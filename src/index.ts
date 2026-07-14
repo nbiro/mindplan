@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 /**
  * MindPlan MCP server — an API gateway and strict compiler for the MindPlan
- * SDLC framework. Persists state to /.mindplan on the local file system and
+ * SDLC framework. Persists state to /mindplan on the local file system and
  * communicates over stdio.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import * as path from "path";
+import { fileURLToPath } from "url";
 
 import { EDGE_TYPES, NODE_TYPES, initialStateForType, type MindPlanNode } from "./types.js";
 import {
   ensureDirectories,
   initProject,
+  installAgentRule,
+  installDefineEntitiesSkill,
   ATTACHMENTS_DIR,
   CONTEXT_FILENAME,
   entityRelativePath,
@@ -34,7 +38,7 @@ import {
 
 const server = new McpServer({
   name: "mindplan",
-  version: "1.0.0",
+  version: "0.1.0",
 });
 
 type ToolResult = {
@@ -148,7 +152,7 @@ server.registerTool(
   {
     title: "Link nodes",
     description:
-      "Adds an edge to the DAG. Legal shapes: Workflow -belongs_to-> Journey, Workflow|Foundation -depends_on-> Foundation, Bug -affects-> Workflow|Foundation.",
+      "Adds an edge to the DAG. Legal shapes: Workflow -belongs_to-> Journey (multiple per Workflow allowed), Workflow|Foundation -depends_on-> Foundation, Bug -affects-> Workflow|Foundation.",
     inputSchema: {
       source_id: NODE_ID.describe("The id of the edge source node."),
       target_id: NODE_ID.describe("The id of the edge target node."),
@@ -274,24 +278,41 @@ async function runMcpServer() {
 function runCli() {
   const cmd = process.argv[2];
   if (cmd === "init") {
+    const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
     const { root, created } = initProject();
+    const rule = installAgentRule(packageRoot);
+    const skill = installDefineEntitiesSkill(packageRoot);
+
     if (created) {
       console.log(`Initialized MindPlan at ${root}`);
-      console.log("Next: register the MCP server in .cursor/mcp.json (see README).");
     } else {
       console.log(`MindPlan already initialized at ${root}`);
     }
+
+    if (rule.installed) {
+      console.log("Installed agent rule at .cursor/rules/mindplan.mdc");
+    } else {
+      console.log("Agent rule already present at .cursor/rules/mindplan.mdc");
+    }
+
+    if (skill.installed) {
+      console.log("Installed skill at .cursor/skills/mindplan-define-entities/");
+    } else {
+      console.log("Skill already present at .cursor/skills/mindplan-define-entities/");
+    }
+
+    console.log("Next: register the MCP server in .cursor/mcp.json (see README).");
     return;
   }
 
   if (cmd === "help" || cmd === "--help" || cmd === "-h") {
     console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
-  mindplan-mcp init         Scaffold .mindplan/ in the current project
+  mindplan-mcp init         Scaffold mindplan/, agent rule, and define-entities skill
   mindplan-mcp help         Show this message
 
 Environment:
-  MINDPLAN_ROOT   Project root containing .mindplan/ (default: cwd)`);
+  MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);
     return;
   }
 

@@ -21,18 +21,21 @@ npm test
 | Path | Purpose |
 |------|---------|
 | `SPEC.md` | Framework specification — source of truth for behaviour |
+| `templates/mindplan-agent.mdc` | Cursor agent rule installed into consumer projects by `init` |
+| `templates/mindplan-define-entities/` | Cursor skill for defining MindPlan entities (installed by `init`) |
 | `src/` | TypeScript MCP server |
 | `scripts/smoke.mjs` | Integration smoke test |
 | `dist/` | Compiled output (gitignored; built at publish time) |
 
-Planning data (`.mindplan/`) lives in **consumer projects**, not in this repo.
+Planning data (`mindplan/`) lives in **consumer projects**, not in this repo. Consumer projects SHOULD commit `mindplan/` to version control.
 
 ## Making changes
 
 1. Update `SPEC.md` first when changing framework behaviour.
 2. Implement server changes in `src/` to match the spec.
-3. Extend `scripts/smoke.mjs` when adding tools or compiler rules.
-4. Run `npm run build && npm test` before opening a PR.
+3. Keep `templates/mindplan-agent.mdc` and `templates/mindplan-define-entities/` in sync with SPEC behaviour agents must follow.
+4. Extend `scripts/smoke.mjs` when adding tools or compiler rules.
+5. Run `npm run build && npm test` before opening a PR.
 
 ## Publishing (maintainers)
 

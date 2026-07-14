@@ -18,7 +18,7 @@ const transport = new StdioClientTransport({
   args: [serverEntry],
   env: { ...process.env, MINDPLAN_ROOT: root },
 });
-const client = new Client({ name: "smoke", version: "1.0.0" });
+const client = new Client({ name: "smoke", version: "0.1.0" });
 await client.connect(transport);
 
 let failures = 0;
@@ -42,7 +42,7 @@ async function expectBlocked(label, tool, args) {
 await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" });
 await expectOk("create foundation", "create_node", { id: "f-db", type: "Foundation", title: "Database schema", description: "Core tables" });
 await expectOk("create workflow", "create_node", { id: "wf-checkout", type: "Workflow", title: "Checkout", description: "Split & pay" });
-const wfFolder = path.join(root, ".mindplan", "workflows", "wf-checkout");
+const wfFolder = path.join(root, "mindplan", "workflows", "wf-checkout");
 if (!fs.existsSync(path.join(wfFolder, "context.mdx"))) {
   failures++; console.log("FAIL entity folder scaffold");
 } else console.log("ok   entity folder scaffold");
@@ -70,7 +70,7 @@ await expectBlocked("manual journey state", "update_node_status", { node_id: "j-
 
 // --- completion check ---
 await expectBlocked("completion check (unchecked boxes)", "update_node_status", { node_id: "wf-checkout", new_status: "in-review" });
-const wfPath = path.join(root, ".mindplan", "workflows", "wf-checkout", "context.mdx");
+const wfPath = path.join(root, "mindplan", "workflows", "wf-checkout", "context.mdx");
 fs.writeFileSync(
   wfPath,
   fs.readFileSync(wfPath, "utf-8").replaceAll("[ ]", "[x]") +
@@ -80,7 +80,7 @@ await expectOk("workflow -> in-review", "update_node_status", { node_id: "wf-che
 
 // --- infrastructure first (ship requires stable foundations) ---
 await expectBlocked("infrastructure first (foundation not shipped)", "update_node_status", { node_id: "wf-checkout", new_status: "ship" });
-const fPath = path.join(root, ".mindplan", "foundations", "f-db", "context.mdx");
+const fPath = path.join(root, "mindplan", "foundations", "f-db", "context.mdx");
 fs.writeFileSync(fPath, fs.readFileSync(fPath, "utf-8").replaceAll("[ ]", "[x]"));
 for (const s of ["ready", "in-progress", "in-review"]) {
   await expectOk(`foundation -> ${s}`, "update_node_status", { node_id: "f-db", new_status: s });
@@ -121,7 +121,7 @@ else console.log("ok   journey unchanged by bug activity");
 await expectOk("bug -> triaged", "update_node_status", { node_id: "bug-race", new_status: "triaged" });
 await expectOk("bug -> fixing", "update_node_status", { node_id: "bug-race", new_status: "fixing" });
 
-const bugPath = path.join(root, ".mindplan", "bugs", "bug-race", "context.mdx");
+const bugPath = path.join(root, "mindplan", "bugs", "bug-race", "context.mdx");
 await expectBlocked("bug completion check", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
 fs.writeFileSync(bugPath, fs.readFileSync(bugPath, "utf-8").replaceAll("[ ]", "[x]"));
 await expectOk("bug -> in-review", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
@@ -145,7 +145,7 @@ await expectBlocked("skip to ship", "update_node_status", { node_id: "wf-tips", 
 await expectBlocked("bug affects journey", "link_nodes", { source_id: "bug-race", target_id: "j-ordering", edge_type: "affects" });
 
 const ctx = JSON.parse(await expectOk("get_node_context bug", "get_node_context", { node_id: "bug-race" }));
-if (ctx.context_path !== ".mindplan/bugs/bug-race/context.mdx") { failures++; console.log("FAIL bug context path"); }
+if (ctx.context_path !== "mindplan/bugs/bug-race/context.mdx") { failures++; console.log("FAIL bug context path"); }
 else console.log("ok   bug get_node_context");
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

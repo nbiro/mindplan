@@ -1,6 +1,6 @@
 {
   "name": "mindplan-mcp",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "MindPlan MCP server — API gateway and strict compiler for the MindPlan SDLC framework",
   "type": "module",
   "main": "dist/index.js",
@@ -9,6 +9,7 @@
   },
   "files": [
     "dist",
+    "templates",
     "README.md",
     "SPEC.md",
     "LICENSE"

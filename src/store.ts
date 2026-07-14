@@ -2,16 +2,16 @@
  * File system persistence for MindPlan.
  *
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
- *   /.mindplan/mindplan.json
- *   /.mindplan/components/              — project-specific MDX components (opaque to the compiler)
- *   /.mindplan/journeys/<id>/context.mdx
- *   /.mindplan/journeys/<id>/attachments/...
- *   /.mindplan/foundations/<id>/context.mdx
- *   /.mindplan/foundations/<id>/attachments/...
- *   /.mindplan/workflows/<id>/context.mdx
- *   /.mindplan/workflows/<id>/attachments/...
- *   /.mindplan/bugs/<id>/context.mdx
- *   /.mindplan/bugs/<id>/attachments/...
+ *   /mindplan/mindplan.json
+ *   /mindplan/components/              — project-specific MDX components (opaque to the compiler)
+ *   /mindplan/journeys/<id>/context.mdx
+ *   /mindplan/journeys/<id>/attachments/...
+ *   /mindplan/foundations/<id>/context.mdx
+ *   /mindplan/foundations/<id>/attachments/...
+ *   /mindplan/workflows/<id>/context.mdx
+ *   /mindplan/workflows/<id>/attachments/...
+ *   /mindplan/bugs/<id>/context.mdx
+ *   /mindplan/bugs/<id>/attachments/...
  */
 
 import * as fs from "fs";
@@ -25,7 +25,7 @@ const TYPE_DIRS: Record<NodeType, string> = {
   Bug: "bugs",
 };
 
-export const MINDPLAN_DIR = ".mindplan";
+export const MINDPLAN_DIR = "mindplan";
 export const CONTEXT_FILENAME = "context.mdx";
 export const ATTACHMENTS_DIR = "attachments";
 export const COMPONENTS_DIR = "components";
@@ -42,12 +42,12 @@ export function typeDir(type: NodeType): string {
   return TYPE_DIRS[type];
 }
 
-/** Absolute path to an entity's folder, e.g. /.mindplan/workflows/wf-checkout */
+/** Absolute path to an entity's folder, e.g. /mindplan/workflows/wf-checkout */
 export function entityDir(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.join(mindplanRoot(), TYPE_DIRS[node.type], node.id);
 }
 
-/** Project-relative path to an entity folder, e.g. .mindplan/workflows/wf-checkout */
+/** Project-relative path to an entity folder, e.g. mindplan/workflows/wf-checkout */
 export function entityRelativePath(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.posix.join(MINDPLAN_DIR, TYPE_DIRS[node.type], node.id);
 }
@@ -76,7 +76,69 @@ export type InitResult = {
   created: boolean;
 };
 
-/** Scaffolds an empty .mindplan/ tree in the consumer project (idempotent). */
+export type InstallAgentRuleResult = {
+  installed: boolean;
+  path: string;
+};
+
+export type InstallSkillResult = {
+  installed: boolean;
+  path: string;
+};
+
+function projectRoot(): string {
+  return process.env.MINDPLAN_ROOT ?? process.cwd();
+}
+
+function copyDirRecursive(src: string, dest: string): void {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/** Copies the bundled agent rule into .cursor/rules/mindplan.mdc (idempotent). */
+export function installAgentRule(packageRoot: string): InstallAgentRuleResult {
+  const templatePath = path.join(packageRoot, "templates", "mindplan-agent.mdc");
+  const destPath = path.join(projectRoot(), ".cursor", "rules", "mindplan.mdc");
+
+  if (fs.existsSync(destPath)) {
+    return { installed: false, path: destPath };
+  }
+
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Agent rule template not found at ${templatePath}`);
+  }
+
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.copyFileSync(templatePath, destPath);
+  return { installed: true, path: destPath };
+}
+
+/** Copies the define-entities skill into .cursor/skills/mindplan-define-entities/ (idempotent). */
+export function installDefineEntitiesSkill(packageRoot: string): InstallSkillResult {
+  const templateDir = path.join(packageRoot, "templates", "mindplan-define-entities");
+  const destDir = path.join(projectRoot(), ".cursor", "skills", "mindplan-define-entities");
+
+  if (fs.existsSync(destDir)) {
+    return { installed: false, path: destDir };
+  }
+
+  if (!fs.existsSync(templateDir)) {
+    throw new Error(`Skill template not found at ${templateDir}`);
+  }
+
+  copyDirRecursive(templateDir, destDir);
+  return { installed: true, path: destDir };
+}
+
+/** Scaffolds an empty mindplan/ tree in the consumer project (idempotent). */
 export function initProject(): InitResult {
   const root = mindplanRoot();
   const graphFile = graphPath();
@@ -89,7 +151,7 @@ export function initProject(): InitResult {
   return { root, created: !exists };
 }
 
-/** Creates /.mindplan, top-level type directories, and components/ if missing. */
+/** Creates /mindplan, top-level type directories, and components/ if missing. */
 export function ensureDirectories(): void {
   fs.mkdirSync(mindplanRoot(), { recursive: true });
   for (const dir of Object.values(TYPE_DIRS)) {

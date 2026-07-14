@@ -5,7 +5,7 @@ Normative specification and reference MCP server for the **MindPlan** SDLC frame
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
 
-Planning data (`.mindplan/`) lives in **consumer projects**, not in this repo.
+Planning data (`mindplan/`) lives in **consumer projects**, not in this repo. Commit `mindplan/` to version control alongside application code.
 
 ## Quick start
 
@@ -30,10 +30,21 @@ Add to `.cursor/mcp.json` in that project:
 
 Reload MCP servers in Cursor. The server uses the opened workspace as the project root, so `MINDPLAN_ROOT` is usually unnecessary.
 
+`init` also installs:
+
+- `.cursor/rules/mindplan.mdc` — always-on agent playbook (MCP workflow, compiler rules)
+- `.cursor/skills/mindplan-define-entities/` — skill for defining Journey, Foundation, Workflow, and Bug nodes
+
+Reload Cursor after init if rules/skills are not picked up immediately.
+
+To install manually:
+- Copy `templates/mindplan-agent.mdc` → `.cursor/rules/mindplan.mdc`
+- Copy `templates/mindplan-define-entities/` → `.cursor/skills/mindplan-define-entities/`
+
 To pin a version:
 
 ```json
-"args": ["-y", "mindplan-mcp@1.0.0"]
+"args": ["-y", "mindplan-mcp@0.1.0"]
 ```
 
 ### Before npm publish (from source)
@@ -59,7 +70,7 @@ npm install && npm run build
 
 ```
 <project-root>/
-└── .mindplan/
+└── mindplan/
     ├── mindplan.json              # The Map — a DAG of nodes and edges
     ├── components/                # Project-specific MDX components (optional)
     ├── journeys/<id>/
@@ -95,7 +106,7 @@ Context files are MDX. See SPEC.md §6.4 for the component contract.
 
 Every violation throws an error starting with `Blocked: `.
 
-1. **No Ghost Workflows** — Workflow cannot reach `ready`/`in-progress` without `belongs_to` + `depends_on`.
+1. **No Ghost Workflows** — Workflow cannot reach `ready`/`in-progress` without at least one `belongs_to` + at least one `depends_on`.
 2. **No Ghost Bugs** — Bug cannot reach `triaged`/`fixing` without at least one `affects` edge.
 3. **Infrastructure First** — Workflow cannot `ship` unless all linked Foundations are `stable`.
 4. **Completion Check** — unchecked `[ ]` in `context.mdx` block `in-review`, `ship`, and Bug `in-review`/`resolved`.
@@ -118,7 +129,7 @@ Every violation throws an error starting with `Blocked: `.
 | Command | Description |
 |---------|-------------|
 | `mindplan-mcp` | Start the MCP server (stdio) |
-| `mindplan-mcp init` | Scaffold `.mindplan/` in the current directory |
+| `mindplan-mcp init` | Scaffold `mindplan/`, install agent rule, and define-entities skill |
 | `mindplan-mcp help` | Show usage |
 
 Set `MINDPLAN_ROOT` to override the project root (defaults to `process.cwd()`).

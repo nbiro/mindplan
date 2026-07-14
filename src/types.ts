@@ -1,5 +1,5 @@
 /**
- * MindPlan data model — the taxonomy persisted in /.mindplan/mindplan.json.
+ * MindPlan data model — the taxonomy persisted in /mindplan/mindplan.json.
  */
 
 export const NODE_TYPES = ["Journey", "Foundation", "Workflow", "Bug"] as const;

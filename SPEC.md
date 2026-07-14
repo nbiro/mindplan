@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHALL, SHOULD, and MAY in this document are to be 
 
 MindPlan is a strictly deterministic Software Development Life Cycle (SDLC) framework designed natively for autonomous AI agents and human engineering teams. It operates as a compiler-style state machine and a "GitOps for Issue Tracking" system: all planning state lives inside the repository, every state mutation is validated against architectural guardrails before it is persisted, and any violation is rejected with a machine-parsable error. The result is that software architecture and project requirements remain perfectly synchronized with the code they describe — there is no external tracker to drift from reality.
 
-MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP) server. The server is the single write path to MindPlan state. Direct file edits to the graph are out of contract (see §9.3).
+MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP) server. The server is the single write path to MindPlan state. Direct file edits to the graph are out of contract (see §9.3). Consumer projects receive an operational agent playbook at `.cursor/rules/mindplan.mdc` (installed by `mindplan-mcp init` from `templates/mindplan-agent.mdc`).
 
 ---
 
@@ -36,11 +36,11 @@ The Territory MUST live in the repository alongside the source code and MUST be 
 
 ### 1.3 Directory layout
 
-All MindPlan state lives under a hidden `.mindplan/` directory at the project root:
+All MindPlan state lives under a `mindplan/` directory at the project root. This directory is versioned with the repository and MUST be committed.
 
 ```
 <project-root>/
-└── .mindplan/
+└── mindplan/
     ├── mindplan.json                  # The Map
     ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
     ├── journeys/
@@ -63,7 +63,7 @@ All MindPlan state lives under a hidden `.mindplan/` directory at the project ro
 
 Rules:
 
-- The planning root is `<MINDPLAN_ROOT>/.mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used.
+- The planning root is `<MINDPLAN_ROOT>/mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used.
 - Each entity folder name MUST equal the node `id`.
 - The subdirectory per type is fixed: `journeys/`, `foundations/`, `workflows/`, `bugs/`.
 - `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `context.mdx` with relative links (e.g. `![flow](attachments/flow.png)`).
@@ -80,7 +80,7 @@ The framework separates **build taxonomy** (Journey, Foundation, Workflow) from 
 |---|---|---|
 | **Journey** | A macro-level business capability or continuous user experience (e.g. "Table Ordering", "Agency Site Generator"). | Permanent container. MUST NOT execute code directly. MUST NOT have outgoing edges. State is computed, never set manually (§4). |
 | **Foundation** | Pure infrastructure and plumbing (e.g. database schemas, API integrations, auth). | Has zero direct business value; exists solely to be consumed by Workflows. MUST be shipped (`stable`) before dependent Workflows can ship. MAY depend on other Foundations (layered infrastructure). |
-| **Workflow** | Self-contained business logic or an end-user feature (e.g. "Compile HTML", "Process Payment"). | MUST belong to exactly one or more Journeys via `belongs_to`. MUST depend on at least one Foundation via `depends_on`. Contains the actual execution work. |
+| **Workflow** | Self-contained business logic or an end-user feature (e.g. "Compile HTML", "Process Payment"). | MUST belong to one or more Journeys via `belongs_to` (multiple edges allowed). MUST depend on at least one Foundation via `depends_on`. Contains the actual execution work. **Agents MUST define the Journey before creating a Workflow** — if the user requests a Workflow that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
 | **Bug** | A defect afflicting one or more Foundations or Workflows. | MUST link to targets via `affects` (Bug → Workflow|Foundation). Dedicated defect lifecycle (§3.2). Does not affect Journey computation. |
 
 ### 2.1 Node identifiers
@@ -93,7 +93,7 @@ Exactly three edge types exist. An edge is a directed triple `(source, target, t
 
 | Edge type | Legal shape | Meaning |
 |---|---|---|
-| `belongs_to` | Workflow → Journey | Membership. The Workflow is part of the Journey's capability surface. |
+| `belongs_to` | Workflow → Journey | Membership. A Workflow MAY have multiple `belongs_to` edges to different Journeys when the feature spans macro capabilities. |
 | `depends_on` | Workflow → Foundation, Foundation → Foundation | Consumption. The source cannot ship without the target's infrastructure. |
 | `affects` | Bug → Workflow, Bug → Foundation | Affliction. The Bug impairs the target; open Bugs drive `unstable` production posture (§3.5). |
 
@@ -120,7 +120,7 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 | # | State | Meaning |
 |---|---|---|
 | 1 | `draft` | Ideation; scope written in `context.mdx` |
-| 2 | `ready` | Pre-flight passed (Workflow: Journey + Foundation linked) |
+| 2 | `ready` | Pre-flight passed (Workflow: at least one Journey + Foundation linked) |
 | 3 | `in-progress` | Active execution; Atomic Ops checked off |
 | 4 | `in-review` | Frozen pending PR approval or CI gate |
 | 5 | `deprecated` | Retired (from `stable`/`unstable` only) |
@@ -345,7 +345,7 @@ After any accepted mutation, the server MUST rewrite the `state:` line inside th
 
 Default checklist items are placeholders; teams SHOULD replace them with real Atomic Ops during `draft` or triage.
 
-Scaffolded bodies include an MDX comment noting which standard components are available. `create_node` MUST also ensure `.mindplan/components/` exists at the planning root.
+Scaffolded bodies include an MDX comment noting which standard components are available. `create_node` MUST also ensure `mindplan/components/` exists at the planning root.
 
 ### 6.4 MDX Component Contract
 
@@ -356,7 +356,7 @@ Context files are MDX, which allows JSX components inside the Markdown body. Thi
 | Tier | Provided by | Purpose | Compiler visibility |
 |---|---|---|---|
 | **Standard library** | MindPlan (versioned with the server/spec) | Semantic elements whose meaning is identical in every MindPlan project | Reserved names; semantics defined here |
-| **Project components** | Host project, in `.mindplan/components/` | Domain-specific presentation (e.g. a restaurant floor-plan diagram) | Opaque — never interpreted |
+| **Project components** | Host project, in `mindplan/components/` | Domain-specific presentation (e.g. a restaurant floor-plan diagram) | Opaque — never interpreted |
 
 Host projects MUST NOT implement or shadow standard-library components. MindPlan does not depend on the host project's stack: a project that never uses JSX is fully compliant, and the standard library requires nothing from the host `package.json`.
 
@@ -371,7 +371,7 @@ The following component names are reserved across all MindPlan projects. Impleme
 | `<Attachment>` | `file: string` (relative to `attachments/`), `caption?: string` | Typed reference to an attachment; viewers render a preview or download link. |
 | `<StateBadge>` | `state?: NodeState` (defaults to the frontmatter `state`) | Renders the node's pipeline state as a badge. |
 | `<DependsOn>` | `id: string` (Foundation id) | Inline reference to a Foundation dependency; viewers link to that node. Informational — edges in the Map are the authority. |
-| `<BelongsTo>` | `id: string` (Journey id) | Inline reference to the parent Journey. Informational — edges in the Map are the authority. |
+| `<BelongsTo>` | `id: string` (Journey id) | Inline reference to a parent Journey. Informational — `belongs_to` edges in the Map are the authority (multiple allowed). |
 | `<Affects>` | `id: string` (Workflow or Foundation id) | Inline reference to an afflicted node. Informational — `affects` edges in the Map are the authority. |
 | `<ReproSteps>` | children | Marks repro steps for viewers. |
 | `<Severity>` | `level: low \| medium \| high \| critical` | Renders bug severity. |
@@ -381,7 +381,7 @@ Future spec versions MAY extend this set; they MUST NOT change the semantics of 
 
 #### 6.4.3 Project components
 
-- Live in `.mindplan/components/` at the planning root (any file layout inside is the project's business; `.tsx`/`.jsx` recommended).
+- Live in `mindplan/components/` at the planning root (any file layout inside is the project's business; `.tsx`/`.jsx` recommended).
 - MAY be referenced from any `context.mdx` in that project.
 - MUST NOT use reserved names from §6.4.2.
 - Are ignored entirely by the MCP server and the compiler rules. A missing or broken project component MUST NOT block any state transition.
@@ -401,7 +401,7 @@ Consequences:
 
 #### 6.4.5 Rendering
 
-Rendering MDX is out of scope for the MCP server. Viewers (docs sites, dashboards, IDE previews) resolve reserved names to the standard library and all other names to `.mindplan/components/`. Until a viewer exists, agents and humans read context files as plain text; the JSX reads as self-describing markup.
+Rendering MDX is out of scope for the MCP server. Viewers (docs sites, dashboards, IDE previews) resolve reserved names to the standard library and all other names to `mindplan/components/`. Until a viewer exists, agents and humans read context files as plain text; the JSX reads as self-describing markup.
 
 ---
 
@@ -462,9 +462,9 @@ The server exposes exactly six tools over stdio. All inputs are validated with z
 
 ```jsonc
 {
-  "folder": ".mindplan/workflows/wf-checkout-split",
-  "context_path": ".mindplan/workflows/wf-checkout-split/context.mdx",
-  "attachments_path": ".mindplan/workflows/wf-checkout-split/attachments",
+  "folder": "mindplan/workflows/wf-checkout-split",
+  "context_path": "mindplan/workflows/wf-checkout-split/context.mdx",
+  "attachments_path": "mindplan/workflows/wf-checkout-split/attachments",
   "attachments": ["checkout-wireframe.png"],   // filenames, sorted, .gitkeep excluded
   "context": "---\nid: wf-checkout-split\n..." // raw context.mdx content
 }
@@ -513,7 +513,7 @@ Attachments are managed through the ordinary file system (IDE, agent file tools,
 
 ### 9.1 Determinism
 
-Given identical `.mindplan/` contents and an identical tool call, the server MUST produce an identical accept/reject decision and identical resulting state (timestamps excepted). There is no hidden state, no database, and no network dependency.
+Given identical `mindplan/` contents and an identical tool call, the server MUST produce an identical accept/reject decision and identical resulting state (timestamps excepted). There is no hidden state, no database, and no network dependency.
 
 ### 9.2 Validation-at-transition
 
@@ -577,7 +577,7 @@ The sync parser is deliberately outside the MCP server (it is a CI concern, not 
 
 An implementation is MindPlan-compliant if and only if:
 
-- [ ] All state lives under `.mindplan/` per §1.3; no external database.
+- [ ] All state lives under `mindplan/` per §1.3; no external database.
 - [ ] Build taxonomy + defect layer and all three edge types are enforced per §2.
 - [ ] Build pipeline, Bug lifecycle, and computed `stable`/`unstable` are enforced per §3.
 - [ ] Journey states are computed, never settable, per §4; Bugs do not affect Journeys.
