@@ -1,0 +1,51 @@
+{
+  "name": "mindplan-mcp",
+  "version": "1.0.0",
+  "description": "MindPlan MCP server — API gateway and strict compiler for the MindPlan SDLC framework",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mindplan-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SPEC.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js",
+    "test": "node scripts/smoke.mjs",
+    "dev": "tsc --watch"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mindplan-io/mindplan.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mindplan-io/mindplan/issues"
+  },
+  "homepage": "https://github.com/mindplan-io/mindplan#readme",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "sdlc",
+    "mindplan",
+    "cursor",
+    "ai-agents"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.9",
+    "typescript": "^5.9.3"
+  }
+}

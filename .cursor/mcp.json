@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mindplan": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "MINDPLAN_ROOT": "."
+      }
+    }
+  }
+}
