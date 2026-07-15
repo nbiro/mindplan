@@ -15,6 +15,21 @@ MindPlan makes planning state **part of the repository** and puts a strict compi
 
 Planning data (`mindplan/`) lives in **consumer projects**, not in this repo. Commit `mindplan/` to version control alongside application code.
 
+## Who is this for
+
+MindPlan works best for **indie developers and small teams** working solo or in tight sync — the kind of project where one person (or one agent) touches `mindplan/` at a time.
+
+Because planning state is plain-text `context.mdx` files committed to git, it inherits git's concurrency model: no built-in locking or conflict resolution. That's a good tradeoff when:
+
+- You're a solo builder or a small team (a handful of people) working on one branch at a time
+- You want planning and code to live and merge together, not drift apart in an external tracker
+- You're building with AI agents that need a live, queryable source of truth instead of a stale ticket
+
+It's a poor fit today for:
+
+- Larger teams with many contributors mutating the same nodes concurrently — simultaneous edits to the same `context.mdx` frontmatter (state, edges) can produce git conflicts the compiler doesn't help you resolve
+- Organizations that need multi-user permissions, audit trails, or sync with existing PM tools (Jira, Linear, GitHub Projects) — MindPlan intentionally has no external sync
+
 ## Quick start
 
 **Not yet published to npm — install from source.**
