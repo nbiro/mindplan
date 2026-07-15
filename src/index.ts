@@ -17,6 +17,7 @@ import {
   initProject,
   installAgentPlaybook,
   installAgentIntegrations,
+  installCursorIgnore,
   installDefineEntitiesSkill,
   installMcpExample,
   installRootAgentsMd,
@@ -32,6 +33,9 @@ import {
   patchFrontmatter,
   addEdgeToFrontmatter,
   removeEdgesFromFrontmatter,
+  splitContext,
+  nodeToRecord,
+  patchNodeTerritory,
 } from "./store.js";
 import {
   blocked,
@@ -46,6 +50,7 @@ import {
   findPredecessor,
   blastRadiusDependents,
   dependentsOf,
+  assertWorkflowTerritoryScalarsEditable,
 } from "./rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "./search.js";
 import { VIEW_FORMATS, exportMindPlanView, persistMindPlanMap } from "./view.js";
@@ -216,7 +221,8 @@ server.registerTool(
   {
     title: "Get node context",
     description:
-      "Returns context.mdx (title, description, body), plus attachment paths and filenames.",
+      "Returns authoritative record (graph slice), editable body, attachment paths, and filenames. " +
+      "Prefer record+body over raw_context (deprecated).",
     inputSchema: {
       node_id: NODE_ID.describe("The id of the node whose context.mdx to read."),
     },
@@ -225,15 +231,151 @@ server.registerTool(
     const graph = loadGraph();
     const node = findNode(graph, node_id);
     const rel = entityRelativePath(node);
+    const raw = readMarkdown(node);
+    const split = splitContext(raw);
     return ok({
       folder: rel,
       context_path: `${rel}/${CONTEXT_FILENAME}`,
       attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
       attachments: listAttachments(node),
+      record: nodeToRecord(node),
+      body: split?.body ?? "",
       title: node.title,
       description: node.description,
-      context: readMarkdown(node),
+      raw_context: raw,
     });
+  })
+);
+
+server.registerTool(
+  "orient_for_work",
+  {
+    title: "Orient for work",
+    description:
+      "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
+      "plus get_blast_radius when focus is a Foundation or Workflow. Prefer this to start a work session.",
+    inputSchema: {
+      query: z
+        .string()
+        .optional()
+        .describe("Free-text query to rank nodes. Required if node_id omitted."),
+      node_id: NODE_ID.optional().describe("Force focus to this node when present."),
+      type: z.enum(NODE_TYPES).optional().describe("Optional type filter before ranking."),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_FIND_LIMIT)
+        .optional()
+        .describe(`Max ranked matches (default ${DEFAULT_FIND_LIMIT}).`),
+    },
+  },
+  guarded(({ query, node_id, type, limit }) => {
+    const q = (query ?? "").trim();
+    if (!q && !node_id) {
+      throw blocked('orient_for_work requires a non-empty "query" and/or "node_id".');
+    }
+    const graph = loadGraph();
+    if (node_id) {
+      findNode(graph, node_id);
+    }
+    const related = findRelatedNodes(graph, {
+      query: q,
+      node_id,
+      type,
+      limit: limit ?? DEFAULT_FIND_LIMIT,
+    });
+    let context: Record<string, unknown> | null = null;
+    let blast_radius: Record<string, unknown> | null = null;
+
+    if (related.focus) {
+      const node = findNode(graph, related.focus);
+      const rel = entityRelativePath(node);
+      const raw = readMarkdown(node);
+      const split = splitContext(raw);
+      context = {
+        folder: rel,
+        context_path: `${rel}/${CONTEXT_FILENAME}`,
+        attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
+        attachments: listAttachments(node),
+        record: nodeToRecord(node),
+        body: split?.body ?? "",
+        title: node.title,
+        description: node.description,
+      };
+      if (node.type === "Foundation" || node.type === "Workflow") {
+        const { affected: entries, via_supersedes } = blastRadiusDependents(graph, node.id);
+        const journeysAtRisk = new Set<string>();
+        for (const { node: affected } of entries) {
+          if (affected.type !== "Workflow") continue;
+          for (const edge of graph.edges) {
+            if (edge.source === affected.id && edge.type === "belongs_to") {
+              journeysAtRisk.add(edge.target);
+            }
+          }
+        }
+        blast_radius = {
+          node_id: node.id,
+          affected: entries.map(({ node: n, distance }) => ({
+            id: n.id,
+            type: n.type,
+            state: n.state,
+            distance,
+          })),
+          via_supersedes,
+          journeys_at_risk: [...journeysAtRisk].sort(),
+        };
+      }
+    }
+
+    return ok({ ...related, context, blast_radius });
+  })
+);
+
+server.registerTool(
+  "patch_node_territory",
+  {
+    title: "Patch node territory",
+    description:
+      "Patches territory-owned context.mdx content: body (PRD, checklists), optional title/description " +
+      "(pre-ship Workflows only), toggle_checkboxes, append_affected_files. Server-owned frontmatter unchanged.",
+    inputSchema: {
+      node_id: NODE_ID.describe("Node whose territory to patch."),
+      title: z.string().min(1).optional().describe("New title (pre-ship Workflow only)."),
+      description: z.string().optional().describe("New description (pre-ship Workflow only)."),
+      body: z.string().optional().describe("Replace entire context.mdx body below frontmatter."),
+      toggle_checkboxes: z
+        .array(
+          z.object({
+            contains: z.string().min(1).describe("Substring to match on a checkbox line."),
+            checked: z.boolean().describe("true for [x], false for [ ]."),
+          })
+        )
+        .optional()
+        .describe("Toggle markdown checkboxes by matching line content."),
+      append_affected_files: z
+        .array(z.string().min(1))
+        .optional()
+        .describe("Append project-relative paths to ## Affected Files (Workflow only)."),
+    },
+  },
+  guarded(({ node_id, title, description, body, toggle_checkboxes, append_affected_files }) => {
+    const graph = loadGraph();
+    const node = findNode(graph, node_id);
+    if (title !== undefined) {
+      assertWorkflowTerritoryScalarsEditable(node, "title");
+    }
+    if (description !== undefined) {
+      assertWorkflowTerritoryScalarsEditable(node, "description");
+    }
+    const result = patchNodeTerritory(node, {
+      title,
+      description,
+      body,
+      toggle_checkboxes,
+      append_affected_files,
+    });
+    return ok({ node_id, ...result });
   })
 );
 
@@ -676,6 +818,7 @@ function runCli() {
     const mcpExample = installMcpExample(packageRoot);
     const integrations = installAgentIntegrations(packageRoot);
     const agentsMd = installRootAgentsMd(packageRoot);
+    const cursorIgnore = installCursorIgnore(packageRoot);
 
     if (created) {
       console.log(`Initialized MindPlan at ${root}`);
@@ -694,6 +837,7 @@ function runCli() {
     report("MCP example", mcpExample);
     report("agent integrations", integrations);
     report("AGENTS.md", agentsMd);
+    report(".cursorignore", cursorIgnore);
 
     if (!agentsMd.installed) {
       console.log("Tip: add a reference to mindplan/agent/playbook.md in your existing AGENTS.md.");
@@ -717,7 +861,7 @@ function runCli() {
   if (cmd === "help" || cmd === "--help" || cmd === "-h") {
     console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
-  mindplan-mcp init         Scaffold mindplan/, agent playbook, skills, and integrations
+  mindplan-mcp init         Scaffold mindplan/, agent playbook, skills, integrations, and .cursorignore
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
   mindplan-mcp help         Show this message

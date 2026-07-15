@@ -1,0 +1,47 @@
+---
+id: wf-project-init-v3
+type: Workflow
+title: "Project init (external review before ship)"
+description: "Scaffold consumer mindplan/ plus agent playbook that forbids the implementing agent from shipping: in-review waits for a human or another agent to review, then ship."
+state: in-review
+created_at: 2026-07-15T20:29:08.448Z
+updated_at: 2026-07-15T20:30:16.095Z
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-territory-store
+supersedes:
+  - wf-project-init-v2
+---
+
+# Project init (external review before ship)
+
+Scaffold consumer mindplan/ plus agent playbook that forbids the implementing agent from shipping: `in-review` waits for a human or another agent to review, then `ship`.
+
+## Execution Logic
+
+1. Run `node dist/index.js init` (or `mindplan-mcp init`) from project root.
+2. Creates `mindplan/` type dirs and installs from `templates/agent/`:
+   - playbook (with blast-radius orient + external review before ship), define-entities skill, mcp.json.example, integrations guides
+3. Creates root `AGENTS.md` only when missing (from the playbook template).
+
+Playbook change: after Atomic Ops are complete, the implementing agent moves the node to `in-review` and **stops**. Only a human or a different agent may `ship` (Foundation/Workflow) or `resolved` (Bug). Documented in Review gate / Ship steps, Bug lifecycle, compiler-rules table (External Review), and Never do.
+
+## Checklist
+
+- [x] Requirements defined (playbook must mandate external review before ship)
+- [x] Implementation complete (`templates/agent/playbook.md`, `AGENTS.md`, `mindplan/agent/playbook.md`; SPEC notes playbook policy)
+- [x] Tests passing (smoke covers init; policy is playbook-only, not a server gate)
+
+## Affected Files
+
+- `templates/agent/playbook.md`
+- `AGENTS.md`
+- `mindplan/agent/playbook.md`
+- `SPEC.md`
+
+## Attachments
+
+_Wireframes, screenshots, and spec PDFs go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}

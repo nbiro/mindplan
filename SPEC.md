@@ -115,11 +115,11 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 | 1 | `draft` | Ideation; scope written in `context.mdx` |
 | 2 | `ready` | Pre-flight passed (Workflow: at least one Journey + Foundation linked) |
 | 3 | `in-progress` | Active execution; Atomic Ops checked off |
-| 4 | `in-review` | Frozen pending PR approval or CI gate |
+| 4 | `in-review` | Frozen pending external review (human or another agent), PR approval, or CI gate |
 | 5 | `stable` / `unstable` | Computed production posture; entered via `ship`, never set manually (§3.5) |
 | 6 | `deprecated` | Retired (from `stable`/`unstable` only) |
 
-**Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state.
+**Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. Agent playbooks MUST treat `in-review` as a handoff: the implementing agent MUST NOT call `ship` (or Bug `resolved`) on its own work — a human or a different agent reviews first. The server does not enforce reviewer identity.
 
 | From \ To | draft | ready | in-progress | in-review | stable/unstable | deprecated |
 |---|---|---|---|---|---|---|
@@ -561,7 +561,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes exactly eleven tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly thirteen tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -645,13 +645,33 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
   "context_path": "mindplan/workflows/wf-checkout-split/context.mdx",
   "attachments_path": "mindplan/workflows/wf-checkout-split/attachments",
   "attachments": ["checkout-wireframe.png"],
+  "record": {
+    "id": "wf-checkout-split",
+    "type": "Workflow",
+    "state": "in-progress",
+    "title": "Split & pay checkout",
+    "description": "Diner splits and pays the bill from their phone",
+    "created_at": "...",
+    "updated_at": "...",
+    "belongs_to": ["j-ordering"],
+    "depends_on": ["f-db"]
+  },
+  "body": "# Split & pay checkout\n\n...",
   "title": "Split & pay checkout",
   "description": "Diner splits and pays the bill from their phone",
-  "context": "---\nid: wf-checkout-split\n..." // raw context.mdx content
+  "raw_context": "---\nid: wf-checkout-split\n..." // deprecated; prefer record + body
 }
 ```
 
 - **Errors:** unknown `node_id`; missing `context.mdx`.
+
+#### `orient_for_work`
+
+Composite orientation for agents: `find_related_nodes` plus full territory for the focus node and `get_blast_radius` when the focus is a Foundation or Workflow.
+
+- **Input:** same as `find_related_nodes` (`query`, `node_id`, `type`, `limit`).
+- **Output:** `{ query, matches, focus, nodes, edges, context, blast_radius }` where `context` matches `get_node_context` (without `raw_context`) when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` for Foundation/Workflow focus, else `null`.
+- **Errors:** same as `find_related_nodes`.
 
 #### `get_workflow_files`
 
@@ -668,6 +688,22 @@ Returns the project-relative file paths listed in a Workflow's `## Affected File
 ```
 
 - **Errors:** unknown `node_id`; node is not a Workflow.
+
+#### `patch_node_territory`
+
+Patches territory-owned `context.mdx` content. Server-owned frontmatter (`state`, edge arrays, `shipped_at`) is never modified.
+
+- **Input:**
+  - `node_id` (slug, required)
+  - `title` (string, optional) — pre-ship Workflow only
+  - `description` (string, optional) — pre-ship Workflow only
+  - `body` (string, optional) — replaces entire body below frontmatter
+  - `toggle_checkboxes` (array of `{ contains, checked }`, optional) — match checkbox lines by substring
+  - `append_affected_files` (string array, optional) — Workflow only; appends to `## Affected Files`
+  - At least one patch field is required.
+- **Effect:** writes territory body and/or `title`/`description` scalars; touches `updated_at` in frontmatter.
+- **Output:** `{ node_id, patched_fields: ["description", ...] }`
+- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; `append_affected_files` on non-Workflow; shipped Workflow `title`/`description` change (`Use create_node_version for material scope changes on live work.`).
 
 ### 8.2 Mutation tools
 
@@ -791,7 +827,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `context.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node frontmatter and assemble at runtime per §7.
-- [ ] The ten-tool MCP surface matches §8 (names, inputs, outputs, errors).
+- [ ] The thirteen-tool MCP surface matches §8 (names, inputs, outputs, errors).
 - [ ] Mutations are deterministic and atomic per §9.
 
 ---

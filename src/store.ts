@@ -203,6 +203,13 @@ export function installRootAgentsMd(packageRoot: string): InstallAgentRuleResult
   return installTemplateFile(templatePath, destPath, "AGENTS.md");
 }
 
+/** Installs `.cursorignore` at project root when missing (idempotent). */
+export function installCursorIgnore(packageRoot: string): InstallAgentRuleResult {
+  const templatePath = path.join(agentTemplateRoot(packageRoot), "cursorignore");
+  const destPath = path.join(projectRoot(), ".cursorignore");
+  return installTemplateFile(templatePath, destPath, ".cursorignore");
+}
+
 /** Scaffolds an empty mindplan/ tree in the consumer project (idempotent). */
 export function initProject(): InitResult {
   const root = mindplanRoot();
@@ -754,4 +761,161 @@ export function listAffectedFiles(node: Pick<MindPlanNode, "id" | "type">): stri
     );
   }
   return parseAffectedFiles(readMarkdown(node));
+}
+
+/** Splits raw context.mdx into YAML frontmatter block and body. */
+export function splitContext(raw: string): { frontmatter: string; body: string } | null {
+  const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---)(\r?\n?)([\s\S]*)$/);
+  if (!match) return null;
+  return { frontmatter: match[1], body: match[3] };
+}
+
+/** Authoritative graph slice for MCP read responses (excludes raw frontmatter duplication). */
+export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
+  const record: Record<string, unknown> = {
+    id: node.id,
+    type: node.type,
+    state: node.state,
+    title: node.title,
+    description: node.description,
+    created_at: node.created_at,
+    updated_at: node.updated_at,
+  };
+  if (node.shipped_at) record.shipped_at = node.shipped_at;
+  if (node.severity) record.severity = node.severity;
+  if (node.belongs_to?.length) record.belongs_to = [...node.belongs_to];
+  if (node.depends_on?.length) record.depends_on = [...node.depends_on];
+  if (node.affects?.length) record.affects = [...node.affects];
+  if (node.supersedes?.length) record.supersedes = [...node.supersedes];
+  return record;
+}
+
+export type PatchNodeTerritoryInput = {
+  title?: string;
+  description?: string;
+  body?: string;
+  toggle_checkboxes?: { contains: string; checked: boolean }[];
+  append_affected_files?: string[];
+};
+
+function toggleCheckboxesInBody(
+  body: string,
+  toggles: { contains: string; checked: boolean }[]
+): string {
+  const lines = body.split(/\r?\n/);
+  for (const toggle of toggles) {
+    let matched = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!/^\s*[-*+]\s+\[[ x]\]/.test(line) || !line.includes(toggle.contains)) continue;
+      lines[i] = line.replace(
+        /^\s*([-*+]\s+)\[[ x]\]/,
+        (_, prefix) => `${prefix}[${toggle.checked ? "x" : " "}]`
+      );
+      matched = true;
+      break;
+    }
+    if (!matched) {
+      throw new Error(
+        `Blocked: no checkbox line containing "${toggle.contains}" in ${lines.length ? "context" : "empty context"} body.`
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+function appendAffectedFilesToBody(body: string, paths: string[]): string {
+  const existing = new Set(parseAffectedFiles(`---\n---\n${body}`));
+  for (const p of paths) {
+    existing.add(p.replace(/\\/g, "/"));
+  }
+  const sorted = [...existing].sort((a, b) => a.localeCompare(b));
+  const list = sorted.map((p) => `- \`${p}\``).join("\n");
+
+  const headingMatch = body.match(/^## Affected Files\s*$/m);
+  if (!headingMatch || headingMatch.index === undefined) {
+    return `${body.replace(/\s*$/, "")}\n\n## Affected Files\n\n${list}\n`;
+  }
+
+  const before = body.slice(0, headingMatch.index + headingMatch[0].length);
+  const afterHeading = body.slice(headingMatch.index + headingMatch[0].length);
+  const nextSection = afterHeading.search(/\r?\n## /);
+  const after =
+    nextSection < 0 ? afterHeading.replace(/\s*$/, "") : afterHeading.slice(nextSection);
+  return `${before}\n\n${list}\n${after}`;
+}
+
+function patchTerritoryScalars(
+  frontmatter: string,
+  scalars: { title?: string; description?: string },
+  updated_at: string
+): string {
+  let patched = frontmatter;
+  if (scalars.title !== undefined) {
+    patched = patched.replace(/^title:.*$/m, `title: ${JSON.stringify(scalars.title)}`);
+  }
+  if (scalars.description !== undefined) {
+    patched = patched.replace(
+      /^description:.*$/m,
+      `description: ${JSON.stringify(scalars.description)}`
+    );
+  }
+  return patched.replace(/^updated_at:.*$/m, `updated_at: ${updated_at}`);
+}
+
+/**
+ * Patches territory-owned context.mdx content (body and title/description scalars).
+ * Server-owned frontmatter fields are never modified here.
+ */
+export function patchNodeTerritory(
+  node: MindPlanNode,
+  input: PatchNodeTerritoryInput
+): { patched_fields: string[] } {
+  const raw = readMarkdown(node);
+  const split = splitContext(raw);
+  if (!split) {
+    throw new Error(`Blocked: context file for "${node.id}" has no YAML frontmatter.`);
+  }
+
+  const patched_fields: string[] = [];
+  const now = new Date().toISOString();
+  let { frontmatter, body } = split;
+
+  if (input.title !== undefined) {
+    frontmatter = patchTerritoryScalars(frontmatter, { title: input.title }, now);
+    patched_fields.push("title");
+  }
+  if (input.description !== undefined) {
+    frontmatter = patchTerritoryScalars(frontmatter, { description: input.description }, now);
+    patched_fields.push("description");
+  }
+  if (input.body !== undefined) {
+    body = input.body;
+    patched_fields.push("body");
+    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
+  if (input.toggle_checkboxes?.length) {
+    body = toggleCheckboxesInBody(body, input.toggle_checkboxes);
+    patched_fields.push("toggle_checkboxes");
+    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
+  if (input.append_affected_files?.length) {
+    if (node.type !== "Workflow") {
+      throw new Error(
+        `Blocked: append_affected_files only applies to Workflow nodes; "${node.id}" is a ${node.type}.`
+      );
+    }
+    body = appendAffectedFilesToBody(body, input.append_affected_files);
+    patched_fields.push("append_affected_files");
+    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
+
+  if (patched_fields.length === 0) {
+    throw new Error(
+      "Blocked: patch_node_territory requires at least one of title, description, body, toggle_checkboxes, or append_affected_files."
+    );
+  }
+
+  writeMarkdown(node, `${frontmatter}\n\n${body}`);
+  return { patched_fields };
 }

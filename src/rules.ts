@@ -22,6 +22,7 @@ import {
   isExecutionState,
   isOpenBugState,
   isProductionState,
+  PRE_SHIP_WORKFLOW_STATES,
   PRODUCTION_TRANSITIONS,
   SHIP_TRANSITION,
 } from "./types.js";
@@ -85,6 +86,29 @@ function runCompletionCheck(node: MindPlanNode, targetLabel: string): void {
   if (unchecked > 0) {
     throw blocked(
       `Completion Check. ${unchecked} unchecked checkbox(es) remain in ${node.id}/context.mdx. All [ ] items must be [x] before moving to "${targetLabel}".`
+    );
+  }
+}
+
+/** Pre-ship Workflow title/description edits; shipped scope changes use create_node_version. */
+export function assertWorkflowTerritoryScalarsEditable(
+  node: MindPlanNode,
+  field: "title" | "description"
+): void {
+  if (node.type !== "Workflow") return;
+  if (
+    isProductionState(node.state) ||
+    node.state === "deprecated"
+  ) {
+    throw blocked(
+      `${field} cannot be changed on shipped Workflow "${node.id}" (${node.state}). ` +
+        "Use create_node_version for material scope changes on live work."
+    );
+  }
+  if (!(PRE_SHIP_WORKFLOW_STATES as readonly string[]).includes(node.state)) {
+    throw blocked(
+      `${field} cannot be changed on Workflow "${node.id}" in state "${node.state}". ` +
+        `Allowed pre-ship states: ${PRE_SHIP_WORKFLOW_STATES.join(", ")}.`
     );
   }
 }

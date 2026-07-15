@@ -82,6 +82,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 
 `init` uses the current working directory as the project root (override with `MINDPLAN_ROOT`) and installs:
 
+- `.cursorignore` — blocks agent file tools from reading territory; agents use MCP for reads and `patch_node_territory` for writes
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
 - `mindplan/agent/mcp.json.example` — MCP server config snippet
@@ -163,11 +164,13 @@ Every violation throws an error starting with `Blocked: `.
 | Tool | Kind | Description |
 |------|------|-------------|
 | `find_related_nodes` | read | Rank nodes by text query; return focus + 1-hop linked neighborhood (summaries) |
+| `orient_for_work` | read | Composite: find_related_nodes + context (record+body) + blast radius for Foundation/Workflow focus |
 | `get_mindplan_graph` | read | Nodes and edges assembled from territory frontmatter |
 | `export_mindplan_view` | read | Mermaid or DOT typed-DAG projection (full map or focus + 1-hop) |
 | `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); seeds from supersedes chain for version successors; journeys_at_risk |
-| `get_node_context` | read | Returns `title`, `description`, `context.mdx`, attachment paths, and filenames |
+| `get_node_context` | read | Returns `record`, `body`, attachment paths; `raw_context` deprecated |
 | `get_workflow_files` | read | Project files listed in a Workflow's `## Affected Files` territory section |
+| `patch_node_territory` | mutation | Body edits, checkboxes, affected files; pre-ship Workflow title/description |
 | `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `context.mdx` |
 | `create_node_version` | mutation | New draft version of a shipped Workflow/Foundation; inherits outgoing edges; predecessor stays live until successor ships (dependents relink at ship, not create) |
 | `link_nodes` | mutation | `belongs_to`, `depends_on` (Foundation or Workflow), or `affects`; optional `link_dependent` for journey closure; writes to source-node frontmatter; recomputes Journey + stability |
@@ -179,7 +182,7 @@ Every violation throws an error starting with `Blocked: `.
 | Command | Description |
 |---------|-------------|
 | `mindplan-mcp` | Start the MCP server (stdio) |
-| `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, and `AGENTS.md` |
+| `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, `.cursorignore`, and `AGENTS.md` |
 | `mindplan-mcp view` | Print a Mermaid/DOT projection of the territory graph (`export` is an alias) |
 | `mindplan-mcp help` | Show usage |
 

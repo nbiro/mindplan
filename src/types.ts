@@ -125,6 +125,10 @@ export function isOpenBugState(state: string): state is OpenBugState {
   return (OPEN_BUG_STATES as readonly string[]).includes(state);
 }
 
+/** Pre-ship build states where Workflow description/title may change when scope shifts. */
+export const PRE_SHIP_WORKFLOW_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
+export type PreShipWorkflowState = (typeof PRE_SHIP_WORKFLOW_STATES)[number];
+
 export function initialStateForType(type: NodeType): NodeState {
   return type === "Bug" ? "open" : "draft";
 }

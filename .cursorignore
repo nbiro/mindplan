@@ -1,0 +1,8 @@
+# MindPlan territory — read via MCP; mutate body via patch_node_territory
+mindplan/**/context.mdx
+
+# Derived graph snapshot — never use as graph authority (SPEC §7.4)
+mindplan/map.md
+
+# Agent instructions are copied to .cursor/rules and .cursor/skills by init
+mindplan/agent/**

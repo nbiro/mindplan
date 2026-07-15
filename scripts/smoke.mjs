@@ -249,6 +249,71 @@ else console.log("ok   bug get_node_context");
 if (ctx.title !== "Race condition" || ctx.description !== "Double charge") {
   failures++; console.log(`FAIL bug title/description from context: ${JSON.stringify({ title: ctx.title, description: ctx.description })}`);
 } else console.log("ok   bug title/description from frontmatter");
+if (!ctx.record?.id || ctx.record.id !== "bug-race" || typeof ctx.body !== "string") {
+  failures++; console.log(`FAIL get_node_context record+body: ${JSON.stringify({ record: ctx.record, bodyType: typeof ctx.body })}`);
+} else console.log("ok   get_node_context record+body");
+
+// --- orient_for_work ---
+await expectBlocked("orient_for_work requires query or node_id", "orient_for_work", {});
+const oriented = JSON.parse(
+  await expectOk("orient_for_work checkout", "orient_for_work", { query: "checkout" })
+);
+if (oriented.focus !== "wf-checkout" || !oriented.context?.record?.id || oriented.context.record.id !== "wf-checkout") {
+  failures++; console.log(`FAIL orient_for_work context: ${JSON.stringify({ focus: oriented.focus, record: oriented.context?.record })}`);
+} else console.log("ok   orient_for_work includes context record");
+if (!oriented.blast_radius?.node_id || oriented.blast_radius.node_id !== "wf-checkout") {
+  failures++; console.log(`FAIL orient_for_work blast_radius: ${JSON.stringify(oriented.blast_radius)}`);
+} else console.log("ok   orient_for_work includes blast_radius for workflow");
+
+// --- patch_node_territory ---
+await expectBlocked("patch_node_territory empty", "patch_node_territory", { node_id: "wf-tips" });
+const patchDesc = JSON.parse(
+  await expectOk("patch workflow description", "patch_node_territory", {
+    node_id: "wf-tips",
+    description: "Tipping flow (revised scope)",
+  })
+);
+if (!patchDesc.patched_fields?.includes("description")) {
+  failures++; console.log(`FAIL patch description fields: ${JSON.stringify(patchDesc)}`);
+} else console.log("ok   patch_node_territory description");
+graph = JSON.parse(await expectOk("read graph after description patch", "get_mindplan_graph", {}));
+const wfTipsPatched = graph.nodes.find((n) => n.id === "wf-tips");
+if (wfTipsPatched?.description !== "Tipping flow (revised scope)") {
+  failures++; console.log(`FAIL description not in graph: ${wfTipsPatched?.description}`);
+} else console.log("ok   patched description visible in graph");
+await expectBlocked("patch shipped workflow description", "patch_node_territory", {
+  node_id: "wf-checkout",
+  description: "should not apply",
+});
+const wfTipsCtxPath = path.join(root, "mindplan", "workflows", "wf-tips", "context.mdx");
+const patchCheck = JSON.parse(
+  await expectOk("patch toggle checkbox", "patch_node_territory", {
+    node_id: "wf-tips",
+    toggle_checkboxes: [{ contains: "Requirements defined", checked: true }],
+  })
+);
+if (!patchCheck.patched_fields?.includes("toggle_checkboxes")) {
+  failures++; console.log(`FAIL patch checkbox fields: ${JSON.stringify(patchCheck)}`);
+} else console.log("ok   patch_node_territory toggle_checkboxes");
+const tipsAfterCheck = fs.readFileSync(wfTipsCtxPath, "utf-8");
+if (!tipsAfterCheck.includes("- [x] Requirements defined")) {
+  failures++; console.log("FAIL checkbox not toggled on disk");
+} else console.log("ok   patch_node_territory persisted checkbox");
+const patchFiles = JSON.parse(
+  await expectOk("patch append affected files", "patch_node_territory", {
+    node_id: "wf-tips",
+    append_affected_files: ["src/tips.ts"],
+  })
+);
+if (!patchFiles.patched_fields?.includes("append_affected_files")) {
+  failures++; console.log(`FAIL patch affected files fields: ${JSON.stringify(patchFiles)}`);
+} else console.log("ok   patch_node_territory append_affected_files");
+const wfTipsFiles = JSON.parse(
+  await expectOk("get_workflow_files after patch", "get_workflow_files", { node_id: "wf-tips" })
+);
+if (!wfTipsFiles.files?.includes("src/tips.ts")) {
+  failures++; console.log(`FAIL affected files after patch: ${JSON.stringify(wfTipsFiles)}`);
+} else console.log("ok   append_affected_files via patch_node_territory");
 
 // --- workflow affected files ---
 const wfFilesEmpty = JSON.parse(
