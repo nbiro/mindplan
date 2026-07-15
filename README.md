@@ -4,7 +4,7 @@ Normative specification and reference MCP server for the **MindPlan** SDLC frame
 
 ## The problem
 
-AI agents (and humans) planning software work today either skip planning entirely or bolt on an external tracker (Jira, Linear, GitHub Projects). External trackers drift from the codebase: a ticket says "done" while the code says otherwise, dependencies between work items are informal or unenforced, and nothing stops an agent from marking a feature `ready` when it has no owning capability, no infrastructure to run on, or unfinished work. There is no single source of truth an agent can query before acting, and no automatic way to know what breaks when a piece of infrastructure or a workflow changes.
+When AI agents (and humans) plan software work today, they either skip planning entirely or bolt on an external tracker such as Jira, Linear, or GitHub Projects. External trackers drift from the codebase: a ticket says "done" while the code says otherwise, dependencies between work items are informal or unenforced, and nothing stops an agent from marking a feature `ready` when it has no owning capability, no infrastructure to run on, or unfinished work. There is no single source of truth an agent can query before acting, and no automatic way to know what breaks when a piece of infrastructure or a workflow changes.
 
 ## The solution
 
