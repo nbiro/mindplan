@@ -1,38 +1,40 @@
 # MindPlan
 
-**MindPlan is a compiler for software planning.** It validates architecture, dependencies, and execution state before code is written — giving AI agents a deterministic model of the system instead of a collection of tickets.
+**MindPlan is the product plan AI agents work from.**  
+Software cannot be written without knowing what the system is. MindPlan keeps that knowledge in the repo — capabilities, infrastructure, dependencies, and what's allowed to ship — so agents build against a real model of the project instead of guessing from tickets and chat.
 
-Software planning can be compiled the same way source code is compiled. That is the product. The MCP server, MDX territory files, and Git-backed store are how it runs.
+Plan state lives next to the code. Every change to it is checked; illegal moves are rejected.
 
 ## The problem
 
-AI agents make planning decisions without an enforceable architectural model. Nothing stops an agent from building on unfinished infrastructure, shipping a feature over unstable dependencies, or marking work reviewed while checklist items are still open. Architecture lives in heads, docs, and chats — not in a machine that can refuse an illegal transition.
+How can AI agents write software if they do not know what the project is about? Without a durable model of the product — what capabilities exist, what infrastructure is ready, what is legal to build next — agents improvise from chat history and stale tickets. They build on unfinished plumbing, ship over unstable dependencies, or mark work done while checklist items are still open.
 
-External trackers (Jira, Linear, GitHub Projects) make that worse as a symptom: tickets drift from the codebase, dependencies stay informal, and there is still no compile step between "someone said ship" and "the graph says ship."
+External trackers (Jira, Linear, GitHub Projects) do not fix that: they list intent, but they do not give agents a living picture of the system, and nothing refuses an illegal move when the ticket says "ship."
 
-## Planning that compiles
+## A plan that can refuse
 
 Traditional issue trackers answer: *what should someone work on?*
 
 MindPlan answers:
 
-- What **can** be worked on?
+- What **is** this project — which capabilities and infrastructure exist?
+- What **can** be worked on next?
 - Is this change **architecturally valid**?
 - What will this **break**?
 - Is this feature even **allowed to ship**?
 
-That is closer to a compiler — or an operating system for software delivery — than to a board of tickets. Every mutation goes through guardrails. Violations are rejected with a machine-parsable error:
+That plan is not advisory. Every mutation is validated like a compile step for planning — guardrails reject violations with a machine-parsable error:
 
 ```
 Blocked: Infrastructure First. Workflow "wf-checkout" cannot ship while
 linked Foundations or Workflows are not stable: "f-payments" (in-progress).
 ```
 
-Architecture becomes executable constraint: no ghost workflows without a capability and foundation, no shipping on unstable deps, no review while Atomic Ops are unchecked. Agents get a focus node, its links, and blast radius *before* they touch code — not after something breaks.
+No ghost workflows without a capability and foundation, no shipping on unstable deps, no review while Atomic Ops are unchecked. Agents get a focus node, its links, and blast radius *before* they touch code — not after something breaks.
 
 ## How it's built
 
-Plan state lives in the repository as `context.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs). An MCP server is the single write path: it mutates frontmatter, enforces the compiler rules, and exposes a queryable graph (`find_related_nodes`, `get_blast_radius`, `export_mindplan_view`). Consumer projects commit territory next to application code so architecture, requirements, and implementation share one history.
+Plan state lives in the repository as `context.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs). An MCP server is the single write path: it mutates frontmatter, validates plan mutations against architectural rules, and exposes a queryable graph (`find_related_nodes`, `get_blast_radius`, `export_mindplan_view`). Consumer projects commit territory next to application code so the product plan and the implementation share one history.
 
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
@@ -47,7 +49,7 @@ This repository dogfoods MindPlan. Live territory: [`mindplan/`](mindplan/).
 
 ## Who is this for
 
-MindPlan is built for people who ship **with AI agents** and need those agents to follow a live architectural model — not a stale ticket list.
+MindPlan is built for people who ship **with AI agents** and need those agents to know what the project is — a living product plan, not a stale ticket list.
 
 It works best for **indie developers and small teams** working solo or in tight sync — the kind of project where one person (or one agent) touches `mindplan/` at a time. Because planning state is plain-text `context.mdx` files in git, it inherits git's concurrency model: no built-in locking or conflict resolution. That tradeoff is a good fit when:
 
@@ -57,7 +59,7 @@ It works best for **indie developers and small teams** working solo or in tight 
 
 It's a poor fit today for:
 
-- Larger teams with many contributors mutating the same nodes concurrently — simultaneous edits to the same `context.mdx` frontmatter (state, edges) can produce git conflicts the compiler doesn't help you resolve
+- Larger teams with many contributors mutating the same nodes concurrently — simultaneous edits to the same `context.mdx` frontmatter (state, edges) can produce git conflicts the rules engine doesn't help you resolve
 - Organizations that need multi-user permissions, audit trails, or sync with existing PM tools (Jira, Linear, GitHub Projects) — MindPlan intentionally has no external sync
 
 ## Quick start
