@@ -1,11 +1,18 @@
 /**
  * Deterministic typed-DAG graph projections for humans (Mermaid / DOT).
- * Read-only — never writes layout or view state into territory.
+ * Projections are derived — only `persistMindPlanMap` writes `mindplan/map.md`
+ * as a generated snapshot (not part of the node record graph).
  */
 
+import * as fs from "fs";
+import * as path from "path";
 import { expandNeighborhood } from "./search.js";
+import { mindplanRoot } from "./store.js";
 import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "./types.js";
 import { GRAPH_VERSION } from "./types.js";
+
+/** Generated Mermaid snapshot under the territory root (not a typed node). */
+export const MAP_FILENAME = "map.md";
 
 export const VIEW_FORMATS = ["mermaid", "dot"] as const;
 export type ViewFormat = (typeof VIEW_FORMATS)[number];
@@ -358,4 +365,29 @@ export function exportMindPlanView(
     edge_count: view.edges.length,
     diagram,
   };
+}
+
+/** Absolute path to the auto-generated Mermaid snapshot (`mindplan/map.md`). */
+export function mindPlanMapPath(): string {
+  return path.join(mindplanRoot(), MAP_FILENAME);
+}
+
+/**
+ * Writes the full Mermaid projection to `mindplan/map.md`.
+ * Called after every successful graph mutation so the map tracks live territory.
+ */
+export function persistMindPlanMap(graph: MindPlanGraph): string {
+  const { diagram, node_count, edge_count } = exportMindPlanView(graph, {
+    format: "mermaid",
+  });
+  const out = mindPlanMapPath();
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const body =
+    `# MindPlan map\n\n` +
+    `_Auto-generated after each graph mutation (${node_count} nodes, ${edge_count} edges). Do not edit by hand._\n\n` +
+    "```mermaid\n" +
+    `${diagram.trimEnd()}\n` +
+    "```\n";
+  fs.writeFileSync(out, body, "utf-8");
+  return out;
 }

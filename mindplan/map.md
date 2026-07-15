@@ -1,12 +1,6 @@
-# The mindplan for mindplan
+# MindPlan map
 
-Live projection of this repository's MindPlan territory (`mindplan/`). Regenerate with:
-
-```bash
-node dist/index.js view --format mermaid --output mindplan-map.md
-```
-
-Then wrap the CLI output in a Mermaid fence (or keep this committed snapshot).
+_Auto-generated after each graph mutation (14 nodes, 23 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
@@ -23,7 +17,7 @@ flowchart TB
     wf_project_init__in__j_agent_onboarding["wf-project-init · Project init · stable"]
   end
   subgraph journey_j_territory_sdlc["j-territory-sdlc · Territory SDLC · stable"]
-    wf_export_views__in__j_territory_sdlc["wf-export-views · Export graph views · stable"]
+    wf_export_views_v2__in__j_territory_sdlc["wf-export-views-v2 · Export graph views (auto-persist map) · stable"]
     wf_framework_docs__in__j_territory_sdlc["wf-framework-docs · Framework documentation · stable"]
     wf_mutate_graph__in__j_territory_sdlc["wf-mutate-graph · Mutate graph · stable"]
     wf_query_graph__in__j_territory_sdlc["wf-query-graph · Query graph · stable"]
@@ -34,8 +28,8 @@ flowchart TB
   f_mcp_runtime --> f_territory_store
   f_territory_store --> f_domain_model
   wf_agent_integrations__in__j_agent_onboarding --> f_mcp_runtime
-  wf_export_views__in__j_territory_sdlc --> f_mcp_runtime
-  wf_export_views__in__j_territory_sdlc --> f_territory_store
+  wf_export_views_v2__in__j_territory_sdlc --> f_mcp_runtime
+  wf_export_views_v2__in__j_territory_sdlc --> f_territory_store
   wf_framework_docs__in__j_agent_onboarding --> f_domain_model
   wf_framework_docs__in__j_territory_sdlc --> f_domain_model
   wf_mutate_graph__in__j_territory_sdlc --> f_compiler_rules

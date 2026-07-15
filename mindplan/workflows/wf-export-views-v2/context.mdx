@@ -1,0 +1,34 @@
+---
+id: wf-export-views-v2
+type: Workflow
+title: "Export graph views (auto-persist map)"
+description: "Mermaid/DOT export plus automatic mindplan/map.md refresh after every successful graph mutation."
+state: stable
+shipped_at: 2026-07-15T19:12:59.030Z
+created_at: 2026-07-15T19:10:47.102Z
+updated_at: 2026-07-15T19:12:59.030Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-territory-store
+  - f-mcp-runtime
+supersedes:
+  - wf-export-views
+---
+
+# Export graph views (auto-persist map)
+
+Mermaid/DOT export plus automatic `mindplan/map.md` refresh after every successful graph mutation.
+
+## Execution Logic
+
+1. Keep `export_mindplan_view` / CLI `view` for on-demand Mermaid or DOT (full or focus).
+2. After each successful mutation (`create_node`, `create_node_version`, `link_nodes`, `unlink_nodes`, `update_node_status`), regenerate the full Mermaid projection and write `mindplan/map.md`.
+3. `map.md` is derived — never read as graph authority; frontmatter remains source of truth.
+4. Playbook / SPEC document the auto-persist contract; smoke tests assert the file refreshes.
+
+## Checklist
+
+- [x] Requirements defined (SPEC §7.4 + playbook validate step)
+- [x] Implementation complete (`persistMindPlanMap` + mutation hooks)
+- [x] Tests passing (`npm test` including map.md smoke assertions)

@@ -2,7 +2,7 @@
 id: wf-npm-publish
 type: Workflow
 title: "Publish to npm"
-description: "Publish mindplan-mcp to npm so consumer projects can install without building from source."
+description: "Ship mindplan-mcp@0.1.0 to the public npm registry via a documented manual first publish, then update consumer install docs."
 state: draft
 created_at: 2026-07-15T18:51:52.964Z
 updated_at: 2026-07-15T18:52:12.224Z
@@ -14,23 +14,93 @@ depends_on:
 
 # Publish to npm
 
-Publish mindplan-mcp to npm so consumer projects can install without building from source.
+Ship `mindplan-mcp@0.1.0` to the public npm registry so consumers can install without cloning and building from source.
+
+## Goal
+
+A maintainer can publish the package once, then any consumer can:
+
+```bash
+npm install -g mindplan-mcp
+# or
+npx mindplan-mcp init
+```
+
+and get a working CLI + MCP server whose `templates/` and `dist/` match this repo’s contract.
+
+## Acceptance Criteria
+
+- [ ] Package name `mindplan-mcp` is claimed on the public registry at version `0.1.0` (or the next SemVer if `0.1.0` was already taken by us in a prior attempt).
+- [ ] `npx mindplan-mcp --help` (or `mindplan-mcp help` after global install) shows init/view/help usage.
+- [ ] Published tarball includes `dist/`, `templates/`, `README.md`, `SPEC.md`, and `LICENSE` — not `src/`, tests, or local `mindplan/` territory.
+- [ ] README Quick start no longer leads with “install from source” as the only path; npm install / `npx` is primary, source build remains as a contributor path.
+- [ ] `CONTRIBUTING.md` Publishing section matches the runbook below (manual first; CI/OIDC explicitly deferred).
+
+## Versioning policy
+
+- **Scheme:** SemVer starting at current `package.json` version **`0.1.0`**.
+- **Until 1.0.0:** treat the public API (MCP tools, CLI, SPEC behaviour) as evolving; prefer `minor` for additive tool/CLI changes, `patch` for fixes, `major` only for breaking tool/contract changes that land while still on 0.x if we choose to signal breakage that way — otherwise document breakage in changelog and SPEC.
+- **First publish:** publish whatever is currently in `package.json` (expected `0.1.0`) — do not bump solely to “make publishing feel real.”
+- **Later releases:** `npm version patch|minor|major` then `npm publish`; tag the git commit when convenient, but **tag-driven CI is out of scope for this Workflow**.
+
+## Release style (this Workflow)
+
+**Manual first publish.** Maintainer machine + npm account with publish rights to `mindplan-mcp`.
+
+Out of scope for this node (follow-up Workflow / version):
+
+- GitHub Actions release job
+- npm Trusted Publishing (OIDC)
+- Automated changelog generation
 
 ## Execution Logic
 
-1. Confirm package metadata (`name`, `files`, `bin`, engines).
-2. Run `npm test` and `npm run build`.
-3. Publish `mindplan-mcp` to the public registry.
-4. Update README quick start from “install from source” to `npx`/`npm i -g`.
+### Preflight
 
-**Current state:** package is built and usable from source; not yet published (README still says so).
+1. Confirm registry identity: npm org/user that should own `mindplan-mcp` (align with github.com/mindplan-io).
+2. Confirm `package.json` metadata is release-ready:
+   - `name`, `version` (`0.1.0`), `description`, `license` (MIT)
+   - `bin.mindplan-mcp` → `dist/index.js`
+   - `files`: `dist`, `templates`, `README.md`, `SPEC.md`, `LICENSE`
+   - `engines.node`: `>=18`
+   - `repository` / `bugs` / `homepage` point at the GitHub repo
+3. Dry-run the tarball: `npm pack --dry-run` (or `npm publish --dry-run`) and verify no secrets, no `.cursor/`, no local `mindplan/` territory, no `src/` unless intentionally added later.
+4. Green CI mindset locally: `npm test` (build + view test + smoke).
+
+### Publish
+
+5. `npm login` (or use an existing authenticated session with 2FA as required by npm).
+6. From a clean working tree on the release commit: `npm publish`  
+   (`prepublishOnly` already runs `npm run build`).
+7. Verify on the registry: package page shows `0.1.0`; install in a **fresh temp directory**:
+
+   ```bash
+   npm install -g mindplan-mcp@0.1.0
+   mindplan-mcp help
+   mkdir /tmp/mp-init-check && cd /tmp/mp-init-check && mindplan-mcp init
+   ```
+
+### Docs sync
+
+8. Update README Quick start: primary path = npm / `npx`; keep clone+build under Development / contributors.
+9. Align `CONTRIBUTING.md` Publishing with this runbook (manual first; note CI deferred).
+10. Regenerate [`mindplan-map.md`](../../../mindplan-map.md) if Journey/Workflow states change when this node ships (optional cosmetic; map still lists this Workflow as draft until then).
+
+## Failure / recovery
+
+- **Name taken by someone else:** stop; escalate ownership/dispute — do not publish under a different public name without a product decision.
+- **`0.1.0` already published by us:** use `npm version patch` (or the intended bump) and publish the next version; update docs to that version.
+- **Broken publish caught after install check:** publish a patch with the fix; never leave README advertising a broken install path.
 
 ## Checklist
 
-- [ ] Requirements defined (publish checklist, versioning policy)
-- [ ] Implementation complete (first npm release)
-- [ ] Tests passing (post-publish install verification)
+- [ ] Package metadata + `npm pack` / publish dry-run reviewed
+- [ ] `npm test` green on the release commit
+- [ ] `mindplan-mcp@0.1.0` published to the public registry
+- [ ] Fresh-install verification (`help` + `init`) passed
+- [ ] README Quick start updated for npm / `npx` primary install
+- [ ] `CONTRIBUTING.md` Publishing section matches this runbook
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+Optional later: screenshots of registry page, `npm pack` listing, or a signed off dry-run log under `attachments/`.

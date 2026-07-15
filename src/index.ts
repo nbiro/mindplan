@@ -47,7 +47,7 @@ import {
   dependentsOf,
 } from "./rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "./search.js";
-import { VIEW_FORMATS, exportMindPlanView } from "./view.js";
+import { VIEW_FORMATS, exportMindPlanView, persistMindPlanMap } from "./view.js";
 import * as fs from "fs";
 
 const server = new McpServer({
@@ -78,6 +78,11 @@ function guarded<A>(handler: (args: A) => ToolResult): (args: A) => ToolResult {
 
 function syncNodes(nodes: MindPlanNode[]): void {
   for (const n of nodes) patchFrontmatter(n);
+}
+
+/** Reload territory and refresh `mindplan/map.md` after a successful mutation. */
+function refreshPersistedMap(): void {
+  persistMindPlanMap(loadGraph());
 }
 
 const NODE_ID = z
@@ -240,6 +245,7 @@ server.registerTool(
     ensureDirectories();
     scaffoldEntity(node, { title, description });
     const rel = entityRelativePath(node);
+    refreshPersistedMap();
     return ok({
       created: node,
       folder: rel,
@@ -322,6 +328,7 @@ server.registerTool(
     const changedJourneys = recomputeJourneyStates(graph);
     const changedStability = recomputeStability(graph);
     syncNodes([...changedJourneys, ...changedStability]);
+    refreshPersistedMap();
     return ok({
       linked: { source: source_id, target: target_id, type: edge_type },
       dependents_linked: dependentsLinked,
@@ -396,6 +403,7 @@ server.registerTool(
     }
 
     const rel = entityRelativePath(node);
+    refreshPersistedMap();
     return ok({
       created: node,
       predecessor: {
@@ -477,6 +485,7 @@ server.registerTool(
     const changedJourneys = recomputeJourneyStates(graph);
     const changedStability = recomputeStability(graph);
     syncNodes([...changedJourneys, ...changedStability]);
+    refreshPersistedMap();
     return ok({
       removed,
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
@@ -545,6 +554,7 @@ server.registerTool(
     const changedJourneys = recomputeJourneyStates(graph);
     for (const n of nodesToSync) patchFrontmatter(n);
     syncNodes([...changedStability, ...changedJourneys]);
+    refreshPersistedMap();
 
     return ok({
       node_id,

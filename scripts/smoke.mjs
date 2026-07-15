@@ -46,6 +46,11 @@ const wfFolder = path.join(root, "mindplan", "workflows", "wf-checkout");
 if (!fs.existsSync(path.join(wfFolder, "context.mdx"))) {
   failures++; console.log("FAIL entity folder scaffold");
 } else console.log("ok   entity folder scaffold");
+const mapPath = path.join(root, "mindplan", "map.md");
+const mapAfterCreate = fs.existsSync(mapPath) ? fs.readFileSync(mapPath, "utf-8") : "";
+if (!mapAfterCreate.includes("```mermaid") || !mapAfterCreate.includes("wf-checkout")) {
+  failures++; console.log(`FAIL mindplan/map.md missing or stale after create_node: ${mapAfterCreate.slice(0, 200)}`);
+} else console.log("ok   mindplan/map.md after create_node");
 if (fs.existsSync(path.join(root, "mindplan", "mindplan.json"))) {
   failures++; console.log("FAIL mindplan.json must not exist");
 } else console.log("ok   no mindplan.json");
@@ -61,6 +66,13 @@ await expectBlocked("ghost workflow (no links)", "update_node_status", { node_id
 await expectOk("link belongs_to", "link_nodes", { source_id: "wf-checkout", target_id: "j-ordering", edge_type: "belongs_to" });
 await expectBlocked("ghost workflow (no foundation)", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
 await expectOk("link depends_on", "link_nodes", { source_id: "wf-checkout", target_id: "f-db", edge_type: "depends_on" });
+const mapAfterLink = fs.readFileSync(mapPath, "utf-8");
+if (!mapAfterLink.includes("wf_checkout") && !mapAfterLink.includes("wf-checkout")) {
+  // Mermaid ids are sanitized with underscores; labels still contain the original id.
+  failures++; console.log(`FAIL mindplan/map.md missing workflow after link: ${mapAfterLink.slice(0, 300)}`);
+} else if (!mapAfterLink.includes("f-db") && !mapAfterLink.includes("f_db")) {
+  failures++; console.log(`FAIL mindplan/map.md missing foundation after link: ${mapAfterLink.slice(0, 300)}`);
+} else console.log("ok   mindplan/map.md refreshed after link_nodes");
 const wfCtx = fs.readFileSync(path.join(wfFolder, "context.mdx"), "utf-8");
 if (!wfCtx.includes("belongs_to:") || !wfCtx.includes("j-ordering") || !wfCtx.includes("depends_on:") || !wfCtx.includes("f-db")) {
   failures++; console.log("FAIL edges not persisted in wf-checkout frontmatter");

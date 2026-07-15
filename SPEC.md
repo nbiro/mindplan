@@ -511,9 +511,11 @@ Journeys have no outgoing edges. Incoming relationships are derived at scan time
 
 ## 7.4 Graph views (projections)
 
-Exporters MAY render a deterministic typed-DAG projection of the assembled graph for humans (PRs, docs, local preview). Views are **read-only projections** of §7 — they MUST NOT persist layout, board columns, or view state into `mindplan/`, and MUST NOT become a second write path.
+Exporters MAY render a deterministic typed-DAG projection of the assembled graph for humans (PRs, docs, local preview). Views MUST NOT become a second write path for node records or edges — frontmatter remains the sole graph authority (§7, §9.3).
 
-Reference formats: Mermaid (`flowchart`) and Graphviz DOT. Surfaces: MCP tool `export_mindplan_view` (§8.1) and CLI `mindplan-mcp view`.
+**Exception — auto-persisted Mermaid snapshot:** after every successful graph mutation (`create_node`, `create_node_version`, `link_nodes`, `unlink_nodes`, `update_node_status`), the server MUST write a full Mermaid projection to `mindplan/map.md`. That file is derived output (regenerated, not hand-edited); it MUST NOT be read back as graph state. On-demand projections via MCP `export_mindplan_view` (§8.1) and CLI `mindplan-mcp view` remain available and do not replace `map.md` unless the caller writes a file explicitly.
+
+Reference formats: Mermaid (`flowchart`) and Graphviz DOT.
 
 ### Layout conventions
 
@@ -559,7 +561,7 @@ The server exposes exactly ten tools over stdio. All inputs are validated with z
 
 #### `export_mindplan_view`
 
-Exports a deterministic typed-DAG projection (§7.4) as Mermaid or DOT. Prefer `find_related_nodes` for agent orientation JSON; use this when a human diagram / architecture map is needed.
+Exports a deterministic typed-DAG projection (§7.4) as Mermaid or DOT. Prefer `find_related_nodes` for agent orientation JSON; use this when a human diagram / architecture map is needed. Note: successful graph mutations also auto-write the full Mermaid projection to `mindplan/map.md` (§7.4); this tool does not itself write that file.
 
 - **Input:**
   - `format` (`mermaid` \| `dot`, optional, default `mermaid`)

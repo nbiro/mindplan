@@ -48,6 +48,17 @@ Then classify:
 
 Do not invent tickets outside MindPlan. Do not start substantial implementation until the owning node is `in-progress` (or Bug is `fixing`).
 
+## Validate after every plan change
+
+After **each** MindPlan mutation — `create_node`, `create_node_version`, `link_nodes`, `unlink_nodes`, `update_node_status` — **and** after any material territory edit that changes checklist gates or intent, **validate before continuing**:
+
+1. Re-read the changed focus with `find_related_nodes` (or `get_node_context`). For multi-node restructuring, call `get_mindplan_graph` once and confirm the full picture.
+2. Confirm the mutation stuck: expected `id`s, `state`s, and edges (`belongs_to` / `depends_on` / `affects` / `supersedes`) match what you intended.
+3. If the response is `Blocked: …` or the graph does not match intent, **stop** — fix the plan, then mutate again. Do not proceed to implementation or the next mutation on a known-bad graph.
+4. **Confirm the visualization** — the server refreshes `mindplan/map.md` automatically after every successful mutation. Confirm that file updated. Call `export_mindplan_view` when you need a focused or DOT projection, or when syncing a secondary copy (e.g. README-embedded diagram).
+
+Compiler success on write is necessary but not sufficient — always re-read **and** confirm `mindplan/map.md` reflects the change.
+
 ## Build pipeline loop (Foundation / Workflow)
 
 ```
@@ -115,8 +126,8 @@ Do **not** reset a shipped Foundation/Workflow back to `draft`.
 | Tool | When to use |
 |------|-------------|
 | `find_related_nodes` | Orient — rank by query, return focus + 1-hop links (prefer over full graph) |
-| `export_mindplan_view` | Human diagram — Mermaid/DOT map of the graph (full or focus + 1-hop); for PRs and “show the map” |
-| `get_mindplan_graph` | Full graph dump — greenfield or rare audit only |
+| `export_mindplan_view` | Human diagram — Mermaid/DOT on demand (full or focus); full Mermaid also auto-persists to `mindplan/map.md` after every mutation |
+| `get_mindplan_graph` | Full graph dump — greenfield, multi-node plan validation, or rare full audits |
 | `get_blast_radius` | Transitive dependents and journeys at risk before changing a node |
 | `get_node_context` | Read territory for the node you are executing |
 | `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities skill) |
@@ -128,6 +139,7 @@ Do **not** reset a shipped Foundation/Workflow back to `draft`.
 ## Never do
 
 - Start substantial coding without `find_related_nodes` (or an explicit `node_id`) and a clear owning node
+- Mutate the plan and continue without validating (re-read focus / graph, confirm edges and states, and confirm `mindplan/map.md` refreshed)
 - Implement under `draft`/`ready` instead of moving to `in-progress` (or Bug `fixing`) first
 - Check off Atomic Ops without completing the work
 - Create a Workflow when no matching Journey exists — refuse; ask the user to define the Journey first

@@ -2,6 +2,7 @@
  * File system persistence for MindPlan.
  *
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
+ *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation)
  *   /mindplan/components/              — project-specific MDX components (opaque to the compiler)
  *   /mindplan/journeys/<id>/context.mdx
  *   /mindplan/journeys/<id>/attachments/...
