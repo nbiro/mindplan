@@ -7,7 +7,7 @@ Thanks for your interest in MindPlan. This repo contains the normative spec ([SP
 Requirements: Node.js 18+ and npm.
 
 ```bash
-git clone https://github.com/mindplan-io/mindplan.git
+git clone https://github.com/nbiro/mindplan.git
 cd mindplan
 npm install
 npm run build

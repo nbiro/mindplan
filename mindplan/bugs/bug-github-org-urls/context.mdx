@@ -1,0 +1,43 @@
+---
+id: bug-github-org-urls
+type: Bug
+title: "Wrong GitHub org in package and CONTRIBUTING"
+description: "package.json and CONTRIBUTING.md still point at github.com/mindplan-io/mindplan instead of github.com/nbiro/mindplan."
+state: resolved
+created_at: 2026-07-15T19:38:03.341Z
+updated_at: 2026-07-15T19:38:42.221Z
+affects:
+  - wf-framework-docs-v2
+  - wf-npm-publish
+---
+
+# Wrong GitHub org in package and CONTRIBUTING
+
+package.json and CONTRIBUTING.md still point at github.com/mindplan-io/mindplan instead of github.com/nbiro/mindplan.
+
+## Summary
+
+Leftover `mindplan-io` GitHub URLs in package metadata, CONTRIBUTING, and npm-publish territory after README was fixed.
+
+## Repro Steps
+
+1. Open `package.json` `repository` / `bugs` / `homepage`.
+2. Open `CONTRIBUTING.md` clone snippet.
+3. Open `mindplan/workflows/wf-npm-publish/context.mdx` preflight step 1.
+
+## Expected / Actual
+
+**Expected:** All point at `https://github.com/nbiro/mindplan` (and issues / `#readme` as appropriate).
+
+**Actual:** Still `github.com/mindplan-io/mindplan`.
+
+## Fix Checklist
+
+- [x] Update `package.json` repository, bugs, and homepage URLs
+- [x] Update `CONTRIBUTING.md` clone URL
+- [x] Update `wf-npm-publish` preflight registry-identity note
+- [x] Grep repo for remaining `github.com/mindplan-io` outside bug history
+
+## Attachments
+
+_Logs and screenshots go in `attachments/`._

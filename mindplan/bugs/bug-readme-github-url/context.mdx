@@ -1,0 +1,40 @@
+---
+id: bug-readme-github-url
+type: Bug
+title: "Wrong GitHub URL in README"
+description: "README quick start clones github.com/mindplan-io/mindplan instead of github.com/nbiro/mindplan."
+state: resolved
+created_at: 2026-07-15T19:36:55.210Z
+updated_at: 2026-07-15T19:37:28.081Z
+affects:
+  - wf-framework-docs-v2
+---
+
+# Wrong GitHub URL in README
+
+README quick start clones github.com/mindplan-io/mindplan instead of github.com/nbiro/mindplan.
+
+## Summary
+
+README `git clone` points at the wrong GitHub org (`mindplan-io` instead of `nbiro`).
+
+## Repro Steps
+
+1. Open `README.md` Quick start.
+2. Copy the clone URL from the install snippet.
+
+## Expected / Actual
+
+**Expected:** `https://github.com/nbiro/mindplan.git`
+
+**Actual:** `https://github.com/mindplan-io/mindplan.git`
+
+## Fix Checklist
+
+- [x] Confirm affected clone URL in README.md
+- [x] Replace with `https://github.com/nbiro/mindplan`
+- [x] Grep README for remaining `mindplan-io` GitHub links
+
+## Attachments
+
+_Logs and screenshots go in `attachments/`._

@@ -67,7 +67,7 @@ It's a poor fit today for:
 1. Clone and build the server:
 
 ```bash
-git clone https://github.com/mindplan-io/mindplan.git
+git clone https://github.com/nbiro/mindplan.git
 cd mindplan
 npm install && npm run build
 ```
