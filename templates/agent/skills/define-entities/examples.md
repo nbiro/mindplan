@@ -200,9 +200,10 @@ create_node_version({
   description: "Revised split calculation"
 })
 → predecessor stays stable; new node draft with inherited outgoing edges
-→ dependents of wf-checkout-split gain depends_on → wf-checkout-split-v2 (old edge kept)
+→ dependents keep depends_on → wf-checkout-split (no relink at create)
 
 // After implementation and checklist complete:
 update_node_status({ node_id: "wf-checkout-split-v2", new_status: "ship" })
-→ predecessor auto-deprecates; response includes predecessor_deprecated
+→ dependents gain depends_on → wf-checkout-split-v2 (old edge kept); predecessor auto-deprecates
+→ response includes dependents_relinked and predecessor_deprecated
 ```

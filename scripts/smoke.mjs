@@ -303,17 +303,32 @@ const versionRes = JSON.parse(await expectOk("create wf-checkout-v2", "create_no
   previous_id: "wf-checkout", id: "wf-checkout-v2", title: "Checkout v2", description: "Revised checkout",
 }));
 
-if (!versionRes.dependents_relinked?.some((l) => l.source === "wf-tips" && l.target === "wf-checkout-v2")) {
-  failures++; console.log(`FAIL dependents_relinked missing wf-tips: ${JSON.stringify(versionRes.dependents_relinked)}`);
-} else console.log("ok   dependents_relinked includes wf-tips");
+if (versionRes.dependents_relinked?.length) {
+  failures++; console.log(`FAIL create_node_version must not relink dependents: ${JSON.stringify(versionRes.dependents_relinked)}`);
+} else console.log("ok   create_node_version does not relink dependents");
 
 graph = JSON.parse(await expectOk("read graph after create_node_version", "get_mindplan_graph", {}));
-const tipsDependsCheckout = graph.edges.filter(
+const tipsDependsAfterVersion = graph.edges.filter(
   (e) => e.source === "wf-tips" && e.type === "depends_on" && (e.target === "wf-checkout" || e.target === "wf-checkout-v2")
 );
-if (tipsDependsCheckout.length !== 2) {
-  failures++; console.log(`FAIL wf-tips should depend on both checkout versions: ${JSON.stringify(tipsDependsCheckout)}`);
-} else console.log("ok   wf-tips duplicated depends_on to new version");
+if (
+  tipsDependsAfterVersion.length !== 1 ||
+  tipsDependsAfterVersion[0].target !== "wf-checkout"
+) {
+  failures++; console.log(`FAIL wf-tips should keep only predecessor depends_on while v2 is draft: ${JSON.stringify(tipsDependsAfterVersion)}`);
+} else console.log("ok   wf-tips still depends only on live predecessor after version create");
+
+const blastDraftSuccessor = JSON.parse(
+  await expectOk("blast radius draft successor", "get_blast_radius", { node_id: "wf-checkout-v2" })
+);
+if (!blastDraftSuccessor.via_supersedes?.includes("wf-checkout")) {
+  failures++; console.log(`FAIL via_supersedes missing wf-checkout: ${JSON.stringify(blastDraftSuccessor.via_supersedes)}`);
+} else console.log("ok   get_blast_radius via_supersedes includes predecessor");
+const tipsInBlast = blastDraftSuccessor.affected?.find((a) => a.id === "wf-tips");
+if (!tipsInBlast || tipsInBlast.distance !== 1) {
+  failures++; console.log(`FAIL draft successor blast should include wf-tips@1: ${JSON.stringify(blastDraftSuccessor.affected)}`);
+} else console.log("ok   get_blast_radius on draft successor includes predecessor dependents");
+
 const wfCheckoutOrig = graph.nodes.find((n) => n.id === "wf-checkout");
 const wfCheckoutV2 = graph.nodes.find((n) => n.id === "wf-checkout-v2");
 if (wfCheckoutOrig.state !== "stable") {
@@ -344,6 +359,17 @@ await expectBlocked("re-version predecessor with successor", "create_node_versio
     failures++; console.log(`FAIL supersedes via link_nodes: error=${error} text=${text}`);
   }
 }
+
+// Unshipped dependent must still be able to ship against the live predecessor while v2 is draft.
+const tipsPath = path.join(root, "mindplan", "workflows", "wf-tips", "context.mdx");
+fs.writeFileSync(tipsPath, fs.readFileSync(tipsPath, "utf-8").replaceAll("[ ]", "[x]"));
+await expectOk("wf-tips -> in-review while v2 draft", "update_node_status", {
+  node_id: "wf-tips", new_status: "in-review",
+});
+await expectOk("wf-tips -> ship while v2 draft", "update_node_status", {
+  node_id: "wf-tips", new_status: "ship",
+});
+console.log("ok   unshipped dependent can ship while successor version is still draft");
 
 await expectOk("create wf-a", "create_node", { id: "wf-a", type: "Workflow", title: "A", description: "base" });
 await expectOk("create wf-b", "create_node", { id: "wf-b", type: "Workflow", title: "B", description: "mid" });
@@ -382,12 +408,21 @@ const shipV2 = JSON.parse(await expectOk("wf-checkout-v2 -> ship", "update_node_
 if (!shipV2.predecessor_deprecated || shipV2.predecessor_deprecated.id !== "wf-checkout") {
   failures++; console.log(`FAIL predecessor_deprecated missing: ${JSON.stringify(shipV2.predecessor_deprecated)}`);
 } else console.log("ok   predecessor deprecated on v2 ship");
+if (!shipV2.dependents_relinked?.some((l) => l.source === "wf-tips" && l.target === "wf-checkout-v2")) {
+  failures++; console.log(`FAIL dependents_relinked missing wf-tips on ship: ${JSON.stringify(shipV2.dependents_relinked)}`);
+} else console.log("ok   dependents_relinked includes wf-tips on successor ship");
 
 graph = JSON.parse(await expectOk("read graph after v2 ship", "get_mindplan_graph", {}));
 const predAfterShip = graph.nodes.find((n) => n.id === "wf-checkout");
 if (predAfterShip.state !== "deprecated") {
   failures++; console.log(`FAIL predecessor after v2 ship: ${predAfterShip.state}`);
 } else console.log("ok   predecessor deprecated after v2 ship");
+const tipsDependsAfterShip = graph.edges.filter(
+  (e) => e.source === "wf-tips" && e.type === "depends_on" && (e.target === "wf-checkout" || e.target === "wf-checkout-v2")
+);
+if (tipsDependsAfterShip.length !== 2) {
+  failures++; console.log(`FAIL wf-tips should depend on both checkout versions after v2 ship: ${JSON.stringify(tipsDependsAfterShip)}`);
+} else console.log("ok   wf-tips duplicated depends_on to successor on ship");
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();

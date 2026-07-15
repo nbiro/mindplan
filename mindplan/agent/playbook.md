@@ -96,8 +96,8 @@ Bugs do not change Journey states.
 
 Do **not** reset a shipped Foundation/Workflow back to `draft`.
 
-1. `get_blast_radius` on the live predecessor — note dependents and journeys at risk.
-2. `create_node_version` — new draft inherits outgoing edges; `supersedes` → predecessor; dependents gain a duplicate `depends_on` to the successor.
+1. `get_blast_radius` on the live predecessor or its draft successor — note dependents and journeys at risk (successor seeds via `supersedes`).
+2. `create_node_version` — new draft inherits outgoing edges; `supersedes` → predecessor; dependents keep the live predecessor until the successor ships (relink + deprecate happen together).
 3. Run the **build pipeline loop** on the successor until `ship`. Predecessor stays live until then; it auto-deprecates when the successor ships.
 
 ## Territory rules during execution
@@ -128,7 +128,7 @@ Do **not** reset a shipped Foundation/Workflow back to `draft`.
 | `find_related_nodes` | Orient — rank by query, return focus + 1-hop links (prefer over full graph) |
 | `export_mindplan_view` | Human diagram — Mermaid/DOT on demand (full or focus); full Mermaid also auto-persists to `mindplan/map.md` after every mutation |
 | `get_mindplan_graph` | Full graph dump — greenfield, multi-node plan validation, or rare full audits |
-| `get_blast_radius` | Transitive dependents and journeys at risk before changing a node |
+| `get_blast_radius` | Transitive dependents (seeds via `supersedes` for version successors) and journeys at risk |
 | `get_node_context` | Read territory for the node you are executing |
 | `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities skill) |
 | `create_node_version` | New draft version of a shipped Workflow or Foundation |

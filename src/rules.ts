@@ -265,14 +265,58 @@ export function computeVersionNumber(graph: MindPlanGraph, nodeId: string): numb
 
 export type DependentEntry = { node: MindPlanNode; distance: number };
 
-/** Transitive dependents via reverse depends_on (BFS). */
+/**
+ * Predecessor ids along the `supersedes` chain (immediate first, oldest last).
+ * Does not include `nodeId` itself.
+ */
+export function supersedesPredecessors(graph: MindPlanGraph, nodeId: string): string[] {
+  const chain: string[] = [];
+  const seen = new Set<string>([nodeId]);
+  let current = nodeId;
+  for (;;) {
+    const pred = findPredecessor(graph, current);
+    if (!pred || seen.has(pred.id)) break;
+    seen.add(pred.id);
+    chain.push(pred.id);
+    current = pred.id;
+  }
+  return chain;
+}
+
+/** Transitive dependents via reverse depends_on (BFS) from a single seed. */
 export function transitiveDependents(
   graph: MindPlanGraph,
   nodeId: string
 ): DependentEntry[] {
+  return reverseDependsOnClosure(graph, [nodeId]);
+}
+
+/**
+ * Blast-radius dependents: reverse-`depends_on` BFS seeded from `nodeId` and every
+ * node it supersedes (distance 0 seeds). `via_supersedes` lists those predecessor ids.
+ */
+export function blastRadiusDependents(
+  graph: MindPlanGraph,
+  nodeId: string
+): { affected: DependentEntry[]; via_supersedes: string[] } {
+  const via_supersedes = supersedesPredecessors(graph, nodeId);
+  return {
+    affected: reverseDependsOnClosure(graph, [nodeId, ...via_supersedes]),
+    via_supersedes,
+  };
+}
+
+/** Reverse-depends_on BFS from one or more distance-0 seeds (seeds omitted from results). */
+function reverseDependsOnClosure(
+  graph: MindPlanGraph,
+  seeds: string[]
+): DependentEntry[] {
   const result: DependentEntry[] = [];
-  const seen = new Set<string>();
-  const queue: { id: string; distance: number }[] = [{ id: nodeId, distance: 0 }];
+  const seen = new Set<string>(seeds);
+  const queue: { id: string; distance: number }[] = seeds.map((id) => ({
+    id,
+    distance: 0,
+  }));
 
   while (queue.length > 0) {
     const { id: current, distance } = queue.shift()!;

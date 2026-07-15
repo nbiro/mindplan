@@ -6,7 +6,7 @@ description: "Write-path tools that mutate territory: create_node, create_node_v
 state: stable
 shipped_at: 2026-07-15T18:55:33.636Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-07-15T18:55:33.636Z
+updated_at: 2026-07-15T19:56:27.199Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -22,8 +22,8 @@ Write-path tools that mutate territory: create_node, create_node_version, link_n
 
 1. `create_node` scaffolds folder + `context.mdx` at initial state.
 2. `link_nodes` / `unlink_nodes` update source frontmatter edge arrays with taxonomy + cycle checks.
-3. `update_node_status` applies build/bug transitions; `ship` sets `shipped_at` and computes stability.
-4. `create_node_version` supersedes a shipped node, inherits outgoing edges, duplicates incoming `depends_on`.
+3. `update_node_status` applies build/bug transitions; `ship` sets `shipped_at` and computes stability. Shipping a version successor also duplicates predecessor dependents onto the successor, then auto-deprecates the predecessor.
+4. `create_node_version` supersedes a shipped node and inherits outgoing edges; dependents are not relinked until that successor ships.
 5. After mutations, journey states and stability are recomputed and synced.
 
 ## Checklist

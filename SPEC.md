@@ -185,16 +185,20 @@ Shipped Foundations and Workflows (`stable`/`unstable`) are never reset to `draf
 
 1. creates a new node in state `draft` with a new id,
 2. links `supersedes` from the new node to the predecessor,
-3. inherits the predecessor's outgoing `belongs_to` and `depends_on` edges,
-4. duplicates each direct incoming `depends_on` edge onto the new version (each dependent keeps its edge to the predecessor and gains a second edge to the new version).
+3. inherits the predecessor's outgoing `belongs_to` and `depends_on` edges.
 
-The predecessor **keeps serving** (`stable`/`unstable`) throughout the new version's build. It is automatically transitioned to `deprecated` only when the new version successfully `ship`s. If the predecessor was already `deprecated` by other means when the successor ships, auto-deprecation is a no-op.
+Dependents are **not** relinked at version-creation time. They keep their existing `depends_on` edge to the live predecessor for the duration of the new version's build.
+
+The predecessor **keeps serving** (`stable`/`unstable`) throughout the new version's build. When the new version successfully `ship`s, the server MUST, in the same mutation:
+
+1. duplicate each direct incoming `depends_on` edge from the predecessor onto the successor (each dependent keeps its edge to the predecessor and gains a second edge to the successor), then
+2. auto-transition the predecessor to `deprecated` if it is currently `stable` or `unstable`.
+
+If the predecessor was already `deprecated` by other means when the successor ships, auto-deprecation is a no-op; relinking still runs. Relinking happens only after the successor has entered production (`stable`/`unstable`), so Rule 2 never sees a `draft` dependency edge created by versioning.
 
 Only `stable`/`unstable` nodes can be superseded at version-creation time. Lineage is linear: a node that already has a successor (another node with `supersedes` pointing at it) MUST NOT be versioned again — create the next version from the latest successor instead.
 
-Use `get_blast_radius` on a live predecessor to discover dependents that may need migration before cutover.
-
-**Note:** Because Rule 2 requires every `depends_on` target to be `stable` before `ship`, a dependent that has not yet shipped and gains a duplicate edge to the new (`draft`) version cannot `ship` until the new version is also `stable` (or until the operator removes the stale edge via `unlink_nodes`). Already-shipped dependents are unaffected.
+Use `get_blast_radius` on a live predecessor **or** on its draft successor: the successor seeds from its `supersedes` chain, so agents implementing the new version still see what the predecessor serves.
 
 ---
 
@@ -298,17 +302,18 @@ Rationale: a Journey is a coherent user capability. A Workflow that depends on a
 - the predecessor is in state `stable` or `unstable` (shipped),
 - the predecessor has no existing successor (no other node already has `supersedes` pointing at it).
 
-Additionally, `create_node_version` MUST duplicate each direct incoming `depends_on` edge from the predecessor onto the new version (dependent keeps the old edge). If any duplicate would create a `depends_on` cycle, the entire call MUST be rejected before writing anything.
+On successful `update_node_status(..., "ship")` for a node with a `supersedes` edge, the server MUST:
 
-On successful `update_node_status(..., "ship")` for a node with a `supersedes` edge, the server MUST auto-transition the predecessor to `deprecated` if it is currently `stable` or `unstable`. This is idempotent if the predecessor is already `deprecated`.
+1. duplicate each direct incoming `depends_on` edge from the predecessor onto the successor (dependent keeps the old edge); if any duplicate would create a `depends_on` cycle, the entire `ship` MUST be rejected before writing anything,
+2. auto-transition the predecessor to `deprecated` if it is currently `stable` or `unstable` (idempotent if already `deprecated`).
 
-Rationale: versioning models replacement without downtime during the build. Rule 2 already blocks dependents from shipping against non-`stable` dependencies once a predecessor is deprecated; `get_blast_radius` surfaces affected dependents proactively while the predecessor is still live.
+Rationale: versioning models replacement without downtime during the build. Deferring dependent relink until the successor is production-stable keeps Rule 2 satisfied for unshipped dependents that still need the live predecessor. After cutover, Rule 2 blocks new ships against the deprecated predecessor; `get_blast_radius` surfaces affected dependents proactively (on the predecessor or its `supersedes` successor) while the predecessor is still live.
 
 ### 5.11 Enforcement ordering
 
 For a status mutation the compiler MUST evaluate, in order:
 
-1. node exists → 2. node is not a Journey → 3. target state is valid → 4. transition is legal per §3 → 5. Rules 1–4 (type-specific) → **write** → 6. on `ship`, auto-deprecate predecessor per Rule 9 if applicable → 7. recompute stability (§3.5) → 8. recompute Journey states (§4) → 9. synchronize frontmatter.
+1. node exists → 2. node is not a Journey → 3. target state is valid → 4. transition is legal per §3 → 5. Rules 1–4 (type-specific) → **write** → 6. on `ship` of a version successor, relink predecessor dependents onto the successor then auto-deprecate the predecessor per Rule 9 → 7. recompute stability (§3.5) → 8. recompute Journey states (§4) → 9. synchronize frontmatter.
 
 For `link_nodes` / `unlink_nodes` involving `affects`: validate §5.8, write edge, recompute stability for affected targets, recompute Journeys if applicable, mirror frontmatter.
 
@@ -316,7 +321,7 @@ For `link_nodes` involving `belongs_to` (Workflow → Journey): validate §5.8, 
 
 For `link_nodes` involving `depends_on`: validate §5.8 including cycle check, write edge, mirror frontmatter.
 
-For `create_node_version`: validate Rule 9, scaffold new node, write `supersedes` and inherited outgoing edges, duplicate incoming `depends_on` edges onto the new version; predecessor state unchanged.
+For `create_node_version`: validate Rule 9, scaffold new node, write `supersedes` and inherited outgoing edges; predecessor state unchanged; dependents are not modified.
 
 ---
 
@@ -391,7 +396,8 @@ After any accepted mutation, the server MUST rewrite server-owned fields in each
 
 - **Status mutations:** `state:`, `updated_at:`, and `shipped_at:` on the transitioned node plus every Journey whose computed state changed.
 - **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, or `affects`) on the source node, plus `updated_at:`.
-- **Versioning (`create_node_version`):** `supersedes:`, `belongs_to:`, and `depends_on:` on the new node; `depends_on:` and `updated_at:` on every dependent that gains a duplicated edge to the new version.
+- **Versioning (`create_node_version`):** `supersedes:`, `belongs_to:`, and `depends_on:` on the new node.
+- **Version cutover (`ship` of a successor):** `depends_on:` and `updated_at:` on every dependent that gains a duplicated edge to the successor; `state:` and `updated_at:` on the predecessor when auto-deprecated.
 
 Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the file. If the file is missing or has no frontmatter, mirroring is skipped silently.
 
@@ -614,8 +620,13 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 #### `get_blast_radius`
 
 - **Input:** `node_id` (slug).
-- **Output:** `{ node_id, affected: [{ id, type, state, distance }], journeys_at_risk: [journey-id, …] }` where `affected` is the transitive reverse-`depends_on` closure (BFS) and `journeys_at_risk` lists Journey ids linked via `belongs_to` from affected Workflows.
+- **Output:** `{ node_id, affected: [{ id, type, state, distance }], via_supersedes: [predecessor-id, …], journeys_at_risk: [journey-id, …] }` where:
+  - `affected` is the transitive reverse-`depends_on` closure (BFS),
+  - seeds are `node_id` plus every predecessor reachable by walking `supersedes` backward (each seed at distance 0; seeds themselves are omitted from `affected`),
+  - `via_supersedes` lists those predecessor ids (immediate first, oldest last; empty when the node has no `supersedes` edge),
+  - `journeys_at_risk` lists Journey ids linked via `belongs_to` from affected Workflows.
 - **Errors:** unknown `node_id`.
+- **Rationale:** while a version successor is still in build, dependents keep pointing at the live predecessor. Seeding from the `supersedes` chain lets an agent query the draft successor and still see what might break.
 
 #### `get_node_context`
 
@@ -648,9 +659,9 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 #### `create_node_version`
 
 - **Input:** `previous_id` (shipped Workflow or Foundation), `id` (new slug), `title` (non-empty), `description`.
-- **Effect:** validates Rule 9, scaffolds a new `draft` node of the same type, writes `supersedes` → `previous_id`, copies predecessor `belongs_to`/`depends_on` to the new node, duplicates each direct incoming `depends_on` edge onto the new version. Predecessor state unchanged.
-- **Output:** `{ created, predecessor: { id, state, note }, inherited_edges: { belongs_to, depends_on }, dependents_relinked: [...], folder, context }`.
-- **Errors:** unknown `previous_id`; duplicate `id`; wrong type; predecessor not shipped; predecessor already has a successor; a duplicated incoming `depends_on` edge would create a dependency cycle.
+- **Effect:** validates Rule 9, scaffolds a new `draft` node of the same type, writes `supersedes` → `previous_id`, copies predecessor `belongs_to`/`depends_on` to the new node. Predecessor state unchanged; dependents are not modified until the successor ships.
+- **Output:** `{ created, predecessor: { id, state, note }, inherited_edges: { belongs_to, depends_on }, folder, context }`.
+- **Errors:** unknown `previous_id`; duplicate `id`; wrong type; predecessor not shipped; predecessor already has a successor.
 
 #### `link_nodes`
 
@@ -670,9 +681,9 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 #### `update_node_status`
 
 - **Input:** `node_id`, `new_status` (string; build/Bug state name, or `ship` for Foundation/Workflow production entry).
-- **Effect:** runs the full §5.11 pipeline. On success: writes the new state (and `shipped_at` on `ship`), auto-deprecates predecessor per Rule 9 when shipping a version successor, touches `updated_at`, recomputes stability and Journey states, persists, mirrors frontmatter for the node and every affected node.
-- **Output:** `{ node_id, previous_state, new_state, shipped_at, predecessor_deprecated: { id, previous_state, new_state } | null, journeys_recomputed: [...], stability_recomputed: [...] }`.
-- **Errors:** unknown id; Journey target; invalid state name; illegal transition; Rule 1–4 violations; manual `stable`/`unstable` attempt.
+- **Effect:** runs the full §5.11 pipeline. On success: writes the new state (and `shipped_at` on `ship`); when shipping a version successor, duplicates predecessor dependents onto the successor then auto-deprecates the predecessor per Rule 9; touches `updated_at`, recomputes stability and Journey states, persists, mirrors frontmatter for the node and every affected node.
+- **Output:** `{ node_id, previous_state, new_state, shipped_at, predecessor_deprecated: { id, previous_state, new_state } | null, dependents_relinked: [...], journeys_recomputed: [...], stability_recomputed: [...] }`.
+- **Errors:** unknown id; Journey target; invalid state name; illegal transition; Rule 1–4 violations; manual `stable`/`unstable` attempt; ship-time dependent relink would create a dependency cycle.
 
 ### 8.3 Attachments
 

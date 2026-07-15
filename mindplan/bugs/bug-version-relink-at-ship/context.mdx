@@ -1,0 +1,42 @@
+---
+id: bug-version-relink-at-ship
+type: Bug
+title: "Version dependents relinked while successor is still draft"
+description: "create_node_version duplicates incoming depends_on onto the draft successor, so unshipped dependents fail Infrastructure First even though the live predecessor remains valid."
+state: resolved
+created_at: 2026-07-15T19:53:46.391Z
+updated_at: 2026-07-15T19:56:27.199Z
+affects:
+  - wf-mutate-graph
+---
+
+# Version dependents relinked while successor is still draft
+
+create_node_version duplicates incoming depends_on onto the draft successor, so unshipped dependents fail Infrastructure First even though the live predecessor remains valid.
+
+## Summary
+
+Duplicating dependents onto a draft successor at version-creation time blocks unshipped dependents from shipping via Infrastructure First, even though the live predecessor they need is still stable.
+
+## Repro Steps
+
+1. Ship a Foundation/Workflow (`wf-a`) that has an unshipped dependent (`wf-b` with `depends_on: wf-a`).
+2. Call `create_node_version` for `wf-a` → `wf-a-v2` (draft).
+3. Attempt to ship `wf-b` while `wf-a-v2` is still draft.
+
+## Expected / Actual
+
+**Expected:** `wf-b` can ship against live `wf-a`. Dependents gain `depends_on` to the successor only when the successor ships (same moment the predecessor is deprecated).
+
+**Actual:** `create_node_version` immediately adds `wf-b → wf-a-v2`. Shipping `wf-b` is blocked because `wf-a-v2` is not `stable`.
+
+## Fix Checklist
+
+- [x] Root cause identified
+- [x] Fix implemented (`create_node_version` no longer relinks; `update_node_status` ship path does)
+- [x] SPEC / playbook docs updated for ship-time relink
+- [x] Regression smoke: unshipped dependent can ship while successor is draft; relink happens on successor ship
+
+## Attachments
+
+_Logs, screenshots, and HAR files go in `attachments/`._

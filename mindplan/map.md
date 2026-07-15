@@ -20,7 +20,7 @@ flowchart TB
     wf_export_views_v2__in__j_territory_sdlc["wf-export-views-v2 · Export graph views (auto-persist map) · stable"]
     wf_framework_docs_v3__in__j_territory_sdlc["wf-framework-docs-v3 · Framework documentation (plan-first punchline) · stable"]
     wf_mutate_graph__in__j_territory_sdlc["wf-mutate-graph · Mutate graph · stable"]
-    wf_query_graph__in__j_territory_sdlc["wf-query-graph · Query graph · stable"]
+    wf_query_graph_v2__in__j_territory_sdlc["wf-query-graph-v2 · Query graph (blast radius via supersedes) · stable"]
     wf_test_harness__in__j_territory_sdlc["wf-test-harness · Test harness · stable"]
   end
   f_compiler_rules --> f_domain_model
@@ -36,6 +36,6 @@ flowchart TB
   wf_mutate_graph__in__j_territory_sdlc --> f_mcp_runtime
   wf_npm_publish__in__j_agent_onboarding --> f_mcp_runtime
   wf_project_init__in__j_agent_onboarding --> f_territory_store
-  wf_query_graph__in__j_territory_sdlc --> f_mcp_runtime
+  wf_query_graph_v2__in__j_territory_sdlc --> f_mcp_runtime
   wf_test_harness__in__j_territory_sdlc --> f_mcp_runtime
 ```

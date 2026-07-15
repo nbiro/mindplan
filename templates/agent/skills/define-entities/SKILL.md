@@ -170,7 +170,7 @@ create_node_version({
 })
 ```
 
-The new node starts in `draft` with inherited outgoing `belongs_to`/`depends_on` and `supersedes` → predecessor. Each direct dependent of the predecessor gains a duplicate `depends_on` edge to the new version (old edge kept). The predecessor stays `stable`/`unstable` until the new version ships. Prefer ids like `<id>-v2`.
+The new node starts in `draft` with inherited outgoing `belongs_to`/`depends_on` and `supersedes` → predecessor. Dependents keep their edge to the live predecessor until the new version ships — at that moment they gain a duplicate `depends_on` to the successor and the predecessor is deprecated. Prefer ids like `<id>-v2`.
 
 ## Common mistakes
 

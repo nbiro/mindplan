@@ -43,7 +43,7 @@ import {
   missingJourneyDependents,
   validateNewVersion,
   findPredecessor,
-  transitiveDependents,
+  blastRadiusDependents,
   dependentsOf,
 } from "./rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "./search.js";
@@ -343,9 +343,9 @@ server.registerTool(
   {
     title: "Create node version",
     description:
-      "Creates a new draft version of a shipped Workflow or Foundation. Links supersedes -> previous, " +
-      "inherits belongs_to and depends_on from the predecessor, and duplicates each direct incoming depends_on " +
-      "edge so dependents also depend on the new version (old edge preserved). Predecessor keeps serving until this version ships.",
+      "Creates a new draft version of a shipped Workflow or Foundation. Links supersedes -> previous and " +
+      "inherits belongs_to and depends_on from the predecessor. Dependents are not relinked at create time — " +
+      "they keep depending on the live predecessor until this version ships (when the predecessor is deprecated).",
     inputSchema: {
       previous_id: NODE_ID.describe("Id of the shipped Workflow or Foundation to supersede."),
       id: NODE_ID.describe("Unique slug id for the new version node."),
@@ -375,11 +375,6 @@ server.registerTool(
     if (previous.belongs_to?.length) node.belongs_to = [...previous.belongs_to];
     if (previous.depends_on?.length) node.depends_on = [...previous.depends_on];
 
-    const incomingDependents = dependentsOf(graph, previous_id);
-    for (const dependent of incomingDependents) {
-      assertAcyclicDependsOn(graph, dependent.id, id);
-    }
-
     ensureDirectories();
     scaffoldEntity(node, { title, description });
     addEdgeToFrontmatter(node, "supersedes", previous_id);
@@ -390,18 +385,6 @@ server.registerTool(
       for (const d of node.depends_on) addEdgeToFrontmatter(node, "depends_on", d);
     }
 
-    const dependentsRelinked: { source: string; target: string; type: "depends_on" }[] = [];
-    for (const dependent of incomingDependents) {
-      const exists = graph.edges.some(
-        (e) =>
-          e.source === dependent.id && e.target === id && e.type === "depends_on"
-      );
-      if (exists) continue;
-      graph.edges.push({ source: dependent.id, target: id, type: "depends_on" });
-      addEdgeToFrontmatter(dependent, "depends_on", id);
-      dependentsRelinked.push({ source: dependent.id, target: id, type: "depends_on" });
-    }
-
     const rel = entityRelativePath(node);
     refreshPersistedMap();
     return ok({
@@ -409,13 +392,12 @@ server.registerTool(
       predecessor: {
         id: previous_id,
         state: previous.state,
-        note: "will auto-deprecate when this version ships",
+        note: "will auto-deprecate when this version ships; dependents relink then",
       },
       inherited_edges: {
         belongs_to: node.belongs_to ?? [],
         depends_on: node.depends_on ?? [],
       },
-      dependents_relinked: dependentsRelinked,
       folder: rel,
       context: `${rel}/${CONTEXT_FILENAME}`,
     });
@@ -428,7 +410,9 @@ server.registerTool(
     title: "Get blast radius",
     description:
       "Returns all nodes that depend on the given node (transitive reverse depends_on closure), " +
-      "with hop distance and journeys_at_risk for affected Workflows.",
+      "with hop distance and journeys_at_risk for affected Workflows. " +
+      "When the node supersedes earlier versions, also includes dependents of that supersedes chain " +
+      "(via_supersedes) so agents building a successor see what the live predecessor still serves.",
     inputSchema: {
       node_id: NODE_ID.describe("The id of the node whose dependents to analyze."),
     },
@@ -436,7 +420,7 @@ server.registerTool(
   guarded(({ node_id }) => {
     const graph = loadGraph();
     findNode(graph, node_id);
-    const entries = transitiveDependents(graph, node_id);
+    const { affected: entries, via_supersedes } = blastRadiusDependents(graph, node_id);
     const journeysAtRisk = new Set<string>();
     for (const { node } of entries) {
       if (node.type !== "Workflow") continue;
@@ -454,6 +438,7 @@ server.registerTool(
         state: node.state,
         distance,
       })),
+      via_supersedes,
       journeys_at_risk: [...journeysAtRisk].sort(),
     });
   })
@@ -501,6 +486,7 @@ server.registerTool(
     description:
       "Transitions a Foundation, Workflow, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
       "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
+      "When shipping a version successor, duplicates predecessor dependents onto the successor then auto-deprecates the predecessor. " +
       "Journey and production stable/unstable are computed automatically.",
     inputSchema: {
       node_id: NODE_ID.describe("The id of the node to transition."),
@@ -533,20 +519,44 @@ server.registerTool(
       new_state: "deprecated";
     } | null = null;
 
+    const dependentsRelinked: { source: string; target: string; type: "depends_on" }[] = [];
     const nodesToSync: MindPlanNode[] = [node];
 
     if (resolved.ship) {
       const predecessor = findPredecessor(graph, node_id);
-      if (predecessor && isProductionState(predecessor.state)) {
-        const predPrevious = predecessor.state;
-        predecessor.state = "deprecated";
-        predecessor.updated_at = now;
-        predecessorDeprecated = {
-          id: predecessor.id,
-          previous_state: predPrevious,
-          new_state: "deprecated",
-        };
-        nodesToSync.push(predecessor);
+      if (predecessor) {
+        // Relink while successor is already production-stable so Infrastructure First
+        // never sees a draft dependency. Validate cycles before writing edges.
+        const incomingDependents = dependentsOf(graph, predecessor.id);
+        for (const dependent of incomingDependents) {
+          assertAcyclicDependsOn(graph, dependent.id, node_id);
+        }
+        for (const dependent of incomingDependents) {
+          const exists = graph.edges.some(
+            (e) =>
+              e.source === dependent.id && e.target === node_id && e.type === "depends_on"
+          );
+          if (exists) continue;
+          graph.edges.push({ source: dependent.id, target: node_id, type: "depends_on" });
+          addEdgeToFrontmatter(dependent, "depends_on", node_id);
+          dependentsRelinked.push({
+            source: dependent.id,
+            target: node_id,
+            type: "depends_on",
+          });
+        }
+
+        if (isProductionState(predecessor.state)) {
+          const predPrevious = predecessor.state;
+          predecessor.state = "deprecated";
+          predecessor.updated_at = now;
+          predecessorDeprecated = {
+            id: predecessor.id,
+            previous_state: predPrevious,
+            new_state: "deprecated",
+          };
+          nodesToSync.push(predecessor);
+        }
       }
     }
 
@@ -562,6 +572,7 @@ server.registerTool(
       new_state: node.state,
       shipped_at: node.shipped_at,
       predecessor_deprecated: predecessorDeprecated,
+      dependents_relinked: dependentsRelinked,
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     });
