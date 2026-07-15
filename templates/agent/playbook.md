@@ -1,8 +1,3 @@
----
-description: MindPlan SDLC — MCP mutations, taxonomy, compiler rules, agent workflow
-alwaysApply: true
----
-
 # MindPlan Agent Playbook
 
 MindPlan is a compiler-style SDLC framework. All graph and state mutations go through the **MindPlan MCP server** — never by editing server-owned frontmatter directly.
@@ -116,7 +111,7 @@ update_node_status(wf-checkout, ready)  → ok
 | `unlink_nodes` | Remove all edges between two nodes |
 | `update_node_status` | Advance build pipeline, Bug lifecycle, or `ship` |
 
-For step-by-step entity creation (taxonomy, naming, linking, territory), use the **mindplan-define-entities** skill.
+For step-by-step entity creation (taxonomy, naming, linking, territory), see `mindplan/agent/skills/define-entities/SKILL.md`.
 
 ## Never do
 

@@ -37,8 +37,10 @@
     "model-context-protocol",
     "sdlc",
     "mindplan",
-    "cursor",
-    "ai-agents"
+    "ai-agents",
+    "claude",
+    "copilot",
+    "codex"
   ],
   "license": "MIT",
   "dependencies": {

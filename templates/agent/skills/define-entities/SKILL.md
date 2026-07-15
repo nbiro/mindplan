@@ -96,7 +96,7 @@ When a Workflow `depends_on` another Workflow, every dependency in the transitiv
 link_nodes({ source_id, target_id, edge_type })
 ```
 
-Illegal shapes are rejected — see agent rule for the full edge taxonomy.
+Illegal shapes are rejected — see `mindplan/agent/playbook.md` for the full edge taxonomy.
 
 ## Step 6 — Enrich territory (`context.mdx` body)
 

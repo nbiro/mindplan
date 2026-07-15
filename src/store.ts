@@ -38,12 +38,17 @@ const EDGE_FIELDS = ["belongs_to", "depends_on", "affects", "supersedes"] as con
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
+export const AGENT_DIR = "agent";
 export const CONTEXT_FILENAME = "context.mdx";
 export const ATTACHMENTS_DIR = "attachments";
 export const COMPONENTS_DIR = "components";
 
 export function mindplanRoot(): string {
   return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR);
+}
+
+export function agentRoot(): string {
+  return path.join(mindplanRoot(), AGENT_DIR);
 }
 
 export function typeDir(type: NodeType): string {
@@ -111,39 +116,90 @@ function copyDirRecursive(src: string, dest: string): void {
   }
 }
 
-/** Copies the bundled agent rule into .cursor/rules/mindplan.mdc (idempotent). */
-export function installAgentRule(packageRoot: string): InstallAgentRuleResult {
-  const templatePath = path.join(packageRoot, "templates", "mindplan-agent.mdc");
-  const destPath = path.join(projectRoot(), ".cursor", "rules", "mindplan.mdc");
-
-  if (fs.existsSync(destPath)) {
-    return { installed: false, path: destPath };
-  }
-
-  if (!fs.existsSync(templatePath)) {
-    throw new Error(`Agent rule template not found at ${templatePath}`);
-  }
-
-  fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  fs.copyFileSync(templatePath, destPath);
-  return { installed: true, path: destPath };
+function agentTemplateRoot(packageRoot: string): string {
+  return path.join(packageRoot, "templates", "agent");
 }
 
-/** Copies the define-entities skill into .cursor/skills/mindplan-define-entities/ (idempotent). */
-export function installDefineEntitiesSkill(packageRoot: string): InstallSkillResult {
-  const templateDir = path.join(packageRoot, "templates", "mindplan-define-entities");
-  const destDir = path.join(projectRoot(), ".cursor", "skills", "mindplan-define-entities");
+function installTemplateFile(
+  templatePath: string,
+  destPath: string,
+  projectRelativePath: string
+): InstallAgentRuleResult {
+  if (fs.existsSync(destPath)) {
+    return { installed: false, path: projectRelativePath };
+  }
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Agent template not found at ${templatePath}`);
+  }
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.copyFileSync(templatePath, destPath);
+  return { installed: true, path: projectRelativePath };
+}
 
+function installTemplateDir(
+  templateDir: string,
+  destDir: string,
+  projectRelativePath: string
+): InstallSkillResult {
   if (fs.existsSync(destDir)) {
-    return { installed: false, path: destDir };
+    return { installed: false, path: projectRelativePath };
   }
-
   if (!fs.existsSync(templateDir)) {
-    throw new Error(`Skill template not found at ${templateDir}`);
+    throw new Error(`Agent template not found at ${templateDir}`);
   }
-
   copyDirRecursive(templateDir, destDir);
-  return { installed: true, path: destDir };
+  return { installed: true, path: projectRelativePath };
+}
+
+/** Copies the bundled playbook into mindplan/agent/playbook.md (idempotent). */
+export function installAgentPlaybook(packageRoot: string): InstallAgentRuleResult {
+  const root = agentTemplateRoot(packageRoot);
+  const destPath = path.join(agentRoot(), "playbook.md");
+  return installTemplateFile(
+    path.join(root, "playbook.md"),
+    destPath,
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "playbook.md")
+  );
+}
+
+/** Copies the define-entities skill into mindplan/agent/skills/define-entities/ (idempotent). */
+export function installDefineEntitiesSkill(packageRoot: string): InstallSkillResult {
+  const root = agentTemplateRoot(packageRoot);
+  const destDir = path.join(agentRoot(), "skills", "define-entities");
+  return installTemplateDir(
+    path.join(root, "skills", "define-entities"),
+    destDir,
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "define-entities")
+  );
+}
+
+/** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent). */
+export function installMcpExample(packageRoot: string): InstallAgentRuleResult {
+  const root = agentTemplateRoot(packageRoot);
+  const destPath = path.join(agentRoot(), "mcp.json.example");
+  return installTemplateFile(
+    path.join(root, "mcp.json.example"),
+    destPath,
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "mcp.json.example")
+  );
+}
+
+/** Copies per-agent integration guides into mindplan/agent/integrations/ (idempotent). */
+export function installAgentIntegrations(packageRoot: string): InstallSkillResult {
+  const root = agentTemplateRoot(packageRoot);
+  const destDir = path.join(agentRoot(), "integrations");
+  return installTemplateDir(
+    path.join(root, "integrations"),
+    destDir,
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "integrations")
+  );
+}
+
+/** Creates root AGENTS.md from the playbook when missing (idempotent). */
+export function installRootAgentsMd(packageRoot: string): InstallAgentRuleResult {
+  const templatePath = path.join(agentTemplateRoot(packageRoot), "playbook.md");
+  const destPath = path.join(projectRoot(), "AGENTS.md");
+  return installTemplateFile(templatePath, destPath, "AGENTS.md");
 }
 
 /** Scaffolds an empty mindplan/ tree in the consumer project (idempotent). */

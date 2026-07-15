@@ -15,8 +15,11 @@ import { NODE_TYPES, initialStateForType, isProductionState, type MindPlanNode }
 import {
   ensureDirectories,
   initProject,
-  installAgentRule,
+  installAgentPlaybook,
+  installAgentIntegrations,
   installDefineEntitiesSkill,
+  installMcpExample,
+  installRootAgentsMd,
   ATTACHMENTS_DIR,
   CONTEXT_FILENAME,
   entityRelativePath,
@@ -475,8 +478,11 @@ function runCli() {
   if (cmd === "init") {
     const packageRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
     const { root, created } = initProject();
-    const rule = installAgentRule(packageRoot);
+    const playbook = installAgentPlaybook(packageRoot);
     const skill = installDefineEntitiesSkill(packageRoot);
+    const mcpExample = installMcpExample(packageRoot);
+    const integrations = installAgentIntegrations(packageRoot);
+    const agentsMd = installRootAgentsMd(packageRoot);
 
     if (created) {
       console.log(`Initialized MindPlan at ${root}`);
@@ -484,26 +490,30 @@ function runCli() {
       console.log(`MindPlan already initialized at ${root}`);
     }
 
-    if (rule.installed) {
-      console.log("Installed agent rule at .cursor/rules/mindplan.mdc");
-    } else {
-      console.log("Agent rule already present at .cursor/rules/mindplan.mdc");
+    const report = (label: string, result: { installed: boolean; path: string }) => {
+      console.log(
+        result.installed ? `Installed ${label} at ${result.path}` : `${label} already present at ${result.path}`
+      );
+    };
+
+    report("agent playbook", playbook);
+    report("define-entities skill", skill);
+    report("MCP example", mcpExample);
+    report("agent integrations", integrations);
+    report("AGENTS.md", agentsMd);
+
+    if (!agentsMd.installed) {
+      console.log("Tip: add a reference to mindplan/agent/playbook.md in your existing AGENTS.md.");
     }
 
-    if (skill.installed) {
-      console.log("Installed skill at .cursor/skills/mindplan-define-entities/");
-    } else {
-      console.log("Skill already present at .cursor/skills/mindplan-define-entities/");
-    }
-
-    console.log("Next: register the MCP server in .cursor/mcp.json (see README).");
+    console.log("Next: register the MindPlan MCP server — see mindplan/agent/integrations/");
     return;
   }
 
   if (cmd === "help" || cmd === "--help" || cmd === "-h") {
     console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
-  mindplan-mcp init         Scaffold mindplan/, agent rule, and define-entities skill
+  mindplan-mcp init         Scaffold mindplan/, agent playbook, skills, and integrations
   mindplan-mcp help         Show this message
 
 Environment:

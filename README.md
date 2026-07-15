@@ -27,7 +27,7 @@ cd mindplan
 npm install && npm run build
 ```
 
-2. From your project's root directory, run `init` against the built server to scaffold `mindplan/` and install the agent rule + skill:
+2. From your project's root directory, run `init` against the built server to scaffold `mindplan/` and install agent instructions:
 
 ```bash
 node /absolute/path/to/mindplan/dist/index.js init
@@ -35,33 +35,34 @@ node /absolute/path/to/mindplan/dist/index.js init
 
 `init` uses the current working directory as the project root (override with `MINDPLAN_ROOT`) and installs:
 
-- `.cursor/rules/mindplan.mdc` — always-on agent playbook (MCP workflow, compiler rules)
-- `.cursor/skills/mindplan-define-entities/` — skill for defining Journey, Foundation, Workflow, and Bug nodes
+- `mindplan/agent/playbook.md` — agent playbook (MCP workflow, compiler rules)
+- `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
+- `mindplan/agent/mcp.json.example` — MCP server config snippet
+- `mindplan/agent/integrations/` — setup guides for Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, and generic MCP clients
+- `AGENTS.md` at the project root — created only when missing (many agents auto-read this file)
 
-To install these manually instead:
-- Copy `templates/mindplan-agent.mdc` → `.cursor/rules/mindplan.mdc`
-- Copy `templates/mindplan-define-entities/` → `.cursor/skills/mindplan-define-entities/`
+3. Register the MCP server with your coding agent — pick the guide that matches your tool:
 
-3. Add the server to `.cursor/mcp.json` in that project:
-
-```json
-{
-  "mcpServers": {
-    "mindplan": {
-      "command": "node",
-      "args": ["/absolute/path/to/mindplan/dist/index.js"]
-    }
-  }
-}
+```
+mindplan/agent/integrations/
 ```
 
-4. Reload MCP servers (or all of Cursor, if rules/skills aren't picked up immediately).
+See [integrations README](templates/agent/integrations/README.md) in this repo for the full list.
+
+4. Reload MCP servers in your agent after config changes.
 
 ## File system layout (consumer project)
 
 ```
 <project-root>/
+├── AGENTS.md                        # Agent instructions (optional; created by init when missing)
 └── mindplan/
+    ├── agent/                       # Agent integration assets (installed by init)
+    │   ├── playbook.md
+    │   ├── mcp.json.example
+    │   ├── integrations/            # Per-agent MCP setup guides
+    │   └── skills/
+    │       └── define-entities/
     ├── components/                # Project-specific MDX components (optional)
     ├── journeys/<id>/
     │   ├── context.mdx
@@ -124,7 +125,7 @@ Every violation throws an error starting with `Blocked: `.
 | Command | Description |
 |---------|-------------|
 | `mindplan-mcp` | Start the MCP server (stdio) |
-| `mindplan-mcp init` | Scaffold `mindplan/`, install agent rule, and define-entities skill |
+| `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, and `AGENTS.md` |
 | `mindplan-mcp help` | Show usage |
 
 Set `MINDPLAN_ROOT` to override the project root (defaults to `process.cwd()`).
