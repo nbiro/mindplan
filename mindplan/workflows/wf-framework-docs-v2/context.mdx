@@ -1,0 +1,40 @@
+---
+id: wf-framework-docs-v2
+type: Workflow
+title: "Framework documentation (compiler pitch)"
+description: "Reposition README to lead with planning-as-compiler idea; SPEC remains normative contract."
+state: stable
+shipped_at: 2026-07-15T19:31:06.359Z
+created_at: 2026-07-15T19:30:05.131Z
+updated_at: 2026-07-15T19:31:06.359Z
+belongs_to:
+  - j-territory-sdlc
+  - j-agent-onboarding
+depends_on:
+  - f-domain-model
+supersedes:
+  - wf-framework-docs
+---
+
+# Framework documentation (compiler pitch)
+
+Reposition README to lead with the idea that software planning can be compiled — not with MCP/GitOps mechanics. SPEC.md remains the normative contract.
+
+## Execution Logic
+
+- Lead README with "compiler for software planning" pitch, not "normative spec + MCP server".
+- Reframe the problem around agents lacking an enforceable architectural model; treat tracker drift as a symptom.
+- Add a "Planning that compiles" section contrasting trackers ("what should someone work on?") with MindPlan ("what can be worked on / is it valid / what breaks / can it ship?"), including a real `Blocked:` example.
+- Demote mechanics (MDX territory, MCP write path, queryable graph) into a short "How it's built" section.
+- Reframe audience to lead with who benefits (builders with agents), keeping solo/small-team concurrency caveats.
+- Leave quick start, layout, taxonomy, rules, tools, CLI, and development sections structurally intact.
+
+## Checklist
+
+- [x] Rewrite README opening and problem section; add "Planning that compiles" with real Blocked example
+- [x] Add "How it's built" mechanics paragraph; reframe audience; consistency pass on issue-tracker framing
+- [x] Reference sections (taxonomy, rules, tools, CLI) still accurate after copy changes
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

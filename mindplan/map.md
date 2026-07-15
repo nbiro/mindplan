@@ -12,13 +12,13 @@ flowchart TB
   end
   subgraph journey_j_agent_onboarding["j-agent-onboarding · Agent onboarding · stable"]
     wf_agent_integrations__in__j_agent_onboarding["wf-agent-integrations · Agent integrations · stable"]
-    wf_framework_docs__in__j_agent_onboarding["wf-framework-docs · Framework documentation · stable"]
+    wf_framework_docs_v2__in__j_agent_onboarding["wf-framework-docs-v2 · Framework documentation (compiler pitch) · stable"]
     wf_npm_publish__in__j_agent_onboarding["wf-npm-publish · Publish to npm · draft"]
     wf_project_init__in__j_agent_onboarding["wf-project-init · Project init · stable"]
   end
   subgraph journey_j_territory_sdlc["j-territory-sdlc · Territory SDLC · stable"]
     wf_export_views_v2__in__j_territory_sdlc["wf-export-views-v2 · Export graph views (auto-persist map) · stable"]
-    wf_framework_docs__in__j_territory_sdlc["wf-framework-docs · Framework documentation · stable"]
+    wf_framework_docs_v2__in__j_territory_sdlc["wf-framework-docs-v2 · Framework documentation (compiler pitch) · stable"]
     wf_mutate_graph__in__j_territory_sdlc["wf-mutate-graph · Mutate graph · stable"]
     wf_query_graph__in__j_territory_sdlc["wf-query-graph · Query graph · stable"]
     wf_test_harness__in__j_territory_sdlc["wf-test-harness · Test harness · stable"]
@@ -30,8 +30,8 @@ flowchart TB
   wf_agent_integrations__in__j_agent_onboarding --> f_mcp_runtime
   wf_export_views_v2__in__j_territory_sdlc --> f_mcp_runtime
   wf_export_views_v2__in__j_territory_sdlc --> f_territory_store
-  wf_framework_docs__in__j_agent_onboarding --> f_domain_model
-  wf_framework_docs__in__j_territory_sdlc --> f_domain_model
+  wf_framework_docs_v2__in__j_agent_onboarding --> f_domain_model
+  wf_framework_docs_v2__in__j_territory_sdlc --> f_domain_model
   wf_mutate_graph__in__j_territory_sdlc --> f_compiler_rules
   wf_mutate_graph__in__j_territory_sdlc --> f_mcp_runtime
   wf_npm_publish__in__j_agent_onboarding --> f_mcp_runtime

@@ -1,19 +1,43 @@
 # MindPlan
 
-Normative specification and reference MCP server for the **MindPlan** SDLC framework — a compiler-style state machine and GitOps issue-tracking system for AI agents and engineering teams.
+**MindPlan is a compiler for software planning.** It validates architecture, dependencies, and execution state before code is written — giving AI agents a deterministic model of the system instead of a collection of tickets.
+
+Software planning can be compiled the same way source code is compiled. That is the product. The MCP server, MDX territory files, and Git-backed store are how it runs.
 
 ## The problem
 
-When AI agents (and humans) plan software work today, they either skip planning entirely or bolt on an external tracker such as Jira, Linear, or GitHub Projects. External trackers drift from the codebase: a ticket says "done" while the code says otherwise, dependencies between work items are informal or unenforced, and nothing stops an agent from marking a feature `ready` when it has no owning capability, no infrastructure to run on, or unfinished work. There is no single source of truth an agent can query before acting, and no automatic way to know what breaks when a piece of infrastructure or a workflow changes.
+AI agents make planning decisions without an enforceable architectural model. Nothing stops an agent from building on unfinished infrastructure, shipping a feature over unstable dependencies, or marking work reviewed while checklist items are still open. Architecture lives in heads, docs, and chats — not in a machine that can refuse an illegal transition.
 
-## The solution
+External trackers (Jira, Linear, GitHub Projects) make that worse as a symptom: tickets drift from the codebase, dependencies stay informal, and there is still no compile step between "someone said ship" and "the graph says ship."
 
-MindPlan makes planning state **part of the repository** and puts a strict compiler in front of every mutation. Journeys, Foundations, Workflows, and Bugs live as `context.mdx` files under `mindplan/`, committed alongside the code they describe. All state changes go through an MCP server that enforces architectural guardrails — no "ghost" workflows with no capability or infrastructure, no shipping on unstable dependencies, no marking work reviewed while checklist items are unchecked — and rejects any violation with a machine-parsable `Blocked: ` error. Because the graph is queryable (`find_related_nodes`, `get_mindplan_graph`, `get_blast_radius`), agents can resolve a focus node and its links — and blast radius — before making a change, instead of finding out after something breaks. The result: architecture, requirements, and code stay perfectly synchronized, with nothing external to drift from.
+## Planning that compiles
+
+Traditional issue trackers answer: *what should someone work on?*
+
+MindPlan answers:
+
+- What **can** be worked on?
+- Is this change **architecturally valid**?
+- What will this **break**?
+- Is this feature even **allowed to ship**?
+
+That is closer to a compiler — or an operating system for software delivery — than to a board of tickets. Every mutation goes through guardrails. Violations are rejected with a machine-parsable error:
+
+```
+Blocked: Infrastructure First. Workflow "wf-checkout" cannot ship while
+linked Foundations or Workflows are not stable: "f-payments" (in-progress).
+```
+
+Architecture becomes executable constraint: no ghost workflows without a capability and foundation, no shipping on unstable deps, no review while Atomic Ops are unchecked. Agents get a focus node, its links, and blast radius *before* they touch code — not after something breaks.
+
+## How it's built
+
+Plan state lives in the repository as `context.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs). An MCP server is the single write path: it mutates frontmatter, enforces the compiler rules, and exposes a queryable graph (`find_related_nodes`, `get_blast_radius`, `export_mindplan_view`). Consumer projects commit territory next to application code so architecture, requirements, and implementation share one history.
 
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
 
-Planning data (`mindplan/`) is designed for **consumer projects** — commit it alongside application code. This repository also keeps its own `mindplan/` territory to dogfood the framework (see below).
+This repository also keeps its own `mindplan/` territory to dogfood the framework.
 
 ## The mindplan for mindplan
 
@@ -23,13 +47,13 @@ This repository dogfoods MindPlan. Live territory: [`mindplan/`](mindplan/).
 
 ## Who is this for
 
-MindPlan works best for **indie developers and small teams** working solo or in tight sync — the kind of project where one person (or one agent) touches `mindplan/` at a time.
+MindPlan is built for people who ship **with AI agents** and need those agents to follow a live architectural model — not a stale ticket list.
 
-Because planning state is plain-text `context.mdx` files committed to git, it inherits git's concurrency model: no built-in locking or conflict resolution. That's a good tradeoff when:
+It works best for **indie developers and small teams** working solo or in tight sync — the kind of project where one person (or one agent) touches `mindplan/` at a time. Because planning state is plain-text `context.mdx` files in git, it inherits git's concurrency model: no built-in locking or conflict resolution. That tradeoff is a good fit when:
 
-- You're a solo builder or a small team (a handful of people) working on one branch at a time
-- You want planning and code to live and merge together, not drift apart in an external tracker
-- You're building with AI agents that need a live, queryable source of truth instead of a stale ticket
+- You're a solo builder or a small team working on one branch at a time
+- You want planning and code to live and merge together
+- Your agents need a queryable source of truth that can refuse illegal moves
 
 It's a poor fit today for:
 
@@ -161,6 +185,7 @@ Every violation throws an error starting with `Blocked: `.
 Set `MINDPLAN_ROOT` to override the project root (defaults to `process.cwd()`).
 
 Graph views are read-only projections of the assembled graph (see SPEC §7.4). They do not replace MDX viewers or external board sync.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
