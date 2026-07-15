@@ -1,0 +1,32 @@
+---
+id: wf-agent-integrations
+type: Workflow
+title: "Agent integrations"
+description: "Per-agent MCP setup guides (Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, generic)."
+state: stable
+shipped_at: 2026-07-15T18:55:23.090Z
+created_at: 2026-07-15T18:51:38.117Z
+updated_at: 2026-07-15T18:55:23.090Z
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-mcp-runtime
+---
+
+# Agent integrations
+
+Per-agent MCP setup guides (Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, generic).
+
+## Execution Logic
+
+Templates under `templates/agent/integrations/` are installed into `mindplan/agent/integrations/` on init. Each guide covers MCP registration and playbook/skill placement for that agent.
+
+## Checklist
+
+- [x] Requirements defined (integrations README)
+- [x] Implementation complete (Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, generic + index)
+- [x] Tests passing (installed by init path in smoke)
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

@@ -1,0 +1,34 @@
+---
+id: wf-test-harness
+type: Workflow
+title: "Test harness"
+description: "Smoke and view regression tests that exercise graph assembly and Mermaid/DOT export."
+state: stable
+shipped_at: 2026-07-15T18:55:35.248Z
+created_at: 2026-07-15T18:51:38.385Z
+updated_at: 2026-07-15T18:55:35.248Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-mcp-runtime
+---
+
+# Test harness
+
+Smoke and view regression tests that exercise graph assembly and Mermaid/DOT export.
+
+## Execution Logic
+
+- `npm test` builds then runs `scripts/view.test.mjs` and `scripts/smoke.mjs`.
+- Smoke covers init, node lifecycle, compiler blocks, and view export against a temp root.
+- View test asserts deterministic Mermaid/DOT shape helpers.
+
+## Checklist
+
+- [x] Requirements defined (CONTRIBUTING / CI)
+- [x] Implementation complete (`scripts/smoke.mjs`, `scripts/view.test.mjs`, `.github/workflows/ci.yml`)
+- [x] Tests passing (`npm test`)
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

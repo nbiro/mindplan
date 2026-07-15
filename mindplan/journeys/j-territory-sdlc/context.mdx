@@ -1,0 +1,29 @@
+---
+id: j-territory-sdlc
+type: Journey
+title: "Territory SDLC"
+description: "Plan and execute software work through MindPlan territory, compiler gates, and MCP graph tools."
+state: stable
+created_at: 2026-07-15T18:51:13.777Z
+updated_at: 2026-07-15T18:55:35.249Z
+---
+
+# Territory SDLC
+
+Plan and execute software work through MindPlan territory, compiler gates, and MCP graph tools.
+
+## Overview
+
+Agents and humans plan software by querying and mutating a GitOps territory graph. Orientation starts with `find_related_nodes`; all writes go through the MCP compiler; Mermaid/DOT views and blast radius keep dependencies visible before change.
+
+## Linked Workflows
+
+- `wf-query-graph` — read/orientation tools
+- `wf-mutate-graph` — create, link, status, version tools
+- `wf-export-views` — Mermaid/DOT projections
+- `wf-test-harness` — smoke and view regression tests
+- `wf-framework-docs` — SPEC + README (also linked to agent onboarding)
+
+## Attachments
+
+_Place supporting files in `attachments/` alongside this file._

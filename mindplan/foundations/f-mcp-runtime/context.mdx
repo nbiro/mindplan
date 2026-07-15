@@ -1,0 +1,36 @@
+---
+id: f-mcp-runtime
+type: Foundation
+title: "MCP stdio runtime"
+description: "MCP server bootstrap over stdio: tool registration shell, guarded handlers, and CLI entrypoints."
+state: stable
+shipped_at: 2026-07-15T18:54:53.702Z
+created_at: 2026-07-15T18:51:31.349Z
+updated_at: 2026-07-15T18:54:53.702Z
+depends_on:
+  - f-compiler-rules
+  - f-territory-store
+---
+
+# MCP stdio runtime
+
+MCP server bootstrap over stdio: tool registration shell, guarded handlers, and CLI entrypoints.
+
+## Infrastructure Spec
+
+Implemented in `src/index.ts`:
+
+- `@modelcontextprotocol/sdk` `McpServer` + `StdioServerTransport`
+- Zod-validated tool inputs; `guarded` error → `isError` results
+- CLI: default MCP start, `init`, `view`/`export`, `help`
+- Package bin `mindplan-mcp` → `dist/index.js`
+
+## Checklist
+
+- [x] Spec written (SPEC §8 tool contract, README CLI)
+- [x] Implementation complete (`src/index.ts`)
+- [x] Verified in target environment (Cursor MCP + `npm test` / smoke)
+
+## Attachments
+
+_Schemas and diagrams go in `attachments/`._

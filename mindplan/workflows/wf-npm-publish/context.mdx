@@ -1,0 +1,36 @@
+---
+id: wf-npm-publish
+type: Workflow
+title: "Publish to npm"
+description: "Publish mindplan-mcp to npm so consumer projects can install without building from source."
+state: draft
+created_at: 2026-07-15T18:51:52.964Z
+updated_at: 2026-07-15T18:52:12.224Z
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-mcp-runtime
+---
+
+# Publish to npm
+
+Publish mindplan-mcp to npm so consumer projects can install without building from source.
+
+## Execution Logic
+
+1. Confirm package metadata (`name`, `files`, `bin`, engines).
+2. Run `npm test` and `npm run build`.
+3. Publish `mindplan-mcp` to the public registry.
+4. Update README quick start from “install from source” to `npx`/`npm i -g`.
+
+**Current state:** package is built and usable from source; not yet published (README still says so).
+
+## Checklist
+
+- [ ] Requirements defined (publish checklist, versioning policy)
+- [ ] Implementation complete (first npm release)
+- [ ] Tests passing (post-publish install verification)
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

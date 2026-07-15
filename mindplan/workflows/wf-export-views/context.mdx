@@ -1,0 +1,38 @@
+---
+id: wf-export-views
+type: Workflow
+title: "Export graph views"
+description: "Deterministic Mermaid/DOT projection of the graph via export_mindplan_view and the view CLI."
+state: stable
+shipped_at: 2026-07-15T18:55:34.390Z
+created_at: 2026-07-15T18:51:36.743Z
+updated_at: 2026-07-15T18:55:34.390Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-territory-store
+  - f-mcp-runtime
+---
+
+# Export graph views
+
+Deterministic Mermaid/DOT projection of the graph via export_mindplan_view and the view CLI.
+
+## Execution Logic
+
+1. Load graph from territory.
+2. Optionally filter to focus + 1-hop; hide retired unless `include_retired`.
+3. Render Mermaid or DOT typed-DAG (workflow instances per journey).
+4. Exposed as MCP `export_mindplan_view` and CLI `view`/`export`.
+
+Implemented in `src/view.ts`.
+
+## Checklist
+
+- [x] Requirements defined (SPEC §7.4 views)
+- [x] Implementation complete (`src/view.ts` + MCP + CLI)
+- [x] Tests passing (`scripts/view.test.mjs`)
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

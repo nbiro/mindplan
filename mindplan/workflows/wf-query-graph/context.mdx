@@ -1,0 +1,37 @@
+---
+id: wf-query-graph
+type: Workflow
+title: "Query graph"
+description: "Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context, and get_blast_radius."
+state: stable
+shipped_at: 2026-07-15T18:55:22.298Z
+created_at: 2026-07-15T18:51:34.864Z
+updated_at: 2026-07-15T18:55:22.298Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-mcp-runtime
+---
+
+# Query graph
+
+Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context, and get_blast_radius.
+
+## Execution Logic
+
+1. Agent calls `find_related_nodes` with a query (preferred orientation).
+2. Optionally `get_node_context` for full territory body/attachments.
+3. `get_blast_radius` for transitive dependents before risky changes.
+4. `get_mindplan_graph` only for greenfield/full audits.
+
+Ranking lives in `src/search.ts`; assembly via store `loadGraph`.
+
+## Checklist
+
+- [x] Requirements defined (SPEC tool contract)
+- [x] Implementation complete (`findRelatedNodes`, MCP tool handlers)
+- [x] Tests passing (smoke exercises graph reads)
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

@@ -1,0 +1,37 @@
+---
+id: wf-mutate-graph
+type: Workflow
+title: "Mutate graph"
+description: "Write-path tools that mutate territory: create_node, create_node_version, link_nodes, unlink_nodes, update_node_status."
+state: stable
+shipped_at: 2026-07-15T18:55:33.636Z
+created_at: 2026-07-15T18:51:48.233Z
+updated_at: 2026-07-15T18:55:33.636Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-mcp-runtime
+  - f-compiler-rules
+---
+
+# Mutate graph
+
+Write-path tools that mutate territory: create_node, create_node_version, link_nodes, unlink_nodes, update_node_status.
+
+## Execution Logic
+
+1. `create_node` scaffolds folder + `context.mdx` at initial state.
+2. `link_nodes` / `unlink_nodes` update source frontmatter edge arrays with taxonomy + cycle checks.
+3. `update_node_status` applies build/bug transitions; `ship` sets `shipped_at` and computes stability.
+4. `create_node_version` supersedes a shipped node, inherits outgoing edges, duplicates incoming `depends_on`.
+5. After mutations, journey states and stability are recomputed and synced.
+
+## Checklist
+
+- [x] Requirements defined (SPEC §§3, 5, 8)
+- [x] Implementation complete (MCP handlers in `src/index.ts` + rules/store)
+- [x] Tests passing (smoke covers create/link/status paths)
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._
