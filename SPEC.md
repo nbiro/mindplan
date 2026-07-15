@@ -1,6 +1,6 @@
 # MindPlan Framework Specification
 
-**Version:** 1.1.0
+**Version:** 2.0.0
 **Status:** Stable
 **Reference implementation:** repository root (TypeScript MCP server, stdio transport)
 
@@ -16,32 +16,21 @@ MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP)
 
 ---
 
-## 1. Core Architecture: Map vs. Territory
+## 1. Core Architecture: Territory
 
-MindPlan separates the macro-architectural state from micro-execution details to maintain a verifiable source of truth.
-
-### 1.1 The Map — `mindplan.json`
-
-A centralized Directed Acyclic Graph (DAG) stored in the planning directory at the project root. It tracks the identity, type, exact status, and dependency edges of every architectural node. The Map answers: *what exists, what state is it in, and what does it depend on?*
-
-The Map MUST be the only authority on node state and node relationships. Any tool, script, or UI that needs graph state MUST derive it from `mindplan.json`.
-
-### 1.2 The Territory — entity folders
-
-"Tickets-as-Code." Each node owns a folder containing a `context.mdx` file and an `attachments/` directory. The `context.mdx` contains the Product Requirements Document (PRD), Acceptance Criteria, and the Atomic Operations (execution checklists) required to complete the node. The Territory answers: *what exactly must be done, and how do we know it is done?*
+MindPlan persists all planning state as **tickets-as-code** under `mindplan/`. Each node owns a folder containing a `context.mdx` file and an `attachments/` directory. The `context.mdx` YAML frontmatter is the **node record** — identity, state, timestamps, and outgoing edge arrays. The body contains PRD, Acceptance Criteria, and Atomic Operations.
 
 Context files are MDX: standard Markdown plus optional JSX components (§6.4). Markdown remains the load-bearing syntax — every compiler rule operates on Markdown constructs only, and a context file containing no JSX at all is fully compliant.
 
-The Territory MUST live in the repository alongside the source code and MUST be versioned with it. A commit therefore captures code, architecture, and requirements in one atomic snapshot.
+The territory MUST live in the repository alongside the source code and MUST be versioned with it. A commit therefore captures code, architecture, and requirements in one atomic snapshot.
 
-### 1.3 Directory layout
+### 1.1 Directory layout
 
 All MindPlan state lives under a `mindplan/` directory at the project root. This directory is versioned with the repository and MUST be committed.
 
 ```
 <project-root>/
 └── mindplan/
-    ├── mindplan.json                  # The Map
     ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
     ├── journeys/
     │   └── <node-id>/
@@ -89,25 +78,29 @@ Node ids MUST match the pattern `^[a-z0-9][a-z0-9-_]*$` (lowercase slug style). 
 
 ### 2.2 Edge taxonomy
 
-Exactly three edge types exist. An edge is a directed triple `(source, target, type)`.
+Exactly four edge types exist. An edge is a directed triple `(source, target, type)`.
 
 | Edge type | Legal shape | Meaning |
 |---|---|---|
 | `belongs_to` | Workflow → Journey | Membership. A Workflow MAY have multiple `belongs_to` edges to different Journeys when the feature spans macro capabilities. |
-| `depends_on` | Workflow → Foundation, Foundation → Foundation | Consumption. The source cannot ship without the target's infrastructure. |
+| `depends_on` | Workflow → Foundation, Workflow → Workflow, Foundation → Foundation | Consumption. The source cannot ship without the target's infrastructure or prerequisite workflow. |
 | `affects` | Bug → Workflow, Bug → Foundation | Affliction. The Bug impairs the target; open Bugs drive `unstable` production posture (§3.5). |
+| `supersedes` | Workflow → Workflow, Foundation → Foundation | Version lineage. Source is a newer version of target; created only by `create_node_version`, never `link_nodes`. At most one outgoing `supersedes` edge per node. |
 
 All other shapes MUST be rejected, specifically including:
 
 - Journey → anything (Journeys are containers; they have no outgoing edges)
-- `depends_on` targeting a Journey or a Workflow
+- `depends_on` targeting a Journey
+- `depends_on` from a Foundation, Bug, or Journey targeting a Workflow
 - `belongs_to` from a Foundation, Journey, or Bug
 - `affects` from anything other than a Bug, or targeting a Journey
 - `depends_on` from a Bug or Journey
+- `supersedes` between nodes of different types
+- `supersedes` created via `link_nodes`
 - self-links (`source == target`)
 - duplicate edges (same source, target, and type)
 
-The graph MUST remain acyclic. (Workflow→Foundation and Foundation→Foundation edges cannot form cycles with `belongs_to` edges; implementations SHOULD additionally reject Foundation→Foundation cycles at link time.)
+The graph MUST remain acyclic. Implementations MUST reject `depends_on` cycles at link time (Foundation→Foundation and Workflow→Workflow).
 
 ---
 
@@ -185,6 +178,23 @@ After `ship`, a Foundation or Workflow's `state` field holds a **computed** prod
 
 Recomputed after: Bug status changes, `affects` link/unlink, and `ship`. Never set manually.
 
+### 3.6 Versioning
+
+Shipped Foundations and Workflows (`stable`/`unstable`) are never reset to `draft` in place. To evolve one, call `create_node_version`, which:
+
+1. creates a new node in state `draft` with a new id,
+2. links `supersedes` from the new node to the predecessor,
+3. inherits the predecessor's outgoing `belongs_to` and `depends_on` edges,
+4. duplicates each direct incoming `depends_on` edge onto the new version (each dependent keeps its edge to the predecessor and gains a second edge to the new version).
+
+The predecessor **keeps serving** (`stable`/`unstable`) throughout the new version's build. It is automatically transitioned to `deprecated` only when the new version successfully `ship`s. If the predecessor was already `deprecated` by other means when the successor ships, auto-deprecation is a no-op.
+
+Only `stable`/`unstable` nodes can be superseded at version-creation time. Lineage is linear: a node that already has a successor (another node with `supersedes` pointing at it) MUST NOT be versioned again — create the next version from the latest successor instead.
+
+Use `get_blast_radius` on a live predecessor to discover dependents that may need migration before cutover.
+
+**Note:** Because Rule 2 requires every `depends_on` target to be `stable` before `ship`, a dependent that has not yet shipped and gains a duplicate edge to the new (`draft`) version cannot `ship` until the new version is also `stable` (or until the operator removes the stale edge via `unlink_nodes`). Already-shipped dependents are unaffected.
+
 ---
 
 ## 4. Computed Journey States
@@ -209,7 +219,7 @@ Notes:
 - `in-review` counts toward `P`.
 - Workflows in `draft`, `ready`, or `deprecated` contribute to neither count.
 - Any attempt to set a Journey's state through the status-update tool MUST be rejected.
-- When a recomputation changes a Journey's state, the server MUST persist the new state to the Map and synchronize the Journey's `context.mdx` frontmatter, and SHOULD report the change in the tool response (`journeys_recomputed`).
+- When a recomputation changes a Journey's state, the server MUST persist the new state to the Journey's `context.mdx` frontmatter, and SHOULD report the change in the tool response (`journeys_recomputed`).
 
 ---
 
@@ -238,9 +248,9 @@ Rationale: work that belongs to no capability and stands on no infrastructure is
 
 ### 5.3 Rule 2 — Infrastructure First
 
-A Workflow MUST NOT `ship` (transition from `in-review` to production) unless **every** Foundation reachable via its direct `depends_on` edges is in state `stable`. The rejection message MUST enumerate each non-stable Foundation with its current state.
+A Workflow MUST NOT `ship` (transition from `in-review` to production) unless **every** Foundation and **every** Workflow reachable via its direct `depends_on` edges is in state `stable`. The rejection message MUST enumerate each non-stable dependency with its current state.
 
-Rationale: concrete must be poured before the roof is built. A feature cannot go live on infrastructure that is not stable in production.
+Rationale: concrete must be poured before the roof is built. A feature cannot go live on infrastructure or prerequisite workflows that are not stable in production.
 
 ### 5.4 Rule 3 — The Completion Check
 
@@ -264,17 +274,48 @@ Manual mutation of a Foundation or Workflow to `stable` or `unstable` MUST be re
 
 Edge creation MUST validate:
 
-- both node ids exist in the Map,
+- both node ids exist in territory,
 - the edge shape is legal per §2.2,
-- the edge is not a self-link and not a duplicate.
+- the edge is not a self-link and not a duplicate,
+- `depends_on` edges do not create a cycle (§2.2).
 
-### 5.9 Enforcement ordering
+### 5.9 Rule 8 — Dependency Closure
+
+When linking a Workflow to a Journey via `belongs_to`, the server MUST verify that **every** Workflow in the transitive `depends_on` closure of the source Workflow already has a `belongs_to` edge to the same Journey.
+
+If any dependency Workflow is missing from the Journey, the link MUST be rejected unless the caller passes `link_dependent: true` on `link_nodes`. When `link_dependent` is true, the server MUST automatically add `belongs_to` edges from each missing dependency Workflow to the same Journey before persisting the requested link.
+
+The rejection message MUST enumerate each missing dependency Workflow id and mention the `link_dependent` flag.
+
+Rationale: a Journey is a coherent user capability. A Workflow that depends on another Workflow implicitly requires that prerequisite to be part of the same Journey.
+
+### 5.10 Rule 9 — Version Lineage
+
+`create_node_version` MUST validate:
+
+- the predecessor exists and is type `Workflow` or `Foundation`,
+- the predecessor is in state `stable` or `unstable` (shipped),
+- the predecessor has no existing successor (no other node already has `supersedes` pointing at it).
+
+Additionally, `create_node_version` MUST duplicate each direct incoming `depends_on` edge from the predecessor onto the new version (dependent keeps the old edge). If any duplicate would create a `depends_on` cycle, the entire call MUST be rejected before writing anything.
+
+On successful `update_node_status(..., "ship")` for a node with a `supersedes` edge, the server MUST auto-transition the predecessor to `deprecated` if it is currently `stable` or `unstable`. This is idempotent if the predecessor is already `deprecated`.
+
+Rationale: versioning models replacement without downtime during the build. Rule 2 already blocks dependents from shipping against non-`stable` dependencies once a predecessor is deprecated; `get_blast_radius` surfaces affected dependents proactively while the predecessor is still live.
+
+### 5.11 Enforcement ordering
 
 For a status mutation the compiler MUST evaluate, in order:
 
-1. node exists → 2. node is not a Journey → 3. target state is valid → 4. transition is legal per §3 → 5. Rules 1–4 (type-specific) → **write** → 6. recompute stability (§3.5) → 7. recompute Journey states (§4) → 8. synchronize frontmatter.
+1. node exists → 2. node is not a Journey → 3. target state is valid → 4. transition is legal per §3 → 5. Rules 1–4 (type-specific) → **write** → 6. on `ship`, auto-deprecate predecessor per Rule 9 if applicable → 7. recompute stability (§3.5) → 8. recompute Journey states (§4) → 9. synchronize frontmatter.
 
 For `link_nodes` / `unlink_nodes` involving `affects`: validate §5.8, write edge, recompute stability for affected targets, recompute Journeys if applicable, mirror frontmatter.
+
+For `link_nodes` involving `belongs_to` (Workflow → Journey): validate §5.8, evaluate Rule 8 (Dependency Closure), write edge(s), recompute Journey states, mirror frontmatter.
+
+For `link_nodes` involving `depends_on`: validate §5.8 including cycle check, write edge, mirror frontmatter.
+
+For `create_node_version`: validate Rule 9, scaffold new node, write `supersedes` and inherited outgoing edges, duplicate incoming `depends_on` edges onto the new version; predecessor state unchanged.
 
 ---
 
@@ -289,8 +330,14 @@ Every entity's `context.mdx` MUST begin with YAML frontmatter followed by an MDX
 id: wf-checkout-split
 type: Workflow
 title: "Split & pay checkout"
+description: "Diner splits and pays the bill from their phone"
 state: in-progress
 created_at: 2026-07-14T06:00:00.000Z
+updated_at: 2026-07-14T07:00:00.000Z
+belongs_to:
+  - j-ordering
+depends_on:
+  - f-db-core
 ---
 
 # Split & pay checkout
@@ -319,20 +366,32 @@ Frontmatter fields:
 
 | Field | Type | Written by | Notes |
 |---|---|---|---|
-| `id` | string | server, at creation | Immutable. MUST equal folder name and Map entry. |
+| `id` | string | server, at creation | Immutable. MUST equal folder name. |
 | `type` | `Journey \| Foundation \| Workflow \| Bug` | server, at creation | Immutable. |
-| `title` | string (JSON-quoted) | server, at creation | Human-readable. |
-| `state` | string | **server only** | Mirror of the Map; re-synced on every accepted transition, stability recomputation, and Journey recomputation. Humans/agents MUST NOT edit it by hand. |
+| `title` | string (JSON-quoted) | territory | Human-readable. Stored only in frontmatter. |
+| `description` | string (JSON-quoted) | territory | Short summary. Stored only in frontmatter. |
+| `state` | string | **server only** | Build pipeline, computed production, or Bug lifecycle; patched by MCP on accepted transitions. |
 | `created_at` | ISO-8601 | server, at creation | Immutable. |
+| `updated_at` | ISO-8601 | **server only** | Touched on every accepted state or edge mutation. |
+| `shipped_at` | ISO-8601 | **server only** | Optional; set on `ship` (Foundation/Workflow). |
 | `severity` | `low \| medium \| high \| critical` | optional | Bug nodes only; informational in v1. |
+| `belongs_to` | string[] | **server only** | Workflow only. Target Journey ids (outgoing `belongs_to` edges). Omitted when empty. |
+| `depends_on` | string[] | **server only** | Workflow or Foundation. Target Foundation or Workflow ids (outgoing `depends_on` edges). Omitted when empty. |
+| `affects` | string[] | **server only** | Bug only. Target Workflow or Foundation ids (outgoing `affects` edges). Omitted when empty. |
+| `supersedes` | string[] | **server only** | Workflow or Foundation only. Predecessor id (outgoing `supersedes` edge). At most one entry. Set only by `create_node_version`. Omitted when empty. |
 
-The body is free-form and owned by humans and agents: PRD, acceptance criteria, execution logic, and the checklist all live here and are edited directly in the IDE. Only the frontmatter `state:` field is server-owned.
+The body is free-form and owned by humans and agents. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation. Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`, `supersedes`) MUST be written only via MCP tools.
 
 Frontmatter delimiters (`---`) MUST appear before any JSX. MDX comments use `{/* ... */}` syntax; HTML comments (`<!-- -->`) are not valid MDX and MUST NOT be used in the body.
 
-### 6.2 State mirroring
+### 6.2 Frontmatter mirroring
 
-After any accepted mutation, the server MUST rewrite the `state:` line inside the frontmatter block of each affected node's `context.mdx` (the transitioned node plus every Journey whose computed state changed). If the file is missing or has no frontmatter, mirroring is skipped silently — the Map remains authoritative.
+After any accepted mutation, the server MUST rewrite server-owned fields in each affected node's `context.mdx` frontmatter:
+
+- **Status mutations:** `state:`, `updated_at:`, and `shipped_at:` on the transitioned node plus every Journey whose computed state changed.
+- **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, or `affects`) on the source node, plus `updated_at:`.
+
+Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the file. If the file is missing or has no frontmatter, mirroring is skipped silently.
 
 ### 6.3 Scaffolding templates
 
@@ -370,9 +429,9 @@ The following component names are reserved across all MindPlan projects. Impleme
 | `<AcceptanceCriteria>` | children: Markdown/JSX | Marks the acceptance-criteria block of the PRD for extraction by viewers and sync parsers. |
 | `<Attachment>` | `file: string` (relative to `attachments/`), `caption?: string` | Typed reference to an attachment; viewers render a preview or download link. |
 | `<StateBadge>` | `state?: NodeState` (defaults to the frontmatter `state`) | Renders the node's pipeline state as a badge. |
-| `<DependsOn>` | `id: string` (Foundation id) | Inline reference to a Foundation dependency; viewers link to that node. Informational — edges in the Map are the authority. |
-| `<BelongsTo>` | `id: string` (Journey id) | Inline reference to a parent Journey. Informational — `belongs_to` edges in the Map are the authority (multiple allowed). |
-| `<Affects>` | `id: string` (Workflow or Foundation id) | Inline reference to an afflicted node. Informational — `affects` edges in the Map are the authority. |
+| `<DependsOn>` | `id: string` (Foundation id) | Inline reference to a Foundation dependency; viewers link to that node. Informational — `depends_on` in frontmatter is the authority. |
+| `<BelongsTo>` | `id: string` (Journey id) | Inline reference to a parent Journey. Informational — `belongs_to` in frontmatter is the authority (multiple allowed). |
+| `<Affects>` | `id: string` (Workflow or Foundation id) | Inline reference to an afflicted node. Informational — `affects` in frontmatter is the authority. |
 | `<ReproSteps>` | children | Marks repro steps for viewers. |
 | `<Severity>` | `level: low \| medium \| high \| critical` | Renders bug severity. |
 | `<ExpectedActual>` | `expected`, `actual` strings | Expected vs actual behaviour. |
@@ -405,26 +464,18 @@ Rendering MDX is out of scope for the MCP server. Viewers (docs sites, dashboard
 
 ---
 
-## 7. The Map File Format
+## 7. Graph Assembly
 
-### 7.1 Schema
+There is no central graph file. At runtime the server scans `mindplan/<type>s/<id>/context.mdx` frontmatter to assemble nodes and expands outgoing edge arrays into flat edge triples.
+
+### 7.1 Runtime graph shape
+
+`get_mindplan_graph` returns:
 
 ```jsonc
 {
-  "version": 1,
-  "nodes": [
-    {
-      "id": "wf-checkout-split",
-      "type": "Workflow",                       // "Journey" | "Foundation" | "Workflow" | "Bug"
-      "title": "Split & pay checkout",
-      "description": "Diner splits and pays the bill",
-      "state": "in-progress",                    // build pipeline, computed production, or Bug lifecycle
-      "shipped_at": "2026-07-14T10:00:00.000Z",  // optional; set on ship (Foundation/Workflow)
-      "severity": "high",                        // optional; Bug nodes only
-      "created_at": "2026-07-14T06:00:00.000Z",  // ISO-8601, immutable
-      "updated_at": "2026-07-14T09:12:33.101Z"   // ISO-8601, touched on every accepted mutation
-    }
-  ],
+  "version": 2,
+  "nodes": [ /* from frontmatter §6.1 */ ],
   "edges": [
     { "source": "wf-checkout-split", "target": "j-ordering", "type": "belongs_to" },
     { "source": "wf-checkout-split", "target": "f-db-core", "type": "depends_on" },
@@ -433,27 +484,46 @@ Rendering MDX is out of scope for the MCP server. Viewers (docs sites, dashboard
 }
 ```
 
-### 7.2 Invariants
+`version` identifies the schema generation (currently `2`). It is a constant reported by the server — not persisted to disk.
 
-- `version` identifies the schema generation (currently `1`).
-- Node `id` values are unique. Every edge endpoint MUST reference an existing node.
-- `state` for Journeys is always one of the computed states (§4); for Foundations/Workflows one of the build pipeline states or computed `stable`/`unstable`; for Bugs one of the Bug lifecycle states (§3.2).
-- `shipped_at` is set only by the `ship` transition; when present, `state` MUST be `stable` or `unstable` unless the node is `deprecated`.
-- The file is written atomically per mutation, pretty-printed (2-space indent), with a trailing newline. A missing file reads as the empty graph `{ version: 1, nodes: [], edges: [] }`.
+### 7.2 Edge persistence rule
+
+Outgoing edges are stored **only on the source node** in frontmatter:
+
+| Edge type | Source type | Frontmatter field |
+|---|---|---|
+| `belongs_to` | Workflow | `belongs_to: [journey-id, …]` |
+| `depends_on` | Workflow, Foundation | `depends_on: [foundation-or-workflow-id, …]` |
+| `affects` | Bug | `affects: [workflow-or-foundation-id, …]` |
+| `supersedes` | Workflow, Foundation | `supersedes: [predecessor-id]` (at most one) |
+
+Journeys have no outgoing edges. Incoming relationships are derived at scan time (e.g. a Journey discovers member Workflows by scanning all Workflow `belongs_to` arrays).
+
+### 7.3 Invariants
+
+- Every edge endpoint MUST reference an existing territory node (folder + `context.mdx`).
+- Edge triples are unique per `(source, target, type)`.
+- Edge arrays MUST only appear on node types permitted by §7.2.
 
 ---
 
 ## 8. MCP Tool Contract
 
-The server exposes exactly six tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly eight tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
 #### `get_mindplan_graph`
 
 - **Input:** none.
-- **Output:** the full parsed `mindplan.json` (§7.1).
+- **Output:** `{ version, nodes, edges }` assembled from territory frontmatter (§6.1, §7).
 - **Errors:** none beyond I/O failures.
+
+#### `get_blast_radius`
+
+- **Input:** `node_id` (slug).
+- **Output:** `{ node_id, affected: [{ id, type, state, distance }], journeys_at_risk: [journey-id, …] }` where `affected` is the transitive reverse-`depends_on` closure (BFS) and `journeys_at_risk` lists Journey ids linked via `belongs_to` from affected Workflows.
+- **Errors:** unknown `node_id`.
 
 #### `get_node_context`
 
@@ -465,7 +535,9 @@ The server exposes exactly six tools over stdio. All inputs are validated with z
   "folder": "mindplan/workflows/wf-checkout-split",
   "context_path": "mindplan/workflows/wf-checkout-split/context.mdx",
   "attachments_path": "mindplan/workflows/wf-checkout-split/attachments",
-  "attachments": ["checkout-wireframe.png"],   // filenames, sorted, .gitkeep excluded
+  "attachments": ["checkout-wireframe.png"],
+  "title": "Split & pay checkout",
+  "description": "Diner splits and pays the bill from their phone",
   "context": "---\nid: wf-checkout-split\n..." // raw context.mdx content
 }
 ```
@@ -477,21 +549,28 @@ The server exposes exactly six tools over stdio. All inputs are validated with z
 #### `create_node`
 
 - **Input:** `id` (slug), `type` (`Journey|Foundation|Workflow|Bug`), `title` (non-empty), `description`.
-- **Effect:** appends the node to the Map with initial state (`draft` for build entities, `open` for Bugs), scaffolds the entity folder (§6.3), persists.
-- **Output:** `{ created: <node>, folder, context, attachments }` (project-relative paths).
+- **Effect:** scaffolds the entity folder with full frontmatter record (§6.3). Does not write edge fields — those are added by `link_nodes`.
+- **Output:** `{ created: <node from frontmatter>, folder, context, attachments }` (project-relative paths).
 - **Errors:** duplicate `id`.
+
+#### `create_node_version`
+
+- **Input:** `previous_id` (shipped Workflow or Foundation), `id` (new slug), `title` (non-empty), `description`.
+- **Effect:** validates Rule 9, scaffolds a new `draft` node of the same type, writes `supersedes` → `previous_id`, copies predecessor `belongs_to`/`depends_on` to the new node, duplicates each direct incoming `depends_on` edge onto the new version. Predecessor state unchanged.
+- **Output:** `{ created, predecessor: { id, state, note }, inherited_edges: { belongs_to, depends_on }, dependents_relinked: [...], folder, context }`.
+- **Errors:** unknown `previous_id`; duplicate `id`; wrong type; predecessor not shipped; predecessor already has a successor.
 
 #### `link_nodes`
 
-- **Input:** `source_id`, `target_id`, `edge_type` (`depends_on|belongs_to|affects`).
-- **Effect:** validates §5.8, appends the edge, recomputes stability (§3.5) and Journey states (§4), persists, mirrors frontmatter.
-- **Output:** `{ linked: {source, target, type}, journeys_recomputed: [...], stability_recomputed: [{id, state}] }`.
-- **Errors:** unknown ids; illegal shape; self-link; duplicate edge.
+- **Input:** `source_id`, `target_id`, `edge_type` (`depends_on|belongs_to|affects`), optional `link_dependent` (boolean; only applies to `belongs_to` Workflow → Journey).
+- **Effect:** validates §5.8 and §5.9 (Dependency Closure for `belongs_to`), appends the target id to the source node's outgoing edge array in frontmatter (and any cascaded `belongs_to` edges when `link_dependent` is true), recomputes stability (§3.5) and Journey states (§4), patches affected frontmatter fields.
+- **Output:** `{ linked: {source, target, type}, dependents_linked: [...], journeys_recomputed: [...], stability_recomputed: [{id, state}] }`.
+- **Errors:** unknown ids; illegal shape; self-link; duplicate edge; dependency cycle; Dependency Closure violation (missing workflow dependencies not in Journey).
 
 #### `unlink_nodes`
 
 - **Input:** `source_id`, `target_id`.
-- **Effect:** removes **all** edges between the pair (any type), recomputes stability and Journey states, persists, mirrors frontmatter.
+- **Effect:** removes **all** edges from `source_id` to `target_id` (any type) from the source node's frontmatter, recomputes stability and Journey states, mirrors frontmatter.
 - **Output:** `{ removed: <count>, journeys_recomputed: [...], stability_recomputed: [...] }`.
 - **Errors:** unknown ids; no edge exists between the pair.
 - **Note:** unlinking does not retroactively demote a Workflow already past a gate; guardrails are evaluated at transition time only (§9.2).
@@ -499,8 +578,8 @@ The server exposes exactly six tools over stdio. All inputs are validated with z
 #### `update_node_status`
 
 - **Input:** `node_id`, `new_status` (string; build/Bug state name, or `ship` for Foundation/Workflow production entry).
-- **Effect:** runs the full §5.9 pipeline. On success: writes the new state (and `shipped_at` on `ship`), touches `updated_at`, recomputes stability and Journey states, persists, mirrors frontmatter for the node and every affected node.
-- **Output:** `{ node_id, previous_state, new_state, journeys_recomputed: [...], stability_recomputed: [...] }`.
+- **Effect:** runs the full §5.11 pipeline. On success: writes the new state (and `shipped_at` on `ship`), auto-deprecates predecessor per Rule 9 when shipping a version successor, touches `updated_at`, recomputes stability and Journey states, persists, mirrors frontmatter for the node and every affected node.
+- **Output:** `{ node_id, previous_state, new_state, shipped_at, predecessor_deprecated: { id, previous_state, new_state } | null, journeys_recomputed: [...], stability_recomputed: [...] }`.
 - **Errors:** unknown id; Journey target; invalid state name; illegal transition; Rule 1–4 violations; manual `stable`/`unstable` attempt.
 
 ### 8.3 Attachments
@@ -521,8 +600,8 @@ Guardrails are evaluated at the moment of transition, against the graph and Terr
 
 ### 9.3 Out-of-band edits
 
-- `context.mdx` **body** edits (PRD, checklists) are a first-class part of the workflow — checking off Atomic Ops is done by editing the file.
-- `context.mdx` **frontmatter `state:`** and `mindplan.json` are server-owned. Editing them by hand voids the framework's guarantees. If the Map and frontmatter disagree, the Map wins.
+- `context.mdx` **body** and frontmatter **`title:`** / **`description:`** edits are a first-class part of the workflow.
+- `context.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees.
 
 ### 9.4 Concurrency
 
@@ -530,7 +609,7 @@ The reference implementation assumes a single writer (one MCP server instance pe
 
 ### 9.5 Deprecation and orphans
 
-Transitioning a Workflow to `deprecated` SHOULD be followed by an orphan review: any Foundation whose only consumers are now deprecated is a candidate for deprecation itself. Implementations MAY automate this check; the reference implementation leaves it to the operator (the graph query is trivial via `get_mindplan_graph`).
+Transitioning a Workflow to `deprecated` SHOULD be followed by an orphan review: any Foundation whose only consumers are now deprecated is a candidate for deprecation itself. When deprecation is due to a **replacement** rather than retirement, use `create_node_version` instead — the predecessor auto-deprecates when the successor ships (§3.6), not at version-creation time. Implementations MAY automate orphan checks; the reference implementation leaves it to the operator (the graph query is trivial via `get_mindplan_graph` or `get_blast_radius`).
 
 ---
 
@@ -547,9 +626,10 @@ MindPlan supports one-way mirroring into standard project-management platforms (
 
 On every merge to the main branch (or on a schedule), a CI step runs a lightweight parser that:
 
-1. reads `mindplan.json` for node states and edges;
-2. reads each `context.mdx` frontmatter and checklist to compute completion percentages;
-3. fires idempotent API payloads to the external tracker: create missing tickets (keyed by node `id`), move tickets to the column mapped from the node state, update checklist progress as a comment or custom field.
+1. scans territory frontmatter for node states and outgoing edge arrays;
+2. expands edge arrays into flat edge triples;
+3. reads each `context.mdx` checklist to compute completion percentages;
+4. fires idempotent API payloads to the external tracker: create missing tickets (keyed by node `id`), move tickets to the column mapped from the node state, update checklist progress as a comment or custom field.
 
 Suggested state→column mapping:
 
@@ -569,7 +649,7 @@ Suggested state→column mapping:
 
 ### 10.3 Implementation status
 
-The sync parser is deliberately outside the MCP server (it is a CI concern, not an agent concern) and is **not included** in the reference implementation. The stable interfaces it consumes — §7 (Map schema) and §6.1 (frontmatter + checklist syntax) — are the compatibility contract for building one.
+The sync parser is deliberately outside the MCP server (it is a CI concern, not an agent concern) and is **not included** in the reference implementation. The stable interfaces it consumes — §6.1 (frontmatter + checklist syntax) and §7 (graph assembly) — are the compatibility contract for building one.
 
 ---
 
@@ -577,16 +657,16 @@ The sync parser is deliberately outside the MCP server (it is a CI concern, not 
 
 An implementation is MindPlan-compliant if and only if:
 
-- [ ] All state lives under `mindplan/` per §1.3; no external database.
+- [ ] All state lives under `mindplan/` per §1.1; no external database.
 - [ ] Build taxonomy + defect layer and all three edge types are enforced per §2.
 - [ ] Build pipeline, Bug lifecycle, and computed `stable`/`unstable` are enforced per §3.
 - [ ] Journey states are computed, never settable, per §4; Bugs do not affect Journeys.
-- [ ] Rules 1–7 are enforced pre-write, fail-fast, per §5.
+- [ ] Rules 1–9 are enforced pre-write (and Rule 9 predecessor deprecation on ship), fail-fast, per §5.
 - [ ] Every rejection message starts with `Blocked: ` per §5.1.
-- [ ] `context.mdx` frontmatter is server-mirrored per §6.
+- [ ] `context.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
-- [ ] The Map schema and invariants hold per §7 (including `shipped_at`).
-- [ ] The six-tool MCP surface matches §8 (names, inputs, outputs, errors).
+- [ ] Edges persist in source-node frontmatter and assemble at runtime per §7.
+- [ ] The eight-tool MCP surface matches §8 (names, inputs, outputs, errors).
 - [ ] Mutations are deterministic and atomic per §9.
 
 ---
@@ -595,7 +675,7 @@ An implementation is MindPlan-compliant if and only if:
 
 | Rule | Example message |
 |---|---|
-| Unknown node | `Blocked: node "wf-x" does not exist in mindplan.json.` |
+| Unknown node | `Blocked: node "wf-x" does not exist in mindplan territory.` |
 | Duplicate node | `Blocked: node "wf-checkout" already exists.` |
 | Illegal edge shape | `Blocked: belongs_to edges must go Workflow -> Journey. Got Foundation "f-db" -> Journey "j-ordering".` |
 | Journey dependency | `Blocked: a Journey cannot depend on a Foundation. Journeys are permanent containers with no direct code execution.` |
@@ -605,7 +685,12 @@ An implementation is MindPlan-compliant if and only if:
 | Invalid state name | `Blocked: "active" is not a valid state. Valid build states: draft -> ready -> in-progress -> in-review -> ship -> stable/unstable -> deprecated.` |
 | Illegal transition | `Blocked: illegal transition "in-progress" -> "stable" for node "wf-tips". Allowed from "in-progress": in-review, ready.` |
 | Rule 1 (Ghost Workflow) | `Blocked: Ghost Workflow. "wf-checkout" has no belongs_to edge to a Journey. Link it with link_nodes before moving it to "ready".` |
-| Rule 2 (Infra First) | `Blocked: Infrastructure First. Workflow "wf-checkout" cannot ship while linked Foundations are not stable: "f-db" (in-review).` |
+| Rule 2 (Infra First) | `Blocked: Infrastructure First. Workflow "wf-checkout" cannot ship while linked Foundations or Workflows are not stable: "f-db" (in-review).` |
+| Rule 8 (Dependency Closure) | `Blocked: Dependency Closure. "wf-checkout" depends on workflow(s) not linked to journey "j-ordering": "wf-auth". Link them first, or retry with link_dependent: true.` |
+| Dependency cycle | `Blocked: depends_on edge wf-a -> wf-b would create a dependency cycle.` |
+| Version not shipped | `Blocked: only shipped Foundations/Workflows (stable or unstable) can be superseded. "wf-checkout" is currently "in-progress".` |
+| Already superseded | `Blocked: "wf-checkout" has already been superseded by "wf-checkout-v2". Create a new version from the latest version instead.` |
+| supersedes via link_nodes | `Blocked: supersedes edges are created only via create_node_version, not link_nodes.` |
 | Rule 3 (Completion) | `Blocked: Completion Check. 3 unchecked checkbox(es) remain in wf-checkout/context.mdx. All [ ] items must be [x] before moving to "in-review".` |
 | Rule 4 (Ghost Bug) | `Blocked: Ghost Bug. "bug-race" has no affects edge. Link it to a Workflow or Foundation before moving it to "triaged".` |
 | Stability flip | (informational) `stability_recomputed: [{ "id": "wf-checkout", "state": "unstable" }]` in tool response |

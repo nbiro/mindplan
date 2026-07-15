@@ -11,7 +11,7 @@ description: >-
 
 # Define MindPlan Entities
 
-Use this skill when adding or restructuring nodes in `mindplan/`. All graph mutations go through the **MindPlan MCP server** — never edit `mindplan.json` directly.
+Use this skill when adding or restructuring nodes in `mindplan/`. All graph mutations go through the **MindPlan MCP server** — never edit server-owned frontmatter fields directly.
 
 Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. Normative reference: `SPEC.md`.
 
@@ -67,7 +67,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Workflow | `wf-` | `wf-checkout-split` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Title:** short human-readable name. **Description:** one sentence for the Map entry.
+**Title:** short human-readable name. **Description:** one sentence. Both are written to `context.mdx` frontmatter at creation — edit them there afterward.
 
 ## Step 4 — Create via MCP
 
@@ -77,18 +77,20 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/context.mdx` and `attachments/`. Initial states: `draft` (build entities), `open` (Bug).
+Server scaffolds `mindplan/<type>s/<id>/context.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). Edge arrays are added by `link_nodes` — stored as `belongs_to`, `depends_on`, or `affects` on the source node.
 
 ## Step 5 — Link edges (before advancing state)
 
 | Type | Required links | MCP call |
 |------|----------------|----------|
-| **Workflow** | `belongs_to` → one or more Journeys, `depends_on` → Foundation | `link_nodes` per Journey + per Foundation |
+| **Workflow** | `belongs_to` → one or more Journeys, `depends_on` → Foundation or Workflow | `link_nodes` per Journey + per dependency |
 | **Foundation** | optional `depends_on` → other Foundation | `link_nodes` if layered |
 | **Bug** | `affects` → Workflow or Foundation (before `triaged`) | `link_nodes` |
 | **Journey** | none (Workflows link to it) | — |
 
 Multiple `belongs_to` edges from the same Workflow are allowed — shared features can span Journeys.
+
+When a Workflow `depends_on` another Workflow, every dependency in the transitive chain must also `belongs_to` the same Journey. If not, `link_nodes(belongs_to)` is rejected unless you pass `link_dependent: true`, which auto-links the missing dependency Workflows to that Journey.
 
 ```
 link_nodes({ source_id, target_id, edge_type })
@@ -154,17 +156,36 @@ Confirm edges, folder paths, and territory content before moving to `ready` or b
 
 Ship order: Foundations → `stable` before Workflow `ship`.
 
+## Versioning a shipped node
+
+When a shipped Workflow or Foundation needs a breaking change:
+
+```
+get_blast_radius({ node_id: "wf-checkout-split" })   // find dependents first
+create_node_version({
+  previous_id: "wf-checkout-split",
+  id: "wf-checkout-split-v2",
+  title: "Split & pay checkout v2",
+  description: "Revised checkout with new split rules"
+})
+```
+
+The new node starts in `draft` with inherited outgoing `belongs_to`/`depends_on` and `supersedes` → predecessor. Each direct dependent of the predecessor gains a duplicate `depends_on` edge to the new version (old edge kept). The predecessor stays `stable`/`unstable` until the new version ships. Prefer ids like `<id>-v2`.
+
 ## Common mistakes
 
 | Mistake | Result |
 |---------|--------|
 | Create Workflow with no Journey in graph | **Refuse** — ask user to define the Journey first |
 | Workflow → `ready` without links | `Blocked: Ghost Workflow` |
+| Workflow → Journey with unlinked workflow dependencies | `Blocked: Dependency Closure` — link dependents first or use `link_dependent: true` |
 | Bug → `triaged` without `affects` | `Blocked: Ghost Bug` |
 | Foundation described as a user feature | Scope creep — split into Foundation + Workflow |
 | Business logic in a Foundation node | Wrong taxonomy — move logic to Workflow |
 | Manual Journey / `stable` / `unstable` status | Rejected — computed only |
-| Editing `mindplan.json` by hand | Out of contract — use MCP tools |
+| Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
+| Version an unshipped node | `Blocked` — only `stable`/`unstable` can be superseded |
+| Re-version a node that already has a successor | `Blocked` — version from the latest successor instead |
 
 ## Examples
 

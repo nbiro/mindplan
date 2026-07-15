@@ -11,7 +11,7 @@ import { z } from "zod";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { EDGE_TYPES, NODE_TYPES, initialStateForType, type MindPlanNode } from "./types.js";
+import { NODE_TYPES, initialStateForType, isProductionState, type MindPlanNode } from "./types.js";
 import {
   ensureDirectories,
   initProject,
@@ -20,12 +20,14 @@ import {
   ATTACHMENTS_DIR,
   CONTEXT_FILENAME,
   entityRelativePath,
-  readGraph,
+  loadGraph,
+  nodeExists,
   listAttachments,
   readMarkdown,
   scaffoldEntity,
-  syncMarkdownState,
-  writeGraph,
+  patchFrontmatter,
+  addEdgeToFrontmatter,
+  removeEdgesFromFrontmatter,
 } from "./store.js";
 import {
   blocked,
@@ -34,6 +36,12 @@ import {
   recomputeStability,
   resolveStatusChange,
   validateLink,
+  assertAcyclicDependsOn,
+  missingJourneyDependents,
+  validateNewVersion,
+  findPredecessor,
+  transitiveDependents,
+  dependentsOf,
 } from "./rules.js";
 
 const server = new McpServer({
@@ -63,7 +71,7 @@ function guarded<A>(handler: (args: A) => ToolResult): (args: A) => ToolResult {
 }
 
 function syncNodes(nodes: MindPlanNode[]): void {
-  for (const n of nodes) syncMarkdownState(n);
+  for (const n of nodes) patchFrontmatter(n);
 }
 
 const NODE_ID = z
@@ -75,10 +83,10 @@ server.registerTool(
   {
     title: "Get MindPlan graph",
     description:
-      "Returns the full parsed mindplan.json — every node (Journey, Foundation, Workflow, Bug) and every edge in the DAG.",
+      "Returns the full MindPlan graph — nodes and edges assembled from context.mdx frontmatter.",
     inputSchema: {},
   },
-  guarded(() => ok(readGraph()))
+  guarded(() => ok(loadGraph()))
 );
 
 server.registerTool(
@@ -86,13 +94,13 @@ server.registerTool(
   {
     title: "Get node context",
     description:
-      "Returns the raw context.mdx for a node, plus any files in its attachments/ folder.",
+      "Returns context.mdx (title, description, body), plus attachment paths and filenames.",
     inputSchema: {
       node_id: NODE_ID.describe("The id of the node whose context.mdx to read."),
     },
   },
   guarded(({ node_id }) => {
-    const graph = readGraph();
+    const graph = loadGraph();
     const node = findNode(graph, node_id);
     const rel = entityRelativePath(node);
     return ok({
@@ -100,6 +108,8 @@ server.registerTool(
       context_path: `${rel}/${CONTEXT_FILENAME}`,
       attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
       attachments: listAttachments(node),
+      title: node.title,
+      description: node.description,
       context: readMarkdown(node),
     });
   })
@@ -110,17 +120,16 @@ server.registerTool(
   {
     title: "Create node",
     description:
-      "Creates a Journey, Foundation, Workflow, or Bug: adds it to mindplan.json, scaffolds <type>s/<id>/context.mdx, and creates an attachments/ folder.",
+      "Creates a Journey, Foundation, Workflow, or Bug: scaffolds territory folder + context.mdx frontmatter.",
     inputSchema: {
       id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
       type: z.enum(NODE_TYPES).describe("Journey | Foundation | Workflow | Bug"),
-      title: z.string().min(1).describe("Human-readable title."),
-      description: z.string().describe("Short description of the node's purpose."),
+      title: z.string().min(1).describe("Human-readable title (written to context.mdx frontmatter)."),
+      description: z.string().describe("Short description (written to context.mdx frontmatter)."),
     },
   },
   guarded(({ id, type, title, description }) => {
-    const graph = readGraph();
-    if (graph.nodes.some((n) => n.id === id)) {
+    if (nodeExists(id)) {
       throw blocked(`node "${id}" already exists.`);
     }
     const now = new Date().toISOString();
@@ -133,10 +142,8 @@ server.registerTool(
       created_at: now,
       updated_at: now,
     };
-    graph.nodes.push(node);
     ensureDirectories();
-    scaffoldEntity(node);
-    writeGraph(graph);
+    scaffoldEntity(node, { title, description });
     const rel = entityRelativePath(node);
     return ok({
       created: node,
@@ -152,18 +159,34 @@ server.registerTool(
   {
     title: "Link nodes",
     description:
-      "Adds an edge to the DAG. Legal shapes: Workflow -belongs_to-> Journey (multiple per Workflow allowed), Workflow|Foundation -depends_on-> Foundation, Bug -affects-> Workflow|Foundation.",
+      "Adds an edge to the DAG. Legal shapes: Workflow -belongs_to-> Journey (multiple per Workflow allowed), " +
+      "Workflow -depends_on-> Foundation|Workflow, Foundation -depends_on-> Foundation, Bug -affects-> Workflow|Foundation. " +
+      "When linking a Workflow to a Journey via belongs_to, pass link_dependent: true to auto-link transitively depended-on Workflows to the same Journey (Dependency Closure). " +
+      "Version lineage (supersedes) is managed via create_node_version.",
     inputSchema: {
       source_id: NODE_ID.describe("The id of the edge source node."),
       target_id: NODE_ID.describe("The id of the edge target node."),
-      edge_type: z.enum(EDGE_TYPES).describe("depends_on | belongs_to | affects"),
+      edge_type: z
+        .enum(["depends_on", "belongs_to", "affects"])
+        .describe("depends_on | belongs_to | affects"),
+      link_dependent: z
+        .boolean()
+        .optional()
+        .describe(
+          "When linking a Workflow to a Journey via belongs_to, auto-link any transitively depended-on Workflow to the same Journey instead of rejecting (Dependency Closure)."
+        ),
     },
   },
-  guarded(({ source_id, target_id, edge_type }) => {
-    const graph = readGraph();
+  guarded(({ source_id, target_id, edge_type, link_dependent }) => {
+    const graph = loadGraph();
     const source = findNode(graph, source_id);
     const target = findNode(graph, target_id);
     validateLink(source, target, edge_type);
+
+    if (edge_type === "depends_on") {
+      assertAcyclicDependsOn(graph, source_id, target_id);
+    }
+
     if (
       graph.edges.some(
         (e) => e.source === source_id && e.target === target_id && e.type === edge_type
@@ -171,15 +194,164 @@ server.registerTool(
     ) {
       throw blocked(`edge ${source_id} -${edge_type}-> ${target_id} already exists.`);
     }
+
+    const dependentsLinked: { source: string; target: string; type: "belongs_to" }[] = [];
+
+    if (
+      edge_type === "belongs_to" &&
+      source.type === "Workflow" &&
+      target.type === "Journey"
+    ) {
+      const missing = missingJourneyDependents(graph, source, target_id);
+      if (missing.length > 0) {
+        if (!link_dependent) {
+          const ids = missing.map((n) => `"${n.id}"`).join(", ");
+          throw blocked(
+            `Dependency Closure. "${source_id}" depends on workflow(s) not linked to journey "${target_id}": ${ids}. Link them first, or retry with link_dependent: true.`
+          );
+        }
+        for (const dep of missing) {
+          dependentsLinked.push({ source: dep.id, target: target_id, type: "belongs_to" });
+        }
+      }
+    }
+
     graph.edges.push({ source: source_id, target: target_id, type: edge_type });
+    addEdgeToFrontmatter(source, edge_type, target_id);
+
+    for (const link of dependentsLinked) {
+      graph.edges.push({ source: link.source, target: link.target, type: link.type });
+      addEdgeToFrontmatter(findNode(graph, link.source), link.type, link.target);
+    }
+
     const changedJourneys = recomputeJourneyStates(graph);
     const changedStability = recomputeStability(graph);
-    writeGraph(graph);
     syncNodes([...changedJourneys, ...changedStability]);
     return ok({
       linked: { source: source_id, target: target_id, type: edge_type },
+      dependents_linked: dependentsLinked,
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+    });
+  })
+);
+
+server.registerTool(
+  "create_node_version",
+  {
+    title: "Create node version",
+    description:
+      "Creates a new draft version of a shipped Workflow or Foundation. Links supersedes -> previous, " +
+      "inherits belongs_to and depends_on from the predecessor, and duplicates each direct incoming depends_on " +
+      "edge so dependents also depend on the new version (old edge preserved). Predecessor keeps serving until this version ships.",
+    inputSchema: {
+      previous_id: NODE_ID.describe("Id of the shipped Workflow or Foundation to supersede."),
+      id: NODE_ID.describe("Unique slug id for the new version node."),
+      title: z.string().min(1).describe("Human-readable title for the new version."),
+      description: z.string().describe("Short description for the new version."),
+    },
+  },
+  guarded(({ previous_id, id, title, description }) => {
+    const graph = loadGraph();
+    const previous = findNode(graph, previous_id);
+    if (nodeExists(id)) {
+      throw blocked(`node "${id}" already exists.`);
+    }
+    validateNewVersion(graph, previous);
+
+    const now = new Date().toISOString();
+    const node: MindPlanNode = {
+      id,
+      type: previous.type,
+      title,
+      description,
+      state: "draft",
+      created_at: now,
+      updated_at: now,
+      supersedes: [previous_id],
+    };
+    if (previous.belongs_to?.length) node.belongs_to = [...previous.belongs_to];
+    if (previous.depends_on?.length) node.depends_on = [...previous.depends_on];
+
+    const incomingDependents = dependentsOf(graph, previous_id);
+    for (const dependent of incomingDependents) {
+      assertAcyclicDependsOn(graph, dependent.id, id);
+    }
+
+    ensureDirectories();
+    scaffoldEntity(node, { title, description });
+    addEdgeToFrontmatter(node, "supersedes", previous_id);
+    if (node.belongs_to) {
+      for (const j of node.belongs_to) addEdgeToFrontmatter(node, "belongs_to", j);
+    }
+    if (node.depends_on) {
+      for (const d of node.depends_on) addEdgeToFrontmatter(node, "depends_on", d);
+    }
+
+    const dependentsRelinked: { source: string; target: string; type: "depends_on" }[] = [];
+    for (const dependent of incomingDependents) {
+      const exists = graph.edges.some(
+        (e) =>
+          e.source === dependent.id && e.target === id && e.type === "depends_on"
+      );
+      if (exists) continue;
+      graph.edges.push({ source: dependent.id, target: id, type: "depends_on" });
+      addEdgeToFrontmatter(dependent, "depends_on", id);
+      dependentsRelinked.push({ source: dependent.id, target: id, type: "depends_on" });
+    }
+
+    const rel = entityRelativePath(node);
+    return ok({
+      created: node,
+      predecessor: {
+        id: previous_id,
+        state: previous.state,
+        note: "will auto-deprecate when this version ships",
+      },
+      inherited_edges: {
+        belongs_to: node.belongs_to ?? [],
+        depends_on: node.depends_on ?? [],
+      },
+      dependents_relinked: dependentsRelinked,
+      folder: rel,
+      context: `${rel}/${CONTEXT_FILENAME}`,
+    });
+  })
+);
+
+server.registerTool(
+  "get_blast_radius",
+  {
+    title: "Get blast radius",
+    description:
+      "Returns all nodes that depend on the given node (transitive reverse depends_on closure), " +
+      "with hop distance and journeys_at_risk for affected Workflows.",
+    inputSchema: {
+      node_id: NODE_ID.describe("The id of the node whose dependents to analyze."),
+    },
+  },
+  guarded(({ node_id }) => {
+    const graph = loadGraph();
+    findNode(graph, node_id);
+    const entries = transitiveDependents(graph, node_id);
+    const journeysAtRisk = new Set<string>();
+    for (const { node } of entries) {
+      if (node.type !== "Workflow") continue;
+      for (const edge of graph.edges) {
+        if (edge.source === node.id && edge.type === "belongs_to") {
+          journeysAtRisk.add(edge.target);
+        }
+      }
+    }
+    return ok({
+      node_id,
+      affected: entries.map(({ node, distance }) => ({
+        id: node.id,
+        type: node.type,
+        state: node.state,
+        distance,
+      })),
+      journeys_at_risk: [...journeysAtRisk].sort(),
     });
   })
 );
@@ -188,14 +360,14 @@ server.registerTool(
   "unlink_nodes",
   {
     title: "Unlink nodes",
-    description: "Removes edge(s) between two nodes from the edges array.",
+    description: "Removes edge(s) between two nodes from the source node's frontmatter.",
     inputSchema: {
       source_id: NODE_ID.describe("The id of the edge source node."),
       target_id: NODE_ID.describe("The id of the edge target node."),
     },
   },
   guarded(({ source_id, target_id }) => {
-    const graph = readGraph();
+    const graph = loadGraph();
     findNode(graph, source_id);
     findNode(graph, target_id);
     const before = graph.edges.length;
@@ -206,9 +378,9 @@ server.registerTool(
     if (removed === 0) {
       throw blocked(`no edge exists between "${source_id}" and "${target_id}".`);
     }
+    removeEdgesFromFrontmatter(findNode(graph, source_id), target_id);
     const changedJourneys = recomputeJourneyStates(graph);
     const changedStability = recomputeStability(graph);
-    writeGraph(graph);
     syncNodes([...changedJourneys, ...changedStability]);
     return ok({
       removed,
@@ -238,7 +410,7 @@ server.registerTool(
     },
   },
   guarded(({ node_id, new_status }) => {
-    const graph = readGraph();
+    const graph = loadGraph();
     const node = findNode(graph, node_id);
 
     const resolved = resolveStatusChange(graph, node, new_status);
@@ -251,10 +423,32 @@ server.registerTool(
     node.state = resolved.state;
     node.updated_at = now;
 
+    let predecessorDeprecated: {
+      id: string;
+      previous_state: string;
+      new_state: "deprecated";
+    } | null = null;
+
+    const nodesToSync: MindPlanNode[] = [node];
+
+    if (resolved.ship) {
+      const predecessor = findPredecessor(graph, node_id);
+      if (predecessor && isProductionState(predecessor.state)) {
+        const predPrevious = predecessor.state;
+        predecessor.state = "deprecated";
+        predecessor.updated_at = now;
+        predecessorDeprecated = {
+          id: predecessor.id,
+          previous_state: predPrevious,
+          new_state: "deprecated",
+        };
+        nodesToSync.push(predecessor);
+      }
+    }
+
     const changedStability = recomputeStability(graph);
     const changedJourneys = recomputeJourneyStates(graph);
-    writeGraph(graph);
-    syncMarkdownState(node);
+    for (const n of nodesToSync) patchFrontmatter(n);
     syncNodes([...changedStability, ...changedJourneys]);
 
     return ok({
@@ -262,6 +456,7 @@ server.registerTool(
       previous_state: previous,
       new_state: node.state,
       shipped_at: node.shipped_at,
+      predecessor_deprecated: predecessorDeprecated,
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     });

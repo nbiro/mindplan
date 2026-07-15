@@ -46,6 +46,14 @@ const wfFolder = path.join(root, "mindplan", "workflows", "wf-checkout");
 if (!fs.existsSync(path.join(wfFolder, "context.mdx"))) {
   failures++; console.log("FAIL entity folder scaffold");
 } else console.log("ok   entity folder scaffold");
+if (fs.existsSync(path.join(root, "mindplan", "mindplan.json"))) {
+  failures++; console.log("FAIL mindplan.json must not exist");
+} else console.log("ok   no mindplan.json");
+const graphFromFm = JSON.parse(await expectOk("read graph from frontmatter", "get_mindplan_graph", {}));
+const wfFromFm = graphFromFm.nodes.find((n) => n.id === "wf-checkout");
+if (wfFromFm?.title !== "Checkout" || wfFromFm?.description !== "Split & pay") {
+  failures++; console.log(`FAIL node title/description from frontmatter: ${JSON.stringify(wfFromFm)}`);
+} else console.log("ok   nodes discovered from frontmatter");
 await expectBlocked("duplicate id", "create_node", { id: "wf-checkout", type: "Workflow", title: "x", description: "y" });
 
 // --- ghost workflow rule ---
@@ -53,6 +61,10 @@ await expectBlocked("ghost workflow (no links)", "update_node_status", { node_id
 await expectOk("link belongs_to", "link_nodes", { source_id: "wf-checkout", target_id: "j-ordering", edge_type: "belongs_to" });
 await expectBlocked("ghost workflow (no foundation)", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
 await expectOk("link depends_on", "link_nodes", { source_id: "wf-checkout", target_id: "f-db", edge_type: "depends_on" });
+const wfCtx = fs.readFileSync(path.join(wfFolder, "context.mdx"), "utf-8");
+if (!wfCtx.includes("belongs_to:") || !wfCtx.includes("j-ordering") || !wfCtx.includes("depends_on:") || !wfCtx.includes("f-db")) {
+  failures++; console.log("FAIL edges not persisted in wf-checkout frontmatter");
+} else console.log("ok   edges in frontmatter");
 await expectOk("workflow -> ready", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
 
 // --- taxonomy rules ---
@@ -147,6 +159,151 @@ await expectBlocked("bug affects journey", "link_nodes", { source_id: "bug-race"
 const ctx = JSON.parse(await expectOk("get_node_context bug", "get_node_context", { node_id: "bug-race" }));
 if (ctx.context_path !== "mindplan/bugs/bug-race/context.mdx") { failures++; console.log("FAIL bug context path"); }
 else console.log("ok   bug get_node_context");
+if (ctx.title !== "Race condition" || ctx.description !== "Double charge") {
+  failures++; console.log(`FAIL bug title/description from context: ${JSON.stringify({ title: ctx.title, description: ctx.description })}`);
+} else console.log("ok   bug title/description from frontmatter");
+
+// --- workflow dependency closure ---
+await expectOk("create wf-auth", "create_node", { id: "wf-auth", type: "Workflow", title: "Authentication", description: "Login flow" });
+await expectOk("create wf-pay", "create_node", { id: "wf-pay", type: "Workflow", title: "Payment", description: "Process payment" });
+await expectOk("link wf-pay depends_on wf-auth", "link_nodes", { source_id: "wf-pay", target_id: "wf-auth", edge_type: "depends_on" });
+await expectOk("link wf-pay depends_on f-db", "link_nodes", { source_id: "wf-pay", target_id: "f-db", edge_type: "depends_on" });
+await expectOk("link wf-auth depends_on f-db", "link_nodes", { source_id: "wf-auth", target_id: "f-db", edge_type: "depends_on" });
+await expectBlocked("dependency closure (auth not in journey)", "link_nodes", { source_id: "wf-pay", target_id: "j-ordering", edge_type: "belongs_to" });
+const cascade = JSON.parse(await expectOk("link wf-pay with link_dependent", "link_nodes", {
+  source_id: "wf-pay", target_id: "j-ordering", edge_type: "belongs_to", link_dependent: true,
+}));
+if (!cascade.dependents_linked?.some((l) => l.source === "wf-auth" && l.target === "j-ordering")) {
+  failures++; console.log(`FAIL dependents_linked missing wf-auth: ${JSON.stringify(cascade.dependents_linked)}`);
+} else console.log("ok   link_dependent cascaded wf-auth to journey");
+
+graph = JSON.parse(await expectOk("read graph after link_dependent", "get_mindplan_graph", {}));
+const wfAuth = graph.nodes.find((n) => n.id === "wf-auth");
+if (!graph.edges.some((e) => e.source === "wf-auth" && e.target === "j-ordering" && e.type === "belongs_to")) {
+  failures++; console.log("FAIL wf-auth missing belongs_to j-ordering after cascade");
+} else console.log("ok   wf-auth belongs_to j-ordering in graph");
+
+await expectBlocked("depends_on cycle", "link_nodes", { source_id: "wf-auth", target_id: "wf-pay", edge_type: "depends_on" });
+
+await expectOk("wf-auth -> ready", "update_node_status", { node_id: "wf-auth", new_status: "ready" });
+await expectOk("wf-pay -> ready", "update_node_status", { node_id: "wf-pay", new_status: "ready" });
+await expectOk("wf-auth -> in-progress", "update_node_status", { node_id: "wf-auth", new_status: "in-progress" });
+await expectOk("wf-pay -> in-progress", "update_node_status", { node_id: "wf-pay", new_status: "in-progress" });
+
+const wfAuthPath = path.join(root, "mindplan", "workflows", "wf-auth", "context.mdx");
+const wfPayPath = path.join(root, "mindplan", "workflows", "wf-pay", "context.mdx");
+fs.writeFileSync(wfAuthPath, fs.readFileSync(wfAuthPath, "utf-8").replaceAll("[ ]", "[x]"));
+fs.writeFileSync(wfPayPath, fs.readFileSync(wfPayPath, "utf-8").replaceAll("[ ]", "[x]"));
+await expectOk("wf-auth -> in-review", "update_node_status", { node_id: "wf-auth", new_status: "in-review" });
+await expectOk("wf-pay -> in-review", "update_node_status", { node_id: "wf-pay", new_status: "in-review" });
+
+await expectBlocked("infrastructure first (wf-auth not shipped)", "update_node_status", { node_id: "wf-pay", new_status: "ship" });
+await expectOk("wf-auth -> ship", "update_node_status", { node_id: "wf-auth", new_status: "ship" });
+await expectOk("wf-pay -> ship", "update_node_status", { node_id: "wf-pay", new_status: "ship" });
+
+graph = JSON.parse(await expectOk("read graph after wf-pay ship", "get_mindplan_graph", {}));
+const wfPayShipped = graph.nodes.find((n) => n.id === "wf-pay");
+if (wfPayShipped.state !== "stable") { failures++; console.log(`FAIL wf-pay state after ship: ${wfPayShipped.state}`); }
+else console.log("ok   wf-pay shipped after wf-auth stable");
+
+// --- versioning and blast radius ---
+await expectBlocked("version draft predecessor", "create_node_version", {
+  previous_id: "wf-tips", id: "wf-tips-v2", title: "Tips v2", description: "v2",
+});
+
+await expectOk("link wf-tips depends_on wf-checkout", "link_nodes", {
+  source_id: "wf-tips", target_id: "wf-checkout", edge_type: "depends_on",
+});
+
+const versionRes = JSON.parse(await expectOk("create wf-checkout-v2", "create_node_version", {
+  previous_id: "wf-checkout", id: "wf-checkout-v2", title: "Checkout v2", description: "Revised checkout",
+}));
+
+if (!versionRes.dependents_relinked?.some((l) => l.source === "wf-tips" && l.target === "wf-checkout-v2")) {
+  failures++; console.log(`FAIL dependents_relinked missing wf-tips: ${JSON.stringify(versionRes.dependents_relinked)}`);
+} else console.log("ok   dependents_relinked includes wf-tips");
+
+graph = JSON.parse(await expectOk("read graph after create_node_version", "get_mindplan_graph", {}));
+const tipsDependsCheckout = graph.edges.filter(
+  (e) => e.source === "wf-tips" && e.type === "depends_on" && (e.target === "wf-checkout" || e.target === "wf-checkout-v2")
+);
+if (tipsDependsCheckout.length !== 2) {
+  failures++; console.log(`FAIL wf-tips should depend on both checkout versions: ${JSON.stringify(tipsDependsCheckout)}`);
+} else console.log("ok   wf-tips duplicated depends_on to new version");
+const wfCheckoutOrig = graph.nodes.find((n) => n.id === "wf-checkout");
+const wfCheckoutV2 = graph.nodes.find((n) => n.id === "wf-checkout-v2");
+if (wfCheckoutOrig.state !== "stable") {
+  failures++; console.log(`FAIL predecessor should stay stable after version create: ${wfCheckoutOrig.state}`);
+} else console.log("ok   predecessor stays stable after create_node_version");
+
+if (wfCheckoutV2.state !== "draft") {
+  failures++; console.log(`FAIL new version should be draft: ${wfCheckoutV2.state}`);
+} else console.log("ok   new version created as draft");
+
+const v2Path = path.join(root, "mindplan", "workflows", "wf-checkout-v2", "context.mdx");
+const v2Ctx = fs.readFileSync(v2Path, "utf-8");
+if (!v2Ctx.includes("supersedes:") || !v2Ctx.includes("wf-checkout") || !v2Ctx.includes("belongs_to:") || !v2Ctx.includes("depends_on:")) {
+  failures++; console.log("FAIL v2 missing supersedes or inherited edges in frontmatter");
+} else console.log("ok   v2 inherits edges and supersedes");
+
+await expectBlocked("re-version predecessor with successor", "create_node_version", {
+  previous_id: "wf-checkout", id: "wf-checkout-v3", title: "Checkout v3", description: "v3",
+});
+
+{
+  const { error, text } = await call("link_nodes", {
+    source_id: "wf-checkout-v2", target_id: "wf-checkout", edge_type: "supersedes",
+  });
+  if (error && (text.startsWith("Blocked:") || text.includes("Invalid option"))) {
+    console.log(`ok   supersedes not allowed via link_nodes -> ${text.slice(0, 80)}...`);
+  } else {
+    failures++; console.log(`FAIL supersedes via link_nodes: error=${error} text=${text}`);
+  }
+}
+
+await expectOk("create wf-a", "create_node", { id: "wf-a", type: "Workflow", title: "A", description: "base" });
+await expectOk("create wf-b", "create_node", { id: "wf-b", type: "Workflow", title: "B", description: "mid" });
+await expectOk("create wf-c", "create_node", { id: "wf-c", type: "Workflow", title: "C", description: "top" });
+await expectOk("link wf-a journey", "link_nodes", { source_id: "wf-a", target_id: "j-ordering", edge_type: "belongs_to" });
+await expectOk("link wf-a f-db", "link_nodes", { source_id: "wf-a", target_id: "f-db", edge_type: "depends_on" });
+await expectOk("link wf-b depends_on wf-a", "link_nodes", { source_id: "wf-b", target_id: "wf-a", edge_type: "depends_on" });
+await expectOk("link wf-b f-db", "link_nodes", { source_id: "wf-b", target_id: "f-db", edge_type: "depends_on" });
+await expectOk("link wf-b journey", "link_nodes", { source_id: "wf-b", target_id: "j-ordering", edge_type: "belongs_to", link_dependent: true });
+await expectOk("link wf-c depends_on wf-b", "link_nodes", { source_id: "wf-c", target_id: "wf-b", edge_type: "depends_on" });
+await expectOk("link wf-c f-db", "link_nodes", { source_id: "wf-c", target_id: "f-db", edge_type: "depends_on" });
+await expectOk("link wf-c journey", "link_nodes", { source_id: "wf-c", target_id: "j-ordering", edge_type: "belongs_to", link_dependent: true });
+
+const radius = JSON.parse(await expectOk("get_blast_radius wf-a", "get_blast_radius", { node_id: "wf-a" }));
+const wfB = radius.affected?.find((a) => a.id === "wf-b");
+const wfC = radius.affected?.find((a) => a.id === "wf-c");
+if (!wfB || wfB.distance !== 1 || !wfC || wfC.distance !== 2) {
+  failures++; console.log(`FAIL blast radius distances: ${JSON.stringify(radius.affected)}`);
+} else console.log("ok   get_blast_radius transitive distances");
+if (!radius.journeys_at_risk?.includes("j-ordering")) {
+  failures++; console.log(`FAIL journeys_at_risk: ${JSON.stringify(radius.journeys_at_risk)}`);
+} else console.log("ok   get_blast_radius journeys_at_risk");
+
+await expectOk("wf-checkout-v2 -> ready", "update_node_status", { node_id: "wf-checkout-v2", new_status: "ready" });
+await expectOk("wf-checkout-v2 -> in-progress", "update_node_status", { node_id: "wf-checkout-v2", new_status: "in-progress" });
+fs.writeFileSync(v2Path, fs.readFileSync(v2Path, "utf-8").replaceAll("[ ]", "[x]"));
+await expectOk("wf-checkout-v2 -> in-review", "update_node_status", { node_id: "wf-checkout-v2", new_status: "in-review" });
+
+graph = JSON.parse(await expectOk("read graph before v2 ship", "get_mindplan_graph", {}));
+const predBeforeShip = graph.nodes.find((n) => n.id === "wf-checkout");
+if (predBeforeShip.state !== "stable") {
+  failures++; console.log(`FAIL predecessor before v2 ship: ${predBeforeShip.state}`);
+} else console.log("ok   predecessor still stable before v2 ship");
+
+const shipV2 = JSON.parse(await expectOk("wf-checkout-v2 -> ship", "update_node_status", { node_id: "wf-checkout-v2", new_status: "ship" }));
+if (!shipV2.predecessor_deprecated || shipV2.predecessor_deprecated.id !== "wf-checkout") {
+  failures++; console.log(`FAIL predecessor_deprecated missing: ${JSON.stringify(shipV2.predecessor_deprecated)}`);
+} else console.log("ok   predecessor deprecated on v2 ship");
+
+graph = JSON.parse(await expectOk("read graph after v2 ship", "get_mindplan_graph", {}));
+const predAfterShip = graph.nodes.find((n) => n.id === "wf-checkout");
+if (predAfterShip.state !== "deprecated") {
+  failures++; console.log(`FAIL predecessor after v2 ship: ${predAfterShip.state}`);
+} else console.log("ok   predecessor deprecated after v2 ship");
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();

@@ -71,7 +71,6 @@ npm install && npm run build
 ```
 <project-root>/
 └── mindplan/
-    ├── mindplan.json              # The Map — a DAG of nodes and edges
     ├── components/                # Project-specific MDX components (optional)
     ├── journeys/<id>/
     │   ├── context.mdx
@@ -87,7 +86,7 @@ npm install && npm run build
         └── attachments/           # Logs, screenshots
 ```
 
-Context files are MDX. See SPEC.md §6.4 for the component contract.
+Context files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. See SPEC.md §6.1 and §7.
 
 ## Taxonomy
 
@@ -108,21 +107,25 @@ Every violation throws an error starting with `Blocked: `.
 
 1. **No Ghost Workflows** — Workflow cannot reach `ready`/`in-progress` without at least one `belongs_to` + at least one `depends_on`.
 2. **No Ghost Bugs** — Bug cannot reach `triaged`/`fixing` without at least one `affects` edge.
-3. **Infrastructure First** — Workflow cannot `ship` unless all linked Foundations are `stable`.
+3. **Infrastructure First** — Workflow cannot `ship` unless all linked Foundations and Workflows are `stable`.
 4. **Completion Check** — unchecked `[ ]` in `context.mdx` block `in-review`, `ship`, and Bug `in-review`/`resolved`.
 5. **Computed Journey States** — from shipped + in-progress Workflows only; Bugs do not affect Journeys.
 6. **Computed Stability** — shipped nodes flip `stable` ↔ `unstable` when open Bugs are linked, unlinked, or resolved.
+7. **Dependency Closure** — linking a Workflow to a Journey is rejected when transitively depended-on Workflows are not already in that Journey; pass `link_dependent: true` to auto-link them.
+8. **Version Lineage** — only shipped nodes can be versioned; predecessor auto-deprecates when the new version ships.
 
 ## MCP Tools
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `get_mindplan_graph` | read | Full parsed `mindplan.json` |
-| `get_node_context` | read | Returns `context.mdx`, attachment paths, and filenames |
+| `get_mindplan_graph` | read | Nodes and edges assembled from territory frontmatter |
+| `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on) and journeys_at_risk |
+| `get_node_context` | read | Returns `title`, `description`, `context.mdx`, attachment paths, and filenames |
 | `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `context.mdx` |
-| `link_nodes` | mutation | `belongs_to`, `depends_on`, or `affects`; recomputes Journey + stability |
-| `unlink_nodes` | mutation | Removes edge(s); recomputes Journey + stability |
-| `update_node_status` | mutation | Transitions + `ship`; recomputes stability and Journey states |
+| `create_node_version` | mutation | New draft version of a shipped Workflow/Foundation; inherits outgoing edges; duplicates incoming depends_on onto dependents; predecessor stays live until successor ships |
+| `link_nodes` | mutation | `belongs_to`, `depends_on` (Foundation or Workflow), or `affects`; optional `link_dependent` for journey closure; writes to source-node frontmatter; recomputes Journey + stability |
+| `unlink_nodes` | mutation | Removes edge(s) from source-node frontmatter; recomputes Journey + stability |
+| `update_node_status` | mutation | Transitions + `ship`; auto-deprecates predecessor on version ship; recomputes stability and Journey states |
 
 ## CLI
 

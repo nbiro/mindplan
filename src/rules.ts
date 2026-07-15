@@ -34,7 +34,7 @@ export function blocked(message: string): Error {
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {
   const node = graph.nodes.find((n) => n.id === id);
   if (!node) {
-    throw blocked(`node "${id}" does not exist in mindplan.json.`);
+    throw blocked(`node "${id}" does not exist in mindplan territory.`);
   }
   return node;
 }
@@ -65,6 +65,14 @@ export function openBugsAffecting(graph: MindPlanGraph, targetId: string): MindP
     .filter((n) => n.type === "Bug" && isOpenBugState(n.state));
 }
 
+/** Nodes with a direct depends_on edge pointing at targetId. */
+export function dependentsOf(graph: MindPlanGraph, targetId: string): MindPlanNode[] {
+  return graph.edges
+    .filter((e) => e.type === "depends_on" && e.target === targetId)
+    .map((e) => findNode(graph, e.source))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export function computeProductionState(
   graph: MindPlanGraph,
   nodeId: string
@@ -84,12 +92,16 @@ function runCompletionCheck(node: MindPlanNode, targetLabel: string): void {
 /**
  * Taxonomy rules for link_nodes:
  *   Workflow --belongs_to--> Journey
- *   Workflow|Foundation --depends_on--> Foundation
+ *   Workflow --depends_on--> Foundation|Workflow
+ *   Foundation --depends_on--> Foundation
  *   Bug --affects--> Workflow|Foundation
  */
 export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeType: EdgeType): void {
   if (source.id === target.id) {
     throw blocked(`cannot link node "${source.id}" to itself.`);
+  }
+  if (edgeType === "supersedes") {
+    throw blocked(`supersedes edges are created only via create_node_version, not link_nodes.`);
   }
   if (edgeType === "affects") {
     if (source.type !== "Bug") {
@@ -113,9 +125,19 @@ export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeTyp
     return;
   }
   // depends_on
-  if (target.type !== "Foundation") {
+  if (target.type === "Journey") {
     throw blocked(
-      `depends_on edges must target a Foundation. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
+      `depends_on edges must target a Foundation or Workflow. Got ${source.type} "${source.id}" -> Journey "${target.id}".`
+    );
+  }
+  if (target.type === "Workflow" && source.type !== "Workflow") {
+    throw blocked(
+      `depends_on edges to a Workflow must originate from a Workflow. Got ${source.type} "${source.id}" -> Workflow "${target.id}".`
+    );
+  }
+  if (target.type === "Foundation" && source.type !== "Workflow" && source.type !== "Foundation") {
+    throw blocked(
+      `depends_on edges to a Foundation must originate from a Workflow or Foundation. Got ${source.type} "${source.id}" -> Foundation "${target.id}".`
     );
   }
   if (source.type === "Journey" || source.type === "Bug") {
@@ -123,6 +145,152 @@ export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeTyp
       `a ${source.type} cannot depend on a Foundation. Only Workflows and Foundations may use depends_on.`
     );
   }
+}
+
+/** Returns true if targetId is reachable from startId via existing depends_on edges. */
+function hasDependsOnPath(graph: MindPlanGraph, startId: string, targetId: string): boolean {
+  const visited = new Set<string>();
+  const stack = [startId];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current === targetId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const edge of graph.edges) {
+      if (edge.source === current && edge.type === "depends_on") {
+        stack.push(edge.target);
+      }
+    }
+  }
+  return false;
+}
+
+/** Rejects depends_on edges that would create a cycle in the dependency graph. */
+export function assertAcyclicDependsOn(
+  graph: MindPlanGraph,
+  sourceId: string,
+  targetId: string
+): void {
+  if (hasDependsOnPath(graph, targetId, sourceId)) {
+    throw blocked(
+      `depends_on edge ${sourceId} -> ${targetId} would create a dependency cycle.`
+    );
+  }
+}
+
+/** Transitive closure of Workflow targets reachable via depends_on from workflowId. */
+export function transitiveWorkflowDependencies(
+  graph: MindPlanGraph,
+  workflowId: string
+): MindPlanNode[] {
+  const result: MindPlanNode[] = [];
+  const seen = new Set<string>();
+  const stack = [workflowId];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    for (const edge of graph.edges) {
+      if (edge.source !== current || edge.type !== "depends_on") continue;
+      const target = findNode(graph, edge.target);
+      if (target.type !== "Workflow") continue;
+      if (seen.has(target.id)) continue;
+      seen.add(target.id);
+      result.push(target);
+      stack.push(target.id);
+    }
+  }
+
+  return result.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Dependency workflows missing a belongs_to edge to the given Journey. */
+export function missingJourneyDependents(
+  graph: MindPlanGraph,
+  workflow: MindPlanNode,
+  journeyId: string
+): MindPlanNode[] {
+  const deps = transitiveWorkflowDependencies(graph, workflow.id);
+  return deps.filter(
+    (dep) =>
+      !graph.edges.some(
+        (e) => e.type === "belongs_to" && e.source === dep.id && e.target === journeyId
+      )
+  );
+}
+
+/** Node with a supersedes edge pointing at nodeId (the successor version). */
+export function findSuccessor(graph: MindPlanGraph, nodeId: string): MindPlanNode | undefined {
+  const edge = graph.edges.find((e) => e.type === "supersedes" && e.target === nodeId);
+  return edge ? findNode(graph, edge.source) : undefined;
+}
+
+/** Predecessor targeted by nodeId's supersedes edge. */
+export function findPredecessor(graph: MindPlanGraph, nodeId: string): MindPlanNode | undefined {
+  const edge = graph.edges.find((e) => e.type === "supersedes" && e.source === nodeId);
+  return edge ? findNode(graph, edge.target) : undefined;
+}
+
+/** Validates create_node_version preconditions (Rule 9). */
+export function validateNewVersion(graph: MindPlanGraph, previous: MindPlanNode): void {
+  if (previous.type !== "Workflow" && previous.type !== "Foundation") {
+    throw blocked(
+      `only Foundations and Workflows can be versioned. Got ${previous.type} "${previous.id}".`
+    );
+  }
+  if (previous.state !== "stable" && previous.state !== "unstable") {
+    throw blocked(
+      `only shipped Foundations/Workflows (stable or unstable) can be superseded. "${previous.id}" is currently "${previous.state}".`
+    );
+  }
+  const successor = findSuccessor(graph, previous.id);
+  if (successor) {
+    throw blocked(
+      `"${previous.id}" has already been superseded by "${successor.id}". Create a new version from the latest version instead.`
+    );
+  }
+}
+
+/** Version number by walking supersedes chain backward (1 = no predecessor). */
+export function computeVersionNumber(graph: MindPlanGraph, nodeId: string): number {
+  let count = 1;
+  let current = nodeId;
+  for (;;) {
+    const pred = findPredecessor(graph, current);
+    if (!pred) break;
+    count++;
+    current = pred.id;
+  }
+  return count;
+}
+
+export type DependentEntry = { node: MindPlanNode; distance: number };
+
+/** Transitive dependents via reverse depends_on (BFS). */
+export function transitiveDependents(
+  graph: MindPlanGraph,
+  nodeId: string
+): DependentEntry[] {
+  const result: DependentEntry[] = [];
+  const seen = new Set<string>();
+  const queue: { id: string; distance: number }[] = [{ id: nodeId, distance: 0 }];
+
+  while (queue.length > 0) {
+    const { id: current, distance } = queue.shift()!;
+    for (const edge of graph.edges) {
+      if (edge.target !== current || edge.type !== "depends_on") continue;
+      const sourceId = edge.source;
+      if (seen.has(sourceId)) continue;
+      seen.add(sourceId);
+      const node = findNode(graph, sourceId);
+      const d = distance + 1;
+      result.push({ node, distance: d });
+      queue.push({ id: sourceId, distance: d });
+    }
+  }
+
+  return result.sort(
+    (a, b) => a.distance - b.distance || a.node.id.localeCompare(b.node.id)
+  );
 }
 
 export type StatusChangeResult = {
@@ -146,11 +314,14 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const notStable = foundations.filter((f) => f.state !== "stable");
+    const workflows = edgesFrom(graph, node.id, "depends_on").filter(
+      (n) => n.type === "Workflow"
+    );
+    const notStable = [...foundations, ...workflows].filter((n) => n.state !== "stable");
     if (notStable.length > 0) {
-      const list = notStable.map((f) => `"${f.id}" (${f.state})`).join(", ");
+      const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Workflow "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+        `Infrastructure First. Workflow "${node.id}" cannot ship while linked Foundations or Workflows are not stable: ${list}.`
       );
     }
   }

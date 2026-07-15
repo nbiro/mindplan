@@ -110,6 +110,35 @@ One Workflow, two `belongs_to` edges — both Journeys recompute state from this
 
 ---
 
+## Workflow dependency and journey closure
+
+**Goal:** Checkout depends on an Auth workflow; both must belong to the Ordering Journey.
+
+```
+create_node({ id: "wf-auth", type: "Workflow", title: "Authentication", description: "Login and session" })
+create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
+link_nodes({ source_id: "wf-checkout-split", target_id: "wf-auth", edge_type: "depends_on" })
+link_nodes({ source_id: "wf-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
+```
+
+Linking checkout to the Journey without auth present is rejected:
+
+```
+link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
+→ Blocked: Dependency Closure. "wf-checkout-split" depends on workflow(s) not linked to journey "j-ordering": "wf-auth". Link them first, or retry with link_dependent: true.
+```
+
+Retry with cascade:
+
+```
+link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to", link_dependent: true })
+→ ok; dependents_linked includes wf-auth -> j-ordering
+```
+
+Both Workflows must ship in dependency order: `wf-auth` must reach `stable` before `wf-checkout-split` can `ship`.
+
+---
+
 ## Bug on shipped Workflow
 
 **Goal:** Report a race condition affecting checkout.
@@ -153,3 +182,27 @@ update_node_status({ node_id: "bug-double-charge", new_status: "triaged" })
 ```
 
 `wf-checkout-split` flips to `unstable` when the `affects` link is created (if already shipped).
+
+---
+
+## Versioning a shipped Workflow
+
+**Goal:** Replace shipped checkout with a v2 while the v1 keeps serving until cutover.
+
+```
+get_blast_radius({ node_id: "wf-checkout-split" })
+→ { affected: [{ id: "wf-tips", type: "Workflow", distance: 1, ... }], journeys_at_risk: ["j-ordering"] }
+
+create_node_version({
+  previous_id: "wf-checkout-split",
+  id: "wf-checkout-split-v2",
+  title: "Split & pay checkout v2",
+  description: "Revised split calculation"
+})
+→ predecessor stays stable; new node draft with inherited outgoing edges
+→ dependents of wf-checkout-split gain depends_on → wf-checkout-split-v2 (old edge kept)
+
+// After implementation and checklist complete:
+update_node_status({ node_id: "wf-checkout-split-v2", new_status: "ship" })
+→ predecessor auto-deprecates; response includes predecessor_deprecated
+```

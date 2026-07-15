@@ -2,7 +2,6 @@
  * File system persistence for MindPlan.
  *
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
- *   /mindplan/mindplan.json
  *   /mindplan/components/              — project-specific MDX components (opaque to the compiler)
  *   /mindplan/journeys/<id>/context.mdx
  *   /mindplan/journeys/<id>/attachments/...
@@ -12,11 +11,14 @@
  *   /mindplan/workflows/<id>/attachments/...
  *   /mindplan/bugs/<id>/context.mdx
  *   /mindplan/bugs/<id>/attachments/...
+ *
+ * Node records and outgoing edge arrays live in context.mdx YAML frontmatter.
  */
 
 import * as fs from "fs";
 import * as path from "path";
-import type { MindPlanGraph, MindPlanNode, NodeType } from "./types.js";
+import type { BugSeverity, EdgeType, MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "./types.js";
+import { BUG_SEVERITIES, GRAPH_VERSION, NODE_TYPES } from "./types.js";
 
 const TYPE_DIRS: Record<NodeType, string> = {
   Journey: "journeys",
@@ -25,6 +27,16 @@ const TYPE_DIRS: Record<NodeType, string> = {
   Bug: "bugs",
 };
 
+const DIR_TO_TYPE: Record<string, NodeType> = {
+  journeys: "Journey",
+  foundations: "Foundation",
+  workflows: "Workflow",
+  bugs: "Bug",
+};
+
+const EDGE_FIELDS = ["belongs_to", "depends_on", "affects", "supersedes"] as const;
+type EdgeField = (typeof EDGE_FIELDS)[number];
+
 export const MINDPLAN_DIR = "mindplan";
 export const CONTEXT_FILENAME = "context.mdx";
 export const ATTACHMENTS_DIR = "attachments";
@@ -32,10 +44,6 @@ export const COMPONENTS_DIR = "components";
 
 export function mindplanRoot(): string {
   return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR);
-}
-
-function graphPath(): string {
-  return path.join(mindplanRoot(), "mindplan.json");
 }
 
 export function typeDir(type: NodeType): string {
@@ -141,14 +149,9 @@ export function installDefineEntitiesSkill(packageRoot: string): InstallSkillRes
 /** Scaffolds an empty mindplan/ tree in the consumer project (idempotent). */
 export function initProject(): InitResult {
   const root = mindplanRoot();
-  const graphFile = graphPath();
-  const exists = fs.existsSync(graphFile);
-  if (!exists) {
-    writeGraph({ version: 1, nodes: [], edges: [] });
-  } else {
-    ensureDirectories();
-  }
-  return { root, created: !exists };
+  const existed = fs.existsSync(root);
+  ensureDirectories();
+  return { root, created: !existed };
 }
 
 /** Creates /mindplan, top-level type directories, and components/ if missing. */
@@ -171,18 +174,229 @@ function ensureEntityDir(node: Pick<MindPlanNode, "id" | "type">): void {
   fs.mkdirSync(attachmentsDir(node), { recursive: true });
 }
 
-export function readGraph(): MindPlanGraph {
-  const file = graphPath();
-  if (!fs.existsSync(file)) {
-    return { version: 1, nodes: [], edges: [] };
-  }
-  const raw = fs.readFileSync(file, "utf-8");
-  return JSON.parse(raw) as MindPlanGraph;
+export type ParsedFrontmatter = {
+  scalars: Record<string, string>;
+  arrays: Record<EdgeField, string[]>;
+};
+
+function isEdgeField(key: string): key is EdgeField {
+  return (EDGE_FIELDS as readonly string[]).includes(key);
 }
 
-export function writeGraph(graph: MindPlanGraph): void {
-  ensureDirectories();
-  fs.writeFileSync(graphPath(), JSON.stringify(graph, null, 2) + "\n", "utf-8");
+/** Parses YAML frontmatter scalars and MCP edge array fields. */
+export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
+
+  const scalars: Record<string, string> = {};
+  const arrays: Record<EdgeField, string[]> = {
+    belongs_to: [],
+    depends_on: [],
+    affects: [],
+    supersedes: [],
+  };
+
+  const lines = match[1].split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    const keyOnly = line.match(/^([\w]+):\s*$/);
+    if (keyOnly && isEdgeField(keyOnly[1])) {
+      const field = keyOnly[1];
+      const items: string[] = [];
+      i++;
+      while (i < lines.length && /^\s+-\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s+-\s+/, "").trim());
+        i++;
+      }
+      arrays[field] = items;
+      continue;
+    }
+
+    const inlineArray = line.match(/^([\w]+):\s*\[(.*)\]\s*$/);
+    if (inlineArray && isEdgeField(inlineArray[1])) {
+      const field = inlineArray[1];
+      const inner = inlineArray[2].trim();
+      arrays[field] = inner
+        ? inner.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+      i++;
+      continue;
+    }
+
+    const scalar = line.match(/^([\w]+):\s*(.*)$/);
+    if (scalar) {
+      let val = scalar[2].trim();
+      if (val.startsWith('"')) {
+        try {
+          val = JSON.parse(val) as string;
+        } catch {
+          /* use raw */
+        }
+      }
+      scalars[scalar[1]] = val;
+    }
+    i++;
+  }
+
+  return { scalars, arrays };
+}
+
+function stripEdgeFieldLines(inner: string): string {
+  const lines = inner.split(/\r?\n/);
+  const result: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (/^(belongs_to|depends_on|affects|supersedes):/.test(lines[i])) {
+      i++;
+      while (i < lines.length && /^\s+-\s+/.test(lines[i])) i++;
+      continue;
+    }
+    result.push(lines[i]);
+    i++;
+  }
+  return result.join("\n").replace(/\n+$/, "");
+}
+
+function formatEdgeFieldLines(arrays: Partial<Record<EdgeField, string[]>>): string {
+  const parts: string[] = [];
+  for (const field of EDGE_FIELDS) {
+    const ids = arrays[field];
+    if (!ids || ids.length === 0) continue;
+    parts.push(`${field}:`);
+    for (const id of ids) parts.push(`  - ${id}`);
+  }
+  return parts.join("\n");
+}
+
+function parseNodeFromFrontmatter(
+  folderId: string,
+  expectedType: NodeType,
+  contextFile: string
+): MindPlanNode {
+  const raw = fs.readFileSync(contextFile, "utf-8");
+  const parsed = parseFrontmatter(raw);
+  if (!parsed) {
+    throw new Error(
+      `Blocked: context file for "${folderId}" has no YAML frontmatter (expected at ${contextFile}).`
+    );
+  }
+  const fm = parsed.scalars;
+  const id = fm.id ?? folderId;
+  const type = fm.type as NodeType;
+  if (id !== folderId) {
+    throw new Error(
+      `Blocked: folder "${folderId}" does not match frontmatter id "${id}" in ${contextFile}.`
+    );
+  }
+  if (!NODE_TYPES.includes(type)) {
+    throw new Error(`Blocked: invalid type "${fm.type}" in ${contextFile}.`);
+  }
+  if (type !== expectedType) {
+    throw new Error(
+      `Blocked: frontmatter type "${type}" does not match directory type "${expectedType}" for "${folderId}".`
+    );
+  }
+  if (!fm.state || !fm.created_at || !fm.updated_at) {
+    throw new Error(
+      `Blocked: context frontmatter for "${folderId}" must include state, created_at, and updated_at.`
+    );
+  }
+  const node: MindPlanNode = {
+    id,
+    type,
+    title: fm.title ?? "",
+    description: fm.description ?? "",
+    state: fm.state as MindPlanNode["state"],
+    created_at: fm.created_at,
+    updated_at: fm.updated_at,
+  };
+  if (fm.shipped_at) node.shipped_at = fm.shipped_at;
+  if (fm.severity && (BUG_SEVERITIES as readonly string[]).includes(fm.severity)) {
+    node.severity = fm.severity as BugSeverity;
+  }
+  if (parsed.arrays.belongs_to.length > 0) node.belongs_to = [...parsed.arrays.belongs_to];
+  if (parsed.arrays.depends_on.length > 0) node.depends_on = [...parsed.arrays.depends_on];
+  if (parsed.arrays.affects.length > 0) node.affects = [...parsed.arrays.affects];
+  if (parsed.arrays.supersedes.length > 0) node.supersedes = [...parsed.arrays.supersedes];
+  return node;
+}
+
+/** Scans territory folders and assembles nodes from context.mdx frontmatter. */
+export function discoverNodes(): MindPlanNode[] {
+  const nodes: MindPlanNode[] = [];
+  const root = mindplanRoot();
+  if (!fs.existsSync(root)) return nodes;
+
+  for (const [dirName, nodeType] of Object.entries(DIR_TO_TYPE)) {
+    const typePath = path.join(root, dirName);
+    if (!fs.existsSync(typePath)) continue;
+    for (const entry of fs.readdirSync(typePath, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const contextFile = path.join(typePath, entry.name, CONTEXT_FILENAME);
+      if (!fs.existsSync(contextFile)) continue;
+      nodes.push(parseNodeFromFrontmatter(entry.name, nodeType, contextFile));
+    }
+  }
+  return nodes.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Expands outgoing edge arrays on nodes into flat edge triples. */
+export function discoverEdges(nodes: MindPlanNode[]): MindPlanEdge[] {
+  const edges: MindPlanEdge[] = [];
+  for (const node of nodes) {
+    if (node.belongs_to) {
+      for (const target of node.belongs_to) {
+        edges.push({ source: node.id, target, type: "belongs_to" });
+      }
+    }
+    if (node.depends_on) {
+      for (const target of node.depends_on) {
+        edges.push({ source: node.id, target, type: "depends_on" });
+      }
+    }
+    if (node.affects) {
+      for (const target of node.affects) {
+        edges.push({ source: node.id, target, type: "affects" });
+      }
+    }
+    if (node.supersedes) {
+      for (const target of node.supersedes) {
+        edges.push({ source: node.id, target, type: "supersedes" });
+      }
+    }
+  }
+  return edges.sort((a, b) => {
+    const ka = `${a.source}:${a.type}:${a.target}`;
+    const kb = `${b.source}:${b.type}:${b.target}`;
+    return ka.localeCompare(kb);
+  });
+}
+
+export function loadGraph(): MindPlanGraph {
+  const nodes = discoverNodes();
+  return { version: GRAPH_VERSION, nodes, edges: discoverEdges(nodes) };
+}
+
+/** Returns { id, type } if a territory folder exists for this id. */
+export function findNodeRef(id: string): Pick<MindPlanNode, "id" | "type"> {
+  for (const [dirName, nodeType] of Object.entries(DIR_TO_TYPE)) {
+    const contextFile = path.join(mindplanRoot(), dirName, id, CONTEXT_FILENAME);
+    if (fs.existsSync(contextFile)) {
+      return { id, type: nodeType };
+    }
+  }
+  throw new Error(`Blocked: node "${id}" does not exist in mindplan territory.`);
+}
+
+export function nodeExists(id: string): boolean {
+  for (const dirName of Object.values(TYPE_DIRS)) {
+    if (fs.existsSync(path.join(mindplanRoot(), dirName, id, CONTEXT_FILENAME))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function readMarkdown(node: Pick<MindPlanNode, "id" | "type">): string {
@@ -200,21 +414,108 @@ export function writeMarkdown(node: Pick<MindPlanNode, "id" | "type">, content: 
   fs.writeFileSync(markdownPath(node), content, "utf-8");
 }
 
-/** Rewrites the `state:` field inside context.mdx YAML frontmatter, if present. */
-export function syncMarkdownState(node: MindPlanNode): void {
+/** Patches server-owned state fields in context.mdx frontmatter. */
+export function patchFrontmatter(
+  node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">
+): void {
   const file = markdownPath(node);
   if (!fs.existsSync(file)) return;
   const raw = fs.readFileSync(file, "utf-8");
   const frontmatter = raw.match(/^---\r?\n[\s\S]*?\r?\n---/);
   if (!frontmatter) return;
-  const patched = frontmatter[0].replace(/^state:.*$/m, `state: ${node.state}`);
+
+  let patched = frontmatter[0]
+    .replace(/^state:.*$/m, `state: ${node.state}`)
+    .replace(/^updated_at:.*$/m, `updated_at: ${node.updated_at}`);
+
+  if (node.shipped_at) {
+    if (/^shipped_at:/m.test(patched)) {
+      patched = patched.replace(/^shipped_at:.*$/m, `shipped_at: ${node.shipped_at}`);
+    } else {
+      patched = patched.replace(/^(state:.*)$/m, `$1\nshipped_at: ${node.shipped_at}`);
+    }
+  }
+
   if (patched !== frontmatter[0]) {
     fs.writeFileSync(file, raw.replace(frontmatter[0], patched), "utf-8");
   }
 }
 
+/** Patches MCP-owned outgoing edge arrays in context.mdx frontmatter. */
+export function patchFrontmatterEdges(
+  node: Pick<MindPlanNode, "id" | "type">,
+  edges: Partial<Record<EdgeField, string[]>>,
+  updated_at: string
+): void {
+  const file = markdownPath(node);
+  if (!fs.existsSync(file)) return;
+  const raw = fs.readFileSync(file, "utf-8");
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return;
+
+  const parsed = parseFrontmatter(raw);
+  if (!parsed) return;
+
+  const merged: Record<EdgeField, string[]> = {
+    belongs_to: edges.belongs_to ?? parsed.arrays.belongs_to,
+    depends_on: edges.depends_on ?? parsed.arrays.depends_on,
+    affects: edges.affects ?? parsed.arrays.affects,
+    supersedes: edges.supersedes ?? parsed.arrays.supersedes,
+  };
+
+  let inner = stripEdgeFieldLines(match[1]);
+  inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${updated_at}`);
+
+  const edgeLines = formatEdgeFieldLines(merged);
+  const rebuiltInner = edgeLines ? `${inner}\n${edgeLines}` : inner;
+  const rebuilt = `---\n${rebuiltInner}\n---`;
+  fs.writeFileSync(file, raw.replace(match[0], rebuilt), "utf-8");
+}
+
+/** Appends a target id to the source node's outgoing edge array for edge_type. */
+export function addEdgeToFrontmatter(
+  node: Pick<MindPlanNode, "id" | "type">,
+  edgeType: EdgeType,
+  targetId: string
+): void {
+  const raw = readMarkdown(node);
+  const parsed = parseFrontmatter(raw);
+  if (!parsed) return;
+
+  const field = edgeType as EdgeField;
+  const current = [...parsed.arrays[field]];
+  if (!current.includes(targetId)) current.push(targetId);
+  const now = new Date().toISOString();
+  patchFrontmatterEdges(node, { [field]: current }, now);
+}
+
+/** Removes target_id from all outgoing edge arrays on the source node. */
+export function removeEdgesFromFrontmatter(
+  node: Pick<MindPlanNode, "id" | "type">,
+  targetId: string
+): void {
+  const raw = readMarkdown(node);
+  const parsed = parseFrontmatter(raw);
+  if (!parsed) return;
+
+  const now = new Date().toISOString();
+  patchFrontmatterEdges(
+    node,
+    {
+      belongs_to: parsed.arrays.belongs_to.filter((id) => id !== targetId),
+      depends_on: parsed.arrays.depends_on.filter((id) => id !== targetId),
+      affects: parsed.arrays.affects.filter((id) => id !== targetId),
+      supersedes: parsed.arrays.supersedes.filter((id) => id !== targetId),
+    },
+    now
+  );
+}
+
 /** Scaffolds an entity folder: context.mdx + empty attachments/ directory. */
-export function scaffoldEntity(node: MindPlanNode): void {
+export function scaffoldEntity(
+  node: Pick<MindPlanNode, "id" | "type" | "state" | "created_at" | "updated_at">,
+  meta: Pick<MindPlanNode, "title" | "description">
+): void {
   ensureEntityDir(node);
   const attachmentsKeep = path.join(attachmentsDir(node), ".gitkeep");
   if (!fs.existsSync(attachmentsKeep)) {
@@ -225,9 +526,11 @@ export function scaffoldEntity(node: MindPlanNode): void {
     "---",
     `id: ${node.id}`,
     `type: ${node.type}`,
-    `title: ${JSON.stringify(node.title)}`,
+    `title: ${JSON.stringify(meta.title)}`,
+    `description: ${JSON.stringify(meta.description)}`,
     `state: ${node.state}`,
     `created_at: ${node.created_at}`,
+    `updated_at: ${node.updated_at}`,
     "---",
   ].join("\n");
 
@@ -235,9 +538,9 @@ export function scaffoldEntity(node: MindPlanNode): void {
   switch (node.type) {
     case "Journey":
       body = [
-        `# ${node.title}`,
+        `# ${meta.title}`,
         "",
-        node.description,
+        meta.description,
         "",
         "## Overview",
         "",
@@ -245,7 +548,7 @@ export function scaffoldEntity(node: MindPlanNode): void {
         "",
         "## Linked Workflows",
         "",
-        "_Workflows attach themselves here via `belongs_to` edges. The Journey state is computed automatically._",
+        "_Workflows link here via `belongs_to` in their frontmatter. The Journey state is computed automatically._",
         "",
         "## Attachments",
         "",
@@ -257,9 +560,9 @@ export function scaffoldEntity(node: MindPlanNode): void {
       break;
     case "Foundation":
       body = [
-        `# ${node.title}`,
+        `# ${meta.title}`,
         "",
-        node.description,
+        meta.description,
         "",
         "## Infrastructure Spec",
         "",
@@ -281,9 +584,9 @@ export function scaffoldEntity(node: MindPlanNode): void {
       break;
     case "Workflow":
       body = [
-        `# ${node.title}`,
+        `# ${meta.title}`,
         "",
-        node.description,
+        meta.description,
         "",
         "## Execution Logic",
         "",
@@ -305,9 +608,9 @@ export function scaffoldEntity(node: MindPlanNode): void {
       break;
     case "Bug":
       body = [
-        `# ${node.title}`,
+        `# ${meta.title}`,
         "",
-        node.description,
+        meta.description,
         "",
         "## Summary",
         "",

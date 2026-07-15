@@ -1,6 +1,9 @@
 /**
- * MindPlan data model — the taxonomy persisted in /mindplan/mindplan.json.
+ * MindPlan data model — node records and edges persisted in context.mdx frontmatter.
  */
+
+/** Schema generation reported by get_mindplan_graph (no file on disk). */
+export const GRAPH_VERSION = 2;
 
 export const NODE_TYPES = ["Journey", "Foundation", "Workflow", "Bug"] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -39,7 +42,7 @@ export type JourneyState = (typeof JOURNEY_STATES)[number];
 
 export type NodeState = ExecutionState | ProductionState | JourneyState | BugState;
 
-export const EDGE_TYPES = ["depends_on", "belongs_to", "affects"] as const;
+export const EDGE_TYPES = ["depends_on", "belongs_to", "affects", "supersedes"] as const;
 export type EdgeType = (typeof EDGE_TYPES)[number];
 
 export const BUG_SEVERITIES = ["low", "medium", "high", "critical"] as const;
@@ -53,10 +56,16 @@ export interface MindPlanNode {
   state: NodeState;
   created_at: string;
   updated_at: string;
-  /** Set when a Foundation/Workflow ships to production (in-review → ship). */
   shipped_at?: string;
-  /** Optional on Bug nodes; informational in v1. */
   severity?: BugSeverity;
+  /** MCP-only. Workflow → Journey ids. */
+  belongs_to?: string[];
+  /** MCP-only. Workflow → Foundation|Workflow ids; Foundation → Foundation ids. */
+  depends_on?: string[];
+  /** MCP-only. Bug → Workflow|Foundation ids. */
+  affects?: string[];
+  /** MCP-only. New Workflow|Foundation version → predecessor id; set only by create_node_version; at most one entry. */
+  supersedes?: string[];
 }
 
 export interface MindPlanEdge {
@@ -65,10 +74,11 @@ export interface MindPlanEdge {
   type: EdgeType;
 }
 
+/** Runtime graph — nodes and edges assembled from territory frontmatter. */
 export interface MindPlanGraph {
   version: number;
-  nodes: MindPlanNode[];
   edges: MindPlanEdge[];
+  nodes: MindPlanNode[];
 }
 
 /** Legal transitions in the manual build pipeline. */
