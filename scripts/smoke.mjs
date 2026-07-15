@@ -104,6 +104,26 @@ if (emptyFind.focus !== null || (emptyFind.matches?.length ?? 0) !== 0) {
 
 await expectOk("workflow -> ready", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
 
+// --- export_mindplan_view ---
+const viewFull = JSON.parse(await expectOk("export mermaid full", "export_mindplan_view", {}));
+if (viewFull.format !== "mermaid" || typeof viewFull.diagram !== "string" || !viewFull.diagram.startsWith("flowchart TB")) {
+  failures++; console.log(`FAIL export full mermaid: ${JSON.stringify(viewFull).slice(0, 200)}`);
+} else console.log("ok   export_mindplan_view mermaid full");
+if (!viewFull.diagram.includes("subgraph foundations") || !viewFull.diagram.includes("journey_j_ordering")) {
+  failures++; console.log(`FAIL export missing clusters: ${viewFull.diagram.slice(0, 300)}`);
+} else console.log("ok   export_mindplan_view clusters");
+const viewFocus = JSON.parse(
+  await expectOk("export mermaid focus", "export_mindplan_view", { focus: "wf-checkout" })
+);
+if (viewFocus.focus !== "wf-checkout" || !viewFocus.diagram.includes("wf_checkout")) {
+  failures++; console.log(`FAIL export focus: ${JSON.stringify({ focus: viewFocus.focus, dig: viewFocus.diagram.slice(0, 200) })}`);
+} else console.log("ok   export_mindplan_view focus");
+const viewDot = JSON.parse(await expectOk("export dot", "export_mindplan_view", { format: "dot" }));
+if (viewDot.format !== "dot" || !viewDot.diagram.startsWith("digraph MindPlan")) {
+  failures++; console.log(`FAIL export dot: ${viewDot.diagram?.slice(0, 100)}`);
+} else console.log("ok   export_mindplan_view dot");
+await expectBlocked("export unknown focus", "export_mindplan_view", { focus: "wf-missing" });
+
 // --- taxonomy rules ---
 await expectBlocked("journey depends_on foundation", "link_nodes", { source_id: "j-ordering", target_id: "f-db", edge_type: "depends_on" });
 await expectBlocked("foundation belongs_to journey", "link_nodes", { source_id: "f-db", target_id: "j-ordering", edge_type: "belongs_to" });
@@ -177,6 +197,21 @@ await expectOk("bug -> in-review", "update_node_status", { node_id: "bug-race", 
 await expectOk("bug -> resolved", "update_node_status", { node_id: "bug-race", new_status: "resolved" });
 
 graph = JSON.parse(await expectOk("read graph after bug resolved", "get_mindplan_graph", {}));
+const viewHideClosed = JSON.parse(
+  await expectOk("export hides closed bugs", "export_mindplan_view", { focus: "wf-checkout" })
+);
+if (viewHideClosed.diagram.includes("bug-race") || viewHideClosed.diagram.includes("bug_race")) {
+  failures++; console.log("FAIL export should hide resolved bug by default");
+} else console.log("ok   export_mindplan_view hides closed bugs");
+const viewShowClosed = JSON.parse(
+  await expectOk("export include_retired", "export_mindplan_view", {
+    focus: "wf-checkout",
+    include_retired: true,
+  })
+);
+if (!viewShowClosed.diagram.includes("bug_race") && !viewShowClosed.diagram.includes("bug-race")) {
+  failures++; console.log("FAIL export include_retired should show resolved bug");
+} else console.log("ok   export_mindplan_view include_retired shows closed bugs");
 const wfAfterFix = graph.nodes.find((n) => n.id === "wf-checkout");
 if (wfAfterFix.state !== "stable") { failures++; console.log(`FAIL wf stable after bug resolved: got ${wfAfterFix.state}`); }
 else console.log("ok   workflow stable after bug resolved");

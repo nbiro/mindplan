@@ -47,6 +47,8 @@ import {
   dependentsOf,
 } from "./rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "./search.js";
+import { VIEW_FORMATS, exportMindPlanView } from "./view.js";
+import * as fs from "fs";
 
 const server = new McpServer({
   name: "mindplan",
@@ -91,6 +93,46 @@ server.registerTool(
     inputSchema: {},
   },
   guarded(() => ok(loadGraph()))
+);
+
+server.registerTool(
+  "export_mindplan_view",
+  {
+    title: "Export MindPlan view",
+    description:
+      "Exports a deterministic typed-DAG projection as Mermaid or DOT for PRs and docs. " +
+      "Omit focus for the full filtered map; pass focus for that node plus its 1-hop neighborhood. " +
+      "By default hides deprecated nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON; " +
+      "use this when the user wants a diagram / map.",
+    inputSchema: {
+      format: z
+        .enum(VIEW_FORMATS)
+        .optional()
+        .describe('Diagram format: "mermaid" (default) or "dot".'),
+      focus: NODE_ID.optional().describe(
+        "When set, export focus + 1-hop linked neighborhood only."
+      ),
+      include_retired: z
+        .boolean()
+        .optional()
+        .describe(
+          "Include deprecated nodes and closed bugs (resolved/wontfix). Default false."
+        ),
+    },
+  },
+  guarded(({ format, focus, include_retired }) => {
+    const graph = loadGraph();
+    if (focus) {
+      findNode(graph, focus);
+    }
+    return ok(
+      exportMindPlanView(graph, {
+        format: format ?? "mermaid",
+        focus,
+        include_retired: include_retired ?? false,
+      })
+    );
+  })
 );
 
 server.registerTool(
@@ -523,6 +565,64 @@ async function runMcpServer() {
   console.error("MindPlan MCP server running on stdio");
 }
 
+function parseViewArgs(argv: string[]): {
+  format: "mermaid" | "dot";
+  focus?: string;
+  include_retired: boolean;
+  output?: string;
+} {
+  let format: "mermaid" | "dot" = "mermaid";
+  let focus: string | undefined;
+  let include_retired = false;
+  let output: string | undefined;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--format" || arg === "-f") {
+      const value = argv[++i];
+      if (value !== "mermaid" && value !== "dot") {
+        throw new Error(`Invalid --format "${value ?? ""}". Use mermaid or dot.`);
+      }
+      format = value;
+    } else if (arg === "--focus") {
+      focus = argv[++i];
+      if (!focus) throw new Error("--focus requires a node id.");
+    } else if (arg === "--include-retired") {
+      include_retired = true;
+    } else if (arg === "--output" || arg === "-o") {
+      output = argv[++i];
+      if (!output) throw new Error("--output requires a file path.");
+    } else if (arg === "export") {
+      // alias accepted as subcommand synonym — ignore
+    } else {
+      throw new Error(`Unknown view option: ${arg}`);
+    }
+  }
+
+  return { format, focus, include_retired, output };
+}
+
+function runViewCli(argv: string[]): void {
+  const opts = parseViewArgs(argv);
+  if (opts.focus) {
+    const graph = loadGraph();
+    findNode(graph, opts.focus);
+  }
+  const result = exportMindPlanView(loadGraph(), {
+    format: opts.format,
+    focus: opts.focus,
+    include_retired: opts.include_retired,
+  });
+  if (opts.output) {
+    fs.writeFileSync(opts.output, result.diagram, "utf-8");
+    console.error(
+      `Wrote ${result.format} view (${result.node_count} nodes, ${result.edge_count} edges) to ${opts.output}`
+    );
+  } else {
+    process.stdout.write(result.diagram);
+  }
+}
+
 function runCli() {
   const cmd = process.argv[2];
   if (cmd === "init") {
@@ -560,11 +660,30 @@ function runCli() {
     return;
   }
 
+  if (cmd === "view" || cmd === "export") {
+    try {
+      runViewCli(process.argv.slice(3));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(message.startsWith("Blocked:") ? message : `Error: ${message}`);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (cmd === "help" || cmd === "--help" || cmd === "-h") {
     console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
   mindplan-mcp init         Scaffold mindplan/, agent playbook, skills, and integrations
+  mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
+  mindplan-mcp export       Alias for view
   mindplan-mcp help         Show this message
+
+View options:
+  --format, -f mermaid|dot  Diagram format (default: mermaid)
+  --focus <node-id>         Focus node + 1-hop neighborhood only
+  --include-retired         Include deprecated nodes and closed bugs
+  --output, -o <file>       Write diagram to a file instead of stdout
 
 Environment:
   MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);

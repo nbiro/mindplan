@@ -97,16 +97,20 @@ Context files are MDX. Node records and outgoing edge arrays (`belongs_to`, `dep
 
 ## Taxonomy
 
-| Type | Purpose | States |
-|------|---------|--------|
-| **Journey** | Macro user flows. Permanent containers. | Computed (`draft`, `incubation`, `stable`, `evolving`) |
-| **Foundation** | Pure infrastructure. | Build pipeline + computed production (`stable` / `unstable`) |
-| **Workflow** | Business logic / features. | Build pipeline + computed production (`stable` / `unstable`) |
-| **Bug** | Defect afflicting a Workflow or Foundation. | Dedicated: `open → triaged → fixing → in-review → resolved \| wontfix` |
+| Type | What it is | States |
+|------|------------|--------|
+| **Journey** | An ongoing product surface or user capability you keep shipping into (e.g. "Table ordering", "Onboarding"). Not a project with an end date — a permanent container for related Workflows. | Computed (`draft`, `incubation`, `stable`, `evolving`) |
+| **Foundation** | Plumbing with no direct user value (e.g. auth, DB schema, payment provider). Exists so Workflows can depend on it; must be stable before those Workflows can ship. | Build pipeline + computed production (`stable` / `unstable`) |
+| **Workflow** | A concrete feature or piece of business logic users actually hit (e.g. "Split the check", "Process payment"). Belongs to one or more Journeys; depends on Foundations (and sometimes other Workflows). | Build pipeline + computed production (`stable` / `unstable`) |
+| **Bug** | A defect on a Workflow or Foundation. The only type with a real closed end (`resolved` / `wontfix`). | Dedicated: `open → triaged → fixing → in-review → resolved \| wontfix` |
+
+Journeys hold the map · Workflows are the work · Foundations are what that work runs on.
 
 **Build pipeline** (Foundation/Workflow): `draft → ready → in-progress → in-review → ship` (sets `shipped_at`, computes `stable` or `unstable`).
 
 **Production posture** (`stable` / `unstable`) is computed from open Bugs via `affects` edges — never set manually. Open bug = `open`, `triaged`, `fixing`, or `in-review`.
+
+In traditional trackers, epics close when a milestone ships — then drop out of the living product map even though the same flows keep getting developed. MindPlan doesn't do that: Journeys stay permanent and move between `incubation`, `stable`, and `evolving`; Workflows stay `stable`/`unstable` and evolve via versioning instead of closing. Only Bugs close.
 
 ## Compiler Rules
 
@@ -128,6 +132,7 @@ Every violation throws an error starting with `Blocked: `.
 |------|------|-------------|
 | `find_related_nodes` | read | Rank nodes by text query; return focus + 1-hop linked neighborhood (summaries) |
 | `get_mindplan_graph` | read | Nodes and edges assembled from territory frontmatter |
+| `export_mindplan_view` | read | Mermaid or DOT typed-DAG projection (full map or focus + 1-hop) |
 | `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on) and journeys_at_risk |
 | `get_node_context` | read | Returns `title`, `description`, `context.mdx`, attachment paths, and filenames |
 | `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `context.mdx` |
@@ -142,10 +147,14 @@ Every violation throws an error starting with `Blocked: `.
 |---------|-------------|
 | `mindplan-mcp` | Start the MCP server (stdio) |
 | `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, and `AGENTS.md` |
+| `mindplan-mcp view` | Print a Mermaid/DOT projection of the territory graph (`export` is an alias) |
 | `mindplan-mcp help` | Show usage |
+
+`view` options: `--format mermaid|dot`, `--focus <node-id>`, `--include-retired`, `--output <file>`.
 
 Set `MINDPLAN_ROOT` to override the project root (defaults to `process.cwd()`).
 
+Graph views are read-only projections of the assembled graph (see SPEC §7.4). They do not replace MDX viewers or external board sync.
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

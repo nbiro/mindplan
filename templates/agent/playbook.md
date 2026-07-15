@@ -35,7 +35,7 @@ Every request starts the same way:
 find_related_nodes({ query: "<user ask>" })
 ```
 
-Use the returned `focus` and 1-hop `nodes`/`edges`. Call `get_node_context` on the focus before executing. Use `get_mindplan_graph` only for greenfield / empty graphs or rare full audits — not on every turn.
+Use the returned `focus` and 1-hop `nodes`/`edges`. Call `get_node_context` on the focus before executing. Use `get_mindplan_graph` only for greenfield / empty graphs or rare full audits — not on every turn. When the user asks to “show the map”, for a PR architecture diagram, or for a Mermaid/DOT visualization, call `export_mindplan_view` (optionally with `focus`) — do not dump `get_mindplan_graph` JSON as a diagram.
 
 Then classify:
 
@@ -115,6 +115,7 @@ Do **not** reset a shipped Foundation/Workflow back to `draft`.
 | Tool | When to use |
 |------|-------------|
 | `find_related_nodes` | Orient — rank by query, return focus + 1-hop links (prefer over full graph) |
+| `export_mindplan_view` | Human diagram — Mermaid/DOT map of the graph (full or focus + 1-hop); for PRs and “show the map” |
 | `get_mindplan_graph` | Full graph dump — greenfield or rare audit only |
 | `get_blast_radius` | Transitive dependents and journeys at risk before changing a node |
 | `get_node_context` | Read territory for the node you are executing |

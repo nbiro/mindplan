@@ -509,9 +509,45 @@ Journeys have no outgoing edges. Incoming relationships are derived at scan time
 
 ---
 
+## 7.4 Graph views (projections)
+
+Exporters MAY render a deterministic typed-DAG projection of the assembled graph for humans (PRs, docs, local preview). Views are **read-only projections** of §7 — they MUST NOT persist layout, board columns, or view state into `mindplan/`, and MUST NOT become a second write path.
+
+Reference formats: Mermaid (`flowchart`) and Graphviz DOT. Surfaces: MCP tool `export_mindplan_view` (§8.1) and CLI `mindplan-mcp view`.
+
+### Layout conventions
+
+| Element | Rendering |
+|---|---|
+| Journey | Cluster / subgraph (container; no outgoing edges) |
+| Workflow | Node inside every Journey it `belongs_to` (multi-membership: one instance per Journey in Mermaid; DOT places the node in the lexicographically first Journey and annotates others) |
+| Foundation | Shared infrastructure cluster |
+| Bug | Overlay node; `affects` drawn dashed |
+| `depends_on` | Solid dependency arrow |
+| `belongs_to` | Encoded by clustering — omitted as an edge in diagrams |
+| `supersedes` | Dotted / labeled lineage edge |
+| Node label | `id · title · state` |
+
+Workflows with no `belongs_to` into a Journey present in the view appear under an **Unassigned workflows** band.
+
+### Filters
+
+By default, views MUST exclude:
+
+- nodes in state `deprecated`
+- Bugs in terminal states `resolved` or `wontfix`
+
+Pass `include_retired: true` (MCP) or `--include-retired` (CLI) to include them.
+
+Optional `focus` limits the view to that node plus its 1-hop linked neighborhood (same neighborhood definition as `find_related_nodes`).
+
+MDX component rendering (§6.4) and external board sync (§10) remain separate concerns and are out of scope for graph-view exporters.
+
+---
+
 ## 8. MCP Tool Contract
 
-The server exposes exactly nine tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly ten tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -520,6 +556,29 @@ The server exposes exactly nine tools over stdio. All inputs are validated with 
 - **Input:** none.
 - **Output:** `{ version, nodes, edges }` assembled from territory frontmatter (§6.1, §7).
 - **Errors:** none beyond I/O failures.
+
+#### `export_mindplan_view`
+
+Exports a deterministic typed-DAG projection (§7.4) as Mermaid or DOT. Prefer `find_related_nodes` for agent orientation JSON; use this when a human diagram / architecture map is needed.
+
+- **Input:**
+  - `format` (`mermaid` \| `dot`, optional, default `mermaid`)
+  - `focus` (slug, optional) — when set, export focus + 1-hop neighborhood only
+  - `include_retired` (boolean, optional, default `false`) — include deprecated nodes and closed bugs
+- **Output:**
+
+```jsonc
+{
+  "format": "mermaid",
+  "focus": null,           // or node id when focus was requested
+  "include_retired": false,
+  "node_count": 12,
+  "edge_count": 15,
+  "diagram": "flowchart TB\n..."
+}
+```
+
+- **Errors:** unknown `focus` node_id.
 
 #### `find_related_nodes`
 
@@ -697,7 +756,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `context.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node frontmatter and assemble at runtime per §7.
-- [ ] The nine-tool MCP surface matches §8 (names, inputs, outputs, errors).
+- [ ] The ten-tool MCP surface matches §8 (names, inputs, outputs, errors).
 - [ ] Mutations are deterministic and atomic per §9.
 
 ---
