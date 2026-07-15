@@ -1,81 +1,102 @@
 # MindPlan Agent Playbook
 
-MindPlan is a compiler-style SDLC framework. All graph and state mutations go through the **MindPlan MCP server** — never by editing server-owned frontmatter directly.
+**Always apply.** For any software work in this repository, follow MindPlan. Orient on the graph before coding. Mutate graph state only through the **MindPlan MCP server**. Treat every `Blocked: <reason>` as a hard failure — read it, fix the plan, then retry. Do not retry blindly.
 
-Full normative spec: `SPEC.md` (in the mindplan-mcp package or repo).
+Normative reference: `SPEC.md` (in the mindplan-mcp package or repo). Entity scaffolding (create/link nodes, Journey-first): `mindplan/agent/skills/define-entities/SKILL.md`.
 
 ## Authority model
 
 | Layer | Location | Who writes |
 |-------|----------|------------|
 | **Node record** | `mindplan/<type>s/<id>/context.mdx` frontmatter | You edit **title**, **description**; server owns **state**, **updated_at**, **shipped_at**, **belongs_to**, **depends_on**, **affects**, **supersedes** via MCP |
-| **Territory body** | `context.mdx` body | You edit PRD, checklists, attachments references |
+| **Territory body** | `context.mdx` body | You edit PRD, checklists, attachment references |
 | **Attachments** | `mindplan/<type>s/<id>/attachments/` | Normal file tools |
 
 **Never edit** server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) by hand.
 
-## Taxonomy
+## Taxonomy (quick map)
 
 | Type | Purpose | States |
 |------|---------|--------|
 | **Journey** | Macro user capability; permanent container | Computed only: `draft`, `incubation`, `stable`, `evolving` |
-| **Foundation** | Pure infrastructure (DB, auth, APIs) | Build pipeline → `ship` → `stable`/`unstable` |
-| **Workflow** | Business logic / feature | Build pipeline → `ship` → `stable`/`unstable` |
+| **Foundation** | Pure infrastructure (DB, auth, APIs) | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` |
+| **Workflow** | Business logic / feature | Same build pipeline as Foundation |
 | **Bug** | Defect on a Workflow or Foundation | `open` → `triaged` → `fixing` → `in-review` → `resolved` \| `wontfix` |
 
-**IDs:** lowercase slug `^[a-z0-9][a-z0-9-_]*$`. Prefer prefixes: `j-`, `f-`, `wf-`, `bug-`.
+**IDs:** `^[a-z0-9][a-z0-9-_]*$`. Prefer prefixes: `j-`, `f-`, `wf-`, `bug-`.
 
-## Journey first (mandatory)
+**Edges:** `belongs_to` (Workflow → Journey), `depends_on` (Workflow/Foundation → Foundation or Workflow → Workflow), `affects` (Bug → Workflow/Foundation), `supersedes` (via `create_node_version` only).
 
-**Every Workflow MUST belong to at least one Journey** (and MAY belong to multiple). Before creating a Workflow:
+## Request routing
 
-1. `get_mindplan_graph` — list existing Journeys
-2. Determine whether the requested feature maps to an **existing** Journey
-3. If **no** matching Journey exists → **refuse**. Do not call `create_node` for the Workflow
+Every request starts the same way:
 
-**Refusal message** (use verbatim):
-
-> I cannot define this Workflow yet — every Workflow must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the macro user capability this feature belongs to). Once the Journey exists, I can create the Workflow and link it with `belongs_to`.
-
-If the user names a Journey that is not in the graph, same refusal — define that Journey first.
-
-Journeys are always defined before Workflows. Foundations and Bugs are not gated by this rule.
-
-## Edges (four types)
-
-| Edge | Shape | Meaning |
-|------|-------|---------|
-| `belongs_to` | Workflow → Journey | Workflow is part of this Journey (multiple `belongs_to` edges allowed — one Workflow can span several Journeys) |
-| `depends_on` | Workflow → Foundation, Workflow → Workflow, Foundation → Foundation | Source needs target infra or prerequisite workflow before shipping |
-| `affects` | Bug → Workflow/Foundation | Open bug degrades target to `unstable` |
-| `supersedes` | Workflow → Workflow, Foundation → Foundation | Version lineage (via `create_node_version` only) |
-
-Illegal: Journey outgoing edges, Bug/Journey `depends_on`, Foundation `belongs_to`, Bug `affects` → Journey, `supersedes` via `link_nodes`.
-
-## Versioning
-
-For breaking changes to a **shipped** Workflow or Foundation, do not edit it back to `draft`. Call `create_node_version` to scaffold a new draft node that inherits outgoing edges and links `supersedes` → predecessor. Existing dependents automatically gain a duplicate `depends_on` edge to the new version (old edge preserved). The predecessor keeps serving until the new version ships; use `get_blast_radius` on the live predecessor to find dependents to migrate before cutover. Unshipped dependents cannot `ship` until the new version is also `stable` unless the stale edge is removed.
-
-## Agent work loop
-
-1. `get_mindplan_graph` — read current DAG
-2. `get_node_context` — read PRD, checklists, attachments for the node you're working on
-3. Implement in application code
-4. Edit `context.mdx` body — check off Atomic Ops: `- [ ]` → `- [x]`
-5. `update_node_status` — advance state when gates pass
-
-**Build order for Workflows:**
 ```
-create_node → link_nodes(belongs_to) × N → link_nodes(depends_on) → ready → in-progress → in-review → ship
+find_related_nodes({ query: "<user ask>" })
 ```
 
-A Workflow may `belongs_to` multiple Journeys — call `link_nodes` once per Journey.
+Use the returned `focus` and 1-hop `nodes`/`edges`. Call `get_node_context` on the focus before executing. Use `get_mindplan_graph` only for greenfield / empty graphs or rare full audits — not on every turn.
 
-**Ship order:** all linked Foundations must be `stable` before a Workflow can `ship`.
+Then classify:
+
+| If the user wants… | Do this |
+|--------------------|---------|
+| New Journey, Foundation, Workflow, or Bug | Follow `mindplan/agent/skills/define-entities/` (Journey must exist before any Workflow; refuse Workflow creation when no matching Journey is in the graph) |
+| Implement or advance an existing Foundation/Workflow | **Build pipeline loop** below |
+| Report or fix a defect | **Bug lifecycle loop** below |
+| Breaking change to a **shipped** Foundation/Workflow | `get_blast_radius` → `create_node_version` → treat the new draft successor as build-pipeline work |
+
+Do not invent tickets outside MindPlan. Do not start substantial implementation until the owning node is `in-progress` (or Bug is `fixing`).
+
+## Build pipeline loop (Foundation / Workflow)
+
+```
+draft → ready → in-progress → in-review → ship → stable/unstable
+```
+
+1. **Orient** — `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Read PRD, Acceptance Criteria, and Atomic Ops.
+2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress`. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
+3. **Commit to work** — `update_node_status` → `ready`, then `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway.
+4. **Execute** — Implement in application code. Keep territory in sync: as each Atomic Op is done, edit the `context.mdx` **body** only (`- [ ]` → `- [x]`). Never check a box without doing the work.
+5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`.
+6. **Ship** — From `in-review`, `update_node_status` → `ship`. Server sets `shipped_at` and computes `stable` or `unstable`.
+   - **Infrastructure First:** a Workflow cannot ship until every direct `depends_on` Foundation and Workflow is `stable`. Ship Foundations (and prerequisite Workflows) first.
+   - Never set Journey, `stable`, or `unstable` manually — they are computed.
+
+Retreat when needed: `in-progress` ↔ `ready`, `in-review` → `in-progress`. Production nodes only move to `deprecated` (or are superseded via versioning).
+
+## Bug lifecycle loop
+
+```
+open → triaged → fixing → in-review → resolved
+         ↘ wontfix (from open)
+```
+
+1. If the Bug does not exist yet, create it via define-entities (starts `open`).
+2. `link_nodes` with `affects` → target Workflow or Foundation **before** leaving `open`. Open Bugs flip the target to `unstable` after it has shipped.
+3. `update_node_status` → `triaged` → `fixing`.
+4. Fix in application code; check off Fix Checklist items in the Bug `context.mdx` body.
+5. `in-review` only when the checklist is complete; then `resolved` (or `wontfix` from `open` when closing without a fix).
+6. Resolving the last open Bug affecting a shipped node restores `stable`.
+
+Bugs do not change Journey states.
+
+## Versioning shipped work
+
+Do **not** reset a shipped Foundation/Workflow back to `draft`.
+
+1. `get_blast_radius` on the live predecessor — note dependents and journeys at risk.
+2. `create_node_version` — new draft inherits outgoing edges; `supersedes` → predecessor; dependents gain a duplicate `depends_on` to the successor.
+3. Run the **build pipeline loop** on the successor until `ship`. Predecessor stays live until then; it auto-deprecates when the successor ships.
+
+## Territory rules during execution
+
+- Atomic Ops in `context.mdx` are the definition of done. Recognized syntax: `- [ ]` / `- [x]` (also `*` / `+` list markers).
+- Checkbox state on disk gates `in-review`, `ship`, and Bug `in-review`/`resolved`.
+- Enrich or replace scaffold checklist placeholders during `draft` / triage with real PR-sized work items.
+- Attachments live under `attachments/`; reference them from the body with relative links.
 
 ## Compiler rules
-
-Every violation returns `Blocked: <reason>`. Treat as a **hard failure** — read the message, fix the plan, then retry. Do not retry blindly.
 
 | Rule | Gate | Fix |
 |------|------|-----|
@@ -84,41 +105,35 @@ Every violation returns `Blocked: <reason>`. Treat as a **hard failure** — rea
 | **Infrastructure First** | Workflow `ship` | Ship linked Foundations and dependent Workflows to `stable` first |
 | **Completion Check** | `in-review`, `ship`, Bug `in-review`/`resolved` | Check off all `- [ ]` in `context.mdx` |
 | **Computed Journeys** | manual Journey status | Never set — server computes from Workflows |
-| **Computed Stability** | manual `stable`/`unstable` | Never set — driven by open Bugs via `affects` |
+| **Computed Stability** | manual `stable`/`unstable` | Never set — use `ship` from `in-review`; Bugs drive `unstable` via `affects` |
 | **Taxonomy** | illegal edge shape | Use correct edge type and node pairing |
-| **Dependency Closure** | `belongs_to` Workflow → Journey | Link dependent Workflows to the same Journey first, or pass `link_dependent: true` on `link_nodes` |
-| **Version Lineage** | `create_node_version` | Only `stable`/`unstable` nodes; no existing successor; predecessor auto-deprecates on successor `ship` |
-
-## Example (ghost workflow)
-
-```
-update_node_status(wf-checkout, ready)  → Blocked: Ghost Workflow (no Journey link)
-link_nodes(wf-checkout, j-ordering, belongs_to)
-link_nodes(wf-checkout, f-db, depends_on)
-update_node_status(wf-checkout, ready)  → ok
-```
+| **Dependency Closure** | `belongs_to` Workflow → Journey | Link dependent Workflows to the same Journey first, or pass `link_dependent: true` |
+| **Version Lineage** | `create_node_version` | Only `stable`/`unstable` nodes; no existing successor |
 
 ## MCP tools
 
 | Tool | When to use |
 |------|-------------|
-| `get_mindplan_graph` | Orient — what exists, states, edges |
-| `get_blast_radius` | Find transitive dependents and journeys_at_risk before changing a node |
-| `get_node_context` | Read territory for a node |
-| `create_node` | New Journey, Foundation, Workflow, or Bug |
+| `find_related_nodes` | Orient — rank by query, return focus + 1-hop links (prefer over full graph) |
+| `get_mindplan_graph` | Full graph dump — greenfield or rare audit only |
+| `get_blast_radius` | Transitive dependents and journeys at risk before changing a node |
+| `get_node_context` | Read territory for the node you are executing |
+| `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities skill) |
 | `create_node_version` | New draft version of a shipped Workflow or Foundation |
-| `link_nodes` | Add `belongs_to`, `depends_on`, or `affects`; use `link_dependent: true` when linking a Workflow to a Journey that has unlinked workflow dependencies |
+| `link_nodes` | Add `belongs_to`, `depends_on`, or `affects`; optional `link_dependent: true` for Journey closure |
 | `unlink_nodes` | Remove all edges between two nodes |
 | `update_node_status` | Advance build pipeline, Bug lifecycle, or `ship` |
 
-For step-by-step entity creation (taxonomy, naming, linking, territory), see `mindplan/agent/skills/define-entities/SKILL.md`.
-
 ## Never do
 
-- Create a Workflow when no matching Journey exists in the graph — refuse and ask the user to define the Journey first
-- Hand-edit frontmatter `state`, `updated_at`, `shipped_at`, or edge arrays (`belongs_to`, `depends_on`, `affects`, `supersedes`)
+- Start substantial coding without `find_related_nodes` (or an explicit `node_id`) and a clear owning node
+- Implement under `draft`/`ready` instead of moving to `in-progress` (or Bug `fixing`) first
+- Check off Atomic Ops without completing the work
+- Create a Workflow when no matching Journey exists — refuse; ask the user to define the Journey first
+- Hand-edit frontmatter `state`, `updated_at`, `shipped_at`, or edge arrays
 - Set Journey, `stable`, or `unstable` states manually
 - Move a Workflow past `ready` without both required links
 - Move a Bug past `open` without an `affects` link
-- Ship a Workflow while linked Foundations are not `stable`
+- Ship a Workflow while linked Foundations or prerequisite Workflows are not `stable`
 - Transition to gated states with unchecked `- [ ]` items in `context.mdx`
+- Reset a shipped node to `draft` — use `create_node_version` instead

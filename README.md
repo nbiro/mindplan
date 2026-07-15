@@ -8,7 +8,7 @@ When AI agents (and humans) plan software work today, they either skip planning 
 
 ## The solution
 
-MindPlan makes planning state **part of the repository** and puts a strict compiler in front of every mutation. Journeys, Foundations, Workflows, and Bugs live as `context.mdx` files under `mindplan/`, committed alongside the code they describe. All state changes go through an MCP server that enforces architectural guardrails — no "ghost" workflows with no capability or infrastructure, no shipping on unstable dependencies, no marking work reviewed while checklist items are unchecked — and rejects any violation with a machine-parsable `Blocked: ` error. Because the graph is queryable (`get_mindplan_graph`, `get_blast_radius`), agents can reason about dependencies and blast radius before making a change, instead of finding out after something breaks. The result: architecture, requirements, and code stay perfectly synchronized, with nothing external to drift from.
+MindPlan makes planning state **part of the repository** and puts a strict compiler in front of every mutation. Journeys, Foundations, Workflows, and Bugs live as `context.mdx` files under `mindplan/`, committed alongside the code they describe. All state changes go through an MCP server that enforces architectural guardrails — no "ghost" workflows with no capability or infrastructure, no shipping on unstable dependencies, no marking work reviewed while checklist items are unchecked — and rejects any violation with a machine-parsable `Blocked: ` error. Because the graph is queryable (`find_related_nodes`, `get_mindplan_graph`, `get_blast_radius`), agents can resolve a focus node and its links — and blast radius — before making a change, instead of finding out after something breaks. The result: architecture, requirements, and code stay perfectly synchronized, with nothing external to drift from.
 
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
@@ -50,7 +50,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 
 `init` uses the current working directory as the project root (override with `MINDPLAN_ROOT`) and installs:
 
-- `mindplan/agent/playbook.md` — agent playbook (MCP workflow, compiler rules)
+- `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
 - `mindplan/agent/mcp.json.example` — MCP server config snippet
 - `mindplan/agent/integrations/` — setup guides for Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, and generic MCP clients
@@ -126,6 +126,7 @@ Every violation throws an error starting with `Blocked: `.
 
 | Tool | Kind | Description |
 |------|------|-------------|
+| `find_related_nodes` | read | Rank nodes by text query; return focus + 1-hop linked neighborhood (summaries) |
 | `get_mindplan_graph` | read | Nodes and edges assembled from territory frontmatter |
 | `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on) and journeys_at_risk |
 | `get_node_context` | read | Returns `title`, `description`, `context.mdx`, attachment paths, and filenames |

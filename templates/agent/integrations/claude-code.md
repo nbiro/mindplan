@@ -11,7 +11,7 @@ Or add to the project MCP config (see [Claude Code MCP docs](https://docs.anthro
 2. **Instructions** — add to `CLAUDE.md` at the project root:
 
 ```markdown
-Follow MindPlan SDLC rules in mindplan/agent/playbook.md. Use mindplan/agent/skills/define-entities/ when creating planning nodes.
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when creating planning nodes.
 ```
 
 3. **Skills** (optional) — symlink or copy `mindplan/agent/skills/define-entities/` to `.claude/skills/mindplan-define-entities/` for Claude Code skill discovery.

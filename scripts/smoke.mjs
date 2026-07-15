@@ -65,6 +65,43 @@ const wfCtx = fs.readFileSync(path.join(wfFolder, "context.mdx"), "utf-8");
 if (!wfCtx.includes("belongs_to:") || !wfCtx.includes("j-ordering") || !wfCtx.includes("depends_on:") || !wfCtx.includes("f-db")) {
   failures++; console.log("FAIL edges not persisted in wf-checkout frontmatter");
 } else console.log("ok   edges in frontmatter");
+
+// --- find_related_nodes ---
+await expectBlocked("find_related_nodes requires query or node_id", "find_related_nodes", {});
+await expectBlocked("find_related_nodes unknown node_id", "find_related_nodes", { node_id: "wf-missing" });
+const found = JSON.parse(
+  await expectOk("find_related_nodes checkout", "find_related_nodes", { query: "checkout split" })
+);
+if (found.focus !== "wf-checkout") {
+  failures++; console.log(`FAIL find focus: expected wf-checkout, got ${found.focus}`);
+} else console.log("ok   find_related_nodes ranks checkout as focus");
+const foundEdgeTypes = new Set((found.edges ?? []).map((e) => `${e.source}->${e.target}:${e.type}`));
+if (
+  !foundEdgeTypes.has("wf-checkout->j-ordering:belongs_to") ||
+  !foundEdgeTypes.has("wf-checkout->f-db:depends_on")
+) {
+  failures++; console.log(`FAIL find neighborhood edges: ${JSON.stringify(found.edges)}`);
+} else console.log("ok   find_related_nodes 1-hop edges");
+const foundIds = new Set((found.nodes ?? []).map((n) => n.id));
+if (!foundIds.has("wf-checkout") || !foundIds.has("j-ordering") || !foundIds.has("f-db")) {
+  failures++; console.log(`FAIL find neighborhood nodes: ${JSON.stringify(found.nodes)}`);
+} else console.log("ok   find_related_nodes 1-hop nodes");
+const forced = JSON.parse(
+  await expectOk("find_related_nodes force node_id", "find_related_nodes", {
+    query: "ordering",
+    node_id: "wf-checkout",
+  })
+);
+if (forced.focus !== "wf-checkout") {
+  failures++; console.log(`FAIL forced focus: ${forced.focus}`);
+} else console.log("ok   find_related_nodes forces focus via node_id");
+const emptyFind = JSON.parse(
+  await expectOk("find_related_nodes no match", "find_related_nodes", { query: "zzzz-no-such-feature" })
+);
+if (emptyFind.focus !== null || (emptyFind.matches?.length ?? 0) !== 0) {
+  failures++; console.log(`FAIL empty find: ${JSON.stringify(emptyFind)}`);
+} else console.log("ok   find_related_nodes empty matches");
+
 await expectOk("workflow -> ready", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
 
 // --- taxonomy rules ---

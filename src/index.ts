@@ -46,6 +46,7 @@ import {
   transitiveDependents,
   dependentsOf,
 } from "./rules.js";
+import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "./search.js";
 
 const server = new McpServer({
   name: "mindplan",
@@ -90,6 +91,55 @@ server.registerTool(
     inputSchema: {},
   },
   guarded(() => ok(loadGraph()))
+);
+
+server.registerTool(
+  "find_related_nodes",
+  {
+    title: "Find related nodes",
+    description:
+      "Ranks nodes by text query (id/title/description) and returns the focus node plus its 1-hop " +
+      "linked neighborhood (summaries only). Prefer this over get_mindplan_graph for orientation. " +
+      "Provide query and/or node_id. Use get_node_context for full territory; get_blast_radius for transitive dependents.",
+    inputSchema: {
+      query: z
+        .string()
+        .optional()
+        .describe("Free-text query to rank nodes (id, title, description). Required if node_id omitted."),
+      node_id: NODE_ID.optional().describe(
+        "Force focus to this node when present. Required if query is empty."
+      ),
+      type: z
+        .enum(NODE_TYPES)
+        .optional()
+        .describe("Optional type filter applied before ranking."),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_FIND_LIMIT)
+        .optional()
+        .describe(`Max ranked matches to return (default ${DEFAULT_FIND_LIMIT}, max ${MAX_FIND_LIMIT}).`),
+    },
+  },
+  guarded(({ query, node_id, type, limit }) => {
+    const q = (query ?? "").trim();
+    if (!q && !node_id) {
+      throw blocked('find_related_nodes requires a non-empty "query" and/or "node_id".');
+    }
+    const graph = loadGraph();
+    if (node_id) {
+      findNode(graph, node_id);
+    }
+    return ok(
+      findRelatedNodes(graph, {
+        query: q,
+        node_id,
+        type,
+        limit: limit ?? DEFAULT_FIND_LIMIT,
+      })
+    );
+  })
 );
 
 server.registerTool(

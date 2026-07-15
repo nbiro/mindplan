@@ -24,8 +24,8 @@ npx mindplan-mcp
 
 Point your agent at these files (installed by `mindplan-mcp init`):
 
-- **`mindplan/agent/playbook.md`** — MCP workflow, taxonomy, compiler rules
-- **`mindplan/agent/skills/define-entities/`** — step-by-step entity creation
+- **`mindplan/agent/playbook.md`** — always-on SDLC execution process for all software work
+- **`mindplan/agent/skills/define-entities/`** — step-by-step entity creation (scaffolding)
 
 Many agents auto-read root **`AGENTS.md`** — `init` creates one when missing.
 

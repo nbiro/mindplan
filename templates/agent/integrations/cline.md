@@ -13,7 +13,7 @@ Or merge the JSON from `mindplan/agent/mcp.json.example` into Cline's MCP settin
 2. **Instructions** — add to `.clinerules` or root `AGENTS.md`:
 
 ```
-Follow mindplan/agent/playbook.md for MindPlan SDLC workflow. All graph mutations via MindPlan MCP tools only.
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). All graph mutations via MindPlan MCP tools only. Use mindplan/agent/skills/define-entities/ when scaffolding nodes.
 ```
 
 3. Enable the server in Cline and verify `get_mindplan_graph` is available.

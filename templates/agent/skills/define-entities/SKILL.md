@@ -13,7 +13,7 @@ description: >-
 
 Use this skill when adding or restructuring nodes in `mindplan/`. All graph mutations go through the **MindPlan MCP server** — never edit server-owned frontmatter fields directly.
 
-Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. Normative reference: `SPEC.md`.
+Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. Normative reference: `SPEC.md`. For executing work through the build pipeline and Bug lifecycle (always-on process), follow `mindplan/agent/playbook.md`.
 
 ## Step 1 — Orient
 

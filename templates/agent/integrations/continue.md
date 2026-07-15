@@ -15,7 +15,7 @@ See [Continue MCP docs](https://docs.continue.dev/customization/mcp) for the cur
 2. **Instructions** — reference in Continue rules or root `AGENTS.md`:
 
 ```
-Read and follow mindplan/agent/playbook.md. Use mindplan/agent/skills/define-entities/ when scaffolding MindPlan nodes.
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding MindPlan nodes.
 ```
 
 3. Restart Continue or reload config.

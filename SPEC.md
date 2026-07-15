@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHALL, SHOULD, and MAY in this document are to be 
 
 MindPlan is a strictly deterministic Software Development Life Cycle (SDLC) framework designed natively for autonomous AI agents and human engineering teams. It operates as a compiler-style state machine and a "GitOps for Issue Tracking" system: all planning state lives inside the repository, every state mutation is validated against architectural guardrails before it is persisted, and any violation is rejected with a machine-parsable error. The result is that software architecture and project requirements remain perfectly synchronized with the code they describe — there is no external tracker to drift from reality.
 
-MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP) server. The server is the single write path to MindPlan state. Direct file edits to the graph are out of contract (see §9.3). Consumer projects receive an operational agent playbook at `mindplan/agent/playbook.md` (installed by `mindplan-mcp init` from `templates/agent/playbook.md`). Many agents also read root `AGENTS.md`, which `init` creates when missing.
+MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP) server. The server is the single write path to MindPlan state. Direct file edits to the graph are out of contract (see §9.3). Consumer projects receive an operational always-on agent playbook at `mindplan/agent/playbook.md` (installed by `mindplan-mcp init` from `templates/agent/playbook.md`) — the playbook is the SDLC execution process agents MUST follow for all software work; entity scaffolding lives in the separate `define-entities` skill. Many agents also read root `AGENTS.md`, which `init` creates when missing.
 
 ---
 
@@ -511,7 +511,7 @@ Journeys have no outgoing edges. Incoming relationships are derived at scan time
 
 ## 8. MCP Tool Contract
 
-The server exposes exactly eight tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly nine tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -520,6 +520,35 @@ The server exposes exactly eight tools over stdio. All inputs are validated with
 - **Input:** none.
 - **Output:** `{ version, nodes, edges }` assembled from territory frontmatter (§6.1, §7).
 - **Errors:** none beyond I/O failures.
+
+#### `find_related_nodes`
+
+Scoped orientation for agents: rank nodes by a text query and return the focus node plus its 1-hop linked neighborhood. Does not load full `context.mdx` bodies. Does not include transitive blast radius (use `get_blast_radius`).
+
+- **Input:**
+  - `query` (string, optional) — free text; tokenized for ranking.
+  - `node_id` (slug, optional) — force focus to this node when it exists.
+  - `type` (`Journey|Foundation|Workflow|Bug`, optional) — filter candidates before ranking.
+  - `limit` (integer 1–20, optional, default `5`) — max ranked matches returned.
+  - At least one of non-empty `query` or `node_id` is required.
+- **Ranking:** scan territory via `loadGraph()` each call (no in-memory cache, no embeddings). Tokenize `query` on non-alphanumeric characters (lowercase). Score: exact `id` match ≫ `id` substring ≫ title token hits ≫ description token hits. Sort by score descending, then `id` ascending. Nodes with score `0` are omitted from `matches`.
+- **Focus selection:** if `node_id` is provided, `focus` is that id (after existence check). Otherwise `focus` is the highest-scoring match, or `null` when there are no matches.
+- **Neighborhood:** all edges where `source` or `target` is `focus` (all four edge types); `nodes` includes the focus and every endpoint of those edges. Summaries only: `id`, `type`, `state`, `title`, `description`.
+- **Output:**
+
+```jsonc
+{
+  "query": "checkout split payment",
+  "matches": [
+    { "id": "wf-checkout-split", "type": "Workflow", "state": "in-progress", "title": "...", "description": "...", "score": 12 }
+  ],
+  "focus": "wf-checkout-split",
+  "nodes": [ /* focus + 1-hop neighbors */ ],
+  "edges": [ /* edges incident to focus */ ]
+}
+```
+
+- **Errors:** neither `query` nor `node_id`; unknown `node_id`. Empty matches with a valid query and no `node_id` is success: `focus: null`, empty `nodes`/`edges`.
 
 #### `get_blast_radius`
 
@@ -668,7 +697,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `context.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node frontmatter and assemble at runtime per §7.
-- [ ] The eight-tool MCP surface matches §8 (names, inputs, outputs, errors).
+- [ ] The nine-tool MCP surface matches §8 (names, inputs, outputs, errors).
 - [ ] Mutations are deterministic and atomic per §9.
 
 ---
