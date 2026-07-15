@@ -2,6 +2,14 @@
 
 Normative specification and reference MCP server for the **MindPlan** SDLC framework — a compiler-style state machine and GitOps issue-tracking system for AI agents and engineering teams.
 
+## The problem
+
+AI agents (and humans) planning software work today either skip planning entirely or bolt on an external tracker (Jira, Linear, GitHub Projects). External trackers drift from the codebase: a ticket says "done" while the code says otherwise, dependencies between work items are informal or unenforced, and nothing stops an agent from marking a feature `ready` when it has no owning capability, no infrastructure to run on, or unfinished work. There is no single source of truth an agent can query before acting, and no automatic way to know what breaks when a piece of infrastructure or a workflow changes.
+
+## The solution
+
+MindPlan makes planning state **part of the repository** and puts a strict compiler in front of every mutation. Journeys, Foundations, Workflows, and Bugs live as `context.mdx` files under `mindplan/`, committed alongside the code they describe. All state changes go through an MCP server that enforces architectural guardrails — no "ghost" workflows with no capability or infrastructure, no shipping on unstable dependencies, no marking work reviewed while checklist items are unchecked — and rejects any violation with a machine-parsable `Blocked: ` error. Because the graph is queryable (`get_mindplan_graph`, `get_blast_radius`), agents can reason about dependencies and blast radius before making a change, instead of finding out after something breaks. The result: architecture, requirements, and code stay perfectly synchronized, with nothing external to drift from.
+
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
 
@@ -86,7 +94,7 @@ npm install && npm run build
         └── attachments/           # Logs, screenshots
 ```
 
-Context files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. See SPEC.md §6.1 and §7.
+Context files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`, `supersedes`) live in YAML frontmatter. See SPEC.md §6.1 and §7.
 
 ## Taxonomy
 
@@ -111,8 +119,9 @@ Every violation throws an error starting with `Blocked: `.
 4. **Completion Check** — unchecked `[ ]` in `context.mdx` block `in-review`, `ship`, and Bug `in-review`/`resolved`.
 5. **Computed Journey States** — from shipped + in-progress Workflows only; Bugs do not affect Journeys.
 6. **Computed Stability** — shipped nodes flip `stable` ↔ `unstable` when open Bugs are linked, unlinked, or resolved.
-7. **Dependency Closure** — linking a Workflow to a Journey is rejected when transitively depended-on Workflows are not already in that Journey; pass `link_dependent: true` to auto-link them.
-8. **Version Lineage** — only shipped nodes can be versioned; predecessor auto-deprecates when the new version ships.
+7. **Taxonomy Enforcement** — edge creation must use a legal shape/type pairing, no self-links or duplicates, no `depends_on` cycles.
+8. **Dependency Closure** — linking a Workflow to a Journey is rejected when transitively depended-on Workflows are not already in that Journey; pass `link_dependent: true` to auto-link them.
+9. **Version Lineage** — only shipped nodes can be versioned; predecessor auto-deprecates when the new version ships.
 
 ## MCP Tools
 

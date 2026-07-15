@@ -116,11 +116,12 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 | 2 | `ready` | Pre-flight passed (Workflow: at least one Journey + Foundation linked) |
 | 3 | `in-progress` | Active execution; Atomic Ops checked off |
 | 4 | `in-review` | Frozen pending PR approval or CI gate |
-| 5 | `deprecated` | Retired (from `stable`/`unstable` only) |
+| 5 | `stable` / `unstable` | Computed production posture; entered via `ship`, never set manually (§3.5) |
+| 6 | `deprecated` | Retired (from `stable`/`unstable` only) |
 
 **Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state.
 
-| From \ To | draft | ready | in-progress | in-review | ship | deprecated |
+| From \ To | draft | ready | in-progress | in-review | stable/unstable | deprecated |
 |---|---|---|---|---|---|---|
 | **draft** | — | ✔ | ✘ | ✘ | ✘ | ✘ |
 | **ready** | ✔ | — | ✔ | ✘ | ✘ | ✘ |
@@ -390,6 +391,7 @@ After any accepted mutation, the server MUST rewrite server-owned fields in each
 
 - **Status mutations:** `state:`, `updated_at:`, and `shipped_at:` on the transitioned node plus every Journey whose computed state changed.
 - **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, or `affects`) on the source node, plus `updated_at:`.
+- **Versioning (`create_node_version`):** `supersedes:`, `belongs_to:`, and `depends_on:` on the new node; `depends_on:` and `updated_at:` on every dependent that gains a duplicated edge to the new version.
 
 Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the file. If the file is missing or has no frontmatter, mirroring is skipped silently.
 
@@ -558,7 +560,7 @@ The server exposes exactly eight tools over stdio. All inputs are validated with
 - **Input:** `previous_id` (shipped Workflow or Foundation), `id` (new slug), `title` (non-empty), `description`.
 - **Effect:** validates Rule 9, scaffolds a new `draft` node of the same type, writes `supersedes` → `previous_id`, copies predecessor `belongs_to`/`depends_on` to the new node, duplicates each direct incoming `depends_on` edge onto the new version. Predecessor state unchanged.
 - **Output:** `{ created, predecessor: { id, state, note }, inherited_edges: { belongs_to, depends_on }, dependents_relinked: [...], folder, context }`.
-- **Errors:** unknown `previous_id`; duplicate `id`; wrong type; predecessor not shipped; predecessor already has a successor.
+- **Errors:** unknown `previous_id`; duplicate `id`; wrong type; predecessor not shipped; predecessor already has a successor; a duplicated incoming `depends_on` edge would create a dependency cycle.
 
 #### `link_nodes`
 
@@ -601,7 +603,7 @@ Guardrails are evaluated at the moment of transition, against the graph and Terr
 ### 9.3 Out-of-band edits
 
 - `context.mdx` **body** and frontmatter **`title:`** / **`description:`** edits are a first-class part of the workflow.
-- `context.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees.
+- `context.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`, `supersedes`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees.
 
 ### 9.4 Concurrency
 
@@ -658,7 +660,7 @@ The sync parser is deliberately outside the MCP server (it is a CI concern, not 
 An implementation is MindPlan-compliant if and only if:
 
 - [ ] All state lives under `mindplan/` per §1.1; no external database.
-- [ ] Build taxonomy + defect layer and all three edge types are enforced per §2.
+- [ ] Build taxonomy + defect layer and all four edge types are enforced per §2.
 - [ ] Build pipeline, Bug lifecycle, and computed `stable`/`unstable` are enforced per §3.
 - [ ] Journey states are computed, never settable, per §4; Bugs do not affect Journeys.
 - [ ] Rules 1–9 are enforced pre-write (and Rule 9 predecessor deprecation on ship), fail-fast, per §5.
