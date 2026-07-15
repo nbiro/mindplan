@@ -26,6 +26,7 @@ import {
   loadGraph,
   nodeExists,
   listAttachments,
+  listAffectedFiles,
   readMarkdown,
   scaffoldEntity,
   patchFrontmatter,
@@ -186,6 +187,27 @@ server.registerTool(
         limit: limit ?? DEFAULT_FIND_LIMIT,
       })
     );
+  })
+);
+
+server.registerTool(
+  "get_workflow_files",
+  {
+    title: "Get workflow files",
+    description:
+      "Returns the list of project files recorded in a Workflow's context.mdx " +
+      "`## Affected Files` section. Agents maintain that list during implementation.",
+    inputSchema: {
+      node_id: NODE_ID.describe("Workflow id whose affected-files list to read."),
+    },
+  },
+  guarded(({ node_id }) => {
+    const graph = loadGraph();
+    const node = findNode(graph, node_id);
+    return ok({
+      node_id,
+      files: listAffectedFiles(node),
+    });
   })
 );
 

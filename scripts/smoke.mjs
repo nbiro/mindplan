@@ -77,6 +77,9 @@ const wfCtx = fs.readFileSync(path.join(wfFolder, "context.mdx"), "utf-8");
 if (!wfCtx.includes("belongs_to:") || !wfCtx.includes("j-ordering") || !wfCtx.includes("depends_on:") || !wfCtx.includes("f-db")) {
   failures++; console.log("FAIL edges not persisted in wf-checkout frontmatter");
 } else console.log("ok   edges in frontmatter");
+if (!wfCtx.includes("## Affected Files")) {
+  failures++; console.log("FAIL workflow scaffold missing ## Affected Files section");
+} else console.log("ok   workflow scaffold includes affected files section");
 
 // --- find_related_nodes ---
 await expectBlocked("find_related_nodes requires query or node_id", "find_related_nodes", {});
@@ -246,6 +249,32 @@ else console.log("ok   bug get_node_context");
 if (ctx.title !== "Race condition" || ctx.description !== "Double charge") {
   failures++; console.log(`FAIL bug title/description from context: ${JSON.stringify({ title: ctx.title, description: ctx.description })}`);
 } else console.log("ok   bug title/description from frontmatter");
+
+// --- workflow affected files ---
+const wfFilesEmpty = JSON.parse(
+  await expectOk("get_workflow_files empty", "get_workflow_files", { node_id: "wf-checkout" })
+);
+if (wfFilesEmpty.node_id !== "wf-checkout" || (wfFilesEmpty.files?.length ?? 0) !== 0) {
+  failures++; console.log(`FAIL empty affected files: ${JSON.stringify(wfFilesEmpty)}`);
+} else console.log("ok   get_workflow_files empty scaffold");
+fs.writeFileSync(
+  wfPath,
+  fs.readFileSync(wfPath, "utf-8").replace(
+    "_Project files touched during implementation (project-relative paths)._",
+    "- `src/checkout.ts`\n- tests/checkout.test.ts"
+  )
+);
+const wfFiles = JSON.parse(
+  await expectOk("get_workflow_files populated", "get_workflow_files", { node_id: "wf-checkout" })
+);
+if (
+  wfFiles.files?.length !== 2 ||
+  !wfFiles.files.includes("src/checkout.ts") ||
+  !wfFiles.files.includes("tests/checkout.test.ts")
+) {
+  failures++; console.log(`FAIL affected files parse: ${JSON.stringify(wfFiles)}`);
+} else console.log("ok   get_workflow_files parses list");
+await expectBlocked("get_workflow_files non-workflow", "get_workflow_files", { node_id: "f-db" });
 
 // --- workflow dependency closure ---
 await expectOk("create wf-auth", "create_node", { id: "wf-auth", type: "Workflow", title: "Authentication", description: "Login flow" });

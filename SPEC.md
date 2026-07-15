@@ -407,10 +407,16 @@ Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the fi
 
 - **Journey** — Overview section, Linked Workflows note, Attachments note. No checklist (Journeys have no completion gate).
 - **Foundation** — Infrastructure Spec section, Checklist (3 default Atomic Ops), Attachments note.
-- **Workflow** — Execution Logic section, Checklist (3 default Atomic Ops), Attachments note.
+- **Workflow** — Execution Logic section, Checklist (3 default Atomic Ops), **Affected Files** section (empty list for project paths touched during implementation; §6.3.1), Attachments note.
 - **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4).
 
 Default checklist items are placeholders; teams SHOULD replace them with real Atomic Ops during `draft` or triage.
+
+#### 6.3.1 Workflow affected files
+
+Workflow `context.mdx` bodies MUST include an `## Affected Files` section (scaffolded empty). During build-pipeline execution, agents MUST append every project file they create or materially modify as a markdown list item (project-relative path, optionally backtick-wrapped). The list is territory-owned body content — not frontmatter and not compiler-gated. Agents query it via `get_workflow_files` (§8.1).
+
+Recognized syntax: list items under the heading until the next `##` heading, using `-`, `*`, or `+` markers. Placeholder italic lines (starting with `_`) are ignored.
 
 Scaffolded bodies include an MDX comment noting which standard components are available. `create_node` MUST also ensure `mindplan/components/` exists at the planning root.
 
@@ -555,7 +561,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes exactly ten tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly eleven tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -646,6 +652,22 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 ```
 
 - **Errors:** unknown `node_id`; missing `context.mdx`.
+
+#### `get_workflow_files`
+
+Returns the project-relative file paths listed in a Workflow's `## Affected Files` territory section (§6.3.1).
+
+- **Input:** `node_id` (slug; must be a Workflow).
+- **Output:**
+
+```jsonc
+{
+  "node_id": "wf-checkout-split",
+  "files": ["src/checkout/split.ts", "tests/checkout.test.ts"]
+}
+```
+
+- **Errors:** unknown `node_id`; node is not a Workflow.
 
 ### 8.2 Mutation tools
 

@@ -655,6 +655,10 @@ export function scaffoldEntity(
         "- [ ] Implementation complete",
         "- [ ] Tests passing",
         "",
+        "## Affected Files",
+        "",
+        "_Project files touched during implementation (project-relative paths)._",
+        "",
         "## Attachments",
         "",
         `_Wireframes, screenshots, and spec PDFs go in \`attachments/\`._`,
@@ -712,4 +716,42 @@ export function countUncheckedBoxes(node: Pick<MindPlanNode, "id" | "type">): nu
   const raw = readMarkdown(node);
   const matches = raw.match(/^\s*[-*+]\s+\[ \]/gm);
   return matches ? matches.length : 0;
+}
+
+/** Heading that marks the workflow affected-files list in context.mdx body. */
+export const AFFECTED_FILES_HEADING = "## Affected Files";
+
+/**
+ * Parses project-relative file paths from the `## Affected Files` section of
+ * context.mdx. List items may use backticks or plain text; paths are
+ * normalized to posix, deduplicated, and sorted.
+ */
+export function parseAffectedFiles(raw: string): string[] {
+  const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  const headingMatch = body.match(/^## Affected Files\s*$/m);
+  if (!headingMatch || headingMatch.index === undefined) return [];
+
+  const afterHeading = body.slice(headingMatch.index + headingMatch[0].length);
+  const nextSection = afterHeading.search(/\r?\n## /);
+  const section = nextSection < 0 ? afterHeading : afterHeading.slice(0, nextSection);
+
+  const files = new Set<string>();
+  for (const line of section.split(/\r?\n/)) {
+    const item = line.match(/^\s*[-*+]\s+(?:`([^`]+)`|(.+?))\s*$/);
+    if (!item) continue;
+    const path = (item[1] ?? item[2] ?? "").trim();
+    if (!path || path.startsWith("_")) continue;
+    files.add(path.replace(/\\/g, "/"));
+  }
+  return [...files].sort((a, b) => a.localeCompare(b));
+}
+
+/** Returns affected project files recorded in a Workflow's context.mdx body. */
+export function listAffectedFiles(node: Pick<MindPlanNode, "id" | "type">): string[] {
+  if (node.type !== "Workflow") {
+    throw new Error(
+      `Blocked: get_workflow_files only applies to Workflow nodes; "${node.id}" is a ${node.type}.`
+    );
+  }
+  return parseAffectedFiles(readMarkdown(node));
 }

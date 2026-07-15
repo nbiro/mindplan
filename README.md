@@ -167,6 +167,7 @@ Every violation throws an error starting with `Blocked: `.
 | `export_mindplan_view` | read | Mermaid or DOT typed-DAG projection (full map or focus + 1-hop) |
 | `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); seeds from supersedes chain for version successors; journeys_at_risk |
 | `get_node_context` | read | Returns `title`, `description`, `context.mdx`, attachment paths, and filenames |
+| `get_workflow_files` | read | Project files listed in a Workflow's `## Affected Files` territory section |
 | `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `context.mdx` |
 | `create_node_version` | mutation | New draft version of a shipped Workflow/Foundation; inherits outgoing edges; predecessor stays live until successor ships (dependents relink at ship, not create) |
 | `link_nodes` | mutation | `belongs_to`, `depends_on` (Foundation or Workflow), or `affects`; optional `link_dependent` for journey closure; writes to source-node frontmatter; recomputes Journey + stability |

@@ -35,7 +35,7 @@ Every request starts the same way:
 find_related_nodes({ query: "<user ask>" })
 ```
 
-Use the returned `focus` and 1-hop `nodes`/`edges`. Call `get_node_context` on the focus before executing. Use `get_mindplan_graph` only for greenfield / empty graphs or rare full audits — not on every turn. When the user asks to “show the map”, for a PR architecture diagram, or for a Mermaid/DOT visualization, call `export_mindplan_view` (optionally with `focus`) — do not dump `get_mindplan_graph` JSON as a diagram.
+Use the returned `focus` and 1-hop `nodes`/`edges`. Call `get_node_context` on the focus before executing. Before substantial implementation on a Foundation or Workflow, call `get_blast_radius` on that node to see transitive dependents and `journeys_at_risk`. Use `get_mindplan_graph` only for greenfield / empty graphs or rare full audits — not on every turn. When the user asks to “show the map”, for a PR architecture diagram, or for a Mermaid/DOT visualization, call `export_mindplan_view` (optionally with `focus`) — do not dump `get_mindplan_graph` JSON as a diagram.
 
 Then classify:
 
@@ -65,10 +65,10 @@ Compiler success on write is necessary but not sufficient — always re-read **a
 draft → ready → in-progress → in-review → ship → stable/unstable
 ```
 
-1. **Orient** — `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Read PRD, Acceptance Criteria, and Atomic Ops.
+1. **Orient** — `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Call `get_blast_radius` on the focus node before substantial implementation; note transitive dependents and `journeys_at_risk`. Read PRD, Acceptance Criteria, and Atomic Ops.
 2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress`. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
 3. **Commit to work** — `update_node_status` → `ready`, then `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway.
-4. **Execute** — Implement in application code. Keep territory in sync: as each Atomic Op is done, edit the `context.mdx` **body** only (`- [ ]` → `- [x]`). Never check a box without doing the work.
+4. **Execute** — Implement in application code. Keep territory in sync: as each Atomic Op is done, edit the `context.mdx` **body** only (`- [ ]` → `- [x]`). For Workflows, append each created or materially modified project file to the `## Affected Files` section (project-relative paths). Never check a box without doing the work.
 5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`.
 6. **Ship** — From `in-review`, `update_node_status` → `ship`. Server sets `shipped_at` and computes `stable` or `unstable`.
    - **Infrastructure First:** a Workflow cannot ship until every direct `depends_on` Foundation and Workflow is `stable`. Ship Foundations (and prerequisite Workflows) first.
@@ -106,6 +106,7 @@ Do **not** reset a shipped Foundation/Workflow back to `draft`.
 - Checkbox state on disk gates `in-review`, `ship`, and Bug `in-review`/`resolved`.
 - Enrich or replace scaffold checklist placeholders during `draft` / triage with real PR-sized work items.
 - Attachments live under `attachments/`; reference them from the body with relative links.
+- Workflow `## Affected Files` lists project paths touched during implementation; query with `get_workflow_files`.
 
 ## Compiler rules
 
@@ -128,8 +129,9 @@ Do **not** reset a shipped Foundation/Workflow back to `draft`.
 | `find_related_nodes` | Orient — rank by query, return focus + 1-hop links (prefer over full graph) |
 | `export_mindplan_view` | Human diagram — Mermaid/DOT on demand (full or focus); full Mermaid also auto-persists to `mindplan/map.md` after every mutation |
 | `get_mindplan_graph` | Full graph dump — greenfield, multi-node plan validation, or rare full audits |
-| `get_blast_radius` | Transitive dependents (seeds via `supersedes` for version successors) and journeys at risk |
+| `get_blast_radius` | Before substantial implementation — transitive dependents (seeds via `supersedes` for version successors) and journeys at risk |
 | `get_node_context` | Read territory for the node you are executing |
+| `get_workflow_files` | List project files recorded in a Workflow's `## Affected Files` section |
 | `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities skill) |
 | `create_node_version` | New draft version of a shipped Workflow or Foundation |
 | `link_nodes` | Add `belongs_to`, `depends_on`, or `affects`; optional `link_dependent: true` for Journey closure |
@@ -139,6 +141,7 @@ Do **not** reset a shipped Foundation/Workflow back to `draft`.
 ## Never do
 
 - Start substantial coding without `find_related_nodes` (or an explicit `node_id`) and a clear owning node
+- Start substantial implementation on a Foundation or Workflow without `get_blast_radius` on the owning node
 - Mutate the plan and continue without validating (re-read focus / graph, confirm edges and states, and confirm `mindplan/map.md` refreshed)
 - Implement under `draft`/`ready` instead of moving to `in-progress` (or Bug `fixing`) first
 - Check off Atomic Ops without completing the work

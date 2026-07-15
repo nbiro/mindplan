@@ -1,0 +1,50 @@
+---
+id: wf-workflow-affected-files
+type: Workflow
+title: "Workflow affected files"
+description: "Workflows record project files touched during implementation in context.mdx; agents query the list via get_workflow_files."
+state: in-review
+created_at: 2026-07-15T20:14:46.276Z
+updated_at: 2026-07-15T20:15:38.462Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-territory-store
+  - f-mcp-runtime
+---
+
+# Workflow affected files
+
+Workflows maintain a territory-body list of project files touched during implementation. Agents query per-workflow file lists through MCP `get_workflow_files`.
+
+## Execution Logic
+
+1. Workflow scaffold includes an `## Affected Files` section (empty list).
+2. During build-pipeline **Execute**, agents append project-relative paths to that section as they modify application code.
+3. `parseAffectedFiles` in the territory store reads the section from `context.mdx` (markdown list items until the next `##` heading).
+4. MCP tool `get_workflow_files({ node_id })` returns `{ node_id, files: [...] }` for Workflow nodes only.
+5. Playbook and SPEC document the convention and tool.
+
+## Checklist
+
+- [x] SPEC: `## Affected Files` territory convention + `get_workflow_files` tool contract
+- [x] Scaffold: Workflow template includes `## Affected Files`
+- [x] Implement `parseAffectedFiles` and `get_workflow_files` MCP tool
+- [x] Smoke test: parse list + query by workflow id
+- [x] Playbook: agents maintain affected files during Execute
+
+## Affected Files
+
+- `src/store.ts`
+- `src/index.ts`
+- `SPEC.md`
+- `AGENTS.md`
+- `templates/agent/playbook.md`
+- `mindplan/agent/playbook.md`
+- `scripts/smoke.mjs`
+
+## Attachments
+
+_Wireframes, screenshots, and spec PDFs go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}
