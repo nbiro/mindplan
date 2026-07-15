@@ -17,51 +17,32 @@ Planning data (`mindplan/`) lives in **consumer projects**, not in this repo. Co
 
 ## Quick start
 
-In your project:
+**Not yet published to npm — install from source.**
 
-```bash
-npx mindplan-mcp init
-```
-
-Add to `.cursor/mcp.json` in that project:
-
-```json
-{
-  "mcpServers": {
-    "mindplan": {
-      "command": "npx",
-      "args": ["-y", "mindplan-mcp"]
-    }
-  }
-}
-```
-
-Reload MCP servers in Cursor. The server uses the opened workspace as the project root, so `MINDPLAN_ROOT` is usually unnecessary.
-
-`init` also installs:
-
-- `.cursor/rules/mindplan.mdc` — always-on agent playbook (MCP workflow, compiler rules)
-- `.cursor/skills/mindplan-define-entities/` — skill for defining Journey, Foundation, Workflow, and Bug nodes
-
-Reload Cursor after init if rules/skills are not picked up immediately.
-
-To install manually:
-- Copy `templates/mindplan-agent.mdc` → `.cursor/rules/mindplan.mdc`
-- Copy `templates/mindplan-define-entities/` → `.cursor/skills/mindplan-define-entities/`
-
-To pin a version:
-
-```json
-"args": ["-y", "mindplan-mcp@0.1.0"]
-```
-
-### Before npm publish (from source)
+1. Clone and build the server:
 
 ```bash
 git clone https://github.com/mindplan-io/mindplan.git
 cd mindplan
 npm install && npm run build
 ```
+
+2. From your project's root directory, run `init` against the built server to scaffold `mindplan/` and install the agent rule + skill:
+
+```bash
+node /absolute/path/to/mindplan/dist/index.js init
+```
+
+`init` uses the current working directory as the project root (override with `MINDPLAN_ROOT`) and installs:
+
+- `.cursor/rules/mindplan.mdc` — always-on agent playbook (MCP workflow, compiler rules)
+- `.cursor/skills/mindplan-define-entities/` — skill for defining Journey, Foundation, Workflow, and Bug nodes
+
+To install these manually instead:
+- Copy `templates/mindplan-agent.mdc` → `.cursor/rules/mindplan.mdc`
+- Copy `templates/mindplan-define-entities/` → `.cursor/skills/mindplan-define-entities/`
+
+3. Add the server to `.cursor/mcp.json` in that project:
 
 ```json
 {
@@ -73,6 +54,8 @@ npm install && npm run build
   }
 }
 ```
+
+4. Reload MCP servers (or all of Cursor, if rules/skills aren't picked up immediately).
 
 ## File system layout (consumer project)
 
