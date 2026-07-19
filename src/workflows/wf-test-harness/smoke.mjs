@@ -614,6 +614,17 @@ if (initResult.status !== 0) {
 ) {
   failures++;
   console.log("FAIL .cursorignore must ignore map.md only (not current.mdx/next.mdx)");
+} else if (!fs.existsSync(path.join(initRoot, ".cursor", "permissions.json"))) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install .cursor/permissions.json");
+} else if (
+  (() => {
+    const perms = fs.readFileSync(path.join(initRoot, ".cursor", "permissions.json"), "utf-8");
+    return !perms.includes("mindplan:*");
+  })()
+) {
+  failures++;
+  console.log("FAIL .cursor/permissions.json must allowlist mindplan:*");
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "integrations", "codex.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install Codex integration guide");

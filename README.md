@@ -146,6 +146,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 `init` uses the current working directory as the project root (override with `MINDPLAN_ROOT`) and installs:
 
 - `.cursorignore` — ignores derived `mindplan/map.md` (and `mindplan/agent/**`); agents orient via MCP for graph authority and edit territory prose with host file tools
+- `.cursor/permissions.json` — allowlists `mindplan:*` MCP tools so Cursor Auto-review does not prompt on playbook graph mutations
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
 - `mindplan/agent/skills/plan-project/` — plan-only sessions (model the graph; no application code)
@@ -255,7 +256,7 @@ Every violation throws an error starting with `Blocked: `.
 | Command | Description |
 |---------|-------------|
 | `mindplan-mcp` | Start the MCP server (stdio) |
-| `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, `.cursorignore`, and `AGENTS.md` |
+| `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, `.cursorignore`, `.cursor/permissions.json`, and `AGENTS.md` |
 | `mindplan-mcp view` | Print a Mermaid/DOT projection of the territory graph (`export` is an alias) |
 | `mindplan-mcp help` | Show usage |
 

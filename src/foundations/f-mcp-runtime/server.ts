@@ -49,6 +49,7 @@ import {
   installAgentPlaybook,
   installAgentIntegrations,
   installCursorIgnore,
+  installCursorPermissions,
   installDefineEntitiesSkill,
   installPlanProjectSkill,
   installMcpExample,
@@ -979,6 +980,7 @@ function runCli() {
     const integrations = installAgentIntegrations(packageRoot);
     const agentsMd = installRootAgentsMd(packageRoot);
     const cursorIgnore = installCursorIgnore(packageRoot);
+    const cursorPermissions = installCursorPermissions(packageRoot);
 
     if (created) {
       console.log(`Initialized MindPlan at ${root}`);
@@ -999,6 +1001,7 @@ function runCli() {
     report("agent integrations", integrations);
     report("AGENTS.md", agentsMd);
     report(".cursorignore", cursorIgnore);
+    report(".cursor/permissions.json", cursorPermissions);
 
     if (!agentsMd.installed) {
       console.log("Tip: add a reference to mindplan/agent/playbook.md in your existing AGENTS.md.");

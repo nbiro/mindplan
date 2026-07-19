@@ -1,0 +1,16 @@
+{
+  "mcpAllowlist": [
+    "mindplan:*",
+    "project-0-mindplan-mindplan:*",
+    "*mindplan*:*"
+  ],
+  "autoRun": {
+    "allow_instructions": [
+      "MindPlan MCP graph mutations required by AGENTS.md / the MindPlan playbook are fine without asking: orient_for_work, find_related_nodes, get_node_context, get_blast_radius, create_node, link_nodes, unlink_nodes, open_next, discard_next, update_node_status for draft/ready/in-progress/in-review/triaged/fixing, and patch_node_territory when used as fallback.",
+      "Allow MindPlan update_node_status when advancing work the user already requested to implement, plan, or ship through the playbook pipeline."
+    ],
+    "block_instructions": [
+      "Still prefer asking before MindPlan update_node_status to ship or Bug resolved unless the user explicitly asked to ship or resolve after review."
+    ]
+  }
+}

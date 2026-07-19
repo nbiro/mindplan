@@ -2,29 +2,27 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP stdio runtime"
-description: "MCP/CLI shell; mutate handlers return changed_files paths"
+description: "MCP/CLI shell; init installs .cursor/permissions.json"
 state: stable
-shipped_at: 2026-07-19T20:13:30.295Z
+shipped_at: 2026-07-19T20:39:52.715Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-07-19T20:13:30.295Z
+updated_at: 2026-07-19T20:39:52.715Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
 ---
 
-
-
 # MCP stdio runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote.
+Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI `init` installs consumer agent assets including `.cursor/permissions.json`.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
-- `server.ts` — MCP server registration; CLI (`init`, `view`, help); wires compiler + store + search + view projection; registers read tools (`wf-query-graph`), write tools (`wf-mutate-graph`), and `export_mindplan_view` (`wf-export-views`); auto-persists `mindplan/map.md` after successful graph mutations; graph mutate tool results include `changed_files: string[]` (and `path` on territory patches)
+- `server.ts` — MCP server registration; CLI (`init`, `view`, help); wires compiler + store + search + view projection; registers read tools (`wf-query-graph`), write tools (`wf-mutate-graph`), and `export_mindplan_view` (`wf-export-views`); auto-persists `mindplan/map.md` after successful graph mutations; graph mutate tool results include `changed_files: string[]` (and `path` on territory patches); `init` calls `wf-project-init` install helpers including `installCursorPermissions`
 
 Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search and view-projection at runtime).
 
@@ -32,15 +30,15 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search and 
 
 - MCP tools listed in Workflow ownership modules are registered and callable over stdio
 - CLI `init` / `view` / help work against the resolved package root
+- CLI `init` installs `.cursor/permissions.json` when missing (via `installCursorPermissions`)
 - Mutations that succeed refresh the Mermaid map on disk
 - Graph mutate tools return `changed_files` for paths written or deleted
 - Verified via `npm test` (smoke)
 
 ## Atomic Ops
 
-- [x] Add `changed_files` to create/link/unlink/status/open_next/discard_next responses
-- [x] Return `changed_files` + `path` from `patch_node_territory`
-- [x] Smoke coverage for `changed_files`
+- [x] Wire `installCursorPermissions` into CLI `init` report
+- [x] Verified via `npm test`
 
 ## Attachments
 

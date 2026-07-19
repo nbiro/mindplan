@@ -149,6 +149,16 @@ export function installCursorIgnore(packageRoot: string): InstallAgentRuleResult
   return installTemplateFile(templatePath, destPath, ".cursorignore");
 }
 
+/** Installs `.cursor/permissions.json` when missing (idempotent).
+ * Allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on
+ * playbook-required graph mutations (status transitions, create/link, etc.).
+ */
+export function installCursorPermissions(packageRoot: string): InstallAgentRuleResult {
+  const templatePath = path.join(agentTemplateRoot(packageRoot), "permissions.json");
+  const destPath = path.join(projectRoot(), ".cursor", "permissions.json");
+  return installTemplateFile(templatePath, destPath, ".cursor/permissions.json");
+}
+
 /** Scaffolds an empty mindplan/ tree in the consumer project (idempotent). */
 export function initProject(): InitResult {
   const root = mindplanRoot();

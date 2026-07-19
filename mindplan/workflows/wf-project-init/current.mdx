@@ -2,11 +2,11 @@
 id: wf-project-init
 type: Workflow
 title: "Init a consumer project"
-description: "Scaffold consumer mindplan/; cursorignore no longer blocks territory MDX"
+description: "Infra — install .cursor/permissions.json so Cursor Auto-review does not prompt on playbook MCP mutations"
 state: stable
-shipped_at: 2026-07-19T20:13:35.127Z
+shipped_at: 2026-07-19T20:39:52.885Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-07-19T20:13:35.127Z
+updated_at: 2026-07-19T20:39:52.885Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -14,12 +14,11 @@ depends_on:
 ---
 
 
-
 # Init a consumer project
 
 ## Purpose
 
-Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities and plan-project skills, MCP example config, per-agent integration guides, root `AGENTS.md`, and `.cursorignore` that ignores the derived map (and agent asset copies) while allowing agent file tools to edit territory MDX prose.
+Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities and plan-project skills, MCP example config, per-agent integration guides, root `AGENTS.md`, `.cursorignore` that ignores the derived map (and agent asset copies) while allowing agent file tools to edit territory MDX prose, and `.cursor/permissions.json` that allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on playbook-required graph mutations.
 
 ## Execution Logic
 
@@ -33,6 +32,7 @@ Package: `src/workflows/wf-project-init/`
   - `installAgentIntegrations` — guides into `mindplan/agent/integrations/`
   - `installRootAgentsMd` — root `AGENTS.md` from template
   - `installCursorIgnore` — installs `templates/agent/cursorignore` (ignores `mindplan/map.md` + `mindplan/agent/**`; does **not** block `current.mdx` / `next.mdx`)
+  - `installCursorPermissions` — installs `templates/agent/permissions.json` → `.cursor/permissions.json` when missing (`mindplan:*` / `project-0-mindplan-mindplan:*` / `*mindplan*:*` MCP allowlist + Auto-review allow/block instructions)
 - Invoked by CLI `mindplan-mcp init` in `f-mcp-runtime` (package root resolved by walking up to `templates/agent`)
 
 Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`.
@@ -40,16 +40,18 @@ Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`.
 ## Acceptance Criteria
 
 - `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
-- Playbook, define-entities skill, plan-project skill, integrations, MCP example, AGENTS.md, and `.cursorignore` are installed from `templates/`
+- Playbook, define-entities skill, plan-project skill, integrations, MCP example, AGENTS.md, `.cursorignore`, and `.cursor/permissions.json` are installed from `templates/`
 - Template `.cursorignore` does not list `mindplan/**/current.mdx` or `mindplan/**/next.mdx`
+- Template `.cursor/permissions.json` allowlists `mindplan:*` and steers Auto-review for playbook mutations
 - Init helpers live in this package (not in the territory store)
-- Smoke test covers init template install including plan-project and cursorignore contents
+- Smoke test covers init template install including plan-project, cursorignore contents, and permissions.json
 
 ## Atomic Ops
 
-- [x] Update `templates/agent/cursorignore` (drop territory MDX ignore lines)
-- [x] Align install docs / comments in `init.ts` with the new ignore policy
-- [x] Smoke asserts cursorignore does not block current.mdx/next.mdx
+- [x] Add `templates/agent/permissions.json` with `mindplan:*` allowlist + autoRun instructions
+- [x] Add `installCursorPermissions` in `init.ts` (idempotent, installs when missing)
+- [x] Document permissions install in `templates/agent/integrations/cursor.md`
+- [x] Smoke asserts `.cursor/permissions.json` is installed with `mindplan:*`
 
 ## Attachments
 
