@@ -9,23 +9,25 @@ Normative reference: `SPEC.md` (in the mindplan-mcp package or repo). Entity sca
 | Layer | Location | Who writes |
 |-------|----------|------------|
 | **Node record** | `mindplan/<type>s/<id>/current.mdx` frontmatter | Server owns **state**, **updated_at**, **shipped_at**, **belongs_to**, **depends_on**, **affects** via MCP |
-| **title / description** | `current.mdx` frontmatter scalars (or `next.mdx` while evolving) | Pre-ship Workflows: `patch_node_territory`; evolving shipped Foundations/Workflows: `patch_node_territory` (defaults to `next`); other types: `patch_node_territory` or file tools until `.cursorignore` blocks reads |
-| **Territory body** | `current.mdx` body (or `next.mdx` while evolving) | `patch_node_territory` (preferred) or file tools on `current_path`/`next_path` from MCP (`context_path` is a deprecated alias for `current_path`) |
+| **title / description** | `current.mdx` frontmatter scalars (or `next.mdx` while evolving) | **Agent file tools** (preferred) on `current_path` / `next_path` from MCP orientation; `patch_node_territory` is an optional fallback |
+| **Territory body** | `current.mdx` body (or `next.mdx` while evolving) | **Agent file tools** (preferred) — edit body below the closing `---` so host “changed files” UIs show the write; `patch_node_territory` optional fallback |
 | **Attachments** | `mindplan/<type>s/<id>/attachments/` (`next-attachments/` while evolving) | Normal file tools |
 
 A node's id is stable forever — Foundations and Workflows never get a new id to evolve; they open an optional `next.mdx` next to `current.mdx` instead.
 
 **Never edit** server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) by hand.
 
-## Territory access (MCP-first)
+## Territory access (MCP = graph; file tools = prose)
 
-When `.cursorignore` is installed (via `mindplan-mcp init`), agent file tools cannot read `mindplan/**/current.mdx`, `mindplan/**/next.mdx`, or `mindplan/map.md`. Use MCP for all territory reads and prefer MCP for territory writes.
+Orient and mutate **graph structure** only through MCP. Write **territory prose** with host file tools so humans see native diffs. `.cursorignore` (via `mindplan-mcp init`) ignores `mindplan/map.md` and `mindplan/agent/**` — it does **not** block `current.mdx` / `next.mdx`.
 
-- **Never** `Read` / `Grep` / `Glob` under `mindplan/journeys|foundations|workflows|bugs/` for orientation — use MCP read tools only
+- **Orient via MCP** — `orient_for_work` / `find_related_nodes` / `get_node_context`. Do not invent graph state by grepping territory folders.
 - **Never** trust `state`, edge arrays, or `shipped_at` except from MCP tool responses (`record` in `get_node_context` / `orient_for_work`)
 - **Never** read `mindplan/map.md` as graph authority — call `export_mindplan_view` or re-call `find_related_nodes` after mutations
-- **Never** use terminal commands (`cat`, `type`, `Get-Content`, etc.) to read ignored territory paths
-- Territory edits: use `patch_node_territory` on the `node_id` returned by orientation; for body-only work until fully on MCP, edit only the body below frontmatter at `current_path` (or `next_path` when a next slot is open) from `get_node_context`
+- **Graph mutations (MCP only):** `create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `open_next`, `discard_next`
+- **Prose edits (file tools preferred):** after orientation, Write/StrReplace `title` / `description` scalars and the body below frontmatter at `current_path` or `next_path`. Toggle checklist boxes the same way. Never rewrite server-owned frontmatter fields.
+- **`patch_node_territory`:** optional fallback (automation, hosts with weak file tools). Prefer file tools in interactive coding agents so the host “changed files” strip shows the edit.
+- After graph MCP tools succeed, narrate what changed using `changed_files` (and states/edges) from the tool result — MCP FS writes do not appear in many hosts’ native edit UIs; review those paths via Source Control or by opening the cited file.
 
 ## Taxonomy (quick map)
 
@@ -81,10 +83,10 @@ Do not invent tickets outside MindPlan. Do not start substantial implementation 
 
 ## Validate after every plan change
 
-After **each** MindPlan mutation — `create_node`, `open_next`, `discard_next`, `link_nodes`, `unlink_nodes`, `update_node_status`, `patch_node_territory` — **and** after any material territory edit that changes checklist gates or intent, **validate before continuing**:
+After **each** MindPlan graph mutation — `create_node`, `open_next`, `discard_next`, `link_nodes`, `unlink_nodes`, `update_node_status` — **and** after any material territory prose edit that changes checklist gates or intent, **validate before continuing**:
 
 1. Re-read the changed focus with `find_related_nodes` (or `get_node_context` / `orient_for_work`). For multi-node restructuring, call `get_mindplan_graph` once and confirm the full picture.
-2. Confirm the mutation stuck: expected `id`s, `state`s (including `next.state` when a next slot is open), and edges (`belongs_to` / `depends_on` / `affects`) match what you intended.
+2. Confirm the mutation stuck: expected `id`s, `state`s (including `next.state` when a next slot is open), and edges (`belongs_to` / `depends_on` / `affects`) match what you intended. Use `changed_files` from the tool result when narrating MCP writes to the human.
 3. If the response is `Blocked: …` or the graph does not match intent, **stop** — fix the plan, then mutate again. Do not proceed to implementation or the next mutation on a known-bad graph.
 4. **Confirm the visualization** — call `export_mindplan_view` or re-call `find_related_nodes` after graph mutations. Do not read `mindplan/map.md` as authority.
 
@@ -96,12 +98,12 @@ Compiler success on write is necessary but not sufficient — always re-read via
 draft → ready → in-progress → in-review → ship → stable/unstable
 ```
 
-For a shipped node evolving via `open_next`, this same pipeline runs against the `next.mdx` slot — `update_node_status` and `patch_node_territory` apply to `next` automatically while it exists (see Versioning shipped work below). The live node keeps serving under `current.mdx` for the whole loop; only `ship` promotes `next` over `current`.
+For a shipped node evolving via `open_next`, this same pipeline runs against the `next.mdx` slot — `update_node_status` applies to `next` automatically while it exists (see Versioning shipped work below). The live node keeps serving under `current.mdx` for the whole loop; only `ship` promotes `next` over `current`.
 
 1. **Orient** — `orient_for_work` or `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Call `get_blast_radius` on the focus node before substantial implementation; note transitive dependents and `journeys_at_risk`. Read PRD, Acceptance Criteria, and Atomic Ops from `body` (or `next.body` when a next slot is open).
 2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress`. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
 3. **Commit to work** — `update_node_status` → `ready`, then `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway.
-4. **Execute** — Implement in the node's prescribed package (`src/workflows/<id>/` or `src/foundations/<id>/`). Keep territory in sync via `patch_node_territory`: toggle checkboxes (`toggle_checkboxes`), update PRD (`body`). Never check a box without doing the work. Query architecture with `get_node_implementation` plus the graph.
+4. **Execute** — Implement in the node's prescribed package (`src/workflows/<id>/` or `src/foundations/<id>/`). Keep territory in sync with **file tools** on `current_path` / `next_path`: update PRD body, toggle Atomic Ops checkboxes. Never check a box without doing the work. (`patch_node_territory` remains an optional fallback.) Query architecture with `get_node_implementation` plus the graph.
 5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`. Then **stop**. Do not immediately `ship`. Hand off for review by a human or a different agent (not the same session that implemented the work).
 6. **Ship** — Only after that external review approves. The **reviewer** (human or another agent) calls `update_node_status` → `ship` from `in-review` (or from `next` `in-review` when evolving). Server sets `shipped_at` and computes `stable` or `unstable`; if a `next` slot was open, ship promotes it over `current` and deletes `next.mdx`.
    - **External Review:** the implementing agent MUST NOT `ship` (or Bug `resolved`) their own work. Wait for a human or a different agent to review and perform the ship/resolve transition.
@@ -114,11 +116,11 @@ Retreat when needed: `in-progress` ↔ `ready`, `in-review` → `in-progress` (s
 
 When implementation reveals different scope on a **pre-ship Workflow** (`draft`, `ready`, `in-progress`, `in-review`):
 
-1. `patch_node_territory({ node_id, description: "…" })` — also update PRD `body` when intent changes materially
+1. Edit `description` (and PRD `body` when intent changes materially) via file tools on `current_path` — do not touch server-owned frontmatter fields
 2. Re-call `find_related_nodes` to validate
 3. If scope changes materially during `in-review`, retreat to `in-progress` before large checklist/PRD rewrites — description alone does not satisfy Completion Check
 
-**Never** change `description` or `title` on the `current.mdx` of a shipped Workflow (`stable`/`unstable`/`deprecated`) — call `open_next` first, then `patch_node_territory` (defaults to `next`) for live scope changes.
+**Never** change `description` or `title` on the `current.mdx` of a shipped Workflow (`stable`/`unstable`/`deprecated`) — call `open_next` first, then edit the `next` slot with file tools.
 
 ## Bug lifecycle loop
 
@@ -130,7 +132,7 @@ open → triaged → fixing → in-review → resolved
 1. If the Bug does not exist yet, create it via define-entities (starts `open`).
 2. `link_nodes` with `affects` → target Workflow or Foundation **before** leaving `open`. Open Bugs flip the target to `unstable` after it has shipped.
 3. `update_node_status` → `triaged` → `fixing`.
-4. Fix in application code; check off Fix Checklist items via `patch_node_territory` (`toggle_checkboxes`).
+4. Fix in application code; check off Fix Checklist items via file tools on the Bug's `current_path` (or `patch_node_territory` fallback).
 5. `in-review` only when the checklist is complete; then **stop** and hand off for external review (same rule as Foundations/Workflows).
 6. After review approval, the **reviewer** transitions to `resolved` (or `wontfix` from `open` when closing without a fix). The implementing agent MUST NOT resolve their own Bug fix.
 7. Resolving the last open Bug affecting a shipped node restores `stable`.
@@ -144,7 +146,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 1. `get_blast_radius` on the live node — note dependents and `journeys_at_risk` before opening an evolution.
 2. `open_next` — opens `next.mdx` on the **same** node id, seeded from `current.mdx` (`draft` state, inherited outgoing `belongs_to`/`depends_on`, optional new `title`/`description`). The live node keeps serving unchanged under `current.mdx`; `get_node_context` / `orient_for_work` surface the live `record` plus a `next` slot.
 3. **Territory Completeness** — edit `next` into a **complete proposed successor** of the live contract (Purpose, PRD/Execution Logic/Shared Substrate Spec, Acceptance Criteria). Seed is the starting point; do not replace the body with a changelog, “diff vs current,” or “this evolution only” narrative. Atomic Ops / checklist items on `next` MAY be evolution-scoped (reset for this build); spec sections MUST stay a full post-ship document. `current.mdx` MUST always describe full repo state for the node — never only the latest change.
-4. Run the **build pipeline loop** against the next slot: `update_node_status` transitions `next.state` through `draft → ready → in-progress → in-review`; `patch_node_territory` defaults to `next` for a shipped node with a next slot open (pass `slot: "current"` to explicitly target the live file instead).
+4. Run the **build pipeline loop** against the next slot: `update_node_status` transitions `next.state` through `draft → ready → in-progress → in-review`; edit `next.mdx` prose with file tools at `next_path` (or `patch_node_territory`, which defaults to `next` while a next slot is open — pass `slot: "current"` to explicitly target the live file instead).
 5. Before `next` → `in-review`, **verify Territory Completeness**: if you removed the full contract and left only evolution work items or a changelog, stop and restore a full successor body.
 6. `update_node_status` → `ship` is only legal from `next` `in-review`. It re-checks **Infrastructure First** against the next slot's `depends_on`, promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, sets `shipped_at`, and recomputes `stable`/`unstable` — same id throughout.
 7. `discard_next` abandons an in-flight evolution at any point — deletes `next.mdx` (and `next-attachments/`); `current.mdx` is untouched. Only one `next.mdx` may be open per node at a time — `open_next` is blocked while one already exists; discard or ship it first.
@@ -171,7 +173,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | **Taxonomy** | illegal edge shape | Use correct edge type and node pairing |
 | **Dependency Closure** | `belongs_to` Workflow → Journey | Link dependent Workflows to the same Journey first, or pass `link_dependent: true` |
 | **Next Evolution** | `open_next` | Only `stable`/`unstable` nodes; blocked while a `next.mdx` already exists — `discard_next` or ship it first |
-| **Shipped scope freeze** | `patch_node_territory` title/description on the `current` slot of a shipped Workflow | Call `open_next` first, then patch the `next` slot |
+| **Shipped scope freeze** | Hand-edit or `patch_node_territory` title/description on the `current` slot of a shipped Workflow | Call `open_next` first, then edit the `next` slot |
 
 ## MCP tools
 
@@ -184,27 +186,26 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | `get_blast_radius` | Before substantial implementation — transitive dependents (reverse `depends_on`) and `journeys_at_risk` |
 | `get_node_context` | Read territory — prefer `record` + `body`; includes `next` slot when evolving; `raw_context` is deprecated |
 | `get_node_implementation` | Prescribed package root for a Workflow/Foundation (`src/workflows/<id>` or `src/foundations/<id>`) |
-| `patch_node_territory` | Territory body edits, checkboxes, title/description; defaults to `next` when evolving a shipped node |
-| `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities; for plan-only sessions use plan-project) |
-| `open_next` | Open `next.mdx` on a shipped Foundation/Workflow (same id) to evolve it in place |
-| `discard_next` | Abandon an in-flight `next.mdx` evolution; `current.mdx` unchanged |
-| `link_nodes` | Add `belongs_to`, `depends_on`, or `affects`; optional `link_dependent: true` for Journey closure; writes to `next` while a next slot is open |
-| `unlink_nodes` | Remove all edges between two nodes |
-| `update_node_status` | Advance build pipeline (current or `next` slot), Bug lifecycle, or `ship` (promotes `next` over `current` when open) |
+| `patch_node_territory` | Optional fallback for body/checkboxes/title/description; defaults to `next` when evolving a shipped node — prefer host file tools for prose |
+| `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities; for plan-only sessions use plan-project); returns `changed_files` |
+| `open_next` | Open `next.mdx` on a shipped Foundation/Workflow (same id) to evolve it in place; returns `changed_files` |
+| `discard_next` | Abandon an in-flight `next.mdx` evolution; `current.mdx` unchanged; returns `changed_files` |
+| `link_nodes` | Add `belongs_to`, `depends_on`, or `affects`; optional `link_dependent: true` for Journey closure; writes to `next` while a next slot is open; returns `changed_files` |
+| `unlink_nodes` | Remove all edges between two nodes; returns `changed_files` |
+| `update_node_status` | Advance build pipeline (current or `next` slot), Bug lifecycle, or `ship` (promotes `next` over `current` when open); returns `changed_files` |
 
 ## Never do
 
 - Implement Workflow/Foundation code outside its prescribed `src/workflows/<id>/` or `src/foundations/<id>/` package
 - Start substantial coding without `orient_for_work` / `find_related_nodes` (or an explicit `node_id`) and a clear owning node
 - Start substantial implementation on a Foundation or Workflow without `get_blast_radius` on the owning node
-- Read or grep `mindplan/**/current.mdx`, `mindplan/**/next.mdx`, or `mindplan/map.md` when `.cursorignore` is installed — use MCP read tools
-- Use terminal commands to bypass `.cursorignore` on territory paths
+- Treat on-disk frontmatter or `mindplan/map.md` as graph authority — use MCP `record` / `export_mindplan_view`
 - Mutate the plan and continue without validating (re-read focus / graph via MCP after mutations)
 - Implement under `draft`/`ready` instead of moving to `in-progress` (or Bug `fixing`) first
 - Check off Atomic Ops without completing the work
 - Create a Workflow when no matching Journey exists — refuse; ask the user to define the Journey first
 - Hand-edit frontmatter `state`, `updated_at`, `shipped_at`, or edge arrays
-- Change shipped Workflow `title` or `description` on the `current` slot — call `open_next`, then patch the `next` slot instead
+- Change shipped Workflow `title` or `description` on the `current` slot — call `open_next`, then edit the `next` slot instead
 - Set Journey, `stable`, or `unstable` states manually
 - Move a Workflow past `ready` without both required links
 - Move a Bug past `open` without an `affects` link

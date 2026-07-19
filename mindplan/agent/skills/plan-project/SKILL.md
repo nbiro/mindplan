@@ -62,16 +62,16 @@ Journey(s) → Foundation(s) → Workflow(s) → link_nodes → enrich territory
 
 ### 4. Enrich territory (full contracts)
 
-Use `patch_node_territory` for body / title / description. Replace scaffold stubs with real Purpose, PRD / Execution Logic / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
+Prefer host file tools on `current_path` / `next_path` for body / title / description (so humans see native diffs). `patch_node_territory` is an optional fallback. Replace scaffold stubs with real Purpose, PRD / Execution Logic / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
 
 Territory Completeness still applies: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius` then `open_next` before changing live scope; edit the `next` slot into a complete proposed successor — still without implementing code or advancing past `ready` on `next`.
 
 ### 5. Validate after every mutation
 
-After each `create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, `patch_node_territory`, or `update_node_status`:
+After each `create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, or `update_node_status` (and after material prose edits):
 
 1. Re-read focus via `find_related_nodes` / `get_node_context` (full `get_mindplan_graph` after multi-node restructuring)
-2. Confirm ids, states (including `next.state`), and edges match intent
+2. Confirm ids, states (including `next.state`), and edges match intent; surface `changed_files` from graph tools when narrating MCP writes
 3. Confirm the visualization with `export_mindplan_view` or a fresh neighborhood read
 4. On `Blocked:` or mismatch — stop and fix; do not continue
 

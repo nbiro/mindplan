@@ -145,7 +145,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 
 `init` uses the current working directory as the project root (override with `MINDPLAN_ROOT`) and installs:
 
-- `.cursorignore` — blocks agent file tools from reading territory; agents use MCP for reads and `patch_node_territory` for writes
+- `.cursorignore` — ignores derived `mindplan/map.md` (and `mindplan/agent/**`); agents orient via MCP for graph authority and edit territory prose with host file tools
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
 - `mindplan/agent/skills/plan-project/` — plan-only sessions (model the graph; no application code)
@@ -242,7 +242,7 @@ Every violation throws an error starting with `Blocked: `.
 | `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); journeys_at_risk |
 | `get_node_context` | read | Returns `record`, `body`, attachment paths, and `next` slot when evolving; `raw_context` deprecated |
 | `get_node_implementation` | read | Prescribed package for Workflow/Foundation (`src/workflows/<id>` or `src/foundations/<id>`) |
-| `patch_node_territory` | mutation | Body edits, checkboxes, title/description; defaults to `next` when evolving a shipped Foundation/Workflow |
+| `patch_node_territory` | mutation | Optional fallback for body/checkboxes/title/description; defaults to `next` when evolving; prefer host file tools for prose |
 | `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `current.mdx` |
 | `open_next` | mutation | Opens `next.mdx` on a shipped Foundation/Workflow (same id) seeded from `current.mdx`; live node keeps serving unchanged |
 | `discard_next` | mutation | Deletes `next.mdx` (and `next-attachments/`), abandoning an in-flight evolution; `current.mdx` unchanged |

@@ -821,52 +821,65 @@ Patches territory-owned content on `current.mdx` or `next.mdx`. Server-owned fro
   - At least one patch field is required.
 - **Slot resolution:** when `slot` is omitted, the server patches `next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Workflow with an open evolution, otherwise `current.mdx`.
 - **Effect:** writes territory body and/or `title`/`description` scalars on the resolved slot; touches `updated_at` in that slot's frontmatter.
-- **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next" }`
+- **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next", path, changed_files: string[] }` — `path` is the repo-relative MDX written; `changed_files` lists that path. Interactive agents SHOULD prefer host file tools for prose; this tool is an optional fallback.
 - **Errors:** unknown `node_id`; empty patch; no matching checkbox line; explicit `slot: "next"` with no `next.mdx`; shipped Workflow `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`).
 
 ### 8.2 Mutation tools
+
+#### Territory write authority (graph vs prose)
+
+| Concern | Who writes |
+|---------|------------|
+| Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` | **MCP only** (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `open_next`, `discard_next`) |
+| `title`, `description`, body (PRD / Atomic Ops), checkbox toggles | **Host file tools** preferred on `current_path` / `next_path` from orientation (so native “changed files” UIs show the edit); `patch_node_territory` is an optional fallback |
+| Server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays) | **MCP only** — agents MUST NOT hand-edit these fields |
+| `mindplan/map.md` | Server after graph mutations — derived snapshot, not graph authority |
+
+Orient and trust graph state via MCP `record` responses. Do not treat on-disk frontmatter as authoritative for `state` or edges.
+
+Successful graph mutations MUST include `changed_files: string[]` — repo-relative paths written or deleted (territory MDX, optional scaffolds / attachment paths, and `mindplan/map.md` when the map is refreshed). Agents SHOULD surface these paths to humans because many hosts do not list MCP subprocess writes in their native “edited files” UI.
 
 #### `create_node`
 
 - **Input:** `id` (slug), `type` (`Journey|Foundation|Workflow|Bug`), `title` (non-empty), `description`.
 - **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). For Workflow and Foundation, also scaffolds the prescribed implementation package under `src/` (§1.2, §6.3.1). Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
-- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, implementation? }` (project-relative paths; `context` is a deprecated alias for `current`; `implementation` is the package root when scaffolded).
+- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, implementation?, changed_files }` (project-relative paths; `context` is a deprecated alias for `current`; `implementation` is the package root when scaffolded).
 - **Errors:** duplicate `id`.
 
 #### `open_next`
 
 - **Input:** `node_id` (shipped Foundation or Workflow), `title` (optional), `description` (optional).
 - **Effect:** validates Rule 9 (§5.10), copies `current.mdx`'s body and outgoing `belongs_to`/`depends_on` into a new `next.mdx` in pipeline state `draft` (overriding `title`/`description` when provided) and creates an empty `next-attachments/`. `current.mdx`, its state, and its edges are completely unchanged — the live node keeps serving.
-- **Output:** `{ node_id, live_state, next: { state, title, description, updated_at, belongs_to?, depends_on? }, folder, current, next_path }`.
+- **Output:** `{ node_id, live_state, next: { state, title, description, updated_at, belongs_to?, depends_on? }, folder, current, next_path, changed_files }`.
 - **Errors:** unknown `node_id`; wrong type (not Workflow/Foundation); node not shipped (`stable`/`unstable`); node already has an open `next.mdx`.
 
 #### `discard_next`
 
 - **Input:** `node_id` (Foundation or Workflow with an open `next.mdx`).
 - **Effect:** deletes `next.mdx` and `next-attachments/`, abandoning the in-flight evolution. `current.mdx` is untouched.
-- **Output:** `{ node_id, discarded: true, live_state }`.
+- **Output:** `{ node_id, discarded: true, live_state, changed_files }`.
 - **Errors:** unknown `node_id`; node has no `next.mdx` to discard.
 
 #### `link_nodes`
 
 - **Input:** `source_id`, `target_id`, `edge_type` (`depends_on|belongs_to|affects`), optional `link_dependent` (boolean; only applies to `belongs_to` Workflow → Journey).
 - **Effect:** validates §5.8 and §5.9 (Dependency Closure for `belongs_to`), then appends the target id to the source node's outgoing edge array — on `current.mdx`, or on the proposed `belongs_to`/`depends_on` of an open `next.mdx` when the source is a Foundation/Workflow currently evolving (§2.2) — plus any cascaded `belongs_to` edges when `link_dependent` is true. Recomputes stability (§3.5) and Journey states (§4) from the live graph (`next`-slot edges never affect these computations until promoted), patches affected frontmatter fields.
-- **Output:** `{ linked: {source, target, type}, slot: "current" | "next", dependents_linked: [...], journeys_recomputed: [...], stability_recomputed: [{id, state}] }`.
+- **Output:** `{ linked: {source, target, type}, slot: "current" | "next", dependents_linked: [...], journeys_recomputed: [...], stability_recomputed: [{id, state}], changed_files }`.
 - **Errors:** unknown ids; illegal shape; self-link; duplicate edge (on the resolved slot); dependency cycle; Dependency Closure violation (missing workflow dependencies not in Journey).
 
 #### `unlink_nodes`
 
 - **Input:** `source_id`, `target_id`.
 - **Effect:** removes **all** edges from `source_id` to `target_id` (any type) from the source node's `current.mdx` frontmatter and, when present, from an open `next.mdx`'s proposed edges; recomputes stability and Journey states; mirrors frontmatter.
-- **Output:** `{ removed: <count>, journeys_recomputed: [...], stability_recomputed: [...] }`.
+- **Output:** `{ removed: <count>, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`.
 - **Errors:** unknown ids; no edge exists between the pair (on either slot).
 - **Note:** unlinking does not retroactively demote a Workflow already past a gate; guardrails are evaluated at transition time only (§9.2).
 
 #### `update_node_status`
 
 - **Input:** `node_id`, `new_status` (string; build/Bug state name, or `ship` for Foundation/Workflow production entry).
-- **Effect:** runs the full §5.11 pipeline. When the node has no open `next.mdx`, mutations apply to `current.mdx` exactly as in a first build. When `next.mdx` is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies `next.mdx`'s body/title/description/proposed edges onto `current.mdx`, computes `stable`/`unstable` from open Bugs, sets `shipped_at`, and deletes `next.mdx`/`next-attachments/` (§3.6, §5.10). Recomputes stability and Journey states, persists, mirrors frontmatter.
-- **Output:** `{ node_id, previous_state, new_state, next_state, shipped_at, promoted_next: boolean, journeys_recomputed: [...], stability_recomputed: [...] }`.
+- **Effect:** runs the full §5.11 pipeline. When the node has no open `next.mdx`, mutations apply to `current.mdx` exactly as in a first build. When `next.mdx` is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies `next.mdx`'s body/title/description/proposed edges onto `current.mdx`, merges non-`.gitkeep` files from `next-attachments/` into `attachments/`, computes `stable`/`unstable` from open Bugs, sets `shipped_at`, and deletes `next.mdx`/`next-attachments/` (§3.6, §5.10). Recomputes stability and Journey states, persists, mirrors frontmatter.
+- **Output:** `{ node_id, previous_state, new_state, next_state, shipped_at, promoted_next: boolean, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`. On promote, `changed_files` includes `current.mdx`, deleted `next.mdx` / `next-attachments/` paths, and any `attachments/<file>` copies from the next slot.
 - **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–4 violations; manual `stable`/`unstable` attempt; `ship` attempted while `next.mdx` is not in-review; `deprecated` attempted while `next.mdx` is open.
 
 ### 8.3 Attachments

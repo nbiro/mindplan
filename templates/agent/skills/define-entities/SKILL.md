@@ -90,7 +90,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Workflow | `wf-` | `wf-checkout-split` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Title:** short human-readable name. **Description:** one sentence. For Foundations, agents SHOULD lead with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`). Both are written to `current.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Workflow or Foundation, call `open_next` first — patches then default to the `next` slot.
+**Title:** short human-readable name. **Description:** one sentence. For Foundations, agents SHOULD lead with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`). Both are written to `current.mdx` frontmatter at creation. Change them afterward with host file tools on `current_path` / `next_path` (preferred) or `patch_node_territory({ node_id, title?, description? })` as a fallback. For a shipped Workflow or Foundation, call `open_next` first — then edit the `next` slot.
 
 ## Step 4 — Create via MCP
 
@@ -123,14 +123,15 @@ link_nodes({ source_id, target_id, edge_type })
 
 Illegal shapes are rejected — see `mindplan/agent/playbook.md` for the full edge taxonomy.
 
-## Step 6 — Enrich territory via MCP
+## Step 6 — Enrich territory (file tools preferred)
 
-Prefer `patch_node_territory` for body, title, and description — especially when `.cursorignore` blocks file tools from reading `current.mdx` / `next.mdx`. Never edit frontmatter `state:`, timestamps, or edge arrays by hand.
+Prefer **host file tools** for body, title, and description at `current_path` / `next_path` from orientation (so the host “changed files” UI shows the edit). Use `patch_node_territory` only as a fallback (automation / weak file tools). Never edit frontmatter `state:`, timestamps, or edge arrays by hand.
 
 ```
-patch_node_territory({ node_id, body: "…" })                    // replace body below frontmatter
-patch_node_territory({ node_id, title?, description? })         // territory scalars
-patch_node_territory({ node_id, toggle_checkboxes: [...] })     // check off Atomic Ops later
+# Preferred: edit MDX body below --- and title/description scalars via Write/StrReplace
+patch_node_territory({ node_id, body: "…" })                    // fallback — replace body
+patch_node_territory({ node_id, title?, description? })         // fallback — territory scalars
+patch_node_territory({ node_id, toggle_checkboxes: [...] })     // fallback — check off Atomic Ops
 ```
 
 Replace scaffold placeholders with real content. Section guidance:
@@ -185,7 +186,7 @@ Confirm edges, folder paths, and territory content before moving to `ready` or b
 3. create_node Workflow(s)      ← only after step 1; link with belongs_to (repeat per Journey)
 4. link_nodes Workflow → Journey (belongs_to)   ← once per Journey; multiple allowed
 5. link_nodes Workflow → Foundation (depends_on)
-6. patch_node_territory for each node body (and title/description if needed)
+6. Edit each node body (and title/description if needed) via file tools at `current_path` / `next_path`
 7. update_node_status when gates pass (Workflows: ready only after both links)
 ```
 
@@ -204,7 +205,7 @@ open_next({
 })
 ```
 
-`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Run the build pipeline (`update_node_status`, `patch_node_territory`) against the next slot until `in-review`, then `ship`: that promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
+`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Run the build pipeline (`update_node_status` + file-tool prose edits on `next_path`) against the next slot until `in-review`, then `ship`: that promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
 
 ## Common mistakes
 

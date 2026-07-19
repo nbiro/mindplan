@@ -39,24 +39,27 @@ link_nodes({ source_id: "wf-checkout-split", target_id: "f-nextjs", edge_type: "
 
 ### 3. Enrich Foundation territory
 
-```
-patch_node_territory({
-  node_id: "f-db-core",
-  body: `## Shared Substrate Spec
+Prefer host file tools on `current_path` from `get_node_context` (body below `---`, plus title/description scalars). Example bodies:
 
-- \`orders\` table: id, table_id, status, created_at
-- \`payments\` table: id, order_id, amount_cents, method
+**`mindplan/foundations/f-db-core/current.mdx` body:**
+
+```
+## Shared Substrate Spec
+
+- `orders` table: id, table_id, status, created_at
+- `payments` table: id, order_id, amount_cents, method
 
 ## Checklist
 
 - [ ] Spec written
 - [ ] Migration created
-- [ ] Verified in staging`
-})
+- [ ] Verified in staging
+```
 
-patch_node_territory({
-  node_id: "f-design-system",
-  body: `## Shared Substrate Spec
+**`mindplan/foundations/f-design-system/current.mdx` body:**
+
+```
+## Shared Substrate Spec
 
 - Primary button, typography, spacing tokens
 - Forms and feedback primitives used across Journeys
@@ -65,31 +68,33 @@ patch_node_territory({
 
 - [ ] Spec written
 - [ ] Components implemented
-- [ ] Documented for consumers`
-})
+- [ ] Documented for consumers
+```
 
-patch_node_territory({
-  node_id: "f-nextjs",
-  body: `## Shared Substrate Spec
+**`mindplan/foundations/f-nextjs/current.mdx` body:**
 
-- App Router \`app/\` layout and providers
-- How Workflow packages under \`src/workflows/\` are mounted into routes
+```
+## Shared Substrate Spec
+
+- App Router `app/` layout and providers
+- How Workflow packages under `src/workflows/` are mounted into routes
 - Env and deploy constraints Workflows must respect
 
 ## Checklist
 
 - [ ] Spec written
 - [ ] App shell wiring complete
-- [ ] Documented for consumers`
-})
+- [ ] Documented for consumers
 ```
+
+Optional fallback (automation / weak file tools): `patch_node_territory({ node_id, body: "…" })`.
 
 ### 4. Enrich Workflow territory
 
+Edit `mindplan/workflows/wf-checkout-split/current.mdx` via file tools:
+
 ```
-patch_node_territory({
-  node_id: "wf-checkout-split",
-  body: `## Execution Logic
+## Execution Logic
 
 1. Diner selects split mode (even / by item / custom)
 2. System calculates per-person totals
@@ -99,10 +104,11 @@ patch_node_territory({
 
 - [ ] Requirements defined
 - [ ] Split calculation implemented
-- [ ] Payment flow integrated
-- [ ] E2E tests passing`
-})
+- [ ] Payment flow complete
+- [ ] Verified via smoke test
 ```
+
+Optional fallback: `patch_node_territory({ node_id: "wf-checkout-split", body: "…" })`.
 
 ### 5. Advance states (after links + content)
 
@@ -213,6 +219,7 @@ Both Workflows must ship in dependency order: `wf-auth` must reach `stable` befo
 create_node({ id: "bug-double-charge", type: "Bug", title: "Double charge on retry", description: "Payment retried after timeout causes duplicate charge" })
 link_nodes({ source_id: "bug-double-charge", target_id: "wf-checkout-split", edge_type: "affects" })
 
+# Prefer file tools on bug current_path for Summary / Repro / Expected; optional fallback:
 patch_node_territory({
   node_id: "bug-double-charge",
   body: `## Summary
@@ -267,8 +274,9 @@ open_next({
 
 update_node_status({ node_id: "wf-checkout-split", new_status: "ready" })
 update_node_status({ node_id: "wf-checkout-split", new_status: "in-progress" })
-patch_node_territory({ node_id: "wf-checkout-split", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
-→ these all apply to next.mdx automatically while it exists (record.next.state advances; live record.state is unchanged)
+# Prefer file tools on next_path to toggle checkboxes / edit body; optional:
+# patch_node_territory({ node_id: "wf-checkout-split", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
+→ status transitions apply to next.mdx automatically while it exists (record.next.state advances; live record.state is unchanged)
 
 update_node_status({ node_id: "wf-checkout-split", new_status: "in-review" })
 

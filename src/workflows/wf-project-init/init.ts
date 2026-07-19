@@ -139,7 +139,10 @@ export function installRootAgentsMd(packageRoot: string): InstallAgentRuleResult
   return installTemplateFile(templatePath, destPath, "AGENTS.md");
 }
 
-/** Installs `.cursorignore` at project root when missing (idempotent). */
+/** Installs `.cursorignore` at project root when missing (idempotent).
+ * Template ignores `mindplan/map.md` + `mindplan/agent/**` only —
+ * territory `current.mdx` / `next.mdx` stay editable via host file tools.
+ */
 export function installCursorIgnore(packageRoot: string): InstallAgentRuleResult {
   const templatePath = path.join(agentTemplateRoot(packageRoot), "cursorignore");
   const destPath = path.join(projectRoot(), ".cursorignore");

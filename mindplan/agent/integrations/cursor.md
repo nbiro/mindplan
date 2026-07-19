@@ -28,13 +28,18 @@ Paste the playbook body below the frontmatter. This rule must apply to every ses
    - `mindplan/agent/skills/define-entities/` → `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Workflow, Bug nodes)
    - `mindplan/agent/skills/plan-project/` → `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
 
-4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It blocks agent file tools from reading `mindplan/**/current.mdx`, `mindplan/**/next.mdx`, and `mindplan/map.md` so agents orient exclusively through MCP (`orient_for_work`, `get_node_context`, `get_blast_radius`). Territory writes go through `patch_node_territory`. If you already have a `.cursorignore`, merge these patterns manually:
+4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It ignores the derived map and copied agent assets — **not** territory MDX:
 
 ```gitignore
-mindplan/**/current.mdx
-mindplan/**/next.mdx
 mindplan/map.md
 mindplan/agent/**
 ```
 
-5. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
+If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `mindplan/**/next.mdx`, remove those lines so agents can edit prose with normal file tools (host “changed files” UI). Keep ignoring `mindplan/map.md` — it is not graph authority.
+
+5. **Authority split & review**
+   - **MCP** — create/link/status/`open_next`/`discard_next`. Graph tool results include `changed_files` (paths MCP wrote). Those writes do **not** appear in Cursor’s agent “changed files” strip — review via Source Control or by opening the cited path.
+   - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
+   - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
+
+6. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).

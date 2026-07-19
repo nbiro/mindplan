@@ -41,6 +41,7 @@ import {
   discardNextSlot,
   promoteNextSlot,
   edgeWriteSlot,
+  nextAttachmentsDir,
   type TerritorySlot,
 } from "../f-territory-store/store.js";
 import {
@@ -114,6 +115,51 @@ function guarded<A>(handler: (args: A) => ToolResult): (args: A) => ToolResult {
 
 function syncNodes(nodes: MindPlanNode[]): void {
   for (const n of nodes) patchFrontmatter(n);
+}
+
+/** Project-relative path of the auto-persisted Mermaid snapshot. */
+const MAP_REL = "mindplan/map.md";
+
+/** Repo-relative path of a node's current or next territory MDX. */
+function territoryPath(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot = "current"
+): string {
+  const rel = entityRelativePath(node);
+  return `${rel}/${slot === "next" ? NEXT_FILENAME : CURRENT_FILENAME}`;
+}
+
+/** Deduplicate changed paths, optionally appending the map snapshot. */
+function changedFiles(paths: string[], includeMap = false): string[] {
+  const out = [...new Set(paths.filter(Boolean))];
+  if (includeMap && !out.includes(MAP_REL)) out.push(MAP_REL);
+  return out;
+}
+
+/**
+ * Paths touched when discarding or promoting a next slot.
+ * When `includeCopiedAttachments` is true (promote), also lists
+ * `attachments/<file>` targets for each non-.gitkeep next-attachment file.
+ */
+function nextSlotFsChangedFiles(
+  node: Pick<MindPlanNode, "id" | "type">,
+  opts: { includeCopiedAttachments: boolean }
+): string[] {
+  const rel = entityRelativePath(node);
+  const nextAttRel = `${rel}/${NEXT_ATTACHMENTS_DIR}`;
+  const attRel = `${rel}/${ATTACHMENTS_DIR}`;
+  const files = [`${rel}/${NEXT_FILENAME}`, nextAttRel];
+  const abs = nextAttachmentsDir(node);
+  if (fs.existsSync(abs)) {
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      files.push(`${nextAttRel}/${entry.name}`);
+      if (opts.includeCopiedAttachments && entry.name !== ".gitkeep") {
+        files.push(`${attRel}/${entry.name}`);
+      }
+    }
+  }
+  return files;
 }
 
 /** Reload territory and refresh `mindplan/map.md` after a successful mutation. */
@@ -422,7 +468,13 @@ server.registerTool(
       toggle_checkboxes,
       slot: resolvedSlot,
     });
-    return ok({ node_id, ...result });
+    const pathWritten = territoryPath(node, result.slot);
+    return ok({
+      node_id,
+      ...result,
+      path: pathWritten,
+      changed_files: changedFiles([pathWritten]),
+    });
   })
 );
 
@@ -457,15 +509,20 @@ server.registerTool(
     ensureDirectories();
     scaffoldEntity(node, { title, description });
     const rel = entityRelativePath(node);
+    const current = `${rel}/${CURRENT_FILENAME}`;
+    const attachments = `${rel}/${ATTACHMENTS_DIR}`;
     const implementation = implementationRelativePath(node);
     refreshPersistedMap();
+    const files = [current, `${attachments}/.gitkeep`];
+    if (implementation) files.push(`${implementation}/.gitkeep`);
     return ok({
       created: node,
       folder: rel,
-      current: `${rel}/${CURRENT_FILENAME}`,
-      context: `${rel}/${CURRENT_FILENAME}`,
-      attachments: `${rel}/${ATTACHMENTS_DIR}`,
+      current,
+      context: current,
+      attachments,
       ...(implementation ? { implementation } : {}),
+      changed_files: changedFiles(files, true),
     });
   })
 );
@@ -561,12 +618,19 @@ server.registerTool(
     const changedStability = recomputeStability(graph);
     syncNodes([...changedJourneys, ...changedStability]);
     refreshPersistedMap();
+    const files = [
+      territoryPath(source, writeSlot),
+      ...dependentsLinked.map((link) => territoryPath(findNode(graph, link.source), "current")),
+      ...changedJourneys.map((j) => territoryPath(j)),
+      ...changedStability.map((n) => territoryPath(n)),
+    ];
     return ok({
       linked: { source: source_id, target: target_id, type: edge_type },
       slot: writeSlot,
       dependents_linked: dependentsLinked,
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+      changed_files: changedFiles(files, true),
     });
   })
 );
@@ -592,14 +656,17 @@ server.registerTool(
     const next = openNextSlot(node, { title, description });
     node.next = next;
     const rel = entityRelativePath(node);
+    const current = `${rel}/${CURRENT_FILENAME}`;
+    const next_path = `${rel}/${NEXT_FILENAME}`;
     refreshPersistedMap();
     return ok({
       node_id,
       live_state: node.state,
       next,
       folder: rel,
-      current: `${rel}/${CURRENT_FILENAME}`,
-      next_path: `${rel}/${NEXT_FILENAME}`,
+      current,
+      next_path,
+      changed_files: changedFiles([next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`], true),
     });
   })
 );
@@ -621,10 +688,17 @@ server.registerTool(
     if (!node.next) {
       throw blocked(`node "${node_id}" has no next.mdx to discard.`);
     }
+    const next_path = territoryPath(node, "next");
+    const slotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: false });
     discardNextSlot(node);
     delete node.next;
     refreshPersistedMap();
-    return ok({ node_id, discarded: true, live_state: node.state });
+    return ok({
+      node_id,
+      discarded: true,
+      live_state: node.state,
+      changed_files: changedFiles([next_path, ...slotFiles], true),
+    });
   })
 );
 
@@ -706,10 +780,19 @@ server.registerTool(
     const changedStability = recomputeStability(graph);
     syncNodes([...changedJourneys, ...changedStability]);
     refreshPersistedMap();
+    // unlink may touch current and/or next frontmatter on the source
+    const sourceFiles = [territoryPath(source, "current")];
+    if (source.next) sourceFiles.push(territoryPath(source, "next"));
+    const files = [
+      ...sourceFiles,
+      ...changedJourneys.map((j) => territoryPath(j)),
+      ...changedStability.map((n) => territoryPath(n)),
+    ];
     return ok({
       removed,
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+      changed_files: changedFiles(files, true),
     });
   })
 );
@@ -743,8 +826,11 @@ server.registerTool(
     const previous = node.next ? node.next.state : node.state;
     const now = new Date().toISOString();
     let promoted = false;
+    let promoteSlotFiles: string[] = [];
 
     if (resolved.promote_next) {
+      // Snapshot next-slot FS paths before promote deletes next.mdx / next-attachments
+      promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
       promoteNextSlot(node, resolved.state, now);
       promoted = true;
       // Refresh graph edges from promoted node
@@ -787,6 +873,21 @@ server.registerTool(
     syncNodes([...changedStability, ...changedJourneys]);
     refreshPersistedMap();
 
+    const primaryPaths: string[] = [];
+    if (promoted) {
+      primaryPaths.push(territoryPath(node, "current"));
+      primaryPaths.push(...promoteSlotFiles);
+    } else if (node.next && isNextPipelineState(resolved.state)) {
+      primaryPaths.push(territoryPath(node, "next"));
+    } else {
+      primaryPaths.push(territoryPath(node, "current"));
+    }
+    const files = [
+      ...primaryPaths,
+      ...changedJourneys.map((j) => territoryPath(j)),
+      ...changedStability.map((n) => territoryPath(n)),
+    ];
+
     return ok({
       node_id,
       previous_state: previous,
@@ -796,6 +897,7 @@ server.registerTool(
       promoted_next: promoted,
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
+      changed_files: changedFiles(files, true),
     });
   })
 );

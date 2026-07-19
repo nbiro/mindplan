@@ -2,11 +2,11 @@
 id: wf-project-init
 type: Workflow
 title: "Init a consumer project"
-description: "Scaffold consumer mindplan/ plus agent playbook, define-entities and plan-project skills, MCP example, integrations, and AGENTS.md."
+description: "Scaffold consumer mindplan/; cursorignore no longer blocks territory MDX"
 state: stable
-shipped_at: 2026-07-19T19:58:37.706Z
+shipped_at: 2026-07-19T20:13:35.127Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-07-19T19:58:37.706Z
+updated_at: 2026-07-19T20:13:35.127Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -15,12 +15,11 @@ depends_on:
 
 
 
-
 # Init a consumer project
 
 ## Purpose
 
-Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities and plan-project skills, MCP example config, per-agent integration guides, root `AGENTS.md`, and `.cursorignore` so agents read territory via MCP.
+Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities and plan-project skills, MCP example config, per-agent integration guides, root `AGENTS.md`, and `.cursorignore` that ignores the derived map (and agent asset copies) while allowing agent file tools to edit territory MDX prose.
 
 ## Execution Logic
 
@@ -33,7 +32,7 @@ Package: `src/workflows/wf-project-init/`
   - `installMcpExample` — `mcp.json.example`
   - `installAgentIntegrations` — guides into `mindplan/agent/integrations/`
   - `installRootAgentsMd` — root `AGENTS.md` from template
-  - `installCursorIgnore` — blocks direct reads of territory MDX/map
+  - `installCursorIgnore` — installs `templates/agent/cursorignore` (ignores `mindplan/map.md` + `mindplan/agent/**`; does **not** block `current.mdx` / `next.mdx`)
 - Invoked by CLI `mindplan-mcp init` in `f-mcp-runtime` (package root resolved by walking up to `templates/agent`)
 
 Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`.
@@ -42,15 +41,16 @@ Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`.
 
 - `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
 - Playbook, define-entities skill, plan-project skill, integrations, MCP example, AGENTS.md, and `.cursorignore` are installed from `templates/`
+- Template `.cursorignore` does not list `mindplan/**/current.mdx` or `mindplan/**/next.mdx`
 - Init helpers live in this package (not in the territory store)
-- Smoke test covers init template install including plan-project
+- Smoke test covers init template install including plan-project and cursorignore contents
 
 ## Atomic Ops
 
-- [x] Add `installPlanProjectSkill` in `src/workflows/wf-project-init/init.ts`
-- [x] Call it from `mindplan-mcp init` in `f-mcp-runtime/server.ts`
-- [x] Smoke test asserts plan-project skill is installed
+- [x] Update `templates/agent/cursorignore` (drop territory MDX ignore lines)
+- [x] Align install docs / comments in `init.ts` with the new ignore policy
+- [x] Smoke asserts cursorignore does not block current.mdx/next.mdx
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+_Wireframes and notes go in `attachments/` / `next-attachments/`._

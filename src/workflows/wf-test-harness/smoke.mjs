@@ -39,9 +39,23 @@ async function expectBlocked(label, tool, args) {
 }
 
 // --- create nodes ---
-await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" });
+const createdJourney = JSON.parse(
+  await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
+);
+if (!createdJourney.changed_files?.includes("mindplan/journeys/j-ordering/current.mdx") || !createdJourney.changed_files?.includes("mindplan/map.md")) {
+  failures++; console.log(`FAIL create_node changed_files journey: ${JSON.stringify(createdJourney.changed_files)}`);
+} else console.log("ok   create_node changed_files (journey)");
 await expectOk("create foundation", "create_node", { id: "f-db", type: "Foundation", title: "Database schema", description: "Core tables" });
-await expectOk("create workflow", "create_node", { id: "wf-checkout", type: "Workflow", title: "Checkout", description: "Split & pay" });
+const createdWf = JSON.parse(
+  await expectOk("create workflow", "create_node", { id: "wf-checkout", type: "Workflow", title: "Checkout", description: "Split & pay" })
+);
+if (
+  !createdWf.changed_files?.includes("mindplan/workflows/wf-checkout/current.mdx") ||
+  !createdWf.changed_files?.includes("src/workflows/wf-checkout/.gitkeep") ||
+  !createdWf.changed_files?.includes("mindplan/map.md")
+) {
+  failures++; console.log(`FAIL create_node changed_files workflow: ${JSON.stringify(createdWf.changed_files)}`);
+} else console.log("ok   create_node changed_files (workflow)");
 const wfFolder = path.join(root, "mindplan", "workflows", "wf-checkout");
 if (!fs.existsSync(path.join(wfFolder, "current.mdx"))) {
   failures++; console.log("FAIL entity folder scaffold");
@@ -65,7 +79,15 @@ await expectBlocked("duplicate id", "create_node", { id: "wf-checkout", type: "W
 await expectBlocked("ghost workflow (no links)", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
 await expectOk("link belongs_to", "link_nodes", { source_id: "wf-checkout", target_id: "j-ordering", edge_type: "belongs_to" });
 await expectBlocked("ghost workflow (no foundation)", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
-await expectOk("link depends_on", "link_nodes", { source_id: "wf-checkout", target_id: "f-db", edge_type: "depends_on" });
+const linkedDepends = JSON.parse(
+  await expectOk("link depends_on", "link_nodes", { source_id: "wf-checkout", target_id: "f-db", edge_type: "depends_on" })
+);
+if (
+  !linkedDepends.changed_files?.includes("mindplan/workflows/wf-checkout/current.mdx") ||
+  !linkedDepends.changed_files?.includes("mindplan/map.md")
+) {
+  failures++; console.log(`FAIL link_nodes changed_files: ${JSON.stringify(linkedDepends.changed_files)}`);
+} else console.log("ok   link_nodes changed_files");
 const mapAfterLink = fs.readFileSync(mapPath, "utf-8");
 if (!mapAfterLink.includes("wf_checkout") && !mapAfterLink.includes("wf-checkout")) {
   // Mermaid ids are sanitized with underscores; labels still contain the original id.
@@ -129,7 +151,15 @@ if (emptyFind.focus !== null || (emptyFind.matches?.length ?? 0) !== 0) {
   failures++; console.log(`FAIL empty find: ${JSON.stringify(emptyFind)}`);
 } else console.log("ok   find_related_nodes empty matches");
 
-await expectOk("workflow -> ready", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
+const wfReady = JSON.parse(
+  await expectOk("workflow -> ready", "update_node_status", { node_id: "wf-checkout", new_status: "ready" })
+);
+if (
+  !wfReady.changed_files?.includes("mindplan/workflows/wf-checkout/current.mdx") ||
+  !wfReady.changed_files?.includes("mindplan/map.md")
+) {
+  failures++; console.log(`FAIL update_node_status changed_files: ${JSON.stringify(wfReady.changed_files)}`);
+} else console.log("ok   update_node_status changed_files");
 
 // --- export_mindplan_view ---
 const viewFull = JSON.parse(await expectOk("export mermaid full", "export_mindplan_view", {}));
@@ -287,6 +317,11 @@ const patchDesc = JSON.parse(
 );
 if (!patchDesc.patched_fields?.includes("description")) {
   failures++; console.log(`FAIL patch description fields: ${JSON.stringify(patchDesc)}`);
+} else if (
+  !patchDesc.path?.includes("wf-tips") ||
+  !patchDesc.changed_files?.includes(patchDesc.path)
+) {
+  failures++; console.log(`FAIL patch_node_territory path/changed_files: ${JSON.stringify(patchDesc)}`);
 } else console.log("ok   patch_node_territory description");
 graph = JSON.parse(await expectOk("read graph after description patch", "get_mindplan_graph", {}));
 const wfTipsPatched = graph.nodes.find((n) => n.id === "wf-tips");
@@ -405,6 +440,13 @@ const openNextRes = JSON.parse(await expectOk("open_next wf-checkout", "open_nex
 if (openNextRes.next?.state !== "draft") {
   failures++; console.log(`FAIL open_next should create draft next: ${JSON.stringify(openNextRes.next)}`);
 } else console.log("ok   open_next creates draft next slot");
+if (
+  !openNextRes.changed_files?.includes("mindplan/workflows/wf-checkout/next.mdx") ||
+  !openNextRes.changed_files?.includes("mindplan/workflows/wf-checkout/next-attachments/.gitkeep") ||
+  !openNextRes.changed_files?.includes("mindplan/map.md")
+) {
+  failures++; console.log(`FAIL open_next changed_files: ${JSON.stringify(openNextRes.changed_files)}`);
+} else console.log("ok   open_next changed_files");
 
 graph = JSON.parse(await expectOk("read graph after open_next", "get_mindplan_graph", {}));
 const tipsDependsAfterOpen = graph.edges.filter(
@@ -476,6 +518,8 @@ if (!radius.journeys_at_risk?.includes("j-ordering")) {
 await expectOk("wf-checkout next -> ready", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
 await expectOk("wf-checkout next -> in-progress", "update_node_status", { node_id: "wf-checkout", new_status: "in-progress" });
 fs.writeFileSync(nextPath, fs.readFileSync(nextPath, "utf-8").replaceAll("[ ]", "[x]"));
+const nextAttNote = path.join(root, "mindplan", "workflows", "wf-checkout", "next-attachments", "note.txt");
+fs.writeFileSync(nextAttNote, "promote me");
 await expectOk("wf-checkout next -> in-review", "update_node_status", { node_id: "wf-checkout", new_status: "in-review" });
 
 graph = JSON.parse(await expectOk("read graph before promote", "get_mindplan_graph", {}));
@@ -491,6 +535,20 @@ if (!shipNext.promoted_next) {
 if (shipNext.new_state !== "stable") {
   failures++; console.log(`FAIL after promote state: ${shipNext.new_state}`);
 } else console.log("ok   promoted node is stable");
+if (
+  !shipNext.changed_files?.includes("mindplan/workflows/wf-checkout/current.mdx") ||
+  !shipNext.changed_files?.includes("mindplan/workflows/wf-checkout/next.mdx") ||
+  !shipNext.changed_files?.includes("mindplan/workflows/wf-checkout/next-attachments") ||
+  !shipNext.changed_files?.includes("mindplan/workflows/wf-checkout/next-attachments/note.txt") ||
+  !shipNext.changed_files?.includes("mindplan/workflows/wf-checkout/attachments/note.txt") ||
+  !shipNext.changed_files?.includes("mindplan/map.md")
+) {
+  failures++; console.log(`FAIL promote changed_files: ${JSON.stringify(shipNext.changed_files)}`);
+} else console.log("ok   promote changed_files includes attachments");
+const promotedAtt = path.join(root, "mindplan", "workflows", "wf-checkout", "attachments", "note.txt");
+if (!fs.existsSync(promotedAtt)) {
+  failures++; console.log("FAIL promote should copy next-attachments/note.txt into attachments/");
+} else console.log("ok   promote copied next-attachment into attachments/");
 
 if (fs.existsSync(nextPath)) {
   failures++; console.log("FAIL next.mdx should be deleted after promote");
@@ -514,11 +572,19 @@ if (tipsDependsAfterPromote.length !== 1) {
 } else console.log("ok   dependents unchanged after promote (stable id)");
 
 // discard_next path
-await expectOk("open_next again for discard", "open_next", { node_id: "wf-checkout" });
-await expectOk("discard_next", "discard_next", { node_id: "wf-checkout" });
+const openForDiscard = JSON.parse(await expectOk("open_next again for discard", "open_next", { node_id: "wf-checkout" }));
+const discardRes = JSON.parse(await expectOk("discard_next", "discard_next", { node_id: "wf-checkout" }));
 if (fs.existsSync(nextPath)) {
   failures++; console.log("FAIL next.mdx should be gone after discard");
 } else console.log("ok   discard_next removes next.mdx");
+if (
+  !discardRes.changed_files?.includes("mindplan/workflows/wf-checkout/next.mdx") ||
+  !discardRes.changed_files?.includes("mindplan/workflows/wf-checkout/next-attachments") ||
+  !discardRes.changed_files?.includes("mindplan/map.md")
+) {
+  failures++; console.log(`FAIL discard_next changed_files: ${JSON.stringify(discardRes.changed_files)}`);
+} else console.log("ok   discard_next changed_files");
+void openForDiscard;
 
 // --- CLI init resolves package templates from nested dist layout ---
 const initRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-"));
@@ -540,6 +606,14 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, ".cursorignore"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install .cursorignore");
+} else if (
+  (() => {
+    const ignore = fs.readFileSync(path.join(initRoot, ".cursorignore"), "utf-8");
+    return ignore.includes("current.mdx") || ignore.includes("next.mdx") || !ignore.includes("mindplan/map.md");
+  })()
+) {
+  failures++;
+  console.log("FAIL .cursorignore must ignore map.md only (not current.mdx/next.mdx)");
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "integrations", "codex.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install Codex integration guide");

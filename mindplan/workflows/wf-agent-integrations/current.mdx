@@ -2,11 +2,11 @@
 id: wf-agent-integrations
 type: Workflow
 title: "Agent integrations"
-description: "Per-agent MCP setup guides (Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, generic)."
+description: "Per-agent MCP setup guides including territory authority split and review surfaces"
 state: stable
-shipped_at: 2026-07-19T19:49:45.674Z
+shipped_at: 2026-07-19T20:13:36.146Z
 created_at: 2026-07-15T18:51:38.117Z
-updated_at: 2026-07-19T19:49:45.674Z
+updated_at: 2026-07-19T20:13:36.146Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -15,12 +15,11 @@ depends_on:
 
 
 
-
 # Agent integrations
 
 ## Purpose
 
-Per-agent MCP setup guides so a consumer can wire MindPlan into Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, or a generic MCP host — plus an index README.
+Per-agent MCP setup guides so a consumer can wire MindPlan into Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, or a generic MCP host — plus an index README covering the territory authority split and how to review MCP vs file-tool edits.
 
 ## Execution Logic
 
@@ -28,17 +27,24 @@ Per-agent MCP setup guides so a consumer can wire MindPlan into Cursor, Claude C
 - Installed into `mindplan/agent/integrations/` by `wf-project-init` (`installAgentIntegrations`)
 - Package folder `src/workflows/wf-agent-integrations/` is a pointer (docs-only Workflow)
 
-Each guide covers MCP registration for that agent and where playbook/skill assets land after init.
+Each guide covers MCP registration for that agent and where playbook/skill assets land after init. Cursor (and the shared README) document: MCP for graph mutations; host file tools for territory prose; `.cursorignore` still ignores `mindplan/map.md` (and `mindplan/agent/**`) but not `current.mdx`/`next.mdx`; graph tool results include `changed_files`; review prose via native edit UI / Source Control.
 
 Depends on: `f-mcp-runtime`. Belongs to: `j-agent-onboarding`.
 
 ## Acceptance Criteria
 
-- [x] Guides exist for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP
-- [x] Integrations README indexes the set (including Codex)
-- [x] Init installs the guides into the consumer `mindplan/agent/integrations/` tree
-- [x] Covered by init path in smoke tests
+- Guides exist for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP
+- Integrations README indexes the set and notes authority split / `changed_files`
+- Cursor guide documents ignore policy, authority split, and review surfaces
+- Init installs the guides into the consumer `mindplan/agent/integrations/` tree
+- Covered by init path in smoke tests
+
+## Atomic Ops
+
+- [x] Update `templates/agent/integrations/cursor.md` for authority split + ignore policy
+- [x] Update `templates/agent/integrations/README.md` shared note
+- [x] Mirror under `mindplan/agent/integrations/` if present
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+_Wireframes and notes go in `attachments/` / `next-attachments/`._

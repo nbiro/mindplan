@@ -2,11 +2,11 @@
 id: wf-mutate-graph
 type: Workflow
 title: "Mutate graph"
-description: "Write-path graph tools; package at src/workflows/wf-mutate-graph/"
+description: "Write-path graph tools; return changed_files on mutations for transparency"
 state: stable
-shipped_at: 2026-07-19T18:51:25.028Z
+shipped_at: 2026-07-19T20:13:34.639Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-07-19T19:39:40.265Z
+updated_at: 2026-07-19T20:13:34.639Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -14,11 +14,13 @@ depends_on:
   - f-compiler-rules
 ---
 
+
+
 # Mutate graph
 
 ## Purpose
 
-Write-path MindPlan tools: create/link nodes, advance pipeline state, patch territory, and open/discard/promote evolutions — always through the compiler.
+Write-path MindPlan tools: create/link nodes, advance pipeline state, optional territory patches, and open/discard/promote evolutions — always through the compiler. Successful graph mutations return `changed_files` (repo-relative paths written or deleted) so hosts can surface what MCP touched.
 
 ## Execution Logic
 
@@ -27,18 +29,29 @@ Package: `src/workflows/wf-mutate-graph/`
 - `tools.ts` — ownership list `MUTATE_TOOLS` registered by `f-mcp-runtime/server.ts`:
   - `create_node`, `link_nodes`, `unlink_nodes`
   - `update_node_status` (current or `next` slot; `ship` promotes `next`)
-  - `patch_node_territory` (body, title/description, checkbox toggles; defaults to `next` when evolving)
+  - `patch_node_territory` (optional fallback for body/title/description/checkbox toggles; defaults to `next` when evolving)
   - `open_next`, `discard_next`
+
+Interactive agents prefer host file tools for territory prose (`title` / `description` / body / checkboxes) at `current_path` / `next_path`; MCP remains mandatory for graph structure and server-owned frontmatter. Graph mutate responses include `changed_files`. `patch_node_territory` remains for automation and hosts with weak file tools.
 
 Compiler gates live in `f-compiler-rules`. Depends on: `f-mcp-runtime`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
 
 ## Acceptance Criteria
 
-- [x] All seven mutate tools are registered and persist through the territory store
-- [x] Illegal mutations return `Blocked:` and leave the graph unchanged
-- [x] Successful mutations refresh `mindplan/map.md` via the runtime
-- [x] Verified via `npm test`
+- All seven mutate tools are registered and persist through the territory store
+- Illegal mutations return `Blocked:` and leave the graph unchanged
+- Successful graph mutations refresh `mindplan/map.md` via the runtime
+- Successful graph mutations (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `open_next`, `discard_next`) return `changed_files` listing territory paths, optional `src/` scaffolds, and `mindplan/map.md` when refreshed
+- `patch_node_territory` remains usable and returns `changed_files` / `path` for the slot written
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Document mutate-tool `changed_files` contract in this territory and SPEC
+- [x] Implement `changed_files` in `f-mcp-runtime` mutate handlers
+- [x] Smoke-test `changed_files` on create/link/status
+- [x] Keep `patch_node_territory` as optional fallback (path echo)
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+_Wireframes and notes go in `attachments/` / `next-attachments/`._

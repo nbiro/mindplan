@@ -22,4 +22,6 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 
 If your agent reads root **`AGENTS.md`**, `init` creates one when missing. Otherwise, point the agent at `mindplan/agent/playbook.md` manually.
 
+**Territory transparency:** MCP owns graph mutations (`create_node`, links, status, `open_next` / `discard_next`) and returns `changed_files` for paths it wrote. Interactive agents SHOULD edit territory prose (`title` / `description` / body / checkboxes) with host file tools so native “changed files” UIs show the diff. Review MCP side-effects via those paths, Source Control, or the tool result — many hosts do not list subprocess FS writes in their edit strip.
+
 Set `MINDPLAN_ROOT` to your project root if the MCP server is not started from that directory.
