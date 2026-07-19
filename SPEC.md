@@ -76,7 +76,7 @@ Workflow and Foundation nodes own a **derived** filesystem package whose path is
 | Node type | Implementation root | Purpose |
 |---|---|---|
 | Workflow | `src/workflows/<id>/` | Use-case code; shared across Journeys via `belongs_to` in the graph only |
-| Foundation | `src/foundations/<id>/` | Shared substrate (design system, DB, auth, adapters) |
+| Foundation | `src/foundations/<id>/` | Shared substrate by role (assembler, infra, design system, adapter) |
 | Journey | *(none)* | Plan container — architecture for a Journey is the union of member Workflow packages |
 | Bug | *(none)* | Fixes land in the affected Workflow/Foundation package |
 
@@ -98,7 +98,7 @@ MindPlan tracks **architecture and delivery together**. The build taxonomy is de
 | Entity | Definition | Routing rules |
 |---|---|---|
 | **Journey** | A named **domain capability** — a permanent architectural boundary for related use cases (e.g. "Table Ordering", "Billing", "Agency Site Generator"). The set of Journey titles is the product's scream: reading only those titles SHOULD reveal the business purpose of the system. Journeys are continuous containers, not closable epics, sprints, or technical layers (`API`, `Frontend`, `Database`). | Permanent container. MUST NOT execute code directly. MUST NOT have outgoing edges. State is computed, never set manually (§4). MUST be named in domain language. |
-| **Foundation** | **Shared substrate** with no standalone use case: infrastructure *and* reusable product platform (e.g. database schemas, auth, payment-provider SDK, queue, HTTP adapter, design system, primary button). Use cases consume Foundations via `depends_on` without becoming them. | Exists solely to be consumed by Workflows (or other Foundations). MUST be shipped (`stable`) before dependent Workflows can ship. MAY depend on other Foundations (layered substrate). MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Foundations are not Journey members. |
+| **Foundation** | **Shared substrate** with no standalone use case: infrastructure *and* reusable product platform, organized by **role** (assembler, infra, design system, adapter — see §2.0.1). Examples: Next.js app shell, database schemas, auth, Stripe SDK, design tokens, primary button. Use cases consume Foundations via `depends_on` without becoming them. | Exists solely to be consumed by Workflows (or other Foundations). MUST be shipped (`stable`) before dependent Workflows can ship. MAY depend on other Foundations (layered substrate). MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Foundations are not Journey members. |
 | **Workflow** | A concrete **use case** — application-specific business logic or end-user feature that realizes part of one or more Journeys (e.g. "Split the check", "Process Payment", "User picker", "Character editor"). This is where execution work lives, including shared screens that are themselves use cases. | MUST belong to one or more Journeys via `belongs_to` (multiple edges allowed — membership reuse across Journeys). MUST depend on at least one Foundation via `depends_on`. MAY `depends_on` other Workflows (composition reuse). Contains the actual execution work. **Agents MUST define the Journey before creating a Workflow** — if the user requests a Workflow that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
 | **Bug** | A defect afflicting one or more Foundations or Workflows. | MUST link to targets via `affects` (Bug → Workflow|Foundation). Dedicated defect lifecycle (§3.2). Does not affect Journey computation. |
 
@@ -108,21 +108,54 @@ Agents MUST classify new work with these checks, in order:
 
 1. Domain capability the product *is about*? → **Journey**
 2. Stakeholder-recognizable use case / screen with its own behaviour (even if many features embed it)? → **Workflow**
-3. Shared code/UI with **no** standalone use case, only consumed by use cases? → **Foundation**
+3. Shared code/UI with **no** standalone use case, only consumed by use cases? → **Foundation** (then pick a **role** per §2.0.1)
 4. Broken behaviour on an existing node? → **Bug**
 
 **Shared-screen examples:**
 
-- Primary button / design tokens → Foundation (e.g. `f-design-system`). Not a use case.
+- Primary button / design tokens → Foundation, Design system role (e.g. `f-design-system`). Not a use case.
+- Next.js / Vercel Cron / Supabase Functions app shell → Foundation, Assembler role (e.g. `f-nextjs`). Not a Journey named "Frontend".
+- Stripe / Resend / Slack SDK wrappers → Foundation, Adapter role (e.g. `f-stripe`). Checkout/billing behaviour stays in Workflows.
 - User picker screen → Workflow (e.g. `wf-user-picker`) when it is a real pick/search/select flow; other Workflows `depends_on` it and/or it `belongs_to` multiple Journeys. If it collapses to a dumb combobox with no product behaviour, it MAY live under the design-system Foundation instead.
 - Character editor → Workflow (e.g. `wf-character-editor`). Domain behaviour; reuse via `depends_on` and/or multi-Journey `belongs_to`, not Foundation.
 
 **Two reuse axes** (keep distinct):
 
 1. **Membership reuse** — `belongs_to`: the same Workflow is part of multiple Journeys when the use case spans domain capabilities.
-2. **Composition reuse** — `depends_on`: one Workflow builds on another use case, or on Foundations (design system, DB, auth).
+2. **Composition reuse** — `depends_on`: one Workflow builds on another use case, or on Foundations (assembler, design system, DB, auth, adapters).
 
 Before inventing shared UI or a shared screen inside a Workflow, agents MUST find or create the right Foundation (substrate) or Workflow (use case) and link `depends_on` (and `belongs_to` when the shared Workflow must sit in the consuming Journey — see Rule 8).
+
+### 2.0.1 Foundation roles (documentation convention)
+
+Foundations remain a single NodeType. Agents SHOULD classify each Foundation into one **role**. Roles are **not** NodeTypes, edge types, frontmatter fields, or compiler enums — they sort substrate without polluting Journeys with tech layers (`Frontend`, `Database`, etc.).
+
+| Role | Owns | Examples | Does not own |
+|------|------|----------|--------------|
+| **Assembler** | External framework/runtime that mounts Workflow packages into a deployable surface | `f-nextjs`, `f-vercel-cron`, `f-supabase-functions` | Use-case screens, business rules |
+| **Infra** | Persistence, messaging, storage, compute plumbing, observability | `f-db`, `f-queue`, `f-blob-store`, `f-otel` | Product features that happen to use a DB |
+| **Design system** | Tokens, typography, theme, layout primitives, and dumb presentational UI | `f-design-system` (tokens + Button, Input, Stack) | Screens with product behaviour (those are Workflows) |
+| **Adapter** | Third-party / boundary SDKs and protocol wrappers | `f-stripe`, `f-resend`, `f-slack-api` | Checkout/billing use cases (Workflows on top) |
+
+**Role discoverability:** agents SHOULD write the role as the leading tag of the Foundation's `description` — e.g. `"Assembler — Next.js app shell mounting workflow packages"`. This is the only place the role lives; it surfaces in `find_related_nodes`, `export_mindplan_view` labels, and graph dumps without a schema change. Missing role tags are not compiler violations (SHOULD, never MUST).
+
+**Auth / identity:** model as **Infra** (e.g. `f-auth`) unless it is clearly a vendor adapter (`f-clerk` → Adapter). Do not invent a fifth role for it by default.
+
+**Design system vs UI components:** keep as **one role**. Splitting tokens from components recreates a tech split agents over-use. If a project later needs two packages, both stay Design system role (`f-tokens` + `f-ui-kit`).
+
+**Assembler specifics:**
+
+- Different Journeys MAY use different assemblers (UI → Next.js; jobs → Vercel Cron / Supabase Functions).
+- A Journey's assembler(s) are **derived** from member Workflows' `depends_on` Foundations that play the Assembler role — Journeys still MUST NOT have outgoing edges.
+- Workflows that run on a given backbone SHOULD `depends_on` that Assembler Foundation; this is guidance, not a compiler gate (Ghost Workflows still only require any Foundation `depends_on`).
+- Assembler territory + thin `src/foundations/<id>/` document entrypoints, mount conventions, and env/deploy constraints — not use-case behaviour.
+
+**Role litmus** (after classifying as Foundation):
+
+1. External app/runtime that **assembles** Workflow packages? → **Assembler**
+2. Vendor/protocol boundary only? → **Adapter**
+3. Visual language / dumb UI primitives? → **Design system**
+4. Otherwise shared platform plumbing? → **Infra**
 
 ### 2.1 Node identifiers
 
@@ -473,7 +506,7 @@ Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the fi
 `create_node` MUST scaffold the entity folder with a type-appropriate `current.mdx` and an empty `attachments/` directory (with `.gitkeep` so the folder is versionable). `next.mdx` and `next-attachments/` are never scaffolded by `create_node` — they are created only by `open_next` on an already-shipped Foundation/Workflow (§3.6, §8.2):
 
 - **Journey** — Overview section (domain capability + use cases it owns), Linked Workflows note, Attachments note. No checklist (Journeys have no completion gate). No implementation package.
-- **Foundation** — Shared Substrate Spec section (infra, adapters, design system, contracts — not use-case behaviour), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/foundations/<id>/` (§1.2).
+- **Foundation** — Shared Substrate Spec section (role tag belongs in frontmatter `description` at create time — Assembler | Infra | Design system | Adapter; body covers schemas, adapters, design system, contracts — not use-case behaviour), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/foundations/<id>/` (§1.2).
 - **Workflow** — Execution Logic section (use-case steps), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/workflows/<id>/` (§1.2).
 - **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4). No implementation package.
 

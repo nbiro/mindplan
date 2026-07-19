@@ -32,13 +32,24 @@ When `.cursorignore` is installed (via `mindplan-mcp init`), agent file tools ca
 | Type | Purpose | States |
 |------|---------|--------|
 | **Journey** | Domain capability the architecture screams; permanent use-case container | Computed only: `draft`, `incubation`, `stable`, `evolving` |
-| **Foundation** | Shared substrate (DB, auth, design system, adapters) — no standalone use case | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` |
+| **Foundation** | Shared substrate by role (Assembler, Infra, Design system, Adapter) — no standalone use case | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` |
 | **Workflow** | Concrete use case / feature (may span Journeys; may depend on other Workflows) | Same build pipeline as Foundation |
 | **Bug** | Defect on a Workflow or Foundation | `open` → `triaged` → `fixing` → `in-review` → `resolved` \| `wontfix` |
 
 **IDs:** `^[a-z0-9][a-z0-9-_]*$`. Prefer prefixes: `j-`, `f-`, `wf-`, `bug-`. IDs never change — evolution happens in place via `next.mdx`, not by minting a new id.
 
 **Edges:** `belongs_to` (Workflow → Journey), `depends_on` (Workflow/Foundation → Foundation or Workflow → Workflow), `affects` (Bug → Workflow/Foundation). No other edge types exist.
+
+**Foundation roles** (docs convention only — not NodeTypes or frontmatter). Agents SHOULD tag the role at the start of the Foundation `description` (e.g. `"Assembler — Next.js app shell"`):
+
+| Role | Owns | Examples |
+|------|------|----------|
+| **Assembler** | External framework/runtime that mounts Workflow packages | `f-nextjs`, `f-vercel-cron` |
+| **Infra** | Persistence, messaging, storage, observability | `f-db`, `f-queue`, `f-auth` |
+| **Design system** | Tokens + dumb presentational UI | `f-design-system` |
+| **Adapter** | Third-party / protocol SDKs | `f-stripe`, `f-resend` |
+
+A Journey's assembler(s) are derived from member Workflows' `depends_on` — Journeys still have no outgoing edges. Different Journeys MAY use different assemblers.
 
 ## Request routing
 

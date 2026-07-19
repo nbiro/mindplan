@@ -2,11 +2,12 @@
 name: mindplan-define-entities
 description: >-
   Defines MindPlan SDLC entities (Journey, Foundation, Workflow, Bug) via MCP —
-  taxonomy selection, ID naming, edge linking, and current.mdx territory.
-  Journey MUST exist before Workflow; refuses Workflow creation when no matching
-  Journey is in the graph. Use when creating planning nodes, scaffolding features,
-  mapping domain capabilities and use cases, adding shared substrate (infra/design
-  system), filing bugs, or structuring a MindPlan graph.
+  taxonomy selection, Foundation roles (Assembler/Infra/Design system/Adapter),
+  ID naming, edge linking, and current.mdx territory. Journey MUST exist before
+  Workflow; refuses Workflow creation when no matching Journey is in the graph.
+  Use when creating planning nodes, scaffolding features, mapping domain
+  capabilities and use cases, adding shared substrate (assembler/infra/design
+  system/adapters), filing bugs, or structuring a MindPlan graph.
 ---
 
 # Define MindPlan Entities
@@ -46,21 +47,35 @@ If the user names a Journey that is not in the graph, same refusal — define th
 | If the work is… | Type | Why |
 |-----------------|------|-----|
 | A domain capability the product is about (e.g. "Table ordering", "Billing") | **Journey** | Architecture scream; permanent use-case container; state computed from Workflows |
-| Shared substrate with no standalone use case (DB, auth, design system, primary button) | **Foundation** | Consumed via `depends_on`; must ship before dependent Workflows |
+| Shared substrate with no standalone use case (assembler, DB, auth, design system, adapters) | **Foundation** | Pick a role (§ below); consumed via `depends_on`; must ship before dependent Workflows |
 | A stakeholder-recognizable use case / screen (e.g. "Split & pay", "User picker", "Character editor") | **Workflow** | Execution work; `belongs_to` one or more Journeys; `depends_on` Foundations and optionally other Workflows |
 | A defect on shipped or in-flight substrate/use-case work | **Bug** | Dedicated lifecycle; links via `affects` only |
 
 **Classification litmus** (in order):
 1. Domain capability the product *is about*? → Journey
 2. Stakeholder-recognizable use case / screen with its own behaviour (even if many features embed it)? → Workflow
-3. Shared code/UI with **no** standalone use case, only consumed by use cases? → Foundation
+3. Shared code/UI with **no** standalone use case, only consumed by use cases? → Foundation (then pick a **role**)
 4. Broken behaviour on an existing node? → Bug
+
+**Foundation roles** (docs convention — not NodeTypes). After classifying as Foundation, pick one:
+
+| Role | When | Description tag example |
+|------|------|-------------------------|
+| **Assembler** | External framework/runtime that mounts Workflow packages into a deployable surface | `"Assembler — Next.js app shell mounting workflow packages"` |
+| **Adapter** | Vendor/protocol boundary SDK only | `"Adapter — Stripe SDK wrapper"` |
+| **Design system** | Tokens + dumb presentational UI | `"Design system — tokens and Button/Input primitives"` |
+| **Infra** | Persistence, messaging, storage, observability, homegrown auth | `"Infra — Postgres schema and migrations"` |
+
+Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth is Infra unless it is a vendor adapter (`f-clerk` → Adapter). Keep tokens and UI kit as Design system (one role).
+
+**Assembler linking:** Workflows that run on a given backbone SHOULD `depends_on` that Assembler Foundation (e.g. UI workflows → `f-nextjs`; cron workflows → `f-vercel-cron`). This is guidance, not a compiler gate — Ghost Workflows still only require any Foundation `depends_on`. A Journey's assembler(s) are derived from member Workflows' `depends_on` — never give Journeys outgoing edges. Different Journeys MAY use different assemblers.
 
 **Reuse rule:** Before inventing shared UI or a shared screen inside a Workflow, find or create the right Foundation (substrate) or Workflow (use case) and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node.
 
 **Anti-patterns:**
 - Journey named after tech (`API`, `Frontend`, `Database`) — wrong; use domain language
-- Primary button / design tokens as a Workflow — wrong; that is Foundation
+- Primary button / design tokens as a Workflow — wrong; that is Foundation (Design system)
+- Next.js / cron runtime as a Journey — wrong; that is Foundation (Assembler)
 - Character editor / user-picker flow as a Foundation — wrong; that is Workflow (reuse via `depends_on` / multi-Journey `belongs_to`)
 - Business use-case behaviour living only in a Foundation — move it to a Workflow
 
@@ -71,11 +86,11 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Type | Prefix | Example |
 |------|--------|---------|
 | Journey | `j-` | `j-ordering` |
-| Foundation | `f-` | `f-db-core` |
+| Foundation | `f-` | `f-db-core`, `f-nextjs` |
 | Workflow | `wf-` | `wf-checkout-split` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Title:** short human-readable name. **Description:** one sentence. Both are written to `current.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Workflow or Foundation, call `open_next` first — patches then default to the `next` slot.
+**Title:** short human-readable name. **Description:** one sentence. For Foundations, agents SHOULD lead with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`). Both are written to `current.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Workflow or Foundation, call `open_next` first — patches then default to the `next` slot.
 
 ## Step 4 — Create via MCP
 
@@ -128,7 +143,7 @@ Replace scaffold placeholders with real content. Section guidance:
 
 ### Foundation
 
-- **Shared Substrate Spec** — schemas, adapters, design system, contracts (not use-case behaviour)
+- **Shared Substrate Spec** — schemas, adapters, design system, contracts (not use-case behaviour). Put the role tag in frontmatter `description` at create time, not here.
 - **Implementation** — code under `src/foundations/<id>/` only
 - **Checklist** — PR-sized Atomic Ops (`- [ ]` / `- [x]`):
   - Spec written

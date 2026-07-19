@@ -644,7 +644,7 @@ export function scaffoldEntity(
         "",
         "## Shared Substrate Spec",
         "",
-        "_Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Implement code only under `src/foundations/<id>/`._",
+        "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Implement code only under `src/foundations/<id>/`._",
         "",
         "## Checklist",
         "",

@@ -22,8 +22,9 @@
 
 ```
 create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders and pays for food" })
-create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Core tables for orders and payments" })
-create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Shared UI primitives including primary button" })
+create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables for orders and payments" })
+create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
+create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router mounting workflow packages" })
 create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
 ```
 
@@ -33,6 +34,7 @@ create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay che
 link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
 link_nodes({ source_id: "wf-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
 link_nodes({ source_id: "wf-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ source_id: "wf-checkout-split", target_id: "f-nextjs", edge_type: "depends_on" })
 ```
 
 ### 3. Enrich Foundation territory
@@ -63,6 +65,21 @@ patch_node_territory({
 
 - [ ] Spec written
 - [ ] Components implemented
+- [ ] Documented for consumers`
+})
+
+patch_node_territory({
+  node_id: "f-nextjs",
+  body: `## Shared Substrate Spec
+
+- App Router \`app/\` layout and providers
+- How Workflow packages under \`src/workflows/\` are mounted into routes
+- Env and deploy constraints Workflows must respect
+
+## Checklist
+
+- [ ] Spec written
+- [ ] App shell wiring complete
 - [ ] Documented for consumers`
 })
 ```

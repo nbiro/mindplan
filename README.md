@@ -201,11 +201,13 @@ Territory files are MDX. Node records and outgoing edge arrays (`belongs_to`, `d
 | Type | What it is | States |
 |------|------------|--------|
 | **Journey** | A named domain capability the architecture should scream (e.g. "Table ordering", "Billing"). Not an epic, sprint, or tech layer — a permanent container for related use cases. | Computed (`draft`, `incubation`, `stable`, `evolving`) |
-| **Foundation** | Shared substrate with no standalone use case: infra *and* reusable product platform (e.g. auth, DB schema, design system, primary button). Workflows depend on it; must be stable before those Workflows can ship. | Build pipeline + computed production (`stable` / `unstable`) |
+| **Foundation** | Shared substrate with no standalone use case, sorted by **role** (Assembler, Infra, Design system, Adapter — e.g. Next.js app shell, auth, DB schema, Stripe SDK, design system, primary button). Workflows depend on it; must be stable before those Workflows can ship. | Build pipeline + computed production (`stable` / `unstable`) |
 | **Workflow** | A concrete use case (e.g. "Split the check", "User picker", "Character editor"). May belong to one or more Journeys; may depend on Foundations and other Workflows. | Build pipeline + computed production (`stable` / `unstable`) |
 | **Bug** | A defect on a Workflow or Foundation. The only type with a real closed end (`resolved` / `wontfix`). | Dedicated: `open → triaged → fixing → in-review → resolved \| wontfix` |
 
 Journeys scream the domain · Workflows are the use cases · Foundations are the shared substrate.
+
+**Foundation roles** (documentation convention — not new NodeTypes): **Assembler** (framework/runtime that mounts Workflow packages, e.g. Next.js or Vercel Cron), **Infra** (DB, queues, observability), **Design system** (tokens + dumb UI), **Adapter** (vendor SDKs). Agents SHOULD lead the Foundation `description` with the role tag. A Journey's assembler is derived from its Workflows' `depends_on` — different Journeys may use different assemblers.
 
 **Build pipeline** (Foundation/Workflow): `draft → ready → in-progress → in-review → ship` (sets `shipped_at`, computes `stable` or `unstable`).
 

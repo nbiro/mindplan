@@ -2,11 +2,11 @@
 id: wf-framework-docs
 type: Workflow
 title: "Framework documentation"
-description: "Fix scrambled-eggs Mermaid depends_on arrows and cooking workflow clarity"
+description: "Document Foundation roles (Assembler, Infra, Design system, Adapter) across SPEC, playbook, skills, and README"
 state: stable
-shipped_at: 2026-07-19T19:15:04.799Z
+shipped_at: 2026-07-19T19:33:19.905Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-19T19:15:04.799Z
+updated_at: 2026-07-19T19:33:19.905Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
@@ -15,19 +15,22 @@ depends_on:
 ---
 
 
-
 # Framework documentation
 
-README, SPEC, and playbook: MindPlan as the living product plan agents work from.
+README, SPEC, and playbook: Foundation roles (Assembler, Infra, Design system, Adapter) as documentation groupings — not new NodeTypes.
 
 ## Execution Logic
 
-Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder is a pointer; no runtime TS.
+Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder is a pointer; no runtime TS. Foundation scaffold lives in `src/foundations/f-territory-store/store.ts`.
 
 ## Checklist
 
-- [x] README scrambled-eggs Mermaid: label depends_on (whisk → crack; cook → whisk + stove)
-- [x] README scrambled-eggs: call out wf-cook-scramble as the cooking Workflow explicitly
+- [x] SPEC.md: Foundation roles section + litmus/examples (§1.2, §2, §2.0)
+- [x] AGENTS.md + templates/agent/playbook.md (+ mindplan/agent/playbook.md mirror): Foundation roles table
+- [x] define-entities skill (templates + mindplan/agent mirror): role classification, description tag, Assembler depends_on
+- [x] README.md: short Foundation roles paragraph in taxonomy
+- [x] Foundation scaffold Shared Substrate Spec: role belongs in frontmatter description
+- [x] Review fixes: Assembler linking SHOULD (not MUST); role only in description; scaffold/examples aligned
 
 ## Attachments
 
