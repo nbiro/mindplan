@@ -26,6 +26,7 @@ Point your agent at these files (installed by `mindplan-mcp init`):
 
 - **`mindplan/agent/playbook.md`** — always-on SDLC execution process for all software work
 - **`mindplan/agent/skills/define-entities/`** — step-by-step entity creation (scaffolding)
+- **`mindplan/agent/skills/plan-project/`** — plan-only product modeling (no application code)
 
 Many agents auto-read root **`AGENTS.md`** — `init` creates one when missing.
 

@@ -2,7 +2,7 @@
 
 **Always apply.** For any software work in this repository, follow MindPlan. Orient on the graph before coding. Mutate graph state only through the **MindPlan MCP server**. Treat every `Blocked: <reason>` as a hard failure — read it, fix the plan, then retry. Do not retry blindly.
 
-Normative reference: `SPEC.md` (in the mindplan-mcp package or repo). Entity scaffolding (create/link nodes, Journey-first): `mindplan/agent/skills/define-entities/SKILL.md`.
+Normative reference: `SPEC.md` (in the mindplan-mcp package or repo). Entity scaffolding (create/link nodes, Journey-first): `mindplan/agent/skills/define-entities/SKILL.md`. Plan-only sessions (model the product graph with no application code): `mindplan/agent/skills/plan-project/SKILL.md`.
 
 ## Authority model
 
@@ -71,12 +71,13 @@ Then classify:
 
 | If the user wants… | Do this |
 |--------------------|---------|
-| New Journey, Foundation, Workflow, or Bug | Follow `mindplan/agent/skills/define-entities/` (Journey must exist before any Workflow; refuse Workflow creation when no matching Journey is in the graph) |
+| **Plan / model / architect only** (greenfield product map, reshape the graph, enrich PRDs — no application code) | Follow `mindplan/agent/skills/plan-project/` — stay in `draft` or stop at `ready`; do not enter the build pipeline or edit `src/` |
+| New Journey, Foundation, Workflow, or Bug (as part of execution, or a small add while building) | Follow `mindplan/agent/skills/define-entities/` (Journey must exist before any Workflow; refuse Workflow creation when no matching Journey is in the graph) |
 | Implement or advance an existing Foundation/Workflow | **Build pipeline loop** below |
 | Report or fix a defect | **Bug lifecycle loop** below |
-| Change to a **shipped** Foundation/Workflow | `get_blast_radius` → `open_next` → run the **build pipeline loop** against the `next.mdx` slot until `ship` promotes it over `current.mdx` (same id) |
+| Change to a **shipped** Foundation/Workflow | `get_blast_radius` → `open_next` → if the ask is plan/spec only, use **plan-project** on the `next` slot; if implementing, run the **build pipeline loop** against `next.mdx` until `ship` promotes it over `current.mdx` (same id) |
 
-Do not invent tickets outside MindPlan. Do not start substantial implementation until the owning node is `in-progress` (or Bug is `fixing`) — for shipped nodes, until the `next` slot is `in-progress`.
+Do not invent tickets outside MindPlan. Do not start substantial implementation until the owning node is `in-progress` (or Bug is `fixing`) — for shipped nodes, until the `next` slot is `in-progress`. When the user asked only to plan, do not “helpfully” continue into implementation in the same session — hand off after plan-project completes.
 
 ## Validate after every plan change
 
@@ -184,7 +185,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | `get_node_context` | Read territory — prefer `record` + `body`; includes `next` slot when evolving; `raw_context` is deprecated |
 | `get_node_implementation` | Prescribed package root for a Workflow/Foundation (`src/workflows/<id>` or `src/foundations/<id>`) |
 | `patch_node_territory` | Territory body edits, checkboxes, title/description; defaults to `next` when evolving a shipped node |
-| `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities skill) |
+| `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities; for plan-only sessions use plan-project) |
 | `open_next` | Open `next.mdx` on a shipped Foundation/Workflow (same id) to evolve it in place |
 | `discard_next` | Abandon an in-flight `next.mdx` evolution; `current.mdx` unchanged |
 | `link_nodes` | Add `belongs_to`, `depends_on`, or `affects`; optional `link_dependent: true` for Journey closure; writes to `next` while a next slot is open |

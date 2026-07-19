@@ -99,6 +99,17 @@ export function installDefineEntitiesSkill(packageRoot: string): InstallSkillRes
   );
 }
 
+/** Copies the plan-project skill into mindplan/agent/skills/plan-project/ (idempotent). */
+export function installPlanProjectSkill(packageRoot: string): InstallSkillResult {
+  const root = agentTemplateRoot(packageRoot);
+  const destDir = path.join(agentRoot(), "skills", "plan-project");
+  return installTemplateDir(
+    path.join(root, "skills", "plan-project"),
+    destDir,
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "plan-project")
+  );
+}
+
 /** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent). */
 export function installMcpExample(packageRoot: string): InstallAgentRuleResult {
   const root = agentTemplateRoot(packageRoot);

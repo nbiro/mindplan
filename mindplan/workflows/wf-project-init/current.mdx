@@ -2,22 +2,25 @@
 id: wf-project-init
 type: Workflow
 title: "Init a consumer project"
-description: "Scaffold consumer mindplan/ plus agent playbook, define-entities skill, MCP example, integrations, and AGENTS.md."
+description: "Scaffold consumer mindplan/ plus agent playbook, define-entities and plan-project skills, MCP example, integrations, and AGENTS.md."
 state: stable
-shipped_at: 2026-07-19T18:51:23.132Z
+shipped_at: 2026-07-19T19:58:37.706Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-07-19T19:39:55.237Z
+updated_at: 2026-07-19T19:58:37.706Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
   - f-territory-store
 ---
 
+
+
+
 # Init a consumer project
 
 ## Purpose
 
-Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities skill, MCP example config, per-agent integration guides, root `AGENTS.md`, and `.cursorignore` so agents read territory via MCP.
+Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities and plan-project skills, MCP example config, per-agent integration guides, root `AGENTS.md`, and `.cursorignore` so agents read territory via MCP.
 
 ## Execution Logic
 
@@ -25,7 +28,8 @@ Package: `src/workflows/wf-project-init/`
 
 - `init.ts` — `initProject` plus install helpers:
   - `installAgentPlaybook` — `templates/agent/playbook.md` → `mindplan/agent/`
-  - `installDefineEntitiesSkill` — skill under `mindplan/agent/skills/`
+  - `installDefineEntitiesSkill` — skill under `mindplan/agent/skills/define-entities/`
+  - `installPlanProjectSkill` — skill under `mindplan/agent/skills/plan-project/`
   - `installMcpExample` — `mcp.json.example`
   - `installAgentIntegrations` — guides into `mindplan/agent/integrations/`
   - `installRootAgentsMd` — root `AGENTS.md` from template
@@ -36,10 +40,16 @@ Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`.
 
 ## Acceptance Criteria
 
-- [x] `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
-- [x] Playbook, define-entities skill, integrations, MCP example, AGENTS.md, and `.cursorignore` are installed from `templates/`
-- [x] Init helpers live in this package (not in the territory store)
-- [x] Smoke test covers init template install
+- `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
+- Playbook, define-entities skill, plan-project skill, integrations, MCP example, AGENTS.md, and `.cursorignore` are installed from `templates/`
+- Init helpers live in this package (not in the territory store)
+- Smoke test covers init template install including plan-project
+
+## Atomic Ops
+
+- [x] Add `installPlanProjectSkill` in `src/workflows/wf-project-init/init.ts`
+- [x] Call it from `mindplan-mcp init` in `f-mcp-runtime/server.ts`
+- [x] Smoke test asserts plan-project skill is installed
 
 ## Attachments
 

@@ -6,6 +6,7 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 |-------|-------|
 | [Cursor](cursor.md) | `.cursor/mcp.json` |
 | [Claude Code](claude-code.md) | `claude mcp add` or project MCP config |
+| [Codex](codex.md) | `codex mcp add` or `.codex/config.toml` |
 | [GitHub Copilot (VS Code)](copilot-vscode.md) | VS Code MCP settings |
 | [Windsurf](windsurf.md) | Cascade MCP config |
 | [Cline](cline.md) | Cline MCP settings |
@@ -16,6 +17,7 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — entity creation guide (scaffolding)
+- `mindplan/agent/skills/plan-project/` — plan-only product modeling (no application code)
 - `mindplan/agent/mcp.json.example` — MCP server snippet (adjust the path)
 
 If your agent reads root **`AGENTS.md`**, `init` creates one when missing. Otherwise, point the agent at `mindplan/agent/playbook.md` manually.

@@ -2,11 +2,11 @@
 id: wf-framework-docs
 type: Workflow
 title: "Framework documentation"
-description: "Own MindPlan normative docs: SPEC, playbooks, skills, README — Foundation roles, Territory Completeness, and agent process guidance."
+description: "Own MindPlan normative docs: SPEC, playbooks, skills (define-entities + plan-project), README — Foundation roles, Territory Completeness, plan-only sessions, and agent process guidance."
 state: stable
-shipped_at: 2026-07-19T19:42:01.875Z
+shipped_at: 2026-07-19T19:58:36.178Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-19T19:42:01.875Z
+updated_at: 2026-07-19T19:58:36.178Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
@@ -16,11 +16,12 @@ depends_on:
 
 
 
+
 # Framework documentation
 
 ## Purpose
 
-Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, and how to evolve shipped work without destroying the living contract.
+Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, and how to evolve shipped work without destroying the living contract.
 
 ## Execution Logic
 
@@ -33,6 +34,7 @@ Surfaces owned by this Workflow:
 - `templates/agent/playbook.md` — consumer playbook shipped by `mindplan-mcp init`
 - `mindplan/agent/playbook.md` — local mirror of the playbook
 - `templates/agent/skills/define-entities/` (+ mindplan/agent mirror) — entity scaffolding skill
+- `templates/agent/skills/plan-project/` (+ mindplan/agent mirror) — plan-only sessions (no application code)
 - `README.md` — product framing and taxonomy summary
 
 Foundation scaffold copy that mentions roles lives in `src/foundations/f-territory-store/store.ts` (touched when role/description conventions change).
@@ -45,22 +47,27 @@ Foundation scaffold copy that mentions roles lives in `src/foundations/f-territo
 
 Assembler, Infra, Design system, Adapter — documentation groupings only (not NodeTypes). Agents SHOULD tag the role at the start of a Foundation `description`.
 
+### Plan-only sessions
+
+When the user wants to model or restructure the product plan without writing application code, agents follow `mindplan/agent/skills/plan-project/`. The always-on playbook routes those sessions to that skill and forbids advancing into implementation (`in-progress` / `src/`) until a later execution session.
+
 ## Acceptance Criteria
 
 - SPEC documents Territory Completeness and Foundation roles.
 - Playbooks (AGENTS + templates + mindplan mirror) instruct agents to keep `current`/`next` as full contracts and forbid delta-only promotion.
+- Playbooks route plan-only / architecture-modeling asks to the `plan-project` skill.
 - define-entities skill aligns with Foundation role tagging.
-- README summarizes Foundation roles in the taxonomy section.
+- plan-project skill forbids application-code writes and pipeline states past `ready`.
+- README summarizes Foundation roles and mentions both agent skills.
 - Active MindPlan Journey/Foundation/Workflow territories describe full repo state (not stubs or latest-change deltas).
 
 ## Atomic Ops
 
-- [x] SPEC.md §3.6: Territory Completeness MUST
-- [x] AGENTS.md + templates/agent/playbook.md + mindplan/agent mirror: versioning steps, review check, Never rule
-- [x] Retrofit all 6 stable Foundation current.mdx bodies to full-state contracts
-- [x] Retrofit active non-deprecated Workflow current.mdx bodies (excl. this node’s next)
-- [x] Refresh both Journey current.mdx bodies to full contracts
-- [x] This next.mdx is itself a full successor contract (not a changelog)
+- [x] Author `templates/agent/skills/plan-project/SKILL.md` (plan-only loop; hard no-code rules)
+- [x] Update playbook (templates + AGENTS.md + mindplan/agent mirror) to route plan-only work to plan-project
+- [x] Mirror plan-project skill under `mindplan/agent/skills/plan-project/`
+- [x] Point README / integrations shared assets at both skills
+- [x] This next.mdx remains a full successor contract (not a changelog)
 
 ## Attachments
 

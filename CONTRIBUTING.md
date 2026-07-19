@@ -23,6 +23,7 @@ npm test
 | `SPEC.md` | Framework specification — source of truth for behaviour |
 | `templates/agent/playbook.md` | Always-on SDLC execution process installed into consumer projects by `init` |
 | `templates/agent/skills/define-entities/` | Entity-definition guide installed by `init` |
+| `templates/agent/skills/plan-project/` | Plan-only session guide installed by `init` |
 | `templates/agent/integrations/` | Per-agent MCP setup guides installed by `init` |
 | `src/` | TypeScript MCP server |
 | `scripts/smoke.mjs` | Integration smoke test |

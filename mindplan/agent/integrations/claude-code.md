@@ -11,9 +11,11 @@ Or add to the project MCP config (see [Claude Code MCP docs](https://docs.anthro
 2. **Instructions** — add to `CLAUDE.md` at the project root:
 
 ```markdown
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when creating planning nodes.
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when creating planning nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code).
 ```
 
-3. **Skills** (optional) — symlink or copy `mindplan/agent/skills/define-entities/` to `.claude/skills/mindplan-define-entities/` for Claude Code skill discovery.
+3. **Skills** (optional) — symlink or copy for Claude Code skill discovery:
+   - `mindplan/agent/skills/define-entities/` → `.claude/skills/mindplan-define-entities/`
+   - `mindplan/agent/skills/plan-project/` → `.claude/skills/mindplan-plan-project/`
 
 Set `MINDPLAN_ROOT` if Claude Code does not start the server with cwd at the project root.

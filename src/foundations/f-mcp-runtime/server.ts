@@ -49,6 +49,7 @@ import {
   installAgentIntegrations,
   installCursorIgnore,
   installDefineEntitiesSkill,
+  installPlanProjectSkill,
   installMcpExample,
   installRootAgentsMd,
 } from "../../workflows/wf-project-init/init.js";
@@ -871,6 +872,7 @@ function runCli() {
     const { root, created } = initProject();
     const playbook = installAgentPlaybook(packageRoot);
     const skill = installDefineEntitiesSkill(packageRoot);
+    const planSkill = installPlanProjectSkill(packageRoot);
     const mcpExample = installMcpExample(packageRoot);
     const integrations = installAgentIntegrations(packageRoot);
     const agentsMd = installRootAgentsMd(packageRoot);
@@ -890,6 +892,7 @@ function runCli() {
 
     report("agent playbook", playbook);
     report("define-entities skill", skill);
+    report("plan-project skill", planSkill);
     report("MCP example", mcpExample);
     report("agent integrations", integrations);
     report("AGENTS.md", agentsMd);

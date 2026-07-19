@@ -148,6 +148,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 - `.cursorignore` — blocks agent file tools from reading territory; agents use MCP for reads and `patch_node_territory` for writes
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
+- `mindplan/agent/skills/plan-project/` — plan-only sessions (model the graph; no application code)
 - `mindplan/agent/mcp.json.example` — MCP server config snippet
 - `mindplan/agent/integrations/` — setup guides for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP clients
 - `AGENTS.md` at the project root — created only when missing (many agents auto-read this file)
@@ -173,7 +174,8 @@ See [integrations README](templates/agent/integrations/README.md) in this repo f
 │   │   ├── mcp.json.example
 │   │   ├── integrations/            # Per-agent MCP setup guides
 │   │   └── skills/
-│   │       └── define-entities/
+│   │       ├── define-entities/
+│   │       └── plan-project/
 │   ├── components/                # Project-specific MDX components (optional)
 │   ├── journeys/<id>/             # Plan only — no src/ package
 │   │   ├── current.mdx

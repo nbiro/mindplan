@@ -543,6 +543,9 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "integrations", "codex.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install Codex integration guide");
+} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "plan-project", "SKILL.md"))) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install plan-project skill");
 } else {
   console.log("ok   mindplan-mcp init installs templates from package root");
 }
