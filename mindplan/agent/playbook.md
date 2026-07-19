@@ -10,7 +10,7 @@ Normative reference: `SPEC.md` (in the mindplan-mcp package or repo). Entity sca
 |-------|----------|------------|
 | **Node record** | `mindplan/<type>s/<id>/current.mdx` frontmatter | Server owns **state**, **updated_at**, **shipped_at**, **belongs_to**, **depends_on**, **affects** via MCP |
 | **title / description** | `current.mdx` frontmatter scalars (or `next.mdx` while evolving) | Pre-ship Workflows: `patch_node_territory`; evolving shipped Foundations/Workflows: `patch_node_territory` (defaults to `next`); other types: `patch_node_territory` or file tools until `.cursorignore` blocks reads |
-| **Territory body** | `current.mdx` body (or `next.mdx` while evolving) | `patch_node_territory` (preferred) or file tools on `context_path`/`next_path` from MCP |
+| **Territory body** | `current.mdx` body (or `next.mdx` while evolving) | `patch_node_territory` (preferred) or file tools on `current_path`/`next_path` from MCP (`context_path` is a deprecated alias for `current_path`) |
 | **Attachments** | `mindplan/<type>s/<id>/attachments/` (`next-attachments/` while evolving) | Normal file tools |
 
 A node's id is stable forever — Foundations and Workflows never get a new id to evolve; they open an optional `next.mdx` next to `current.mdx` instead.
@@ -25,7 +25,7 @@ When `.cursorignore` is installed (via `mindplan-mcp init`), agent file tools ca
 - **Never** trust `state`, edge arrays, or `shipped_at` except from MCP tool responses (`record` in `get_node_context` / `orient_for_work`)
 - **Never** read `mindplan/map.md` as graph authority — call `export_mindplan_view` or re-call `find_related_nodes` after mutations
 - **Never** use terminal commands (`cat`, `type`, `Get-Content`, etc.) to read ignored territory paths
-- Territory edits: use `patch_node_territory` on the `node_id` returned by orientation; for body-only work until fully on MCP, edit only the body below frontmatter at `context_path` (or `next_path` when a next slot is open) from `get_node_context`
+- Territory edits: use `patch_node_territory` on the `node_id` returned by orientation; for body-only work until fully on MCP, edit only the body below frontmatter at `current_path` (or `next_path` when a next slot is open) from `get_node_context`
 
 ## Taxonomy (quick map)
 

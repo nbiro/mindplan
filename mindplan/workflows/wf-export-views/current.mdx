@@ -1,0 +1,32 @@
+---
+id: wf-export-views
+type: Workflow
+title: "See the map"
+description: "Mermaid/DOT export plus automatic mindplan/map.md refresh after graph mutations."
+state: stable
+shipped_at: 2026-07-19T18:51:31.578Z
+created_at: 2026-07-19T18:33:36.804Z
+updated_at: 2026-07-19T18:51:31.578Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-mcp-runtime
+  - f-territory-store
+  - f-view-projection
+---
+
+# See the map
+
+## Execution Logic
+
+`export_mindplan_view` + map refresh; ownership in `src/workflows/wf-export-views/tools.ts`. Projection substrate: `f-view-projection`.
+
+## Checklist
+
+- [x] Requirements defined
+- [x] Tools live under `src/workflows/wf-export-views/`
+- [x] Tests passing
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

@@ -1,0 +1,31 @@
+---
+id: f-graph-search
+type: Foundation
+title: "Graph search"
+description: "Graph search in src/foundations/f-graph-search/; excludes retired nodes from orientation ranking"
+state: stable
+shipped_at: 2026-07-19T18:51:18.683Z
+created_at: 2026-07-19T18:33:36.731Z
+updated_at: 2026-07-19T18:51:18.683Z
+depends_on:
+  - f-domain-model
+---
+
+# Graph search
+
+## Shared Substrate Spec
+
+Implemented in `src/foundations/f-graph-search/`:
+
+- `search.ts` — token ranking + 1-hop neighborhood
+- Retired nodes (`deprecated`, closed Bugs) are excluded from ranking by default (same policy as map export)
+
+## Checklist
+
+- [x] Spec written
+- [x] Implementation complete in `src/foundations/f-graph-search/`
+- [x] Verified in target environment (`npm test`)
+
+## Attachments
+
+_Schemas and diagrams go in `attachments/`._

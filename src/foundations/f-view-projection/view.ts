@@ -6,10 +6,10 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { expandNeighborhood } from "./search.js";
-import { mindplanRoot } from "./store.js";
-import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "./types.js";
-import { GRAPH_VERSION } from "./types.js";
+import { expandNeighborhood } from "../f-graph-search/search.js";
+import { mindplanRoot } from "../f-territory-store/store.js";
+import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "../f-domain-model/types.js";
+import { GRAPH_VERSION } from "../f-domain-model/types.js";
 
 /** Generated Mermaid snapshot under the territory root (not a typed node). */
 export const MAP_FILENAME = "map.md";

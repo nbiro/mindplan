@@ -13,7 +13,7 @@ import type {
   NextPipelineState,
   NodeState,
   ProductionState,
-} from "./types.js";
+} from "../f-domain-model/types.js";
 import {
   BUG_STATES,
   BUG_TRANSITIONS,
@@ -26,8 +26,8 @@ import {
   PRE_SHIP_WORKFLOW_STATES,
   PRODUCTION_TRANSITIONS,
   SHIP_TRANSITION,
-} from "./types.js";
-import { countUncheckedBoxes } from "./store.js";
+} from "../f-domain-model/types.js";
+import { countUncheckedBoxes } from "../f-territory-store/store.js";
 
 export function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);

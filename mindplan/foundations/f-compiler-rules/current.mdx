@@ -2,34 +2,29 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules engine"
-description: "Enforces Blocked: guardrails, status transitions, journey/stability recompute, and open_next / promote validation."
+description: "Compiler rules in src/foundations/f-compiler-rules/"
 state: stable
-shipped_at: 2026-07-15T18:54:23.015Z
+shipped_at: 2026-07-19T18:51:11.758Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-07-15T18:54:23.015Z
+updated_at: 2026-07-19T18:51:11.758Z
 depends_on:
   - f-domain-model
 ---
 
+
 # Compiler rules engine
 
-Enforces Blocked: guardrails, status transitions, journey/stability recompute, and open_next / promote validation.
+## Shared Substrate Spec
 
-## Infrastructure Spec
+Implemented in `src/foundations/f-compiler-rules/`:
 
-Implemented in `src/rules.ts`:
-
-- `Blocked: ` errors for ghost workflows/bugs, taxonomy, cycles, completion, infrastructure-first
-- Status transition resolution including `ship` → computed `stable`/`unstable`
-- Journey state and stability recompute
-- Dependency closure / `link_dependent`
-- Version lineage validation, blast-radius helpers (`transitiveDependents`)
+- `rules.ts` — Blocked: guardrails, status transitions, journey/stability recompute, open_next validation
 
 ## Checklist
 
-- [x] Spec written (SPEC §5 compiler rules)
-- [x] Implementation complete (`src/rules.ts`)
-- [x] Verified in target environment (gates all MCP mutations; covered by smoke tests)
+- [x] Spec written
+- [x] Implementation complete in `src/foundations/f-compiler-rules/`
+- [x] Verified in target environment (`npm test`)
 
 ## Attachments
 

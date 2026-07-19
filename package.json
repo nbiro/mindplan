@@ -18,7 +18,7 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
-    "test": "npm run build && node scripts/view.test.mjs && node scripts/smoke.mjs",
+    "test": "npm run build && node src/workflows/wf-test-harness/view.test.mjs && node src/workflows/wf-test-harness/search.test.mjs && node src/workflows/wf-test-harness/smoke.mjs",
     "dev": "tsc --watch"
   },
   "engines": {

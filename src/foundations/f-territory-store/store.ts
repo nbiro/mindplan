@@ -26,8 +26,8 @@ import type {
   NextPipelineState,
   NextSlot,
   NodeType,
-} from "./types.js";
-import { BUG_SEVERITIES, GRAPH_VERSION, isNextPipelineState, NODE_TYPES } from "./types.js";
+} from "../f-domain-model/types.js";
+import { BUG_SEVERITIES, GRAPH_VERSION, isNextPipelineState, NODE_TYPES } from "../f-domain-model/types.js";
 
 const TYPE_DIRS: Record<NodeType, string> = {
   Journey: "journeys",
@@ -171,137 +171,8 @@ export function listAttachments(node: Pick<MindPlanNode, "id" | "type">): string
     .sort();
 }
 
-export type InitResult = {
-  root: string;
-  created: boolean;
-};
-
-export type InstallAgentRuleResult = {
-  installed: boolean;
-  path: string;
-};
-
-export type InstallSkillResult = {
-  installed: boolean;
-  path: string;
-};
-
-function projectRoot(): string {
+export function projectRoot(): string {
   return process.env.MINDPLAN_ROOT ?? process.cwd();
-}
-
-function copyDirRecursive(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
-}
-
-function agentTemplateRoot(packageRoot: string): string {
-  return path.join(packageRoot, "templates", "agent");
-}
-
-function installTemplateFile(
-  templatePath: string,
-  destPath: string,
-  projectRelativePath: string
-): InstallAgentRuleResult {
-  if (fs.existsSync(destPath)) {
-    return { installed: false, path: projectRelativePath };
-  }
-  if (!fs.existsSync(templatePath)) {
-    throw new Error(`Agent template not found at ${templatePath}`);
-  }
-  fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  fs.copyFileSync(templatePath, destPath);
-  return { installed: true, path: projectRelativePath };
-}
-
-function installTemplateDir(
-  templateDir: string,
-  destDir: string,
-  projectRelativePath: string
-): InstallSkillResult {
-  if (fs.existsSync(destDir)) {
-    return { installed: false, path: projectRelativePath };
-  }
-  if (!fs.existsSync(templateDir)) {
-    throw new Error(`Agent template not found at ${templateDir}`);
-  }
-  copyDirRecursive(templateDir, destDir);
-  return { installed: true, path: projectRelativePath };
-}
-
-/** Copies the bundled playbook into mindplan/agent/playbook.md (idempotent). */
-export function installAgentPlaybook(packageRoot: string): InstallAgentRuleResult {
-  const root = agentTemplateRoot(packageRoot);
-  const destPath = path.join(agentRoot(), "playbook.md");
-  return installTemplateFile(
-    path.join(root, "playbook.md"),
-    destPath,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "playbook.md")
-  );
-}
-
-/** Copies the define-entities skill into mindplan/agent/skills/define-entities/ (idempotent). */
-export function installDefineEntitiesSkill(packageRoot: string): InstallSkillResult {
-  const root = agentTemplateRoot(packageRoot);
-  const destDir = path.join(agentRoot(), "skills", "define-entities");
-  return installTemplateDir(
-    path.join(root, "skills", "define-entities"),
-    destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "define-entities")
-  );
-}
-
-/** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent). */
-export function installMcpExample(packageRoot: string): InstallAgentRuleResult {
-  const root = agentTemplateRoot(packageRoot);
-  const destPath = path.join(agentRoot(), "mcp.json.example");
-  return installTemplateFile(
-    path.join(root, "mcp.json.example"),
-    destPath,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "mcp.json.example")
-  );
-}
-
-/** Copies per-agent integration guides into mindplan/agent/integrations/ (idempotent). */
-export function installAgentIntegrations(packageRoot: string): InstallSkillResult {
-  const root = agentTemplateRoot(packageRoot);
-  const destDir = path.join(agentRoot(), "integrations");
-  return installTemplateDir(
-    path.join(root, "integrations"),
-    destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "integrations")
-  );
-}
-
-/** Creates root AGENTS.md from the playbook when missing (idempotent). */
-export function installRootAgentsMd(packageRoot: string): InstallAgentRuleResult {
-  const templatePath = path.join(agentTemplateRoot(packageRoot), "playbook.md");
-  const destPath = path.join(projectRoot(), "AGENTS.md");
-  return installTemplateFile(templatePath, destPath, "AGENTS.md");
-}
-
-/** Installs `.cursorignore` at project root when missing (idempotent). */
-export function installCursorIgnore(packageRoot: string): InstallAgentRuleResult {
-  const templatePath = path.join(agentTemplateRoot(packageRoot), "cursorignore");
-  const destPath = path.join(projectRoot(), ".cursorignore");
-  return installTemplateFile(templatePath, destPath, ".cursorignore");
-}
-
-/** Scaffolds an empty mindplan/ tree in the consumer project (idempotent). */
-export function initProject(): InitResult {
-  const root = mindplanRoot();
-  const existed = fs.existsSync(root);
-  ensureDirectories();
-  return { root, created: !existed };
 }
 
 /** Creates /mindplan, top-level type directories, and components/ if missing. */

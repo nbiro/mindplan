@@ -37,25 +37,24 @@ link_nodes({ source_id: "wf-checkout-split", target_id: "f-design-system", edge_
 
 ### 3. Enrich Foundation territory
 
-In `mindplan/foundations/f-db-core/current.mdx` body:
+```
+patch_node_territory({
+  node_id: "f-db-core",
+  body: `## Shared Substrate Spec
 
-```markdown
-## Shared Substrate Spec
-
-- `orders` table: id, table_id, status, created_at
-- `payments` table: id, order_id, amount_cents, method
+- \`orders\` table: id, table_id, status, created_at
+- \`payments\` table: id, order_id, amount_cents, method
 
 ## Checklist
 
 - [ ] Spec written
 - [ ] Migration created
-- [ ] Verified in staging
-```
+- [ ] Verified in staging`
+})
 
-In `mindplan/foundations/f-design-system/current.mdx` body:
-
-```markdown
-## Shared Substrate Spec
+patch_node_territory({
+  node_id: "f-design-system",
+  body: `## Shared Substrate Spec
 
 - Primary button, typography, spacing tokens
 - Forms and feedback primitives used across Journeys
@@ -64,15 +63,16 @@ In `mindplan/foundations/f-design-system/current.mdx` body:
 
 - [ ] Spec written
 - [ ] Components implemented
-- [ ] Documented for consumers
+- [ ] Documented for consumers`
+})
 ```
 
 ### 4. Enrich Workflow territory
 
-In `mindplan/workflows/wf-checkout-split/current.mdx` body:
-
-```markdown
-## Execution Logic
+```
+patch_node_territory({
+  node_id: "wf-checkout-split",
+  body: `## Execution Logic
 
 1. Diner selects split mode (even / by item / custom)
 2. System calculates per-person totals
@@ -83,7 +83,8 @@ In `mindplan/workflows/wf-checkout-split/current.mdx` body:
 - [ ] Requirements defined
 - [ ] Split calculation implemented
 - [ ] Payment flow integrated
-- [ ] E2E tests passing
+- [ ] E2E tests passing`
+})
 ```
 
 ### 5. Advance states (after links + content)
@@ -194,12 +195,10 @@ Both Workflows must ship in dependency order: `wf-auth` must reach `stable` befo
 ```
 create_node({ id: "bug-double-charge", type: "Bug", title: "Double charge on retry", description: "Payment retried after timeout causes duplicate charge" })
 link_nodes({ source_id: "bug-double-charge", target_id: "wf-checkout-split", edge_type: "affects" })
-```
 
-Enrich `mindplan/bugs/bug-double-charge/current.mdx`:
-
-```markdown
-## Summary
+patch_node_territory({
+  node_id: "bug-double-charge",
+  body: `## Summary
 
 Retrying payment after network timeout creates a second charge.
 
@@ -220,7 +219,8 @@ Retrying payment after network timeout creates a second charge.
 
 - [ ] Root cause identified
 - [ ] Idempotency key added to payment API
-- [ ] Regression test added
+- [ ] Regression test added`
+})
 ```
 
 Then:

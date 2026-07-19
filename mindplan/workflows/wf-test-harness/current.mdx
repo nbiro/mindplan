@@ -2,32 +2,35 @@
 id: wf-test-harness
 type: Workflow
 title: "Test harness"
-description: "Smoke and view regression tests that exercise graph assembly and Mermaid/DOT export."
+description: "Smoke/view/search tests in src/workflows/wf-test-harness/"
 state: stable
-shipped_at: 2026-07-15T18:55:35.248Z
+shipped_at: 2026-07-19T18:51:22.613Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-07-15T18:55:35.248Z
+updated_at: 2026-07-19T18:51:22.613Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-mcp-runtime
 ---
 
-# Test harness
 
-Smoke and view regression tests that exercise graph assembly and Mermaid/DOT export.
+# Test harness
 
 ## Execution Logic
 
-- `npm test` builds then runs `scripts/view.test.mjs` and `scripts/smoke.mjs`.
-- Smoke covers init, node lifecycle, compiler blocks, and view export against a temp root.
-- View test asserts deterministic Mermaid/DOT shape helpers.
+Regression tests live in `src/workflows/wf-test-harness/`:
+
+- `view.test.mjs` — Mermaid/DOT unit tests
+- `search.test.mjs` — ranking excludes retired nodes
+- `smoke.mjs` — MCP stdio end-to-end + `mindplan-mcp init` template install
+
+`npm test` runs build then these scripts.
 
 ## Checklist
 
-- [x] Requirements defined (CONTRIBUTING / CI)
-- [x] Implementation complete (`scripts/smoke.mjs`, `scripts/view.test.mjs`, `.github/workflows/ci.yml`)
-- [x] Tests passing (`npm test`)
+- [x] Requirements defined
+- [x] Harness under `src/workflows/wf-test-harness/`
+- [x] Tests passing
 
 ## Attachments
 

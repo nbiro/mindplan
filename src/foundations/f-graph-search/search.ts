@@ -3,7 +3,7 @@
  * Deterministic token scoring over id/title/description — no embeddings, no cache.
  */
 
-import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "./types.js";
+import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "../f-domain-model/types.js";
 
 export const DEFAULT_FIND_LIMIT = 5;
 export const MAX_FIND_LIMIT = 20;
@@ -56,6 +56,15 @@ function toSummary(node: MindPlanNode): NodeSummary {
   };
 }
 
+const CLOSED_BUG_STATES = new Set(["resolved", "wontfix"]);
+
+/** Match export_mindplan_view default: hide deprecated nodes and closed bugs from ranking. */
+function isRetired(node: MindPlanNode): boolean {
+  if (node.state === "deprecated") return true;
+  if (node.type === "Bug" && CLOSED_BUG_STATES.has(node.state)) return true;
+  return false;
+}
+
 /** Score a node against query tokens. Exact id match ≫ id substring ≫ title ≫ description. */
 export function scoreNode(node: MindPlanNode, tokens: string[], queryLower: string): number {
   if (tokens.length === 0 && !queryLower) return 0;
@@ -93,7 +102,7 @@ export function rankNodes(
     MAX_FIND_LIMIT
   );
 
-  let candidates = nodes;
+  let candidates = nodes.filter((n) => !isRetired(n));
   if (options?.type) {
     candidates = candidates.filter((n) => n.type === options.type);
   }

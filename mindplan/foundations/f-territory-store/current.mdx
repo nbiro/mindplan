@@ -2,35 +2,30 @@
 id: f-territory-store
 type: Foundation
 title: "Territory filesystem store"
-description: "Persists MindPlan nodes as current.mdx (optional next.mdx) under mindplan/, including scaffold, frontmatter edges, init, and graph assembly."
+description: "Territory FS store in src/foundations/f-territory-store/ (init split to wf-project-init)"
 state: stable
-shipped_at: 2026-07-15T18:54:22.761Z
+shipped_at: 2026-07-19T18:51:11.815Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-07-15T18:54:22.761Z
+updated_at: 2026-07-19T18:51:11.815Z
 depends_on:
   - f-domain-model
 ---
 
+
 # Territory filesystem store
 
-Persists MindPlan nodes as current.mdx (optional next.mdx) under mindplan/, including scaffold, frontmatter edges, init, and graph assembly.
+## Shared Substrate Spec
 
-## Infrastructure Spec
+Implemented in `src/foundations/f-territory-store/`:
 
-Implemented in `src/store.ts`:
-
-- Discover nodes/edges from `mindplan/{journeys,foundations,workflows,bugs}/`
-- Parse/patch YAML frontmatter (state, timestamps, edge arrays)
-- Scaffold entity folders + `current.mdx` + `attachments/` (optional `next.mdx`)
-- `initProject` and agent asset installers (playbook, skill, integrations, `AGENTS.md`)
-- Unchecked checkbox counter for Completion Check
-- Root via `MINDPLAN_ROOT` or cwd
+- `store.ts` — discover/load graph, frontmatter edges, scaffold, next promote/discard, territory patch
+- Consumer init/install helpers live in `src/workflows/wf-project-init/init.ts` (not this Foundation)
 
 ## Checklist
 
-- [x] Spec written (SPEC §1, §6–7)
-- [x] Implementation complete (`src/store.ts`)
-- [x] Verified in target environment (graph load + init used by MCP and CLI)
+- [x] Spec written
+- [x] Implementation complete in `src/foundations/f-territory-store/`
+- [x] Verified in target environment (`npm test`)
 
 ## Attachments
 

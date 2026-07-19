@@ -2,34 +2,31 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP stdio runtime"
-description: "MCP server bootstrap over stdio: tool registration shell, guarded handlers, and CLI entrypoints."
+description: "MCP/CLI shell in src/foundations/f-mcp-runtime/; resolves package root via templates/agent walk-up"
 state: stable
-shipped_at: 2026-07-15T18:54:53.702Z
+shipped_at: 2026-07-19T18:51:18.705Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-07-15T18:54:53.702Z
+updated_at: 2026-07-19T18:51:18.705Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
 ---
 
+
 # MCP stdio runtime
 
-MCP server bootstrap over stdio: tool registration shell, guarded handlers, and CLI entrypoints.
+## Shared Substrate Spec
 
-## Infrastructure Spec
+Implemented in `src/foundations/f-mcp-runtime/`:
 
-Implemented in `src/index.ts`:
-
-- `@modelcontextprotocol/sdk` `McpServer` + `StdioServerTransport`
-- Zod-validated tool inputs; `guarded` error → `isError` results
-- CLI: default MCP start, `init`, `view`/`export`, `help`
-- Package bin `mindplan-mcp` → `dist/index.js`
+- `server.ts` — MCP tool registration shell, CLI (`init`/`view`), package-root resolution for templates
+- Thin entry: `src/index.ts` boots this module
 
 ## Checklist
 
-- [x] Spec written (SPEC §8 tool contract, README CLI)
-- [x] Implementation complete (`src/index.ts`)
-- [x] Verified in target environment (Cursor MCP + `npm test` / smoke)
+- [x] Spec written
+- [x] Implementation complete in `src/foundations/f-mcp-runtime/`
+- [x] Verified in target environment (`npm test`)
 
 ## Attachments
 

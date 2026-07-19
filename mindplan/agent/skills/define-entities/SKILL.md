@@ -75,7 +75,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Workflow | `wf-` | `wf-checkout-split` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Title:** short human-readable name. **Description:** one sentence. Both are written to `current.mdx` frontmatter at creation — edit them there afterward (or on `next.mdx` once the node has shipped and is evolving via `open_next`).
+**Title:** short human-readable name. **Description:** one sentence. Both are written to `current.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Workflow or Foundation, call `open_next` first — patches then default to the `next` slot.
 
 ## Step 4 — Create via MCP
 
@@ -108,9 +108,17 @@ link_nodes({ source_id, target_id, edge_type })
 
 Illegal shapes are rejected — see `mindplan/agent/playbook.md` for the full edge taxonomy.
 
-## Step 6 — Enrich territory (`current.mdx` body)
+## Step 6 — Enrich territory via MCP
 
-Edit the **body only** — never frontmatter `state:`. Replace scaffold placeholders with real content.
+Prefer `patch_node_territory` for body, title, and description — especially when `.cursorignore` blocks file tools from reading `current.mdx` / `next.mdx`. Never edit frontmatter `state:`, timestamps, or edge arrays by hand.
+
+```
+patch_node_territory({ node_id, body: "…" })                    // replace body below frontmatter
+patch_node_territory({ node_id, title?, description? })         // territory scalars
+patch_node_territory({ node_id, toggle_checkboxes: [...] })     // check off Atomic Ops later
+```
+
+Replace scaffold placeholders with real content. Section guidance:
 
 ### Journey
 
@@ -143,7 +151,7 @@ Edit the **body only** — never frontmatter `state:`. Replace scaffold placehol
 - **Expected / Actual** — behaviour contrast
 - **Fix Checklist** — root cause, fix, regression test
 
-Use `- [ ]` syntax for gates — unchecked boxes block `in-review`, `ship`, and Bug `in-review`/`resolved`.
+Use `- [ ]` syntax for gates — unchecked boxes block `in-review`, `ship`, and Bug `in-review`/`resolved`. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
 
 ## Step 7 — Verify graph
 
@@ -162,7 +170,7 @@ Confirm edges, folder paths, and territory content before moving to `ready` or b
 3. create_node Workflow(s)      ← only after step 1; link with belongs_to (repeat per Journey)
 4. link_nodes Workflow → Journey (belongs_to)   ← once per Journey; multiple allowed
 5. link_nodes Workflow → Foundation (depends_on)
-6. Enrich all current.mdx bodies
+6. patch_node_territory for each node body (and title/description if needed)
 7. update_node_status when gates pass (Workflows: ready only after both links)
 ```
 

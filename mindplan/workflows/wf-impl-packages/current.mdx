@@ -1,0 +1,36 @@
+---
+id: wf-impl-packages
+type: Workflow
+title: "Prescribe implementation packages"
+description: "Move runtime code into src/foundations/<id>/ and src/workflows/<id>/ so architecture screams from the filesystem."
+state: stable
+shipped_at: 2026-07-19T18:51:24.353Z
+created_at: 2026-07-19T18:33:36.847Z
+updated_at: 2026-07-19T18:51:24.353Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-territory-store
+  - f-mcp-runtime
+---
+
+# Prescribe implementation packages
+
+## Execution Logic
+
+1. Foundations under `src/foundations/<id>/`
+2. Workflows under `src/workflows/<id>/`
+3. Thin `src/index.ts` boots `f-mcp-runtime`
+4. `npm test` points at `wf-test-harness`
+5. Suffix Workflows deprecated; orientation excludes retired nodes
+
+## Checklist
+
+- [x] Foundations moved (domain, rules, store, search, view, mcp-runtime)
+- [x] Workflows moved (query, mutate, export, project-init, test-harness)
+- [x] Thin entry + imports wire; `npm test` green
+- [x] Stale suffix Workflows deprecated; map screams clean ids
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._
