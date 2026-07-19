@@ -32,6 +32,69 @@ linked Foundations or Workflows are not stable: "f-payments" (in-progress).
 
 No ghost workflows without a capability and foundation, no shipping on unstable deps, no review while Atomic Ops are unchecked. Agents get a focus node, its links, and blast radius *before* they touch code — not after something breaks.
 
+## Plans are made to be changed
+
+Every constraint and dependency is an engineering decision — and decisions change. MindPlan's compiler refuses *illegal* moves; it does not freeze the plan.
+
+You change the graph under the rules:
+
+- **Rewire** — `link_nodes` / `unlink_nodes` when dependencies or Journey membership shift
+- **Retreat** — move `in-review` back to `in-progress` when scope or checklist reality changes
+- **Evolve** — shipped Foundations and Workflows keep the same id forever; `open_next` opens a `next.mdx` draft, you run the build pipeline against it, and `ship` promotes it over `current.mdx`
+- **Retire** — move production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
+
+In traditional trackers, shipping often means closing the ticket and losing it from the living map. MindPlan keeps Journeys permanent and Workflows as live product surface: evolve in place, or deprecate — don't pretend "done" erased the capability.
+
+## See what the agent sees
+
+After every graph mutation, MindPlan refreshes [`mindplan/map.md`](mindplan/map.md) — a Mermaid diagram of Journeys, Foundations, Workflows, and Bugs. Node labels include delivery state (`id · title · state`), so you can scan what is stable, in flight, or blocked by dependencies the same way an agent does via MCP.
+
+On demand:
+
+- MCP `export_mindplan_view` — Mermaid or DOT (full map or focus + 1-hop)
+- CLI `mindplan-mcp view` — same projection from the terminal
+
+Today's map is an **architecture + state** projection, not a kanban board. A richer **status board** (done / in-flight / blocked at a glance) is planned; until then, open `map.md` on GitHub or run `view` to read the same graph the tools expose.
+
+## Worked example: scrambled eggs
+
+Imagine planning breakfast the way you'd plan a product. Capability, shared stove, and use cases — with states you can see.
+
+```mermaid
+flowchart TB
+  subgraph jBreakfast ["Journey: j-breakfast · Make breakfast · incubation"]
+    wfCrack["wf-crack-eggs · Crack eggs · stable"]
+    wfWhisk["wf-whisk · Whisk · stable"]
+    wfCook["wf-cook-scramble · Cook scramble · in-progress"]
+  end
+  subgraph foundations ["Foundations"]
+    fStove["f-stove · Stove · ready"]
+  end
+  wfWhisk -->|"depends_on"| wfCrack
+  wfCook -->|"depends_on"| wfWhisk
+  wfCook -->|"depends_on"| fStove
+```
+
+Arrows are MindPlan `depends_on` (dependent → dependency), same as `map.md` — not cooking-step order.
+
+- **Journey** `j-breakfast` — permanent capability ("Make breakfast"), not a sprint
+- **Foundation** `f-stove` — shared substrate; cook cannot ship until the stove is `stable`
+- **Workflows**
+  - `wf-crack-eggs` — no Workflow deps in this sketch
+  - `wf-whisk` — `depends_on` `wf-crack-eggs` (you whisk what you cracked)
+  - `wf-cook-scramble` — the cooking Workflow; `depends_on` `wf-whisk` and `f-stove`
+
+Trying to ship `wf-cook-scramble` while `f-stove` is still `ready` fails:
+
+```
+Blocked: Infrastructure First. Workflow "wf-cook-scramble" cannot ship while
+linked Foundations or Workflows are not stable: "f-stove" (ready).
+```
+
+When the plan changes — say you add toast that also needs the stove — you don't fight the compiler: create `wf-make-toast`, `link_nodes` it to `j-breakfast` and `f-stove`, and keep going. When the scramble recipe itself changes after ship, `open_next` on `wf-cook-scramble` (same id) and evolve under `next.mdx`.
+
+Snapshot in the diagram: crack and whisk are done (`stable`); cook is underway; stove isn't shippable infrastructure yet — so cook is blocked from shipping until you finish the foundation.
+
 ## How it's built
 
 Plan state lives in the repository as `current.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs) — plus an optional `next.mdx` next to a shipped Foundation's or Workflow's `current.mdx` while it evolves in place. Node ids are stable forever: there is no new id for a revision. Workflow and Foundation nodes also own prescribed implementation packages under `src/workflows/<id>/` and `src/foundations/<id>/`. An MCP server is the single write path for plan mutations; it validates against architectural rules and exposes a queryable graph plus `get_node_implementation` so agents can inspect software architecture, not only delivery state.
@@ -39,28 +102,28 @@ Plan state lives in the repository as `current.mdx` files under `mindplan/` (Jou
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
 
-This repository also keeps its own `mindplan/` territory to dogfood the framework.
+## This repo's live plan
 
-## The mindplan for mindplan
-
-This repository dogfoods MindPlan. Live territory: [`mindplan/`](mindplan/).
-
-**Map:** [mindplan/map.md](mindplan/map.md) — auto-generated Mermaid chart, refreshed after every graph mutation. Open that file on GitHub to render the diagram.
+This repository dogfoods MindPlan. Live territory: [`mindplan/`](mindplan/). The auto-generated map is at [mindplan/map.md](mindplan/map.md).
 
 ## Who is this for
 
 MindPlan is built for people who ship **with AI agents** and need those agents to know what the project is — a living product plan, not a stale ticket list.
 
-It works best for **indie developers and small teams** working solo or in tight sync — the kind of project where one person (or one agent) touches `mindplan/` at a time. Because planning state is plain-text `current.mdx`/`next.mdx` files in git, it inherits git's concurrency model: no built-in locking or conflict resolution. That tradeoff is a good fit when:
+It works best for **indie developers and small, tightly collaborating teams**. Plan state is plain-text `current.mdx` / `next.mdx` in git, so concurrency follows git — the same way two people build two features on different files.
 
-- You're a solo builder or a small team working on one branch at a time
+That is a good fit when:
+
+- You're a solo builder, or a small team where agents and humans often work on **different** Workflows or Foundations in parallel (merge conflicts stay rare, like distinct feature work)
 - You want planning and code to live and merge together
 - Your agents need a queryable source of truth that can refuse illegal moves
 
+The real limit is concurrent edits to the **same** node's frontmatter (state, edges) — that can produce ordinary git conflicts the rules engine does not resolve for you. MCP is the write gate and validator, not a multi-writer lock; the system does not "crash" under collaboration.
+
 It's a poor fit today for:
 
-- Larger teams with many contributors mutating the same nodes concurrently — simultaneous edits to the same `current.mdx`/`next.mdx` frontmatter (state, edges) can produce git conflicts the rules engine doesn't help you resolve
 - Organizations that need multi-user permissions, audit trails, or sync with existing PM tools (Jira, Linear, GitHub Projects) — MindPlan intentionally has no external sync
+- Teams that expect a shared live board with locking instead of git-based merges
 
 ## Quick start
 
@@ -196,7 +259,7 @@ Every violation throws an error starting with `Blocked: `.
 
 Set `MINDPLAN_ROOT` to override the project root (defaults to `process.cwd()`).
 
-Graph views are read-only projections of the assembled graph (see SPEC §7.4). They do not replace MDX viewers or external board sync.
+Graph views are read-only projections of the assembled graph (see SPEC §7.4). They do not replace MDX viewers or external board sync. A richer status board is planned; see [See what the agent sees](#see-what-the-agent-sees).
 
 ## Development
 

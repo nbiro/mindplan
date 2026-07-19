@@ -1,0 +1,31 @@
+---
+id: wf-framework-docs
+type: Workflow
+title: "Framework documentation"
+description: "Fix scrambled-eggs Mermaid depends_on arrows and cooking workflow clarity"
+state: in-review
+updated_at: 2026-07-19T19:13:29.632Z
+belongs_to:
+  - j-territory-sdlc
+  - j-agent-onboarding
+depends_on:
+  - f-domain-model
+---
+
+
+# Framework documentation
+
+README, SPEC, and playbook: MindPlan as the living product plan agents work from.
+
+## Execution Logic
+
+Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder is a pointer; no runtime TS.
+
+## Checklist
+
+- [x] README scrambled-eggs Mermaid: label depends_on (whisk → crack; cook → whisk + stove)
+- [x] README scrambled-eggs: call out wf-cook-scramble as the cooking Workflow explicitly
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._
