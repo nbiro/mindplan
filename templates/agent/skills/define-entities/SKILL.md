@@ -5,8 +5,8 @@ description: >-
   taxonomy selection, ID naming, edge linking, and current.mdx territory.
   Journey MUST exist before Workflow; refuses Workflow creation when no matching
   Journey is in the graph. Use when creating planning nodes, scaffolding features,
-  mapping user flows, adding infrastructure tickets, filing bugs, or structuring
-  a MindPlan graph.
+  mapping domain capabilities and use cases, adding shared substrate (infra/design
+  system), filing bugs, or structuring a MindPlan graph.
 ---
 
 # Define MindPlan Entities
@@ -27,7 +27,7 @@ Note existing Journeys, Foundations, Workflows, Bugs, and edges before creating 
 
 **A Journey MUST exist before any Workflow is created. A Workflow may belong to **one or more** Journeys.**
 
-When the user asks for a Workflow (feature, business logic, end-user capability):
+When the user asks for a Workflow (use case, feature, shared screen with its own behaviour):
 
 1. Run `get_mindplan_graph` and inspect existing Journeys
 2. Decide whether the request maps to an **existing** Journey (by title, description, or user-stated parent Journey id)
@@ -35,7 +35,7 @@ When the user asks for a Workflow (feature, business logic, end-user capability)
 
 **Refusal message** (use verbatim):
 
-> I cannot define this Workflow yet — every Workflow must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the macro user capability this feature belongs to). Once the Journey exists, I can create the Workflow and link it with `belongs_to`.
+> I cannot define this Workflow yet — every Workflow must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the domain capability this use case belongs to). Once the Journey exists, I can create the Workflow and link it with `belongs_to`.
 
 If the user names a Journey that is not in the graph, same refusal — define that Journey first.
 
@@ -45,16 +45,24 @@ If the user names a Journey that is not in the graph, same refusal — define th
 
 | If the work is… | Type | Why |
 |-----------------|------|-----|
-| A macro user capability or product surface (e.g. "Table ordering") | **Journey** | Permanent container; state is computed from Workflows |
-| Pure infrastructure with no direct user value (DB schema, auth, API client) | **Foundation** | Consumed by Workflows; must ship before dependents |
-| A feature or business-logic unit users interact with | **Workflow** | Execution work; must link to at least one Journey + at least one Foundation |
-| A defect on shipped or in-flight infra/feature work | **Bug** | Dedicated lifecycle; links via `affects` only |
+| A domain capability the product is about (e.g. "Table ordering", "Billing") | **Journey** | Architecture scream; permanent use-case container; state computed from Workflows |
+| Shared substrate with no standalone use case (DB, auth, design system, primary button) | **Foundation** | Consumed via `depends_on`; must ship before dependent Workflows |
+| A stakeholder-recognizable use case / screen (e.g. "Split & pay", "User picker", "Character editor") | **Workflow** | Execution work; `belongs_to` one or more Journeys; `depends_on` Foundations and optionally other Workflows |
+| A defect on shipped or in-flight substrate/use-case work | **Bug** | Dedicated lifecycle; links via `affects` only |
 
-**Decision checks:**
-- Does it execute business logic for users? → Workflow (not Foundation)
-- Is it only plumbing other features need? → Foundation (not Workflow)
-- Is it a container grouping features? → Journey (never executes code)
-- Is it broken behaviour on an existing node? → Bug
+**Classification litmus** (in order):
+1. Domain capability the product *is about*? → Journey
+2. Stakeholder-recognizable use case / screen with its own behaviour (even if many features embed it)? → Workflow
+3. Shared code/UI with **no** standalone use case, only consumed by use cases? → Foundation
+4. Broken behaviour on an existing node? → Bug
+
+**Reuse rule:** Before inventing shared UI or a shared screen inside a Workflow, find or create the right Foundation (substrate) or Workflow (use case) and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node.
+
+**Anti-patterns:**
+- Journey named after tech (`API`, `Frontend`, `Database`) — wrong; use domain language
+- Primary button / design tokens as a Workflow — wrong; that is Foundation
+- Character editor / user-picker flow as a Foundation — wrong; that is Workflow (reuse via `depends_on` / multi-Journey `belongs_to`)
+- Business use-case behaviour living only in a Foundation — move it to a Workflow
 
 ## Step 3 — Name the node
 
@@ -77,7 +85,9 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). Edge arrays are added by `link_nodes` — stored as `belongs_to`, `depends_on`, or `affects` on the source node. This id is permanent — Foundations and Workflows never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
+Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). For **Workflow** and **Foundation**, also scaffolds the prescribed implementation package: `src/workflows/<id>/` or `src/foundations/<id>/` (with `.gitkeep`). Journeys and Bugs have no code package. Edge arrays are added by `link_nodes`. This id is permanent — Foundations and Workflows never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
+
+Query the package with `get_node_implementation({ node_id })`. Implement **only** inside that package; reuse across use cases via Foundation packages or `depends_on` Workflow packages.
 
 ## Step 5 — Link edges (before advancing state)
 
@@ -88,9 +98,9 @@ Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in fro
 | **Bug** | `affects` → Workflow or Foundation (before `triaged`) | `link_nodes` |
 | **Journey** | none (Workflows link to it) | — |
 
-Multiple `belongs_to` edges from the same Workflow are allowed — shared features can span Journeys.
+Multiple `belongs_to` edges from the same Workflow are allowed — membership reuse across Journeys.
 
-When a Workflow `depends_on` another Workflow, every dependency in the transitive chain must also `belongs_to` the same Journey. If not, `link_nodes(belongs_to)` is rejected unless you pass `link_dependent: true`, which auto-links the missing dependency Workflows to that Journey.
+Composition reuse: a Workflow MAY `depends_on` another Workflow (shared use case) or a Foundation (shared substrate). When a Workflow `depends_on` another Workflow, every dependency in the transitive chain must also `belongs_to` the same Journey. If not, `link_nodes(belongs_to)` is rejected unless you pass `link_dependent: true`, which auto-links the missing dependency Workflows to that Journey.
 
 ```
 link_nodes({ source_id, target_id, edge_type })
@@ -104,13 +114,14 @@ Edit the **body only** — never frontmatter `state:`. Replace scaffold placehol
 
 ### Journey
 
-- **Overview** — macro user flow this Journey covers
+- **Overview** — domain capability this Journey owns and which use cases belong inside it (Journey titles alone should scream the product purpose)
 - **Linked Workflows** — note which Workflows will `belongs_to` here
 - No checklist (Journeys have no completion gate)
 
 ### Foundation
 
-- **Infrastructure Spec** — schemas, contracts, integrations
+- **Shared Substrate Spec** — schemas, adapters, design system, contracts (not use-case behaviour)
+- **Implementation** — code under `src/foundations/<id>/` only
 - **Checklist** — PR-sized Atomic Ops (`- [ ]` / `- [x]`):
   - Spec written
   - Implementation complete
@@ -118,7 +129,8 @@ Edit the **body only** — never frontmatter `state:`. Replace scaffold placehol
 
 ### Workflow
 
-- **Execution Logic** — step-by-step feature behaviour
+- **Execution Logic** — step-by-step use-case behaviour
+- **Implementation** — code under `src/workflows/<id>/` only (no Journey-owned folders — Workflows may belong to many Journeys)
 - **Checklist** — Atomic Ops, e.g.:
   - Requirements defined
   - Implementation complete
@@ -179,8 +191,10 @@ open_next({
 | Workflow → `ready` without links | `Blocked: Ghost Workflow` |
 | Workflow → Journey with unlinked workflow dependencies | `Blocked: Dependency Closure` — link dependents first or use `link_dependent: true` |
 | Bug → `triaged` without `affects` | `Blocked: Ghost Bug` |
-| Foundation described as a user feature | Scope creep — split into Foundation + Workflow |
-| Business logic in a Foundation node | Wrong taxonomy — move logic to Workflow |
+| Foundation described as a user feature / use case | Scope creep — split into Foundation (substrate) + Workflow (use case) |
+| Business use-case behaviour in a Foundation node | Wrong taxonomy — move logic to Workflow; keep design system / infra as Foundation |
+| Inventing a new primary button inside a Workflow | Reuse — depend on `f-design-system` (or create that Foundation first) |
+| Implementing Workflow code outside `src/workflows/<id>/` | Wrong architecture — use the prescribed package (query via `get_node_implementation`) |
 | Manual Journey / `stable` / `unstable` status | Rejected — computed only |
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
 | `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |

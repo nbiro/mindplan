@@ -77,9 +77,21 @@ const wfCtx = fs.readFileSync(path.join(wfFolder, "current.mdx"), "utf-8");
 if (!wfCtx.includes("belongs_to:") || !wfCtx.includes("j-ordering") || !wfCtx.includes("depends_on:") || !wfCtx.includes("f-db")) {
   failures++; console.log("FAIL edges not persisted in wf-checkout frontmatter");
 } else console.log("ok   edges in frontmatter");
-if (!wfCtx.includes("## Affected Files")) {
-  failures++; console.log("FAIL workflow scaffold missing ## Affected Files section");
-} else console.log("ok   workflow scaffold includes affected files section");
+if (wfCtx.includes("## Affected Files")) {
+  failures++; console.log("FAIL workflow scaffold still has removed ## Affected Files section");
+} else console.log("ok   workflow scaffold has no affected files section");
+const wfImplDir = path.join(root, "src", "workflows", "wf-checkout");
+const fImplDir = path.join(root, "src", "foundations", "f-db");
+if (!fs.existsSync(path.join(wfImplDir, ".gitkeep"))) {
+  failures++; console.log("FAIL workflow implementation package not scaffolded");
+} else console.log("ok   workflow implementation package scaffolded");
+if (!fs.existsSync(path.join(fImplDir, ".gitkeep"))) {
+  failures++; console.log("FAIL foundation implementation package not scaffolded");
+} else console.log("ok   foundation implementation package scaffolded");
+const jImplDir = path.join(root, "src", "journeys");
+if (fs.existsSync(jImplDir)) {
+  failures++; console.log("FAIL journey must not have implementation package tree");
+} else console.log("ok   journey has no implementation package");
 
 // --- find_related_nodes ---
 await expectBlocked("find_related_nodes requires query or node_id", "find_related_nodes", {});
@@ -299,47 +311,41 @@ const tipsAfterCheck = fs.readFileSync(wfTipsCtxPath, "utf-8");
 if (!tipsAfterCheck.includes("- [x] Requirements defined")) {
   failures++; console.log("FAIL checkbox not toggled on disk");
 } else console.log("ok   patch_node_territory persisted checkbox");
-const patchFiles = JSON.parse(
-  await expectOk("patch append affected files", "patch_node_territory", {
-    node_id: "wf-tips",
-    append_affected_files: ["src/tips.ts"],
-  })
-);
-if (!patchFiles.patched_fields?.includes("append_affected_files")) {
-  failures++; console.log(`FAIL patch affected files fields: ${JSON.stringify(patchFiles)}`);
-} else console.log("ok   patch_node_territory append_affected_files");
-const wfTipsFiles = JSON.parse(
-  await expectOk("get_workflow_files after patch", "get_workflow_files", { node_id: "wf-tips" })
-);
-if (!wfTipsFiles.files?.includes("src/tips.ts")) {
-  failures++; console.log(`FAIL affected files after patch: ${JSON.stringify(wfTipsFiles)}`);
-} else console.log("ok   append_affected_files via patch_node_territory");
 
-// --- workflow affected files ---
-const wfFilesEmpty = JSON.parse(
-  await expectOk("get_workflow_files empty", "get_workflow_files", { node_id: "wf-checkout" })
-);
-if (wfFilesEmpty.node_id !== "wf-checkout" || (wfFilesEmpty.files?.length ?? 0) !== 0) {
-  failures++; console.log(`FAIL empty affected files: ${JSON.stringify(wfFilesEmpty)}`);
-} else console.log("ok   get_workflow_files empty scaffold");
-fs.writeFileSync(
-  wfPath,
-  fs.readFileSync(wfPath, "utf-8").replace(
-    "_Project files touched during implementation (project-relative paths)._",
-    "- `src/checkout.ts`\n- tests/checkout.test.ts"
-  )
-);
-const wfFiles = JSON.parse(
-  await expectOk("get_workflow_files populated", "get_workflow_files", { node_id: "wf-checkout" })
+// --- implementation packages ---
+const wfImpl = JSON.parse(
+  await expectOk("get_node_implementation workflow", "get_node_implementation", { node_id: "wf-checkout" })
 );
 if (
-  wfFiles.files?.length !== 2 ||
-  !wfFiles.files.includes("src/checkout.ts") ||
-  !wfFiles.files.includes("tests/checkout.test.ts")
+  wfImpl.root !== "src/workflows/wf-checkout" ||
+  wfImpl.exists !== true ||
+  !wfImpl.entries?.includes(".gitkeep")
 ) {
-  failures++; console.log(`FAIL affected files parse: ${JSON.stringify(wfFiles)}`);
-} else console.log("ok   get_workflow_files parses list");
-await expectBlocked("get_workflow_files non-workflow", "get_workflow_files", { node_id: "f-db" });
+  failures++; console.log(`FAIL workflow implementation: ${JSON.stringify(wfImpl)}`);
+} else console.log("ok   get_node_implementation workflow");
+const fImpl = JSON.parse(
+  await expectOk("get_node_implementation foundation", "get_node_implementation", { node_id: "f-db" })
+);
+if (fImpl.root !== "src/foundations/f-db" || fImpl.exists !== true) {
+  failures++; console.log(`FAIL foundation implementation: ${JSON.stringify(fImpl)}`);
+} else console.log("ok   get_node_implementation foundation");
+fs.writeFileSync(path.join(root, "src", "workflows", "wf-checkout", "checkout.ts"), "export {}\n");
+const wfImplPopulated = JSON.parse(
+  await expectOk("get_node_implementation with code", "get_node_implementation", { node_id: "wf-checkout" })
+);
+if (
+  !wfImplPopulated.entries?.includes("checkout.ts") ||
+  !wfImplPopulated.entries?.includes(".gitkeep")
+) {
+  failures++; console.log(`FAIL implementation entries: ${JSON.stringify(wfImplPopulated)}`);
+} else console.log("ok   get_node_implementation lists package entries");
+await expectBlocked("get_node_implementation journey", "get_node_implementation", { node_id: "j-ordering" });
+const tipsCreate = JSON.parse(
+  await expectOk("create tips already done earlier check impl", "get_node_implementation", { node_id: "wf-tips" })
+);
+if (tipsCreate.root !== "src/workflows/wf-tips" || !tipsCreate.exists) {
+  failures++; console.log(`FAIL tips implementation: ${JSON.stringify(tipsCreate)}`);
+} else console.log("ok   wf-tips implementation package exists");
 
 // --- workflow dependency closure ---
 await expectOk("create wf-auth", "create_node", { id: "wf-auth", type: "Workflow", title: "Authentication", description: "Login flow" });

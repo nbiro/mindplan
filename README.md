@@ -34,7 +34,7 @@ No ghost workflows without a capability and foundation, no shipping on unstable 
 
 ## How it's built
 
-Plan state lives in the repository as `current.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs) — plus an optional `next.mdx` next to a shipped Foundation's or Workflow's `current.mdx` while it evolves in place. Node ids are stable forever: there is no new id for a revision. An MCP server is the single write path: it mutates frontmatter, validates plan mutations against architectural rules, and exposes a queryable graph (`find_related_nodes`, `get_blast_radius`, `export_mindplan_view`). Consumer projects commit territory next to application code so the product plan and the implementation share one history.
+Plan state lives in the repository as `current.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs) — plus an optional `next.mdx` next to a shipped Foundation's or Workflow's `current.mdx` while it evolves in place. Node ids are stable forever: there is no new id for a revision. Workflow and Foundation nodes also own prescribed implementation packages under `src/workflows/<id>/` and `src/foundations/<id>/`. An MCP server is the single write path for plan mutations; it validates against architectural rules and exposes a queryable graph plus `get_node_implementation` so agents can inspect software architecture, not only delivery state.
 
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
@@ -104,42 +104,45 @@ See [integrations README](templates/agent/integrations/README.md) in this repo f
 ```
 <project-root>/
 ├── AGENTS.md                        # Agent instructions (optional; created by init when missing)
-└── mindplan/
-    ├── agent/                       # Agent integration assets (installed by init)
-    │   ├── playbook.md
-    │   ├── mcp.json.example
-    │   ├── integrations/            # Per-agent MCP setup guides
-    │   └── skills/
-    │       └── define-entities/
-    ├── components/                # Project-specific MDX components (optional)
-    ├── journeys/<id>/
-    │   ├── current.mdx
-    │   └── attachments/
-    ├── foundations/<id>/
-    │   ├── current.mdx
-    │   ├── next.mdx              # optional — in-flight evolution of a shipped Foundation
-    │   └── attachments/
-    ├── workflows/<id>/
-    │   ├── current.mdx
-    │   ├── next.mdx              # optional — in-flight evolution of a shipped Workflow
-    │   └── attachments/
-    └── bugs/<id>/
-        ├── current.mdx           # Repro, expected/actual, fix checklist
-        └── attachments/           # Logs, screenshots
+├── mindplan/
+│   ├── agent/                       # Agent integration assets (installed by init)
+│   │   ├── playbook.md
+│   │   ├── mcp.json.example
+│   │   ├── integrations/            # Per-agent MCP setup guides
+│   │   └── skills/
+│   │       └── define-entities/
+│   ├── components/                # Project-specific MDX components (optional)
+│   ├── journeys/<id>/             # Plan only — no src/ package
+│   │   ├── current.mdx
+│   │   └── attachments/
+│   ├── foundations/<id>/
+│   │   ├── current.mdx
+│   │   ├── next.mdx              # optional — in-flight evolution of a shipped Foundation
+│   │   └── attachments/
+│   ├── workflows/<id>/
+│   │   ├── current.mdx
+│   │   ├── next.mdx              # optional — in-flight evolution of a shipped Workflow
+│   │   └── attachments/
+│   └── bugs/<id>/
+│       ├── current.mdx           # Repro, expected/actual, fix checklist
+│       └── attachments/
+└── src/
+    ├── workflows/<workflow-id>/   # Use-case implementation package (scaffolded by create_node)
+    └── foundations/<foundation-id>/  # Substrate implementation package
 ```
 
-Territory files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. A node's id never changes — `next.mdx` holds a draft evolution of a shipped Foundation/Workflow under the same id; `ship` promotes it over `current.mdx`. See SPEC.md §6.1 and §7.
+Territory files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. A node's id never changes — `next.mdx` holds a draft evolution of a shipped Foundation/Workflow under the same id; `ship` promotes it over `current.mdx`. Implementation packages are prescribed by type+id (`src/workflows/<id>`, `src/foundations/<id>`); Journeys have no code package because Workflows may belong to many Journeys. See SPEC.md §1.2, §6.1 and §7.
 
 ## Taxonomy
 
 | Type | What it is | States |
 |------|------------|--------|
-| **Journey** | An ongoing product surface or user capability you keep shipping into (e.g. "Table ordering", "Onboarding"). Not a project with an end date — a permanent container for related Workflows. | Computed (`draft`, `incubation`, `stable`, `evolving`) |
-| **Foundation** | Plumbing with no direct user value (e.g. auth, DB schema, payment provider). Exists so Workflows can depend on it; must be stable before those Workflows can ship. | Build pipeline + computed production (`stable` / `unstable`) |
-| **Workflow** | A concrete feature or piece of business logic users actually hit (e.g. "Split the check", "Process payment"). Belongs to one or more Journeys; depends on Foundations (and sometimes other Workflows). | Build pipeline + computed production (`stable` / `unstable`) |
+| **Journey** | A named domain capability the architecture should scream (e.g. "Table ordering", "Billing"). Not an epic, sprint, or tech layer — a permanent container for related use cases. | Computed (`draft`, `incubation`, `stable`, `evolving`) |
+| **Foundation** | Shared substrate with no standalone use case: infra *and* reusable product platform (e.g. auth, DB schema, design system, primary button). Workflows depend on it; must be stable before those Workflows can ship. | Build pipeline + computed production (`stable` / `unstable`) |
+| **Workflow** | A concrete use case (e.g. "Split the check", "User picker", "Character editor"). May belong to one or more Journeys; may depend on Foundations and other Workflows. | Build pipeline + computed production (`stable` / `unstable`) |
 | **Bug** | A defect on a Workflow or Foundation. The only type with a real closed end (`resolved` / `wontfix`). | Dedicated: `open → triaged → fixing → in-review → resolved \| wontfix` |
 
-Journeys hold the map · Workflows are the work · Foundations are what that work runs on.
+Journeys scream the domain · Workflows are the use cases · Foundations are the shared substrate.
 
 **Build pipeline** (Foundation/Workflow): `draft → ready → in-progress → in-review → ship` (sets `shipped_at`, computes `stable` or `unstable`).
 
@@ -171,8 +174,8 @@ Every violation throws an error starting with `Blocked: `.
 | `export_mindplan_view` | read | Mermaid or DOT typed-DAG projection (full map or focus + 1-hop) |
 | `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); journeys_at_risk |
 | `get_node_context` | read | Returns `record`, `body`, attachment paths, and `next` slot when evolving; `raw_context` deprecated |
-| `get_workflow_files` | read | Project files listed in a Workflow's `## Affected Files` territory section (`next.mdx` when evolving, else `current.mdx`) |
-| `patch_node_territory` | mutation | Body edits, checkboxes, affected files, title/description; defaults to `next` when evolving a shipped Foundation/Workflow |
+| `get_node_implementation` | read | Prescribed package for Workflow/Foundation (`src/workflows/<id>` or `src/foundations/<id>`) |
+| `patch_node_territory` | mutation | Body edits, checkboxes, title/description; defaults to `next` when evolving a shipped Foundation/Workflow |
 | `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `current.mdx` |
 | `open_next` | mutation | Opens `next.mdx` on a shipped Foundation/Workflow (same id) seeded from `current.mdx`; live node keeps serving unchanged |
 | `discard_next` | mutation | Deletes `next.mdx` (and `next-attachments/`), abandoning an in-flight evolution; `current.mdx` unchanged |

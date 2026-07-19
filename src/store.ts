@@ -5,12 +5,11 @@
  *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation)
  *   /mindplan/components/                  — project-specific MDX components (opaque to the compiler)
  *   /mindplan/journeys/<id>/current.mdx
- *   /mindplan/journeys/<id>/attachments/...
- *   /mindplan/foundations/<id>/current.mdx
- *   /mindplan/foundations/<id>/next.mdx    — optional evolution slot
- *   /mindplan/workflows/<id>/current.mdx
- *   /mindplan/workflows/<id>/next.mdx      — optional evolution slot
+ *   /mindplan/foundations/<id>/current.mdx (+ optional next.mdx)
+ *   /mindplan/workflows/<id>/current.mdx (+ optional next.mdx)
  *   /mindplan/bugs/<id>/current.mdx
+ *   /src/workflows/<id>/                   — Workflow implementation package
+ *   /src/foundations/<id>/                 — Foundation implementation package
  *
  * Live node records and outgoing edge arrays live in current.mdx YAML frontmatter.
  * While evolving a shipped Foundation/Workflow, next.mdx holds the draft pipeline + proposed edges.
@@ -49,6 +48,7 @@ type EdgeField = (typeof EDGE_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
 export const AGENT_DIR = "agent";
+export const SRC_DIR = "src";
 export const CURRENT_FILENAME = "current.mdx";
 export const NEXT_FILENAME = "next.mdx";
 /** @deprecated Use CURRENT_FILENAME */
@@ -78,6 +78,67 @@ export function entityDir(node: Pick<MindPlanNode, "id" | "type">): string {
 /** Project-relative path to an entity folder, e.g. mindplan/workflows/wf-checkout */
 export function entityRelativePath(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.posix.join(MINDPLAN_DIR, TYPE_DIRS[node.type], node.id);
+}
+
+/**
+ * Project-relative implementation package root for Workflow/Foundation, or null for Journey/Bug.
+ * e.g. src/workflows/wf-checkout
+ */
+export function implementationRelativePath(
+  node: Pick<MindPlanNode, "id" | "type">
+): string | null {
+  if (node.type !== "Workflow" && node.type !== "Foundation") return null;
+  return path.posix.join(SRC_DIR, TYPE_DIRS[node.type], node.id);
+}
+
+/** Absolute path to the implementation package directory, or null. */
+export function implementationDir(node: Pick<MindPlanNode, "id" | "type">): string | null {
+  const rel = implementationRelativePath(node);
+  if (!rel) return null;
+  return path.join(projectRoot(), ...rel.split("/"));
+}
+
+/** Scaffolds src/workflows/<id> or src/foundations/<id> with .gitkeep. No-op for Journey/Bug. */
+export function scaffoldImplementationPackage(
+  node: Pick<MindPlanNode, "id" | "type">
+): string | null {
+  const abs = implementationDir(node);
+  const rel = implementationRelativePath(node);
+  if (!abs || !rel) return null;
+  fs.mkdirSync(abs, { recursive: true });
+  const keep = path.join(abs, ".gitkeep");
+  if (!fs.existsSync(keep)) {
+    fs.writeFileSync(keep, "", "utf-8");
+  }
+  return rel;
+}
+
+/**
+ * Returns prescribed implementation package info for a Workflow or Foundation.
+ * Throws Blocked for Journey/Bug.
+ */
+export function getNodeImplementation(node: MindPlanNode): {
+  node_id: string;
+  root: string;
+  exists: boolean;
+  entries?: string[];
+} {
+  const root = implementationRelativePath(node);
+  if (!root) {
+    throw new Error(
+      `Blocked: get_node_implementation only applies to Workflow and Foundation nodes; "${node.id}" is a ${node.type}.`
+    );
+  }
+  const abs = implementationDir(node)!;
+  const exists = fs.existsSync(abs) && fs.statSync(abs).isDirectory();
+  if (!exists) {
+    return { node_id: node.id, root, exists: false, entries: [] };
+  }
+  const entries = fs
+    .readdirSync(abs)
+    .filter((name) => name !== "." && name !== "..")
+    .sort((a, b) => a.localeCompare(b));
+  return { node_id: node.id, root, exists: true, entries };
 }
 
 export function markdownPath(
@@ -690,7 +751,7 @@ export function scaffoldEntity(
         "",
         "## Overview",
         "",
-        "_Describe the macro user flow this Journey covers._",
+        "_Name the domain capability this Journey owns and which use cases belong inside it. Journey titles alone should scream the product purpose — not the tech stack._",
         "",
         "## Linked Workflows",
         "",
@@ -710,9 +771,9 @@ export function scaffoldEntity(
         "",
         meta.description,
         "",
-        "## Infrastructure Spec",
+        "## Shared Substrate Spec",
         "",
-        "_Document schemas, API integrations, and contracts here._",
+        "_Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Implement code only under `src/foundations/<id>/`._",
         "",
         "## Checklist",
         "",
@@ -722,7 +783,7 @@ export function scaffoldEntity(
         "",
         "## Attachments",
         "",
-        `_Schemas, OpenAPI exports, ER diagrams, etc. go in \`attachments/\`._`,
+        `_Schemas, OpenAPI exports, ER diagrams, design tokens, etc. go in \`attachments/\`._`,
         "",
         "{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}",
         "",
@@ -736,17 +797,13 @@ export function scaffoldEntity(
         "",
         "## Execution Logic",
         "",
-        "_Describe the business logic / feature behaviour step by step._",
+        "_Describe the use case step by step — the application-specific business logic this feature implements. Implement code only under `src/workflows/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._",
         "",
         "## Checklist",
         "",
         "- [ ] Requirements defined",
         "- [ ] Implementation complete",
         "- [ ] Tests passing",
-        "",
-        "## Affected Files",
-        "",
-        "_Project files touched during implementation (project-relative paths)._",
         "",
         "## Attachments",
         "",
@@ -794,6 +851,7 @@ export function scaffoldEntity(
   }
 
   writeMarkdown(node, `${frontmatter}\n\n${body}`, "current");
+  scaffoldImplementationPackage(node);
 }
 
 /**
@@ -807,45 +865,6 @@ export function countUncheckedBoxes(
   const raw = readMarkdown(node, slot);
   const matches = raw.match(/^\s*[-*+]\s+\[ \]/gm);
   return matches ? matches.length : 0;
-}
-
-/** Heading that marks the workflow affected-files list in territory body. */
-export const AFFECTED_FILES_HEADING = "## Affected Files";
-
-/**
- * Parses project-relative file paths from the `## Affected Files` section.
- * List items may use backticks or plain text; paths are normalized to posix,
- * deduplicated, and sorted.
- */
-export function parseAffectedFiles(raw: string): string[] {
-  const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-  const headingMatch = body.match(/^## Affected Files\s*$/m);
-  if (!headingMatch || headingMatch.index === undefined) return [];
-
-  const afterHeading = body.slice(headingMatch.index + headingMatch[0].length);
-  const nextSection = afterHeading.search(/\r?\n## /);
-  const section = nextSection < 0 ? afterHeading : afterHeading.slice(0, nextSection);
-
-  const files = new Set<string>();
-  for (const line of section.split(/\r?\n/)) {
-    const item = line.match(/^\s*[-*+]\s+(?:`([^`]+)`|(.+?))\s*$/);
-    if (!item) continue;
-    const filePath = (item[1] ?? item[2] ?? "").trim();
-    if (!filePath || filePath.startsWith("_")) continue;
-    files.add(filePath.replace(/\\/g, "/"));
-  }
-  return [...files].sort((a, b) => a.localeCompare(b));
-}
-
-/** Returns affected project files recorded in a Workflow's territory body. */
-export function listAffectedFiles(node: MindPlanNode): string[] {
-  if (node.type !== "Workflow") {
-    throw new Error(
-      `Blocked: get_workflow_files only applies to Workflow nodes; "${node.id}" is a ${node.type}.`
-    );
-  }
-  const slot: TerritorySlot = node.next ? "next" : "current";
-  return parseAffectedFiles(readMarkdown(node, slot));
 }
 
 /** Splits raw territory MDX into YAML frontmatter block and body. */
@@ -889,7 +908,6 @@ export type PatchNodeTerritoryInput = {
   description?: string;
   body?: string;
   toggle_checkboxes?: { contains: string; checked: boolean }[];
-  append_affected_files?: string[];
   /** Override default slot selection. */
   slot?: TerritorySlot;
 };
@@ -942,27 +960,6 @@ function toggleCheckboxesInBody(
     }
   }
   return lines.join("\n");
-}
-
-function appendAffectedFilesToBody(body: string, paths: string[]): string {
-  const existing = new Set(parseAffectedFiles(`---\n---\n${body}`));
-  for (const p of paths) {
-    existing.add(p.replace(/\\/g, "/"));
-  }
-  const sorted = [...existing].sort((a, b) => a.localeCompare(b));
-  const list = sorted.map((p) => `- \`${p}\``).join("\n");
-
-  const headingMatch = body.match(/^## Affected Files\s*$/m);
-  if (!headingMatch || headingMatch.index === undefined) {
-    return `${body.replace(/\s*$/, "")}\n\n## Affected Files\n\n${list}\n`;
-  }
-
-  const before = body.slice(0, headingMatch.index + headingMatch[0].length);
-  const afterHeading = body.slice(headingMatch.index + headingMatch[0].length);
-  const nextSection = afterHeading.search(/\r?\n## /);
-  const after =
-    nextSection < 0 ? afterHeading.replace(/\s*$/, "") : afterHeading.slice(nextSection);
-  return `${before}\n\n${list}\n${after}`;
 }
 
 function patchTerritoryScalars(
@@ -1020,20 +1017,10 @@ export function patchNodeTerritory(
     patched_fields.push("toggle_checkboxes");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
-  if (input.append_affected_files?.length) {
-    if (node.type !== "Workflow") {
-      throw new Error(
-        `Blocked: append_affected_files only applies to Workflow nodes; "${node.id}" is a ${node.type}.`
-      );
-    }
-    body = appendAffectedFilesToBody(body, input.append_affected_files);
-    patched_fields.push("append_affected_files");
-    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
-  }
 
   if (patched_fields.length === 0) {
     throw new Error(
-      "Blocked: patch_node_territory requires at least one of title, description, body, toggle_checkboxes, or append_affected_files."
+      "Blocked: patch_node_territory requires at least one of title, description, body, or toggle_checkboxes."
     );
   }
 

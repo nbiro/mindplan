@@ -28,43 +28,64 @@ The territory MUST live in the repository alongside the source code and MUST be 
 
 ### 1.1 Directory layout
 
-All MindPlan state lives under a `mindplan/` directory at the project root. This directory is versioned with the repository and MUST be committed.
+MindPlan prescribes a **dual tree**: planning under `mindplan/`, and **implementation packages** under `src/` for Workflows and Foundations. Journeys and Bugs have no code package — Journeys are graph containers (Workflows may belong to many Journeys), and Bugs are a defect layer whose fixes land in the affected node's package.
 
 ```
 <project-root>/
-└── mindplan/
-    ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
-    ├── journeys/
-    │   └── <node-id>/
-    │       ├── current.mdx           # The Territory for this node
-    │       └── attachments/          # Binary/reference assets (images, PDFs, diagrams)
-    ├── foundations/
-    │   └── <node-id>/
-    │       ├── current.mdx
-    │       ├── next.mdx              # Optional — in-flight evolution (§3.6)
-    │       ├── attachments/
-    │       └── next-attachments/     # Optional — assets for the next.mdx evolution
-    ├── workflows/
-    │   └── <node-id>/
-    │       ├── current.mdx
-    │       ├── next.mdx              # Optional — in-flight evolution (§3.6)
-    │       ├── attachments/
-    │       └── next-attachments/     # Optional — assets for the next.mdx evolution
-    └── bugs/
-        └── <node-id>/
-            ├── current.mdx
-            └── attachments/
+├── mindplan/
+│   ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
+│   ├── journeys/
+│   │   └── <node-id>/
+│   │       ├── current.mdx           # Plan only — no src/ package
+│   │       └── attachments/
+│   ├── foundations/
+│   │   └── <node-id>/
+│   │       ├── current.mdx
+│   │       ├── next.mdx              # Optional — in-flight evolution (§3.6)
+│   │       ├── attachments/
+│   │       └── next-attachments/
+│   ├── workflows/
+│   │   └── <node-id>/
+│   │       ├── current.mdx
+│   │       ├── next.mdx
+│   │       ├── attachments/
+│   │       └── next-attachments/
+│   └── bugs/
+│       └── <node-id>/
+│           ├── current.mdx
+│           └── attachments/
+└── src/
+    ├── workflows/<workflow-id>/       # Use-case implementation package (§1.2)
+    └── foundations/<foundation-id>/   # Shared-substrate implementation package (§1.2)
 ```
 
 Rules:
 
-- The planning root is `<MINDPLAN_ROOT>/mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used.
-- Each entity folder name MUST equal the node `id`.
+- The planning root is `<MINDPLAN_ROOT>/mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used. Implementation packages are rooted at `<MINDPLAN_ROOT>/src`.
+- Each entity folder name under `mindplan/` MUST equal the node `id`.
 - The subdirectory per type is fixed: `journeys/`, `foundations/`, `workflows/`, `bugs/`.
 - `next.mdx` and `next-attachments/` MUST NOT exist for Journeys or Bugs; they are legal only under `foundations/<id>/` and `workflows/<id>/`, and only while an evolution is open (§3.6).
 - `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `current.mdx` with relative links (e.g. `![flow](attachments/flow.png)`); `next-attachments/` is referenced the same way from `next.mdx` and is merged into `attachments/` when the evolution ships (§3.6).
 - `components/` MAY contain project-specific MDX components (§6.4.3). It is created by the server but never read by it.
 - The server MUST create missing directories on demand; a fresh project requires no manual scaffolding.
+
+### 1.2 Implementation packages (prescribed architecture)
+
+Workflow and Foundation nodes own a **derived** filesystem package whose path is fixed by type and id (not a graph edge — targets are directories, not MindPlan nodes):
+
+| Node type | Implementation root | Purpose |
+|---|---|---|
+| Workflow | `src/workflows/<id>/` | Use-case code; shared across Journeys via `belongs_to` in the graph only |
+| Foundation | `src/foundations/<id>/` | Shared substrate (design system, DB, auth, adapters) |
+| Journey | *(none)* | Plan container — architecture for a Journey is the union of member Workflow packages |
+| Bug | *(none)* | Fixes land in the affected Workflow/Foundation package |
+
+Rules:
+
+- Package folder name MUST equal the node `id` (e.g. `wf-user-picker` → `src/workflows/wf-user-picker/`).
+- `create_node` for Workflow or Foundation MUST scaffold the package directory with a `.gitkeep` (§6.3).
+- Agents MUST implement that node's code **only** inside its package. Cross-cutting reuse MUST go through Foundation packages or `depends_on` Workflow packages — not ad-hoc junk-drawer folders outside the prescribed roots.
+- Agents query architecture via the MindPlan graph **plus** `get_node_implementation` (§8.1). For a Journey, derive member packages by resolving `belongs_to` Workflows, then calling `get_node_implementation` on each.
 
 ---
 
@@ -72,14 +93,36 @@ Rules:
 
 The framework separates **build taxonomy** (Journey, Foundation, Workflow) from a **defect layer** (Bug) to eliminate scope creep and prevent spaghetti dependencies.
 
-MindPlan tracks **architecture and delivery together**. The build taxonomy is deliberately use-case-first (screaming architecture): a glance at the Journeys — and the Workflows that belong to them — MUST scream what the product *is*, not which frameworks, databases, or delivery mechanisms it uses. Foundations hold those deferred infrastructure details at the edges so use cases stay primary.
+MindPlan tracks **architecture and delivery together**. The build taxonomy is deliberately use-case-first (screaming architecture): a glance at the Journeys — and the Workflows that belong to them — MUST scream what the product *is*, not which frameworks, databases, or delivery mechanisms it uses. Foundations hold **shared substrate** at the edges (infra and reusable product platform) so use cases stay primary.
 
 | Entity | Definition | Routing rules |
 |---|---|---|
 | **Journey** | A named **domain capability** — a permanent architectural boundary for related use cases (e.g. "Table Ordering", "Billing", "Agency Site Generator"). The set of Journey titles is the product's scream: reading only those titles SHOULD reveal the business purpose of the system. Journeys are continuous containers, not closable epics, sprints, or technical layers (`API`, `Frontend`, `Database`). | Permanent container. MUST NOT execute code directly. MUST NOT have outgoing edges. State is computed, never set manually (§4). MUST be named in domain language. |
-| **Foundation** | An **infrastructure detail** with no domain scream of its own (e.g. database schemas, auth, payment-provider SDK, queue, HTTP adapter). Frameworks, stores, and delivery mechanisms live here so use cases can depend on them without becoming them. | Has zero direct business value; exists solely to be consumed by Workflows. MUST be shipped (`stable`) before dependent Workflows can ship. MAY depend on other Foundations (layered infrastructure). MUST NOT own user-facing use-case behaviour. |
-| **Workflow** | A concrete **use case** — application-specific business logic or end-user feature that realizes part of a Journey (e.g. "Split the check", "Process Payment", "Compile HTML"). This is where execution work lives. | MUST belong to one or more Journeys via `belongs_to` (multiple edges allowed). MUST depend on at least one Foundation via `depends_on`. Contains the actual execution work. **Agents MUST define the Journey before creating a Workflow** — if the user requests a Workflow that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
+| **Foundation** | **Shared substrate** with no standalone use case: infrastructure *and* reusable product platform (e.g. database schemas, auth, payment-provider SDK, queue, HTTP adapter, design system, primary button). Use cases consume Foundations via `depends_on` without becoming them. | Exists solely to be consumed by Workflows (or other Foundations). MUST be shipped (`stable`) before dependent Workflows can ship. MAY depend on other Foundations (layered substrate). MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Foundations are not Journey members. |
+| **Workflow** | A concrete **use case** — application-specific business logic or end-user feature that realizes part of one or more Journeys (e.g. "Split the check", "Process Payment", "User picker", "Character editor"). This is where execution work lives, including shared screens that are themselves use cases. | MUST belong to one or more Journeys via `belongs_to` (multiple edges allowed — membership reuse across Journeys). MUST depend on at least one Foundation via `depends_on`. MAY `depends_on` other Workflows (composition reuse). Contains the actual execution work. **Agents MUST define the Journey before creating a Workflow** — if the user requests a Workflow that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
 | **Bug** | A defect afflicting one or more Foundations or Workflows. | MUST link to targets via `affects` (Bug → Workflow|Foundation). Dedicated defect lifecycle (§3.2). Does not affect Journey computation. |
+
+### 2.0 Classification litmus (agents)
+
+Agents MUST classify new work with these checks, in order:
+
+1. Domain capability the product *is about*? → **Journey**
+2. Stakeholder-recognizable use case / screen with its own behaviour (even if many features embed it)? → **Workflow**
+3. Shared code/UI with **no** standalone use case, only consumed by use cases? → **Foundation**
+4. Broken behaviour on an existing node? → **Bug**
+
+**Shared-screen examples:**
+
+- Primary button / design tokens → Foundation (e.g. `f-design-system`). Not a use case.
+- User picker screen → Workflow (e.g. `wf-user-picker`) when it is a real pick/search/select flow; other Workflows `depends_on` it and/or it `belongs_to` multiple Journeys. If it collapses to a dumb combobox with no product behaviour, it MAY live under the design-system Foundation instead.
+- Character editor → Workflow (e.g. `wf-character-editor`). Domain behaviour; reuse via `depends_on` and/or multi-Journey `belongs_to`, not Foundation.
+
+**Two reuse axes** (keep distinct):
+
+1. **Membership reuse** — `belongs_to`: the same Workflow is part of multiple Journeys when the use case spans domain capabilities.
+2. **Composition reuse** — `depends_on`: one Workflow builds on another use case, or on Foundations (design system, DB, auth).
+
+Before inventing shared UI or a shared screen inside a Workflow, agents MUST find or create the right Foundation (substrate) or Workflow (use case) and link `depends_on` (and `belongs_to` when the shared Workflow must sit in the consuming Journey — see Rule 8).
 
 ### 2.1 Node identifiers
 
@@ -92,7 +135,7 @@ Exactly three edge types exist. An edge is a directed triple `(source, target, t
 | Edge type | Legal shape | Meaning |
 |---|---|---|
 | `belongs_to` | Workflow → Journey | Membership. A Workflow MAY have multiple `belongs_to` edges to different Journeys when the use case spans domain capabilities. |
-| `depends_on` | Workflow → Foundation, Workflow → Workflow, Foundation → Foundation | Consumption. The source cannot ship without the target's infrastructure or prerequisite workflow. |
+| `depends_on` | Workflow → Foundation, Workflow → Workflow, Foundation → Foundation | Composition. The source cannot ship without the target's shared substrate or prerequisite use case. |
 | `affects` | Bug → Workflow, Bug → Foundation | Affliction. The Bug impairs the target; open Bugs drive `unstable` production posture (§3.5). |
 
 All other shapes MUST be rejected, specifically including:
@@ -429,18 +472,18 @@ Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the fi
 
 `create_node` MUST scaffold the entity folder with a type-appropriate `current.mdx` and an empty `attachments/` directory (with `.gitkeep` so the folder is versionable). `next.mdx` and `next-attachments/` are never scaffolded by `create_node` — they are created only by `open_next` on an already-shipped Foundation/Workflow (§3.6, §8.2):
 
-- **Journey** — Overview section (domain capability + use cases it owns), Linked Workflows note, Attachments note. No checklist (Journeys have no completion gate).
-- **Foundation** — Infrastructure Spec section (schemas, adapters, contracts — not use-case behaviour), Checklist (3 default Atomic Ops), Attachments note.
-- **Workflow** — Execution Logic section (use-case steps), Checklist (3 default Atomic Ops), **Affected Files** section (empty list for project paths touched during implementation; §6.3.1), Attachments note.
-- **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4).
+- **Journey** — Overview section (domain capability + use cases it owns), Linked Workflows note, Attachments note. No checklist (Journeys have no completion gate). No implementation package.
+- **Foundation** — Shared Substrate Spec section (infra, adapters, design system, contracts — not use-case behaviour), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/foundations/<id>/` (§1.2).
+- **Workflow** — Execution Logic section (use-case steps), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/workflows/<id>/` (§1.2).
+- **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4). No implementation package.
 
 Default checklist items are placeholders; teams SHOULD replace them with real Atomic Ops during `draft` or triage.
 
-#### 6.3.1 Workflow affected files
+#### 6.3.1 Implementation packages
 
-Workflow `current.mdx` bodies MUST include an `## Affected Files` section (scaffolded empty); an open `next.mdx` inherits the same section from the copied body. During build-pipeline execution, agents MUST append every project file they create or materially modify as a markdown list item (project-relative path, optionally backtick-wrapped). The list is territory-owned body content — not frontmatter and not compiler-gated. Agents query it via `get_workflow_files` (§8.1).
+`create_node` for Workflow and Foundation MUST create the prescribed implementation package (§1.2) with a `.gitkeep` so the folder is versionable. The package path is derived — it is not stored in frontmatter and is not an edge.
 
-Recognized syntax: list items under the heading until the next `##` heading, using `-`, `*`, or `+` markers. Placeholder italic lines (starting with `_`) are ignored.
+Agents MUST place all implementation for that node under its package. Agents query the package via `get_node_implementation` (§8.1). There is no per-file affected-files list in territory — architecture is the graph plus package roots.
 
 Scaffolded bodies include an MDX comment noting which standard components are available. `create_node` MUST also ensure `mindplan/components/` exists at the planning root.
 
@@ -701,21 +744,25 @@ Composite orientation for agents: `find_related_nodes` plus full territory for t
 - **Output:** `{ query, matches, focus, nodes, edges, context, blast_radius }` where `context` matches `get_node_context` (without `raw_context`) when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` for Foundation/Workflow focus, else `null`.
 - **Errors:** same as `find_related_nodes`.
 
-#### `get_workflow_files`
+#### `get_node_implementation`
 
-Returns the project-relative file paths listed in a Workflow's `## Affected Files` territory section (§6.3.1).
+Returns the prescribed implementation package for a Workflow or Foundation (§1.2).
 
-- **Input:** `node_id` (slug; must be a Workflow).
+- **Input:** `node_id` (slug; must be a Workflow or Foundation).
 - **Output:**
 
 ```jsonc
 {
   "node_id": "wf-checkout-split",
-  "files": ["src/checkout/split.ts", "tests/checkout.test.ts"]
+  "root": "src/workflows/wf-checkout-split",
+  "exists": true,
+  "entries": [".gitkeep"]
 }
 ```
 
-- **Errors:** unknown `node_id`; node is not a Workflow.
+`root` is always the derived project-relative package path. `exists` is whether that directory is present on disk. When `exists` is true, `entries` lists **top-level** names in the package (sorted); otherwise `entries` is omitted or empty.
+
+- **Errors:** unknown `node_id`; node is a Journey or Bug (`Blocked: … only applies to Workflow and Foundation nodes`).
 
 #### `patch_node_territory`
 
@@ -727,21 +774,20 @@ Patches territory-owned content on `current.mdx` or `next.mdx`. Server-owned fro
   - `description` (string, optional) — pre-ship Workflow (`current`) or an open `next` slot only
   - `body` (string, optional) — replaces entire body below frontmatter
   - `toggle_checkboxes` (array of `{ contains, checked }`, optional) — match checkbox lines by substring
-  - `append_affected_files` (string array, optional) — Workflow only; appends to `## Affected Files`
   - `slot` (`current` \| `next`, optional) — explicitly select the territory file to patch; errors if `next` is requested but no `next.mdx` exists
   - At least one patch field is required.
 - **Slot resolution:** when `slot` is omitted, the server patches `next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Workflow with an open evolution, otherwise `current.mdx`.
 - **Effect:** writes territory body and/or `title`/`description` scalars on the resolved slot; touches `updated_at` in that slot's frontmatter.
 - **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next" }`
-- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; `append_affected_files` on non-Workflow; explicit `slot: "next"` with no `next.mdx`; shipped Workflow `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`).
+- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; explicit `slot: "next"` with no `next.mdx`; shipped Workflow `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`).
 
 ### 8.2 Mutation tools
 
 #### `create_node`
 
 - **Input:** `id` (slug), `type` (`Journey|Foundation|Workflow|Bug`), `title` (non-empty), `description`.
-- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
-- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments }` (project-relative paths; `context` is a deprecated alias for `current`).
+- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). For Workflow and Foundation, also scaffolds the prescribed implementation package under `src/` (§1.2, §6.3.1). Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
+- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, implementation? }` (project-relative paths; `context` is a deprecated alias for `current`; `implementation` is the package root when scaffolded).
 - **Errors:** duplicate `id`.
 
 #### `open_next`

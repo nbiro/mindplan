@@ -8,7 +8,7 @@
 
 **Do not** call `create_node` for the Workflow. Respond:
 
-> I cannot define this Workflow yet — every Workflow must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the macro user capability this feature belongs to). Once the Journey exists, I can create the Workflow and link it with `belongs_to`.
+> I cannot define this Workflow yet — every Workflow must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the domain capability this use case belongs to). Once the Journey exists, I can create the Workflow and link it with `belongs_to`.
 
 **Next step (after user agrees):** define Journey `j-ordering`, then proceed with the greenfield example below.
 
@@ -23,6 +23,7 @@
 ```
 create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders and pays for food" })
 create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Core tables for orders and payments" })
+create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Shared UI primitives including primary button" })
 create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
 ```
 
@@ -31,6 +32,7 @@ create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay che
 ```
 link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
 link_nodes({ source_id: "wf-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
+link_nodes({ source_id: "wf-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
 ```
 
 ### 3. Enrich Foundation territory
@@ -38,7 +40,7 @@ link_nodes({ source_id: "wf-checkout-split", target_id: "f-db-core", edge_type: 
 In `mindplan/foundations/f-db-core/current.mdx` body:
 
 ```markdown
-## Infrastructure Spec
+## Shared Substrate Spec
 
 - `orders` table: id, table_id, status, created_at
 - `payments` table: id, order_id, amount_cents, method
@@ -48,6 +50,21 @@ In `mindplan/foundations/f-db-core/current.mdx` body:
 - [ ] Spec written
 - [ ] Migration created
 - [ ] Verified in staging
+```
+
+In `mindplan/foundations/f-design-system/current.mdx` body:
+
+```markdown
+## Shared Substrate Spec
+
+- Primary button, typography, spacing tokens
+- Forms and feedback primitives used across Journeys
+
+## Checklist
+
+- [ ] Spec written
+- [ ] Components implemented
+- [ ] Documented for consumers
 ```
 
 ### 4. Enrich Workflow territory
@@ -78,6 +95,37 @@ update_node_status({ node_id: "wf-checkout-split", new_status: "in-progress" })
 
 ---
 
+## Design system Foundation (shared UI substrate)
+
+**Goal:** Stop inventing a new primary button per Workflow — one Foundation, many dependents.
+
+```
+create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Shared UI primitives including primary button" })
+link_nodes({ source_id: "wf-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ source_id: "wf-user-picker", target_id: "f-design-system", edge_type: "depends_on" })
+```
+
+Ship `f-design-system` to `stable` before dependent Workflows can ship (Infrastructure First).
+
+---
+
+## Shared Workflow composition (user picker)
+
+**Goal:** Checkout embeds a real user-picker use case; picker is a Workflow, not a Foundation.
+
+```
+create_node({ id: "wf-user-picker", type: "Workflow", title: "User picker", description: "Search and select a user" })
+create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
+link_nodes({ source_id: "wf-user-picker", target_id: "j-ordering", edge_type: "belongs_to" })
+link_nodes({ source_id: "wf-user-picker", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ source_id: "wf-checkout-split", target_id: "wf-user-picker", edge_type: "depends_on" })
+link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to", link_dependent: true })
+```
+
+Composition reuse = `depends_on` between Workflows. If the picker also serves Admin, add a second `belongs_to` to `j-admin` (membership reuse).
+
+---
+
 ## Layered Foundation
 
 **Goal:** Auth service depends on a lower-level config Foundation.
@@ -100,13 +148,13 @@ Ship `f-config` before `f-auth`. Workflows depending on `f-auth` cannot ship unt
 create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
 create_node({ id: "j-loyalty", type: "Journey", title: "Loyalty", description: "Points and rewards" })
 create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Core tables" })
-create_node({ id: "wf-user-profile", type: "Workflow", title: "User profile", description: "Shared profile across product surfaces" })
+create_node({ id: "wf-user-profile", type: "Workflow", title: "User profile", description: "Shared profile across domain capabilities" })
 link_nodes({ source_id: "wf-user-profile", target_id: "j-ordering", edge_type: "belongs_to" })
 link_nodes({ source_id: "wf-user-profile", target_id: "j-loyalty", edge_type: "belongs_to" })
 link_nodes({ source_id: "wf-user-profile", target_id: "f-db-core", edge_type: "depends_on" })
 ```
 
-One Workflow, two `belongs_to` edges — both Journeys recompute state from this Workflow independently.
+One Workflow, two `belongs_to` edges — membership reuse across Journeys.
 
 ---
 

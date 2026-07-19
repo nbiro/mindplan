@@ -29,7 +29,8 @@ import {
   loadGraph,
   nodeExists,
   listAttachments,
-  listAffectedFiles,
+  getNodeImplementation,
+  implementationRelativePath,
   readMarkdown,
   scaffoldEntity,
   patchFrontmatter,
@@ -239,23 +240,20 @@ server.registerTool(
 );
 
 server.registerTool(
-  "get_workflow_files",
+  "get_node_implementation",
   {
-    title: "Get workflow files",
+    title: "Get node implementation",
     description:
-      "Returns the list of project files recorded in a Workflow's current.mdx (or next.mdx when evolving) " +
-      "`## Affected Files` section. Agents maintain that list during implementation.",
+      "Returns the prescribed implementation package for a Workflow or Foundation " +
+      "(src/workflows/<id> or src/foundations/<id>): root path, whether it exists, and top-level entries.",
     inputSchema: {
-      node_id: NODE_ID.describe("Workflow id whose affected-files list to read."),
+      node_id: NODE_ID.describe("Workflow or Foundation id whose implementation package to read."),
     },
   },
   guarded(({ node_id }) => {
     const graph = loadGraph();
     const node = findNode(graph, node_id);
-    return ok({
-      node_id,
-      files: listAffectedFiles(node),
-    });
+    return ok(getNodeImplementation(node));
   })
 );
 
@@ -355,7 +353,7 @@ server.registerTool(
     title: "Patch node territory",
     description:
       "Patches territory-owned content: body (PRD, checklists), optional title/description " +
-      "(pre-ship Workflows or next slot), toggle_checkboxes, append_affected_files. " +
+      "(pre-ship Workflows or next slot), toggle_checkboxes. " +
       "When a shipped Foundation/Workflow has next.mdx, patches default to next. Optional slot: current|next.",
     inputSchema: {
       node_id: NODE_ID.describe("Node whose territory to patch."),
@@ -371,17 +369,13 @@ server.registerTool(
         )
         .optional()
         .describe("Toggle markdown checkboxes by matching line content."),
-      append_affected_files: z
-        .array(z.string().min(1))
-        .optional()
-        .describe("Append project-relative paths to ## Affected Files (Workflow only)."),
       slot: z
         .enum(["current", "next"])
         .optional()
         .describe("Territory slot to patch. Defaults to next when evolving a shipped node."),
     },
   },
-  guarded(({ node_id, title, description, body, toggle_checkboxes, append_affected_files, slot }) => {
+  guarded(({ node_id, title, description, body, toggle_checkboxes, slot }) => {
     const graph = loadGraph();
     const node = findNode(graph, node_id);
     const resolvedSlot: TerritorySlot =
@@ -402,7 +396,6 @@ server.registerTool(
       description,
       body,
       toggle_checkboxes,
-      append_affected_files,
       slot: resolvedSlot,
     });
     return ok({ node_id, ...result });
@@ -414,7 +407,8 @@ server.registerTool(
   {
     title: "Create node",
     description:
-      "Creates a Journey, Foundation, Workflow, or Bug: scaffolds territory folder + current.mdx frontmatter.",
+      "Creates a Journey, Foundation, Workflow, or Bug: scaffolds territory folder + current.mdx frontmatter. " +
+      "Workflow/Foundation also scaffold src/workflows/<id> or src/foundations/<id> implementation packages.",
     inputSchema: {
       id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
       type: z.enum(NODE_TYPES).describe("Journey | Foundation | Workflow | Bug"),
@@ -439,6 +433,7 @@ server.registerTool(
     ensureDirectories();
     scaffoldEntity(node, { title, description });
     const rel = entityRelativePath(node);
+    const implementation = implementationRelativePath(node);
     refreshPersistedMap();
     return ok({
       created: node,
@@ -446,6 +441,7 @@ server.registerTool(
       current: `${rel}/${CURRENT_FILENAME}`,
       context: `${rel}/${CURRENT_FILENAME}`,
       attachments: `${rel}/${ATTACHMENTS_DIR}`,
+      ...(implementation ? { implementation } : {}),
     });
   })
 );

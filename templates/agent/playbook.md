@@ -31,9 +31,9 @@ When `.cursorignore` is installed (via `mindplan-mcp init`), agent file tools ca
 
 | Type | Purpose | States |
 |------|---------|--------|
-| **Journey** | Macro user capability; permanent container | Computed only: `draft`, `incubation`, `stable`, `evolving` |
-| **Foundation** | Pure infrastructure (DB, auth, APIs) | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` |
-| **Workflow** | Business logic / feature | Same build pipeline as Foundation |
+| **Journey** | Domain capability the architecture screams; permanent use-case container | Computed only: `draft`, `incubation`, `stable`, `evolving` |
+| **Foundation** | Shared substrate (DB, auth, design system, adapters) — no standalone use case | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` |
+| **Workflow** | Concrete use case / feature (may span Journeys; may depend on other Workflows) | Same build pipeline as Foundation |
 | **Bug** | Defect on a Workflow or Foundation | `open` → `triaged` → `fixing` → `in-review` → `resolved` \| `wontfix` |
 
 **IDs:** `^[a-z0-9][a-z0-9-_]*$`. Prefer prefixes: `j-`, `f-`, `wf-`, `bug-`. IDs never change — evolution happens in place via `next.mdx`, not by minting a new id.
@@ -89,7 +89,7 @@ For a shipped node evolving via `open_next`, this same pipeline runs against the
 1. **Orient** — `orient_for_work` or `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Call `get_blast_radius` on the focus node before substantial implementation; note transitive dependents and `journeys_at_risk`. Read PRD, Acceptance Criteria, and Atomic Ops from `body` (or `next.body` when a next slot is open).
 2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress`. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
 3. **Commit to work** — `update_node_status` → `ready`, then `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway.
-4. **Execute** — Implement in application code. Keep territory in sync via `patch_node_territory`: toggle checkboxes (`toggle_checkboxes`), append `## Affected Files` (`append_affected_files`), update PRD (`body`). Never check a box without doing the work.
+4. **Execute** — Implement in the node's prescribed package (`src/workflows/<id>/` or `src/foundations/<id>/`). Keep territory in sync via `patch_node_territory`: toggle checkboxes (`toggle_checkboxes`), update PRD (`body`). Never check a box without doing the work. Query architecture with `get_node_implementation` plus the graph.
 5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`. Then **stop**. Do not immediately `ship`. Hand off for review by a human or a different agent (not the same session that implemented the work).
 6. **Ship** — Only after that external review approves. The **reviewer** (human or another agent) calls `update_node_status` → `ship` from `in-review` (or from `next` `in-review` when evolving). Server sets `shipped_at` and computes `stable` or `unstable`; if a `next` slot was open, ship promotes it over `current` and deletes `next.mdx`.
    - **External Review:** the implementing agent MUST NOT `ship` (or Bug `resolved`) their own work. Wait for a human or a different agent to review and perform the ship/resolve transition.
@@ -141,7 +141,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 - Checkbox state on disk gates `in-review`, `ship`, and Bug `in-review`/`resolved` — checked against whichever file is active (`current.mdx`, or `next.mdx` when evolving).
 - Enrich or replace scaffold checklist placeholders during `draft` / triage with real PR-sized work items.
 - Attachments live under `attachments/` (`next-attachments/` while evolving); reference them from the body with relative links.
-- Workflow `## Affected Files` lists project paths touched during implementation; query with `get_workflow_files` (reads `next.mdx` when a next slot is open, otherwise `current.mdx`), append with `patch_node_territory`.
+- Workflow/Foundation implementation lives under `src/workflows/<id>/` or `src/foundations/<id>/` (scaffolded by `create_node`). Query with `get_node_implementation`. Journeys have no code package — derive architecture from member Workflows via `belongs_to`.
 
 ## Compiler rules
 
@@ -169,8 +169,8 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | `get_mindplan_graph` | Full graph dump — greenfield, multi-node plan validation, or rare full audits |
 | `get_blast_radius` | Before substantial implementation — transitive dependents (reverse `depends_on`) and `journeys_at_risk` |
 | `get_node_context` | Read territory — prefer `record` + `body`; includes `next` slot when evolving; `raw_context` is deprecated |
-| `get_workflow_files` | List project files recorded in a Workflow's `## Affected Files` section |
-| `patch_node_territory` | Territory body edits, checkboxes, affected files, title/description; defaults to `next` when evolving a shipped node |
+| `get_node_implementation` | Prescribed package root for a Workflow/Foundation (`src/workflows/<id>` or `src/foundations/<id>`) |
+| `patch_node_territory` | Territory body edits, checkboxes, title/description; defaults to `next` when evolving a shipped node |
 | `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities skill) |
 | `open_next` | Open `next.mdx` on a shipped Foundation/Workflow (same id) to evolve it in place |
 | `discard_next` | Abandon an in-flight `next.mdx` evolution; `current.mdx` unchanged |
@@ -180,6 +180,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 
 ## Never do
 
+- Implement Workflow/Foundation code outside its prescribed `src/workflows/<id>/` or `src/foundations/<id>/` package
 - Start substantial coding without `orient_for_work` / `find_related_nodes` (or an explicit `node_id`) and a clear owning node
 - Start substantial implementation on a Foundation or Workflow without `get_blast_radius` on the owning node
 - Read or grep `mindplan/**/current.mdx`, `mindplan/**/next.mdx`, or `mindplan/map.md` when `.cursorignore` is installed — use MCP read tools
