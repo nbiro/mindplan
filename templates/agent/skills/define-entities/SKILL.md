@@ -2,7 +2,7 @@
 name: mindplan-define-entities
 description: >-
   Defines MindPlan SDLC entities (Journey, Foundation, Workflow, Bug) via MCP —
-  taxonomy selection, ID naming, edge linking, and context.mdx territory.
+  taxonomy selection, ID naming, edge linking, and current.mdx territory.
   Journey MUST exist before Workflow; refuses Workflow creation when no matching
   Journey is in the graph. Use when creating planning nodes, scaffolding features,
   mapping user flows, adding infrastructure tickets, filing bugs, or structuring
@@ -67,7 +67,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Workflow | `wf-` | `wf-checkout-split` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Title:** short human-readable name. **Description:** one sentence. Both are written to `context.mdx` frontmatter at creation — edit them there afterward.
+**Title:** short human-readable name. **Description:** one sentence. Both are written to `current.mdx` frontmatter at creation — edit them there afterward (or on `next.mdx` once the node has shipped and is evolving via `open_next`).
 
 ## Step 4 — Create via MCP
 
@@ -77,7 +77,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/context.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). Edge arrays are added by `link_nodes` — stored as `belongs_to`, `depends_on`, or `affects` on the source node.
+Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). Edge arrays are added by `link_nodes` — stored as `belongs_to`, `depends_on`, or `affects` on the source node. This id is permanent — Foundations and Workflows never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
 
 ## Step 5 — Link edges (before advancing state)
 
@@ -98,7 +98,7 @@ link_nodes({ source_id, target_id, edge_type })
 
 Illegal shapes are rejected — see `mindplan/agent/playbook.md` for the full edge taxonomy.
 
-## Step 6 — Enrich territory (`context.mdx` body)
+## Step 6 — Enrich territory (`current.mdx` body)
 
 Edit the **body only** — never frontmatter `state:`. Replace scaffold placeholders with real content.
 
@@ -150,27 +150,26 @@ Confirm edges, folder paths, and territory content before moving to `ready` or b
 3. create_node Workflow(s)      ← only after step 1; link with belongs_to (repeat per Journey)
 4. link_nodes Workflow → Journey (belongs_to)   ← once per Journey; multiple allowed
 5. link_nodes Workflow → Foundation (depends_on)
-6. Enrich all context.mdx bodies
+6. Enrich all current.mdx bodies
 7. update_node_status when gates pass (Workflows: ready only after both links)
 ```
 
 Ship order: Foundations → `stable` before Workflow `ship`.
 
-## Versioning a shipped node
+## Evolving a shipped node
 
-When a shipped Workflow or Foundation needs a breaking change:
+Foundations and Workflows keep one id forever — there is no `-v2` node. When a shipped Workflow or Foundation needs a change:
 
 ```
 get_blast_radius({ node_id: "wf-checkout-split" })   // find dependents first
-create_node_version({
-  previous_id: "wf-checkout-split",
-  id: "wf-checkout-split-v2",
-  title: "Split & pay checkout v2",
-  description: "Revised checkout with new split rules"
+open_next({
+  node_id: "wf-checkout-split",
+  title: "Split & pay checkout v2",              // optional
+  description: "Revised checkout with new split rules"  // optional
 })
 ```
 
-The new node starts in `draft` with inherited outgoing `belongs_to`/`depends_on` and `supersedes` → predecessor. Dependents keep their edge to the live predecessor until the new version ships — at that moment they gain a duplicate `depends_on` to the successor and the predecessor is deprecated. Prefer ids like `<id>-v2`.
+`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Run the build pipeline (`update_node_status`, `patch_node_territory`) against the next slot until `in-review`, then `ship`: that promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
 
 ## Common mistakes
 
@@ -184,8 +183,8 @@ The new node starts in `draft` with inherited outgoing `belongs_to`/`depends_on`
 | Business logic in a Foundation node | Wrong taxonomy — move logic to Workflow |
 | Manual Journey / `stable` / `unstable` status | Rejected — computed only |
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
-| Version an unshipped node | `Blocked` — only `stable`/`unstable` can be superseded |
-| Re-version a node that already has a successor | `Blocked` — version from the latest successor instead |
+| `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |
+| `open_next` while a `next.mdx` is already open | `Blocked` — `discard_next` or ship it first |
 
 ## Examples
 

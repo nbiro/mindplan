@@ -1,8 +1,8 @@
 ---
 id: wf-query-graph-v2
 type: Workflow
-title: "Query graph (blast radius via supersedes)"
-description: "get_blast_radius seeds from the supersedes chain so agents see what the predecessor still serves while building a successor version."
+title: "Query graph"
+description: "Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context (current+next), get_blast_radius (same-id dependents), orient_for_work."
 state: stable
 shipped_at: 2026-07-15T19:59:26.977Z
 created_at: 2026-07-15T19:58:14.741Z
@@ -11,11 +11,9 @@ belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-mcp-runtime
-supersedes:
-  - wf-query-graph
 ---
 
-# Query graph (blast radius via supersedes)
+# Query graph
 
 Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context, and get_blast_radius — with blast radius aware of version lineage.
 
@@ -23,15 +21,15 @@ Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context
 
 1. Agent calls `find_related_nodes` with a query (preferred orientation).
 2. Optionally `get_node_context` for full territory body/attachments.
-3. `get_blast_radius` for transitive dependents before risky changes. When the focus node has a `supersedes` chain, seed the reverse-`depends_on` BFS from the focus **and** each predecessor at distance 0; return `via_supersedes` listing those predecessor ids so the agent understands why affected nodes appear.
+3. `get_blast_radius` for transitive dependents before risky changes (same stable id; no supersedes seeding).
 4. `get_mindplan_graph` only for greenfield/full audits.
 
 Ranking lives in `src/search.ts`; blast radius and assembly via `src/rules.ts` / store `loadGraph`.
 
 ## Checklist
 
-- [x] SPEC: `get_blast_radius` documents supersedes seeding + `via_supersedes`
-- [x] Implement supersedes-chain seed in `transitiveDependents` / blast handler
+- [x] SPEC: `get_blast_radius` documents same-id transitive dependents
+- [x] Implement reverse-`depends_on` blast radius without supersedes seeding
 - [x] Smoke: blast radius of a draft successor includes predecessor dependents
 - [x] Playbook / README wording updated
 

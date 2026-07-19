@@ -34,7 +34,7 @@ No ghost workflows without a capability and foundation, no shipping on unstable 
 
 ## How it's built
 
-Plan state lives in the repository as `context.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs). An MCP server is the single write path: it mutates frontmatter, validates plan mutations against architectural rules, and exposes a queryable graph (`find_related_nodes`, `get_blast_radius`, `export_mindplan_view`). Consumer projects commit territory next to application code so the product plan and the implementation share one history.
+Plan state lives in the repository as `current.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs) — plus an optional `next.mdx` next to a shipped Foundation's or Workflow's `current.mdx` while it evolves in place. Node ids are stable forever: there is no new id for a revision. An MCP server is the single write path: it mutates frontmatter, validates plan mutations against architectural rules, and exposes a queryable graph (`find_related_nodes`, `get_blast_radius`, `export_mindplan_view`). Consumer projects commit territory next to application code so the product plan and the implementation share one history.
 
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
@@ -51,7 +51,7 @@ This repository dogfoods MindPlan. Live territory: [`mindplan/`](mindplan/).
 
 MindPlan is built for people who ship **with AI agents** and need those agents to know what the project is — a living product plan, not a stale ticket list.
 
-It works best for **indie developers and small teams** working solo or in tight sync — the kind of project where one person (or one agent) touches `mindplan/` at a time. Because planning state is plain-text `context.mdx` files in git, it inherits git's concurrency model: no built-in locking or conflict resolution. That tradeoff is a good fit when:
+It works best for **indie developers and small teams** working solo or in tight sync — the kind of project where one person (or one agent) touches `mindplan/` at a time. Because planning state is plain-text `current.mdx`/`next.mdx` files in git, it inherits git's concurrency model: no built-in locking or conflict resolution. That tradeoff is a good fit when:
 
 - You're a solo builder or a small team working on one branch at a time
 - You want planning and code to live and merge together
@@ -59,7 +59,7 @@ It works best for **indie developers and small teams** working solo or in tight 
 
 It's a poor fit today for:
 
-- Larger teams with many contributors mutating the same nodes concurrently — simultaneous edits to the same `context.mdx` frontmatter (state, edges) can produce git conflicts the rules engine doesn't help you resolve
+- Larger teams with many contributors mutating the same nodes concurrently — simultaneous edits to the same `current.mdx`/`next.mdx` frontmatter (state, edges) can produce git conflicts the rules engine doesn't help you resolve
 - Organizations that need multi-user permissions, audit trails, or sync with existing PM tools (Jira, Linear, GitHub Projects) — MindPlan intentionally has no external sync
 
 ## Quick start
@@ -113,20 +113,22 @@ See [integrations README](templates/agent/integrations/README.md) in this repo f
     │       └── define-entities/
     ├── components/                # Project-specific MDX components (optional)
     ├── journeys/<id>/
-    │   ├── context.mdx
+    │   ├── current.mdx
     │   └── attachments/
     ├── foundations/<id>/
-    │   ├── context.mdx
+    │   ├── current.mdx
+    │   ├── next.mdx              # optional — in-flight evolution of a shipped Foundation
     │   └── attachments/
     ├── workflows/<id>/
-    │   ├── context.mdx
+    │   ├── current.mdx
+    │   ├── next.mdx              # optional — in-flight evolution of a shipped Workflow
     │   └── attachments/
     └── bugs/<id>/
-        ├── context.mdx            # Repro, expected/actual, fix checklist
+        ├── current.mdx           # Repro, expected/actual, fix checklist
         └── attachments/           # Logs, screenshots
 ```
 
-Context files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`, `supersedes`) live in YAML frontmatter. See SPEC.md §6.1 and §7.
+Territory files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. A node's id never changes — `next.mdx` holds a draft evolution of a shipped Foundation/Workflow under the same id; `ship` promotes it over `current.mdx`. See SPEC.md §6.1 and §7.
 
 ## Taxonomy
 
@@ -143,7 +145,7 @@ Journeys hold the map · Workflows are the work · Foundations are what that wor
 
 **Production posture** (`stable` / `unstable`) is computed from open Bugs via `affects` edges — never set manually. Open bug = `open`, `triaged`, `fixing`, or `in-review`.
 
-In traditional trackers, epics close when a milestone ships — then drop out of the living product map even though the same flows keep getting developed. MindPlan doesn't do that: Journeys stay permanent and move between `incubation`, `stable`, and `evolving`; Workflows stay `stable`/`unstable` and evolve via versioning instead of closing. Only Bugs close.
+In traditional trackers, epics close when a milestone ships — then drop out of the living product map even though the same flows keep getting developed. MindPlan doesn't do that: Journeys stay permanent and move between `incubation`, `stable`, and `evolving`; Workflows stay `stable`/`unstable` and evolve in place (`open_next` → `next.mdx` → `ship` promotes it over `current.mdx`, same id) instead of closing. Only Bugs close.
 
 ## Compiler Rules
 
@@ -152,12 +154,12 @@ Every violation throws an error starting with `Blocked: `.
 1. **No Ghost Workflows** — Workflow cannot reach `ready`/`in-progress` without at least one `belongs_to` + at least one `depends_on`.
 2. **No Ghost Bugs** — Bug cannot reach `triaged`/`fixing` without at least one `affects` edge.
 3. **Infrastructure First** — Workflow cannot `ship` unless all linked Foundations and Workflows are `stable`.
-4. **Completion Check** — unchecked `[ ]` in `context.mdx` block `in-review`, `ship`, and Bug `in-review`/`resolved`.
+4. **Completion Check** — unchecked `[ ]` in `current.mdx` (or `next.mdx` while evolving) block `in-review`, `ship`, and Bug `in-review`/`resolved`.
 5. **Computed Journey States** — from shipped + in-progress Workflows only; Bugs do not affect Journeys.
 6. **Computed Stability** — shipped nodes flip `stable` ↔ `unstable` when open Bugs are linked, unlinked, or resolved.
 7. **Taxonomy Enforcement** — edge creation must use a legal shape/type pairing, no self-links or duplicates, no `depends_on` cycles.
 8. **Dependency Closure** — linking a Workflow to a Journey is rejected when transitively depended-on Workflows are not already in that Journey; pass `link_dependent: true` to auto-link them.
-9. **Version Lineage** — only shipped nodes can be versioned; predecessor auto-deprecates when the new version ships.
+9. **Next Evolution** — only shipped (`stable`/`unstable`) Foundations/Workflows can `open_next`; blocked while a `next.mdx` is already open. `ship` from next `in-review` promotes `next.mdx` over `current.mdx` in place — same id, no new node.
 
 ## MCP Tools
 
@@ -167,15 +169,16 @@ Every violation throws an error starting with `Blocked: `.
 | `orient_for_work` | read | Composite: find_related_nodes + context (record+body) + blast radius for Foundation/Workflow focus |
 | `get_mindplan_graph` | read | Nodes and edges assembled from territory frontmatter |
 | `export_mindplan_view` | read | Mermaid or DOT typed-DAG projection (full map or focus + 1-hop) |
-| `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); seeds from supersedes chain for version successors; journeys_at_risk |
-| `get_node_context` | read | Returns `record`, `body`, attachment paths; `raw_context` deprecated |
-| `get_workflow_files` | read | Project files listed in a Workflow's `## Affected Files` territory section |
-| `patch_node_territory` | mutation | Body edits, checkboxes, affected files; pre-ship Workflow title/description |
-| `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `context.mdx` |
-| `create_node_version` | mutation | New draft version of a shipped Workflow/Foundation; inherits outgoing edges; predecessor stays live until successor ships (dependents relink at ship, not create) |
-| `link_nodes` | mutation | `belongs_to`, `depends_on` (Foundation or Workflow), or `affects`; optional `link_dependent` for journey closure; writes to source-node frontmatter; recomputes Journey + stability |
-| `unlink_nodes` | mutation | Removes edge(s) from source-node frontmatter; recomputes Journey + stability |
-| `update_node_status` | mutation | Transitions + `ship`; auto-deprecates predecessor on version ship; recomputes stability and Journey states |
+| `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); journeys_at_risk |
+| `get_node_context` | read | Returns `record`, `body`, attachment paths, and `next` slot when evolving; `raw_context` deprecated |
+| `get_workflow_files` | read | Project files listed in a Workflow's `## Affected Files` territory section (`next.mdx` when evolving, else `current.mdx`) |
+| `patch_node_territory` | mutation | Body edits, checkboxes, affected files, title/description; defaults to `next` when evolving a shipped Foundation/Workflow |
+| `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `current.mdx` |
+| `open_next` | mutation | Opens `next.mdx` on a shipped Foundation/Workflow (same id) seeded from `current.mdx`; live node keeps serving unchanged |
+| `discard_next` | mutation | Deletes `next.mdx` (and `next-attachments/`), abandoning an in-flight evolution; `current.mdx` unchanged |
+| `link_nodes` | mutation | `belongs_to`, `depends_on` (Foundation or Workflow), or `affects`; optional `link_dependent` for journey closure; writes to `next` slot while one is open, otherwise source-node frontmatter; recomputes Journey + stability |
+| `unlink_nodes` | mutation | Removes edge(s) from source-node frontmatter (current and next); recomputes Journey + stability |
+| `update_node_status` | mutation | Transitions + `ship`; applies to the `next` slot while one is open; ship promotes `next.mdx` over `current.mdx` in place; recomputes stability and Journey states |
 
 ## CLI
 

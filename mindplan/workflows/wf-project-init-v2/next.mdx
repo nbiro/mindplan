@@ -1,5 +1,5 @@
 ---
-id: wf-project-init-v3
+id: wf-project-init-v2
 type: Workflow
 title: "Project init (external review before ship)"
 description: "Scaffold consumer mindplan/ plus agent playbook that forbids the implementing agent from shipping: in-review waits for a human or another agent to review, then ship."
@@ -10,8 +10,6 @@ belongs_to:
   - j-agent-onboarding
 depends_on:
   - f-territory-store
-supersedes:
-  - wf-project-init-v2
 ---
 
 # Project init (external review before ship)

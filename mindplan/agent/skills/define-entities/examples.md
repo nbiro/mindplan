@@ -35,7 +35,7 @@ link_nodes({ source_id: "wf-checkout-split", target_id: "f-db-core", edge_type: 
 
 ### 3. Enrich Foundation territory
 
-In `mindplan/foundations/f-db-core/context.mdx` body:
+In `mindplan/foundations/f-db-core/current.mdx` body:
 
 ```markdown
 ## Infrastructure Spec
@@ -52,7 +52,7 @@ In `mindplan/foundations/f-db-core/context.mdx` body:
 
 ### 4. Enrich Workflow territory
 
-In `mindplan/workflows/wf-checkout-split/context.mdx` body:
+In `mindplan/workflows/wf-checkout-split/current.mdx` body:
 
 ```markdown
 ## Execution Logic
@@ -148,7 +148,7 @@ create_node({ id: "bug-double-charge", type: "Bug", title: "Double charge on ret
 link_nodes({ source_id: "bug-double-charge", target_id: "wf-checkout-split", edge_type: "affects" })
 ```
 
-Enrich `mindplan/bugs/bug-double-charge/context.mdx`:
+Enrich `mindplan/bugs/bug-double-charge/current.mdx`:
 
 ```markdown
 ## Summary
@@ -185,25 +185,33 @@ update_node_status({ node_id: "bug-double-charge", new_status: "triaged" })
 
 ---
 
-## Versioning a shipped Workflow
+## Evolving a shipped Workflow
 
-**Goal:** Replace shipped checkout with a v2 while the v1 keeps serving until cutover.
+**Goal:** Revise shipped checkout's split calculation while v1 keeps serving until cutover. The Workflow keeps its id (`wf-checkout-split`) throughout — there is no `-v2` node.
 
 ```
 get_blast_radius({ node_id: "wf-checkout-split" })
 → { affected: [{ id: "wf-tips", type: "Workflow", distance: 1, ... }], journeys_at_risk: ["j-ordering"] }
 
-create_node_version({
-  previous_id: "wf-checkout-split",
-  id: "wf-checkout-split-v2",
-  title: "Split & pay checkout v2",
+open_next({
+  node_id: "wf-checkout-split",
   description: "Revised split calculation"
 })
-→ predecessor stays stable; new node draft with inherited outgoing edges
-→ dependents keep depends_on → wf-checkout-split (no relink at create)
+→ live node stays stable, still serving under current.mdx
+→ next.mdx created: { state: "draft", title, description, belongs_to, depends_on } inherited from current
 
-// After implementation and checklist complete:
-update_node_status({ node_id: "wf-checkout-split-v2", new_status: "ship" })
-→ dependents gain depends_on → wf-checkout-split-v2 (old edge kept); predecessor auto-deprecates
-→ response includes dependents_relinked and predecessor_deprecated
+update_node_status({ node_id: "wf-checkout-split", new_status: "ready" })
+update_node_status({ node_id: "wf-checkout-split", new_status: "in-progress" })
+patch_node_territory({ node_id: "wf-checkout-split", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
+→ these all apply to next.mdx automatically while it exists (record.next.state advances; live record.state is unchanged)
+
+update_node_status({ node_id: "wf-checkout-split", new_status: "in-review" })
+
+// After external review approves:
+update_node_status({ node_id: "wf-checkout-split", new_status: "ship" })
+→ ship is only legal from next in-review; re-checks Infrastructure First against next's depends_on
+→ promotes next.mdx over current.mdx (title/description/body/edges); next.mdx is deleted
+→ response: { promoted_next: true, new_state: "stable" | "unstable", next_state: null }
 ```
+
+`discard_next({ node_id: "wf-checkout-split" })` abandons the evolution at any point — deletes `next.mdx` and `next-attachments/`; `current.mdx` is untouched.

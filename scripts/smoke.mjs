@@ -43,7 +43,7 @@ await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journ
 await expectOk("create foundation", "create_node", { id: "f-db", type: "Foundation", title: "Database schema", description: "Core tables" });
 await expectOk("create workflow", "create_node", { id: "wf-checkout", type: "Workflow", title: "Checkout", description: "Split & pay" });
 const wfFolder = path.join(root, "mindplan", "workflows", "wf-checkout");
-if (!fs.existsSync(path.join(wfFolder, "context.mdx"))) {
+if (!fs.existsSync(path.join(wfFolder, "current.mdx"))) {
   failures++; console.log("FAIL entity folder scaffold");
 } else console.log("ok   entity folder scaffold");
 const mapPath = path.join(root, "mindplan", "map.md");
@@ -73,7 +73,7 @@ if (!mapAfterLink.includes("wf_checkout") && !mapAfterLink.includes("wf-checkout
 } else if (!mapAfterLink.includes("f-db") && !mapAfterLink.includes("f_db")) {
   failures++; console.log(`FAIL mindplan/map.md missing foundation after link: ${mapAfterLink.slice(0, 300)}`);
 } else console.log("ok   mindplan/map.md refreshed after link_nodes");
-const wfCtx = fs.readFileSync(path.join(wfFolder, "context.mdx"), "utf-8");
+const wfCtx = fs.readFileSync(path.join(wfFolder, "current.mdx"), "utf-8");
 if (!wfCtx.includes("belongs_to:") || !wfCtx.includes("j-ordering") || !wfCtx.includes("depends_on:") || !wfCtx.includes("f-db")) {
   failures++; console.log("FAIL edges not persisted in wf-checkout frontmatter");
 } else console.log("ok   edges in frontmatter");
@@ -154,7 +154,7 @@ await expectBlocked("manual journey state", "update_node_status", { node_id: "j-
 
 // --- completion check ---
 await expectBlocked("completion check (unchecked boxes)", "update_node_status", { node_id: "wf-checkout", new_status: "in-review" });
-const wfPath = path.join(root, "mindplan", "workflows", "wf-checkout", "context.mdx");
+const wfPath = path.join(root, "mindplan", "workflows", "wf-checkout", "current.mdx");
 fs.writeFileSync(
   wfPath,
   fs.readFileSync(wfPath, "utf-8").replaceAll("[ ]", "[x]") +
@@ -164,7 +164,7 @@ await expectOk("workflow -> in-review", "update_node_status", { node_id: "wf-che
 
 // --- infrastructure first (ship requires stable foundations) ---
 await expectBlocked("infrastructure first (foundation not shipped)", "update_node_status", { node_id: "wf-checkout", new_status: "ship" });
-const fPath = path.join(root, "mindplan", "foundations", "f-db", "context.mdx");
+const fPath = path.join(root, "mindplan", "foundations", "f-db", "current.mdx");
 fs.writeFileSync(fPath, fs.readFileSync(fPath, "utf-8").replaceAll("[ ]", "[x]"));
 for (const s of ["ready", "in-progress", "in-review"]) {
   await expectOk(`foundation -> ${s}`, "update_node_status", { node_id: "f-db", new_status: s });
@@ -205,7 +205,7 @@ else console.log("ok   journey unchanged by bug activity");
 await expectOk("bug -> triaged", "update_node_status", { node_id: "bug-race", new_status: "triaged" });
 await expectOk("bug -> fixing", "update_node_status", { node_id: "bug-race", new_status: "fixing" });
 
-const bugPath = path.join(root, "mindplan", "bugs", "bug-race", "context.mdx");
+const bugPath = path.join(root, "mindplan", "bugs", "bug-race", "current.mdx");
 await expectBlocked("bug completion check", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
 fs.writeFileSync(bugPath, fs.readFileSync(bugPath, "utf-8").replaceAll("[ ]", "[x]"));
 await expectOk("bug -> in-review", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
@@ -244,7 +244,7 @@ await expectBlocked("skip to ship", "update_node_status", { node_id: "wf-tips", 
 await expectBlocked("bug affects journey", "link_nodes", { source_id: "bug-race", target_id: "j-ordering", edge_type: "affects" });
 
 const ctx = JSON.parse(await expectOk("get_node_context bug", "get_node_context", { node_id: "bug-race" }));
-if (ctx.context_path !== "mindplan/bugs/bug-race/context.mdx") { failures++; console.log("FAIL bug context path"); }
+if (ctx.context_path !== "mindplan/bugs/bug-race/current.mdx") { failures++; console.log("FAIL bug context path"); }
 else console.log("ok   bug get_node_context");
 if (ctx.title !== "Race condition" || ctx.description !== "Double charge") {
   failures++; console.log(`FAIL bug title/description from context: ${JSON.stringify({ title: ctx.title, description: ctx.description })}`);
@@ -285,7 +285,7 @@ await expectBlocked("patch shipped workflow description", "patch_node_territory"
   node_id: "wf-checkout",
   description: "should not apply",
 });
-const wfTipsCtxPath = path.join(root, "mindplan", "workflows", "wf-tips", "context.mdx");
+const wfTipsCtxPath = path.join(root, "mindplan", "workflows", "wf-tips", "current.mdx");
 const patchCheck = JSON.parse(
   await expectOk("patch toggle checkbox", "patch_node_territory", {
     node_id: "wf-tips",
@@ -368,8 +368,8 @@ await expectOk("wf-pay -> ready", "update_node_status", { node_id: "wf-pay", new
 await expectOk("wf-auth -> in-progress", "update_node_status", { node_id: "wf-auth", new_status: "in-progress" });
 await expectOk("wf-pay -> in-progress", "update_node_status", { node_id: "wf-pay", new_status: "in-progress" });
 
-const wfAuthPath = path.join(root, "mindplan", "workflows", "wf-auth", "context.mdx");
-const wfPayPath = path.join(root, "mindplan", "workflows", "wf-pay", "context.mdx");
+const wfAuthPath = path.join(root, "mindplan", "workflows", "wf-auth", "current.mdx");
+const wfPayPath = path.join(root, "mindplan", "workflows", "wf-pay", "current.mdx");
 fs.writeFileSync(wfAuthPath, fs.readFileSync(wfAuthPath, "utf-8").replaceAll("[ ]", "[x]"));
 fs.writeFileSync(wfPayPath, fs.readFileSync(wfPayPath, "utf-8").replaceAll("[ ]", "[x]"));
 await expectOk("wf-auth -> in-review", "update_node_status", { node_id: "wf-auth", new_status: "in-review" });
@@ -384,86 +384,66 @@ const wfPayShipped = graph.nodes.find((n) => n.id === "wf-pay");
 if (wfPayShipped.state !== "stable") { failures++; console.log(`FAIL wf-pay state after ship: ${wfPayShipped.state}`); }
 else console.log("ok   wf-pay shipped after wf-auth stable");
 
-// --- versioning and blast radius ---
-await expectBlocked("version draft predecessor", "create_node_version", {
-  previous_id: "wf-tips", id: "wf-tips-v2", title: "Tips v2", description: "v2",
+// --- stable-id evolution (open_next / promote) ---
+await expectBlocked("open_next on draft", "open_next", {
+  node_id: "wf-tips", title: "Tips v2", description: "v2",
 });
 
 await expectOk("link wf-tips depends_on wf-checkout", "link_nodes", {
   source_id: "wf-tips", target_id: "wf-checkout", edge_type: "depends_on",
 });
 
-const versionRes = JSON.parse(await expectOk("create wf-checkout-v2", "create_node_version", {
-  previous_id: "wf-checkout", id: "wf-checkout-v2", title: "Checkout v2", description: "Revised checkout",
+const openNextRes = JSON.parse(await expectOk("open_next wf-checkout", "open_next", {
+  node_id: "wf-checkout", title: "Checkout v2", description: "Revised checkout",
 }));
+if (openNextRes.next?.state !== "draft") {
+  failures++; console.log(`FAIL open_next should create draft next: ${JSON.stringify(openNextRes.next)}`);
+} else console.log("ok   open_next creates draft next slot");
 
-if (versionRes.dependents_relinked?.length) {
-  failures++; console.log(`FAIL create_node_version must not relink dependents: ${JSON.stringify(versionRes.dependents_relinked)}`);
-} else console.log("ok   create_node_version does not relink dependents");
-
-graph = JSON.parse(await expectOk("read graph after create_node_version", "get_mindplan_graph", {}));
-const tipsDependsAfterVersion = graph.edges.filter(
-  (e) => e.source === "wf-tips" && e.type === "depends_on" && (e.target === "wf-checkout" || e.target === "wf-checkout-v2")
+graph = JSON.parse(await expectOk("read graph after open_next", "get_mindplan_graph", {}));
+const tipsDependsAfterOpen = graph.edges.filter(
+  (e) => e.source === "wf-tips" && e.type === "depends_on" && e.target === "wf-checkout"
 );
-if (
-  tipsDependsAfterVersion.length !== 1 ||
-  tipsDependsAfterVersion[0].target !== "wf-checkout"
-) {
-  failures++; console.log(`FAIL wf-tips should keep only predecessor depends_on while v2 is draft: ${JSON.stringify(tipsDependsAfterVersion)}`);
-} else console.log("ok   wf-tips still depends only on live predecessor after version create");
+if (tipsDependsAfterOpen.length !== 1) {
+  failures++; console.log(`FAIL wf-tips should still depend on wf-checkout: ${JSON.stringify(tipsDependsAfterOpen)}`);
+} else console.log("ok   dependents keep same id after open_next");
 
-const blastDraftSuccessor = JSON.parse(
-  await expectOk("blast radius draft successor", "get_blast_radius", { node_id: "wf-checkout-v2" })
+const blastWhileNext = JSON.parse(
+  await expectOk("blast radius while next open", "get_blast_radius", { node_id: "wf-checkout" })
 );
-if (!blastDraftSuccessor.via_supersedes?.includes("wf-checkout")) {
-  failures++; console.log(`FAIL via_supersedes missing wf-checkout: ${JSON.stringify(blastDraftSuccessor.via_supersedes)}`);
-} else console.log("ok   get_blast_radius via_supersedes includes predecessor");
-const tipsInBlast = blastDraftSuccessor.affected?.find((a) => a.id === "wf-tips");
+const tipsInBlast = blastWhileNext.affected?.find((a) => a.id === "wf-tips");
 if (!tipsInBlast || tipsInBlast.distance !== 1) {
-  failures++; console.log(`FAIL draft successor blast should include wf-tips@1: ${JSON.stringify(blastDraftSuccessor.affected)}`);
-} else console.log("ok   get_blast_radius on draft successor includes predecessor dependents");
+  failures++; console.log(`FAIL blast should include wf-tips@1: ${JSON.stringify(blastWhileNext.affected)}`);
+} else console.log("ok   get_blast_radius includes dependents of stable id");
+if (blastWhileNext.via_supersedes !== undefined) {
+  failures++; console.log(`FAIL via_supersedes should be removed: ${JSON.stringify(blastWhileNext.via_supersedes)}`);
+} else console.log("ok   get_blast_radius has no via_supersedes");
 
-const wfCheckoutOrig = graph.nodes.find((n) => n.id === "wf-checkout");
-const wfCheckoutV2 = graph.nodes.find((n) => n.id === "wf-checkout-v2");
-if (wfCheckoutOrig.state !== "stable") {
-  failures++; console.log(`FAIL predecessor should stay stable after version create: ${wfCheckoutOrig.state}`);
-} else console.log("ok   predecessor stays stable after create_node_version");
+const wfCheckoutLive = graph.nodes.find((n) => n.id === "wf-checkout");
+if (wfCheckoutLive.state !== "stable" || wfCheckoutLive.next?.state !== "draft") {
+  failures++; console.log(`FAIL live should stay stable with draft next: ${JSON.stringify(wfCheckoutLive)}`);
+} else console.log("ok   live stays stable after open_next");
 
-if (wfCheckoutV2.state !== "draft") {
-  failures++; console.log(`FAIL new version should be draft: ${wfCheckoutV2.state}`);
-} else console.log("ok   new version created as draft");
+const nextPath = path.join(root, "mindplan", "workflows", "wf-checkout", "next.mdx");
+const nextCtx = fs.readFileSync(nextPath, "utf-8");
+if (!nextCtx.includes("state: draft") || !nextCtx.includes("belongs_to:") || !nextCtx.includes("depends_on:")) {
+  failures++; console.log("FAIL next.mdx missing draft state or inherited edges");
+} else console.log("ok   next.mdx inherits edges and starts draft");
 
-const v2Path = path.join(root, "mindplan", "workflows", "wf-checkout-v2", "context.mdx");
-const v2Ctx = fs.readFileSync(v2Path, "utf-8");
-if (!v2Ctx.includes("supersedes:") || !v2Ctx.includes("wf-checkout") || !v2Ctx.includes("belongs_to:") || !v2Ctx.includes("depends_on:")) {
-  failures++; console.log("FAIL v2 missing supersedes or inherited edges in frontmatter");
-} else console.log("ok   v2 inherits edges and supersedes");
-
-await expectBlocked("re-version predecessor with successor", "create_node_version", {
-  previous_id: "wf-checkout", id: "wf-checkout-v3", title: "Checkout v3", description: "v3",
+await expectBlocked("open_next twice", "open_next", {
+  node_id: "wf-checkout", title: "Checkout v3", description: "v3",
 });
 
-{
-  const { error, text } = await call("link_nodes", {
-    source_id: "wf-checkout-v2", target_id: "wf-checkout", edge_type: "supersedes",
-  });
-  if (error && (text.startsWith("Blocked:") || text.includes("Invalid option"))) {
-    console.log(`ok   supersedes not allowed via link_nodes -> ${text.slice(0, 80)}...`);
-  } else {
-    failures++; console.log(`FAIL supersedes via link_nodes: error=${error} text=${text}`);
-  }
-}
-
-// Unshipped dependent must still be able to ship against the live predecessor while v2 is draft.
-const tipsPath = path.join(root, "mindplan", "workflows", "wf-tips", "context.mdx");
+// Unshipped dependent can still ship against the live node while next is draft.
+const tipsPath = path.join(root, "mindplan", "workflows", "wf-tips", "current.mdx");
 fs.writeFileSync(tipsPath, fs.readFileSync(tipsPath, "utf-8").replaceAll("[ ]", "[x]"));
-await expectOk("wf-tips -> in-review while v2 draft", "update_node_status", {
+await expectOk("wf-tips -> in-review while next draft", "update_node_status", {
   node_id: "wf-tips", new_status: "in-review",
 });
-await expectOk("wf-tips -> ship while v2 draft", "update_node_status", {
+await expectOk("wf-tips -> ship while next draft", "update_node_status", {
   node_id: "wf-tips", new_status: "ship",
 });
-console.log("ok   unshipped dependent can ship while successor version is still draft");
+console.log("ok   unshipped dependent can ship while next evolution is still draft");
 
 await expectOk("create wf-a", "create_node", { id: "wf-a", type: "Workflow", title: "A", description: "base" });
 await expectOk("create wf-b", "create_node", { id: "wf-b", type: "Workflow", title: "B", description: "mid" });
@@ -487,36 +467,52 @@ if (!radius.journeys_at_risk?.includes("j-ordering")) {
   failures++; console.log(`FAIL journeys_at_risk: ${JSON.stringify(radius.journeys_at_risk)}`);
 } else console.log("ok   get_blast_radius journeys_at_risk");
 
-await expectOk("wf-checkout-v2 -> ready", "update_node_status", { node_id: "wf-checkout-v2", new_status: "ready" });
-await expectOk("wf-checkout-v2 -> in-progress", "update_node_status", { node_id: "wf-checkout-v2", new_status: "in-progress" });
-fs.writeFileSync(v2Path, fs.readFileSync(v2Path, "utf-8").replaceAll("[ ]", "[x]"));
-await expectOk("wf-checkout-v2 -> in-review", "update_node_status", { node_id: "wf-checkout-v2", new_status: "in-review" });
+await expectOk("wf-checkout next -> ready", "update_node_status", { node_id: "wf-checkout", new_status: "ready" });
+await expectOk("wf-checkout next -> in-progress", "update_node_status", { node_id: "wf-checkout", new_status: "in-progress" });
+fs.writeFileSync(nextPath, fs.readFileSync(nextPath, "utf-8").replaceAll("[ ]", "[x]"));
+await expectOk("wf-checkout next -> in-review", "update_node_status", { node_id: "wf-checkout", new_status: "in-review" });
 
-graph = JSON.parse(await expectOk("read graph before v2 ship", "get_mindplan_graph", {}));
-const predBeforeShip = graph.nodes.find((n) => n.id === "wf-checkout");
-if (predBeforeShip.state !== "stable") {
-  failures++; console.log(`FAIL predecessor before v2 ship: ${predBeforeShip.state}`);
-} else console.log("ok   predecessor still stable before v2 ship");
+graph = JSON.parse(await expectOk("read graph before promote", "get_mindplan_graph", {}));
+const beforePromote = graph.nodes.find((n) => n.id === "wf-checkout");
+if (beforePromote.state !== "stable" || beforePromote.next?.state !== "in-review") {
+  failures++; console.log(`FAIL before promote: ${JSON.stringify(beforePromote)}`);
+} else console.log("ok   live still stable with next in-review before ship");
 
-const shipV2 = JSON.parse(await expectOk("wf-checkout-v2 -> ship", "update_node_status", { node_id: "wf-checkout-v2", new_status: "ship" }));
-if (!shipV2.predecessor_deprecated || shipV2.predecessor_deprecated.id !== "wf-checkout") {
-  failures++; console.log(`FAIL predecessor_deprecated missing: ${JSON.stringify(shipV2.predecessor_deprecated)}`);
-} else console.log("ok   predecessor deprecated on v2 ship");
-if (!shipV2.dependents_relinked?.some((l) => l.source === "wf-tips" && l.target === "wf-checkout-v2")) {
-  failures++; console.log(`FAIL dependents_relinked missing wf-tips on ship: ${JSON.stringify(shipV2.dependents_relinked)}`);
-} else console.log("ok   dependents_relinked includes wf-tips on successor ship");
+const shipNext = JSON.parse(await expectOk("wf-checkout ship promotes next", "update_node_status", { node_id: "wf-checkout", new_status: "ship" }));
+if (!shipNext.promoted_next) {
+  failures++; console.log(`FAIL promoted_next missing: ${JSON.stringify(shipNext)}`);
+} else console.log("ok   ship promotes next over current");
+if (shipNext.new_state !== "stable") {
+  failures++; console.log(`FAIL after promote state: ${shipNext.new_state}`);
+} else console.log("ok   promoted node is stable");
 
-graph = JSON.parse(await expectOk("read graph after v2 ship", "get_mindplan_graph", {}));
-const predAfterShip = graph.nodes.find((n) => n.id === "wf-checkout");
-if (predAfterShip.state !== "deprecated") {
-  failures++; console.log(`FAIL predecessor after v2 ship: ${predAfterShip.state}`);
-} else console.log("ok   predecessor deprecated after v2 ship");
-const tipsDependsAfterShip = graph.edges.filter(
-  (e) => e.source === "wf-tips" && e.type === "depends_on" && (e.target === "wf-checkout" || e.target === "wf-checkout-v2")
+if (fs.existsSync(nextPath)) {
+  failures++; console.log("FAIL next.mdx should be deleted after promote");
+} else console.log("ok   next.mdx removed after promote");
+
+const currentAfter = fs.readFileSync(path.join(root, "mindplan", "workflows", "wf-checkout", "current.mdx"), "utf-8");
+if (!currentAfter.includes("Checkout v2") || !currentAfter.includes("Revised checkout")) {
+  failures++; console.log("FAIL current.mdx should carry promoted title/description");
+} else console.log("ok   current.mdx updated from next on promote");
+
+graph = JSON.parse(await expectOk("read graph after promote", "get_mindplan_graph", {}));
+const afterPromote = graph.nodes.find((n) => n.id === "wf-checkout");
+if (afterPromote.next) {
+  failures++; console.log(`FAIL next should be gone after promote: ${JSON.stringify(afterPromote.next)}`);
+} else console.log("ok   no next slot after promote");
+const tipsDependsAfterPromote = graph.edges.filter(
+  (e) => e.source === "wf-tips" && e.type === "depends_on" && e.target === "wf-checkout"
 );
-if (tipsDependsAfterShip.length !== 2) {
-  failures++; console.log(`FAIL wf-tips should depend on both checkout versions after v2 ship: ${JSON.stringify(tipsDependsAfterShip)}`);
-} else console.log("ok   wf-tips duplicated depends_on to successor on ship");
+if (tipsDependsAfterPromote.length !== 1) {
+  failures++; console.log(`FAIL wf-tips should still depend once on wf-checkout: ${JSON.stringify(tipsDependsAfterPromote)}`);
+} else console.log("ok   dependents unchanged after promote (stable id)");
+
+// discard_next path
+await expectOk("open_next again for discard", "open_next", { node_id: "wf-checkout" });
+await expectOk("discard_next", "discard_next", { node_id: "wf-checkout" });
+if (fs.existsSync(nextPath)) {
+  failures++; console.log("FAIL next.mdx should be gone after discard");
+} else console.log("ok   discard_next removes next.mdx");
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();

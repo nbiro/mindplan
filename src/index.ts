@@ -11,7 +11,7 @@ import { z } from "zod";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { NODE_TYPES, initialStateForType, isProductionState, type MindPlanNode } from "./types.js";
+import { NODE_TYPES, initialStateForType, isNextPipelineState, type MindPlanNode } from "./types.js";
 import {
   ensureDirectories,
   initProject,
@@ -22,7 +22,9 @@ import {
   installMcpExample,
   installRootAgentsMd,
   ATTACHMENTS_DIR,
-  CONTEXT_FILENAME,
+  CURRENT_FILENAME,
+  NEXT_FILENAME,
+  NEXT_ATTACHMENTS_DIR,
   entityRelativePath,
   loadGraph,
   nodeExists,
@@ -36,6 +38,11 @@ import {
   splitContext,
   nodeToRecord,
   patchNodeTerritory,
+  openNextSlot,
+  discardNextSlot,
+  promoteNextSlot,
+  edgeWriteSlot,
+  type TerritorySlot,
 } from "./store.js";
 import {
   blocked,
@@ -46,10 +53,8 @@ import {
   validateLink,
   assertAcyclicDependsOn,
   missingJourneyDependents,
-  validateNewVersion,
-  findPredecessor,
+  validateOpenNext,
   blastRadiusDependents,
-  dependentsOf,
   assertWorkflowTerritoryScalarsEditable,
 } from "./rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "./search.js";
@@ -91,6 +96,44 @@ function refreshPersistedMap(): void {
   persistMindPlanMap(loadGraph());
 }
 
+function buildNodeContextPayload(node: MindPlanNode): Record<string, unknown> {
+  const rel = entityRelativePath(node);
+  const currentRaw = readMarkdown(node, "current");
+  const currentSplit = splitContext(currentRaw);
+  const payload: Record<string, unknown> = {
+    folder: rel,
+    context_path: `${rel}/${CURRENT_FILENAME}`,
+    current_path: `${rel}/${CURRENT_FILENAME}`,
+    attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
+    attachments: listAttachments(node),
+    record: nodeToRecord(node),
+    body: currentSplit?.body ?? "",
+    title: node.title,
+    description: node.description,
+    raw_context: currentRaw,
+    next: null,
+  };
+  if (node.next) {
+    const nextRaw = readMarkdown(node, "next");
+    const nextSplit = splitContext(nextRaw);
+    payload.next_path = `${rel}/${NEXT_FILENAME}`;
+    payload.next_attachments_path = `${rel}/${NEXT_ATTACHMENTS_DIR}`;
+    payload.next = {
+      record: {
+        state: node.next.state,
+        title: node.next.title,
+        description: node.next.description,
+        updated_at: node.next.updated_at,
+        ...(node.next.belongs_to?.length ? { belongs_to: node.next.belongs_to } : {}),
+        ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
+      },
+      body: nextSplit?.body ?? "",
+      raw: nextRaw,
+    };
+  }
+  return payload;
+}
+
 const NODE_ID = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-_]*$/, "ids must be kebab_case/slug style: lowercase letters, digits, - and _");
@@ -100,7 +143,7 @@ server.registerTool(
   {
     title: "Get MindPlan graph",
     description:
-      "Returns the full MindPlan graph — nodes and edges assembled from context.mdx frontmatter.",
+      "Returns the full MindPlan graph — nodes and edges assembled from current.mdx frontmatter.",
     inputSchema: {},
   },
   guarded(() => ok(loadGraph()))
@@ -200,7 +243,7 @@ server.registerTool(
   {
     title: "Get workflow files",
     description:
-      "Returns the list of project files recorded in a Workflow's context.mdx " +
+      "Returns the list of project files recorded in a Workflow's current.mdx (or next.mdx when evolving) " +
       "`## Affected Files` section. Agents maintain that list during implementation.",
     inputSchema: {
       node_id: NODE_ID.describe("Workflow id whose affected-files list to read."),
@@ -222,28 +265,15 @@ server.registerTool(
     title: "Get node context",
     description:
       "Returns authoritative record (graph slice), editable body, attachment paths, and filenames. " +
-      "Prefer record+body over raw_context (deprecated).",
+      "Includes next slot when an evolution is in progress. Prefer record+body over raw_context (deprecated).",
     inputSchema: {
-      node_id: NODE_ID.describe("The id of the node whose context.mdx to read."),
+      node_id: NODE_ID.describe("The id of the node whose territory to read."),
     },
   },
   guarded(({ node_id }) => {
     const graph = loadGraph();
     const node = findNode(graph, node_id);
-    const rel = entityRelativePath(node);
-    const raw = readMarkdown(node);
-    const split = splitContext(raw);
-    return ok({
-      folder: rel,
-      context_path: `${rel}/${CONTEXT_FILENAME}`,
-      attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
-      attachments: listAttachments(node),
-      record: nodeToRecord(node),
-      body: split?.body ?? "",
-      title: node.title,
-      description: node.description,
-      raw_context: raw,
-    });
+    return ok(buildNodeContextPayload(node));
   })
 );
 
@@ -290,21 +320,9 @@ server.registerTool(
 
     if (related.focus) {
       const node = findNode(graph, related.focus);
-      const rel = entityRelativePath(node);
-      const raw = readMarkdown(node);
-      const split = splitContext(raw);
-      context = {
-        folder: rel,
-        context_path: `${rel}/${CONTEXT_FILENAME}`,
-        attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
-        attachments: listAttachments(node),
-        record: nodeToRecord(node),
-        body: split?.body ?? "",
-        title: node.title,
-        description: node.description,
-      };
+      context = buildNodeContextPayload(node);
       if (node.type === "Foundation" || node.type === "Workflow") {
-        const { affected: entries, via_supersedes } = blastRadiusDependents(graph, node.id);
+        const { affected: entries } = blastRadiusDependents(graph, node.id);
         const journeysAtRisk = new Set<string>();
         for (const { node: affected } of entries) {
           if (affected.type !== "Workflow") continue;
@@ -322,7 +340,6 @@ server.registerTool(
             state: n.state,
             distance,
           })),
-          via_supersedes,
           journeys_at_risk: [...journeysAtRisk].sort(),
         };
       }
@@ -337,13 +354,14 @@ server.registerTool(
   {
     title: "Patch node territory",
     description:
-      "Patches territory-owned context.mdx content: body (PRD, checklists), optional title/description " +
-      "(pre-ship Workflows only), toggle_checkboxes, append_affected_files. Server-owned frontmatter unchanged.",
+      "Patches territory-owned content: body (PRD, checklists), optional title/description " +
+      "(pre-ship Workflows or next slot), toggle_checkboxes, append_affected_files. " +
+      "When a shipped Foundation/Workflow has next.mdx, patches default to next. Optional slot: current|next.",
     inputSchema: {
       node_id: NODE_ID.describe("Node whose territory to patch."),
-      title: z.string().min(1).optional().describe("New title (pre-ship Workflow only)."),
-      description: z.string().optional().describe("New description (pre-ship Workflow only)."),
-      body: z.string().optional().describe("Replace entire context.mdx body below frontmatter."),
+      title: z.string().min(1).optional().describe("New title (pre-ship Workflow or next slot)."),
+      description: z.string().optional().describe("New description (pre-ship Workflow or next slot)."),
+      body: z.string().optional().describe("Replace entire territory body below frontmatter."),
       toggle_checkboxes: z
         .array(
           z.object({
@@ -357,16 +375,27 @@ server.registerTool(
         .array(z.string().min(1))
         .optional()
         .describe("Append project-relative paths to ## Affected Files (Workflow only)."),
+      slot: z
+        .enum(["current", "next"])
+        .optional()
+        .describe("Territory slot to patch. Defaults to next when evolving a shipped node."),
     },
   },
-  guarded(({ node_id, title, description, body, toggle_checkboxes, append_affected_files }) => {
+  guarded(({ node_id, title, description, body, toggle_checkboxes, append_affected_files, slot }) => {
     const graph = loadGraph();
     const node = findNode(graph, node_id);
+    const resolvedSlot: TerritorySlot =
+      slot ??
+      (node.next &&
+      (node.type === "Foundation" || node.type === "Workflow") &&
+      (node.state === "stable" || node.state === "unstable")
+        ? "next"
+        : "current");
     if (title !== undefined) {
-      assertWorkflowTerritoryScalarsEditable(node, "title");
+      assertWorkflowTerritoryScalarsEditable(node, "title", resolvedSlot);
     }
     if (description !== undefined) {
-      assertWorkflowTerritoryScalarsEditable(node, "description");
+      assertWorkflowTerritoryScalarsEditable(node, "description", resolvedSlot);
     }
     const result = patchNodeTerritory(node, {
       title,
@@ -374,6 +403,7 @@ server.registerTool(
       body,
       toggle_checkboxes,
       append_affected_files,
+      slot: resolvedSlot,
     });
     return ok({ node_id, ...result });
   })
@@ -384,12 +414,12 @@ server.registerTool(
   {
     title: "Create node",
     description:
-      "Creates a Journey, Foundation, Workflow, or Bug: scaffolds territory folder + context.mdx frontmatter.",
+      "Creates a Journey, Foundation, Workflow, or Bug: scaffolds territory folder + current.mdx frontmatter.",
     inputSchema: {
       id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
       type: z.enum(NODE_TYPES).describe("Journey | Foundation | Workflow | Bug"),
-      title: z.string().min(1).describe("Human-readable title (written to context.mdx frontmatter)."),
-      description: z.string().describe("Short description (written to context.mdx frontmatter)."),
+      title: z.string().min(1).describe("Human-readable title (written to current.mdx frontmatter)."),
+      description: z.string().describe("Short description (written to current.mdx frontmatter)."),
     },
   },
   guarded(({ id, type, title, description }) => {
@@ -413,7 +443,8 @@ server.registerTool(
     return ok({
       created: node,
       folder: rel,
-      context: `${rel}/${CONTEXT_FILENAME}`,
+      current: `${rel}/${CURRENT_FILENAME}`,
+      context: `${rel}/${CURRENT_FILENAME}`,
       attachments: `${rel}/${ATTACHMENTS_DIR}`,
     });
   })
@@ -427,7 +458,7 @@ server.registerTool(
       "Adds an edge to the DAG. Legal shapes: Workflow -belongs_to-> Journey (multiple per Workflow allowed), " +
       "Workflow -depends_on-> Foundation|Workflow, Foundation -depends_on-> Foundation, Bug -affects-> Workflow|Foundation. " +
       "When linking a Workflow to a Journey via belongs_to, pass link_dependent: true to auto-link transitively depended-on Workflows to the same Journey (Dependency Closure). " +
-      "Version lineage (supersedes) is managed via create_node_version.",
+      "While a node has next.mdx, belongs_to/depends_on writes go to the next slot (proposed edges applied on ship).",
     inputSchema: {
       source_id: NODE_ID.describe("The id of the edge source node."),
       target_id: NODE_ID.describe("The id of the edge target node."),
@@ -452,11 +483,19 @@ server.registerTool(
       assertAcyclicDependsOn(graph, source_id, target_id);
     }
 
-    if (
-      graph.edges.some(
-        (e) => e.source === source_id && e.target === target_id && e.type === edge_type
-      )
-    ) {
+    const writeSlot = edgeWriteSlot(source, edge_type);
+    const existingOnSlot =
+      writeSlot === "next" && source.next
+        ? edge_type === "belongs_to"
+          ? (source.next.belongs_to ?? []).includes(target_id)
+          : edge_type === "depends_on"
+            ? (source.next.depends_on ?? []).includes(target_id)
+            : false
+        : graph.edges.some(
+            (e) => e.source === source_id && e.target === target_id && e.type === edge_type
+          );
+
+    if (existingOnSlot) {
       throw blocked(`edge ${source_id} -${edge_type}-> ${target_id} already exists.`);
     }
 
@@ -481,12 +520,21 @@ server.registerTool(
       }
     }
 
-    graph.edges.push({ source: source_id, target: target_id, type: edge_type });
+    if (writeSlot === "current") {
+      graph.edges.push({ source: source_id, target: target_id, type: edge_type });
+    } else if (source.next) {
+      if (edge_type === "belongs_to") {
+        source.next.belongs_to = [...(source.next.belongs_to ?? []), target_id];
+      } else if (edge_type === "depends_on") {
+        source.next.depends_on = [...(source.next.depends_on ?? []), target_id];
+      }
+    }
     addEdgeToFrontmatter(source, edge_type, target_id);
 
     for (const link of dependentsLinked) {
+      const dep = findNode(graph, link.source);
       graph.edges.push({ source: link.source, target: link.target, type: link.type });
-      addEdgeToFrontmatter(findNode(graph, link.source), link.type, link.target);
+      addEdgeToFrontmatter(dep, link.type, link.target);
     }
 
     const changedJourneys = recomputeJourneyStates(graph);
@@ -495,6 +543,7 @@ server.registerTool(
     refreshPersistedMap();
     return ok({
       linked: { source: source_id, target: target_id, type: edge_type },
+      slot: writeSlot,
       dependents_linked: dependentsLinked,
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
@@ -503,68 +552,59 @@ server.registerTool(
 );
 
 server.registerTool(
-  "create_node_version",
+  "open_next",
   {
-    title: "Create node version",
+    title: "Open next evolution",
     description:
-      "Creates a new draft version of a shipped Workflow or Foundation. Links supersedes -> previous and " +
-      "inherits belongs_to and depends_on from the predecessor. Dependents are not relinked at create time — " +
-      "they keep depending on the live predecessor until this version ships (when the predecessor is deprecated).",
+      "Opens next.mdx for a shipped Foundation or Workflow (stable/unstable). Copies current body and " +
+      "outgoing belongs_to/depends_on into a draft next slot. The live node keeps serving under the same id. " +
+      "Ship from next in-review to promote next over current; discard_next to abandon.",
     inputSchema: {
-      previous_id: NODE_ID.describe("Id of the shipped Workflow or Foundation to supersede."),
-      id: NODE_ID.describe("Unique slug id for the new version node."),
-      title: z.string().min(1).describe("Human-readable title for the new version."),
-      description: z.string().describe("Short description for the new version."),
+      node_id: NODE_ID.describe("Id of the shipped Workflow or Foundation to evolve."),
+      title: z.string().min(1).optional().describe("Optional new title for the next slot."),
+      description: z.string().optional().describe("Optional new description for the next slot."),
     },
   },
-  guarded(({ previous_id, id, title, description }) => {
+  guarded(({ node_id, title, description }) => {
     const graph = loadGraph();
-    const previous = findNode(graph, previous_id);
-    if (nodeExists(id)) {
-      throw blocked(`node "${id}" already exists.`);
-    }
-    validateNewVersion(graph, previous);
-
-    const now = new Date().toISOString();
-    const node: MindPlanNode = {
-      id,
-      type: previous.type,
-      title,
-      description,
-      state: "draft",
-      created_at: now,
-      updated_at: now,
-      supersedes: [previous_id],
-    };
-    if (previous.belongs_to?.length) node.belongs_to = [...previous.belongs_to];
-    if (previous.depends_on?.length) node.depends_on = [...previous.depends_on];
-
-    ensureDirectories();
-    scaffoldEntity(node, { title, description });
-    addEdgeToFrontmatter(node, "supersedes", previous_id);
-    if (node.belongs_to) {
-      for (const j of node.belongs_to) addEdgeToFrontmatter(node, "belongs_to", j);
-    }
-    if (node.depends_on) {
-      for (const d of node.depends_on) addEdgeToFrontmatter(node, "depends_on", d);
-    }
-
+    const node = findNode(graph, node_id);
+    validateOpenNext(node);
+    const next = openNextSlot(node, { title, description });
+    node.next = next;
     const rel = entityRelativePath(node);
     refreshPersistedMap();
     return ok({
-      created: node,
-      predecessor: {
-        id: previous_id,
-        state: previous.state,
-        note: "will auto-deprecate when this version ships; dependents relink then",
-      },
-      inherited_edges: {
-        belongs_to: node.belongs_to ?? [],
-        depends_on: node.depends_on ?? [],
-      },
+      node_id,
+      live_state: node.state,
+      next,
       folder: rel,
-      context: `${rel}/${CONTEXT_FILENAME}`,
+      current: `${rel}/${CURRENT_FILENAME}`,
+      next_path: `${rel}/${NEXT_FILENAME}`,
     });
+  })
+);
+
+server.registerTool(
+  "discard_next",
+  {
+    title: "Discard next evolution",
+    description:
+      "Deletes next.mdx (and next-attachments/) for a Foundation or Workflow, abandoning an in-flight evolution. " +
+      "The live current.mdx is unchanged.",
+    inputSchema: {
+      node_id: NODE_ID.describe("Id of the node whose next slot to discard."),
+    },
+  },
+  guarded(({ node_id }) => {
+    const graph = loadGraph();
+    const node = findNode(graph, node_id);
+    if (!node.next) {
+      throw blocked(`node "${node_id}" has no next.mdx to discard.`);
+    }
+    discardNextSlot(node);
+    delete node.next;
+    refreshPersistedMap();
+    return ok({ node_id, discarded: true, live_state: node.state });
   })
 );
 
@@ -574,9 +614,7 @@ server.registerTool(
     title: "Get blast radius",
     description:
       "Returns all nodes that depend on the given node (transitive reverse depends_on closure), " +
-      "with hop distance and journeys_at_risk for affected Workflows. " +
-      "When the node supersedes earlier versions, also includes dependents of that supersedes chain " +
-      "(via_supersedes) so agents building a successor see what the live predecessor still serves.",
+      "with hop distance and journeys_at_risk for affected Workflows.",
     inputSchema: {
       node_id: NODE_ID.describe("The id of the node whose dependents to analyze."),
     },
@@ -584,7 +622,7 @@ server.registerTool(
   guarded(({ node_id }) => {
     const graph = loadGraph();
     findNode(graph, node_id);
-    const { affected: entries, via_supersedes } = blastRadiusDependents(graph, node_id);
+    const { affected: entries } = blastRadiusDependents(graph, node_id);
     const journeysAtRisk = new Set<string>();
     for (const { node } of entries) {
       if (node.type !== "Workflow") continue;
@@ -602,7 +640,6 @@ server.registerTool(
         state: node.state,
         distance,
       })),
-      via_supersedes,
       journeys_at_risk: [...journeysAtRisk].sort(),
     });
   })
@@ -620,17 +657,31 @@ server.registerTool(
   },
   guarded(({ source_id, target_id }) => {
     const graph = loadGraph();
-    findNode(graph, source_id);
+    const source = findNode(graph, source_id);
     findNode(graph, target_id);
     const before = graph.edges.length;
     graph.edges = graph.edges.filter(
       (e) => !(e.source === source_id && e.target === target_id)
     );
-    const removed = before - graph.edges.length;
+    let removed = before - graph.edges.length;
+
+    // Also remove from next proposed edges when present
+    if (source.next) {
+      const nextBelongs = source.next.belongs_to ?? [];
+      const nextDepends = source.next.depends_on ?? [];
+      if (nextBelongs.includes(target_id) || nextDepends.includes(target_id)) {
+        source.next.belongs_to = nextBelongs.filter((id) => id !== target_id);
+        source.next.depends_on = nextDepends.filter((id) => id !== target_id);
+        if (source.next.belongs_to.length === 0) delete source.next.belongs_to;
+        if (source.next.depends_on?.length === 0) delete source.next.depends_on;
+        removed += 1;
+      }
+    }
+
     if (removed === 0) {
       throw blocked(`no edge exists between "${source_id}" and "${target_id}".`);
     }
-    removeEdgesFromFrontmatter(findNode(graph, source_id), target_id);
+    removeEdgesFromFrontmatter(source, target_id);
     const changedJourneys = recomputeJourneyStates(graph);
     const changedStability = recomputeStability(graph);
     syncNodes([...changedJourneys, ...changedStability]);
@@ -650,7 +701,7 @@ server.registerTool(
     description:
       "Transitions a Foundation, Workflow, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
       "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
-      "When shipping a version successor, duplicates predecessor dependents onto the successor then auto-deprecates the predecessor. " +
+      "When next.mdx exists, build-pipeline transitions apply to the next slot; ship promotes next over current. " +
       "Journey and production stable/unstable are computed automatically.",
     inputSchema: {
       node_id: NODE_ID.describe("The id of the node to transition."),
@@ -659,7 +710,7 @@ server.registerTool(
         .describe(
           "Foundation/Workflow: draft | ready | in-progress | in-review | ship | deprecated. " +
             "Bug: open | triaged | fixing | in-review | resolved | wontfix. " +
-            "From stable/unstable: deprecated only."
+            "From stable/unstable: deprecated only (or open_next then build/ship next)."
         ),
     },
   },
@@ -669,64 +720,50 @@ server.registerTool(
 
     const resolved = resolveStatusChange(graph, node, new_status);
 
-    const previous = node.state;
+    const previous = node.next ? node.next.state : node.state;
     const now = new Date().toISOString();
-    if (resolved.ship) {
-      node.shipped_at = now;
-    }
-    node.state = resolved.state;
-    node.updated_at = now;
+    let promoted = false;
 
-    let predecessorDeprecated: {
-      id: string;
-      previous_state: string;
-      new_state: "deprecated";
-    } | null = null;
-
-    const dependentsRelinked: { source: string; target: string; type: "depends_on" }[] = [];
-    const nodesToSync: MindPlanNode[] = [node];
-
-    if (resolved.ship) {
-      const predecessor = findPredecessor(graph, node_id);
-      if (predecessor) {
-        // Relink while successor is already production-stable so Infrastructure First
-        // never sees a draft dependency. Validate cycles before writing edges.
-        const incomingDependents = dependentsOf(graph, predecessor.id);
-        for (const dependent of incomingDependents) {
-          assertAcyclicDependsOn(graph, dependent.id, node_id);
-        }
-        for (const dependent of incomingDependents) {
-          const exists = graph.edges.some(
-            (e) =>
-              e.source === dependent.id && e.target === node_id && e.type === "depends_on"
-          );
-          if (exists) continue;
-          graph.edges.push({ source: dependent.id, target: node_id, type: "depends_on" });
-          addEdgeToFrontmatter(dependent, "depends_on", node_id);
-          dependentsRelinked.push({
-            source: dependent.id,
-            target: node_id,
-            type: "depends_on",
-          });
-        }
-
-        if (isProductionState(predecessor.state)) {
-          const predPrevious = predecessor.state;
-          predecessor.state = "deprecated";
-          predecessor.updated_at = now;
-          predecessorDeprecated = {
-            id: predecessor.id,
-            previous_state: predPrevious,
-            new_state: "deprecated",
-          };
-          nodesToSync.push(predecessor);
+    if (resolved.promote_next) {
+      promoteNextSlot(node, resolved.state, now);
+      promoted = true;
+      // Refresh graph edges from promoted node
+      graph.edges = graph.edges.filter((e) => e.source !== node_id);
+      if (node.belongs_to) {
+        for (const t of node.belongs_to) {
+          graph.edges.push({ source: node_id, target: t, type: "belongs_to" });
         }
       }
+      if (node.depends_on) {
+        for (const t of node.depends_on) {
+          graph.edges.push({ source: node_id, target: t, type: "depends_on" });
+        }
+      }
+    } else if (resolved.ship) {
+      node.shipped_at = now;
+      node.state = resolved.state;
+      node.updated_at = now;
+      patchFrontmatter(node);
+    } else if (node.next && isNextPipelineState(resolved.state)) {
+      node.next.state = resolved.state;
+      node.next.updated_at = now;
+      patchFrontmatter(
+        {
+          id: node.id,
+          type: node.type,
+          state: resolved.state,
+          updated_at: now,
+        },
+        "next"
+      );
+    } else {
+      node.state = resolved.state;
+      node.updated_at = now;
+      patchFrontmatter(node);
     }
 
     const changedStability = recomputeStability(graph);
     const changedJourneys = recomputeJourneyStates(graph);
-    for (const n of nodesToSync) patchFrontmatter(n);
     syncNodes([...changedStability, ...changedJourneys]);
     refreshPersistedMap();
 
@@ -734,9 +771,9 @@ server.registerTool(
       node_id,
       previous_state: previous,
       new_state: node.state,
+      next_state: node.next?.state ?? null,
       shipped_at: node.shipped_at,
-      predecessor_deprecated: predecessorDeprecated,
-      dependents_relinked: dependentsRelinked,
+      promoted_next: promoted,
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     });

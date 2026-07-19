@@ -1,7 +1,7 @@
 # MindPlan Framework Specification
 
-**Version:** 2.0.0
-**Status:** Stable
+**Version:** 0.1.0
+**Status:** Unreleased
 **Reference implementation:** repository root (TypeScript MCP server, stdio transport)
 
 The key words MUST, MUST NOT, SHALL, SHOULD, and MAY in this document are to be interpreted as described in RFC 2119.
@@ -18,7 +18,9 @@ MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP)
 
 ## 1. Core Architecture: Territory
 
-MindPlan persists all planning state as **tickets-as-code** under `mindplan/`. Each node owns a folder containing a `context.mdx` file and an `attachments/` directory. The `context.mdx` YAML frontmatter is the **node record** — identity, state, timestamps, and outgoing edge arrays. The body contains PRD, Acceptance Criteria, and Atomic Operations.
+MindPlan persists all planning state as **tickets-as-code** under `mindplan/`. Each node owns a folder containing a `current.mdx` file and an `attachments/` directory. The `current.mdx` YAML frontmatter is the **node record** — identity, state, timestamps, and outgoing edge arrays; it is the live, stable id for the node's entire lifetime (§3.6). The body contains PRD, Acceptance Criteria, and Atomic Operations.
+
+A shipped Foundation or Workflow (`stable`/`unstable`) MAY additionally hold a `next.mdx` — an in-flight evolution of that same node, built in place under the same id while `current.mdx` keeps serving. `next.mdx` and its sibling `next-attachments/` directory exist only for Foundations and Workflows (§3.6) and are never present on Journeys or Bugs.
 
 Context files are MDX: standard Markdown plus optional JSX components (§6.4). Markdown remains the load-bearing syntax — every compiler rule operates on Markdown constructs only, and a context file containing no JSX at all is fully compliant.
 
@@ -34,19 +36,23 @@ All MindPlan state lives under a `mindplan/` directory at the project root. This
     ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
     ├── journeys/
     │   └── <node-id>/
-    │       ├── context.mdx            # The Territory for this node
-    │       └── attachments/           # Binary/reference assets (images, PDFs, diagrams)
+    │       ├── current.mdx           # The Territory for this node
+    │       └── attachments/          # Binary/reference assets (images, PDFs, diagrams)
     ├── foundations/
     │   └── <node-id>/
-    │       ├── context.mdx
-    │       └── attachments/
+    │       ├── current.mdx
+    │       ├── next.mdx              # Optional — in-flight evolution (§3.6)
+    │       ├── attachments/
+    │       └── next-attachments/     # Optional — assets for the next.mdx evolution
     ├── workflows/
     │   └── <node-id>/
-    │       ├── context.mdx
-    │       └── attachments/
+    │       ├── current.mdx
+    │       ├── next.mdx              # Optional — in-flight evolution (§3.6)
+    │       ├── attachments/
+    │       └── next-attachments/     # Optional — assets for the next.mdx evolution
     └── bugs/
         └── <node-id>/
-            ├── context.mdx
+            ├── current.mdx
             └── attachments/
 ```
 
@@ -55,7 +61,8 @@ Rules:
 - The planning root is `<MINDPLAN_ROOT>/mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used.
 - Each entity folder name MUST equal the node `id`.
 - The subdirectory per type is fixed: `journeys/`, `foundations/`, `workflows/`, `bugs/`.
-- `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `context.mdx` with relative links (e.g. `![flow](attachments/flow.png)`).
+- `next.mdx` and `next-attachments/` MUST NOT exist for Journeys or Bugs; they are legal only under `foundations/<id>/` and `workflows/<id>/`, and only while an evolution is open (§3.6).
+- `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `current.mdx` with relative links (e.g. `![flow](attachments/flow.png)`); `next-attachments/` is referenced the same way from `next.mdx` and is merged into `attachments/` when the evolution ships (§3.6).
 - `components/` MAY contain project-specific MDX components (§6.4.3). It is created by the server but never read by it.
 - The server MUST create missing directories on demand; a fresh project requires no manual scaffolding.
 
@@ -65,11 +72,13 @@ Rules:
 
 The framework separates **build taxonomy** (Journey, Foundation, Workflow) from a **defect layer** (Bug) to eliminate scope creep and prevent spaghetti dependencies.
 
+MindPlan tracks **architecture and delivery together**. The build taxonomy is deliberately use-case-first (screaming architecture): a glance at the Journeys — and the Workflows that belong to them — MUST scream what the product *is*, not which frameworks, databases, or delivery mechanisms it uses. Foundations hold those deferred infrastructure details at the edges so use cases stay primary.
+
 | Entity | Definition | Routing rules |
 |---|---|---|
-| **Journey** | A macro-level business capability or continuous user experience (e.g. "Table Ordering", "Agency Site Generator"). | Permanent container. MUST NOT execute code directly. MUST NOT have outgoing edges. State is computed, never set manually (§4). |
-| **Foundation** | Pure infrastructure and plumbing (e.g. database schemas, API integrations, auth). | Has zero direct business value; exists solely to be consumed by Workflows. MUST be shipped (`stable`) before dependent Workflows can ship. MAY depend on other Foundations (layered infrastructure). |
-| **Workflow** | Self-contained business logic or an end-user feature (e.g. "Compile HTML", "Process Payment"). | MUST belong to one or more Journeys via `belongs_to` (multiple edges allowed). MUST depend on at least one Foundation via `depends_on`. Contains the actual execution work. **Agents MUST define the Journey before creating a Workflow** — if the user requests a Workflow that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
+| **Journey** | A named **domain capability** — a permanent architectural boundary for related use cases (e.g. "Table Ordering", "Billing", "Agency Site Generator"). The set of Journey titles is the product's scream: reading only those titles SHOULD reveal the business purpose of the system. Journeys are continuous containers, not closable epics, sprints, or technical layers (`API`, `Frontend`, `Database`). | Permanent container. MUST NOT execute code directly. MUST NOT have outgoing edges. State is computed, never set manually (§4). MUST be named in domain language. |
+| **Foundation** | An **infrastructure detail** with no domain scream of its own (e.g. database schemas, auth, payment-provider SDK, queue, HTTP adapter). Frameworks, stores, and delivery mechanisms live here so use cases can depend on them without becoming them. | Has zero direct business value; exists solely to be consumed by Workflows. MUST be shipped (`stable`) before dependent Workflows can ship. MAY depend on other Foundations (layered infrastructure). MUST NOT own user-facing use-case behaviour. |
+| **Workflow** | A concrete **use case** — application-specific business logic or end-user feature that realizes part of a Journey (e.g. "Split the check", "Process Payment", "Compile HTML"). This is where execution work lives. | MUST belong to one or more Journeys via `belongs_to` (multiple edges allowed). MUST depend on at least one Foundation via `depends_on`. Contains the actual execution work. **Agents MUST define the Journey before creating a Workflow** — if the user requests a Workflow that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
 | **Bug** | A defect afflicting one or more Foundations or Workflows. | MUST link to targets via `affects` (Bug → Workflow|Foundation). Dedicated defect lifecycle (§3.2). Does not affect Journey computation. |
 
 ### 2.1 Node identifiers
@@ -78,14 +87,13 @@ Node ids MUST match the pattern `^[a-z0-9][a-z0-9-_]*$` (lowercase slug style). 
 
 ### 2.2 Edge taxonomy
 
-Exactly four edge types exist. An edge is a directed triple `(source, target, type)`.
+Exactly three edge types exist. An edge is a directed triple `(source, target, type)`. There is no version-lineage edge type: a Foundation or Workflow evolves in place under its **stable id** via the `next.mdx` slot (§3.6), so there is nothing for a graph edge to link.
 
 | Edge type | Legal shape | Meaning |
 |---|---|---|
-| `belongs_to` | Workflow → Journey | Membership. A Workflow MAY have multiple `belongs_to` edges to different Journeys when the feature spans macro capabilities. |
+| `belongs_to` | Workflow → Journey | Membership. A Workflow MAY have multiple `belongs_to` edges to different Journeys when the use case spans domain capabilities. |
 | `depends_on` | Workflow → Foundation, Workflow → Workflow, Foundation → Foundation | Consumption. The source cannot ship without the target's infrastructure or prerequisite workflow. |
 | `affects` | Bug → Workflow, Bug → Foundation | Affliction. The Bug impairs the target; open Bugs drive `unstable` production posture (§3.5). |
-| `supersedes` | Workflow → Workflow, Foundation → Foundation | Version lineage. Source is a newer version of target; created only by `create_node_version`, never `link_nodes`. At most one outgoing `supersedes` edge per node. |
 
 All other shapes MUST be rejected, specifically including:
 
@@ -95,12 +103,12 @@ All other shapes MUST be rejected, specifically including:
 - `belongs_to` from a Foundation, Journey, or Bug
 - `affects` from anything other than a Bug, or targeting a Journey
 - `depends_on` from a Bug or Journey
-- `supersedes` between nodes of different types
-- `supersedes` created via `link_nodes`
 - self-links (`source == target`)
 - duplicate edges (same source, target, and type)
 
 The graph MUST remain acyclic. Implementations MUST reject `depends_on` cycles at link time (Foundation→Foundation and Workflow→Workflow).
+
+While a Foundation or Workflow has an open `next.mdx`, `belongs_to`/`depends_on` writes from that node MUST target the `next` slot's proposed edges rather than the live `current.mdx` edge arrays (§6.2, §8.2 `link_nodes`) — the live node keeps serving its existing edges until the evolution ships and promotes.
 
 ---
 
@@ -112,7 +120,7 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 
 | # | State | Meaning |
 |---|---|---|
-| 1 | `draft` | Ideation; scope written in `context.mdx` |
+| 1 | `draft` | Ideation; scope written in `current.mdx` (or `next.mdx` while evolving, §3.6) |
 | 2 | `ready` | Pre-flight passed (Workflow: at least one Journey + Foundation linked) |
 | 3 | `in-progress` | Active execution; Atomic Ops checked off |
 | 4 | `in-review` | Frozen pending external review (human or another agent), PR approval, or CI gate |
@@ -134,7 +142,7 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 
 | State | Meaning |
 |---|---|
-| `open` | Reported; repro in `context.mdx` |
+| `open` | Reported; repro in `current.mdx` |
 | `triaged` | Validated; linked via `affects`; severity optional |
 | `fixing` | Fix in progress |
 | `in-review` | Fix PR open |
@@ -151,14 +159,14 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 
 ### 3.3 Atomic Operations
 
-An Atomic Operation is a PR-sized unit of work expressed as a Markdown task-list item in `context.mdx`:
+An Atomic Operation is a PR-sized unit of work expressed as a Markdown task-list item in `current.mdx` (or `next.mdx` while a Foundation/Workflow evolution is open, §3.6):
 
 ```markdown
 - [ ] Implement POST /orders endpoint
 - [x] Write migration for orders table
 ```
 
-Recognized syntax: a list item beginning with `-`, `*`, or `+`, followed by `[ ]` (open) or `[x]` (complete). Checkbox state is parsed from `context.mdx` at validation time — the file on disk is the source of truth for completion, not the graph.
+Recognized syntax: a list item beginning with `-`, `*`, or `+`, followed by `[ ]` (open) or `[x]` (complete). Checkbox state is parsed from the relevant file (`current.mdx`, or `next.mdx` when evolving) at validation time — the file on disk is the source of truth for completion, not the graph.
 
 JSX in the file is invisible to this check (§6.4.4): only Markdown task-list syntax gates completion.
 
@@ -181,24 +189,27 @@ Recomputed after: Bug status changes, `affects` link/unlink, and `ship`. Never s
 
 ### 3.6 Versioning
 
-Shipped Foundations and Workflows (`stable`/`unstable`) are never reset to `draft` in place. To evolve one, call `create_node_version`, which:
+MindPlan uses a **stable-id evolution model**: a Foundation or Workflow's `id` never changes across its lifetime, and there is no successor node, no `supersedes` edge, and no dependent relinking. A node's history — including every past evolution — lives in the git history of its `current.mdx`, which **is** the version lineage; there is nothing else to consult.
 
-1. creates a new node in state `draft` with a new id,
-2. links `supersedes` from the new node to the predecessor,
-3. inherits the predecessor's outgoing `belongs_to` and `depends_on` edges.
+Shipped Foundations and Workflows (`stable`/`unstable`) are never reset to `draft` in place, and they are never replaced by a new node. To evolve one, call `open_next`, which:
 
-Dependents are **not** relinked at version-creation time. They keep their existing `depends_on` edge to the live predecessor for the duration of the new version's build.
+1. verifies the node is `stable` or `unstable` and has no existing `next.mdx` (§5.10),
+2. copies `current.mdx`'s body (and, for `attachments/`, nothing automatically — new assets go in a fresh `next-attachments/`) into a new `next.mdx` in pipeline state `draft`,
+3. proposes the node's current outgoing `belongs_to`/`depends_on` as the next slot's starting edges (mutable independently of `current`'s edges from this point on, §2.2).
 
-The predecessor **keeps serving** (`stable`/`unstable`) throughout the new version's build. When the new version successfully `ship`s, the server MUST, in the same mutation:
+The **live `current.mdx` keeps serving** (`stable`/`unstable`, same id, same edges) for the entire duration of the build on `next`. Dependents' `depends_on` edges continue to resolve to the same id throughout — there is nothing to relink, because the id never moves.
 
-1. duplicate each direct incoming `depends_on` edge from the predecessor onto the successor (each dependent keeps its edge to the predecessor and gains a second edge to the successor), then
-2. auto-transition the predecessor to `deprecated` if it is currently `stable` or `unstable`.
+`next.mdx` runs through the same manual build pipeline as a first build (`draft → ready → in-progress → in-review`, §3.1), scoped to the `next` slot: Rule 1 (Ghost Workflow) and Rule 3 (Completion Check) are evaluated against `next.mdx`'s proposed edges and checkboxes, not `current.mdx`'s.
 
-If the predecessor was already `deprecated` by other means when the successor ships, auto-deprecation is a no-op; relinking still runs. Relinking happens only after the successor has entered production (`stable`/`unstable`), so Rule 2 never sees a `draft` dependency edge created by versioning.
+When `next` is `in-review` and the caller calls `update_node_status(..., "ship")`:
 
-Only `stable`/`unstable` nodes can be superseded at version-creation time. Lineage is linear: a node that already has a successor (another node with `supersedes` pointing at it) MUST NOT be versioned again — create the next version from the latest successor instead.
+1. Rule 2 (Infrastructure First) is evaluated against **`next`'s** proposed `depends_on` targets,
+2. Rule 3 (Completion Check) is evaluated against **`next.mdx`**,
+3. on success, the server **promotes `next` over `current`**: it copies `next.mdx`'s body, title, description, and proposed edges onto `current.mdx` (same `id`, same `type`, fresh `updated_at`/`shipped_at`), merges `next-attachments/` into `attachments/`, computes `stable`/`unstable` from open Bugs (§3.5), and deletes `next.mdx` and `next-attachments/`.
 
-Use `get_blast_radius` on a live predecessor **or** on its draft successor: the successor seeds from its `supersedes` chain, so agents implementing the new version still see what the predecessor serves.
+The node's `id` and production posture continue uninterrupted — dependents never see a different id and never need relinking. To abandon an in-flight evolution without shipping it, call `discard_next`: it deletes `next.mdx`/`next-attachments/` and leaves `current.mdx` completely untouched.
+
+A node MUST NOT have more than one open `next.mdx` at a time (§5.10). `get_blast_radius` on a node with an open evolution reports the **live** `current.mdx`'s dependents — the same set regardless of whether `next` exists, since the id never changes.
 
 ---
 
@@ -209,11 +220,13 @@ Journeys are continuous and never technically "finished." Their states MUST NOT 
 For a given Journey, let:
 
 - `S` = count of member Workflows with `shipped_at` set (state `stable` or `unstable`)
-- `P` = count of member Workflows without `shipped_at` in `in-progress` or `in-review`
+- `P` = count of member Workflows that are **actively building**, where a Workflow counts toward `P` if either:
+  - it has no `shipped_at` and its `current.mdx` state is `in-progress` or `in-review`, **or**
+  - it is shipped (`stable`/`unstable`) and has an open `next.mdx` whose pipeline state is `in-progress` or `in-review` (§3.6)
 
 | State | Condition | Reading |
 |---|---|---|
-| `evolving` | `S > 0` and `P > 0` | Live and actively being expanded. |
+| `evolving` | `S > 0` and `P > 0` | Live and actively being expanded — includes shipped Workflows whose `next` evolution is mid-build. |
 | `stable` | `S > 0` and `P = 0` | Live and untouched. |
 | `incubation` | `S = 0` and `P > 0` | The V1 build phase. |
 | `draft` | `S = 0` and `P = 0` | Resting state. |
@@ -221,10 +234,11 @@ For a given Journey, let:
 Notes:
 
 - **Bugs do not affect Journey states.** A Workflow flipping `stable` → `unstable` does not change its Journey.
-- `in-review` counts toward `P`.
-- Workflows in `draft`, `ready`, or `deprecated` contribute to neither count.
+- `in-review` counts toward `P`, whether on `current.mdx` (unshipped Workflow) or `next.mdx` (evolution of a shipped Workflow).
+- A shipped Workflow with no open `next.mdx`, or whose `next.mdx` is still `draft`/`ready`, contributes to `S` but not `P`.
+- Workflows in `draft`, `ready`, or `deprecated` (and not evolving) contribute to neither count.
 - Any attempt to set a Journey's state through the status-update tool MUST be rejected.
-- When a recomputation changes a Journey's state, the server MUST persist the new state to the Journey's `context.mdx` frontmatter, and SHOULD report the change in the tool response (`journeys_recomputed`).
+- When a recomputation changes a Journey's state, the server MUST persist the new state to the Journey's `current.mdx` frontmatter, and SHOULD report the change in the tool response (`journeys_recomputed`).
 
 ---
 
@@ -259,7 +273,7 @@ Rationale: concrete must be poured before the roof is built. A feature cannot go
 
 ### 5.4 Rule 3 — The Completion Check
 
-A Workflow MUST NOT transition to `in-review` or `ship` while its `context.mdx` contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `in-review` or `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
+A Workflow MUST NOT transition to `in-review` or `ship` while its active territory file (`current.mdx`, or `next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `in-review` or `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
 
 Rationale: review is a gate on *finished* work. The checklist in the Territory is the definition of done.
 
@@ -292,44 +306,54 @@ If any dependency Workflow is missing from the Journey, the link MUST be rejecte
 
 The rejection message MUST enumerate each missing dependency Workflow id and mention the `link_dependent` flag.
 
-Rationale: a Journey is a coherent user capability. A Workflow that depends on another Workflow implicitly requires that prerequisite to be part of the same Journey.
+Rationale: a Journey is a coherent domain capability. A Workflow that depends on another Workflow implicitly requires that prerequisite use case to be part of the same Journey.
 
-### 5.10 Rule 9 — Version Lineage
+### 5.10 Rule 9 — Version Lineage (stable-id evolution)
 
-`create_node_version` MUST validate:
+`open_next` MUST validate:
 
-- the predecessor exists and is type `Workflow` or `Foundation`,
-- the predecessor is in state `stable` or `unstable` (shipped),
-- the predecessor has no existing successor (no other node already has `supersedes` pointing at it).
+- the node exists and is type `Workflow` or `Foundation`,
+- the node is in state `stable` or `unstable` (shipped) — Journeys, Bugs, and unshipped Foundations/Workflows MUST be rejected,
+- the node has no existing `next.mdx` — at most one open evolution per node at a time; the rejection message MUST name the `next` slot's current pipeline state and point to `ship` (from `next` in-review) or `discard_next` as the way to clear it.
 
-On successful `update_node_status(..., "ship")` for a node with a `supersedes` edge, the server MUST:
+`discard_next` MUST validate:
 
-1. duplicate each direct incoming `depends_on` edge from the predecessor onto the successor (dependent keeps the old edge); if any duplicate would create a `depends_on` cycle, the entire `ship` MUST be rejected before writing anything,
-2. auto-transition the predecessor to `deprecated` if it is currently `stable` or `unstable` (idempotent if already `deprecated`).
+- the node has an existing `next.mdx` to delete.
 
-Rationale: versioning models replacement without downtime during the build. Deferring dependent relink until the successor is production-stable keeps Rule 2 satisfied for unshipped dependents that still need the live predecessor. After cutover, Rule 2 blocks new ships against the deprecated predecessor; `get_blast_radius` surfaces affected dependents proactively (on the predecessor or its `supersedes` successor) while the predecessor is still live.
+While `next.mdx` is open, the manual build pipeline transitions (`draft → ready → in-progress → in-review`) and Rules 1/3 apply to the `next` slot's own state, checkboxes, and proposed edges — not to `current.mdx`, which is untouched and keeps serving. A node with an open `next.mdx` MUST NOT be transitioned to `deprecated`; `discard_next` (or shipping the evolution) MUST run first.
+
+On successful `update_node_status(..., "ship")` for a node whose `next.mdx` is `in-review`, the server MUST:
+
+1. re-validate Rule 2 (Infrastructure First) and Rule 3 (Completion Check) against `next`'s proposed `depends_on` and checkboxes,
+2. **promote**: copy `next.mdx`'s body, title, description, and proposed `belongs_to`/`depends_on` onto `current.mdx` under the unchanged `id`, merge `next-attachments/` into `attachments/`, compute the new `stable`/`unstable` from open Bugs (§3.5), and delete `next.mdx`/`next-attachments/`.
+
+There is no successor id, no relinking step, and no predecessor to auto-deprecate: the `id` never changes, so every existing `depends_on`/`belongs_to`/`affects` edge that already targets this node continues to resolve correctly through and after the promotion.
+
+Rationale: versioning models replacement without downtime during the build, without ever forcing dependents to discover and re-point at a new id. Git history of `current.mdx` — not a graph edge — is the audit trail for what a node's evolution changed at each ship.
 
 ### 5.11 Enforcement ordering
 
 For a status mutation the compiler MUST evaluate, in order:
 
-1. node exists → 2. node is not a Journey → 3. target state is valid → 4. transition is legal per §3 → 5. Rules 1–4 (type-specific) → **write** → 6. on `ship` of a version successor, relink predecessor dependents onto the successor then auto-deprecate the predecessor per Rule 9 → 7. recompute stability (§3.5) → 8. recompute Journey states (§4) → 9. synchronize frontmatter.
+1. node exists → 2. node is not a Journey → 3. resolve the active slot (`next.mdx` if open, else `current.mdx`) → 4. target state is valid for that slot → 5. transition is legal per §3 (or §3.6 next-pipeline transitions) → 6. Rules 1–4 (type-specific, evaluated against the active slot) → **write** → 7. on `ship` from `next` in-review, promote `next` over `current` per Rule 9 (§5.10) → 8. recompute stability (§3.5) → 9. recompute Journey states (§4) → 10. synchronize frontmatter.
 
 For `link_nodes` / `unlink_nodes` involving `affects`: validate §5.8, write edge, recompute stability for affected targets, recompute Journeys if applicable, mirror frontmatter.
 
-For `link_nodes` involving `belongs_to` (Workflow → Journey): validate §5.8, evaluate Rule 8 (Dependency Closure), write edge(s), recompute Journey states, mirror frontmatter.
+For `link_nodes` involving `belongs_to` (Workflow → Journey): validate §5.8, evaluate Rule 8 (Dependency Closure), write edge(s) to the active slot (`next` if open, else `current`), recompute Journey states, mirror frontmatter.
 
-For `link_nodes` involving `depends_on`: validate §5.8 including cycle check, write edge, mirror frontmatter.
+For `link_nodes` involving `depends_on`: validate §5.8 including cycle check, write edge to the active slot (`next` if open, else `current`), mirror frontmatter.
 
-For `create_node_version`: validate Rule 9, scaffold new node, write `supersedes` and inherited outgoing edges; predecessor state unchanged; dependents are not modified.
+For `open_next`: validate Rule 9 (§5.10), copy `current.mdx` body and outgoing edges into a new `next.mdx` in `draft`; `current.mdx` and its edges are unchanged.
+
+For `discard_next`: validate Rule 9 (§5.10), delete `next.mdx`/`next-attachments/`; `current.mdx` is unchanged.
 
 ---
 
 ## 6. Territory File Format
 
-### 6.1 `context.mdx` structure
+### 6.1 `current.mdx` structure
 
-Every entity's `context.mdx` MUST begin with YAML frontmatter followed by an MDX body (Markdown plus optional JSX per §6.4):
+Every entity's `current.mdx` MUST begin with YAML frontmatter followed by an MDX body (Markdown plus optional JSX per §6.4). An open `next.mdx` (Foundation/Workflow only, §3.6) uses the same frontmatter+body shape, scoped to the fields in the table below marked "also on `next.mdx`":
 
 ```mdx
 ---
@@ -372,49 +396,49 @@ Frontmatter fields:
 
 | Field | Type | Written by | Notes |
 |---|---|---|---|
-| `id` | string | server, at creation | Immutable. MUST equal folder name. |
-| `type` | `Journey \| Foundation \| Workflow \| Bug` | server, at creation | Immutable. |
-| `title` | string (JSON-quoted) | territory | Human-readable. Stored only in frontmatter. |
-| `description` | string (JSON-quoted) | territory | Short summary. Stored only in frontmatter. |
-| `state` | string | **server only** | Build pipeline, computed production, or Bug lifecycle; patched by MCP on accepted transitions. |
-| `created_at` | ISO-8601 | server, at creation | Immutable. |
-| `updated_at` | ISO-8601 | **server only** | Touched on every accepted state or edge mutation. |
-| `shipped_at` | ISO-8601 | **server only** | Optional; set on `ship` (Foundation/Workflow). |
+| `id` | string | server, at creation | Immutable for the node's lifetime, including every evolution. MUST equal folder name. Also on `next.mdx`. |
+| `type` | `Journey \| Foundation \| Workflow \| Bug` | server, at creation | Immutable. Also on `next.mdx`. |
+| `title` | string (JSON-quoted) | territory | Human-readable. Stored only in frontmatter. Also on `next.mdx` (proposed title, promoted on ship). |
+| `description` | string (JSON-quoted) | territory | Short summary. Stored only in frontmatter. Also on `next.mdx` (proposed description, promoted on ship). |
+| `state` | string | **server only** | On `current.mdx`: build pipeline, computed production, or Bug lifecycle. On `next.mdx`: the pipeline sub-state of the evolution (`draft \| ready \| in-progress \| in-review`, §3.6) — never `stable`/`unstable`/`deprecated`. Patched by MCP on accepted transitions. |
+| `created_at` | ISO-8601 | server, at creation | Immutable; present only on `current.mdx` and never rewritten by an evolution. |
+| `updated_at` | ISO-8601 | **server only** | Touched on every accepted state or edge mutation to that slot. Also on `next.mdx`. |
+| `shipped_at` | ISO-8601 | **server only** | `current.mdx` only. Optional; set on `ship` (first build or promotion of `next`, §3.6). |
 | `severity` | `low \| medium \| high \| critical` | optional | Bug nodes only; informational in v1. |
-| `belongs_to` | string[] | **server only** | Workflow only. Target Journey ids (outgoing `belongs_to` edges). Omitted when empty. |
-| `depends_on` | string[] | **server only** | Workflow or Foundation. Target Foundation or Workflow ids (outgoing `depends_on` edges). Omitted when empty. |
+| `belongs_to` | string[] | **server only** | Workflow only. Target Journey ids (outgoing `belongs_to` edges). Omitted when empty. On `next.mdx`: proposed edges, applied to `current.mdx` on ship. |
+| `depends_on` | string[] | **server only** | Workflow or Foundation. Target Foundation or Workflow ids (outgoing `depends_on` edges). Omitted when empty. On `next.mdx`: proposed edges, applied to `current.mdx` on ship. |
 | `affects` | string[] | **server only** | Bug only. Target Workflow or Foundation ids (outgoing `affects` edges). Omitted when empty. |
-| `supersedes` | string[] | **server only** | Workflow or Foundation only. Predecessor id (outgoing `supersedes` edge). At most one entry. Set only by `create_node_version`. Omitted when empty. |
 
-The body is free-form and owned by humans and agents. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation. Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`, `supersedes`) MUST be written only via MCP tools.
+The body is free-form and owned by humans and agents. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `current.mdx` pre-ship, or on `next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`) MUST be written only via MCP tools.
 
 Frontmatter delimiters (`---`) MUST appear before any JSX. MDX comments use `{/* ... */}` syntax; HTML comments (`<!-- -->`) are not valid MDX and MUST NOT be used in the body.
 
 ### 6.2 Frontmatter mirroring
 
-After any accepted mutation, the server MUST rewrite server-owned fields in each affected node's `context.mdx` frontmatter:
+After any accepted mutation, the server MUST rewrite server-owned fields in each affected node's territory frontmatter:
 
-- **Status mutations:** `state:`, `updated_at:`, and `shipped_at:` on the transitioned node plus every Journey whose computed state changed.
-- **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, or `affects`) on the source node, plus `updated_at:`.
-- **Versioning (`create_node_version`):** `supersedes:`, `belongs_to:`, and `depends_on:` on the new node.
-- **Version cutover (`ship` of a successor):** `depends_on:` and `updated_at:` on every dependent that gains a duplicated edge to the successor; `state:` and `updated_at:` on the predecessor when auto-deprecated.
+- **Status mutations:** `state:` and `updated_at:` on the transitioned node's active slot (`current.mdx`, or `next.mdx` while an evolution is open) plus every Journey whose computed state changed; `shipped_at:` on `current.mdx` when a first build or a `next` promotion ships.
+- **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, or `affects`) on the source node's active slot, plus `updated_at:`.
+- **Opening an evolution (`open_next`):** creates `next.mdx` with `state: draft`, copied/overridden `title:`/`description:`, and `belongs_to:`/`depends_on:` proposed from `current.mdx`'s edges at open time.
+- **Discarding an evolution (`discard_next`):** deletes `next.mdx` and `next-attachments/`; `current.mdx` is untouched.
+- **Ship / promotion (`update_node_status(..., "ship")`):** on a first build, writes `state:`, `updated_at:`, and `shipped_at:` on `current.mdx`. When promoting an open `next.mdx`, copies `next.mdx`'s `title:`, `description:`, `belongs_to:`, and `depends_on:` onto `current.mdx`, sets `state:` to the computed `stable`/`unstable`, refreshes `updated_at:`/`shipped_at:`, and deletes `next.mdx`/`next-attachments/`. There is no other node's frontmatter to update — the `id` never changes, so no dependent's `depends_on`/`belongs_to`/`affects` array needs rewriting.
 
 Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the file. If the file is missing or has no frontmatter, mirroring is skipped silently.
 
 ### 6.3 Scaffolding templates
 
-`create_node` MUST scaffold the entity folder with a type-appropriate `context.mdx` and an empty `attachments/` directory (with `.gitkeep` so the folder is versionable):
+`create_node` MUST scaffold the entity folder with a type-appropriate `current.mdx` and an empty `attachments/` directory (with `.gitkeep` so the folder is versionable). `next.mdx` and `next-attachments/` are never scaffolded by `create_node` — they are created only by `open_next` on an already-shipped Foundation/Workflow (§3.6, §8.2):
 
-- **Journey** — Overview section, Linked Workflows note, Attachments note. No checklist (Journeys have no completion gate).
-- **Foundation** — Infrastructure Spec section, Checklist (3 default Atomic Ops), Attachments note.
-- **Workflow** — Execution Logic section, Checklist (3 default Atomic Ops), **Affected Files** section (empty list for project paths touched during implementation; §6.3.1), Attachments note.
+- **Journey** — Overview section (domain capability + use cases it owns), Linked Workflows note, Attachments note. No checklist (Journeys have no completion gate).
+- **Foundation** — Infrastructure Spec section (schemas, adapters, contracts — not use-case behaviour), Checklist (3 default Atomic Ops), Attachments note.
+- **Workflow** — Execution Logic section (use-case steps), Checklist (3 default Atomic Ops), **Affected Files** section (empty list for project paths touched during implementation; §6.3.1), Attachments note.
 - **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4).
 
 Default checklist items are placeholders; teams SHOULD replace them with real Atomic Ops during `draft` or triage.
 
 #### 6.3.1 Workflow affected files
 
-Workflow `context.mdx` bodies MUST include an `## Affected Files` section (scaffolded empty). During build-pipeline execution, agents MUST append every project file they create or materially modify as a markdown list item (project-relative path, optionally backtick-wrapped). The list is territory-owned body content — not frontmatter and not compiler-gated. Agents query it via `get_workflow_files` (§8.1).
+Workflow `current.mdx` bodies MUST include an `## Affected Files` section (scaffolded empty); an open `next.mdx` inherits the same section from the copied body. During build-pipeline execution, agents MUST append every project file they create or materially modify as a markdown list item (project-relative path, optionally backtick-wrapped). The list is territory-owned body content — not frontmatter and not compiler-gated. Agents query it via `get_workflow_files` (§8.1).
 
 Recognized syntax: list items under the heading until the next `##` heading, using `-`, `*`, or `+` markers. Placeholder italic lines (starting with `_`) are ignored.
 
@@ -455,7 +479,7 @@ Future spec versions MAY extend this set; they MUST NOT change the semantics of 
 #### 6.4.3 Project components
 
 - Live in `mindplan/components/` at the planning root (any file layout inside is the project's business; `.tsx`/`.jsx` recommended).
-- MAY be referenced from any `context.mdx` in that project.
+- MAY be referenced from any `current.mdx`/`next.mdx` in that project.
 - MUST NOT use reserved names from §6.4.2.
 - Are ignored entirely by the MCP server and the compiler rules. A missing or broken project component MUST NOT block any state transition.
 
@@ -480,7 +504,7 @@ Rendering MDX is out of scope for the MCP server. Viewers (docs sites, dashboard
 
 ## 7. Graph Assembly
 
-There is no central graph file. At runtime the server scans `mindplan/<type>s/<id>/context.mdx` frontmatter to assemble nodes and expands outgoing edge arrays into flat edge triples.
+There is no central graph file. At runtime the server scans `mindplan/<type>s/<id>/current.mdx` frontmatter to assemble nodes and expands outgoing edge arrays into flat edge triples. When a Foundation/Workflow folder also has a `next.mdx`, the server additionally parses it into that node's `next` slot (§3.6); `next.mdx`'s proposed `belongs_to`/`depends_on` are **not** expanded into graph edges — only `current.mdx`'s edges are live.
 
 ### 7.1 Runtime graph shape
 
@@ -488,8 +512,8 @@ There is no central graph file. At runtime the server scans `mindplan/<type>s/<i
 
 ```jsonc
 {
-  "version": 2,
-  "nodes": [ /* from frontmatter §6.1 */ ],
+  "version": 1,
+  "nodes": [ /* from frontmatter §6.1, each optionally carrying a "next" slot */ ],
   "edges": [
     { "source": "wf-checkout-split", "target": "j-ordering", "type": "belongs_to" },
     { "source": "wf-checkout-split", "target": "f-db-core", "type": "depends_on" },
@@ -498,7 +522,7 @@ There is no central graph file. At runtime the server scans `mindplan/<type>s/<i
 }
 ```
 
-`version` identifies the schema generation (currently `2`). It is a constant reported by the server — not persisted to disk.
+`version` identifies the schema generation (currently `1`). It is a constant reported by the server — not persisted to disk.
 
 ### 7.2 Edge persistence rule
 
@@ -509,15 +533,15 @@ Outgoing edges are stored **only on the source node** in frontmatter:
 | `belongs_to` | Workflow | `belongs_to: [journey-id, …]` |
 | `depends_on` | Workflow, Foundation | `depends_on: [foundation-or-workflow-id, …]` |
 | `affects` | Bug | `affects: [workflow-or-foundation-id, …]` |
-| `supersedes` | Workflow, Foundation | `supersedes: [predecessor-id]` (at most one) |
 
-Journeys have no outgoing edges. Incoming relationships are derived at scan time (e.g. a Journey discovers member Workflows by scanning all Workflow `belongs_to` arrays).
+Journeys have no outgoing edges. Incoming relationships are derived at scan time (e.g. a Journey discovers member Workflows by scanning all Workflow `belongs_to` arrays). A `next.mdx`'s `belongs_to`/`depends_on` are proposed edges scoped to that node's evolution (§3.6) — they live in the same frontmatter shape but are not part of the assembled graph's edge triples until promoted onto `current.mdx` at ship time.
 
 ### 7.3 Invariants
 
-- Every edge endpoint MUST reference an existing territory node (folder + `context.mdx`).
+- Every edge endpoint MUST reference an existing territory node (folder + `current.mdx`).
 - Edge triples are unique per `(source, target, type)`.
 - Edge arrays MUST only appear on node types permitted by §7.2.
+- `next.mdx` MUST only exist alongside a `current.mdx` for the same Foundation/Workflow id and MUST NOT introduce a new `id`.
 
 ---
 
@@ -525,7 +549,7 @@ Journeys have no outgoing edges. Incoming relationships are derived at scan time
 
 Exporters MAY render a deterministic typed-DAG projection of the assembled graph for humans (PRs, docs, local preview). Views MUST NOT become a second write path for node records or edges — frontmatter remains the sole graph authority (§7, §9.3).
 
-**Exception — auto-persisted Mermaid snapshot:** after every successful graph mutation (`create_node`, `create_node_version`, `link_nodes`, `unlink_nodes`, `update_node_status`), the server MUST write a full Mermaid projection to `mindplan/map.md`. That file is derived output (regenerated, not hand-edited); it MUST NOT be read back as graph state. On-demand projections via MCP `export_mindplan_view` (§8.1) and CLI `mindplan-mcp view` remain available and do not replace `map.md` unless the caller writes a file explicitly.
+**Exception — auto-persisted Mermaid snapshot:** after every successful graph mutation (`create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, `update_node_status`), the server MUST write a full Mermaid projection to `mindplan/map.md`. That file is derived output (regenerated, not hand-edited); it MUST NOT be read back as graph state. On-demand projections via MCP `export_mindplan_view` (§8.1) and CLI `mindplan-mcp view` remain available and do not replace `map.md` unless the caller writes a file explicitly.
 
 Reference formats: Mermaid (`flowchart`) and Graphviz DOT.
 
@@ -539,8 +563,9 @@ Reference formats: Mermaid (`flowchart`) and Graphviz DOT.
 | Bug | Overlay node; `affects` drawn dashed |
 | `depends_on` | Solid dependency arrow |
 | `belongs_to` | Encoded by clustering — omitted as an edge in diagrams |
-| `supersedes` | Dotted / labeled lineage edge |
 | Node label | `id · title · state` |
+
+A node with an open `next.mdx` renders once, at its `current.mdx` state and id — `next` is an in-flight territory slot, not a second node, and has no dedicated diagram representation in v3.
 
 Workflows with no `belongs_to` into a Journey present in the view appear under an **Unassigned workflows** band.
 
@@ -561,7 +586,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes exactly thirteen tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly fourteen tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -596,7 +621,7 @@ Exports a deterministic typed-DAG projection (§7.4) as Mermaid or DOT. Prefer `
 
 #### `find_related_nodes`
 
-Scoped orientation for agents: rank nodes by a text query and return the focus node plus its 1-hop linked neighborhood. Does not load full `context.mdx` bodies. Does not include transitive blast radius (use `get_blast_radius`).
+Scoped orientation for agents: rank nodes by a text query and return the focus node plus its 1-hop linked neighborhood. Does not load full `current.mdx`/`next.mdx` bodies. Does not include transitive blast radius (use `get_blast_radius`).
 
 - **Input:**
   - `query` (string, optional) — free text; tokenized for ranking.
@@ -606,7 +631,7 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
   - At least one of non-empty `query` or `node_id` is required.
 - **Ranking:** scan territory via `loadGraph()` each call (no in-memory cache, no embeddings). Tokenize `query` on non-alphanumeric characters (lowercase). Score: exact `id` match ≫ `id` substring ≫ title token hits ≫ description token hits. Sort by score descending, then `id` ascending. Nodes with score `0` are omitted from `matches`.
 - **Focus selection:** if `node_id` is provided, `focus` is that id (after existence check). Otherwise `focus` is the highest-scoring match, or `null` when there are no matches.
-- **Neighborhood:** all edges where `source` or `target` is `focus` (all four edge types); `nodes` includes the focus and every endpoint of those edges. Summaries only: `id`, `type`, `state`, `title`, `description`.
+- **Neighborhood:** all edges where `source` or `target` is `focus` (all three edge types); `nodes` includes the focus and every endpoint of those edges. Summaries only: `id`, `type`, `state`, `title`, `description`.
 - **Output:**
 
 ```jsonc
@@ -626,23 +651,22 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 #### `get_blast_radius`
 
 - **Input:** `node_id` (slug).
-- **Output:** `{ node_id, affected: [{ id, type, state, distance }], via_supersedes: [predecessor-id, …], journeys_at_risk: [journey-id, …] }` where:
-  - `affected` is the transitive reverse-`depends_on` closure (BFS),
-  - seeds are `node_id` plus every predecessor reachable by walking `supersedes` backward (each seed at distance 0; seeds themselves are omitted from `affected`),
-  - `via_supersedes` lists those predecessor ids (immediate first, oldest last; empty when the node has no `supersedes` edge),
+- **Output:** `{ node_id, affected: [{ id, type, state, distance }], journeys_at_risk: [journey-id, …] }` where:
+  - `affected` is the transitive reverse-`depends_on` closure (BFS) from `node_id` (distance 0 seed omitted from results),
   - `journeys_at_risk` lists Journey ids linked via `belongs_to` from affected Workflows.
 - **Errors:** unknown `node_id`.
-- **Rationale:** while a version successor is still in build, dependents keep pointing at the live predecessor. Seeding from the `supersedes` chain lets an agent query the draft successor and still see what might break.
+- **Rationale:** calling this before `open_next` — or on a node with an open `next.mdx` — surfaces the same live dependents either way: the stable-id model means an evolution never changes what depends on the node, so there is nothing analogous to `via_supersedes` to seed from.
 
 #### `get_node_context`
 
 - **Input:** `node_id` (slug).
-- **Output:**
+- **Output:** always includes the live `current.mdx` slice; when the node has an open `next.mdx` (Foundation/Workflow only), also includes a `next` object with that slot's record, body, and paths:
 
 ```jsonc
 {
   "folder": "mindplan/workflows/wf-checkout-split",
-  "context_path": "mindplan/workflows/wf-checkout-split/context.mdx",
+  "context_path": "mindplan/workflows/wf-checkout-split/current.mdx", // deprecated alias; prefer current_path
+  "current_path": "mindplan/workflows/wf-checkout-split/current.mdx",
   "attachments_path": "mindplan/workflows/wf-checkout-split/attachments",
   "attachments": ["checkout-wireframe.png"],
   "record": {
@@ -659,11 +683,15 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
   "body": "# Split & pay checkout\n\n...",
   "title": "Split & pay checkout",
   "description": "Diner splits and pays the bill from their phone",
-  "raw_context": "---\nid: wf-checkout-split\n..." // deprecated; prefer record + body
+  "raw_context": "---\nid: wf-checkout-split\n...", // deprecated; prefer record + body
+  "next": null
+  // when next.mdx exists, the payload also carries:
+  //   "next_path": ".../next.mdx", "next_attachments_path": ".../next-attachments",
+  //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on? }, "body": "...", "raw": "..." }
 }
 ```
 
-- **Errors:** unknown `node_id`; missing `context.mdx`.
+- **Errors:** unknown `node_id`; missing `current.mdx`.
 
 #### `orient_for_work`
 
@@ -691,57 +719,66 @@ Returns the project-relative file paths listed in a Workflow's `## Affected File
 
 #### `patch_node_territory`
 
-Patches territory-owned `context.mdx` content. Server-owned frontmatter (`state`, edge arrays, `shipped_at`) is never modified.
+Patches territory-owned content on `current.mdx` or `next.mdx`. Server-owned frontmatter (`state`, edge arrays, `shipped_at`) is never modified.
 
 - **Input:**
   - `node_id` (slug, required)
-  - `title` (string, optional) — pre-ship Workflow only
-  - `description` (string, optional) — pre-ship Workflow only
+  - `title` (string, optional) — pre-ship Workflow (`current`) or an open `next` slot only
+  - `description` (string, optional) — pre-ship Workflow (`current`) or an open `next` slot only
   - `body` (string, optional) — replaces entire body below frontmatter
   - `toggle_checkboxes` (array of `{ contains, checked }`, optional) — match checkbox lines by substring
   - `append_affected_files` (string array, optional) — Workflow only; appends to `## Affected Files`
+  - `slot` (`current` \| `next`, optional) — explicitly select the territory file to patch; errors if `next` is requested but no `next.mdx` exists
   - At least one patch field is required.
-- **Effect:** writes territory body and/or `title`/`description` scalars; touches `updated_at` in frontmatter.
-- **Output:** `{ node_id, patched_fields: ["description", ...] }`
-- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; `append_affected_files` on non-Workflow; shipped Workflow `title`/`description` change (`Use create_node_version for material scope changes on live work.`).
+- **Slot resolution:** when `slot` is omitted, the server patches `next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Workflow with an open evolution, otherwise `current.mdx`.
+- **Effect:** writes territory body and/or `title`/`description` scalars on the resolved slot; touches `updated_at` in that slot's frontmatter.
+- **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next" }`
+- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; `append_affected_files` on non-Workflow; explicit `slot: "next"` with no `next.mdx`; shipped Workflow `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`).
 
 ### 8.2 Mutation tools
 
 #### `create_node`
 
 - **Input:** `id` (slug), `type` (`Journey|Foundation|Workflow|Bug`), `title` (non-empty), `description`.
-- **Effect:** scaffolds the entity folder with full frontmatter record (§6.3). Does not write edge fields — those are added by `link_nodes`.
-- **Output:** `{ created: <node from frontmatter>, folder, context, attachments }` (project-relative paths).
+- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
+- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments }` (project-relative paths; `context` is a deprecated alias for `current`).
 - **Errors:** duplicate `id`.
 
-#### `create_node_version`
+#### `open_next`
 
-- **Input:** `previous_id` (shipped Workflow or Foundation), `id` (new slug), `title` (non-empty), `description`.
-- **Effect:** validates Rule 9, scaffolds a new `draft` node of the same type, writes `supersedes` → `previous_id`, copies predecessor `belongs_to`/`depends_on` to the new node. Predecessor state unchanged; dependents are not modified until the successor ships.
-- **Output:** `{ created, predecessor: { id, state, note }, inherited_edges: { belongs_to, depends_on }, folder, context }`.
-- **Errors:** unknown `previous_id`; duplicate `id`; wrong type; predecessor not shipped; predecessor already has a successor.
+- **Input:** `node_id` (shipped Foundation or Workflow), `title` (optional), `description` (optional).
+- **Effect:** validates Rule 9 (§5.10), copies `current.mdx`'s body and outgoing `belongs_to`/`depends_on` into a new `next.mdx` in pipeline state `draft` (overriding `title`/`description` when provided) and creates an empty `next-attachments/`. `current.mdx`, its state, and its edges are completely unchanged — the live node keeps serving.
+- **Output:** `{ node_id, live_state, next: { state, title, description, updated_at, belongs_to?, depends_on? }, folder, current, next_path }`.
+- **Errors:** unknown `node_id`; wrong type (not Workflow/Foundation); node not shipped (`stable`/`unstable`); node already has an open `next.mdx`.
+
+#### `discard_next`
+
+- **Input:** `node_id` (Foundation or Workflow with an open `next.mdx`).
+- **Effect:** deletes `next.mdx` and `next-attachments/`, abandoning the in-flight evolution. `current.mdx` is untouched.
+- **Output:** `{ node_id, discarded: true, live_state }`.
+- **Errors:** unknown `node_id`; node has no `next.mdx` to discard.
 
 #### `link_nodes`
 
 - **Input:** `source_id`, `target_id`, `edge_type` (`depends_on|belongs_to|affects`), optional `link_dependent` (boolean; only applies to `belongs_to` Workflow → Journey).
-- **Effect:** validates §5.8 and §5.9 (Dependency Closure for `belongs_to`), appends the target id to the source node's outgoing edge array in frontmatter (and any cascaded `belongs_to` edges when `link_dependent` is true), recomputes stability (§3.5) and Journey states (§4), patches affected frontmatter fields.
-- **Output:** `{ linked: {source, target, type}, dependents_linked: [...], journeys_recomputed: [...], stability_recomputed: [{id, state}] }`.
-- **Errors:** unknown ids; illegal shape; self-link; duplicate edge; dependency cycle; Dependency Closure violation (missing workflow dependencies not in Journey).
+- **Effect:** validates §5.8 and §5.9 (Dependency Closure for `belongs_to`), then appends the target id to the source node's outgoing edge array — on `current.mdx`, or on the proposed `belongs_to`/`depends_on` of an open `next.mdx` when the source is a Foundation/Workflow currently evolving (§2.2) — plus any cascaded `belongs_to` edges when `link_dependent` is true. Recomputes stability (§3.5) and Journey states (§4) from the live graph (`next`-slot edges never affect these computations until promoted), patches affected frontmatter fields.
+- **Output:** `{ linked: {source, target, type}, slot: "current" | "next", dependents_linked: [...], journeys_recomputed: [...], stability_recomputed: [{id, state}] }`.
+- **Errors:** unknown ids; illegal shape; self-link; duplicate edge (on the resolved slot); dependency cycle; Dependency Closure violation (missing workflow dependencies not in Journey).
 
 #### `unlink_nodes`
 
 - **Input:** `source_id`, `target_id`.
-- **Effect:** removes **all** edges from `source_id` to `target_id` (any type) from the source node's frontmatter, recomputes stability and Journey states, mirrors frontmatter.
+- **Effect:** removes **all** edges from `source_id` to `target_id` (any type) from the source node's `current.mdx` frontmatter and, when present, from an open `next.mdx`'s proposed edges; recomputes stability and Journey states; mirrors frontmatter.
 - **Output:** `{ removed: <count>, journeys_recomputed: [...], stability_recomputed: [...] }`.
-- **Errors:** unknown ids; no edge exists between the pair.
+- **Errors:** unknown ids; no edge exists between the pair (on either slot).
 - **Note:** unlinking does not retroactively demote a Workflow already past a gate; guardrails are evaluated at transition time only (§9.2).
 
 #### `update_node_status`
 
 - **Input:** `node_id`, `new_status` (string; build/Bug state name, or `ship` for Foundation/Workflow production entry).
-- **Effect:** runs the full §5.11 pipeline. On success: writes the new state (and `shipped_at` on `ship`); when shipping a version successor, duplicates predecessor dependents onto the successor then auto-deprecates the predecessor per Rule 9; touches `updated_at`, recomputes stability and Journey states, persists, mirrors frontmatter for the node and every affected node.
-- **Output:** `{ node_id, previous_state, new_state, shipped_at, predecessor_deprecated: { id, previous_state, new_state } | null, dependents_relinked: [...], journeys_recomputed: [...], stability_recomputed: [...] }`.
-- **Errors:** unknown id; Journey target; invalid state name; illegal transition; Rule 1–4 violations; manual `stable`/`unstable` attempt; ship-time dependent relink would create a dependency cycle.
+- **Effect:** runs the full §5.11 pipeline. When the node has no open `next.mdx`, mutations apply to `current.mdx` exactly as in a first build. When `next.mdx` is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies `next.mdx`'s body/title/description/proposed edges onto `current.mdx`, computes `stable`/`unstable` from open Bugs, sets `shipped_at`, and deletes `next.mdx`/`next-attachments/` (§3.6, §5.10). Recomputes stability and Journey states, persists, mirrors frontmatter.
+- **Output:** `{ node_id, previous_state, new_state, next_state, shipped_at, promoted_next: boolean, journeys_recomputed: [...], stability_recomputed: [...] }`.
+- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–4 violations; manual `stable`/`unstable` attempt; `ship` attempted while `next.mdx` is not in-review; `deprecated` attempted while `next.mdx` is open.
 
 ### 8.3 Attachments
 
@@ -761,8 +798,8 @@ Guardrails are evaluated at the moment of transition, against the graph and Terr
 
 ### 9.3 Out-of-band edits
 
-- `context.mdx` **body** and frontmatter **`title:`** / **`description:`** edits are a first-class part of the workflow.
-- `context.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`, `supersedes`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees.
+- `current.mdx`/`next.mdx` **body** and frontmatter **`title:`** / **`description:`** edits are a first-class part of the workflow.
+- `current.mdx`/`next.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `affects`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees. Manually creating, editing, or deleting `next.mdx` outside `open_next`/`update_node_status`/`discard_next` is likewise out of contract.
 
 ### 9.4 Concurrency
 
@@ -770,7 +807,7 @@ The reference implementation assumes a single writer (one MCP server instance pe
 
 ### 9.5 Deprecation and orphans
 
-Transitioning a Workflow to `deprecated` SHOULD be followed by an orphan review: any Foundation whose only consumers are now deprecated is a candidate for deprecation itself. When deprecation is due to a **replacement** rather than retirement, use `create_node_version` instead — the predecessor auto-deprecates when the successor ships (§3.6), not at version-creation time. Implementations MAY automate orphan checks; the reference implementation leaves it to the operator (the graph query is trivial via `get_mindplan_graph` or `get_blast_radius`).
+Transitioning a Workflow to `deprecated` SHOULD be followed by an orphan review: any Foundation whose only consumers are now deprecated is a candidate for deprecation itself. When change is due to a **replacement of scope on live work** rather than retirement, use `open_next` instead — the node keeps its id and edges and simply gains new territory and state under the same folder until the evolution ships (§3.6); there is no predecessor to auto-deprecate in the stable-id model. Implementations MAY automate orphan checks; the reference implementation leaves it to the operator (the graph query is trivial via `get_mindplan_graph` or `get_blast_radius`).
 
 ---
 
@@ -789,7 +826,7 @@ On every merge to the main branch (or on a schedule), a CI step runs a lightweig
 
 1. scans territory frontmatter for node states and outgoing edge arrays;
 2. expands edge arrays into flat edge triples;
-3. reads each `context.mdx` checklist to compute completion percentages;
+3. reads each node's `current.mdx` checklist (and, informationally, an open `next.mdx` checklist) to compute completion percentages;
 4. fires idempotent API payloads to the external tracker: create missing tickets (keyed by node `id`), move tickets to the column mapped from the node state, update checklist progress as a comment or custom field.
 
 Suggested state→column mapping:
@@ -819,15 +856,16 @@ The sync parser is deliberately outside the MCP server (it is a CI concern, not 
 An implementation is MindPlan-compliant if and only if:
 
 - [ ] All state lives under `mindplan/` per §1.1; no external database.
-- [ ] Build taxonomy + defect layer and all four edge types are enforced per §2.
+- [ ] Build taxonomy + defect layer and all three edge types are enforced per §2.
 - [ ] Build pipeline, Bug lifecycle, and computed `stable`/`unstable` are enforced per §3.
-- [ ] Journey states are computed, never settable, per §4; Bugs do not affect Journeys.
-- [ ] Rules 1–9 are enforced pre-write (and Rule 9 predecessor deprecation on ship), fail-fast, per §5.
+- [ ] The stable-id evolution model (`open_next` / `next.mdx` / promote-on-ship / `discard_next`) is enforced per §3.6, with no version-lineage edge and no dependent relinking.
+- [ ] Journey states are computed, never settable, per §4 (including `next`-slot activity); Bugs do not affect Journeys.
+- [ ] Rules 1–9 are enforced pre-write, fail-fast, per §5 (Rule 9 as `open_next`/`ship`-promotes/`discard_next`, §5.10).
 - [ ] Every rejection message starts with `Blocked: ` per §5.1.
-- [ ] `context.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
+- [ ] `current.mdx`/`next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
-- [ ] Edges persist in source-node frontmatter and assemble at runtime per §7.
-- [ ] The thirteen-tool MCP surface matches §8 (names, inputs, outputs, errors).
+- [ ] Edges persist in source-node `current.mdx` frontmatter and assemble at runtime per §7; `next.mdx` proposed edges are not live graph edges.
+- [ ] The fourteen-tool MCP surface matches §8 (names, inputs, outputs, errors).
 - [ ] Mutations are deterministic and atomic per §9.
 
 ---
@@ -849,10 +887,12 @@ An implementation is MindPlan-compliant if and only if:
 | Rule 2 (Infra First) | `Blocked: Infrastructure First. Workflow "wf-checkout" cannot ship while linked Foundations or Workflows are not stable: "f-db" (in-review).` |
 | Rule 8 (Dependency Closure) | `Blocked: Dependency Closure. "wf-checkout" depends on workflow(s) not linked to journey "j-ordering": "wf-auth". Link them first, or retry with link_dependent: true.` |
 | Dependency cycle | `Blocked: depends_on edge wf-a -> wf-b would create a dependency cycle.` |
-| Version not shipped | `Blocked: only shipped Foundations/Workflows (stable or unstable) can be superseded. "wf-checkout" is currently "in-progress".` |
-| Already superseded | `Blocked: "wf-checkout" has already been superseded by "wf-checkout-v2". Create a new version from the latest version instead.` |
-| supersedes via link_nodes | `Blocked: supersedes edges are created only via create_node_version, not link_nodes.` |
-| Rule 3 (Completion) | `Blocked: Completion Check. 3 unchecked checkbox(es) remain in wf-checkout/context.mdx. All [ ] items must be [x] before moving to "in-review".` |
+| open_next: not shipped | `Blocked: only shipped Foundations/Workflows (stable or unstable) can open next. "wf-checkout" is currently "in-progress".` |
+| open_next: already open | `Blocked: "wf-checkout" already has a next.mdx evolution in state "in-progress". Ship or discard_next before opening another.` |
+| ship: next not in-review | `Blocked: ship is only allowed from next in-review. "wf-checkout" next is currently "in-progress".` |
+| discard_next: nothing to discard | `Blocked: node "wf-checkout" has no next.mdx to discard.` |
+| deprecate while evolving | `Blocked: cannot deprecate "wf-checkout" while next.mdx exists. Call discard_next first, or ship the evolution.` |
+| Rule 3 (Completion) | `Blocked: Completion Check. 3 unchecked checkbox(es) remain in wf-checkout/current.mdx. All [ ] items must be [x] before moving to "in-review".` |
 | Rule 4 (Ghost Bug) | `Blocked: Ghost Bug. "bug-race" has no affects edge. Link it to a Workflow or Foundation before moving it to "triaged".` |
 | Stability flip | (informational) `stability_recomputed: [{ "id": "wf-checkout", "state": "unstable" }]` in tool response |
 | No edge to remove | `Blocked: no edge exists between "wf-tips" and "f-db".` |
@@ -868,7 +908,7 @@ link_nodes(wf-checkout, j-ordering, belongs_to)
 link_nodes(wf-checkout, f-db, depends_on)
 update_node_status(wf-checkout, ready)      → ok
 update_node_status(wf-checkout, in-progress)→ ok; j-ordering → incubation
-… agent implements, checks off Atomic Ops in context.mdx …
+… agent implements, checks off Atomic Ops in current.mdx …
 update_node_status(wf-checkout, in-review)  → ok (all [x])
 update_node_status(wf-checkout, ship)       → Blocked: Infrastructure First (f-db is in-review)
 … f-db: draft → ready → in-progress → in-review → ship → stable …
@@ -879,4 +919,13 @@ link_nodes(bug-race, wf-checkout, affects)  → wf-checkout: unstable (stability
 update_node_status(bug-race, triaged)       → ok; j-ordering unchanged (still stable)
 … fix bug, check off Fix Checklist …
 update_node_status(bug-race, resolved)      → ok; wf-checkout: stable
+
+… months later, checkout gains split-payment support (same id, no new node) …
+open_next(wf-checkout)                       → wf-checkout: still stable (current.mdx untouched); next.mdx created in draft
+update_node_status(wf-checkout, ready)       → applies to next slot: next.mdx → ready (next inherited belongs_to/depends_on)
+update_node_status(wf-checkout, in-progress) → next.mdx → in-progress; j-ordering → evolving (S>0 shipped, P>0 next building)
+… agent implements, checks off Atomic Ops in next.mdx …
+update_node_status(wf-checkout, in-review)   → ok (all [x] in next.mdx)
+update_node_status(wf-checkout, ship)        → ok; next promoted over current.mdx (same id "wf-checkout"); next.mdx deleted;
+                                                 wf-checkout: stable (or unstable if bug-race were still open); j-ordering → stable
 ```

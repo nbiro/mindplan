@@ -12,8 +12,6 @@ belongs_to:
 depends_on:
   - f-territory-store
   - f-mcp-runtime
-supersedes:
-  - wf-export-views
 ---
 
 # Export graph views (auto-persist map)
@@ -23,7 +21,7 @@ Mermaid/DOT export plus automatic `mindplan/map.md` refresh after every successf
 ## Execution Logic
 
 1. Keep `export_mindplan_view` / CLI `view` for on-demand Mermaid or DOT (full or focus).
-2. After each successful mutation (`create_node`, `create_node_version`, `link_nodes`, `unlink_nodes`, `update_node_status`), regenerate the full Mermaid projection and write `mindplan/map.md`.
+2. After each successful mutation (`create_node`, `open_next`, `discard_next`, `link_nodes`, `unlink_nodes`, `update_node_status`, `patch_node_territory`), regenerate the full Mermaid projection and write `mindplan/map.md`.
 3. `map.md` is derived — never read as graph authority; frontmatter remains source of truth.
 4. Playbook / SPEC document the auto-persist contract; smoke tests assert the file refreshes.
 

@@ -91,18 +91,6 @@ const baseGraph = {
       updated_at: "2026-01-01T00:00:00.000Z",
       affects: ["wf-checkout"],
     },
-    {
-      id: "wf-checkout-v2",
-      type: "Workflow",
-      title: "Checkout v2",
-      description: "v2",
-      state: "draft",
-      created_at: "2026-01-01T00:00:00.000Z",
-      updated_at: "2026-01-01T00:00:00.000Z",
-      belongs_to: ["j-ordering"],
-      depends_on: ["f-db"],
-      supersedes: ["wf-checkout"],
-    },
   ],
   edges: [
     { source: "wf-checkout", target: "j-ordering", type: "belongs_to" },
@@ -111,9 +99,6 @@ const baseGraph = {
     { source: "wf-orphan", target: "f-db", type: "depends_on" },
     { source: "bug-race", target: "wf-checkout", type: "affects" },
     { source: "bug-closed", target: "wf-checkout", type: "affects" },
-    { source: "wf-checkout-v2", target: "j-ordering", type: "belongs_to" },
-    { source: "wf-checkout-v2", target: "f-db", type: "depends_on" },
-    { source: "wf-checkout-v2", target: "wf-checkout", type: "supersedes" },
   ],
 };
 
@@ -169,11 +154,11 @@ check("mermaid duplicates multi-belongs_to workflows", () => {
   assert.match(out, /wf_checkout__in__j_admin/);
 });
 
-check("mermaid omits belongs_to edges and styles affects/supersedes", () => {
+check("mermaid omits belongs_to edges and styles affects", () => {
   const out = graphToMermaid(baseGraph);
   assert.equal(out.includes("belongs_to"), false);
   assert.match(out, /bug_race -.-> wf_checkout__/);
-  assert.match(out, /supersedes/);
+  assert.equal(out.includes("supersedes"), false);
   assert.match(out, /wf_checkout__in__j_ordering --> f_db/);
 });
 
@@ -183,7 +168,7 @@ check("dot emits digraph with clusters", () => {
   assert.match(out, /subgraph cluster_foundations/);
   assert.match(out, /subgraph cluster_j_ordering/);
   assert.match(out, /style=dashed/);
-  assert.match(out, /label="supersedes"/);
+  assert.equal(out.includes("supersedes"), false);
 });
 
 check("exportMindPlanView returns diagram payload", () => {

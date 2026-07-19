@@ -3,23 +3,32 @@
  *
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
  *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation)
- *   /mindplan/components/              — project-specific MDX components (opaque to the compiler)
- *   /mindplan/journeys/<id>/context.mdx
+ *   /mindplan/components/                  — project-specific MDX components (opaque to the compiler)
+ *   /mindplan/journeys/<id>/current.mdx
  *   /mindplan/journeys/<id>/attachments/...
- *   /mindplan/foundations/<id>/context.mdx
- *   /mindplan/foundations/<id>/attachments/...
- *   /mindplan/workflows/<id>/context.mdx
- *   /mindplan/workflows/<id>/attachments/...
- *   /mindplan/bugs/<id>/context.mdx
- *   /mindplan/bugs/<id>/attachments/...
+ *   /mindplan/foundations/<id>/current.mdx
+ *   /mindplan/foundations/<id>/next.mdx    — optional evolution slot
+ *   /mindplan/workflows/<id>/current.mdx
+ *   /mindplan/workflows/<id>/next.mdx      — optional evolution slot
+ *   /mindplan/bugs/<id>/current.mdx
  *
- * Node records and outgoing edge arrays live in context.mdx YAML frontmatter.
+ * Live node records and outgoing edge arrays live in current.mdx YAML frontmatter.
+ * While evolving a shipped Foundation/Workflow, next.mdx holds the draft pipeline + proposed edges.
  */
 
 import * as fs from "fs";
 import * as path from "path";
-import type { BugSeverity, EdgeType, MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "./types.js";
-import { BUG_SEVERITIES, GRAPH_VERSION, NODE_TYPES } from "./types.js";
+import type {
+  BugSeverity,
+  EdgeType,
+  MindPlanEdge,
+  MindPlanGraph,
+  MindPlanNode,
+  NextPipelineState,
+  NextSlot,
+  NodeType,
+} from "./types.js";
+import { BUG_SEVERITIES, GRAPH_VERSION, isNextPipelineState, NODE_TYPES } from "./types.js";
 
 const TYPE_DIRS: Record<NodeType, string> = {
   Journey: "journeys",
@@ -35,15 +44,20 @@ const DIR_TO_TYPE: Record<string, NodeType> = {
   bugs: "Bug",
 };
 
-const EDGE_FIELDS = ["belongs_to", "depends_on", "affects", "supersedes"] as const;
+const EDGE_FIELDS = ["belongs_to", "depends_on", "affects"] as const;
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
 export const AGENT_DIR = "agent";
-export const CONTEXT_FILENAME = "context.mdx";
+export const CURRENT_FILENAME = "current.mdx";
+export const NEXT_FILENAME = "next.mdx";
+/** @deprecated Use CURRENT_FILENAME */
+export const CONTEXT_FILENAME = CURRENT_FILENAME;
 export const ATTACHMENTS_DIR = "attachments";
+export const NEXT_ATTACHMENTS_DIR = "next-attachments";
 export const COMPONENTS_DIR = "components";
 
+export type TerritorySlot = "current" | "next";
 export function mindplanRoot(): string {
   return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR);
 }
@@ -66,12 +80,23 @@ export function entityRelativePath(node: Pick<MindPlanNode, "id" | "type">): str
   return path.posix.join(MINDPLAN_DIR, TYPE_DIRS[node.type], node.id);
 }
 
-export function markdownPath(node: Pick<MindPlanNode, "id" | "type">): string {
-  return path.join(entityDir(node), CONTEXT_FILENAME);
+export function markdownPath(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot = "current"
+): string {
+  return path.join(entityDir(node), slot === "next" ? NEXT_FILENAME : CURRENT_FILENAME);
 }
 
 export function attachmentsDir(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.join(entityDir(node), ATTACHMENTS_DIR);
+}
+
+export function nextAttachmentsDir(node: Pick<MindPlanNode, "id" | "type">): string {
+  return path.join(entityDir(node), NEXT_ATTACHMENTS_DIR);
+}
+
+export function nextExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
+  return fs.existsSync(markdownPath(node, "next"));
 }
 
 /** Lists filenames in the entity's attachments/ folder (non-recursive). */
@@ -257,7 +282,6 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     belongs_to: [],
     depends_on: [],
     affects: [],
-    supersedes: [],
   };
 
   const lines = match[1].split(/\r?\n/);
@@ -312,7 +336,7 @@ function stripEdgeFieldLines(inner: string): string {
   const result: string[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (/^(belongs_to|depends_on|affects|supersedes):/.test(lines[i])) {
+    if (/^(belongs_to|depends_on|affects):/.test(lines[i])) {
       i++;
       while (i < lines.length && /^\s+-\s+/.test(lines[i])) i++;
       continue;
@@ -343,7 +367,7 @@ function parseNodeFromFrontmatter(
   const parsed = parseFrontmatter(raw);
   if (!parsed) {
     throw new Error(
-      `Blocked: context file for "${folderId}" has no YAML frontmatter (expected at ${contextFile}).`
+      `Blocked: current file for "${folderId}" has no YAML frontmatter (expected at ${contextFile}).`
     );
   }
   const fm = parsed.scalars;
@@ -364,7 +388,7 @@ function parseNodeFromFrontmatter(
   }
   if (!fm.state || !fm.created_at || !fm.updated_at) {
     throw new Error(
-      `Blocked: context frontmatter for "${folderId}" must include state, created_at, and updated_at.`
+      `Blocked: current frontmatter for "${folderId}" must include state, created_at, and updated_at.`
     );
   }
   const node: MindPlanNode = {
@@ -383,11 +407,41 @@ function parseNodeFromFrontmatter(
   if (parsed.arrays.belongs_to.length > 0) node.belongs_to = [...parsed.arrays.belongs_to];
   if (parsed.arrays.depends_on.length > 0) node.depends_on = [...parsed.arrays.depends_on];
   if (parsed.arrays.affects.length > 0) node.affects = [...parsed.arrays.affects];
-  if (parsed.arrays.supersedes.length > 0) node.supersedes = [...parsed.arrays.supersedes];
   return node;
 }
 
-/** Scans territory folders and assembles nodes from context.mdx frontmatter. */
+function parseNextSlot(folderId: string, nextFile: string): NextSlot {
+  const raw = fs.readFileSync(nextFile, "utf-8");
+  const parsed = parseFrontmatter(raw);
+  if (!parsed) {
+    throw new Error(
+      `Blocked: next file for "${folderId}" has no YAML frontmatter (expected at ${nextFile}).`
+    );
+  }
+  const fm = parsed.scalars;
+  if (!fm.state || !fm.updated_at) {
+    throw new Error(
+      `Blocked: next frontmatter for "${folderId}" must include state and updated_at.`
+    );
+  }
+  if (!isNextPipelineState(fm.state)) {
+    throw new Error(
+      `Blocked: next.mdx for "${folderId}" has invalid pipeline state "${fm.state}". ` +
+        `Allowed: draft, ready, in-progress, in-review.`
+    );
+  }
+  const slot: NextSlot = {
+    state: fm.state as NextPipelineState,
+    title: fm.title ?? "",
+    description: fm.description ?? "",
+    updated_at: fm.updated_at,
+  };
+  if (parsed.arrays.belongs_to.length > 0) slot.belongs_to = [...parsed.arrays.belongs_to];
+  if (parsed.arrays.depends_on.length > 0) slot.depends_on = [...parsed.arrays.depends_on];
+  return slot;
+}
+
+/** Scans territory folders and assembles nodes from current.mdx (+ optional next.mdx). */
 export function discoverNodes(): MindPlanNode[] {
   const nodes: MindPlanNode[] = [];
   const root = mindplanRoot();
@@ -398,15 +452,25 @@ export function discoverNodes(): MindPlanNode[] {
     if (!fs.existsSync(typePath)) continue;
     for (const entry of fs.readdirSync(typePath, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const contextFile = path.join(typePath, entry.name, CONTEXT_FILENAME);
-      if (!fs.existsSync(contextFile)) continue;
-      nodes.push(parseNodeFromFrontmatter(entry.name, nodeType, contextFile));
+      const currentFile = path.join(typePath, entry.name, CURRENT_FILENAME);
+      if (!fs.existsSync(currentFile)) continue;
+      const node = parseNodeFromFrontmatter(entry.name, nodeType, currentFile);
+      const nextFile = path.join(typePath, entry.name, NEXT_FILENAME);
+      if (fs.existsSync(nextFile)) {
+        if (nodeType !== "Foundation" && nodeType !== "Workflow") {
+          throw new Error(
+            `Blocked: next.mdx is only allowed for Foundations and Workflows (found on ${nodeType} "${entry.name}").`
+          );
+        }
+        node.next = parseNextSlot(entry.name, nextFile);
+      }
+      nodes.push(node);
     }
   }
   return nodes.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** Expands outgoing edge arrays on nodes into flat edge triples. */
+/** Expands outgoing edge arrays on nodes into flat edge triples (live/current edges only). */
 export function discoverEdges(nodes: MindPlanNode[]): MindPlanEdge[] {
   const edges: MindPlanEdge[] = [];
   for (const node of nodes) {
@@ -425,11 +489,6 @@ export function discoverEdges(nodes: MindPlanNode[]): MindPlanEdge[] {
         edges.push({ source: node.id, target, type: "affects" });
       }
     }
-    if (node.supersedes) {
-      for (const target of node.supersedes) {
-        edges.push({ source: node.id, target, type: "supersedes" });
-      }
-    }
   }
   return edges.sort((a, b) => {
     const ka = `${a.source}:${a.type}:${a.target}`;
@@ -446,8 +505,8 @@ export function loadGraph(): MindPlanGraph {
 /** Returns { id, type } if a territory folder exists for this id. */
 export function findNodeRef(id: string): Pick<MindPlanNode, "id" | "type"> {
   for (const [dirName, nodeType] of Object.entries(DIR_TO_TYPE)) {
-    const contextFile = path.join(mindplanRoot(), dirName, id, CONTEXT_FILENAME);
-    if (fs.existsSync(contextFile)) {
+    const currentFile = path.join(mindplanRoot(), dirName, id, CURRENT_FILENAME);
+    if (fs.existsSync(currentFile)) {
       return { id, type: nodeType };
     }
   }
@@ -456,33 +515,41 @@ export function findNodeRef(id: string): Pick<MindPlanNode, "id" | "type"> {
 
 export function nodeExists(id: string): boolean {
   for (const dirName of Object.values(TYPE_DIRS)) {
-    if (fs.existsSync(path.join(mindplanRoot(), dirName, id, CONTEXT_FILENAME))) {
+    if (fs.existsSync(path.join(mindplanRoot(), dirName, id, CURRENT_FILENAME))) {
       return true;
     }
   }
   return false;
 }
 
-export function readMarkdown(node: Pick<MindPlanNode, "id" | "type">): string {
-  const file = markdownPath(node);
+export function readMarkdown(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot = "current"
+): string {
+  const file = markdownPath(node, slot);
   if (!fs.existsSync(file)) {
     throw new Error(
-      `Blocked: context file not found for node "${node.id}" (expected at ${file}).`
+      `Blocked: ${slot} file not found for node "${node.id}" (expected at ${file}).`
     );
   }
   return fs.readFileSync(file, "utf-8");
 }
 
-export function writeMarkdown(node: Pick<MindPlanNode, "id" | "type">, content: string): void {
+export function writeMarkdown(
+  node: Pick<MindPlanNode, "id" | "type">,
+  content: string,
+  slot: TerritorySlot = "current"
+): void {
   ensureEntityDir(node);
-  fs.writeFileSync(markdownPath(node), content, "utf-8");
+  fs.writeFileSync(markdownPath(node, slot), content, "utf-8");
 }
 
-/** Patches server-owned state fields in context.mdx frontmatter. */
+/** Patches server-owned state fields in current.mdx or next.mdx frontmatter. */
 export function patchFrontmatter(
-  node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">
+  node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">,
+  slot: TerritorySlot = "current"
 ): void {
-  const file = markdownPath(node);
+  const file = markdownPath(node, slot);
   if (!fs.existsSync(file)) return;
   const raw = fs.readFileSync(file, "utf-8");
   const frontmatter = raw.match(/^---\r?\n[\s\S]*?\r?\n---/);
@@ -492,7 +559,7 @@ export function patchFrontmatter(
     .replace(/^state:.*$/m, `state: ${node.state}`)
     .replace(/^updated_at:.*$/m, `updated_at: ${node.updated_at}`);
 
-  if (node.shipped_at) {
+  if (slot === "current" && node.shipped_at) {
     if (/^shipped_at:/m.test(patched)) {
       patched = patched.replace(/^shipped_at:.*$/m, `shipped_at: ${node.shipped_at}`);
     } else {
@@ -505,13 +572,14 @@ export function patchFrontmatter(
   }
 }
 
-/** Patches MCP-owned outgoing edge arrays in context.mdx frontmatter. */
+/** Patches MCP-owned outgoing edge arrays in current.mdx or next.mdx frontmatter. */
 export function patchFrontmatterEdges(
   node: Pick<MindPlanNode, "id" | "type">,
   edges: Partial<Record<EdgeField, string[]>>,
-  updated_at: string
+  updated_at: string,
+  slot: TerritorySlot = "current"
 ): void {
-  const file = markdownPath(node);
+  const file = markdownPath(node, slot);
   if (!fs.existsSync(file)) return;
   const raw = fs.readFileSync(file, "utf-8");
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -524,7 +592,6 @@ export function patchFrontmatterEdges(
     belongs_to: edges.belongs_to ?? parsed.arrays.belongs_to,
     depends_on: edges.depends_on ?? parsed.arrays.depends_on,
     affects: edges.affects ?? parsed.arrays.affects,
-    supersedes: edges.supersedes ?? parsed.arrays.supersedes,
   };
 
   let inner = stripEdgeFieldLines(match[1]);
@@ -536,13 +603,26 @@ export function patchFrontmatterEdges(
   fs.writeFileSync(file, raw.replace(match[0], rebuilt), "utf-8");
 }
 
+/** Resolves which territory slot receives belongs_to/depends_on mutations. */
+export function edgeWriteSlot(node: MindPlanNode, edgeType: EdgeType): TerritorySlot {
+  if (
+    node.next &&
+    (edgeType === "belongs_to" || edgeType === "depends_on") &&
+    (node.type === "Workflow" || node.type === "Foundation")
+  ) {
+    return "next";
+  }
+  return "current";
+}
+
 /** Appends a target id to the source node's outgoing edge array for edge_type. */
 export function addEdgeToFrontmatter(
-  node: Pick<MindPlanNode, "id" | "type">,
+  node: MindPlanNode,
   edgeType: EdgeType,
   targetId: string
 ): void {
-  const raw = readMarkdown(node);
+  const slot = edgeWriteSlot(node, edgeType);
+  const raw = readMarkdown(node, slot);
   const parsed = parseFrontmatter(raw);
   if (!parsed) return;
 
@@ -550,32 +630,34 @@ export function addEdgeToFrontmatter(
   const current = [...parsed.arrays[field]];
   if (!current.includes(targetId)) current.push(targetId);
   const now = new Date().toISOString();
-  patchFrontmatterEdges(node, { [field]: current }, now);
+  patchFrontmatterEdges(node, { [field]: current }, now, slot);
 }
 
-/** Removes target_id from all outgoing edge arrays on the source node. */
+/** Removes target_id from all outgoing edge arrays on the source node (current and next). */
 export function removeEdgesFromFrontmatter(
-  node: Pick<MindPlanNode, "id" | "type">,
+  node: MindPlanNode,
   targetId: string
 ): void {
-  const raw = readMarkdown(node);
-  const parsed = parseFrontmatter(raw);
-  if (!parsed) return;
-
   const now = new Date().toISOString();
-  patchFrontmatterEdges(
-    node,
-    {
-      belongs_to: parsed.arrays.belongs_to.filter((id) => id !== targetId),
-      depends_on: parsed.arrays.depends_on.filter((id) => id !== targetId),
-      affects: parsed.arrays.affects.filter((id) => id !== targetId),
-      supersedes: parsed.arrays.supersedes.filter((id) => id !== targetId),
-    },
-    now
-  );
+  for (const slot of ["current", "next"] as const) {
+    if (slot === "next" && !nextExists(node)) continue;
+    const raw = readMarkdown(node, slot);
+    const parsed = parseFrontmatter(raw);
+    if (!parsed) continue;
+    patchFrontmatterEdges(
+      node,
+      {
+        belongs_to: parsed.arrays.belongs_to.filter((id) => id !== targetId),
+        depends_on: parsed.arrays.depends_on.filter((id) => id !== targetId),
+        affects: parsed.arrays.affects.filter((id) => id !== targetId),
+      },
+      now,
+      slot
+    );
+  }
 }
 
-/** Scaffolds an entity folder: context.mdx + empty attachments/ directory. */
+/** Scaffolds an entity folder: current.mdx + empty attachments/ directory. */
 export function scaffoldEntity(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "created_at" | "updated_at">,
   meta: Pick<MindPlanNode, "title" | "description">
@@ -711,27 +793,29 @@ export function scaffoldEntity(
       break;
   }
 
-  writeMarkdown(node, `${frontmatter}\n\n${body}`);
+  writeMarkdown(node, `${frontmatter}\n\n${body}`, "current");
 }
 
 /**
  * Completion Check helper: returns the number of unchecked `[ ]` checkboxes
- * in context.mdx. Markdown checkboxes are `- [ ]` / `- [x]` list items.
- * JSX in the file is never parsed; guardrails gate on markdown syntax only.
+ * in current.mdx or next.mdx. Markdown checkboxes are `- [ ]` / `- [x]` list items.
  */
-export function countUncheckedBoxes(node: Pick<MindPlanNode, "id" | "type">): number {
-  const raw = readMarkdown(node);
+export function countUncheckedBoxes(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot = "current"
+): number {
+  const raw = readMarkdown(node, slot);
   const matches = raw.match(/^\s*[-*+]\s+\[ \]/gm);
   return matches ? matches.length : 0;
 }
 
-/** Heading that marks the workflow affected-files list in context.mdx body. */
+/** Heading that marks the workflow affected-files list in territory body. */
 export const AFFECTED_FILES_HEADING = "## Affected Files";
 
 /**
- * Parses project-relative file paths from the `## Affected Files` section of
- * context.mdx. List items may use backticks or plain text; paths are
- * normalized to posix, deduplicated, and sorted.
+ * Parses project-relative file paths from the `## Affected Files` section.
+ * List items may use backticks or plain text; paths are normalized to posix,
+ * deduplicated, and sorted.
  */
 export function parseAffectedFiles(raw: string): string[] {
   const body = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
@@ -746,24 +830,25 @@ export function parseAffectedFiles(raw: string): string[] {
   for (const line of section.split(/\r?\n/)) {
     const item = line.match(/^\s*[-*+]\s+(?:`([^`]+)`|(.+?))\s*$/);
     if (!item) continue;
-    const path = (item[1] ?? item[2] ?? "").trim();
-    if (!path || path.startsWith("_")) continue;
-    files.add(path.replace(/\\/g, "/"));
+    const filePath = (item[1] ?? item[2] ?? "").trim();
+    if (!filePath || filePath.startsWith("_")) continue;
+    files.add(filePath.replace(/\\/g, "/"));
   }
   return [...files].sort((a, b) => a.localeCompare(b));
 }
 
-/** Returns affected project files recorded in a Workflow's context.mdx body. */
-export function listAffectedFiles(node: Pick<MindPlanNode, "id" | "type">): string[] {
+/** Returns affected project files recorded in a Workflow's territory body. */
+export function listAffectedFiles(node: MindPlanNode): string[] {
   if (node.type !== "Workflow") {
     throw new Error(
       `Blocked: get_workflow_files only applies to Workflow nodes; "${node.id}" is a ${node.type}.`
     );
   }
-  return parseAffectedFiles(readMarkdown(node));
+  const slot: TerritorySlot = node.next ? "next" : "current";
+  return parseAffectedFiles(readMarkdown(node, slot));
 }
 
-/** Splits raw context.mdx into YAML frontmatter block and body. */
+/** Splits raw territory MDX into YAML frontmatter block and body. */
 export function splitContext(raw: string): { frontmatter: string; body: string } | null {
   const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---)(\r?\n?)([\s\S]*)$/);
   if (!match) return null;
@@ -786,7 +871,16 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.belongs_to?.length) record.belongs_to = [...node.belongs_to];
   if (node.depends_on?.length) record.depends_on = [...node.depends_on];
   if (node.affects?.length) record.affects = [...node.affects];
-  if (node.supersedes?.length) record.supersedes = [...node.supersedes];
+  if (node.next) {
+    record.next = {
+      state: node.next.state,
+      title: node.next.title,
+      description: node.next.description,
+      updated_at: node.next.updated_at,
+      ...(node.next.belongs_to?.length ? { belongs_to: [...node.next.belongs_to] } : {}),
+      ...(node.next.depends_on?.length ? { depends_on: [...node.next.depends_on] } : {}),
+    };
+  }
   return record;
 }
 
@@ -796,7 +890,33 @@ export type PatchNodeTerritoryInput = {
   body?: string;
   toggle_checkboxes?: { contains: string; checked: boolean }[];
   append_affected_files?: string[];
+  /** Override default slot selection. */
+  slot?: TerritorySlot;
 };
+
+/**
+ * Default patch target: when a shipped Foundation/Workflow has next.mdx, patches go to next.
+ * Otherwise current. Explicit `slot` overrides.
+ */
+export function resolveTerritorySlot(
+  node: MindPlanNode,
+  explicit?: TerritorySlot
+): TerritorySlot {
+  if (explicit) {
+    if (explicit === "next" && !node.next) {
+      throw new Error(`Blocked: node "${node.id}" has no next.mdx evolution slot.`);
+    }
+    return explicit;
+  }
+  if (
+    node.next &&
+    (node.type === "Foundation" || node.type === "Workflow") &&
+    (node.state === "stable" || node.state === "unstable")
+  ) {
+    return "next";
+  }
+  return "current";
+}
 
 function toggleCheckboxesInBody(
   body: string,
@@ -817,7 +937,7 @@ function toggleCheckboxesInBody(
     }
     if (!matched) {
       throw new Error(
-        `Blocked: no checkbox line containing "${toggle.contains}" in ${lines.length ? "context" : "empty context"} body.`
+        `Blocked: no checkbox line containing "${toggle.contains}" in territory body.`
       );
     }
   }
@@ -864,17 +984,18 @@ function patchTerritoryScalars(
 }
 
 /**
- * Patches territory-owned context.mdx content (body and title/description scalars).
- * Server-owned frontmatter fields are never modified here.
+ * Patches territory-owned content (body and title/description scalars).
+ * Server-owned frontmatter fields (except updated_at on territory edits) are never modified here.
  */
 export function patchNodeTerritory(
   node: MindPlanNode,
   input: PatchNodeTerritoryInput
-): { patched_fields: string[] } {
-  const raw = readMarkdown(node);
+): { patched_fields: string[]; slot: TerritorySlot } {
+  const slot = resolveTerritorySlot(node, input.slot);
+  const raw = readMarkdown(node, slot);
   const split = splitContext(raw);
   if (!split) {
-    throw new Error(`Blocked: context file for "${node.id}" has no YAML frontmatter.`);
+    throw new Error(`Blocked: ${slot} file for "${node.id}" has no YAML frontmatter.`);
   }
 
   const patched_fields: string[] = [];
@@ -916,6 +1037,149 @@ export function patchNodeTerritory(
     );
   }
 
-  writeMarkdown(node, `${frontmatter}\n\n${body}`);
-  return { patched_fields };
+  writeMarkdown(node, `${frontmatter}\n\n${body}`, slot);
+  return { patched_fields, slot };
+}
+
+/**
+ * Opens next.mdx for a shipped Foundation/Workflow by copying current territory into a draft slot.
+ */
+export function openNextSlot(
+  node: MindPlanNode,
+  meta?: { title?: string; description?: string }
+): NextSlot {
+  if (nextExists(node)) {
+    throw new Error(`Blocked: "${node.id}" already has a next.mdx evolution slot.`);
+  }
+  const now = new Date().toISOString();
+  const currentRaw = readMarkdown(node, "current");
+  const split = splitContext(currentRaw);
+  if (!split) {
+    throw new Error(`Blocked: current file for "${node.id}" has no YAML frontmatter.`);
+  }
+
+  const title = meta?.title ?? node.title;
+  const description = meta?.description ?? node.description;
+
+  const frontmatterLines = [
+    "---",
+    `id: ${node.id}`,
+    `type: ${node.type}`,
+    `title: ${JSON.stringify(title)}`,
+    `description: ${JSON.stringify(description)}`,
+    "state: draft",
+    `updated_at: ${now}`,
+  ];
+  if (node.belongs_to?.length) {
+    frontmatterLines.push("belongs_to:");
+    for (const id of node.belongs_to) frontmatterLines.push(`  - ${id}`);
+  }
+  if (node.depends_on?.length) {
+    frontmatterLines.push("depends_on:");
+    for (const id of node.depends_on) frontmatterLines.push(`  - ${id}`);
+  }
+  frontmatterLines.push("---");
+
+  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${split.body}`, "next");
+  fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
+  const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
+  if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf-8");
+
+  const slot: NextSlot = {
+    state: "draft",
+    title,
+    description,
+    updated_at: now,
+  };
+  if (node.belongs_to?.length) slot.belongs_to = [...node.belongs_to];
+  if (node.depends_on?.length) slot.depends_on = [...node.depends_on];
+  return slot;
+}
+
+/** Deletes next.mdx and next-attachments/, abandoning an in-flight evolution. */
+export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): void {
+  const nextFile = markdownPath(node, "next");
+  if (!fs.existsSync(nextFile)) {
+    throw new Error(`Blocked: node "${node.id}" has no next.mdx to discard.`);
+  }
+  fs.unlinkSync(nextFile);
+  const nextAtt = nextAttachmentsDir(node);
+  if (fs.existsSync(nextAtt)) {
+    fs.rmSync(nextAtt, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Promotes next.mdx over current.mdx: copies next body/scalars/edges into current with
+ * production state, then deletes the next slot.
+ */
+export function promoteNextSlot(
+  node: MindPlanNode,
+  productionState: string,
+  shippedAt: string
+): void {
+  if (!node.next) {
+    throw new Error(`Blocked: node "${node.id}" has no next.mdx to promote.`);
+  }
+  const nextRaw = readMarkdown(node, "next");
+  const nextSplit = splitContext(nextRaw);
+  if (!nextSplit) {
+    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
+  }
+  const nextParsed = parseFrontmatter(nextRaw);
+  if (!nextParsed) {
+    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
+  }
+
+  const title = nextParsed.scalars.title ?? node.next.title;
+  const description = nextParsed.scalars.description ?? node.next.description;
+  const belongs_to = nextParsed.arrays.belongs_to;
+  const depends_on = nextParsed.arrays.depends_on;
+
+  const frontmatterLines = [
+    "---",
+    `id: ${node.id}`,
+    `type: ${node.type}`,
+    `title: ${JSON.stringify(title)}`,
+    `description: ${JSON.stringify(description)}`,
+    `state: ${productionState}`,
+    `shipped_at: ${shippedAt}`,
+    `created_at: ${node.created_at}`,
+    `updated_at: ${shippedAt}`,
+  ];
+  if (belongs_to.length > 0) {
+    frontmatterLines.push("belongs_to:");
+    for (const id of belongs_to) frontmatterLines.push(`  - ${id}`);
+  }
+  if (depends_on.length > 0) {
+    frontmatterLines.push("depends_on:");
+    for (const id of depends_on) frontmatterLines.push(`  - ${id}`);
+  }
+  frontmatterLines.push("---");
+
+  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${nextSplit.body}`, "current");
+
+  // Merge next-attachments into attachments when present
+  const nextAtt = nextAttachmentsDir(node);
+  if (fs.existsSync(nextAtt)) {
+    const dest = attachmentsDir(node);
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(nextAtt, { withFileTypes: true })) {
+      if (!entry.isFile() || entry.name === ".gitkeep") continue;
+      fs.copyFileSync(path.join(nextAtt, entry.name), path.join(dest, entry.name));
+    }
+  }
+
+  discardNextSlot(node);
+
+  node.title = title;
+  node.description = description;
+  node.state = productionState as MindPlanNode["state"];
+  node.shipped_at = shippedAt;
+  node.updated_at = shippedAt;
+  if (belongs_to.length > 0) node.belongs_to = [...belongs_to];
+  else delete node.belongs_to;
+  if (depends_on.length > 0) node.depends_on = [...depends_on];
+  else delete node.depends_on;
+  delete node.next;
 }

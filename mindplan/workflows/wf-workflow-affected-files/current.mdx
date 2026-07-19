@@ -2,7 +2,7 @@
 id: wf-workflow-affected-files
 type: Workflow
 title: "Workflow affected files"
-description: "Workflows record project files touched during implementation in context.mdx; agents query the list via get_workflow_files."
+description: "Workflows record project files touched during implementation in current.mdx; agents query the list via get_workflow_files."
 state: in-review
 created_at: 2026-07-15T20:14:46.276Z
 updated_at: 2026-07-15T20:15:38.462Z
@@ -21,7 +21,7 @@ Workflows maintain a territory-body list of project files touched during impleme
 
 1. Workflow scaffold includes an `## Affected Files` section (empty list).
 2. During build-pipeline **Execute**, agents append project-relative paths to that section as they modify application code.
-3. `parseAffectedFiles` in the territory store reads the section from `context.mdx` (markdown list items until the next `##` heading).
+3. `parseAffectedFiles` in the territory store reads the section from `current.mdx` (markdown list items until the next `##` heading).
 4. MCP tool `get_workflow_files({ node_id })` returns `{ node_id, files: [...] }` for Workflow nodes only.
 5. Playbook and SPEC document the convention and tool.
 

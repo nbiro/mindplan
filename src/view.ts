@@ -191,7 +191,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
     lines.push(`  ${mermaidSafeId(bug.id)}["${nodeLabel(bug)}"]`);
   }
 
-  // Edges: omit belongs_to (encoded by clustering); style depends_on / affects / supersedes
+  // Edges: omit belongs_to (encoded by clustering); style depends_on / affects
   for (const e of view.edges) {
     if (e.type === "belongs_to") continue;
     if (!byId.has(e.source) || !byId.has(e.target)) continue;
@@ -214,15 +214,6 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
       const src = mermaidSafeId(e.source);
       const tgt = resolveEndpointId(e.target, byId, instanceMap);
       lines.push(`  ${src} -.-> ${tgt}`);
-      continue;
-    }
-
-    if (e.type === "supersedes") {
-      const srcInstances = instanceMap.get(e.source) ?? [mermaidSafeId(e.source)];
-      const tgt = resolveEndpointId(e.target, byId, instanceMap);
-      for (const src of srcInstances) {
-        lines.push(`  ${src} -.->|supersedes| ${tgt}`);
-      }
     }
   }
 
@@ -330,12 +321,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
 
   for (const e of view.edges) {
     if (e.type === "belongs_to") continue;
-    const style =
-      e.type === "affects"
-        ? "style=dashed"
-        : e.type === "supersedes"
-          ? 'style=dotted, label="supersedes"'
-          : "style=solid";
+    const style = e.type === "affects" ? "style=dashed" : "style=solid";
     lines.push(`  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [${style}];`);
   }
 

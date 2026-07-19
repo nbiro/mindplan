@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (16 nodes, 29 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (15 nodes, 26 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
@@ -15,13 +15,12 @@ flowchart TB
     wf_framework_docs_v3__in__j_agent_onboarding["wf-framework-docs-v3 · Framework documentation (plan-first punchline) · stable"]
     wf_npm_publish__in__j_agent_onboarding["wf-npm-publish · Publish to npm · draft"]
     wf_project_init_v2__in__j_agent_onboarding["wf-project-init-v2 · Project init (blast-radius orient) · stable"]
-    wf_project_init_v3__in__j_agent_onboarding["wf-project-init-v3 · Project init (external review before ship) · in-review"]
   end
   subgraph journey_j_territory_sdlc["j-territory-sdlc · Territory SDLC · evolving"]
     wf_export_views_v2__in__j_territory_sdlc["wf-export-views-v2 · Export graph views (auto-persist map) · stable"]
     wf_framework_docs_v3__in__j_territory_sdlc["wf-framework-docs-v3 · Framework documentation (plan-first punchline) · stable"]
     wf_mutate_graph__in__j_territory_sdlc["wf-mutate-graph · Mutate graph · stable"]
-    wf_query_graph_v2__in__j_territory_sdlc["wf-query-graph-v2 · Query graph (blast radius via supersedes) · stable"]
+    wf_query_graph_v2__in__j_territory_sdlc["wf-query-graph-v2 · Query graph · stable"]
     wf_test_harness__in__j_territory_sdlc["wf-test-harness · Test harness · stable"]
     wf_workflow_affected_files__in__j_territory_sdlc["wf-workflow-affected-files · Workflow affected files · in-review"]
   end
@@ -38,8 +37,6 @@ flowchart TB
   wf_mutate_graph__in__j_territory_sdlc --> f_mcp_runtime
   wf_npm_publish__in__j_agent_onboarding --> f_mcp_runtime
   wf_project_init_v2__in__j_agent_onboarding --> f_territory_store
-  wf_project_init_v3__in__j_agent_onboarding --> f_territory_store
-  wf_project_init_v3__in__j_agent_onboarding -.->|supersedes| wf_project_init_v2__in__j_agent_onboarding
   wf_query_graph_v2__in__j_territory_sdlc --> f_mcp_runtime
   wf_test_harness__in__j_territory_sdlc --> f_mcp_runtime
   wf_workflow_affected_files__in__j_territory_sdlc --> f_mcp_runtime

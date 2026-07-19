@@ -1,5 +1,6 @@
 # MindPlan territory — read via MCP; mutate body via patch_node_territory
-mindplan/**/context.mdx
+mindplan/**/current.mdx
+mindplan/**/next.mdx
 
 # Derived graph snapshot — never use as graph authority (SPEC §7.4)
 mindplan/map.md

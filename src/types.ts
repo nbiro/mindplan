@@ -1,9 +1,10 @@
 /**
- * MindPlan data model — node records and edges persisted in context.mdx frontmatter.
+ * MindPlan data model — node records and edges persisted in current.mdx frontmatter.
+ * Optional next.mdx holds an in-flight evolution of a shipped Foundation/Workflow.
  */
 
 /** Schema generation reported by get_mindplan_graph (no file on disk). */
-export const GRAPH_VERSION = 2;
+export const GRAPH_VERSION = 1;
 
 export const NODE_TYPES = ["Journey", "Foundation", "Workflow", "Bug"] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
@@ -42,11 +43,27 @@ export type JourneyState = (typeof JOURNEY_STATES)[number];
 
 export type NodeState = ExecutionState | ProductionState | JourneyState | BugState;
 
-export const EDGE_TYPES = ["depends_on", "belongs_to", "affects", "supersedes"] as const;
+export const EDGE_TYPES = ["depends_on", "belongs_to", "affects"] as const;
 export type EdgeType = (typeof EDGE_TYPES)[number];
 
 export const BUG_SEVERITIES = ["low", "medium", "high", "critical"] as const;
 export type BugSeverity = (typeof BUG_SEVERITIES)[number];
+
+/** Pre-ship build states allowed on next.mdx (evolution slot). */
+export const NEXT_PIPELINE_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
+export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
+
+/** In-flight evolution of a shipped Foundation/Workflow (from next.mdx). */
+export interface NextSlot {
+  state: NextPipelineState;
+  title: string;
+  description: string;
+  updated_at: string;
+  /** Proposed Workflow → Journey ids; applied to current on ship. */
+  belongs_to?: string[];
+  /** Proposed depends_on targets; applied to current on ship. */
+  depends_on?: string[];
+}
 
 export interface MindPlanNode {
   id: string;
@@ -64,8 +81,8 @@ export interface MindPlanNode {
   depends_on?: string[];
   /** MCP-only. Bug → Workflow|Foundation ids. */
   affects?: string[];
-  /** MCP-only. New Workflow|Foundation version → predecessor id; set only by create_node_version; at most one entry. */
-  supersedes?: string[];
+  /** Present when next.mdx exists (Foundation/Workflow evolution in progress). */
+  next?: NextSlot;
 }
 
 export interface MindPlanEdge {
@@ -123,6 +140,10 @@ export function isBugState(state: string): state is BugState {
 
 export function isOpenBugState(state: string): state is OpenBugState {
   return (OPEN_BUG_STATES as readonly string[]).includes(state);
+}
+
+export function isNextPipelineState(state: string): state is NextPipelineState {
+  return (NEXT_PIPELINE_STATES as readonly string[]).includes(state);
 }
 
 /** Pre-ship build states where Workflow description/title may change when scope shifts. */
