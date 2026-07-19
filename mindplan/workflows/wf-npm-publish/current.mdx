@@ -2,25 +2,27 @@
 id: wf-npm-publish
 type: Workflow
 title: "Publish to npm"
-description: "Ship mindplan-mcp@0.1.0 to the public npm registry via a documented manual first publish, then update consumer install docs."
-state: draft
+description: "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs under tag-driven CI."
+state: ready
 created_at: 2026-07-15T18:51:52.964Z
-updated_at: 2026-07-19T19:40:00.111Z
+updated_at: 2026-07-19T20:26:45.448Z
 belongs_to:
   - j-agent-onboarding
+  - j-npm-publish
 depends_on:
   - f-mcp-runtime
+  - f-npm-registry
 ---
 
 # Publish to npm
 
 ## Purpose
 
-Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning and building from source. This Workflow is still **draft** — the runbook below is the intended full contract for first publish and docs sync.
+Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning from source. Own a **single reusable publish script** that maintainers run for the first claim and that `wf-npm-tag-publish` invokes non-interactively on version tags.
 
 ## Goal
 
-A maintainer can publish the package once, then any consumer can:
+A maintainer can run one scripted path; afterward any consumer can:
 
 ```bash
 npm install -g mindplan-mcp
@@ -32,66 +34,81 @@ and get a working CLI + MCP server whose `templates/` and `dist/` match this rep
 
 ## Acceptance Criteria
 
-- [ ] Package name `mindplan-mcp` is claimed on the public registry at version `0.1.0` (or the next SemVer if `0.1.0` was already taken by us in a prior attempt).
+- [ ] Publish script under the prescribed package encodes dry-run → test → publish → verify; CI can call non-interactive mode of the **same** script.
+- [ ] Package name `mindplan-mcp` is claimed on the public registry at version `0.1.0` (or the next SemVer if already taken by us).
+- [ ] Dry-run / pack listing asserts tarball contents: `dist/`, `templates/`, `README.md`, `SPEC.md`, `LICENSE` — not `src/`, tests, or local `mindplan/` territory.
 - [ ] `npx mindplan-mcp --help` (or `mindplan-mcp help` after global install) shows init/view/help usage.
-- [ ] Published tarball includes `dist/`, `templates/`, `README.md`, `SPEC.md`, and `LICENSE` — not `src/`, tests, or local `mindplan/` territory.
-- [ ] README Quick start no longer leads with “install from source” as the only path; npm install / `npx` is primary, source build remains as a contributor path.
-- [ ] `CONTRIBUTING.md` Publishing section matches the runbook below (manual first; CI/OIDC explicitly deferred).
+- [ ] README Quick start leads with npm / `npx`; clone+build remains a contributor path.
+- [ ] `CONTRIBUTING.md` Publishing documents the script for first/manual publish and points later releases to `wf-npm-tag-publish`.
 
 ## Versioning policy
 
 - **Scheme:** SemVer starting at current `package.json` version **`0.1.0`**.
-- **Until 1.0.0:** treat the public API (MCP tools, CLI, SPEC behaviour) as evolving; prefer `minor` for additive tool/CLI changes, `patch` for fixes, `major` only for breaking tool/contract changes that land while still on 0.x if we choose to signal breakage that way — otherwise document breakage in changelog and SPEC.
-- **First publish:** publish whatever is currently in `package.json` (expected `0.1.0`) — do not bump solely to “make publishing feel real.”
-- **Later releases:** `npm version patch|minor|major` then `npm publish`; tag the git commit when convenient, but **tag-driven CI is out of scope for this Workflow**.
+- **Until 1.0.0:** treat the public API as evolving; prefer `minor` for additive changes, `patch` for fixes; document breakage in changelog/SPEC when not bumping major on 0.x.
+- **First publish:** publish whatever is currently in `package.json` (expected `0.1.0`).
+- **Later releases:** bump version on **main**, push matching `vX.Y.Z` tag; automation is `wf-npm-tag-publish`.
 
 ## Release style (this Workflow)
 
-**Manual first publish.** Maintainer machine + npm account with publish rights to `mindplan-mcp`.
+**Script-first, manual first claim.** Maintainer machine + npm account with publish rights for the initial `npm publish` (OTP / `npm login` as required).
 
-Out of scope for this node (follow-up Workflow / version):
+Depends on `f-npm-registry` for **package identity + OIDC contract docs** — not for a live Trusted Publisher binding (that binding is `wf-npm-tag-publish` after this Workflow claims the package).
 
-- GitHub Actions release job
-- npm Trusted Publishing (OIDC)
+Handoff: once the script works and the package is claimed, live Trusted Publishing + tag automation is `wf-npm-tag-publish` (using conventions from `f-npm-registry` / `f-github-actions`).
+
+Out of scope for this node:
+
+- `.github/workflows/publish.yml` (owned by `wf-npm-tag-publish`)
+- Live npm Trusted Publishing UI binding
 - Automated changelog generation
 
 ## Execution Logic
 
-Package: `src/workflows/wf-npm-publish/` (pointer until publish automation exists). Depends on: `f-mcp-runtime`. Belongs to: `j-agent-onboarding`.
+Package: `src/workflows/wf-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-registry`. Belongs to: `j-npm-publish`, `j-agent-onboarding`.
 
-### Preflight
+### Publish script location
 
-1. Confirm registry identity: npm org/user that should own `mindplan-mcp` (align with github.com/nbiro/mindplan).
-2. Confirm `package.json` metadata is release-ready (`name`, `version`, `bin`, `files`, `engines`, repository URLs).
-3. Dry-run the tarball: `npm pack --dry-run` / `npm publish --dry-run` — no secrets, no `.cursor/`, no local `mindplan/` territory, no `src/`.
-4. `npm test` green on the release commit.
+- **Primary:** implement the script inside `src/workflows/wf-npm-publish/` (e.g. `publish.mjs` or `publish.sh`).
+- **Optional thin wrapper:** a root `package.json` script (e.g. `"publish:release": "node src/workflows/wf-npm-publish/publish.mjs"`) so maintainers and CI share one entrypoint.
+- Do **not** invent a parallel root-only `scripts/publish.sh` that diverges from the package implementation.
 
-### Publish
+### Publish script (source of truth)
 
-5. `npm login` (2FA as required).
-6. Clean tree on release commit: `npm publish` (`prepublishOnly` runs build).
-7. Fresh-install verify: `mindplan-mcp help` + `mindplan-mcp init` in a temp directory.
+1. **Preflight:** assert clean git tree (or documented allowlist); confirm `package.json` name/version/bin/files/engines/repository URLs.
+2. **Dry-run:** `npm pack --dry-run` / `npm publish --dry-run` — assert allowlisted tarball paths; no secrets, no `.cursor/`, no local `mindplan/` territory, no `src/`.
+3. **Test:** `npm test` green (required in both maintainer and CI modes).
+4. **Publish:** `npm publish` (`prepublishOnly` builds `dist/`). Interactive login/OTP only in maintainer mode; CI mode skips login and relies on OIDC.
+5. **Verify:** fresh install — `mindplan-mcp help` + `mindplan-mcp init` in a temp directory (maintainer mode; CI may use a lighter post-publish check).
+
+### First publish runbook
+
+1. Confirm registry identity aligns with github.com/nbiro/mindplan (`f-npm-registry` docs).
+2. Run the publish script in maintainer mode on the release commit (claims the name).
+3. Sync docs (README + CONTRIBUTING).
+4. Do **not** block on Trusted Publisher UI — that is `wf-npm-tag-publish` after claim.
 
 ### Docs sync
 
-8. README Quick start: npm / `npx` primary; clone+build for contributors.
-9. `CONTRIBUTING.md` Publishing matches this runbook (manual first; CI deferred).
+- README Quick start: npm / `npx` primary.
+- CONTRIBUTING: first publish = run the script after `npm login`; later = bump on main, tag, push (automation lands with `wf-npm-tag-publish`).
 
 ## Failure / recovery
 
 - **Name taken by someone else:** stop; escalate — do not rename without a product decision.
 - **`0.1.0` already published by us:** bump patch/minor and publish; update docs.
-- **Broken publish after install check:** ship a patch; never leave README advertising a broken path.
+- **Broken publish after install check:** ship a patch via the same script; never leave README advertising a broken path.
 
 ## Checklist
 
-- [ ] Package metadata + `npm pack` / publish dry-run reviewed
+- [ ] Publish script lives under `src/workflows/wf-npm-publish/` with maintainer + CI modes (CI mode includes `npm test`)
+- [ ] Optional root `package.json` script wrapper points at that implementation
+- [ ] Pack/dry-run asserts tarball allowlist (`dist/`, `templates/`, docs, LICENSE)
 - [ ] `npm test` green on the release commit
-- [ ] `mindplan-mcp@0.1.0` published to the public registry
+- [ ] `mindplan-mcp@0.1.0` (or next SemVer) published to the public registry
 - [ ] Fresh-install verification (`help` + `init`) passed
 - [ ] README Quick start updated for npm / `npx` primary install
-- [ ] `CONTRIBUTING.md` Publishing section matches this runbook
+- [ ] `CONTRIBUTING.md` Publishing section matches this runbook and points to tag-driven follow-up
 
 ## Attachments
 
-Optional later: registry screenshots or dry-run logs under `attachments/`.
+Optional: dry-run logs under `attachments/`.

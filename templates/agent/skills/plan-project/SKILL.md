@@ -27,7 +27,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 - **No application code** — do not create, edit, or delete files under `src/workflows/<id>/` or `src/foundations/<id>/` (except ignoring empty `.gitkeep` scaffolds that `create_node` already made).
 - **No implementation pipeline** — do not move Foundations/Workflows to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
-- **Allowed states** — leave new or reshaped nodes in `draft`. Optionally advance Workflows/Foundations to `ready` only when Ghost Workflow / Ghost Bug link gates are satisfied and the user wants the graph pre-flighted for a later build — then **stop**.
+- **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, advance Workflows/Foundations to `ready` only (Ghost Workflow / Ghost Bug link gates must pass) — then **stop**. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
 - Mutate graph state only through MindPlan MCP. Treat every `Blocked: <reason>` as a hard failure — fix the plan, do not retry blindly.
 
@@ -86,20 +86,29 @@ End the plan session when:
 
 Tell the user the plan is ready for an **execution session** under the always-on playbook (`in-progress` → implement in prescribed packages → `in-review`). Do not start that work in the same plan-only session unless they explicitly switch modes.
 
-## Optional: stop at `ready`
+## Shipping a plan (`draft` → `ready`)
 
-When links are complete and the user wants build-ready nodes:
+When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means **pre-flight to `ready`**, not the build-pipeline `ship` transition.
 
 ```
 update_node_status({ node_id, new_status: "ready" })
 ```
 
-Then stop. Do **not** continue to `in-progress`.
+Requirements:
+
+- Links complete (Workflows: at least one `belongs_to` + one `depends_on`; Bugs past `open`: `affects`)
+- Territory is a full contract with **unchecked** Atomic Ops
+- **No** application code under `src/`
+- **No** `in-progress` / `in-review` / `ship` / `stable`
+- **No** checking off checklist boxes
+
+Then **stop**. Hand off for a later execution session under the always-on playbook. Do not interpret “ship” here as `update_node_status` → `ship`.
 
 ## Never do (this skill)
 
 - Write or “just scaffold” real implementation in `src/workflows/` / `src/foundations/`
 - Advance to `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`
+- Treat “ship the plan” as build-pipeline `ship` / `stable` or as permission to check Atomic Ops
 - Check off Atomic Ops without implementation
 - Create a Workflow with no matching Journey
 - Hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)

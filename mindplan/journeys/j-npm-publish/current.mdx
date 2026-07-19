@@ -1,0 +1,38 @@
+---
+id: j-npm-publish
+type: Journey
+title: "Ship to npm"
+description: "Maintainer capability to release mindplan-mcp to the public npm registry — first claim, repeatable publish script, then tag-driven automation."
+state: draft
+created_at: 2026-07-19T20:18:58.540Z
+updated_at: 2026-07-19T20:18:58.540Z
+---
+
+# Ship to npm
+
+## Purpose
+
+Domain capability: release `mindplan-mcp` to the public npm registry so maintainers can ship versions safely and consumers can install without cloning from source.
+
+## Overview
+
+Maintainers claim the package once, then publish through a **repeatable publish script** (dry-run → test → publish → verify). Later releases are the same script, triggered automatically when a `v*` git tag is pushed, authenticated with npm Trusted Publishing (OIDC) — no long-lived `NPM_TOKEN`.
+
+Journey state is **computed** from member Workflows. Assembler for automation: `f-github-actions`. Registry boundary: `f-npm-registry`.
+
+Consumer install docs also surface under Adopt MindPlan (`j-agent-onboarding`) via dual membership of `wf-npm-publish`.
+
+## Linked Workflows
+
+- `wf-npm-publish` — first claim + reusable publish script + consumer install docs
+- `wf-npm-tag-publish` — tag-driven GitHub Actions publish wrapping that script via OIDC
+
+## What “healthy” means
+
+- A maintainer can publish from a clean tree with one scripted path
+- Pushing a matching `v*` tag publishes the same artifact without interactive login
+- README / CONTRIBUTING describe npm install for consumers and tag-based release for maintainers
+
+## Attachments
+
+_Place supporting files in `attachments/` alongside this file._

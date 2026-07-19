@@ -74,12 +74,31 @@ Then classify:
 | If the user wants… | Do this |
 |--------------------|---------|
 | **Plan / model / architect only** (greenfield product map, reshape the graph, enrich PRDs — no application code) | Follow `mindplan/agent/skills/plan-project/` — stay in `draft` or stop at `ready`; do not enter the build pipeline or edit `src/` |
+| **Ship the plan** / “ship it” after planning (no code) | **`draft` → `ready` only** — see **Shipping a plan** below. Never `ship` / `stable`, never check Atomic Ops, never write `src/` |
 | New Journey, Foundation, Workflow, or Bug (as part of execution, or a small add while building) | Follow `mindplan/agent/skills/define-entities/` (Journey must exist before any Workflow; refuse Workflow creation when no matching Journey is in the graph) |
 | Implement or advance an existing Foundation/Workflow | **Build pipeline loop** below |
 | Report or fix a defect | **Bug lifecycle loop** below |
 | Change to a **shipped** Foundation/Workflow | `get_blast_radius` → `open_next` → if the ask is plan/spec only, use **plan-project** on the `next` slot; if implementing, run the **build pipeline loop** against `next.mdx` until `ship` promotes it over `current.mdx` (same id) |
 
 Do not invent tickets outside MindPlan. Do not start substantial implementation until the owning node is `in-progress` (or Bug is `fixing`) — for shipped nodes, until the `next` slot is `in-progress`. When the user asked only to plan, do not “helpfully” continue into implementation in the same session — hand off after plan-project completes.
+
+### Shipping a plan
+
+In a **plan-only** session (or when the user says “ship the plan” / “ship it” meaning the MindPlan graph, not product code), **shipping the plan** means:
+
+```
+update_node_status({ node_id, new_status: "ready" })
+```
+
+for each Foundation/Workflow whose links satisfy Ghost Workflow gates — **`draft` → `ready` only**.
+
+| Do | Do not |
+|----|--------|
+| Advance modeled nodes to `ready` when links are complete | Call `ship` or move to `in-progress` / `in-review` / `stable` |
+| Leave all Atomic Ops unchecked | Check off checklist items (that means implementation happened) |
+| Stop after `ready` and hand off for a later execution session | Write or “just scaffold” code under `src/` |
+
+`update_node_status` → `ship` is the **build pipeline** promotion after real work and external review — never the meaning of “ship the plan.”
 
 ## Validate after every plan change
 
@@ -202,6 +221,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 - Treat on-disk frontmatter or `mindplan/map.md` as graph authority — use MCP `record` / `export_mindplan_view`
 - Mutate the plan and continue without validating (re-read focus / graph via MCP after mutations)
 - Implement under `draft`/`ready` instead of moving to `in-progress` (or Bug `fixing`) first
+- Treat “ship the plan” / plan-only “ship it” as `ship` / `stable` — that phrase means **`draft` → `ready` only** (see **Shipping a plan**)
 - Check off Atomic Ops without completing the work
 - Create a Workflow when no matching Journey exists — refuse; ask the user to define the Journey first
 - Hand-edit frontmatter `state`, `updated_at`, `shipped_at`, or edge arrays

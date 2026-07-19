@@ -1,0 +1,130 @@
+---
+id: wf-npm-tag-publish
+type: Workflow
+title: "Tag-driven npm publish"
+description: "On v* git tag push, GitHub Actions runs the same publish script and releases to npm via OIDC Trusted Publishing."
+state: ready
+created_at: 2026-07-19T20:19:48.978Z
+updated_at: 2026-07-19T20:26:46.980Z
+belongs_to:
+  - j-npm-publish
+depends_on:
+  - f-npm-registry
+  - f-github-actions
+  - wf-npm-publish
+---
+
+# Tag-driven npm publish
+
+## Purpose
+
+Automate npm releases: when a maintainer pushes a version git tag, GitHub Actions runs the **same publish script** owned by `wf-npm-publish` and publishes via npm Trusted Publishing (OIDC). No long-lived `NPM_TOKEN`.
+
+This Workflow **solely owns** `.github/workflows/publish.yml` (repo-root workflow path is an intentional exception to the prescribed package, like CI YAML).
+
+## Goal
+
+Maintainer release path after first claim:
+
+```bash
+# on main, release commit with package.json version X.Y.Z already bumped
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+CI publishes `mindplan-mcp@X.Y.Z` using OIDC.
+
+## Acceptance Criteria
+
+- [ ] Pushing tag `vX.Y.Z` (SemVer; equals `package.json` version) on a commit reachable from `main` triggers publish.
+- [ ] Auth is npm Trusted Publishing only — no `NPM_TOKEN` repository secret.
+- [ ] Job uses GitHub Environment `npm-publish` (or equivalent) with required reviewers / protection rules appropriate for maintainers.
+- [ ] Release job invokes the shared publish script in CI mode (must include `npm test` — not a bare `npm publish`).
+- [ ] Mismatched tag vs `package.json` version fails before publish.
+- [ ] Live Trusted Publisher on npmjs.com is bound to this workflow **after** first claim.
+- [ ] `CONTRIBUTING.md` documents: bump on main → tag `vX.Y.Z` → push tag.
+
+## Prerequisites (Infrastructure First)
+
+Must be stable before this Workflow can ship:
+
+- `wf-npm-publish` — publish script + **first claim complete** (package exists on npm)
+- `f-npm-registry` — OIDC **contract** documented (live UI binding is this Workflow’s Atomic Op, post–first claim)
+- `f-github-actions` — CI substrate + OIDC permission conventions documented
+
+## Execution Logic
+
+Package: `src/workflows/wf-npm-tag-publish/` (helpers/docs if needed). Belongs to: `j-npm-publish`. Depends on: `f-github-actions`, `f-npm-registry`, `wf-npm-publish`.
+
+### Owns
+
+- `.github/workflows/publish.yml` — full job definition
+- Live npm Trusted Publisher binding for `mindplan-mcp` → this workflow file
+- Tag / main / environment guards below
+
+### Trigger
+
+Prefer a SemVer-oriented pattern (not a bare `v*` that matches `vfoo`):
+
+```yaml
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+```
+
+(Adjust only if pre-release tags are intentionally supported; document the choice.)
+
+### Auth + environment
+
+- `permissions: id-token: write` (+ `contents: read`)
+- `actions/setup-node` with `registry-url: https://registry.npmjs.org`
+- Job `environment: npm-publish` (create in GitHub repo settings; require reviewers and/or wait timer as maintainer policy)
+- After first claim: bind Trusted Publisher on npmjs.com to `nbiro/mindplan` + `publish.yml`
+
+### Job steps
+
+1. Checkout the tagged commit
+2. Guard: tagged SHA is an ancestor of `origin/main` (refuse tags on arbitrary/non-main history)
+3. Setup Node (single LTS per `f-github-actions`)
+4. `npm ci`
+5. Guard: strip leading `v` from tag; assert equality with `package.json` `version`
+6. Invoke shared publish script **CI mode** (must run tests; then publish)
+7. Surface job logs / npm publish confirmation
+
+CI green on the tagged SHA is satisfied by the shared script’s mandatory `npm test` in CI mode (per `f-github-actions` conventions) — do not replace with a bare publish step.
+
+### Maintainer docs
+
+Update `CONTRIBUTING.md` Publishing:
+
+- First publish: `wf-npm-publish` script + interactive login
+- Later: bump SemVer on **main** → tag `vX.Y.Z` → push tag → Actions + Environment approval → OIDC publish
+
+### Out of scope
+
+- Automated changelog / GitHub Release notes
+- Publishing from forks
+- `workflow_dispatch` dry-run UI (nice-to-have later)
+
+## Failure / recovery
+
+- **Version mismatch / non-main tag:** fix and retag; do not force-move tags on already-published versions
+- **OIDC / Trusted Publisher misconfigured:** fix npm UI binding; do not add `NPM_TOKEN` without a product decision
+- **Broken published version:** bump patch, new tag, re-run automation
+
+## Checklist
+
+- [ ] Author `.github/workflows/publish.yml` (this Workflow owns the file)
+- [ ] SemVer-oriented tag trigger + tag/`package.json` version guard
+- [ ] Guard: tagged commit is on `main` ancestry
+- [ ] GitHub Environment `npm-publish` with protection / required reviewers
+- [ ] OIDC permissions + `registry-url` per `f-npm-registry` / `f-github-actions`
+- [ ] Job calls shared publish script CI mode (includes `npm test`)
+- [ ] Live Trusted Publisher bound on npmjs.com after first claim
+- [ ] `CONTRIBUTING.md` documents tag-driven release on main
+- [ ] End-to-end verify: protected tag publish releases expected version
+
+## Attachments
+
+Optional: successful Actions run URLs or screenshots under `attachments/`.
