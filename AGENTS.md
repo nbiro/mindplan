@@ -24,7 +24,7 @@ Orient and mutate **graph structure** only through MCP. Write **territory prose*
 - **Orient via MCP** — `orient_for_work` / `find_related_nodes` / `get_node_context`. Do not invent graph state by grepping territory folders.
 - **Never** trust `state`, edge arrays, or `shipped_at` except from MCP tool responses (`record` in `get_node_context` / `orient_for_work`)
 - **Never** read `mindplan/map.md` as graph authority — call `export_mindplan_view` or re-call `find_related_nodes` after mutations
-- **Graph mutations (MCP only):** `create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `open_next`, `discard_next`
+- **Graph mutations (MCP only):** `create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `force_unship`, `open_next`, `discard_next`
 - **Prose edits (file tools preferred):** after orientation, Write/StrReplace `title` / `description` scalars and the body below frontmatter at `current_path` or `next_path`. Toggle checklist boxes the same way. Never rewrite server-owned frontmatter fields.
 - **`patch_node_territory`:** optional fallback (automation, hosts with weak file tools). Prefer file tools in interactive coding agents so the host “changed files” strip shows the edit.
 - After graph MCP tools succeed, narrate what changed using `changed_files` (and states/edges) from the tool result — MCP FS writes do not appear in many hosts’ native edit UIs; review those paths via Source Control or by opening the cited file.
@@ -102,7 +102,7 @@ for each Foundation/Workflow whose links satisfy Ghost Workflow gates — **`dra
 
 ## Validate after every plan change
 
-After **each** MindPlan graph mutation — `create_node`, `open_next`, `discard_next`, `link_nodes`, `unlink_nodes`, `update_node_status` — **and** after any material territory prose edit that changes checklist gates or intent, **validate before continuing**:
+After **each** MindPlan graph mutation — `create_node`, `open_next`, `discard_next`, `link_nodes`, `unlink_nodes`, `update_node_status`, `force_unship` — **and** after any material territory prose edit that changes checklist gates or intent, **validate before continuing**:
 
 1. Re-read the changed focus with `find_related_nodes` (or `get_node_context` / `orient_for_work`). For multi-node restructuring, call `get_mindplan_graph` once and confirm the full picture.
 2. Confirm the mutation stuck: expected `id`s, `state`s (including `next.state` when a next slot is open), and edges (`belongs_to` / `depends_on` / `affects`) match what you intended. Use `changed_files` from the tool result when narrating MCP writes to the human.
@@ -192,6 +192,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | **Taxonomy** | illegal edge shape | Use correct edge type and node pairing |
 | **Dependency Closure** | `belongs_to` Workflow → Journey | Link dependent Workflows to the same Journey first, or pass `link_dependent: true` |
 | **Next Evolution** | `open_next` | Only `stable`/`unstable` nodes; blocked while a `next.mdx` already exists — `discard_next` or ship it first |
+| **Force Unship** | `force_unship` | Mistaken ship only; requires user yes + `confirm: "unship:<id>"`; blocked while `next` open or shipped dependents exist |
 | **Shipped scope freeze** | Hand-edit or `patch_node_territory` title/description on the `current` slot of a shipped Workflow | Call `open_next` first, then edit the `next` slot |
 
 ## MCP tools
@@ -212,6 +213,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | `link_nodes` | Add `belongs_to`, `depends_on`, or `affects`; optional `link_dependent: true` for Journey closure; writes to `next` while a next slot is open; returns `changed_files` |
 | `unlink_nodes` | Remove all edges between two nodes; returns `changed_files` |
 | `update_node_status` | Advance build pipeline (current or `next` slot), Bug lifecycle, or `ship` (promotes `next` over `current` when open); returns `changed_files` |
+| `force_unship` | **Recovery only.** Ask the user first; pass `confirm: "unship:<node_id>"` after an explicit yes. Clears `shipped_at` and sets a pre-ship state. Never invent `confirm`. |
 
 ## Never do
 
@@ -232,6 +234,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 - Ship a Workflow while linked Foundations or prerequisite Workflows are not `stable`
 - `ship` a Foundation/Workflow (or `resolved` a Bug) that this same agent session implemented — leave `in-review` for a human or another agent
 - Transition to gated states with unchecked `- [ ]` items in `current.mdx` / `next.mdx`
-- Reset a shipped node to `draft` — use `open_next` to evolve it in place instead
+- Reset a shipped node to `draft` via normal status transitions — use `open_next` to evolve, or `force_unship` only after explicit user confirmation for mistaken ships
+- Call `force_unship` without an explicit human yes in the conversation, or invent the `confirm` token
 - Open a second `next.mdx` while one is already in flight — `discard_next` or ship it first
 - Rewrite `next.mdx` as a delta/changelog only, or promote a body that would leave `current.mdx` describing only the latest change instead of the node's full repo contract (Territory Completeness)

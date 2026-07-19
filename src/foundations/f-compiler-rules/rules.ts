@@ -21,6 +21,7 @@ import {
   EXECUTION_TRANSITIONS,
   isBugState,
   isExecutionState,
+  isNextPipelineState,
   isOpenBugState,
   isProductionState,
   PRE_SHIP_WORKFLOW_STATES,
@@ -522,7 +523,8 @@ export function resolveStatusChange(
       `illegal transition "${node.state}" -> "${newStatus}" for node "${node.id}". ` +
         `Allowed from "${node.state}": ${allowed.join(", ") || "(none)"}. ` +
         `Production posture (stable/unstable) is computed automatically from open Bugs. ` +
-        `Use open_next to evolve a shipped Foundation/Workflow.`
+        `Use open_next to evolve a shipped Foundation/Workflow. ` +
+        `To undo a mistaken ship, ask the user then call force_unship with confirm: "unship:${node.id}".`
     );
   }
 
@@ -582,6 +584,72 @@ export function resolveStatusChange(
   }
 
   return { state: newStatus, ship: false, promote_next: false };
+}
+
+/** Exact confirm token required by force_unship (Rule 10). */
+export function forceUnshipConfirmToken(nodeId: string): string {
+  return `unship:${nodeId}`;
+}
+
+/**
+ * Rule 10 — Force Unship (mistaken ship recovery).
+ * Validates and returns the pre-ship target state. Caller clears shipped_at and persists.
+ */
+export function resolveForceUnship(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  newStatus: string,
+  confirm: string
+): NextPipelineState {
+  if (confirm !== forceUnshipConfirmToken(node.id)) {
+    throw blocked(
+      `force_unship requires confirm: "${forceUnshipConfirmToken(node.id)}". ` +
+        `Ask the user to confirm the unship, then pass that exact token. Do not invent confirmation.`
+    );
+  }
+
+  if (node.type !== "Workflow" && node.type !== "Foundation") {
+    throw blocked(
+      `force_unship only applies to Foundations and Workflows. Got ${node.type} "${node.id}".`
+    );
+  }
+
+  if (!isProductionState(node.state)) {
+    throw blocked(
+      `force_unship only applies to stable/unstable nodes. "${node.id}" is currently "${node.state}".`
+    );
+  }
+
+  if (node.next) {
+    throw blocked(
+      `cannot force_unship "${node.id}" while next.mdx exists (state "${node.next.state}"). Call discard_next first.`
+    );
+  }
+
+  const shippedDependents = dependentsOf(graph, node.id).filter((n) =>
+    isProductionState(n.state)
+  );
+  if (shippedDependents.length > 0) {
+    const list = shippedDependents.map((n) => `"${n.id}" (${n.state})`).join(", ");
+    throw blocked(
+      `cannot force_unship "${node.id}" while shipped dependents exist: ${list}. ` +
+        `Force-unship or deprecate those first (Infrastructure First).`
+    );
+  }
+
+  if (!isNextPipelineState(newStatus)) {
+    throw blocked(
+      `"${newStatus}" is not a valid force_unship target. Valid: draft, ready, in-progress, in-review.`
+    );
+  }
+
+  if (node.type === "Workflow") {
+    validateWorkflowRules(graph, node, newStatus);
+  } else if (node.type === "Foundation" && newStatus === "in-review") {
+    runCompletionCheck(node, newStatus, "current");
+  }
+
+  return newStatus;
 }
 
 /**

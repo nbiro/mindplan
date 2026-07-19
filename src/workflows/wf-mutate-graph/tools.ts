@@ -6,6 +6,7 @@ export const MUTATE_TOOLS = [
   "link_nodes",
   "unlink_nodes",
   "update_node_status",
+  "force_unship",
   "patch_node_territory",
   "open_next",
   "discard_next",

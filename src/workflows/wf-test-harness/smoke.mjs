@@ -586,6 +586,62 @@ if (
 } else console.log("ok   discard_next changed_files");
 void openForDiscard;
 
+// --- force_unship (mistaken ship recovery) ---
+await expectBlocked("force_unship wrong confirm", "force_unship", {
+  node_id: "wf-tips",
+  confirm: "nope",
+});
+await expectBlocked("force_unship mismatched token", "force_unship", {
+  node_id: "wf-tips",
+  confirm: "unship:wf-checkout",
+});
+
+await expectOk("open_next before force_unship gate", "open_next", { node_id: "wf-tips" });
+await expectBlocked("force_unship while next open", "force_unship", {
+  node_id: "wf-tips",
+  confirm: "unship:wf-tips",
+});
+await expectOk("discard_next before force_unship", "discard_next", { node_id: "wf-tips" });
+
+await expectBlocked("force_unship with shipped dependents", "force_unship", {
+  node_id: "wf-checkout",
+  confirm: "unship:wf-checkout",
+});
+
+const unshipRes = JSON.parse(
+  await expectOk("force_unship wf-tips to ready", "force_unship", {
+    node_id: "wf-tips",
+    confirm: "unship:wf-tips",
+    new_status: "ready",
+  })
+);
+if (unshipRes.new_state !== "ready" || unshipRes.shipped_at !== null) {
+  failures++;
+  console.log(`FAIL force_unship result: ${JSON.stringify(unshipRes)}`);
+} else console.log("ok   force_unship returns ready and cleared shipped_at");
+if (!unshipRes.changed_files?.includes("mindplan/workflows/wf-tips/current.mdx")) {
+  failures++;
+  console.log(`FAIL force_unship changed_files: ${JSON.stringify(unshipRes.changed_files)}`);
+} else console.log("ok   force_unship changed_files");
+
+graph = JSON.parse(await expectOk("read graph after force_unship", "get_mindplan_graph", {}));
+const tipsUnshipped = graph.nodes.find((n) => n.id === "wf-tips");
+if (tipsUnshipped.state !== "ready" || tipsUnshipped.shipped_at) {
+  failures++;
+  console.log(`FAIL wf-tips after force_unship: ${JSON.stringify(tipsUnshipped)}`);
+} else console.log("ok   force_unship cleared production posture on disk/graph");
+
+const tipsFm = fs.readFileSync(tipsPath, "utf-8");
+if (/^shipped_at:/m.test(tipsFm) || !/^state: ready$/m.test(tipsFm)) {
+  failures++;
+  console.log("FAIL wf-tips current.mdx should be ready without shipped_at");
+} else console.log("ok   force_unship removed shipped_at from frontmatter");
+
+await expectBlocked("stable to ready still blocked on update_node_status", "update_node_status", {
+  node_id: "wf-checkout",
+  new_status: "ready",
+});
+
 // --- CLI init resolves package templates from nested dist layout ---
 const initRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-"));
 const { spawnSync } = await import("child_process");

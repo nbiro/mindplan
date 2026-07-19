@@ -2,7 +2,7 @@
 id: wf-test-harness
 type: Workflow
 title: "Test harness"
-description: "Smoke/view/search tests; init permissions.json coverage"
+description: "Test harness; force_unship smoke + init permissions.json coverage"
 state: stable
 shipped_at: 2026-07-19T20:39:56.641Z
 created_at: 2026-07-15T18:51:38.385Z
@@ -13,11 +13,12 @@ depends_on:
   - f-mcp-runtime
 ---
 
+
 # Test harness
 
 ## Purpose
 
-Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers init install of `.cursor/permissions.json`.
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers `force_unship` recovery gates and init install of `.cursor/permissions.json`.
 
 ## Execution Logic
 
@@ -25,7 +26,7 @@ Package: `src/workflows/wf-test-harness/`
 
 - `view.test.mjs` — Mermaid/DOT projection unit tests
 - `search.test.mjs` — ranking excludes retired nodes
-- `smoke.mjs` — MCP stdio end-to-end + init template install (including `.cursor/permissions.json` with `mindplan:*`)
+- `smoke.mjs` — MCP stdio end-to-end + init template install (including `.cursor/permissions.json` with `mindplan:*`) + `force_unship` gates (confirm, next open, shipped dependents, happy path)
 
 Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`.
 
@@ -35,9 +36,11 @@ Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j
 - Smoke covers MCP tool round-trips and consumer init assets
 - Smoke asserts init installs `.cursor/permissions.json` with `mindplan:*`
 - Search tests assert retired-node exclusion from orientation ranking
+- Smoke covers `force_unship` confirm / next-open / shipped-dependents / clear-`shipped_at` happy path
 
 ## Atomic Ops
 
+- [x] Add `force_unship` smoke cases (confirm, next open, shipped dependents, happy path)
 - [x] Assert init installs `.cursor/permissions.json` with `mindplan:*`
 - [x] Keep existing view/search/init coverage green via `npm test`
 

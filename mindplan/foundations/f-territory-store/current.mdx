@@ -2,26 +2,27 @@
 id: f-territory-store
 type: Foundation
 title: "Territory filesystem store"
-description: "Territory FS store in src/foundations/f-territory-store/ (init split to wf-project-init)"
+description: "Territory FS store; patchFrontmatter can clear shipped_at for force_unship recovery"
 state: stable
-shipped_at: 2026-07-19T18:51:11.815Z
+shipped_at: 2026-07-19T20:40:31.876Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-07-19T19:39:22.350Z
+updated_at: 2026-07-19T20:40:31.876Z
 depends_on:
   - f-domain-model
 ---
+
 
 # Territory filesystem store
 
 ## Purpose
 
-Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities and prescribed `src/` packages, and owns `next.mdx` open/promote/discard plus territory body patches.
+Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities and prescribed `src/` packages, and owns `next.mdx` open/promote/discard plus territory body patches. Supports clearing `shipped_at` when recovering a mistaken ship via `force_unship`.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-territory-store/`
 
-- `store.ts` — path helpers (`mindplanRoot`, `entityDir`, `implementationDir`, …); frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` / edge writers (respecting next-slot edge writes); `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory` (slot resolution `current`|`next`); `countUncheckedBoxes`; `getNodeImplementation`
+- `store.ts` — path helpers (`mindplanRoot`, `entityDir`, `implementationDir`, …); frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` (optional `{ clearShippedAt: true }` removes the `shipped_at:` line) / edge writers (respecting next-slot edge writes); `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory` (slot resolution `current`|`next`); `countUncheckedBoxes`; `getNodeImplementation`
 
 Consumer init/install helpers live in `src/workflows/wf-project-init/init.ts` (not this Foundation).
 
@@ -29,12 +30,19 @@ Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- [x] Graph load matches on-disk `current.mdx` (+ optional `next.mdx`) frontmatter
-- [x] `open_next` seeds body and outgoing edges; `ship` promotes next over current; `discard_next` leaves current untouched
-- [x] Territory patches can target `current` or `next`; default to `next` when an evolution is open on that node
-- [x] Foundations/Workflows get prescribed packages under `src/foundations/<id>/` or `src/workflows/<id>/`
-- [x] Verified via `npm test`
+- Graph load matches on-disk `current.mdx` (+ optional `next.mdx`) frontmatter
+- `open_next` seeds body and outgoing edges; `ship` promotes next over current; `discard_next` leaves current untouched
+- Territory patches can target `current` or `next`; default to `next` when an evolution is open on that node
+- Foundations/Workflows get prescribed packages under `src/foundations/<id>/` or `src/workflows/<id>/`
+- `patchFrontmatter(..., { clearShippedAt: true })` removes `shipped_at` from `current.mdx`
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Extend `patchFrontmatter` with `clearShippedAt` to delete the `shipped_at:` line
+- [x] Document clear-shipped_at in this territory
+- [x] Verified via `npm test` (force_unship smoke)
 
 ## Attachments
 
-_Schemas and diagrams go in `attachments/`._
+_Schemas and diagrams go in `attachments/` / `next-attachments/`._

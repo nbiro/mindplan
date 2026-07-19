@@ -61,6 +61,7 @@ import {
   recomputeJourneyStates,
   recomputeStability,
   resolveStatusChange,
+  resolveForceUnship,
   validateLink,
   assertAcyclicDependsOn,
   missingJourneyDependents,
@@ -896,6 +897,63 @@ server.registerTool(
       next_state: node.next?.state ?? null,
       shipped_at: node.shipped_at,
       promoted_next: promoted,
+      stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+      journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
+      changed_files: changedFiles(files, true),
+    });
+  })
+);
+
+server.registerTool(
+  "force_unship",
+  {
+    title: "Force unship (mistaken ship recovery)",
+    description:
+      "DANGEROUS recovery only. Ask the user first and wait for an explicit yes — never invent confirmation. " +
+      "Reverses a mistaken Foundation/Workflow ship: clears shipped_at and sets a pre-ship state (default ready). " +
+      'Requires confirm exactly equal to "unship:<node_id>". Blocked while next.mdx is open or shipped dependents exist.',
+    inputSchema: {
+      node_id: NODE_ID.describe("Stable/unstable Foundation or Workflow to unship."),
+      confirm: z
+        .string()
+        .describe('Exact token after user confirmation: "unship:<node_id>". Do not invent this.'),
+      new_status: z
+        .enum(["draft", "ready", "in-progress", "in-review"])
+        .optional()
+        .describe("Pre-ship target state (default ready)."),
+    },
+  },
+  guarded(({ node_id, confirm, new_status }) => {
+    const graph = loadGraph();
+    const node = findNode(graph, node_id);
+    const target = new_status ?? "ready";
+    const previous = node.state;
+
+    resolveForceUnship(graph, node, target, confirm);
+
+    const now = new Date().toISOString();
+    delete node.shipped_at;
+    node.state = target;
+    node.updated_at = now;
+    patchFrontmatter(node, "current", { clearShippedAt: true });
+
+    const changedStability = recomputeStability(graph);
+    const changedJourneys = recomputeJourneyStates(graph);
+    syncNodes([...changedStability, ...changedJourneys]);
+    refreshPersistedMap();
+
+    const files = [
+      territoryPath(node),
+      ...changedJourneys.map((j) => territoryPath(j)),
+      ...changedStability.map((n) => territoryPath(n)),
+    ];
+
+    return ok({
+      node_id,
+      previous_state: previous,
+      new_state: node.state,
+      shipped_at: null,
+      force_unship: true,
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       changed_files: changedFiles(files, true),

@@ -214,7 +214,7 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 | **stable/unstable** | ✘ | ✘ | ✘ | ✘ | ✘ | ✔ |
 | **deprecated** | ✘ | ✘ | ✘ | ✘ | ✘ | — |
 
-### 3.2 Bug lifecycle (dedicated)
+**Exception — `force_unship` (Rule 10):** a dedicated recovery tool may clear `shipped_at` and move a `stable`/`unstable` Foundation/Workflow to `draft`/`ready`/`in-progress`/`in-review` only when the caller passes `confirm: "unship:<node_id>"` after explicit human confirmation. This is not a normal transition and MUST NOT be used as a substitute for `open_next` evolution.
 
 | State | Meaning |
 |---|---|
@@ -417,11 +417,27 @@ There is no successor id, no relinking step, and no predecessor to auto-deprecat
 
 Rationale: versioning models replacement without downtime during the build, without ever forcing dependents to discover and re-point at a new id. Git history of `current.mdx` — not a graph edge — is the audit trail for what a node's evolution changed at each ship.
 
-### 5.11 Enforcement ordering
+### 5.11 Rule 10 — Force Unship (mistaken ship recovery)
+
+`force_unship` MAY reverse a mistaken Foundation/Workflow ship. It is the only legal path from `stable`/`unstable` back to a pre-ship execution state. The server MUST:
+
+1. require `confirm` exactly equal to `unship:<node_id>` — any other value MUST be rejected with a message that tells the agent to ask the user and not invent confirmation,
+2. accept only Foundation/Workflow nodes currently in `stable` or `unstable`,
+3. reject while `next.mdx` is open (`discard_next` first),
+4. reject while any **direct** `depends_on` dependent is itself `stable` or `unstable` (enumerate them; force-unship or deprecate dependents first so Infrastructure First remains coherent),
+5. accept `new_status` only in `draft | ready | in-progress | in-review` (default `ready` when omitted),
+6. apply Ghost Workflow / Completion Check gates appropriate to the target state (same as a normal transition into that state),
+7. clear `shipped_at` on `current.mdx`, set `state` to the target, recompute Journey states, and refresh `mindplan/map.md`.
+
+Agents MUST obtain an explicit human yes in the conversation before calling `force_unship`. Agents MUST NOT invent or “helpfully” supply `confirm`. Journeys and Bugs MUST be rejected. Manual `stable`/`unstable` remains forbidden (§5.7).
+
+### 5.12 Enforcement ordering
 
 For a status mutation the compiler MUST evaluate, in order:
 
 1. node exists → 2. node is not a Journey → 3. resolve the active slot (`next.mdx` if open, else `current.mdx`) → 4. target state is valid for that slot → 5. transition is legal per §3 (or §3.6 next-pipeline transitions) → 6. Rules 1–4 (type-specific, evaluated against the active slot) → **write** → 7. on `ship` from `next` in-review, promote `next` over `current` per Rule 9 (§5.10) → 8. recompute stability (§3.5) → 9. recompute Journey states (§4) → 10. synchronize frontmatter.
+
+For `force_unship`: validate Rule 10 (§5.11), clear `shipped_at`, write pre-ship `state`, recompute Journey states, synchronize frontmatter.
 
 For `link_nodes` / `unlink_nodes` involving `affects`: validate §5.8, write edge, recompute stability for affected targets, recompute Journeys if applicable, mirror frontmatter.
 
@@ -635,7 +651,7 @@ Journeys have no outgoing edges. Incoming relationships are derived at scan time
 
 Exporters MAY render a deterministic typed-DAG projection of the assembled graph for humans (PRs, docs, local preview). Views MUST NOT become a second write path for node records or edges — frontmatter remains the sole graph authority (§7, §9.3).
 
-**Exception — auto-persisted Mermaid snapshot:** after every successful graph mutation (`create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, `update_node_status`), the server MUST write a full Mermaid projection to `mindplan/map.md`. That file is derived output (regenerated, not hand-edited); it MUST NOT be read back as graph state. On-demand projections via MCP `export_mindplan_view` (§8.1) and CLI `mindplan-mcp view` remain available and do not replace `map.md` unless the caller writes a file explicitly.
+**Exception — auto-persisted Mermaid snapshot:** after every successful graph mutation (`create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, `update_node_status`, `force_unship`), the server MUST write a full Mermaid projection to `mindplan/map.md`. That file is derived output (regenerated, not hand-edited); it MUST NOT be read back as graph state. On-demand projections via MCP `export_mindplan_view` (§8.1) and CLI `mindplan-mcp view` remain available and do not replace `map.md` unless the caller writes a file explicitly.
 
 Reference formats: Mermaid (`flowchart`) and Graphviz DOT.
 
@@ -830,7 +846,7 @@ Patches territory-owned content on `current.mdx` or `next.mdx`. Server-owned fro
 
 | Concern | Who writes |
 |---------|------------|
-| Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` | **MCP only** (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `open_next`, `discard_next`) |
+| Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` / `force_unship` | **MCP only** (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `force_unship`, `open_next`, `discard_next`) |
 | `title`, `description`, body (PRD / Atomic Ops), checkbox toggles | **Host file tools** preferred on `current_path` / `next_path` from orientation (so native “changed files” UIs show the edit); `patch_node_territory` is an optional fallback |
 | Server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays) | **MCP only** — agents MUST NOT hand-edit these fields |
 | `mindplan/map.md` | Server after graph mutations — derived snapshot, not graph authority |
@@ -880,7 +896,15 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 - **Input:** `node_id`, `new_status` (string; build/Bug state name, or `ship` for Foundation/Workflow production entry).
 - **Effect:** runs the full §5.11 pipeline. When the node has no open `next.mdx`, mutations apply to `current.mdx` exactly as in a first build. When `next.mdx` is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies `next.mdx`'s body/title/description/proposed edges onto `current.mdx`, merges non-`.gitkeep` files from `next-attachments/` into `attachments/`, computes `stable`/`unstable` from open Bugs, sets `shipped_at`, and deletes `next.mdx`/`next-attachments/` (§3.6, §5.10). Recomputes stability and Journey states, persists, mirrors frontmatter.
 - **Output:** `{ node_id, previous_state, new_state, next_state, shipped_at, promoted_next: boolean, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`. On promote, `changed_files` includes `current.mdx`, deleted `next.mdx` / `next-attachments/` paths, and any `attachments/<file>` copies from the next slot.
-- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–4 violations; manual `stable`/`unstable` attempt; `ship` attempted while `next.mdx` is not in-review; `deprecated` attempted while `next.mdx` is open.
+- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–4 violations; manual `stable`/`unstable` attempt; `ship` attempted while `next.mdx` is not in-review; `deprecated` attempted while `next.mdx` is open. Illegal production retreats SHOULD mention `force_unship` and the `unship:<node_id>` confirm shape.
+
+#### `force_unship`
+
+- **Input:** `node_id`, `confirm` (exact string `unship:<node_id>`), optional `new_status` (`draft|ready|in-progress|in-review`, default `ready`).
+- **Effect:** runs Rule 10 (§5.11): clears `shipped_at`, sets pre-ship `state` on `current.mdx`, recomputes Journey states, refreshes `mindplan/map.md`.
+- **Output:** `{ node_id, previous_state, new_state, shipped_at: null, force_unship: true, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`.
+- **Errors:** wrong/missing confirm; not Foundation/Workflow; not `stable`/`unstable`; open `next.mdx`; shipped direct dependents; invalid target; Ghost Workflow / Completion Check failures for the target state.
+- **Playbook:** agents MUST ask the human and wait for an explicit yes before calling; MUST NOT invent `confirm`.
 
 ### 8.3 Attachments
 
@@ -962,7 +986,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] Build pipeline, Bug lifecycle, and computed `stable`/`unstable` are enforced per §3.
 - [ ] The stable-id evolution model (`open_next` / `next.mdx` / promote-on-ship / `discard_next`) is enforced per §3.6, with no version-lineage edge and no dependent relinking.
 - [ ] Journey states are computed, never settable, per §4 (including `next`-slot activity); Bugs do not affect Journeys.
-- [ ] Rules 1–9 are enforced pre-write, fail-fast, per §5 (Rule 9 as `open_next`/`ship`-promotes/`discard_next`, §5.10).
+- [ ] Rules 1–10 are enforced pre-write, fail-fast, per §5 (Rule 9 as `open_next`/`ship`-promotes/`discard_next`, §5.10; Rule 10 as `force_unship`, §5.11).
 - [ ] Every rejection message starts with `Blocked: ` per §5.1.
 - [ ] `current.mdx`/`next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.

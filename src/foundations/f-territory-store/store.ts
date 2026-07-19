@@ -479,7 +479,8 @@ export function writeMarkdown(
 /** Patches server-owned state fields in current.mdx or next.mdx frontmatter. */
 export function patchFrontmatter(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">,
-  slot: TerritorySlot = "current"
+  slot: TerritorySlot = "current",
+  opts?: { clearShippedAt?: boolean }
 ): void {
   const file = markdownPath(node, slot);
   if (!fs.existsSync(file)) return;
@@ -491,11 +492,15 @@ export function patchFrontmatter(
     .replace(/^state:.*$/m, `state: ${node.state}`)
     .replace(/^updated_at:.*$/m, `updated_at: ${node.updated_at}`);
 
-  if (slot === "current" && node.shipped_at) {
-    if (/^shipped_at:/m.test(patched)) {
-      patched = patched.replace(/^shipped_at:.*$/m, `shipped_at: ${node.shipped_at}`);
-    } else {
-      patched = patched.replace(/^(state:.*)$/m, `$1\nshipped_at: ${node.shipped_at}`);
+  if (slot === "current") {
+    if (opts?.clearShippedAt) {
+      patched = patched.replace(/\r?\nshipped_at:.*$/m, "");
+    } else if (node.shipped_at) {
+      if (/^shipped_at:/m.test(patched)) {
+        patched = patched.replace(/^shipped_at:.*$/m, `shipped_at: ${node.shipped_at}`);
+      } else {
+        patched = patched.replace(/^(state:.*)$/m, `$1\nshipped_at: ${node.shipped_at}`);
+      }
     }
   }
 

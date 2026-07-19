@@ -2,36 +2,46 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules engine"
-description: "Compiler rules in src/foundations/f-compiler-rules/"
+description: "Compiler rules; adds resolveForceUnship (Rule 10) for mistaken stable recovery"
 state: stable
-shipped_at: 2026-07-19T18:51:11.758Z
+shipped_at: 2026-07-19T20:40:16.292Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-07-19T19:39:20.845Z
+updated_at: 2026-07-19T20:40:16.292Z
 depends_on:
   - f-domain-model
 ---
+
 
 # Compiler rules engine
 
 ## Purpose
 
-Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly.
+Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly. Includes Rule 10 force-unship recovery for mistaken ships.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-compiler-rules/`
 
-- `rules.ts` — find-node helpers; Rule 1 Ghost Workflow / Ghost Bug; Rule 2 Infrastructure First; Rule 3 Completion Check (unchecked Atomic Ops); taxonomy / dependency closure; status transition tables; Journey state recompute; production stability from open Bugs; `open_next` / `discard_next` / ship-promote gates (Rule 9 Next Evolution); shipped Workflow title/description freeze on `current`
+- `rules.ts` — find-node helpers; Rule 1 Ghost Workflow / Ghost Bug; Rule 2 Infrastructure First; Rule 3 Completion Check (unchecked Atomic Ops); taxonomy / dependency closure; status transition tables; Journey state recompute; production stability from open Bugs; `open_next` / `discard_next` / ship-promote gates (Rule 9 Next Evolution); `resolveForceUnship` / `forceUnshipConfirmToken` (Rule 10 Force Unship); shipped Workflow title/description freeze on `current`
 
 Depends on: `f-domain-model`. Uses `countUncheckedBoxes` from `f-territory-store`.
 
 ## Acceptance Criteria
 
-- [x] Illegal transitions and edge shapes are rejected with `Blocked:` messages
-- [x] Journey and `stable`/`unstable` are computed, never set manually through this layer’s callers
-- [x] Ship and `in-review` require Completion Check against the active territory file (`current` or `next`)
-- [x] Verified via `npm test`
+- Illegal transitions and edge shapes are rejected with `Blocked:` messages
+- Journey and `stable`/`unstable` are computed, never set manually through this layer’s callers
+- Ship and `in-review` require Completion Check against the active territory file (`current` or `next`)
+- `resolveForceUnship` enforces confirm token, no-next, no shipped dependents, and pre-ship targets only
+- Illegal production retreats via `update_node_status` mention `force_unship`
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Implement `resolveForceUnship` + `forceUnshipConfirmToken` (Rule 10)
+- [x] Point illegal stable/unstable retreats at `force_unship` + confirm shape
+- [x] Document Rule 10 in SPEC
+- [x] Verified via `npm test` (force_unship smoke)
 
 ## Attachments
 
-_Schemas and diagrams go in `attachments/`._
+_Schemas and diagrams go in `attachments/` / `next-attachments/`._

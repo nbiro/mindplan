@@ -10,7 +10,7 @@ flowchart TB
     f_github_actions["f-github-actions · GitHub Actions assembler · ready"]
     f_graph_search["f-graph-search · Graph search · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP stdio runtime · stable"]
-    f_npm_registry["f-npm-registry · npm registry adapter · stable"]
+    f_npm_registry["f-npm-registry · npm registry adapter · ready"]
     f_territory_store["f-territory-store · Territory filesystem store · stable"]
     f_view_projection["f-view-projection · View projection · stable"]
   end
