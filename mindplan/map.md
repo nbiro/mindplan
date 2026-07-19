@@ -12,13 +12,13 @@ flowchart TB
     f_territory_store["f-territory-store · Territory filesystem store · stable"]
     f_view_projection["f-view-projection · View projection · stable"]
   end
-  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
+  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
     wf_agent_integrations__in__j_agent_onboarding["wf-agent-integrations · Agent integrations · stable"]
     wf_framework_docs__in__j_agent_onboarding["wf-framework-docs · Framework documentation · stable"]
     wf_npm_publish__in__j_agent_onboarding["wf-npm-publish · Publish to npm · draft"]
     wf_project_init__in__j_agent_onboarding["wf-project-init · Init a consumer project · stable"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
     wf_export_views__in__j_territory_sdlc["wf-export-views · See the map · stable"]
     wf_framework_docs__in__j_territory_sdlc["wf-framework-docs · Framework documentation · stable"]
     wf_impl_packages__in__j_territory_sdlc["wf-impl-packages · Prescribe implementation packages · stable"]
