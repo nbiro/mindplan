@@ -2,11 +2,11 @@
 id: wf-framework-docs
 type: Workflow
 title: "Framework documentation"
-description: "Document Foundation roles (Assembler, Infra, Design system, Adapter) across SPEC, playbook, skills, and README"
+description: "Own MindPlan normative docs: SPEC, playbooks, skills, README — Foundation roles, Territory Completeness, and agent process guidance."
 state: stable
-shipped_at: 2026-07-19T19:33:19.905Z
+shipped_at: 2026-07-19T19:42:01.875Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-19T19:33:19.905Z
+updated_at: 2026-07-19T19:42:01.875Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
@@ -15,23 +15,53 @@ depends_on:
 ---
 
 
+
 # Framework documentation
 
-README, SPEC, and playbook: Foundation roles (Assembler, Infra, Design system, Adapter) as documentation groupings — not new NodeTypes.
+## Purpose
+
+Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, and how to evolve shipped work without destroying the living contract.
 
 ## Execution Logic
 
-Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder is a pointer; no runtime TS. Foundation scaffold lives in `src/foundations/f-territory-store/store.ts`.
+Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. The package folder `src/workflows/wf-framework-docs/` is a pointer (no runtime TS).
 
-## Checklist
+Surfaces owned by this Workflow:
 
-- [x] SPEC.md: Foundation roles section + litmus/examples (§1.2, §2, §2.0)
-- [x] AGENTS.md + templates/agent/playbook.md (+ mindplan/agent/playbook.md mirror): Foundation roles table
-- [x] define-entities skill (templates + mindplan/agent mirror): role classification, description tag, Assembler depends_on
-- [x] README.md: short Foundation roles paragraph in taxonomy
-- [x] Foundation scaffold Shared Substrate Spec: role belongs in frontmatter description
-- [x] Review fixes: Assembler linking SHOULD (not MUST); role only in description; scaffold/examples aligned
+- `SPEC.md` — normative language (taxonomy, versioning, Territory Completeness, compiler rules)
+- `AGENTS.md` — always-applied agent playbook (repo root)
+- `templates/agent/playbook.md` — consumer playbook shipped by `mindplan-mcp init`
+- `mindplan/agent/playbook.md` — local mirror of the playbook
+- `templates/agent/skills/define-entities/` (+ mindplan/agent mirror) — entity scaffolding skill
+- `README.md` — product framing and taxonomy summary
+
+Foundation scaffold copy that mentions roles lives in `src/foundations/f-territory-store/store.ts` (touched when role/description conventions change).
+
+### Territory Completeness
+
+`current.mdx` is the complete contract of what a node *is* in the repository now. `next.mdx` is a complete proposed successor of that same contract (seeded from current, edited in place). Atomic Ops on `next` may be evolution-scoped; PRD/spec sections must remain a full post-ship document. Delta-only or changelog-only `next` bodies are forbidden because `ship` promotes `next` over `current`.
+
+### Foundation roles (docs convention)
+
+Assembler, Infra, Design system, Adapter — documentation groupings only (not NodeTypes). Agents SHOULD tag the role at the start of a Foundation `description`.
+
+## Acceptance Criteria
+
+- SPEC documents Territory Completeness and Foundation roles.
+- Playbooks (AGENTS + templates + mindplan mirror) instruct agents to keep `current`/`next` as full contracts and forbid delta-only promotion.
+- define-entities skill aligns with Foundation role tagging.
+- README summarizes Foundation roles in the taxonomy section.
+- Active MindPlan Journey/Foundation/Workflow territories describe full repo state (not stubs or latest-change deltas).
+
+## Atomic Ops
+
+- [x] SPEC.md §3.6: Territory Completeness MUST
+- [x] AGENTS.md + templates/agent/playbook.md + mindplan/agent mirror: versioning steps, review check, Never rule
+- [x] Retrofit all 6 stable Foundation current.mdx bodies to full-state contracts
+- [x] Retrofit active non-deprecated Workflow current.mdx bodies (excl. this node’s next)
+- [x] Refresh both Journey current.mdx bodies to full contracts
+- [x] This next.mdx is itself a full successor contract (not a changelog)
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+_Wireframes and notes go in `attachments/` / `next-attachments/`._

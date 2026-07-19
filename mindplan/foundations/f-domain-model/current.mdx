@@ -6,23 +6,29 @@ description: "Taxonomy and graph types in src/foundations/f-domain-model/"
 state: stable
 shipped_at: 2026-07-19T18:51:13.644Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-07-19T18:51:13.644Z
+updated_at: 2026-07-19T19:39:17.563Z
 ---
-
 
 # Domain model
 
+## Purpose
+
+Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, and the optional `next` evolution slot. Every other Foundation and Workflow imports these types; there is no I/O here.
+
 ## Shared Substrate Spec
 
-Implemented in `src/foundations/f-domain-model/`:
+Package: `src/foundations/f-domain-model/`
 
-- `types.ts` — taxonomy, state machines, edge types, next-slot types, graph version
+- `types.ts` — `NODE_TYPES`, execution/production/Bug/Journey state machines and legal transitions, edge types (`belongs_to` / `depends_on` / `affects`), `MindPlanNode` / `MindPlanEdge` / `MindPlanGraph`, next-slot pipeline states, `GRAPH_VERSION`, helpers (`isExecutionState`, `isOpenBugState`, …)
 
-## Checklist
+Depends on: none.
 
-- [x] Spec written
-- [x] Implementation complete in `src/foundations/f-domain-model/`
-- [x] Verified in target environment (`npm test`)
+## Acceptance Criteria
+
+- [x] All NodeTypes, edge types, and state machines used by the compiler and store are defined here
+- [x] Next-slot types support stable-id evolution without successor node ids
+- [x] `GRAPH_VERSION` is reported by `get_mindplan_graph`
+- [x] Verified via `npm test`
 
 ## Attachments
 

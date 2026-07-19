@@ -6,26 +6,34 @@ description: "Territory FS store in src/foundations/f-territory-store/ (init spl
 state: stable
 shipped_at: 2026-07-19T18:51:11.815Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-07-19T18:51:11.815Z
+updated_at: 2026-07-19T19:39:22.350Z
 depends_on:
   - f-domain-model
 ---
 
-
 # Territory filesystem store
+
+## Purpose
+
+Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities and prescribed `src/` packages, and owns `next.mdx` open/promote/discard plus territory body patches.
 
 ## Shared Substrate Spec
 
-Implemented in `src/foundations/f-territory-store/`:
+Package: `src/foundations/f-territory-store/`
 
-- `store.ts` — discover/load graph, frontmatter edges, scaffold, next promote/discard, territory patch
-- Consumer init/install helpers live in `src/workflows/wf-project-init/init.ts` (not this Foundation)
+- `store.ts` — path helpers (`mindplanRoot`, `entityDir`, `implementationDir`, …); frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` / edge writers (respecting next-slot edge writes); `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory` (slot resolution `current`|`next`); `countUncheckedBoxes`; `getNodeImplementation`
 
-## Checklist
+Consumer init/install helpers live in `src/workflows/wf-project-init/init.ts` (not this Foundation).
 
-- [x] Spec written
-- [x] Implementation complete in `src/foundations/f-territory-store/`
-- [x] Verified in target environment (`npm test`)
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- [x] Graph load matches on-disk `current.mdx` (+ optional `next.mdx`) frontmatter
+- [x] `open_next` seeds body and outgoing edges; `ship` promotes next over current; `discard_next` leaves current untouched
+- [x] Territory patches can target `current` or `next`; default to `next` when an evolution is open on that node
+- [x] Foundations/Workflows get prescribed packages under `src/foundations/<id>/` or `src/workflows/<id>/`
+- [x] Verified via `npm test`
 
 ## Attachments
 

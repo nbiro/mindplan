@@ -5,23 +5,35 @@ title: "Adopt MindPlan"
 description: "Adopt MindPlan in a consumer project and wire it into coding agents via init, playbooks, and integrations."
 state: stable
 created_at: 2026-07-15T18:51:13.072Z
-updated_at: 2026-07-19T19:33:19.908Z
+updated_at: 2026-07-19T19:42:01.877Z
 ---
 
 # Adopt MindPlan
 
-Adopt MindPlan in a consumer project and wire it into coding agents via init, playbooks, and integrations.
+## Purpose
+
+Domain capability: adopt MindPlan in a consumer project and wire it into coding agents — init, playbooks, per-agent MCP guides, public package install path, and shared framework documentation.
 
 ## Overview
 
-Consumer projects install MindPlan territory, an always-on agent playbook, the define-entities skill, and per-agent MCP setup guides.
+A consumer runs `mindplan-mcp init` (or installs from npm once published) and gets territory layout, an always-on playbook (`AGENTS.md` / `mindplan/agent/playbook.md`), the define-entities skill, `.cursorignore`, and integration guides for major agent hosts. Framework docs (SPEC, README, roles, Territory Completeness) are shared with Plan software so consumers and this repo speak the same language.
+
+Journey state is **computed** from member Workflows. Assembler for init/runtime paths: `f-mcp-runtime` (via Workflow `depends_on`).
 
 ## Linked Workflows
 
-- `wf-project-init` — scaffold mindplan/ + agent assets
+- `wf-project-init` — scaffold `mindplan/` + agent assets
 - `wf-agent-integrations` — per-agent MCP setup guides
-- `wf-npm-publish` — publish mindplan-mcp to npm
-- `wf-framework-docs` — README / SPEC / playbook (shared with Plan software)
+- `wf-npm-publish` — publish `mindplan-mcp` to npm (draft until first publish)
+- `wf-framework-docs` — README / SPEC / playbook / skills (shared with Plan software)
+
+Deprecated historical suffixes (`wf-project-init-v2`, `wf-framework-docs-v3`, …) are not active members of the living capability.
+
+## What “healthy” means
+
+- A new repo can init and connect an agent to MindPlan MCP without hand-copying internals
+- Playbook and SPEC stay aligned with Territory Completeness and Foundation roles
+- npm publish (when shipped) makes install a one-liner for consumers
 
 ## Attachments
 

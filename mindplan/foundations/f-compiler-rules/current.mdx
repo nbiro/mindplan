@@ -6,25 +6,31 @@ description: "Compiler rules in src/foundations/f-compiler-rules/"
 state: stable
 shipped_at: 2026-07-19T18:51:11.758Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-07-19T18:51:11.758Z
+updated_at: 2026-07-19T19:39:20.845Z
 depends_on:
   - f-domain-model
 ---
 
-
 # Compiler rules engine
+
+## Purpose
+
+Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly.
 
 ## Shared Substrate Spec
 
-Implemented in `src/foundations/f-compiler-rules/`:
+Package: `src/foundations/f-compiler-rules/`
 
-- `rules.ts` — Blocked: guardrails, status transitions, journey/stability recompute, open_next validation
+- `rules.ts` — find-node helpers; Rule 1 Ghost Workflow / Ghost Bug; Rule 2 Infrastructure First; Rule 3 Completion Check (unchecked Atomic Ops); taxonomy / dependency closure; status transition tables; Journey state recompute; production stability from open Bugs; `open_next` / `discard_next` / ship-promote gates (Rule 9 Next Evolution); shipped Workflow title/description freeze on `current`
 
-## Checklist
+Depends on: `f-domain-model`. Uses `countUncheckedBoxes` from `f-territory-store`.
 
-- [x] Spec written
-- [x] Implementation complete in `src/foundations/f-compiler-rules/`
-- [x] Verified in target environment (`npm test`)
+## Acceptance Criteria
+
+- [x] Illegal transitions and edge shapes are rejected with `Blocked:` messages
+- [x] Journey and `stable`/`unstable` are computed, never set manually through this layer’s callers
+- [x] Ship and `in-review` require Completion Check against the active territory file (`current` or `next`)
+- [x] Verified via `npm test`
 
 ## Attachments
 

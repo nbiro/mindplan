@@ -6,7 +6,7 @@ description: "Move runtime code into src/foundations/<id>/ and src/workflows/<id
 state: stable
 shipped_at: 2026-07-19T18:51:24.353Z
 created_at: 2026-07-19T18:33:36.847Z
-updated_at: 2026-07-19T18:51:24.353Z
+updated_at: 2026-07-19T19:39:46.274Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,20 +16,29 @@ depends_on:
 
 # Prescribe implementation packages
 
+## Purpose
+
+Make architecture scream from the filesystem: every Foundation and Workflow owns a prescribed package under `src/foundations/<id>/` or `src/workflows/<id>/`. Thin `src/index.ts` boots `f-mcp-runtime`. Suffix (`-v2`/`-v3`) Workflows are deprecated; orientation excludes retired nodes.
+
 ## Execution Logic
 
-1. Foundations under `src/foundations/<id>/`
-2. Workflows under `src/workflows/<id>/`
-3. Thin `src/index.ts` boots `f-mcp-runtime`
+This Workflow is process + layout (package pointer under `src/workflows/wf-impl-packages/`). Live contract:
+
+1. Foundations live under `src/foundations/<id>/` (domain, compiler-rules, territory-store, graph-search, view-projection, mcp-runtime)
+2. Workflows live under `src/workflows/<id>/` (query, mutate, export, project-init, test-harness, …)
+3. `create_node` / store scaffolds those packages; `get_node_implementation` returns the root
 4. `npm test` points at `wf-test-harness`
-5. Suffix Workflows deprecated; orientation excludes retired nodes
+5. Deprecated suffix Workflows remain in the graph for history but are not orientation focus
 
-## Checklist
+Depends on: `f-territory-store`, `f-mcp-runtime`. Belongs to: `j-territory-sdlc`.
 
-- [x] Foundations moved (domain, rules, store, search, view, mcp-runtime)
-- [x] Workflows moved (query, mutate, export, project-init, test-harness)
-- [x] Thin entry + imports wire; `npm test` green
-- [x] Stale suffix Workflows deprecated; map screams clean ids
+## Acceptance Criteria
+
+- [x] All runtime Foundations/Workflows have prescribed packages matching their ids
+- [x] Thin entry boots MCP runtime; imports resolve from packages
+- [x] `get_node_implementation` reports package roots
+- [x] Stale suffix Workflows are `deprecated`; map/orientation prefer clean ids
+- [x] `npm test` green
 
 ## Attachments
 

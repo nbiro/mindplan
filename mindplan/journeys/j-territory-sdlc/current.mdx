@@ -5,25 +5,37 @@ title: "Plan software"
 description: "Plan and execute software work through MindPlan territory, compiler gates, and MCP graph tools."
 state: stable
 created_at: 2026-07-15T18:51:13.777Z
-updated_at: 2026-07-19T19:33:19.908Z
+updated_at: 2026-07-19T19:42:01.877Z
 ---
 
 # Plan software
 
-Plan and execute software work through MindPlan territory, compiler gates, and MCP graph tools.
+## Purpose
+
+Domain capability: plan and execute software work through a GitOps MindPlan territory — orientation, compiler-gated mutation, diagrams, prescribed packages, and framework docs. Agents never invent tickets outside this graph.
 
 ## Overview
 
-Agents and humans plan software by querying and mutating a GitOps territory graph. Orientation starts with `orient_for_work` / `find_related_nodes`; all writes go through the MCP compiler; Mermaid/DOT views and blast radius keep dependencies visible before change.
+Humans and coding agents share one living plan under `mindplan/`. Work starts with `orient_for_work` / `find_related_nodes`, reads territory via `get_node_context`, checks blast radius before substantial Foundation/Workflow implementation, and mutates only through MCP tools. Mermaid/DOT views keep the architecture visible; `ship` and Bug resolution are gated by compiler rules and external review.
+
+Journey state is **computed** from member Workflows (never set manually). Assembler(s) are derived from member Workflows’ `depends_on` (today: `f-mcp-runtime` via the SDLC Workflows).
 
 ## Linked Workflows
 
-- `wf-query-graph` — orient on the plan
-- `wf-mutate-graph` — change the plan
-- `wf-export-views` — see the map
-- `wf-test-harness` — smoke and view regression tests
-- `wf-impl-packages` — prescribe src/foundations and src/workflows packages
-- `wf-framework-docs` — framework documentation (shared with Adopt MindPlan)
+- `wf-query-graph` — orient on the plan (read tools)
+- `wf-mutate-graph` — change the plan (write tools)
+- `wf-export-views` — see the map (Mermaid/DOT + map.md)
+- `wf-test-harness` — smoke / view / search regression
+- `wf-impl-packages` — prescribe `src/foundations` and `src/workflows` packages
+- `wf-framework-docs` — SPEC, playbooks, skills, README (shared with Adopt MindPlan)
+
+Deprecated historical suffixes (`wf-query-graph-v2`, `wf-export-views-v2`, `wf-framework-docs-v3`, …) are not active members of the living capability.
+
+## What “healthy” means
+
+- Agents can orient, mutate, and export without bypassing MCP or `.cursorignore`
+- Active Workflow territories describe full repo contracts (Territory Completeness)
+- Foundations that SDLC Workflows depend on are shipped and stable unless intentionally evolving
 
 ## Attachments
 

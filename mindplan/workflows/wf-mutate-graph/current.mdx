@@ -6,7 +6,7 @@ description: "Write-path graph tools; package at src/workflows/wf-mutate-graph/"
 state: stable
 shipped_at: 2026-07-19T18:51:25.028Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-07-19T18:51:25.028Z
+updated_at: 2026-07-19T19:39:40.265Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -14,19 +14,30 @@ depends_on:
   - f-compiler-rules
 ---
 
-
 # Mutate graph
+
+## Purpose
+
+Write-path MindPlan tools: create/link nodes, advance pipeline state, patch territory, and open/discard/promote evolutions — always through the compiler.
 
 ## Execution Logic
 
-Write-path MCP tools registered in `f-mcp-runtime/server.ts`; ownership list in `src/workflows/wf-mutate-graph/tools.ts`:
-`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `patch_node_territory`, `open_next`, `discard_next`.
+Package: `src/workflows/wf-mutate-graph/`
 
-## Checklist
+- `tools.ts` — ownership list `MUTATE_TOOLS` registered by `f-mcp-runtime/server.ts`:
+  - `create_node`, `link_nodes`, `unlink_nodes`
+  - `update_node_status` (current or `next` slot; `ship` promotes `next`)
+  - `patch_node_territory` (body, title/description, checkbox toggles; defaults to `next` when evolving)
+  - `open_next`, `discard_next`
 
-- [x] Requirements defined
-- [x] Tools wired under package ownership (`src/workflows/wf-mutate-graph/`)
-- [x] Tests passing
+Compiler gates live in `f-compiler-rules`. Depends on: `f-mcp-runtime`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
+
+## Acceptance Criteria
+
+- [x] All seven mutate tools are registered and persist through the territory store
+- [x] Illegal mutations return `Blocked:` and leave the graph unchanged
+- [x] Successful mutations refresh `mindplan/map.md` via the runtime
+- [x] Verified via `npm test`
 
 ## Attachments
 

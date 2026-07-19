@@ -6,27 +6,32 @@ description: "MCP/CLI shell in src/foundations/f-mcp-runtime/; resolves package 
 state: stable
 shipped_at: 2026-07-19T18:51:18.705Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-07-19T18:51:18.705Z
+updated_at: 2026-07-19T19:39:24.727Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
 ---
 
-
 # MCP stdio runtime
+
+## Purpose
+
+Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`.
 
 ## Shared Substrate Spec
 
-Implemented in `src/foundations/f-mcp-runtime/`:
+Package: `src/foundations/f-mcp-runtime/`
 
-- `server.ts` — MCP tool registration shell, CLI (`init`/`view`), package-root resolution for templates
-- Thin entry: `src/index.ts` boots this module
+- `server.ts` — MCP server registration; CLI (`init`, `view`, help); wires compiler + store + search + view projection; registers read tools (`wf-query-graph`), write tools (`wf-mutate-graph`), and `export_mindplan_view` (`wf-export-views`); auto-persists `mindplan/map.md` after successful graph mutations
 
-## Checklist
+Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search and view-projection at runtime).
 
-- [x] Spec written
-- [x] Implementation complete in `src/foundations/f-mcp-runtime/`
-- [x] Verified in target environment (`npm test`)
+## Acceptance Criteria
+
+- [x] MCP tools listed in Workflow ownership modules are registered and callable over stdio
+- [x] CLI `init` / `view` / help work against the resolved package root
+- [x] Mutations that succeed refresh the Mermaid map on disk
+- [x] Verified via `npm test` (smoke)
 
 ## Attachments
 

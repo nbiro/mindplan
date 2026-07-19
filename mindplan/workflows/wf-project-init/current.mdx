@@ -6,7 +6,7 @@ description: "Scaffold consumer mindplan/ plus agent playbook, define-entities s
 state: stable
 shipped_at: 2026-07-19T18:51:23.132Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-07-19T18:51:23.132Z
+updated_at: 2026-07-19T19:39:55.237Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -15,15 +15,31 @@ depends_on:
 
 # Init a consumer project
 
+## Purpose
+
+Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities skill, MCP example config, per-agent integration guides, root `AGENTS.md`, and `.cursorignore` so agents read territory via MCP.
+
 ## Execution Logic
 
-`mindplan-mcp init` uses `src/workflows/wf-project-init/init.ts` (playbook, skill, integrations, AGENTS.md, .cursorignore). Package root resolved by walking up to `templates/agent`.
+Package: `src/workflows/wf-project-init/`
 
-## Checklist
+- `init.ts` — `initProject` plus install helpers:
+  - `installAgentPlaybook` — `templates/agent/playbook.md` → `mindplan/agent/`
+  - `installDefineEntitiesSkill` — skill under `mindplan/agent/skills/`
+  - `installMcpExample` — `mcp.json.example`
+  - `installAgentIntegrations` — guides into `mindplan/agent/integrations/`
+  - `installRootAgentsMd` — root `AGENTS.md` from template
+  - `installCursorIgnore` — blocks direct reads of territory MDX/map
+- Invoked by CLI `mindplan-mcp init` in `f-mcp-runtime` (package root resolved by walking up to `templates/agent`)
 
-- [x] Requirements defined
-- [x] Init helpers moved out of territory store into this package
-- [x] Tests passing
+Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`.
+
+## Acceptance Criteria
+
+- [x] `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
+- [x] Playbook, define-entities skill, integrations, MCP example, AGENTS.md, and `.cursorignore` are installed from `templates/`
+- [x] Init helpers live in this package (not in the territory store)
+- [x] Smoke test covers init template install
 
 ## Attachments
 

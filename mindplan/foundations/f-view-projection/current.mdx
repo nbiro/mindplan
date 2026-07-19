@@ -6,24 +6,31 @@ description: "View projection in src/foundations/f-view-projection/"
 state: stable
 shipped_at: 2026-07-19T18:51:18.650Z
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-07-19T18:51:18.650Z
+updated_at: 2026-07-19T19:39:28.391Z
 depends_on:
   - f-domain-model
 ---
 
 # View projection
 
+## Purpose
+
+Infra — project the MindPlan graph into Mermaid or DOT for humans, and persist the canonical Mermaid map at `mindplan/map.md` after mutations. Agents must treat MCP export/`find_related_nodes` as authority, not the map file alone.
+
 ## Shared Substrate Spec
 
-Implemented in `src/foundations/f-view-projection/`:
+Package: `src/foundations/f-view-projection/`
 
-- `view.ts` — Mermaid/DOT projection and `mindplan/map.md` persistence
+- `view.ts` — `prepareViewGraph` (optional focus, hide retired); `graphToMermaid` / `graphToDot`; `exportMindPlanView`; `persistMindPlanMap` / `mindPlanMapPath` (`MAP_FILENAME = map.md`)
 
-## Checklist
+Depends on: `f-domain-model`.
 
-- [x] Spec written
-- [x] Implementation complete in `src/foundations/f-view-projection/`
-- [x] Verified in target environment (`npm test`)
+## Acceptance Criteria
+
+- [x] Mermaid and DOT exports render nodes, edges, and states
+- [x] Focused and full-graph views are supported
+- [x] Successful graph mutations can refresh `mindplan/map.md`
+- [x] Verified via `npm test` (`view.test.mjs`)
 
 ## Attachments
 

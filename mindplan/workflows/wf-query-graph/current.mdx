@@ -6,7 +6,7 @@ description: "Read orientation tools: find_related_nodes, get_mindplan_graph, ge
 state: stable
 shipped_at: 2026-07-19T18:51:25.002Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-07-19T18:51:25.002Z
+updated_at: 2026-07-19T19:39:39.381Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,15 +16,30 @@ depends_on:
 
 # Orient on the plan
 
+## Purpose
+
+Read-path orientation for agents and humans: find the owning node, its 1-hop neighborhood, territory body, blast radius, and prescribed implementation package before coding.
+
 ## Execution Logic
 
-Read tools registered in `f-mcp-runtime`; ownership in `src/workflows/wf-query-graph/tools.ts`. Ranking substrate: `f-graph-search`.
+Package: `src/workflows/wf-query-graph/`
 
-## Checklist
+- `tools.ts` — ownership list `QUERY_TOOLS` registered by `f-mcp-runtime/server.ts`:
+  - `get_mindplan_graph` — full graph dump
+  - `find_related_nodes` — ranked focus + 1-hop summaries
+  - `get_blast_radius` — transitive dependents + `journeys_at_risk`
+  - `get_node_context` — record + body (+ `next` when evolving)
+  - `orient_for_work` — composite find + context + blast radius
+  - `get_node_implementation` — `src/foundations/<id>/` or `src/workflows/<id>/`
 
-- [x] Requirements defined
-- [x] Tools live under `src/workflows/wf-query-graph/`
-- [x] Tests passing
+Ranking substrate: `f-graph-search`. Depends on: `f-mcp-runtime`, `f-graph-search`. Belongs to: `j-territory-sdlc`.
+
+## Acceptance Criteria
+
+- [x] All six read tools are registered and return authoritative graph/territory data
+- [x] Orientation excludes retired nodes from default ranking
+- [x] `orient_for_work` includes blast radius for Foundation/Workflow focus
+- [x] Verified via `npm test`
 
 ## Attachments
 

@@ -142,9 +142,11 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 
 1. `get_blast_radius` on the live node — note dependents and `journeys_at_risk` before opening an evolution.
 2. `open_next` — opens `next.mdx` on the **same** node id, seeded from `current.mdx` (`draft` state, inherited outgoing `belongs_to`/`depends_on`, optional new `title`/`description`). The live node keeps serving unchanged under `current.mdx`; `get_node_context` / `orient_for_work` surface the live `record` plus a `next` slot.
-3. Run the **build pipeline loop** against the next slot: `update_node_status` transitions `next.state` through `draft → ready → in-progress → in-review`; `patch_node_territory` defaults to `next` for a shipped node with a next slot open (pass `slot: "current"` to explicitly target the live file instead).
-4. `update_node_status` → `ship` is only legal from `next` `in-review`. It re-checks **Infrastructure First** against the next slot's `depends_on`, promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, sets `shipped_at`, and recomputes `stable`/`unstable` — same id throughout.
-5. `discard_next` abandons an in-flight evolution at any point — deletes `next.mdx` (and `next-attachments/`); `current.mdx` is untouched. Only one `next.mdx` may be open per node at a time — `open_next` is blocked while one already exists; discard or ship it first.
+3. **Territory Completeness** — edit `next` into a **complete proposed successor** of the live contract (Purpose, PRD/Execution Logic/Shared Substrate Spec, Acceptance Criteria). Seed is the starting point; do not replace the body with a changelog, “diff vs current,” or “this evolution only” narrative. Atomic Ops / checklist items on `next` MAY be evolution-scoped (reset for this build); spec sections MUST stay a full post-ship document. `current.mdx` MUST always describe full repo state for the node — never only the latest change.
+4. Run the **build pipeline loop** against the next slot: `update_node_status` transitions `next.state` through `draft → ready → in-progress → in-review`; `patch_node_territory` defaults to `next` for a shipped node with a next slot open (pass `slot: "current"` to explicitly target the live file instead).
+5. Before `next` → `in-review`, **verify Territory Completeness**: if you removed the full contract and left only evolution work items or a changelog, stop and restore a full successor body.
+6. `update_node_status` → `ship` is only legal from `next` `in-review`. It re-checks **Infrastructure First** against the next slot's `depends_on`, promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, sets `shipped_at`, and recomputes `stable`/`unstable` — same id throughout.
+7. `discard_next` abandons an in-flight evolution at any point — deletes `next.mdx` (and `next-attachments/`); `current.mdx` is untouched. Only one `next.mdx` may be open per node at a time — `open_next` is blocked while one already exists; discard or ship it first.
 
 ## Territory rules during execution
 
@@ -210,3 +212,4 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 - Transition to gated states with unchecked `- [ ]` items in `current.mdx` / `next.mdx`
 - Reset a shipped node to `draft` — use `open_next` to evolve it in place instead
 - Open a second `next.mdx` while one is already in flight — `discard_next` or ship it first
+- Rewrite `next.mdx` as a delta/changelog only, or promote a body that would leave `current.mdx` describing only the latest change instead of the node's full repo contract (Territory Completeness)

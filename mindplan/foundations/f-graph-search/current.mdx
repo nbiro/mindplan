@@ -6,25 +6,31 @@ description: "Graph search in src/foundations/f-graph-search/; excludes retired 
 state: stable
 shipped_at: 2026-07-19T18:51:18.683Z
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-07-19T18:51:18.683Z
+updated_at: 2026-07-19T19:39:25.138Z
 depends_on:
   - f-domain-model
 ---
 
 # Graph search
 
+## Purpose
+
+Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`. Keeps retired nodes out of default ranking so agents focus on the live architecture.
+
 ## Shared Substrate Spec
 
-Implemented in `src/foundations/f-graph-search/`:
+Package: `src/foundations/f-graph-search/`
 
-- `search.ts` — token ranking + 1-hop neighborhood
-- Retired nodes (`deprecated`, closed Bugs) are excluded from ranking by default (same policy as map export)
+- `search.ts` — `tokenize` / `scoreNode` / `rankNodes`; `expandNeighborhood`; `findRelatedNodes` (focus + linked summaries); default/max find limits; excludes `deprecated` nodes and closed Bugs from ranking by default (aligned with map export policy)
 
-## Checklist
+Depends on: `f-domain-model`.
 
-- [x] Spec written
-- [x] Implementation complete in `src/foundations/f-graph-search/`
-- [x] Verified in target environment (`npm test`)
+## Acceptance Criteria
+
+- [x] Query ranking returns a focus plus 1-hop neighborhood summaries
+- [x] Retired nodes are excluded from default orientation ranking
+- [x] Limits respect DEFAULT_FIND_LIMIT / MAX_FIND_LIMIT
+- [x] Verified via `npm test` (`search.test.mjs`)
 
 ## Attachments
 

@@ -6,7 +6,7 @@ description: "Mermaid/DOT export plus automatic mindplan/map.md refresh after gr
 state: stable
 shipped_at: 2026-07-19T18:51:31.578Z
 created_at: 2026-07-19T18:33:36.804Z
-updated_at: 2026-07-19T18:51:31.578Z
+updated_at: 2026-07-19T19:39:42.931Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -17,15 +17,26 @@ depends_on:
 
 # See the map
 
+## Purpose
+
+Human-facing graph diagrams: on-demand Mermaid/DOT export and automatic persistence of `mindplan/map.md` after successful graph mutations so the repo always has a readable map (MCP remains authority).
+
 ## Execution Logic
 
-`export_mindplan_view` + map refresh; ownership in `src/workflows/wf-export-views/tools.ts`. Projection substrate: `f-view-projection`.
+Package: `src/workflows/wf-export-views/`
 
-## Checklist
+- `tools.ts` — ownership list `EXPORT_TOOLS`: `export_mindplan_view`
+- Projection substrate: `f-view-projection` (`graphToMermaid` / `graphToDot` / `persistMindPlanMap`)
+- Registration and post-mutation map refresh: `f-mcp-runtime/server.ts`
 
-- [x] Requirements defined
-- [x] Tools live under `src/workflows/wf-export-views/`
-- [x] Tests passing
+Depends on: `f-mcp-runtime`, `f-territory-store`, `f-view-projection`. Belongs to: `j-territory-sdlc`.
+
+## Acceptance Criteria
+
+- [x] `export_mindplan_view` returns Mermaid and/or DOT (full or focused)
+- [x] Graph mutations that succeed update `mindplan/map.md`
+- [x] Agents treat MCP export / orientation as authority, not the map file alone
+- [x] Verified via `npm test` (`view.test.mjs`)
 
 ## Attachments
 

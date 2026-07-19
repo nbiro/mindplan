@@ -287,6 +287,16 @@ The node's `id` and production posture continue uninterrupted — dependents nev
 
 A node MUST NOT have more than one open `next.mdx` at a time (§5.10). `get_blast_radius` on a node with an open evolution reports the **live** `current.mdx`'s dependents — the same set regardless of whether `next` exists, since the id never changes.
 
+#### Territory Completeness
+
+`current.mdx` MUST describe the **complete** contract of what the node *is* in the repository now — purpose, living spec (PRD / Execution Logic / Shared Substrate Spec), and durable acceptance criteria that match shipped (or in-flight pre-ship) reality. It MUST NOT be reduced to a changelog, a “what changed last” narrative, or a stub that only points at a package path.
+
+When `open_next` seeds `next.mdx` from `current.mdx`, authors MUST edit `next` into a **complete proposed successor** of that same contract: add, change, or remove sections in place until the body describes the desired post-ship state. Because `ship` promotes `next` over `current` wholesale, a delta-only or changelog-only `next` body is illegal — it would leave `current.mdx` describing only the latest change instead of the repository’s full state for that node.
+
+Atomic Operations / checklist items on `next.mdx` MAY be scoped to the current evolution (reset or replaced when opening `next`). Spec sections (Purpose, PRD, Execution Logic, Shared Substrate Spec, Acceptance Criteria, and equivalents) MUST remain a full successor document, not an evolution-only diff.
+
+Agents MUST verify Territory Completeness before transitioning `next` to `in-review` (playbook review check). There is no automated compiler gate for this rule.
+
 ---
 
 ## 4. Computed Journey States
