@@ -540,6 +540,9 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, ".cursorignore"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install .cursorignore");
+} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "integrations", "codex.md"))) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install Codex integration guide");
 } else {
   console.log("ok   mindplan-mcp init installs templates from package root");
 }

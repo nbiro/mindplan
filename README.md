@@ -149,7 +149,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
 - `mindplan/agent/mcp.json.example` — MCP server config snippet
-- `mindplan/agent/integrations/` — setup guides for Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, and generic MCP clients
+- `mindplan/agent/integrations/` — setup guides for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP clients
 - `AGENTS.md` at the project root — created only when missing (many agents auto-read this file)
 
 3. Register the MCP server with your coding agent — pick the guide that matches your tool:

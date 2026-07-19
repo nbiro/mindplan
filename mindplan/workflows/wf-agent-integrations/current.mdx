@@ -2,26 +2,29 @@
 id: wf-agent-integrations
 type: Workflow
 title: "Agent integrations"
-description: "Per-agent MCP setup guides (Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, generic)."
+description: "Per-agent MCP setup guides (Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, generic)."
 state: stable
-shipped_at: 2026-07-15T18:55:23.090Z
+shipped_at: 2026-07-19T19:49:45.674Z
 created_at: 2026-07-15T18:51:38.117Z
-updated_at: 2026-07-19T19:40:01.276Z
+updated_at: 2026-07-19T19:49:45.674Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
   - f-mcp-runtime
 ---
 
+
+
+
 # Agent integrations
 
 ## Purpose
 
-Per-agent MCP setup guides so a consumer can wire MindPlan into Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, or a generic MCP host — plus an index README.
+Per-agent MCP setup guides so a consumer can wire MindPlan into Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, or a generic MCP host — plus an index README.
 
 ## Execution Logic
 
-- Templates: `templates/agent/integrations/` (`README.md`, `cursor.md`, `claude-code.md`, `copilot-vscode.md`, `windsurf.md`, `cline.md`, `continue.md`, `generic.md`)
+- Templates: `templates/agent/integrations/` (`README.md`, `cursor.md`, `claude-code.md`, `codex.md`, `copilot-vscode.md`, `windsurf.md`, `cline.md`, `continue.md`, `generic.md`)
 - Installed into `mindplan/agent/integrations/` by `wf-project-init` (`installAgentIntegrations`)
 - Package folder `src/workflows/wf-agent-integrations/` is a pointer (docs-only Workflow)
 
@@ -31,8 +34,8 @@ Depends on: `f-mcp-runtime`. Belongs to: `j-agent-onboarding`.
 
 ## Acceptance Criteria
 
-- [x] Guides exist for Cursor, Claude Code, Copilot, Windsurf, Cline, Continue, and generic MCP
-- [x] Integrations README indexes the set
+- [x] Guides exist for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP
+- [x] Integrations README indexes the set (including Codex)
 - [x] Init installs the guides into the consumer `mindplan/agent/integrations/` tree
 - [x] Covered by init path in smoke tests
 

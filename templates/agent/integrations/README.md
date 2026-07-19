@@ -6,6 +6,7 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 |-------|-------|
 | [Cursor](cursor.md) | `.cursor/mcp.json` |
 | [Claude Code](claude-code.md) | `claude mcp add` or project MCP config |
+| [Codex](codex.md) | `codex mcp add` or `.codex/config.toml` |
 | [GitHub Copilot (VS Code)](copilot-vscode.md) | VS Code MCP settings |
 | [Windsurf](windsurf.md) | Cascade MCP config |
 | [Cline](cline.md) | Cline MCP settings |
