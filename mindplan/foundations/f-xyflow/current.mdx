@@ -1,0 +1,44 @@
+---
+id: f-xyflow
+type: Foundation
+title: "XYFlow adapter"
+description: "Adapter — XYFlow / React Flow for interactive graph chrome (not Mermaid/DOT)."
+state: ready
+created_at: 2026-07-20T21:15:13.977Z
+updated_at: 2026-07-20T21:17:12.987Z
+depends_on:
+  - f-design-system
+---
+
+# XYFlow adapter
+
+## Purpose
+
+Adapter — wraps XYFlow / React Flow so console Workflows can render an interactive MindPlan graph from JSON nodes/edges. Not a Mermaid or DOT renderer; `export_mindplan_view` remains the agent/CLI projection path.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-xyflow/`
+
+- Thin React wrappers around XYFlow (canvas, node types, edge types)
+- Helpers to map MindPlan `{ nodes, edges }` (+ state/type) into XYFlow elements
+- Styling hooks that consume `f-design-system` tokens (type/state colors)
+- Pan, zoom, focus highlighting — no product navigation or mutation logic
+
+Depends on: `f-design-system`. Consumed primarily by `wf-graph-explore`.
+
+## Acceptance Criteria
+
+- A MindPlan graph JSON payload renders as an interactive canvas
+- Node labels can show id · title · state without Mermaid
+- Adapter stays free of bridge calls and compiler mutations
+
+## Atomic Ops
+
+- [ ] Add XYFlow dependency and base canvas wrapper
+- [ ] Map MindPlan graph JSON → XYFlow nodes/edges
+- [ ] Type/state-colored node chrome using design tokens
+
+## Attachments
+
+_Schemas and diagrams go in `attachments/`._

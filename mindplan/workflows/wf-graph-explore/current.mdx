@@ -1,0 +1,51 @@
+---
+id: wf-graph-explore
+type: Workflow
+title: "Explore the graph"
+description: "See the plan — interactive XYFlow architecture canvas with focus and state-colored nodes."
+state: ready
+created_at: 2026-07-20T21:15:23.764Z
+updated_at: 2026-07-20T21:17:15.940Z
+belongs_to:
+  - j-plan-console
+depends_on:
+  - f-xyflow
+  - f-design-system
+  - f-console-bridge
+  - wf-console-shell
+---
+
+# Explore the graph
+
+## Purpose
+
+See the plan — interactive architecture canvas (XYFlow) for Journeys, Foundations, Workflows, and Bugs. Prettier and navigable than Mermaid/`map.md`; does not replace agent/CLI `export_mindplan_view`.
+
+## Execution Logic
+
+Package: `src/workflows/wf-graph-explore/`
+
+- Fetch `{ nodes, edges }` from `f-console-bridge`
+- Render via `f-xyflow` with state-colored nodes (id · title · state)
+- Pan, zoom, select focus; optional 1-hop emphasis (align with `find_related_nodes` semantics)
+- Click node → open territory viewer or board context via shell
+- No Mermaid/DOT render path in this Workflow
+
+Belongs to: `j-plan-console`. Depends on: `wf-console-shell`, `f-xyflow`, `f-console-bridge`, `f-design-system`.
+
+## Acceptance Criteria
+
+- Full graph (or focus neighborhood) renders on an interactive canvas
+- Node appearance encodes type and delivery state
+- Focus/select works without leaving the console
+- Implementation does not call `export_mindplan_view` to draw the UI
+
+## Atomic Ops
+
+- [ ] Bridge graph → XYFlow canvas in the shell
+- [ ] Focus / 1-hop highlight mode
+- [ ] Node click navigates to territory (or prep for model/mutate)
+
+## Attachments
+
+_Wireframes go in `attachments/`._

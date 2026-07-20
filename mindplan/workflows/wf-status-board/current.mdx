@@ -1,0 +1,48 @@
+---
+id: wf-status-board
+type: Workflow
+title: "Status board"
+description: "See the plan — delivery-state board with done / in-flight / blocked at a glance."
+state: ready
+created_at: 2026-07-20T21:15:23.167Z
+updated_at: 2026-07-20T21:17:15.541Z
+belongs_to:
+  - j-plan-console
+depends_on:
+  - wf-console-shell
+  - f-design-system
+  - f-console-bridge
+---
+
+# Status board
+
+## Purpose
+
+See the plan — a delivery-state board so humans can scan what is stable, in flight, ready, or blocked without reading Mermaid or MCP JSON.
+
+## Execution Logic
+
+Package: `src/workflows/wf-status-board/`
+
+- Load graph via `f-console-bridge` (same authority as `get_mindplan_graph`)
+- Group Foundations / Workflows / Bugs into lanes by state (e.g. stable · in-progress · in-review · ready · draft · blocked/unstable)
+- Surface blocked callouts when Infrastructure First or Completion Check would prevent progress (derived from graph + known gates; not a second compiler)
+- Click-through to territory or graph focus (via shell navigation)
+
+Belongs to: `j-plan-console`. Depends on: `wf-console-shell`, `f-console-bridge`, `f-design-system`.
+
+## Acceptance Criteria
+
+- Board reflects live graph states from the bridge
+- Done / in-flight / blocked are visible without opening territory files
+- Selecting a card can navigate to territory or graph focus
+
+## Atomic Ops
+
+- [ ] State lanes populated from bridge graph payload
+- [ ] Blocked / unstable callouts on affected nodes
+- [ ] Navigate to territory viewer or graph explore from a card
+
+## Attachments
+
+_Wireframes go in `attachments/`._

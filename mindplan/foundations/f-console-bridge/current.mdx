@@ -1,0 +1,50 @@
+---
+id: f-console-bridge
+type: Foundation
+title: "Console bridge"
+description: "Infra — local HTTP API over MindPlan graph tools; returns Blocked: as structured errors."
+state: ready
+created_at: 2026-07-20T21:15:12.303Z
+updated_at: 2026-07-20T21:17:13.146Z
+depends_on:
+  - f-territory-store
+  - f-compiler-rules
+  - f-graph-search
+  - f-mcp-runtime
+---
+
+# Console bridge
+
+## Purpose
+
+Infra — local HTTP API that exposes MindPlan read/write graph operations to the browser console. Single authority remains the MindPlan compiler and territory store; the bridge is a transport, not a second plan.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-console-bridge/`
+
+- HTTP handlers (mounted by `f-nextjs` server routes or a sibling local server) that invoke the same operations as MCP tools:
+  - Read: graph, find/orient, node context, blast radius, implementation
+  - Write: create/link/unlink, status, open_next/discard_next, patch territory, force_unship (with confirm token)
+- Project root resolution per request or session
+- Map compiler `Blocked: …` to structured JSON errors the UI can render
+- Return `changed_files` on successful mutations
+
+Depends on: `f-mcp-runtime`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`. MUST NOT reimplement compiler rules or parse `map.md` as authority.
+
+## Acceptance Criteria
+
+- Console Workflows can load graph + territory without speaking MCP stdio
+- Illegal mutations fail with structured `Blocked:` payloads (not silent success)
+- Successful writes report `changed_files` and refreshable graph state
+
+## Atomic Ops
+
+- [ ] Define HTTP route map mirroring MCP read/write tools
+- [ ] Wire handlers to existing MindPlan store/compiler (no duplicate authority)
+- [ ] Structured error envelope for `Blocked:` responses
+- [ ] Project-root binding for local console sessions
+
+## Attachments
+
+_Schemas and diagrams go in `attachments/`._
