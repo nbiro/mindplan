@@ -2,11 +2,11 @@
 id: wf-framework-docs
 type: Workflow
 title: "Framework docs"
-description: "Framework docs; SPEC cancelled state, mindplan-mcp check, git delivery playbook"
+description: "Docs cover layout-free adoption: implementation_packages required vs off in SPEC, playbook, and skills."
 state: stable
-shipped_at: 2026-07-20T20:11:40.746Z
+shipped_at: 2026-07-20T21:11:45.798Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-20T20:11:40.746Z
+updated_at: 2026-07-20T21:11:45.798Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
@@ -15,14 +15,11 @@ depends_on:
 ---
 
 
-
-
-
 # Framework documentation
 
 ## Purpose
 
-Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, territory authority split (MCP = graph; agent file tools = prose), and how to evolve shipped work without destroying the living contract.
+Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), and how to evolve shipped work without destroying the living contract.
 
 ## Execution Logic
 
@@ -30,15 +27,24 @@ Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. The pac
 
 Surfaces owned by this Workflow:
 
-- `SPEC.md` — normative language (taxonomy, versioning, Territory Completeness, compiler rules, authority split, mutate `changed_files`)
+- `SPEC.md` — normative language (taxonomy, versioning, Territory Completeness, compiler rules, authority split, mutate `changed_files`, **`mindplan/config.json` / `implementation_packages`**)
 - `AGENTS.md` — always-applied agent playbook (repo root)
 - `templates/agent/playbook.md` — consumer playbook shipped by `mindplan-mcp init`
 - `mindplan/agent/playbook.md` — local mirror of the playbook
-- `templates/agent/skills/define-entities/` (+ mindplan/agent mirror) — entity scaffolding skill
+- `templates/agent/skills/define-entities/` (+ mindplan/agent mirror) — entity scaffolding skill (note when packages are not scaffolded)
 - `templates/agent/skills/plan-project/` (+ mindplan/agent mirror) — plan-only sessions (no application code)
-- `README.md` — product framing and taxonomy summary
+- `README.md` — product framing, taxonomy summary, and brownfield layout-free adoption
 
 Foundation scaffold copy that mentions roles lives in `src/foundations/f-territory-store/store.ts` (touched when role/description conventions change).
+
+### Layout modes
+
+| Mode | Config | When |
+|------|--------|------|
+| Prescribed (default) | `implementation_packages: "required"` or missing file | Greenfield / this MindPlan repo — architecture screams from `src/foundations|workflows/<id>/` |
+| Layout-free | `implementation_packages: "off"` | Brownfield — graph + territory + playbook only; agents implement in the existing app layout |
+
+Set at init via `mindplan-mcp init --layout free|prescribed` (`wf-project-init` / `wf-layout-free`). Compiler graph gates are identical; only package scaffolding and package/dirty-src integrity checks differ.
 
 ### Territory Completeness
 
@@ -62,19 +68,19 @@ When the user wants to model or restructure the product plan without writing app
 
 ## Acceptance Criteria
 
-- SPEC documents Territory Completeness, Foundation roles, and the MCP=graph / file-tools=prose authority split
-- Playbooks (AGENTS + templates + mindplan mirror) instruct agents accordingly and forbid hand-editing server-owned frontmatter
+- SPEC documents Territory Completeness, Foundation roles, the MCP=graph / file-tools=prose authority split, and `implementation_packages` required vs off
+- Playbooks (AGENTS + templates + mindplan mirror) instruct agents for both layout modes and forbid hand-editing server-owned frontmatter
 - Playbooks route plan-only / architecture-modeling asks to the `plan-project` skill
-- define-entities and plan-project skills align with the authority split
-- README summarizes Foundation roles and mentions both agent skills
+- define-entities and plan-project skills align with the authority split and layout-free (no forced package paths when `off`)
+- README summarizes Foundation roles, agent skills, and brownfield layout-free adoption
 - Active MindPlan Journey/Foundation/Workflow territories describe full repo state (not stubs or latest-change deltas)
 
 ## Atomic Ops
 
-- [x] SPEC: `cancelled` state machine + §9.6 integrity check
-- [x] Playbooks: Git delivery (always PR), cancel path, check modes
-- [x] Cursor integration: never push main; use check
-- [x] This next.mdx remains a full successor contract (not a changelog)
+- [x] SPEC: `mindplan/config.json` + layout-free vs prescribed package rules (§ with integrity check)
+- [x] Playbooks + define-entities + plan-project: layout-free implementation guidance
+- [x] README: brownfield adoption without restructuring `src/`
+- [x] Keep this next.mdx a full successor contract (not a changelog)
 
 ## Attachments
 

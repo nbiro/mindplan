@@ -2,11 +2,11 @@
 id: wf-project-init
 type: Workflow
 title: "Init a consumer project"
-description: "Infra — install .cursor/permissions.json so Cursor Auto-review does not prompt on playbook MCP mutations"
+description: "Init writes implementation_packages mode (required|off) so brownfield can opt out of prescribed layout."
 state: stable
-shipped_at: 2026-07-19T20:39:52.885Z
+shipped_at: 2026-07-20T21:11:45.967Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-07-19T20:39:52.885Z
+updated_at: 2026-07-20T21:11:45.967Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -18,40 +18,41 @@ depends_on:
 
 ## Purpose
 
-Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, always-on agent playbook, define-entities and plan-project skills, MCP example config, per-agent integration guides, root `AGENTS.md`, `.cursorignore` that ignores the derived map (and agent asset copies) while allowing agent file tools to edit territory MDX prose, and `.cursor/permissions.json` that allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on playbook-required graph mutations.
+Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, project config (`mindplan/config.json`) choosing prescribed vs layout-free packages, always-on agent playbook, define-entities and plan-project skills, MCP example config, per-agent integration guides, root `AGENTS.md`, `.cursorignore` that ignores the derived map (and agent asset copies) while allowing agent file tools to edit territory MDX prose, and `.cursor/permissions.json` that allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on playbook-required graph mutations.
 
 ## Execution Logic
 
 Package: `src/workflows/wf-project-init/`
 
 - `init.ts` — `initProject` plus install helpers:
+  - `installProjectConfig` — writes `mindplan/config.json` with `implementation_packages`: `required` (default / `--layout prescribed`) or `off` (`--layout free`). Missing config is treated as `required` by loaders elsewhere. Idempotent: create when missing; update only when an explicit `--layout` flag is passed
   - `installAgentPlaybook` — `templates/agent/playbook.md` → `mindplan/agent/`
   - `installDefineEntitiesSkill` — skill under `mindplan/agent/skills/define-entities/`
   - `installPlanProjectSkill` — skill under `mindplan/agent/skills/plan-project/`
   - `installMcpExample` — `mcp.json.example`
-  - `installAgentIntegrations` — guides into `mindplan/agent/integrations/`
+  - `installAgentIntegrations` — guides into `mindplan/agent/integrations/` (document `--layout free` for brownfield)
   - `installRootAgentsMd` — root `AGENTS.md` from template
   - `installCursorIgnore` — installs `templates/agent/cursorignore` (ignores `mindplan/map.md` + `mindplan/agent/**`; does **not** block `current.mdx` / `next.mdx`)
   - `installCursorPermissions` — installs `templates/agent/permissions.json` → `.cursor/permissions.json` when missing (`mindplan:*` / `project-0-mindplan-mindplan:*` / `*mindplan*:*` MCP allowlist + Auto-review allow/block instructions)
-- Invoked by CLI `mindplan-mcp init` in `f-mcp-runtime` (package root resolved by walking up to `templates/agent`)
+- Invoked by CLI `mindplan-mcp init [--layout free|prescribed]` in `f-mcp-runtime` (package root resolved by walking up to `templates/agent`)
 
-Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`.
+Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`. Consumer use case: `wf-layout-free`.
 
 ## Acceptance Criteria
 
 - `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
+- `init` writes `mindplan/config.json`; `--layout free` sets `implementation_packages` to `off`; default/prescribed sets `required`
 - Playbook, define-entities skill, plan-project skill, integrations, MCP example, AGENTS.md, `.cursorignore`, and `.cursor/permissions.json` are installed from `templates/`
 - Template `.cursorignore` does not list `mindplan/**/current.mdx` or `mindplan/**/next.mdx`
 - Template `.cursor/permissions.json` allowlists `mindplan:*` and steers Auto-review for playbook mutations
 - Init helpers live in this package (not in the territory store)
-- Smoke test covers init template install including plan-project, cursorignore contents, and permissions.json
+- Smoke test covers init template install including plan-project, cursorignore, permissions.json, and layout config
 
 ## Atomic Ops
 
-- [x] Add `templates/agent/permissions.json` with `mindplan:*` allowlist + autoRun instructions
-- [x] Add `installCursorPermissions` in `init.ts` (idempotent, installs when missing)
-- [x] Document permissions install in `templates/agent/integrations/cursor.md`
-- [x] Smoke asserts `.cursor/permissions.json` is installed with `mindplan:*`
+- [x] Add `installProjectConfig` + CLI `--layout free|prescribed`
+- [x] Document layout flag in `templates/agent/integrations/`
+- [x] Smoke: free writes `off`; default/prescribed writes `required`; missing file not overwritten without flag
 
 ## Attachments
 

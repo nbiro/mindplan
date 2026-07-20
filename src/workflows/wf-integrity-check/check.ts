@@ -9,6 +9,7 @@ import * as path from "path";
 import type { MindPlanGraph, MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import {
   getNodeImplementation,
+  implementationPackagesRequired,
   loadGraph,
   projectRoot,
   SRC_DIR,
@@ -370,12 +371,18 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   }
 
   try {
-    checkPackages(graph, root, failures);
+    const packagesOn = implementationPackagesRequired(root);
+    if (packagesOn) {
+      checkPackages(graph, root, failures);
+    }
     if (options.forMain) {
       checkForMain(graph, failures);
-    } else {
+    } else if (packagesOn) {
       checkDirtySrc(graph, root, options.base, failures);
     }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    fail(failures, message);
   } finally {
     if (options.cwd) {
       if (prev === undefined) delete process.env.MINDPLAN_ROOT;

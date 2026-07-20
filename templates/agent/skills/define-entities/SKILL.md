@@ -100,9 +100,9 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). For **Workflow** and **Foundation**, also scaffolds the prescribed implementation package: `src/workflows/<id>/` or `src/foundations/<id>/` (with `.gitkeep`). Journeys and Bugs have no code package. Edge arrays are added by `link_nodes`. This id is permanent — Foundations and Workflows never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
+Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). For **Workflow** and **Foundation**, when `implementation_packages` is `required` (default), also scaffolds the prescribed implementation package: `src/workflows/<id>/` or `src/foundations/<id>/` (with `.gitkeep`). When `implementation_packages` is `off` (layout-free / `mindplan-mcp init --layout free`), only territory is created — no `src/` package. Journeys and Bugs have no code package. Edge arrays are added by `link_nodes`. This id is permanent — Foundations and Workflows never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
 
-Query the package with `get_node_implementation({ node_id })`. Implement **only** inside that package; reuse across use cases via Foundation packages or `depends_on` Workflow packages.
+Query the package with `get_node_implementation({ node_id })` (`root` is null when packages are off). When packages are `required`, implement **only** inside that package; reuse across use cases via Foundation packages or `depends_on` Workflow packages. When packages are `off`, implement in the project's existing layout.
 
 ## Step 5 — Link edges (before advancing state)
 
@@ -218,7 +218,7 @@ open_next({
 | Foundation described as a user feature / use case | Scope creep — split into Foundation (substrate) + Workflow (use case) |
 | Business use-case behaviour in a Foundation node | Wrong taxonomy — move logic to Workflow; keep design system / infra as Foundation |
 | Inventing a new primary button inside a Workflow | Reuse — depend on `f-design-system` (or create that Foundation first) |
-| Implementing Workflow code outside `src/workflows/<id>/` | Wrong architecture — use the prescribed package (query via `get_node_implementation`) |
+| Implementing Workflow code outside `src/workflows/<id>/` when packages are `required` | Wrong architecture — use the prescribed package (query via `get_node_implementation`); layout-free/`off` projects use the existing app layout |
 | Manual Journey / `stable` / `unstable` status | Rejected — computed only |
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
 | `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |

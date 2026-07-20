@@ -122,7 +122,7 @@ For a shipped node evolving via `open_next`, this same pipeline runs against the
 1. **Orient** — `orient_for_work` or `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Call `get_blast_radius` on the focus node before substantial implementation; note transitive dependents and `journeys_at_risk`. Read PRD, Acceptance Criteria, and Atomic Ops from `body` (or `next.body` when a next slot is open).
 2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress`. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
 3. **Commit to work** — `update_node_status` → `ready`, then `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway.
-4. **Execute** — Implement in the node's prescribed package (`src/workflows/<id>/` or `src/foundations/<id>/`). Keep territory in sync with **file tools** on `current_path` / `next_path`: update PRD body, toggle Atomic Ops checkboxes. Never check a box without doing the work. (`patch_node_territory` remains an optional fallback.) Query architecture with `get_node_implementation` plus the graph.
+4. **Execute** — When `implementation_packages` is `required` (default), implement in the node's prescribed package (`src/workflows/<id>/` or `src/foundations/<id>/`). When `off` (layout-free / `mindplan-mcp init --layout free`), implement in the project's existing layout instead — still keep territory in sync. Keep territory updated with **file tools** on `current_path` / `next_path`: update PRD body, toggle Atomic Ops checkboxes. Never check a box without doing the work. (`patch_node_territory` remains an optional fallback.) Query architecture with `get_node_implementation` plus the graph (`root` is null when packages are off).
 5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`. Then **stop**. Do not immediately `ship`. Hand off for review by a human or a different agent (not the same session that implemented the work).
 6. **Ship** — Only after that external review approves. The **reviewer** (human or another agent) calls `update_node_status` → `ship` from `in-review` (or from `next` `in-review` when evolving). Server sets `shipped_at` and computes `stable` or `unstable`; if a `next` slot was open, ship promotes it over `current` and deletes `next.mdx`.
    - **External Review:** the implementing agent MUST NOT `ship` (or Bug `resolved`) their own work. Wait for a human or a different agent to review and perform the ship/resolve transition.
@@ -176,7 +176,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 - Checkbox state on disk gates `in-review`, `ship`, and Bug `in-review`/`resolved` — checked against whichever file is active (`current.mdx`, or `next.mdx` when evolving).
 - Enrich or replace scaffold checklist placeholders during `draft` / triage with real PR-sized work items.
 - Attachments live under `attachments/` (`next-attachments/` while evolving); reference them from the body with relative links.
-- Workflow/Foundation implementation lives under `src/workflows/<id>/` or `src/foundations/<id>/` (scaffolded by `create_node`). Query with `get_node_implementation`. Journeys have no code package — derive architecture from member Workflows via `belongs_to`.
+- Workflow/Foundation implementation: under `src/workflows/<id>/` or `src/foundations/<id>/` when packages are `required` (scaffolded by `create_node`); when `implementation_packages` is `off`, implement in the existing project layout. Query with `get_node_implementation`. Journeys have no code package — derive architecture from member Workflows via `belongs_to`.
 
 ## Compiler rules
 
@@ -205,7 +205,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | `get_mindplan_graph` | Full graph dump — greenfield, multi-node plan validation, or rare full audits |
 | `get_blast_radius` | Before substantial implementation — transitive dependents (reverse `depends_on`) and `journeys_at_risk` |
 | `get_node_context` | Read territory — prefer `record` + `body`; includes `next` slot when evolving; `raw_context` is deprecated |
-| `get_node_implementation` | Prescribed package root for a Workflow/Foundation (`src/workflows/<id>` or `src/foundations/<id>`) |
+| `get_node_implementation` | Package info for Workflow/Foundation; when packages `required`: `src/…/<id>` root + exists/entries; when `off`: `root: null` / `exists: false` (not applicable — check `implementation_packages` first) |
 | `patch_node_territory` | Optional fallback for body/checkboxes/title/description; defaults to `next` when evolving a shipped node — prefer host file tools for prose |
 | `create_node` | New Journey, Foundation, Workflow, or Bug (prefer define-entities; for plan-only sessions use plan-project); returns `changed_files` |
 | `open_next` | Open `next.mdx` on a shipped Foundation/Workflow (same id) to evolve it in place; returns `changed_files` |
@@ -221,7 +221,7 @@ Agents MUST land work via a **feature branch + pull request**. Never push to `ma
 
 1. Before committing implementation work, ensure HEAD is **not** on `main`/`master`. If it is, create/switch to a feature branch (prefer naming from the owning node id, e.g. `wf-integrity-check`).
 2. Push the feature branch with `-u`, then open a PR (`gh pr create`).
-3. On the feature branch, run `mindplan-mcp check` (dirty-src ownership) as day-to-day hygiene. Uncommitted `src/` changes need `in-progress`; committed diffs vs base also allow `in-review` / shipped so PRs stay green through review.
+3. On the feature branch, run `mindplan-mcp check` as day-to-day hygiene (when packages are `required`: dirty-src ownership — uncommitted `src/` needs `in-progress`; committed diffs vs base also allow `in-review` / shipped so PRs stay green through review). When packages are `off`, check still loads the graph but skips package/dirty-src ownership.
 4. Before merge, run `mindplan-mcp check --for-main`. If it fails (any Foundation/Workflow `in-progress`/`in-review`, open `next` in those states, or Bug `fixing`/`in-review`): do not merge — ship, `cancelled`, or retreat to `draft`/`ready` first.
 5. If the user asks to push or commit directly to `main`/`master`, **refuse** and offer a branch + PR instead — even when they say “just push it.”
 
@@ -229,7 +229,7 @@ Pre-ship dead ends: `update_node_status(..., "cancelled")` — not `deprecated` 
 
 ## Never do
 
-- Implement Workflow/Foundation code outside its prescribed `src/workflows/<id>/` or `src/foundations/<id>/` package
+- Implement Workflow/Foundation code outside its prescribed `src/workflows/<id>/` or `src/foundations/<id>/` package when `implementation_packages` is `required` (layout-free/`off` projects use the existing app layout instead)
 - Start substantial coding without `orient_for_work` / `find_related_nodes` (or an explicit `node_id`) and a clear owning node
 - Start substantial implementation on a Foundation or Workflow without `get_blast_radius` on the owning node
 - Treat on-disk frontmatter or `mindplan/map.md` as graph authority — use MCP `record` / `export_mindplan_view`

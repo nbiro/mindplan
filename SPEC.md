@@ -71,7 +71,7 @@ Rules:
 
 ### 1.2 Implementation packages (prescribed architecture)
 
-Workflow and Foundation nodes own a **derived** filesystem package whose path is fixed by type and id (not a graph edge — targets are directories, not MindPlan nodes):
+By default (and when `mindplan/config.json` is missing), Workflow and Foundation nodes own a **derived** filesystem package whose path is fixed by type and id (not a graph edge — targets are directories, not MindPlan nodes):
 
 | Node type | Implementation root | Purpose |
 |---|---|---|
@@ -80,12 +80,33 @@ Workflow and Foundation nodes own a **derived** filesystem package whose path is
 | Journey | *(none)* | Plan container — architecture for a Journey is the union of member Workflow packages |
 | Bug | *(none)* | Fixes land in the affected Workflow/Foundation package |
 
-Rules:
+Rules (when `implementation_packages` is `required`):
 
 - Package folder name MUST equal the node `id` (e.g. `wf-user-picker` → `src/workflows/wf-user-picker/`).
 - `create_node` for Workflow or Foundation MUST scaffold the package directory with a `.gitkeep` (§6.3).
 - Agents MUST implement that node's code **only** inside its package. Cross-cutting reuse MUST go through Foundation packages or `depends_on` Workflow packages — not ad-hoc junk-drawer folders outside the prescribed roots.
 - Agents query architecture via the MindPlan graph **plus** `get_node_implementation` (§8.1). For a Journey, derive member packages by resolving `belongs_to` Workflows, then calling `get_node_implementation` on each.
+
+#### 1.2.1 Layout-free adoption (`implementation_packages: "off"`)
+
+Existing (brownfield) projects MAY opt out of prescribed packages via `mindplan/config.json`:
+
+```json
+{
+  "implementation_packages": "off"
+}
+```
+
+`mindplan-mcp init --layout free` writes that config; `--layout prescribed` (or default init when missing) writes `"required"`. Missing config MUST be treated as `"required"` so greenfield and this reference repo keep screaming-architecture checks. A **present but invalid** `mindplan/config.json` (bad JSON, non-object, or `implementation_packages` not exactly `"required"`|`"off"`) MUST hard-fail with `Blocked: invalid mindplan/config.json: …` — tools (`create_node`, `get_node_implementation`, …), `mindplan-mcp check`, and bare `init` (preserve path) MUST NOT silently fall back to `"required"`. Fix the file or overwrite with `mindplan-mcp init --layout free|prescribed`.
+
+When packages are `off`:
+
+- `create_node` MUST NOT scaffold `src/foundations|workflows/<id>/`
+- `get_node_implementation` MUST report `implementation_packages: "off"` with `root: null` (not an integrity failure)
+- `mindplan-mcp check` MUST skip package presence, orphan, and dirty-src ownership checks; graph load and `--for-main` mid-pipeline bans still apply
+- Agents implement in the project's existing layout; they still advance MindPlan states and MUST NOT invent tickets outside the graph
+
+Graph compiler gates (Ghost Workflows/Bugs, Infrastructure First, Completion Check, External Review) are unchanged in both modes.
 
 ---
 
@@ -544,7 +565,7 @@ Default checklist items are placeholders; teams SHOULD replace them with real At
 
 #### 6.3.1 Implementation packages
 
-`create_node` for Workflow and Foundation MUST create the prescribed implementation package (§1.2) with a `.gitkeep` so the folder is versionable. The package path is derived — it is not stored in frontmatter and is not an edge.
+`create_node` for Workflow and Foundation MUST create the prescribed implementation package (§1.2) with a `.gitkeep` so the folder is versionable — **unless** `implementation_packages` is `off` (§1.2.1), in which case only territory is scaffolded. The package path is derived — it is not stored in frontmatter and is not an edge.
 
 Agents MUST place all implementation for that node under its package. Agents query the package via `get_node_implementation` (§8.1). There is no per-file affected-files list in territory — architecture is the graph plus package roots.
 
@@ -809,21 +830,34 @@ Composite orientation for agents: `find_related_nodes` plus full territory for t
 
 #### `get_node_implementation`
 
-Returns the prescribed implementation package for a Workflow or Foundation (§1.2).
+Returns the prescribed implementation package for a Workflow or Foundation (§1.2), or a packages-off result when layout-free (§1.2.1).
 
 - **Input:** `node_id` (slug; must be a Workflow or Foundation).
-- **Output:**
+- **Output (packages required):**
 
 ```jsonc
 {
   "node_id": "wf-checkout-split",
   "root": "src/workflows/wf-checkout-split",
   "exists": true,
+  "implementation_packages": "required",
   "entries": [".gitkeep"]
 }
 ```
 
-`root` is always the derived project-relative package path. `exists` is whether that directory is present on disk. When `exists` is true, `entries` lists **top-level** names in the package (sorted); otherwise `entries` is omitted or empty.
+- **Output (packages off):**
+
+```jsonc
+{
+  "node_id": "wf-checkout-split",
+  "root": null,
+  "exists": false,
+  "implementation_packages": "off",
+  "entries": []
+}
+```
+
+`root` is the derived project-relative package path when `implementation_packages` is `required`. When packages are `off`, `root` is always `null` and `exists` is always `false` — that means packages are **not applicable**, not that a package is missing. Agents MUST read `implementation_packages` before interpreting `exists`/`root`. When packages are `required` and `exists` is true, `entries` lists **top-level** names in the package (sorted); otherwise `entries` is omitted or empty.
 
 - **Errors:** unknown `node_id`; node is a Journey or Bug (`Blocked: … only applies to Workflow and Foundation nodes`).
 
@@ -862,8 +896,8 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 #### `create_node`
 
 - **Input:** `id` (slug), `type` (`Journey|Foundation|Workflow|Bug`), `title` (non-empty), `description`.
-- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). For Workflow and Foundation, also scaffolds the prescribed implementation package under `src/` (§1.2, §6.3.1). Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
-- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, implementation?, changed_files }` (project-relative paths; `context` is a deprecated alias for `current`; `implementation` is the package root when scaffolded).
+- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). For Workflow and Foundation, when `implementation_packages` is `required`, also scaffolds the prescribed implementation package under `src/` (§1.2, §6.3.1); when `off`, only territory is created (§1.2.1). Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
+- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, implementation?, implementation_packages?, changed_files }` (project-relative paths; `context` is a deprecated alias for `current`; `implementation` is the package root when scaffolded; `implementation_packages: "off"` is set when packages are disabled).
 - **Errors:** duplicate `id`.
 
 #### `open_next`
@@ -941,12 +975,14 @@ Transitioning a Workflow to `deprecated` (post-ship) or `cancelled` (pre-ship) S
 
 ### 9.6 Offline integrity check (`mindplan-mcp check`)
 
-The package binary exposes an offline CLI (same entry as MCP stdio, no stdio session required) that audits territory without mutating it:
+The package binary exposes an offline CLI (same entry as MCP stdio, no stdio session required) that audits territory without mutating it. Behavior depends on `mindplan/config.json` `implementation_packages` (missing → `required`):
 
 | Mode | Command | Checks |
 |------|---------|--------|
-| Default | `mindplan-mcp check [--base <ref>]` | Graph load; every non-retired Foundation/Workflow has `src/{foundations\|workflows}/<id>/`; no orphan package dirs; dirty `src/` ownership: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`); **committed** paths vs `base...HEAD` allow `in-progress`/`in-review`/`stable`/`unstable`/`cancelled`/`deprecated`, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts (not draft/ready). Explicit `--base` fails closed on git errors. |
-| Main gate | `mindplan-mcp check --for-main` | Graph load + packages; fail if any Foundation/Workflow is `in-progress`/`in-review` (or `next` in those states), or any Bug is `fixing`/`in-review`. Does **not** run dirty-src |
+| Default (`required`) | `mindplan-mcp check [--base <ref>]` | Graph load; every non-retired Foundation/Workflow has `src/{foundations\|workflows}/<id>/`; no orphan package dirs; dirty `src/` ownership: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`); **committed** paths vs `base...HEAD` allow `in-progress`/`in-review`/`stable`/`unstable`/`cancelled`/`deprecated`, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts (not draft/ready). Explicit `--base` fails closed on git errors. |
+| Default (`off`) | `mindplan-mcp check [--base <ref>]` | Graph load only — skips package presence, orphans, and dirty-src ownership (layout-free / brownfield) |
+| Invalid config | any check mode | Fail immediately if `mindplan/config.json` exists but is invalid (bad JSON / mode); do not treat as `required` |
+| Main gate | `mindplan-mcp check --for-main` | Graph load; package checks only when `required`; fail if any Foundation/Workflow is `in-progress`/`in-review` (or `next` in those states), or any Bug is `fixing`/`in-review`. Does **not** run dirty-src |
 
 Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source (`node dist/index.js check …`). Consumer repos SHOULD use the published bin after npm release.
 
