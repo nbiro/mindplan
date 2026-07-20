@@ -30,6 +30,8 @@ const CLAIMED_OR_CONCLUDED = new Set([
   "cancelled",
   "deprecated",
 ]);
+/** Plan-only states: create_node may leave only `.gitkeep` package scaffolds. */
+const PRE_CLAIM = new Set(["draft", "ready"]);
 
 export interface CheckOptions {
   /** Ban mid-pipeline states (merge-to-main gate). Skips dirty-src-vs-base. */
@@ -81,6 +83,16 @@ function packageOwnerFromSrcPath(relPosix: string): { kind: string; id: string }
   const m = relPosix.match(/^src\/(foundations|workflows)\/([^/]+)(?:\/|$)/);
   if (!m) return null;
   return { kind: m[1], id: m[2] };
+}
+
+/** `create_node` package placeholder — not implementation work. */
+function isPackageScaffoldPath(relPosix: string): boolean {
+  return /^src\/(foundations|workflows)\/[^/]+\/\.gitkeep$/.test(relPosix);
+}
+
+function ownerIsPreClaim(node: MindPlanNode): boolean {
+  if (node.next) return PRE_CLAIM.has(node.next.state);
+  return PRE_CLAIM.has(node.state);
 }
 
 function toPosix(p: string): string {
@@ -292,6 +304,8 @@ function checkDirtySrc(
       fail(failures, `dirty path "${rel}" owner "${owner.id}" is a ${node.type}.`);
       return;
     }
+    // Ready/draft plans commit create_node scaffolds; that is not implementation work.
+    if (isPackageScaffoldPath(rel) && ownerIsPreClaim(node)) return;
     if (!allow(graph, node)) {
       fail(
         failures,
@@ -304,7 +318,8 @@ function checkDirtySrc(
     checkPath(
       rel,
       ownerAllowsWorkingTree,
-      "Uncommitted src/ changes require in-progress (or next in-progress), or a Bug in fixing/in-review."
+      "Uncommitted src/ changes require in-progress (or next in-progress), or a Bug in fixing/in-review. " +
+        "Package-root .gitkeep scaffolds alone are allowed at draft/ready."
     );
   }
 
@@ -313,7 +328,8 @@ function checkDirtySrc(
     checkPath(
       rel,
       ownerAllowsCommitDiff,
-      "Committed src/ diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review (not draft/ready), or a Bug in fixing/in-review."
+      "Committed src/ diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review. " +
+        "Package-root .gitkeep scaffolds alone are allowed at draft/ready; other files are not."
     );
   }
 }

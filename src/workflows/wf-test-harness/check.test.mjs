@@ -91,6 +91,21 @@ git("config", "user.email", "test@example.com");
 git("config", "user.name", "Test");
 git("commit", "--allow-empty", "-m", "init");
 const baseSha = git("rev-parse", "HEAD").stdout.trim();
+
+// Plan-only PR: committed create_node .gitkeep for a ready Workflow must pass.
+// Only wf-feature (ready) — f-core is already in-progress and would mask the exemption.
+git("add", "src/workflows/wf-feature/.gitkeep");
+git("commit", "-m", "wf-feature scaffold");
+r = runCheck(["--base", baseSha]);
+if (r.status !== 0) {
+  failures++;
+  console.log(`FAIL committed scaffolds while ready should pass: ${r.stderr || r.stdout}`);
+} else console.log("ok   committed scaffolds while ready pass");
+
+// Claim f-core scaffold so it is not untracked noise in later checks
+git("add", "src/foundations/f-core/.gitkeep");
+git("commit", "-m", "f-core scaffold");
+
 fs.writeFileSync(path.join(root, "src", "workflows", "wf-feature", "code.ts"), "export const x = 1;\n");
 
 r = runCheck([]);
@@ -99,18 +114,23 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("wf-feature")) {
   console.log(`FAIL dirty while ready: status=${r.status} out=${r.stderr || r.stdout}`);
 } else console.log("ok   dirty src while ready fails");
 
+// Committed real package files at ready must still fail (scaffold exemption is path-exact)
+git("add", "src/workflows/wf-feature/code.ts");
+git("commit", "-m", "feature code while ready");
+r = runCheck(["--base", baseSha]);
+if (r.status === 0 || !(r.stderr || r.stdout).includes("wf-feature")) {
+  failures++;
+  console.log(`FAIL committed real code while ready should fail: ${r.stderr || r.stdout}`);
+} else console.log("ok   committed real code while ready fails");
+
 await call("update_node_status", { node_id: "wf-feature", new_status: "in-progress" });
-r = runCheck([]);
+r = runCheck(["--base", baseSha]);
 if (r.status !== 0) {
   failures++;
-  console.log(`FAIL dirty while in-progress should pass: ${r.stderr || r.stdout}`);
+  console.log(`FAIL committed dirty while in-progress should pass: ${r.stderr || r.stdout}`);
 } else console.log("ok   dirty src while in-progress passes");
 
-// Commit the change, clean working tree, advance to in-review — PR dirty-src must still pass
-git("add", "-A");
-git("commit", "-m", "feature code");
-
-// Complete checklist for in-review
+// Complete checklist for in-review — committed dirty vs base must still pass
 const wfPath = path.join(root, "mindplan", "workflows", "wf-feature", "current.mdx");
 let wfBody = fs.readFileSync(wfPath, "utf-8");
 wfBody = wfBody.replace(/- \[ \]/g, "- [x]");
@@ -227,15 +247,26 @@ await call("update_node_status", { node_id: "wf-evolve", new_status: "in-review"
 await call("update_node_status", { node_id: "wf-evolve", new_status: "ship" });
 
 const evolveBase = git("rev-parse", "HEAD").stdout.trim();
+await call("open_next", { node_id: "wf-evolve" });
+
+// next draft + package-root .gitkeep alone is allowed (same plan-scaffold exemption)
+fs.writeFileSync(path.join(root, "src", "workflows", "wf-evolve", ".gitkeep"), "\n");
+git("add", "src/workflows/wf-evolve/.gitkeep");
+git("commit", "-m", "touch scaffold during next draft");
+r = runCheck(["--base", evolveBase]);
+if (r.status !== 0) {
+  failures++;
+  console.log(`FAIL next draft + scaffold-only should pass: ${r.stderr || r.stdout}`);
+} else console.log("ok   next draft + scaffold-only passes");
+
 fs.writeFileSync(
   path.join(root, "src", "workflows", "wf-evolve", "v2.ts"),
   "export const v2 = true;\n"
 );
-git("add", "src/workflows/wf-evolve");
+git("add", "src/workflows/wf-evolve/v2.ts");
 git("commit", "-m", "evolve code before claiming next");
 
-await call("open_next", { node_id: "wf-evolve" });
-// next is draft — committed dirty must fail
+// next is draft — committed real code must fail
 r = runCheck(["--base", evolveBase]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("wf-evolve")) {
   failures++;
