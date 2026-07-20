@@ -1,18 +1,20 @@
 ---
 id: wf-framework-docs
 type: Workflow
-title: "Framework documentation"
-description: "Own MindPlan normative docs — MCP=graph, agent file tools=prose authority split"
+title: "Framework docs"
+description: "Framework docs; SPEC cancelled state, mindplan-mcp check, git delivery playbook"
 state: stable
-shipped_at: 2026-07-19T20:13:35.944Z
+shipped_at: 2026-07-20T20:11:40.746Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-19T20:13:35.944Z
+updated_at: 2026-07-20T20:11:40.746Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
 depends_on:
   - f-domain-model
 ---
+
+
 
 
 
@@ -69,10 +71,9 @@ When the user wants to model or restructure the product plan without writing app
 
 ## Atomic Ops
 
-- [x] Update SPEC for authority split + mutate `changed_files`
-- [x] Update playbooks (templates + AGENTS.md + mindplan mirror)
-- [x] Update plan-project / define-entities skill guidance for prose via file tools
-- [x] Point README at the authority split briefly if needed
+- [x] SPEC: `cancelled` state machine + §9.6 integrity check
+- [x] Playbooks: Git delivery (always PR), cancel path, check modes
+- [x] Cursor integration: never push main; use check
 - [x] This next.mdx remains a full successor contract (not a changelog)
 
 ## Attachments

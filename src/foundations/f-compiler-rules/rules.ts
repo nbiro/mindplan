@@ -110,10 +110,12 @@ export function assertWorkflowTerritoryScalarsEditable(
     }
     return;
   }
-  if (isProductionState(node.state) || node.state === "deprecated") {
+  if (isProductionState(node.state) || node.state === "deprecated" || node.state === "cancelled") {
     throw blocked(
-      `${field} cannot be changed on shipped Workflow "${node.id}" (${node.state}). ` +
-        "Use open_next for material scope changes on live work."
+      `${field} cannot be changed on Workflow "${node.id}" (${node.state}). ` +
+        (node.state === "cancelled"
+          ? "Cancelled Workflows are terminal."
+          : "Use open_next for material scope changes on live work.")
     );
   }
   if (!(PRE_SHIP_WORKFLOW_STATES as readonly string[]).includes(node.state)) {
@@ -444,15 +446,66 @@ function validateWorkflowRules(
   }
 }
 
+/** Terminal states that do not block cancelling a dependency target. */
+const RETIRED_OR_CLOSED = new Set([
+  "cancelled",
+  "deprecated",
+  "resolved",
+  "wontfix",
+]);
+
+/**
+ * Pre-ship abandon: cancel is blocked while next.mdx is open or any active
+ * (non-retired) node still depends_on this node — including proposed
+ * depends_on on another node's open next.mdx.
+ */
+function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): void {
+  if (node.type !== "Workflow" && node.type !== "Foundation") {
+    throw blocked(
+      `cancelled only applies to Foundations and Workflows. Got ${node.type} "${node.id}".`
+    );
+  }
+  if (node.next) {
+    throw blocked(
+      `cannot cancel "${node.id}" while next.mdx exists (state "${node.next.state}"). Call discard_next first.`
+    );
+  }
+  const byId = new Map<string, MindPlanNode>();
+  for (const dep of dependentsOf(graph, node.id)) {
+    if (!RETIRED_OR_CLOSED.has(dep.state)) byId.set(dep.id, dep);
+  }
+  for (const other of graph.nodes) {
+    if (other.id === node.id) continue;
+    if (RETIRED_OR_CLOSED.has(other.state)) continue;
+    if (other.next?.depends_on?.includes(node.id)) {
+      byId.set(other.id, other);
+    }
+  }
+  const activeDependents = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+  if (activeDependents.length > 0) {
+    const list = activeDependents
+      .map((n) =>
+        n.next?.depends_on?.includes(node.id)
+          ? `"${n.id}" (next depends_on, next: ${n.next.state})`
+          : `"${n.id}" (${n.state})`
+      )
+      .join(", ");
+    throw blocked(
+      `cannot cancel "${node.id}" while active dependents exist: ${list}. ` +
+        `Cancel or deprecate those first, unlink depends_on, or discard_next / change next edges.`
+    );
+  }
+}
+
 function resolveNextStatusChange(
   graph: MindPlanGraph,
   node: MindPlanNode,
   newStatus: string
 ): StatusChangeResult {
   const next = node.next!;
-  if (newStatus === "deprecated") {
+  if (newStatus === "deprecated" || newStatus === "cancelled") {
     throw blocked(
-      `cannot deprecate "${node.id}" while next.mdx exists. Call discard_next first, or ship the evolution.`
+      `cannot set "${newStatus}" on "${node.id}" while next.mdx exists. Call discard_next first, or ship the evolution.`
     );
   }
 
@@ -461,7 +514,7 @@ function resolveNextStatusChange(
     return { state: productionState, ship: true, promote_next: true };
   }
 
-  if (!isExecutionState(newStatus) || newStatus === "deprecated") {
+  if (!isExecutionState(newStatus) || newStatus === "deprecated" || newStatus === "cancelled") {
     throw blocked(
       `"${newStatus}" is not a valid next pipeline state. Valid: draft, ready, in-progress, in-review, or ship from in-review.`
     );
@@ -575,6 +628,10 @@ export function resolveStatusChange(
       `illegal transition "${current}" -> "${newStatus}" for node "${node.id}". ` +
         `Allowed from "${current}": ${EXECUTION_TRANSITIONS[current]?.join(", ") || "(none)"}.`
     );
+  }
+
+  if (newStatus === "cancelled") {
+    validateCancelTransition(graph, node);
   }
 
   if (node.type === "Workflow") {
@@ -699,7 +756,7 @@ export function recomputeStability(graph: MindPlanGraph): MindPlanNode[] {
   for (const node of graph.nodes) {
     if (node.type !== "Workflow" && node.type !== "Foundation") continue;
     if (!node.shipped_at) continue;
-    if (node.state === "deprecated") continue;
+    if (node.state === "deprecated" || node.state === "cancelled") continue;
     const next = computeProductionState(graph, node.id);
     if (node.state !== next) {
       node.state = next;

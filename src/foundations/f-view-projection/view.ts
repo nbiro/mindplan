@@ -20,7 +20,7 @@ export type ViewFormat = (typeof VIEW_FORMATS)[number];
 export interface ViewOptions {
   /** When set, render focus + 1-hop neighborhood only. */
   focus?: string;
-  /** Include deprecated nodes and closed bugs (`resolved` / `wontfix`). Default false. */
+  /** Include deprecated/cancelled nodes and closed bugs (`resolved` / `wontfix`). Default false. */
   include_retired?: boolean;
 }
 
@@ -36,7 +36,7 @@ export interface ExportMindPlanViewResult {
 const CLOSED_BUG_STATES = new Set(["resolved", "wontfix"]);
 
 function isRetired(node: MindPlanNode): boolean {
-  if (node.state === "deprecated") return true;
+  if (node.state === "deprecated" || node.state === "cancelled") return true;
   if (node.type === "Bug" && CLOSED_BUG_STATES.has(node.state)) return true;
   return false;
 }

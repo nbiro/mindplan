@@ -2,16 +2,18 @@
 id: wf-test-harness
 type: Workflow
 title: "Test harness"
-description: "Test harness; force_unship smoke + init permissions.json coverage"
+description: "Test harness; cancelled transitions + integrity check smoke coverage"
 state: stable
-shipped_at: 2026-07-19T20:39:56.641Z
+shipped_at: 2026-07-20T20:11:40.858Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-07-19T20:39:56.641Z
+updated_at: 2026-07-20T20:11:40.858Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-mcp-runtime
 ---
+
+
 
 
 # Test harness
@@ -26,23 +28,23 @@ Package: `src/workflows/wf-test-harness/`
 
 - `view.test.mjs` — Mermaid/DOT projection unit tests
 - `search.test.mjs` — ranking excludes retired nodes
-- `smoke.mjs` — MCP stdio end-to-end + init template install (including `.cursor/permissions.json` with `mindplan:*`) + `force_unship` gates (confirm, next open, shipped dependents, happy path)
+- `check.test.mjs` — integrity check CLI (orphan, dirty-src, `--for-main`)
+- `smoke.mjs` — MCP stdio end-to-end + init + `force_unship` + `cancelled` gates
 
 Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`.
 
 ## Acceptance Criteria
 
-- `npm test` runs build + view + search + smoke successfully
-- Smoke covers MCP tool round-trips and consumer init assets
-- Smoke asserts init installs `.cursor/permissions.json` with `mindplan:*`
-- Search tests assert retired-node exclusion from orientation ranking
-- Smoke covers `force_unship` confirm / next-open / shipped-dependents / clear-`shipped_at` happy path
+- `npm test` runs build + view + search + check + smoke successfully
+- Smoke covers cancel (dependents block, terminal, view hide/`include_retired`)
+- Check harness covers orphan package, dirty ownership, `--for-main`
 
 ## Atomic Ops
 
-- [x] Add `force_unship` smoke cases (confirm, next open, shipped dependents, happy path)
-- [x] Assert init installs `.cursor/permissions.json` with `mindplan:*`
-- [x] Keep existing view/search/init coverage green via `npm test`
+- [x] Add `cancelled` smoke cases
+- [x] Add `check.test.mjs` for integrity CLI
+- [x] Wire `check.test.mjs` into `npm test`
+- [x] Keep view/search/init coverage green
 
 ## Attachments
 

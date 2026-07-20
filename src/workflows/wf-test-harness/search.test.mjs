@@ -27,6 +27,15 @@ const graph = {
       updated_at: "2026-01-01T00:00:00.000Z",
     },
     {
+      id: "wf-query-cancelled",
+      type: "Workflow",
+      title: "Query cancelled",
+      description: "query graph abandoned",
+      state: "cancelled",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
       id: "bug-old",
       type: "Bug",
       title: "Old bug",
@@ -41,16 +50,18 @@ const graph = {
 
 const ranked = rankNodes(graph.nodes, "query graph");
 assert.equal(ranked.some((m) => m.id === "wf-query-graph-v2"), false, "deprecated excluded from rank");
+assert.equal(ranked.some((m) => m.id === "wf-query-cancelled"), false, "cancelled excluded from rank");
 assert.equal(ranked.some((m) => m.id === "bug-old"), false, "closed bug excluded from rank");
 assert.ok(ranked.some((m) => m.id === "wf-query-graph"), "live workflow ranked");
 
 const found = findRelatedNodes(graph, { query: "query graph orient" });
 assert.equal(found.focus, "wf-query-graph");
 assert.equal(found.matches.some((m) => m.state === "deprecated"), false);
+assert.equal(found.matches.some((m) => m.state === "cancelled"), false);
 
 // Forced focus still works for deprecated ids (explicit node_id)
 const forced = findRelatedNodes(graph, { node_id: "wf-query-graph-v2" });
 assert.equal(forced.focus, "wf-query-graph-v2");
 
-console.log("ok   search excludes deprecated/closed from ranking");
+console.log("ok   search excludes deprecated/cancelled/closed from ranking");
 console.log("SEARCH UNIT TESTS PASSED");

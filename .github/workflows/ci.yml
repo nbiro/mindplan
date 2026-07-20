@@ -14,6 +14,8 @@ jobs:
         node-version: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
@@ -21,3 +23,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - name: mindplan check (dirty src + packages)
+        if: github.event_name == 'pull_request'
+        run: node dist/index.js check --base ${{ github.event.pull_request.base.sha }}
+      - name: mindplan check --for-main
+        run: node dist/index.js check --for-main
