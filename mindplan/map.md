@@ -1,3 +1,8 @@
+# MindPlan map
+
+_Auto-generated after each graph mutation (23 nodes, 46 edges). Do not edit by hand._
+
+```mermaid
 flowchart TB
   subgraph foundations["Foundations"]
     f_compiler_rules["f-compiler-rules · Compiler rules engine · stable"]
@@ -28,9 +33,6 @@ flowchart TB
     wf_mutate_graph__in__j_territory_sdlc["wf-mutate-graph · Mutate graph · stable"]
     wf_query_graph__in__j_territory_sdlc["wf-query-graph · Orient on the plan · stable"]
     wf_test_harness__in__j_territory_sdlc["wf-test-harness · Test harness · stable"]
-  end
-  subgraph unassigned["Unassigned workflows"]
-    wf_graph_explore["wf-graph-explore · Explore the graph · draft"]
   end
   f_compiler_rules --> f_domain_model
   f_github_actions --> f_npm_registry
@@ -67,3 +69,4 @@ flowchart TB
   wf_query_graph__in__j_territory_sdlc --> f_graph_search
   wf_query_graph__in__j_territory_sdlc --> f_mcp_runtime
   wf_test_harness__in__j_territory_sdlc --> f_mcp_runtime
+```

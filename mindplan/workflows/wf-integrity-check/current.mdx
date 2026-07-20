@@ -6,7 +6,7 @@ description: "Integrity check respects implementation_packages=off: skip package
 state: stable
 shipped_at: 2026-07-20T21:11:45.697Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-07-20T21:11:45.697Z
+updated_at: 2026-07-20T21:33:01.750Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -26,7 +26,7 @@ Offline audit that CI and agents run without starting MCP stdio. On projects wit
 
 1. Load `mindplan/config.json` (missing → `implementation_packages: "required"`).
 2. `mindplan-mcp check [--base <ref>]` loads the territory graph.
-   - When `required`: verify every non-retired Foundation/Workflow has its prescribed package, reject orphan `src/` package dirs, and enforce dirty-src ownership: uncommitted `src/` needs `in-progress` (or next in-progress / Bug fixing/in-review); committed diffs vs base allow review/shipped/cancelled/deprecated, but when `next.mdx` is open only next `in-progress`/`in-review` counts. Explicit `--base` fails closed on git errors.
+   - When `required`: verify every non-retired Foundation/Workflow has its prescribed package, reject orphan `src/` package dirs, and enforce dirty-src ownership: uncommitted `src/` needs `in-progress` (or next in-progress / Bug fixing/in-review); committed diffs vs base allow review/shipped/cancelled/deprecated, but when `next.mdx` is open only next `in-progress`/`in-review` counts. Exception: `src/{foundations,workflows}/<id>/.gitkeep` scaffolds from `create_node` are allowed while the owner (or open `next`) is `draft`/`ready` so plan-only PRs can merge. Explicit `--base` fails closed on git errors.
    - When `off`: skip package presence, orphan, and dirty-src ownership checks. Still validate the graph loads.
 3. `mindplan-mcp check --for-main` runs graph (+ package checks only when `required`) and fails if any Foundation/Workflow is `in-progress`/`in-review` (including `next`), or any Bug is `fixing`/`in-review`. Skips dirty-src always.
 4. Wired from `f-mcp-runtime` CLI (`node dist/index.js check`); this repo’s CI builds from source and stays on `required`.
@@ -37,7 +37,7 @@ Package: `src/workflows/wf-integrity-check/`
 
 ## Acceptance Criteria
 
-- Default check with `required` (or missing config): fails on orphan packages; uncommitted dirty src without in-progress fails; committed dirty while in-review/stable passes
+- Default check with `required` (or missing config): fails on orphan packages; uncommitted dirty src without in-progress fails; committed `.gitkeep` scaffolds while draft/ready pass; real package files while draft/ready fail; committed dirty while in-review/stable passes
 - With `implementation_packages: "off"`: missing packages and dirty unowned `src/` do not fail; `--for-main` mid-pipeline ban still fails
 - `--for-main` fails on mid-pipeline states and passes on draft/ready/stable/cancelled/deprecated graphs
 - Explicit bad `--base` fails closed

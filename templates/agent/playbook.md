@@ -221,7 +221,7 @@ Agents MUST land work via a **feature branch + pull request**. Never push to `ma
 
 1. Before committing implementation work, ensure HEAD is **not** on `main`/`master`. If it is, create/switch to a feature branch (prefer naming from the owning node id, e.g. `wf-integrity-check`).
 2. Push the feature branch with `-u`, then open a PR (`gh pr create`).
-3. On the feature branch, run `mindplan-mcp check` as day-to-day hygiene (when packages are `required`: dirty-src ownership — uncommitted `src/` needs `in-progress`; committed diffs vs base also allow `in-review` / shipped so PRs stay green through review). When packages are `off`, check still loads the graph but skips package/dirty-src ownership.
+3. On the feature branch, run `mindplan-mcp check` as day-to-day hygiene (when packages are `required`: dirty-src ownership — uncommitted real `src/` needs `in-progress`; committed diffs vs base also allow `in-review` / shipped so PRs stay green through review; `create_node` `.gitkeep` scaffolds alone are allowed at `draft`/`ready` so plan-only PRs can merge). When packages are `off`, check still loads the graph but skips package/dirty-src ownership.
 4. Before merge, run `mindplan-mcp check --for-main`. If it fails (any Foundation/Workflow `in-progress`/`in-review`, open `next` in those states, or Bug `fixing`/`in-review`): do not merge — ship, `cancelled`, or retreat to `draft`/`ready` first.
 5. If the user asks to push or commit directly to `main`/`master`, **refuse** and offer a branch + PR instead — even when they say “just push it.”
 
