@@ -9,7 +9,7 @@ description: >-
 
 # Plan a MindPlan Project (no code)
 
-Use this skill when the session’s job is **only** to create or reshape MindPlan territory. Application code under `src/workflows/` and `src/foundations/` is out of scope until a later execution session under `mindplan/agent/playbook.md`.
+Use this skill when the session’s job is **only** to create or reshape MindPlan territory. Application code under `src/workflows/` and `src/foundations/` (or the project’s existing layout when `implementation_packages` is `off`) is out of scope until a later execution session under `mindplan/agent/playbook.md`.
 
 Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity create/link details: `mindplan/agent/skills/define-entities/SKILL.md`. Always-on execution process (build pipeline, bugs, shipping): `mindplan/agent/playbook.md`.
 
@@ -25,7 +25,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 ## Hard rules (plan-only)
 
-- **No application code** — do not create, edit, or delete files under `src/workflows/<id>/` or `src/foundations/<id>/` (except ignoring empty `.gitkeep` scaffolds that `create_node` already made).
+- **No application code** — do not create, edit, or delete files under `src/workflows/<id>/` or `src/foundations/<id>/` (except ignoring empty `.gitkeep` scaffolds that `create_node` already made when packages are `required`). When packages are `off`, do not start implementing in the existing app layout either — plan-only means graph/territory only.
 - **No implementation pipeline** — do not move Foundations/Workflows to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
 - **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, advance Workflows/Foundations to `ready` only (Ghost Workflow / Ghost Bug link gates must pass) — then **stop**. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.

@@ -97,7 +97,7 @@ Snapshot in the diagram: crack and whisk are done (`stable`); cook is underway; 
 
 ## How it's built
 
-Plan state lives in the repository as `current.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs) — plus an optional `next.mdx` next to a shipped Foundation's or Workflow's `current.mdx` while it evolves in place. Node ids are stable forever: there is no new id for a revision. Workflow and Foundation nodes also own prescribed implementation packages under `src/workflows/<id>/` and `src/foundations/<id>/`. An MCP server is the single write path for plan mutations; it validates against architectural rules and exposes a queryable graph plus `get_node_implementation` so agents can inspect software architecture, not only delivery state.
+Plan state lives in the repository as `current.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs) — plus an optional `next.mdx` next to a shipped Foundation's or Workflow's `current.mdx` while it evolves in place. Node ids are stable forever: there is no new id for a revision. By default, Workflow and Foundation nodes also own prescribed implementation packages under `src/workflows/<id>/` and `src/foundations/<id>/`. Brownfield projects can opt out with `mindplan-mcp init --layout free` (`implementation_packages: "off"`) and keep their existing app layout. An MCP server is the single write path for plan mutations; it validates against architectural rules and exposes a queryable graph plus `get_node_implementation` so agents can inspect software architecture, not only delivery state.
 
 - **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
 - **`src/`** — TypeScript MCP server (stdio transport)
@@ -197,7 +197,7 @@ See [integrations README](templates/agent/integrations/README.md) in this repo f
     └── foundations/<foundation-id>/  # Substrate implementation package
 ```
 
-Territory files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. A node's id never changes — `next.mdx` holds a draft evolution of a shipped Foundation/Workflow under the same id; `ship` promotes it over `current.mdx`. Implementation packages are prescribed by type+id (`src/workflows/<id>`, `src/foundations/<id>`); Journeys have no code package because Workflows may belong to many Journeys. See SPEC.md §1.2, §6.1 and §7.
+Territory files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. A node's id never changes — `next.mdx` holds a draft evolution of a shipped Foundation/Workflow under the same id; `ship` promotes it over `current.mdx`. Implementation packages are prescribed by type+id (`src/workflows/<id>`, `src/foundations/<id>`) when `implementation_packages` is `required` (default); set to `off` for layout-free brownfield adoption. Journeys have no code package because Workflows may belong to many Journeys. See SPEC.md §1.2, §1.2.1, §6.1 and §7.
 
 ## Taxonomy
 
@@ -242,7 +242,7 @@ Every violation throws an error starting with `Blocked: `.
 | `export_mindplan_view` | read | Mermaid or DOT typed-DAG projection (full map or focus + 1-hop) |
 | `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); journeys_at_risk |
 | `get_node_context` | read | Returns `record`, `body`, attachment paths, and `next` slot when evolving; `raw_context` deprecated |
-| `get_node_implementation` | read | Prescribed package for Workflow/Foundation (`src/workflows/<id>` or `src/foundations/<id>`) |
+| `get_node_implementation` | read | Package info for Workflow/Foundation; `root: null` when layout-free (`implementation_packages: off`) |
 | `patch_node_territory` | mutation | Optional fallback for body/checkboxes/title/description; defaults to `next` when evolving; prefer host file tools for prose |
 | `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `current.mdx` |
 | `open_next` | mutation | Opens `next.mdx` on a shipped Foundation/Workflow (same id) seeded from `current.mdx`; live node keeps serving unchanged |

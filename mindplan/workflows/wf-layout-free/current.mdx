@@ -1,0 +1,102 @@
+---
+id: wf-layout-free
+type: Workflow
+title: "Layout-free adoption"
+description: "Let existing projects adopt MindPlan as graph + territory + playbook without prescribed src/foundations|workflows packages or dirty-src ownership."
+state: stable
+shipped_at: 2026-07-20T21:11:49.505Z
+created_at: 2026-07-20T20:20:58.261Z
+updated_at: 2026-07-20T21:11:49.505Z
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-territory-store
+  - f-mcp-runtime
+  - wf-project-init
+  - wf-framework-docs
+---
+
+# Layout-free adoption
+
+## Purpose
+
+Let an **existing** (brownfield) project adopt MindPlan for planning, lifecycle, and agent playbooks **without** restructuring application code into prescribed `src/foundations/<id>/` and `src/workflows/<id>/` packages, and without failing `mindplan-mcp check` on ordinary dirty paths under `src/`.
+
+Prescribed packages remain the default for greenfield and for this MindPlan repo. Layout-free is an explicit opt-in.
+
+## Execution Logic
+
+### Project config
+
+Introduce `mindplan/config.json` (project root relative to `MINDPLAN_ROOT`):
+
+```json
+{
+  "implementation_packages": "required"
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| `required` (default when file missing) | Today's behavior: scaffold packages on `create_node`; integrity check enforces package presence, orphans, and dirty-src ownership |
+| `off` | Layout-free: no package scaffolding; skip package + dirty-src ownership checks; `get_node_implementation` reports packages off / no root |
+
+Graph compiler gates (Ghost Workflows/Bugs, Infrastructure First, Completion Check, `--for-main` mid-pipeline ban) are **unchanged** in both modes.
+
+### Init path
+
+`mindplan-mcp init` (owned by `wf-project-init`) writes or updates `mindplan/config.json`:
+
+- Default / `--layout prescribed` → `"implementation_packages": "required"`
+- `--layout free` → `"implementation_packages": "off"`
+
+Idempotent: do not overwrite an existing explicit config unless the user passes a layout flag that requests a change (document the flag semantics in init + integrations).
+
+### Store + MCP
+
+`f-territory-store` loads config when scaffolding and when answering `get_node_implementation`:
+
+- `off` → `create_node` creates territory only (no `src/.../<id>/.gitkeep`)
+- `off` → `get_node_implementation` returns a clear “packages off” result (no implied failure)
+- `required` → unchanged prescribed paths
+
+### Integrity check
+
+`wf-integrity-check` reads the same config:
+
+- `off` → skip `checkPackages` and `checkDirtySrc`; still load graph; `--for-main` still bans mid-pipeline states
+- `required` → unchanged
+
+### Docs / playbook
+
+`wf-framework-docs` documents both modes in SPEC, consumer playbook, define-entities, and plan-project: layout-free agents implement in the project's existing layout; they still advance MindPlan states and must not invent tickets outside the graph.
+
+### Coordination
+
+Shipped contracts evolve in place via `next` on `wf-project-init`, `wf-integrity-check`, `f-territory-store`, and `wf-framework-docs`. This Workflow owns the consumer-facing use case and the config schema; those nodes own the implementation seams.
+
+Package for orchestration/tests: `src/workflows/wf-layout-free/` (this MindPlan repo stays on `required`).
+
+Depends on: `f-territory-store`, `f-mcp-runtime`, `wf-project-init`, `wf-framework-docs`. Belongs to: `j-agent-onboarding`. Coordinated evolution: `wf-integrity-check` next slot.
+
+## Acceptance Criteria
+
+- Brownfield init with `--layout free` produces `implementation_packages: "off"` and never requires moving app code under `src/foundations|workflows`
+- With packages `off`, `create_node` does not create prescribed packages; `mindplan-mcp check` does not fail on missing packages or unowned dirty `src/`
+- With packages `off`, `--for-main` and Ghost/Completion gates still apply
+- Missing config behaves as `required` (no surprise for this repo or existing consumers)
+- SPEC + playbook explain when to choose free vs prescribed
+- This MindPlan repo remains on `required` and keeps screaming-architecture checks green
+
+## Atomic Ops
+
+- [x] Add `mindplan/config.json` schema + loader (shared with store/check/init)
+- [x] `mindplan-mcp init --layout free|prescribed` writes config
+- [x] Territory store: skip scaffold + packages-off `get_node_implementation` when `off`
+- [x] Integrity check: skip package + dirty-src when `off`; keep graph / `--for-main`
+- [x] SPEC + playbook + skills document layout-free vs prescribed
+- [x] Harness: free-layout fixture (init + create_node + check) and required still green on this repo
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

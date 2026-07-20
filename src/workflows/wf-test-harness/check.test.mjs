@@ -268,6 +268,138 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("wf-evolve")) {
   console.log(`FAIL --for-main should fail with next in-progress: ${r.stderr || r.stdout}`);
 } else console.log("ok   --for-main fails on next in-progress");
 
+// --- layout-free (implementation_packages: off) ---
+fs.writeFileSync(
+  path.join(root, "mindplan", "config.json"),
+  JSON.stringify({ implementation_packages: "off" }, null, 2) + "\n"
+);
+fs.mkdirSync(path.join(root, "src", "app"), { recursive: true });
+fs.writeFileSync(path.join(root, "src", "app", "page.ts"), "export {};\n");
+fs.rmSync(path.join(root, "src", "workflows", "wf-feature"), { recursive: true, force: true });
+fs.rmSync(path.join(root, "src", "foundations", "f-core"), { recursive: true, force: true });
+
+r = runCheck([]);
+if (r.status !== 0) {
+  failures++;
+  console.log(`FAIL layout-free check should pass without packages: ${r.stderr || r.stdout}`);
+} else console.log("ok   layout-free check skips packages and dirty-src");
+
+r = runCheck(["--for-main"]);
+if (r.status === 0 || !(r.stderr || r.stdout).includes("wf-evolve")) {
+  failures++;
+  console.log(`FAIL layout-free --for-main should still fail mid-pipeline: ${r.stderr || r.stdout}`);
+} else console.log("ok   layout-free --for-main still bans mid-pipeline");
+
+const freeCreate = await call("create_node", {
+  id: "wf-free-extra",
+  type: "Workflow",
+  title: "Free extra",
+  description: "No package",
+});
+if (freeCreate.implementation || fs.existsSync(path.join(root, "src", "workflows", "wf-free-extra"))) {
+  failures++;
+  console.log(`FAIL layout-free create_node should not scaffold package: ${JSON.stringify(freeCreate)}`);
+} else if (freeCreate.implementation_packages !== "off") {
+  failures++;
+  console.log(`FAIL create_node should report implementation_packages off: ${JSON.stringify(freeCreate)}`);
+} else if (freeCreate.changed_files?.some((f) => String(f).includes("src/workflows/"))) {
+  failures++;
+  console.log(`FAIL layout-free changed_files must omit src package: ${JSON.stringify(freeCreate.changed_files)}`);
+} else console.log("ok   layout-free create_node skips package scaffold");
+
+const freeBody = fs.readFileSync(
+  path.join(root, "mindplan", "workflows", "wf-free-extra", "current.mdx"),
+  "utf-8"
+);
+if (!freeBody.includes("layout-free") || freeBody.includes("Implement code only under `src/workflows/<id>/`")) {
+  failures++;
+  console.log("FAIL layout-free scaffold body should not prescribe src/workflows path");
+} else console.log("ok   layout-free scaffold body mentions layout-free");
+
+const freeImpl = await call("get_node_implementation", { node_id: "wf-feature" });
+if (freeImpl.root !== null || freeImpl.implementation_packages !== "off") {
+  failures++;
+  console.log(`FAIL get_node_implementation packages off: ${JSON.stringify(freeImpl)}`);
+} else console.log("ok   get_node_implementation reports packages off");
+
+fs.writeFileSync(
+  path.join(root, "mindplan", "config.json"),
+  JSON.stringify({ implementation_packages: "Off" }, null, 2) + "\n"
+);
+const badCfg = runCheck([]);
+const badOut = `${badCfg.stderr || ""}\n${badCfg.stdout || ""}`;
+if (badCfg.status === 0 || !badOut.includes("Blocked: invalid mindplan/config.json")) {
+  failures++;
+  console.log(`FAIL invalid config should hard-break: status=${badCfg.status} out=${badOut}`);
+} else console.log("ok   invalid config hard-breaks check");
+
+try {
+  await call("get_node_implementation", { node_id: "wf-feature" });
+  failures++;
+  console.log("FAIL get_node_implementation should Blocked on invalid config");
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!msg.includes("Blocked: invalid mindplan/config.json")) {
+    failures++;
+    console.log(`FAIL expected invalid config Blocked, got: ${msg}`);
+  } else console.log("ok   get_node_implementation hard-breaks on invalid config");
+}
+
+fs.writeFileSync(path.join(root, "mindplan", "config.json"), "{ not json\n");
+const badJson = runCheck([]);
+const badJsonOut = `${badJson.stderr || ""}\n${badJson.stdout || ""}`;
+if (badJson.status === 0 || !badJsonOut.includes("Blocked: invalid mindplan/config.json")) {
+  failures++;
+  console.log(`FAIL bad JSON config should hard-break: ${badJsonOut}`);
+} else console.log("ok   bad JSON config hard-breaks check");
+
+try {
+  await call("create_node", {
+    id: "j-should-not-exist",
+    type: "Journey",
+    title: "Should not exist",
+    description: "Partial write regression",
+  });
+  failures++;
+  console.log("FAIL create_node Journey should Blocked on invalid config");
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!msg.includes("Blocked: invalid mindplan/config.json")) {
+    failures++;
+    console.log(`FAIL expected invalid config Blocked on create_node, got: ${msg}`);
+  } else if (fs.existsSync(path.join(root, "mindplan", "journeys", "j-should-not-exist"))) {
+    failures++;
+    console.log("FAIL create_node must not leave Journey folder after invalid config");
+  } else console.log("ok   create_node hard-breaks before writing on invalid config");
+}
+
+const bareInitBad = spawnSync(process.execPath, [serverEntry, "init"], {
+  cwd: root,
+  env: { ...process.env, MINDPLAN_ROOT: root },
+  encoding: "utf-8",
+});
+const bareInitOut = `${bareInitBad.stderr || ""}\n${bareInitBad.stdout || ""}`;
+if (bareInitBad.status === 0 || !bareInitOut.includes("Blocked: invalid mindplan/config.json")) {
+  failures++;
+  console.log(`FAIL bare init on corrupt config should Blocked: ${bareInitOut}`);
+} else console.log("ok   bare init hard-breaks on corrupt config");
+
+const layoutFix = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
+  cwd: root,
+  env: { ...process.env, MINDPLAN_ROOT: root },
+  encoding: "utf-8",
+});
+if (layoutFix.status !== 0) {
+  failures++;
+  console.log(`FAIL --layout free should overwrite corrupt config: ${layoutFix.stderr || layoutFix.stdout}`);
+} else {
+  const cfg = JSON.parse(fs.readFileSync(path.join(root, "mindplan", "config.json"), "utf-8"));
+  if (cfg.implementation_packages !== "off") {
+    failures++;
+    console.log(`FAIL --layout free overwrite: ${JSON.stringify(cfg)}`);
+  } else console.log("ok   --layout free overwrites corrupt config");
+}
+
 await client.close();
 
 if (failures > 0) {

@@ -39,11 +39,13 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
 
 5. **`.cursor/permissions.json`** — `mindplan-mcp init` installs this when missing. It allowlists MindPlan MCP tools (`mindplan:*`, plus the Cursor UI server id `project-0-mindplan-mindplan:*` / `*mindplan*:*`) so Auto-review does **not** prompt on playbook-required graph mutations (`update_node_status`, `create_node`, `link_nodes`, etc.). Requires Run Mode **Auto-review** or **Allowlist** (Settings → Agents → Approvals & Execution). Defining `mcpAllowlist` in this file replaces the in-app MCP allowlist for that key type — if you already allowlisted other MCP servers in Settings, add those patterns to the same file (or `~/.cursor/permissions.json`).
 
-6. **Authority split & review**
+6. **Layout mode** — `mindplan-mcp init` writes `mindplan/config.json`. Use `--layout free` on an existing codebase so MindPlan does **not** require `src/foundations|workflows/<id>/` packages or dirty-src ownership checks. Default / `--layout prescribed` keeps screaming architecture. See SPEC §1.2.1.
+
+7. **Authority split & review**
    - **MCP** — create/link/status/`open_next`/`discard_next`. Graph tool results include `changed_files` (paths MCP wrote). Those writes do **not** appear in Cursor’s agent “changed files” strip — review via Source Control or by opening the cited path.
    - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
    - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
 
-7. **Git delivery** — always feature branch + PR. Never push to `main`/`master` (see playbook **Git delivery**). Run `mindplan-mcp check` on the branch; `mindplan-mcp check --for-main` before merge.
+8. **Git delivery** — always feature branch + PR. Never push to `main`/`master` (see playbook **Git delivery**). Run `mindplan-mcp check` on the branch; `mindplan-mcp check --for-main` before merge.
 
-8. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
+9. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).

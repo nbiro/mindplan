@@ -28,6 +28,23 @@ import type {
   NodeType,
 } from "../f-domain-model/types.js";
 import { BUG_SEVERITIES, GRAPH_VERSION, isNextPipelineState, NODE_TYPES } from "../f-domain-model/types.js";
+import {
+  implementationPackagesRequired,
+  loadProjectConfig,
+  type ImplementationPackagesMode,
+} from "./config.js";
+
+export {
+  CONFIG_FILENAME,
+  implementationPackagesRequired,
+  loadProjectConfig,
+  projectConfigPath,
+  projectConfigRelativePath,
+  writeProjectConfig,
+  type ImplementationPackagesMode,
+  type MindPlanProjectConfig,
+  type WriteProjectConfigResult,
+} from "./config.js";
 
 const TYPE_DIRS: Record<NodeType, string> = {
   Journey: "journeys",
@@ -98,10 +115,11 @@ export function implementationDir(node: Pick<MindPlanNode, "id" | "type">): stri
   return path.join(projectRoot(), ...rel.split("/"));
 }
 
-/** Scaffolds src/workflows/<id> or src/foundations/<id> with .gitkeep. No-op for Journey/Bug. */
+/** Scaffolds src/workflows/<id> or src/foundations/<id> with .gitkeep. No-op for Journey/Bug or when packages are off. */
 export function scaffoldImplementationPackage(
   node: Pick<MindPlanNode, "id" | "type">
 ): string | null {
+  if (!implementationPackagesRequired()) return null;
   const abs = implementationDir(node);
   const rel = implementationRelativePath(node);
   if (!abs || !rel) return null;
@@ -113,32 +131,68 @@ export function scaffoldImplementationPackage(
   return rel;
 }
 
+export type NodeImplementationInfo = {
+  node_id: string;
+  /**
+   * Prescribed package root when implementation_packages is required.
+   * Always null when implementation_packages is off — do not treat as a missing package.
+   */
+  root: string | null;
+  /**
+   * Whether the prescribed package directory exists on disk.
+   * When implementation_packages is off, always false (packages are not applicable).
+   * Agents MUST check implementation_packages before interpreting exists/root.
+   */
+  exists: boolean;
+  implementation_packages: ImplementationPackagesMode;
+  entries?: string[];
+};
+
 /**
  * Returns prescribed implementation package info for a Workflow or Foundation.
+ * When implementation_packages is off, root is null and exists is false —
+ * that means packages are not applicable, not that a package is missing.
  * Throws Blocked for Journey/Bug.
  */
-export function getNodeImplementation(node: MindPlanNode): {
-  node_id: string;
-  root: string;
-  exists: boolean;
-  entries?: string[];
-} {
-  const root = implementationRelativePath(node);
-  if (!root) {
+export function getNodeImplementation(node: MindPlanNode): NodeImplementationInfo {
+  if (node.type !== "Workflow" && node.type !== "Foundation") {
     throw new Error(
       `Blocked: get_node_implementation only applies to Workflow and Foundation nodes; "${node.id}" is a ${node.type}.`
     );
   }
+  const mode = loadProjectConfig().implementation_packages;
+  if (mode === "off") {
+    return {
+      node_id: node.id,
+      root: null,
+      exists: false,
+      implementation_packages: "off",
+      entries: [],
+    };
+  }
+  const root = implementationRelativePath(node)!;
   const abs = implementationDir(node)!;
   const exists = fs.existsSync(abs) && fs.statSync(abs).isDirectory();
   if (!exists) {
-    return { node_id: node.id, root, exists: false, entries: [] };
+    return {
+      node_id: node.id,
+      root,
+      exists: false,
+      implementation_packages: "required",
+      entries: [],
+    };
   }
   const entries = fs
     .readdirSync(abs)
     .filter((name) => name !== "." && name !== "..")
     .sort((a, b) => a.localeCompare(b));
-  return { node_id: node.id, root, exists: true, entries };
+  return {
+    node_id: node.id,
+    root,
+    exists: true,
+    implementation_packages: "required",
+    entries,
+  };
 }
 
 export function markdownPath(
@@ -599,6 +653,9 @@ export function scaffoldEntity(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "created_at" | "updated_at">,
   meta: Pick<MindPlanNode, "title" | "description">
 ): void {
+  // Validate project config before any FS writes so invalid config cannot leave a partial node.
+  const packagesRequired = implementationPackagesRequired();
+
   ensureEntityDir(node);
   const attachmentsKeep = path.join(attachmentsDir(node), ".gitkeep");
   if (!fs.existsSync(attachmentsKeep)) {
@@ -649,7 +706,9 @@ export function scaffoldEntity(
         "",
         "## Shared Substrate Spec",
         "",
-        "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Implement code only under `src/foundations/<id>/`._",
+        packagesRequired
+          ? "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Implement code only under `src/foundations/<id>/`._"
+          : "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/foundations/<id>/`._",
         "",
         "## Checklist",
         "",
@@ -673,7 +732,9 @@ export function scaffoldEntity(
         "",
         "## Execution Logic",
         "",
-        "_Describe the use case step by step — the application-specific business logic this feature implements. Implement code only under `src/workflows/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._",
+        packagesRequired
+          ? "_Describe the use case step by step — the application-specific business logic this feature implements. Implement code only under `src/workflows/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._"
+          : "_Describe the use case step by step — the application-specific business logic this feature implements. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/workflows/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._",
         "",
         "## Checklist",
         "",

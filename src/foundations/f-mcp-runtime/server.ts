@@ -28,6 +28,7 @@ import {
   nodeExists,
   listAttachments,
   getNodeImplementation,
+  implementationPackagesRequired,
   implementationRelativePath,
   readMarkdown,
   scaffoldEntity,
@@ -53,7 +54,9 @@ import {
   installDefineEntitiesSkill,
   installPlanProjectSkill,
   installMcpExample,
+  installProjectConfig,
   installRootAgentsMd,
+  type InitLayout,
 } from "../../workflows/wf-project-init/init.js";
 import {
   blocked,
@@ -317,8 +320,9 @@ server.registerTool(
   {
     title: "Get node implementation",
     description:
-      "Returns the prescribed implementation package for a Workflow or Foundation " +
-      "(src/workflows/<id> or src/foundations/<id>): root path, whether it exists, and top-level entries.",
+      "Returns implementation package info for a Workflow or Foundation. " +
+      "When implementation_packages is required: root is src/workflows/<id> or src/foundations/<id>, plus exists/entries. " +
+      "When off (layout-free): root is null and exists is false — packages are not applicable; check implementation_packages before treating as missing.",
     inputSchema: {
       node_id: NODE_ID.describe("Workflow or Foundation id whose implementation package to read."),
     },
@@ -487,7 +491,8 @@ server.registerTool(
     title: "Create node",
     description:
       "Creates a Journey, Foundation, Workflow, or Bug: scaffolds territory folder + current.mdx frontmatter. " +
-      "Workflow/Foundation also scaffold src/workflows/<id> or src/foundations/<id> implementation packages.",
+      "When implementation_packages is required (default), Workflow/Foundation also scaffold src/workflows/<id> or src/foundations/<id>. " +
+      "When off (layout-free), only territory is created.",
     inputSchema: {
       id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
       type: z.enum(NODE_TYPES).describe("Journey | Foundation | Workflow | Bug"),
@@ -514,7 +519,8 @@ server.registerTool(
     const rel = entityRelativePath(node);
     const current = `${rel}/${CURRENT_FILENAME}`;
     const attachments = `${rel}/${ATTACHMENTS_DIR}`;
-    const implementation = implementationRelativePath(node);
+    const packagesOn = implementationPackagesRequired();
+    const implementation = packagesOn ? implementationRelativePath(node) : null;
     refreshPersistedMap();
     const files = [current, `${attachments}/.gitkeep`];
     if (implementation) files.push(`${implementation}/.gitkeep`);
@@ -525,6 +531,7 @@ server.registerTool(
       context: current,
       attachments,
       ...(implementation ? { implementation } : {}),
+      ...(packagesOn ? {} : { implementation_packages: "off" as const }),
       changed_files: changedFiles(files, true),
     });
   })
@@ -1082,46 +1089,111 @@ Options:
   }
 }
 
+function parseInitLayout(argv: string[]): { layout: InitLayout; forceLayout: boolean; error?: string } {
+  let layout: InitLayout = "prescribed";
+  let forceLayout = false;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--layout") {
+      const value = argv[++i];
+      if (value !== "free" && value !== "prescribed") {
+        return {
+          layout: "prescribed",
+          forceLayout: false,
+          error: `Blocked: --layout must be "free" or "prescribed" (got ${value ?? "(missing)"}).`,
+        };
+      }
+      layout = value;
+      forceLayout = true;
+    } else if (arg.startsWith("--layout=")) {
+      const value = arg.slice("--layout=".length);
+      if (value !== "free" && value !== "prescribed") {
+        return {
+          layout: "prescribed",
+          forceLayout: false,
+          error: `Blocked: --layout must be "free" or "prescribed" (got ${value}).`,
+        };
+      }
+      layout = value;
+      forceLayout = true;
+    } else {
+      return {
+        layout: "prescribed",
+        forceLayout: false,
+        error: `Blocked: unknown init option "${arg}". Use --layout free|prescribed.`,
+      };
+    }
+  }
+  return { layout, forceLayout };
+}
+
 function runCli() {
   const cmd = process.argv[2];
   if (cmd === "init") {
-    const packageRoot = resolvePackageRoot(import.meta.url);
-    const { root, created } = initProject();
-    const playbook = installAgentPlaybook(packageRoot);
-    const skill = installDefineEntitiesSkill(packageRoot);
-    const planSkill = installPlanProjectSkill(packageRoot);
-    const mcpExample = installMcpExample(packageRoot);
-    const integrations = installAgentIntegrations(packageRoot);
-    const agentsMd = installRootAgentsMd(packageRoot);
-    const cursorIgnore = installCursorIgnore(packageRoot);
-    const cursorPermissions = installCursorPermissions(packageRoot);
+    try {
+      const parsed = parseInitLayout(process.argv.slice(3));
+      if (parsed.error) {
+        console.error(parsed.error);
+        process.exit(1);
+      }
+      const packageRoot = resolvePackageRoot(import.meta.url);
+      const { root, created } = initProject();
+      const projectConfig = installProjectConfig(parsed.layout, { force: parsed.forceLayout });
+      const playbook = installAgentPlaybook(packageRoot);
+      const skill = installDefineEntitiesSkill(packageRoot);
+      const planSkill = installPlanProjectSkill(packageRoot);
+      const mcpExample = installMcpExample(packageRoot);
+      const integrations = installAgentIntegrations(packageRoot);
+      const agentsMd = installRootAgentsMd(packageRoot);
+      const cursorIgnore = installCursorIgnore(packageRoot);
+      const cursorPermissions = installCursorPermissions(packageRoot);
 
-    if (created) {
-      console.log(`Initialized MindPlan at ${root}`);
-    } else {
-      console.log(`MindPlan already initialized at ${root}`);
+      if (created) {
+        console.log(`Initialized MindPlan at ${root}`);
+      } else {
+        console.log(`MindPlan already initialized at ${root}`);
+      }
+
+      const report = (label: string, result: { installed: boolean; path: string }) => {
+        console.log(
+          result.installed ? `Installed ${label} at ${result.path}` : `${label} already present at ${result.path}`
+        );
+      };
+
+      if (projectConfig.installed) {
+        console.log(
+          `Installed project config at ${projectConfig.path} (implementation_packages: ${projectConfig.config.implementation_packages})`
+        );
+      } else {
+        console.log(
+          `Project config already present at ${projectConfig.path} (implementation_packages: ${projectConfig.config.implementation_packages})`
+        );
+      }
+      report("agent playbook", playbook);
+      report("define-entities skill", skill);
+      report("plan-project skill", planSkill);
+      report("MCP example", mcpExample);
+      report("agent integrations", integrations);
+      report("AGENTS.md", agentsMd);
+      report(".cursorignore", cursorIgnore);
+      report(".cursor/permissions.json", cursorPermissions);
+
+      if (!agentsMd.installed) {
+        console.log("Tip: add a reference to mindplan/agent/playbook.md in your existing AGENTS.md.");
+      }
+
+      if (projectConfig.config.implementation_packages === "off") {
+        console.log(
+          "Layout-free mode: create_node will not scaffold src/foundations|workflows packages; check skips package/dirty-src ownership."
+        );
+      }
+
+      console.log("Next: register the MindPlan MCP server — see mindplan/agent/integrations/");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(message.startsWith("Blocked:") ? message : `Error: ${message}`);
+      process.exit(1);
     }
-
-    const report = (label: string, result: { installed: boolean; path: string }) => {
-      console.log(
-        result.installed ? `Installed ${label} at ${result.path}` : `${label} already present at ${result.path}`
-      );
-    };
-
-    report("agent playbook", playbook);
-    report("define-entities skill", skill);
-    report("plan-project skill", planSkill);
-    report("MCP example", mcpExample);
-    report("agent integrations", integrations);
-    report("AGENTS.md", agentsMd);
-    report(".cursorignore", cursorIgnore);
-    report(".cursor/permissions.json", cursorPermissions);
-
-    if (!agentsMd.installed) {
-      console.log("Tip: add a reference to mindplan/agent/playbook.md in your existing AGENTS.md.");
-    }
-
-    console.log("Next: register the MindPlan MCP server — see mindplan/agent/integrations/");
     return;
   }
 
@@ -1144,11 +1216,16 @@ function runCli() {
   if (cmd === "help" || cmd === "--help" || cmd === "-h") {
     console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
-  mindplan-mcp init         Scaffold mindplan/, agent playbook, skills, integrations, and .cursorignore
+  mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and .cursorignore
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
   mindplan-mcp check        Offline integrity: graph, packages, dirty src (or --for-main)
   mindplan-mcp help         Show this message
+
+Init options:
+  --layout free|prescribed  Write mindplan/config.json (free = off packages; prescribed = required).
+                            With --layout, always overwrites existing config. Without --layout,
+                            creates config only if missing (default prescribed / required).
 
 View options:
   --format, -f mermaid|dot  Diagram format (default: mermaid)

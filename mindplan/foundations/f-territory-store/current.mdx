@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory filesystem store"
-description: "Territory FS store; patchFrontmatter can clear shipped_at for force_unship recovery"
+description: "Territory store reads project config; skips implementation package scaffolding when packages are off."
 state: stable
-shipped_at: 2026-07-19T20:40:31.876Z
+shipped_at: 2026-07-20T21:11:40.531Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-07-19T20:40:31.876Z
+updated_at: 2026-07-20T21:11:40.531Z
 depends_on:
   - f-domain-model
 ---
@@ -16,13 +16,15 @@ depends_on:
 
 ## Purpose
 
-Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities and prescribed `src/` packages, and owns `next.mdx` open/promote/discard plus territory body patches. Supports clearing `shipped_at` when recovering a mistaken ship via `force_unship`.
+Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities (and prescribed `src/` packages when configured), and owns `next.mdx` open/promote/discard plus territory body patches. Supports clearing `shipped_at` when recovering a mistaken ship via `force_unship`. Reads `mindplan/config.json` so layout-free projects can opt out of prescribed implementation packages.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-territory-store/`
 
-- `store.ts` — path helpers (`mindplanRoot`, `entityDir`, `implementationDir`, …); frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` (optional `{ clearShippedAt: true }` removes the `shipped_at:` line) / edge writers (respecting next-slot edge writes); `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory` (slot resolution `current`|`next`); `countUncheckedBoxes`; `getNodeImplementation`
+- `store.ts` — path helpers (`mindplanRoot`, `entityDir`, `implementationDir`, …); frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + optional implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` (optional `{ clearShippedAt: true }` removes the `shipped_at:` line) / edge writers (respecting next-slot edge writes); `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory` (slot resolution `current`|`next`); `countUncheckedBoxes`; `getNodeImplementation`; **project config loader** for `implementation_packages` (`required` | `off`, default `required` when file missing)
+- When `implementation_packages` is `off`: `scaffoldImplementationPackage` is a no-op; `getNodeImplementation` reports packages off / no implied prescribed root (callers must not treat absence as integrity failure)
+- When `required`: Foundations/Workflows get prescribed packages under `src/foundations/<id>/` or `src/workflows/<id>/` (unchanged)
 
 Consumer init/install helpers live in `src/workflows/wf-project-init/init.ts` (not this Foundation).
 
@@ -33,15 +35,17 @@ Depends on: `f-domain-model`.
 - Graph load matches on-disk `current.mdx` (+ optional `next.mdx`) frontmatter
 - `open_next` seeds body and outgoing edges; `ship` promotes next over current; `discard_next` leaves current untouched
 - Territory patches can target `current` or `next`; default to `next` when an evolution is open on that node
-- Foundations/Workflows get prescribed packages under `src/foundations/<id>/` or `src/workflows/<id>/`
+- With `required` (or missing config): Foundations/Workflows get prescribed packages under `src/foundations/<id>/` or `src/workflows/<id>/`
+- With `off`: `create_node` / scaffold creates territory only; no prescribed package dirs; `get_node_implementation` surfaces packages-off clearly
 - `patchFrontmatter(..., { clearShippedAt: true })` removes `shipped_at` from `current.mdx`
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Extend `patchFrontmatter` with `clearShippedAt` to delete the `shipped_at:` line
-- [x] Document clear-shipped_at in this territory
-- [x] Verified via `npm test` (force_unship smoke)
+- [x] Add config loader (`implementation_packages`, default `required`; invalid file hard-fails with `Blocked`)
+- [x] Skip `scaffoldImplementationPackage` when `off`
+- [x] `getNodeImplementation` returns packages-off result when `off`
+- [x] Tests for both modes
 
 ## Attachments
 

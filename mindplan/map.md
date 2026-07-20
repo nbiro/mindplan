@@ -1,8 +1,3 @@
-# MindPlan map
-
-_Auto-generated after each graph mutation (22 nodes, 41 edges). Do not edit by hand._
-
-```mermaid
 flowchart TB
   subgraph foundations["Foundations"]
     f_compiler_rules["f-compiler-rules · Compiler rules engine · stable"]
@@ -17,6 +12,7 @@ flowchart TB
   subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
     wf_agent_integrations__in__j_agent_onboarding["wf-agent-integrations · Agent integrations · stable"]
     wf_framework_docs__in__j_agent_onboarding["wf-framework-docs · Framework docs · stable"]
+    wf_layout_free__in__j_agent_onboarding["wf-layout-free · Layout-free adoption · stable"]
     wf_npm_publish__in__j_agent_onboarding["wf-npm-publish · Publish to npm · ready"]
     wf_project_init__in__j_agent_onboarding["wf-project-init · Init a consumer project · stable"]
   end
@@ -32,6 +28,9 @@ flowchart TB
     wf_mutate_graph__in__j_territory_sdlc["wf-mutate-graph · Mutate graph · stable"]
     wf_query_graph__in__j_territory_sdlc["wf-query-graph · Orient on the plan · stable"]
     wf_test_harness__in__j_territory_sdlc["wf-test-harness · Test harness · stable"]
+  end
+  subgraph unassigned["Unassigned workflows"]
+    wf_graph_explore["wf-graph-explore · Explore the graph · draft"]
   end
   f_compiler_rules --> f_domain_model
   f_github_actions --> f_npm_registry
@@ -51,6 +50,10 @@ flowchart TB
   wf_integrity_check__in__j_territory_sdlc --> f_compiler_rules
   wf_integrity_check__in__j_territory_sdlc --> f_mcp_runtime
   wf_integrity_check__in__j_territory_sdlc --> f_territory_store
+  wf_layout_free__in__j_agent_onboarding --> f_mcp_runtime
+  wf_layout_free__in__j_agent_onboarding --> f_territory_store
+  wf_layout_free__in__j_agent_onboarding --> wf_framework_docs__in__j_agent_onboarding
+  wf_layout_free__in__j_agent_onboarding --> wf_project_init__in__j_agent_onboarding
   wf_mutate_graph__in__j_territory_sdlc --> f_compiler_rules
   wf_mutate_graph__in__j_territory_sdlc --> f_mcp_runtime
   wf_npm_publish__in__j_agent_onboarding --> f_mcp_runtime
@@ -64,4 +67,3 @@ flowchart TB
   wf_query_graph__in__j_territory_sdlc --> f_graph_search
   wf_query_graph__in__j_territory_sdlc --> f_mcp_runtime
   wf_test_harness__in__j_territory_sdlc --> f_mcp_runtime
-```

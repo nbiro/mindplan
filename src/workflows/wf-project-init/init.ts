@@ -12,7 +12,12 @@ import {
   ensureDirectories,
   mindplanRoot,
   projectRoot,
+  writeProjectConfig,
+  type ImplementationPackagesMode,
+  type MindPlanProjectConfig,
 } from "../../foundations/f-territory-store/store.js";
+
+export type InitLayout = "free" | "prescribed";
 
 export type InitResult = {
   root: string;
@@ -27,6 +32,12 @@ export type InstallAgentRuleResult = {
 export type InstallSkillResult = {
   installed: boolean;
   path: string;
+};
+
+export type InstallProjectConfigResult = {
+  installed: boolean;
+  path: string;
+  config: MindPlanProjectConfig;
 };
 
 function copyDirRecursive(src: string, dest: string): void {
@@ -157,6 +168,22 @@ export function installCursorPermissions(packageRoot: string): InstallAgentRuleR
   const templatePath = path.join(agentTemplateRoot(packageRoot), "permissions.json");
   const destPath = path.join(projectRoot(), ".cursor", "permissions.json");
   return installTemplateFile(templatePath, destPath, ".cursor/permissions.json");
+}
+
+/** Installs mindplan/config.json for prescribed or layout-free adoption.
+ * Creates when missing. Overwrites only when `force` is true (explicit --layout).
+ */
+export function installProjectConfig(
+  layout: InitLayout = "prescribed",
+  options: { force?: boolean } = {}
+): InstallProjectConfigResult {
+  const mode: ImplementationPackagesMode = layout === "free" ? "off" : "required";
+  const result = writeProjectConfig(mode, { force: options.force === true });
+  return {
+    installed: result.written,
+    path: result.path,
+    config: result.config,
+  };
 }
 
 /** Scaffolds an empty mindplan/ tree in the consumer project (idempotent). */

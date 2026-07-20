@@ -354,6 +354,7 @@ const wfImpl = JSON.parse(
 if (
   wfImpl.root !== "src/workflows/wf-checkout" ||
   wfImpl.exists !== true ||
+  wfImpl.implementation_packages !== "required" ||
   !wfImpl.entries?.includes(".gitkeep")
 ) {
   failures++; console.log(`FAIL workflow implementation: ${JSON.stringify(wfImpl)}`);
@@ -803,8 +804,69 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "plan-project", "SKILL.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install plan-project skill");
+} else if (
+  (() => {
+    const cfgPath = path.join(initRoot, "mindplan", "config.json");
+    if (!fs.existsSync(cfgPath)) return true;
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
+    return cfg.implementation_packages !== "required";
+  })()
+) {
+  failures++;
+  console.log("FAIL mindplan-mcp init should write implementation_packages required by default");
 } else {
   console.log("ok   mindplan-mcp init installs templates from package root");
+}
+
+const freeInitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-free-"));
+const freeInit = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
+  cwd: freeInitRoot,
+  env: { ...process.env, MINDPLAN_ROOT: freeInitRoot },
+  encoding: "utf-8",
+});
+if (freeInit.status !== 0) {
+  failures++;
+  console.log(`FAIL init --layout free exit ${freeInit.status}: ${freeInit.stderr || freeInit.stdout}`);
+} else {
+  const cfg = JSON.parse(fs.readFileSync(path.join(freeInitRoot, "mindplan", "config.json"), "utf-8"));
+  if (cfg.implementation_packages !== "off") {
+    failures++;
+    console.log(`FAIL init --layout free config: ${JSON.stringify(cfg)}`);
+  } else console.log("ok   mindplan-mcp init --layout free writes packages off");
+}
+
+const bareAfterFree = spawnSync(process.execPath, [serverEntry, "init"], {
+  cwd: freeInitRoot,
+  env: { ...process.env, MINDPLAN_ROOT: freeInitRoot },
+  encoding: "utf-8",
+});
+if (bareAfterFree.status !== 0) {
+  failures++;
+  console.log(`FAIL bare init after free exit ${bareAfterFree.status}: ${bareAfterFree.stderr || bareAfterFree.stdout}`);
+} else {
+  const cfg = JSON.parse(fs.readFileSync(path.join(freeInitRoot, "mindplan", "config.json"), "utf-8"));
+  if (cfg.implementation_packages !== "off") {
+    failures++;
+    console.log(`FAIL bare init must preserve free config: ${JSON.stringify(cfg)}`);
+  } else console.log("ok   bare init preserves existing layout-free config");
+}
+
+const prescribeAfterFree = spawnSync(process.execPath, [serverEntry, "init", "--layout", "prescribed"], {
+  cwd: freeInitRoot,
+  env: { ...process.env, MINDPLAN_ROOT: freeInitRoot },
+  encoding: "utf-8",
+});
+if (prescribeAfterFree.status !== 0) {
+  failures++;
+  console.log(
+    `FAIL init --layout prescribed exit ${prescribeAfterFree.status}: ${prescribeAfterFree.stderr || prescribeAfterFree.stdout}`
+  );
+} else {
+  const cfg = JSON.parse(fs.readFileSync(path.join(freeInitRoot, "mindplan", "config.json"), "utf-8"));
+  if (cfg.implementation_packages !== "required") {
+    failures++;
+    console.log(`FAIL --layout prescribed must overwrite free config: ${JSON.stringify(cfg)}`);
+  } else console.log("ok   --layout prescribed overwrites free config");
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
