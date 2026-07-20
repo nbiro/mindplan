@@ -1,0 +1,52 @@
+---
+id: wf-console-mutate
+type: Workflow
+title: "Steer the plan"
+description: "Mutate the plan — compiler-gated status, link/unlink, open_next, and related edits with Blocked: surfacing."
+state: ready
+created_at: 2026-07-20T21:15:24.412Z
+updated_at: 2026-07-20T21:17:14.845Z
+belongs_to:
+  - j-plan-console
+depends_on:
+  - wf-territory-viewer
+  - f-design-system
+  - f-console-bridge
+  - wf-console-shell
+---
+
+# Steer the plan
+
+## Purpose
+
+Mutate the plan — human UI to advance status, link/unlink edges, open/discard `next`, and related compiler-gated edits. Same rules as MCP; never a bypass. Surfaces `Blocked:` clearly.
+
+## Execution Logic
+
+Package: `src/workflows/wf-console-mutate/`
+
+- Actions via `f-console-bridge`: `update_node_status`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, optional `patch_node_territory`
+- `force_unship` only after explicit in-UI confirmation and correct confirm token (playbook-aligned)
+- On failure, show structured `Blocked:` reason; do not retry blindly
+- On success, refresh shell see surfaces; show `changed_files`
+- Territory context from `wf-territory-viewer` for the focused node
+
+Belongs to: `j-plan-console`. Depends on: `wf-console-shell`, `wf-territory-viewer`, `f-console-bridge`, `f-design-system`.
+
+## Acceptance Criteria
+
+- Legal status transitions succeed and update the board/graph after refresh
+- Illegal transitions show `Blocked:` with the compiler reason
+- `force_unship` requires explicit human confirmation in the UI
+- No direct filesystem rewrite of server-owned frontmatter fields
+
+## Atomic Ops
+
+- [ ] Status transition controls wired through bridge
+- [ ] Link / unlink edge UI with taxonomy constraints
+- [ ] open_next / discard_next controls
+- [ ] Blocked: error display + changed_files on success
+
+## Attachments
+
+_Wireframes go in `attachments/`._

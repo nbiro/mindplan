@@ -1,0 +1,45 @@
+---
+id: j-plan-console
+type: Journey
+title: "See and steer the plan"
+description: "Human console to see, mutate, and model a repo's MindPlan — status, interactive graph, territory, and compiler-gated edits."
+state: draft
+created_at: 2026-07-20T21:15:08.291Z
+updated_at: 2026-07-20T21:22:31.178Z
+---
+
+
+# See and steer the plan
+
+## Purpose
+
+Domain capability: a local human console for a repo’s MindPlan — see delivery status and architecture, read territory, mutate through the compiler, and model new structure. Complements agent MCP SDLC (`j-territory-sdlc`); does not replace Mermaid/`map.md` export for agents.
+
+## Overview
+
+Humans open a Next.js console pointed at a project root. Three pillars share one shell:
+
+1. **See** — status board, interactive XYFlow graph, territory viewer
+2. **Mutate** — lifecycle and edge edits via the same compiler agents use
+3. **Model** — create and link Journeys, Foundations, Workflows, Bugs (human define-entities)
+
+Journey state is **computed** from member Workflows. Assembler: `f-nextjs` (via Workflow `depends_on`). Data path: browser → `f-console-bridge` → MindPlan store/compiler (no second authority).
+
+## Linked Workflows
+
+- `wf-console-shell` — shared chrome (project root, nav)
+- `wf-status-board` — see: delivery board
+- `wf-graph-explore` — see: XYFlow canvas
+- `wf-territory-viewer` — see: PRD / Atomic Ops
+- `wf-console-mutate` — mutate: steer the plan
+- `wf-model-plan` — model: define structure
+
+## What “healthy” means
+
+- A human can open the console on a MindPlan repo and see the same graph authority agents see via MCP
+- Mutations and modeling never bypass compiler gates; `Blocked:` is visible and actionable
+- Interactive graph is XYFlow-based — not a Mermaid render of `export_mindplan_view`
+
+## Attachments
+
+_Place supporting files in `attachments/` alongside this file._

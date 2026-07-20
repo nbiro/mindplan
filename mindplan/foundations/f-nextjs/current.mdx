@@ -1,0 +1,41 @@
+---
+id: f-nextjs
+type: Foundation
+title: "Next.js assembler"
+description: "Assembler — Next.js App Router shell that mounts console Workflow packages."
+state: ready
+created_at: 2026-07-20T21:15:11.414Z
+updated_at: 2026-07-20T21:17:09.330Z
+---
+
+# Next.js assembler
+
+## Purpose
+
+Assembler — Next.js App Router runtime that mounts console Workflow packages into a local deployable UI. Owns app bootstrap, routing shell hooks, and how Workflow UIs are composed — not stakeholder use-case behaviour (board, graph, mutate, model).
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-nextjs/`
+
+- App Router entry and layout primitives for the MindPlan console
+- Mount points for Workflow packages under `src/workflows/wf-*`
+- Local-dev conventions (project root env / launch) consumed by `wf-console-shell`
+
+MUST NOT own status-board, graph-explore, territory, mutate, or model screens — those are Workflows.
+
+## Acceptance Criteria
+
+- Console Workflows can be mounted as App Router routes/packages
+- Assembler stays free of product use-case logic
+- Local `next dev` (or equivalent) can boot the shell against a chosen project root
+
+## Atomic Ops
+
+- [ ] Scaffold Next.js App Router assembler package
+- [ ] Define Workflow mount convention for console routes
+- [ ] Document local-dev project-root wiring for the shell
+
+## Attachments
+
+_Schemas and diagrams go in `attachments/`._

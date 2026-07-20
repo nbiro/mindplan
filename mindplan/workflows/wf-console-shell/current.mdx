@@ -1,0 +1,48 @@
+---
+id: wf-console-shell
+type: Workflow
+title: "Console shell"
+description: "App shell: project root selection, layout, and navigation across see / mutate / model surfaces."
+state: ready
+created_at: 2026-07-20T21:15:24.459Z
+updated_at: 2026-07-20T21:17:13.798Z
+belongs_to:
+  - j-plan-console
+depends_on:
+  - f-nextjs
+  - f-design-system
+  - f-console-bridge
+---
+
+# Console shell
+
+## Purpose
+
+Shared app chrome for the MindPlan console: choose a project root, host layout, and navigate across see / mutate / model pillars. All other console Workflows mount inside this shell.
+
+## Execution Logic
+
+Package: `src/workflows/wf-console-shell/`
+
+- Project root picker / binding passed to `f-console-bridge`
+- Top-level nav: Status board · Graph · Territory · Steer · Model
+- Layout frame using `f-design-system`; mounted by `f-nextjs`
+- After mutations elsewhere, provide a refresh path so see surfaces reload graph state
+
+Belongs to: `j-plan-console`. Depends on: `f-nextjs`, `f-design-system`, `f-console-bridge`.
+
+## Acceptance Criteria
+
+- User can bind a local MindPlan project root and open the console
+- Nav reaches all five pillar Workflows without leaving the shell
+- Shell itself does not implement board/graph/mutate/model behaviour
+
+## Atomic Ops
+
+- [ ] Project root binding UI wired to bridge session
+- [ ] App layout + pillar navigation
+- [ ] Global refresh after successful mutations
+
+## Attachments
+
+_Wireframes go in `attachments/`._

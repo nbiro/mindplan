@@ -1,0 +1,41 @@
+---
+id: f-design-system
+type: Foundation
+title: "Console design system"
+description: "Design system — tokens and dumb presentational UI for the MindPlan console."
+state: ready
+created_at: 2026-07-20T21:15:11.934Z
+updated_at: 2026-07-20T21:17:13.760Z
+---
+
+# Console design system
+
+## Purpose
+
+Design system — tokens, typography, and dumb presentational primitives for the MindPlan console. Shared look-and-feel for shell, board, graph chrome, territory, and forms. No product behaviour or MindPlan compiler calls.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-design-system/`
+
+- CSS variables / theme tokens (type, color, space) — avoid default AI-slop palettes; pick a deliberate console identity
+- Dumb primitives: layout, text, buttons, inputs, badges (including state badge chrome used by viewers)
+- No data fetching, no bridge calls, no graph layout logic
+
+Consumed by console Workflows and by `f-xyflow` for node/edge styling hooks.
+
+## Acceptance Criteria
+
+- Workflows can compose screens without inventing one-off token stacks
+- Components are presentational only (props in, markup out)
+- State badge / type colors are consistent across board and graph
+
+## Atomic Ops
+
+- [ ] Define token set and base typography
+- [ ] Ship core primitives (Stack, Text, Button, Input, Badge)
+- [ ] Document usage for console Workflow packages
+
+## Attachments
+
+_Schemas and diagrams go in `attachments/`._

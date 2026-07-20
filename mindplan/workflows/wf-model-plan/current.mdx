@@ -1,0 +1,52 @@
+---
+id: wf-model-plan
+type: Workflow
+title: "Model the plan"
+description: "Model the plan — create and link Journeys, Foundations, Workflows, and Bugs through the compiler (human define-entities)."
+state: ready
+created_at: 2026-07-20T21:15:24.437Z
+updated_at: 2026-07-20T21:17:15.025Z
+belongs_to:
+  - j-plan-console
+depends_on:
+  - wf-graph-explore
+  - f-console-bridge
+  - f-design-system
+  - wf-console-shell
+---
+
+# Model the plan
+
+## Purpose
+
+Model the plan — human UI for define-entities / plan-project: create Journeys, Foundations, Workflows, and Bugs; set title/description; establish `belongs_to` / `depends_on` / `affects`. Journey-first: refuse Workflow creation when no matching Journey exists.
+
+## Execution Logic
+
+Package: `src/workflows/wf-model-plan/`
+
+- Create forms call bridge `create_node` with type + id + title + description
+- Link helpers enforce legal edge shapes; Foundation role guidance in copy (Assembler / Infra / Design system / Adapter)
+- After create/link, refresh graph explore so the new structure is visible
+- Enrichment of territory body may deep-link to territory viewer; prose edits can remain host-file-tools in v1 if bridge patch is deferred — document the chosen path in implementation
+- Stays at modeling intent: does not own lifecycle “ship” review theatre (that is `wf-console-mutate`)
+
+Belongs to: `j-plan-console`. Depends on: `wf-console-shell`, `wf-graph-explore`, `f-console-bridge`, `f-design-system`.
+
+## Acceptance Criteria
+
+- User can create a Journey then a Workflow linked with `belongs_to`
+- Workflow create is blocked in the UI when no Journey exists (mirror playbook)
+- New nodes appear on the XYFlow graph after refresh
+- Compiler rejects illegal links with visible `Blocked:`
+
+## Atomic Ops
+
+- [ ] Create-node forms for Journey / Foundation / Workflow / Bug
+- [ ] Journey-first gate for Workflow creation
+- [ ] Link UI for belongs_to / depends_on / affects
+- [ ] Graph refresh after successful model mutations
+
+## Attachments
+
+_Wireframes go in `attachments/`._
