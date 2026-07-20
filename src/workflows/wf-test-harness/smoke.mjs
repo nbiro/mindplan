@@ -642,6 +642,122 @@ await expectBlocked("stable to ready still blocked on update_node_status", "upda
   new_status: "ready",
 });
 
+// --- cancelled (pre-ship abandon) ---
+await expectOk("create wf-deadend", "create_node", {
+  id: "wf-deadend",
+  type: "Workflow",
+  title: "Dead end",
+  description: "Abandoned before ship",
+});
+await expectOk("link deadend belongs_to", "link_nodes", {
+  source_id: "wf-deadend",
+  target_id: "j-ordering",
+  edge_type: "belongs_to",
+});
+await expectOk("link deadend depends_on", "link_nodes", {
+  source_id: "wf-deadend",
+  target_id: "f-db",
+  edge_type: "depends_on",
+});
+await expectOk("deadend -> ready", "update_node_status", {
+  node_id: "wf-deadend",
+  new_status: "ready",
+});
+await expectOk("deadend -> in-progress", "update_node_status", {
+  node_id: "wf-deadend",
+  new_status: "in-progress",
+});
+await expectOk("create wf-depends-deadend", "create_node", {
+  id: "wf-depends-deadend",
+  type: "Workflow",
+  title: "Depends on deadend",
+  description: "Blocks cancel",
+});
+await expectOk("link depends-deadend belongs_to", "link_nodes", {
+  source_id: "wf-depends-deadend",
+  target_id: "j-ordering",
+  edge_type: "belongs_to",
+});
+await expectOk("link depends-deadend -> f-db", "link_nodes", {
+  source_id: "wf-depends-deadend",
+  target_id: "f-db",
+  edge_type: "depends_on",
+});
+await expectOk("link depends-deadend -> wf-deadend", "link_nodes", {
+  source_id: "wf-depends-deadend",
+  target_id: "wf-deadend",
+  edge_type: "depends_on",
+});
+await expectBlocked("cancel blocked by active dependent", "update_node_status", {
+  node_id: "wf-deadend",
+  new_status: "cancelled",
+});
+await expectOk("cancel the dependent first", "update_node_status", {
+  node_id: "wf-depends-deadend",
+  new_status: "cancelled",
+});
+await expectOk("cancel wf-deadend", "update_node_status", {
+  node_id: "wf-deadend",
+  new_status: "cancelled",
+});
+await expectBlocked("cancelled is terminal", "update_node_status", {
+  node_id: "wf-deadend",
+  new_status: "draft",
+});
+await expectBlocked("cannot cancel shipped wf-checkout", "update_node_status", {
+  node_id: "wf-checkout",
+  new_status: "cancelled",
+});
+
+// cancel blocked by next.depends_on on a shipped peer (target is still pre-ship)
+await expectOk("create f-needed", "create_node", {
+  id: "f-needed",
+  type: "Foundation",
+  title: "Needed",
+  description: "Infra — required by next evolution",
+});
+await expectOk("f-needed -> ready", "update_node_status", {
+  node_id: "f-needed",
+  new_status: "ready",
+});
+await expectOk("open_next wf-checkout for next depends_on", "open_next", {
+  node_id: "wf-checkout",
+});
+await expectOk("link next depends_on f-needed", "link_nodes", {
+  source_id: "wf-checkout",
+  target_id: "f-needed",
+  edge_type: "depends_on",
+});
+await expectBlocked("cancel blocked by next depends_on", "update_node_status", {
+  node_id: "f-needed",
+  new_status: "cancelled",
+});
+await expectOk("discard_next after next-depends cancel gate", "discard_next", {
+  node_id: "wf-checkout",
+});
+await expectOk("cancel f-needed after discard_next", "update_node_status", {
+  node_id: "f-needed",
+  new_status: "cancelled",
+});
+
+const viewNoRetired = JSON.parse(
+  await expectOk("view hides cancelled", "export_mindplan_view", { format: "mermaid" })
+);
+if (viewNoRetired.diagram.includes("wf-deadend")) {
+  failures++;
+  console.log("FAIL cancelled node should be hidden from default view");
+} else console.log("ok   cancelled hidden from default view");
+const viewRetired = JSON.parse(
+  await expectOk("view include_retired shows cancelled", "export_mindplan_view", {
+    format: "mermaid",
+    include_retired: true,
+  })
+);
+if (!viewRetired.diagram.includes("wf-deadend")) {
+  failures++;
+  console.log("FAIL include_retired should show cancelled node");
+} else console.log("ok   include_retired shows cancelled");
+
 // --- CLI init resolves package templates from nested dist layout ---
 const initRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-"));
 const { spawnSync } = await import("child_process");

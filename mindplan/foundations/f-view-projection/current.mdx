@@ -2,14 +2,16 @@
 id: f-view-projection
 type: Foundation
 title: "View projection"
-description: "View projection in src/foundations/f-view-projection/"
+description: "View projection; hide cancelled like deprecated unless include_retired"
 state: stable
-shipped_at: 2026-07-19T18:51:18.650Z
+shipped_at: 2026-07-20T20:11:40.556Z
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-07-19T19:39:28.391Z
+updated_at: 2026-07-20T20:11:40.556Z
 depends_on:
   - f-domain-model
 ---
+
+
 
 # View projection
 
@@ -21,16 +23,23 @@ Infra — project the MindPlan graph into Mermaid or DOT for humans, and persist
 
 Package: `src/foundations/f-view-projection/`
 
-- `view.ts` — `prepareViewGraph` (optional focus, hide retired); `graphToMermaid` / `graphToDot`; `exportMindPlanView`; `persistMindPlanMap` / `mindPlanMapPath` (`MAP_FILENAME = map.md`)
+- `view.ts` — `prepareViewGraph` (optional focus, hide retired including `cancelled`/`deprecated`); `graphToMermaid` / `graphToDot`; `exportMindPlanView`; `persistMindPlanMap` / `mindPlanMapPath` (`MAP_FILENAME = map.md`)
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- [x] Mermaid and DOT exports render nodes, edges, and states
-- [x] Focused and full-graph views are supported
-- [x] Successful graph mutations can refresh `mindplan/map.md`
-- [x] Verified via `npm test` (`view.test.mjs`)
+- Mermaid and DOT exports render nodes, edges, and states
+- Focused and full-graph views are supported
+- `cancelled` and `deprecated` are hidden unless `include_retired`
+- Successful graph mutations can refresh `mindplan/map.md`
+- Verified via `npm test` (`view.test.mjs`)
+
+## Atomic Ops
+
+- [x] Treat `cancelled` as retired in `isRetired`
+- [x] Document include_retired covers cancelled
+- [x] Verified via `npm test`
 
 ## Attachments
 

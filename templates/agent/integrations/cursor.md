@@ -44,4 +44,6 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
    - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
    - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
 
-7. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
+7. **Git delivery** — always feature branch + PR. Never push to `main`/`master` (see playbook **Git delivery**). Run `mindplan-mcp check` on the branch; `mindplan-mcp check --for-main` before merge.
+
+8. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).

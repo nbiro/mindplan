@@ -1,0 +1,54 @@
+---
+id: wf-integrity-check
+type: Workflow
+title: "Integrity check CLI"
+description: "Offline mindplan-mcp check: graph/package integrity, dirty-src ownership, and --for-main mid-pipeline ban for CI and agents."
+state: stable
+shipped_at: 2026-07-20T20:11:40.919Z
+created_at: 2026-07-20T18:53:01.570Z
+updated_at: 2026-07-20T20:11:40.919Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-territory-store
+  - f-compiler-rules
+  - f-mcp-runtime
+---
+
+# Integrity check CLI
+
+## Purpose
+
+Offline audit that CI and agents run without starting MCP stdio. Catches package drift and playbook skips on feature branches; blocks merging mid-pipeline graph state to main.
+
+## Execution Logic
+
+1. `mindplan-mcp check [--base <ref>]` loads the territory graph, verifies every non-retired Foundation/Workflow has its prescribed package, rejects orphan `src/` package dirs, and enforces dirty-src ownership: uncommitted `src/` needs `in-progress` (or next in-progress / Bug fixing/in-review); committed diffs vs base allow review/shipped/cancelled/deprecated, but when `next.mdx` is open only next `in-progress`/`in-review` counts. Explicit `--base` fails closed on git errors.
+2. `mindplan-mcp check --for-main` runs graph + package checks and fails if any Foundation/Workflow is `in-progress`/`in-review` (including `next`), or any Bug is `fixing`/`in-review`. Skips dirty-src.
+3. Wired from `f-mcp-runtime` CLI (`node dist/index.js check`); this repo’s CI builds from source.
+
+Package: `src/workflows/wf-integrity-check/`
+
+- `check.ts` — `runIntegrityCheck`, dirty path collection, package/orphan/`--for-main` validators
+
+## Acceptance Criteria
+
+- Default check fails on orphan packages; uncommitted dirty src without in-progress fails; committed dirty while in-review/stable passes
+- `--for-main` fails on mid-pipeline states and passes on draft/ready/stable/cancelled/deprecated graphs
+- Explicit bad `--base` fails closed
+- Exit code 0/1 with `Blocked:` lines for CI
+
+## Checklist
+
+- [x] Implement `check.ts` validators
+- [x] Split working-tree vs commit-diff ownership (review/ship PR-safe)
+- [x] When next.mdx is open, commit-diff requires next in-progress/in-review (not draft/ready)
+- [x] Committed diffs under cancelled/deprecated allowed; uncommitted under cancelled blocked
+- [x] Fail closed on explicit `--base` git errors
+- [x] Wire CLI in `f-mcp-runtime`
+- [x] Harness coverage (`check.test.mjs` including next-slot cases)
+- [x] Document in SPEC §9.6 and playbook
+
+## Attachments
+
+_None._

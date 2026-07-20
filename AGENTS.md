@@ -34,7 +34,7 @@ Orient and mutate **graph structure** only through MCP. Write **territory prose*
 | Type | Purpose | States |
 |------|---------|--------|
 | **Journey** | Domain capability the architecture screams; permanent use-case container | Computed only: `draft`, `incubation`, `stable`, `evolving` |
-| **Foundation** | Shared substrate by role (Assembler, Infra, Design system, Adapter) — no standalone use case | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` |
+| **Foundation** | Shared substrate by role (Assembler, Infra, Design system, Adapter) — no standalone use case | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` (or `cancelled` pre-ship) |
 | **Workflow** | Concrete use case / feature (may span Journeys; may depend on other Workflows) | Same build pipeline as Foundation |
 | **Bug** | Defect on a Workflow or Foundation | `open` → `triaged` → `fixing` → `in-review` → `resolved` \| `wontfix` |
 
@@ -215,6 +215,18 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | `update_node_status` | Advance build pipeline (current or `next` slot), Bug lifecycle, or `ship` (promotes `next` over `current` when open); returns `changed_files` |
 | `force_unship` | **Recovery only.** Ask the user first; pass `confirm: "unship:<node_id>"` after an explicit yes. Clears `shipped_at` and sets a pre-ship state. Never invent `confirm`. |
 
+## Git delivery (always PR)
+
+Agents MUST land work via a **feature branch + pull request**. Never push to `main`/`master`.
+
+1. Before committing implementation work, ensure HEAD is **not** on `main`/`master`. If it is, create/switch to a feature branch (prefer naming from the owning node id, e.g. `wf-integrity-check`).
+2. Push the feature branch with `-u`, then open a PR (`gh pr create`).
+3. On the feature branch, run `mindplan-mcp check` (dirty-src ownership) as day-to-day hygiene. Uncommitted `src/` changes need `in-progress`; committed diffs vs base also allow `in-review` / shipped so PRs stay green through review.
+4. Before merge, run `mindplan-mcp check --for-main`. If it fails (any Foundation/Workflow `in-progress`/`in-review`, open `next` in those states, or Bug `fixing`/`in-review`): do not merge — ship, `cancelled`, or retreat to `draft`/`ready` first.
+5. If the user asks to push or commit directly to `main`/`master`, **refuse** and offer a branch + PR instead — even when they say “just push it.”
+
+Pre-ship dead ends: `update_node_status(..., "cancelled")` — not `deprecated` (production only) and not `discard_next` (evolution only).
+
 ## Never do
 
 - Implement Workflow/Foundation code outside its prescribed `src/workflows/<id>/` or `src/foundations/<id>/` package
@@ -238,3 +250,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 - Call `force_unship` without an explicit human yes in the conversation, or invent the `confirm` token
 - Open a second `next.mdx` while one is already in flight — `discard_next` or ship it first
 - Rewrite `next.mdx` as a delta/changelog only, or promote a body that would leave `current.mdx` describing only the latest change instead of the node's full repo contract (Territory Completeness)
+- Push, force-push, or merge commits **directly to `main`/`master`**
+- Commit implementation work while checked out on `main`/`master` — switch branches first
+- Merge a PR while `mindplan-mcp check --for-main` would fail
+- Bypass the PR path because the user said “just push it” — refuse and explain

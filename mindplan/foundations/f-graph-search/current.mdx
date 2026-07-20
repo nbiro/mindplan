@@ -2,14 +2,16 @@
 id: f-graph-search
 type: Foundation
 title: "Graph search"
-description: "Graph search in src/foundations/f-graph-search/; excludes retired nodes from orientation ranking"
+description: "Graph search; hide cancelled nodes from default ranking like deprecated"
 state: stable
-shipped_at: 2026-07-19T18:51:18.683Z
+shipped_at: 2026-07-20T20:11:40.600Z
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-07-19T19:39:25.138Z
+updated_at: 2026-07-20T20:11:40.600Z
 depends_on:
   - f-domain-model
 ---
+
+
 
 # Graph search
 
@@ -21,16 +23,21 @@ Infra — orientation ranking and 1-hop neighborhood expansion for `find_related
 
 Package: `src/foundations/f-graph-search/`
 
-- `search.ts` — `tokenize` / `scoreNode` / `rankNodes`; `expandNeighborhood`; `findRelatedNodes` (focus + linked summaries); default/max find limits; excludes `deprecated` nodes and closed Bugs from ranking by default (aligned with map export policy)
+- `search.ts` — `tokenize` / `scoreNode` / `rankNodes`; `expandNeighborhood`; `findRelatedNodes` (focus + linked summaries); default/max find limits; excludes `deprecated`/`cancelled` nodes and closed Bugs from ranking by default (aligned with map export policy)
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- [x] Query ranking returns a focus plus 1-hop neighborhood summaries
-- [x] Retired nodes are excluded from default orientation ranking
-- [x] Limits respect DEFAULT_FIND_LIMIT / MAX_FIND_LIMIT
-- [x] Verified via `npm test` (`search.test.mjs`)
+- Query ranking returns a focus plus 1-hop neighborhood summaries
+- Retired nodes (`deprecated`, `cancelled`, closed Bugs) are excluded from default orientation ranking
+- Limits respect DEFAULT_FIND_LIMIT / MAX_FIND_LIMIT
+- Verified via `npm test` (`search.test.mjs`)
+
+## Atomic Ops
+
+- [x] Treat `cancelled` as retired in ranking filter
+- [x] Verified via `npm test`
 
 ## Attachments
 

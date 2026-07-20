@@ -51,6 +51,15 @@ const baseGraph = {
       updated_at: "2026-01-01T00:00:00.000Z",
     },
     {
+      id: "wf-cancelled",
+      type: "Workflow",
+      title: "Cancelled",
+      description: "Abandoned",
+      state: "cancelled",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
       id: "wf-checkout",
       type: "Workflow",
       title: "Checkout",
@@ -117,6 +126,7 @@ check("filters deprecated and closed bugs by default", () => {
   const view = prepareViewGraph(baseGraph);
   const ids = new Set(view.nodes.map((n) => n.id));
   assert.equal(ids.has("f-old"), false);
+  assert.equal(ids.has("wf-cancelled"), false);
   assert.equal(ids.has("bug-closed"), false);
   assert.equal(ids.has("bug-race"), true);
   assert.equal(ids.has("f-db"), true);
@@ -126,6 +136,7 @@ check("include_retired keeps deprecated and closed bugs", () => {
   const view = prepareViewGraph(baseGraph, { include_retired: true });
   const ids = new Set(view.nodes.map((n) => n.id));
   assert.equal(ids.has("f-old"), true);
+  assert.equal(ids.has("wf-cancelled"), true);
   assert.equal(ids.has("bug-closed"), true);
 });
 

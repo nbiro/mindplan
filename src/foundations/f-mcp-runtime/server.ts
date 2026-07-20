@@ -71,6 +71,7 @@ import {
 } from "../f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "../f-graph-search/search.js";
 import { VIEW_FORMATS, exportMindPlanView, persistMindPlanMap } from "../f-view-projection/view.js";
+import { runIntegrityCheck } from "../../workflows/wf-integrity-check/check.js";
 
 const server = new McpServer({
   name: "mindplan",
@@ -229,7 +230,7 @@ server.registerTool(
     description:
       "Exports a deterministic typed-DAG projection as Mermaid or DOT for PRs and docs. " +
       "Omit focus for the full filtered map; pass focus for that node plus its 1-hop neighborhood. " +
-      "By default hides deprecated nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON; " +
+      "By default hides deprecated/cancelled nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON; " +
       "use this when the user wants a diagram / map.",
     inputSchema: {
       format: z
@@ -243,7 +244,7 @@ server.registerTool(
         .boolean()
         .optional()
         .describe(
-          "Include deprecated nodes and closed bugs (resolved/wontfix). Default false."
+          "Include deprecated/cancelled nodes and closed bugs (resolved/wontfix). Default false."
         ),
     },
   },
@@ -813,9 +814,10 @@ server.registerTool(
       new_status: z
         .string()
         .describe(
-          "Foundation/Workflow: draft | ready | in-progress | in-review | ship | deprecated. " +
+          "Foundation/Workflow: draft | ready | in-progress | in-review | ship | cancelled | deprecated. " +
             "Bug: open | triaged | fixing | in-review | resolved | wontfix. " +
-            "From stable/unstable: deprecated only (or open_next then build/ship next)."
+            "From stable/unstable: deprecated only (or open_next then build/ship next). " +
+            "Pre-ship abandon: cancelled from draft|ready|in-progress|in-review."
         ),
     },
   },
@@ -1026,6 +1028,60 @@ function runViewCli(argv: string[]): void {
   }
 }
 
+function parseCheckArgs(argv: string[]): { forMain: boolean; base?: string } {
+  let forMain = false;
+  let base: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--for-main") {
+      forMain = true;
+    } else if (arg === "--base") {
+      const value = argv[++i];
+      if (!value) throw new Error("Blocked: --base requires a git ref.");
+      base = value;
+    } else if (arg === "--help" || arg === "-h") {
+      throw new Error("HELP");
+    } else {
+      throw new Error(`Blocked: unknown check option "${arg}".`);
+    }
+  }
+  return { forMain, base };
+}
+
+function runCheckCli(argv: string[]): void {
+  try {
+    const opts = parseCheckArgs(argv);
+    const result = runIntegrityCheck({ forMain: opts.forMain, base: opts.base });
+    if (result.ok) {
+      console.log(
+        opts.forMain
+          ? "mindplan-mcp check --for-main: ok"
+          : "mindplan-mcp check: ok"
+      );
+      return;
+    }
+    for (const line of result.failures) {
+      console.error(line);
+    }
+    process.exit(1);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message === "HELP") {
+      console.log(`Usage:
+  mindplan-mcp check [--base <ref>]   Graph + packages + dirty src ownership
+  mindplan-mcp check --for-main       Graph + packages + no mid-pipeline states
+
+Options:
+  --base <ref>   Git base for commit diff (default: merge-base with main/master)
+  --for-main     Merge gate: ban in-progress/in-review (and Bug fixing/in-review)
+`);
+      return;
+    }
+    console.error(message.startsWith("Blocked:") ? message : `Error: ${message}`);
+    process.exit(1);
+  }
+}
+
 function runCli() {
   const cmd = process.argv[2];
   if (cmd === "init") {
@@ -1080,19 +1136,29 @@ function runCli() {
     return;
   }
 
+  if (cmd === "check") {
+    runCheckCli(process.argv.slice(3));
+    return;
+  }
+
   if (cmd === "help" || cmd === "--help" || cmd === "-h") {
     console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
   mindplan-mcp init         Scaffold mindplan/, agent playbook, skills, integrations, and .cursorignore
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
+  mindplan-mcp check        Offline integrity: graph, packages, dirty src (or --for-main)
   mindplan-mcp help         Show this message
 
 View options:
   --format, -f mermaid|dot  Diagram format (default: mermaid)
   --focus <node-id>         Focus node + 1-hop neighborhood only
-  --include-retired         Include deprecated nodes and closed bugs
+  --include-retired         Include deprecated/cancelled nodes and closed bugs
   --output, -o <file>       Write diagram to a file instead of stdout
+
+Check options:
+  --base <ref>              Git base for dirty-src commit diff
+  --for-main                Fail if any mid-pipeline Foundation/Workflow/Bug states
 
 Environment:
   MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);

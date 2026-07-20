@@ -258,9 +258,12 @@ Every violation throws an error starting with `Blocked: `.
 | `mindplan-mcp` | Start the MCP server (stdio) |
 | `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, `.cursorignore`, `.cursor/permissions.json`, and `AGENTS.md` |
 | `mindplan-mcp view` | Print a Mermaid/DOT projection of the territory graph (`export` is an alias) |
+| `mindplan-mcp check` | Offline integrity: graph, packages, dirty `src/` ownership; `--for-main` bans mid-pipeline states |
 | `mindplan-mcp help` | Show usage |
 
-`view` options: `--format mermaid|dot`, `--focus <node-id>`, `--include-retired`, `--output <file>`.
+`view` options: `--format mermaid|dot`, `--focus <node-id>`, `--include-retired` (includes deprecated/cancelled + closed bugs), `--output <file>`.
+
+`check` options: `--base <ref>` (dirty-src commit base), `--for-main` (merge gate).
 
 Set `MINDPLAN_ROOT` to override the project root (defaults to `process.cwd()`).
 

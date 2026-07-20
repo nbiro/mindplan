@@ -2,47 +2,46 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP stdio runtime"
-description: "MCP runtime; force_unship + init installs .cursor/permissions.json"
+description: "MCP runtime; mindplan-mcp check CLI (graph, packages, dirty-src, --for-main)"
 state: stable
-shipped_at: 2026-07-19T20:39:52.715Z
+shipped_at: 2026-07-20T20:11:40.648Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-07-19T20:39:52.715Z
+updated_at: 2026-07-20T20:11:40.648Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
 ---
 
 
+
+
 # MCP stdio runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including `.cursor/permissions.json`.
+Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including `.cursor/permissions.json`.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
-- `server.ts` — MCP server registration; CLI (`init`, `view`, help); wires compiler + store + search + view projection; registers read tools (`wf-query-graph`), write tools (`wf-mutate-graph` including `force_unship`), and `export_mindplan_view` (`wf-export-views`); auto-persists `mindplan/map.md` after successful graph mutations (including `force_unship`); graph mutate tool results include `changed_files: string[]` (and `path` on territory patches); `init` calls `wf-project-init` install helpers including `installCursorPermissions`
+- `server.ts` — MCP server registration; CLI (`init`, `view`, `check`, help); wires compiler + store + search + view projection + `wf-integrity-check`; registers read/write tools; auto-persists `mindplan/map.md` after successful graph mutations; `update_node_status` documents `cancelled`
 
-Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search and view-projection at runtime).
+Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, view-projection, and `wf-integrity-check` at runtime).
 
 ## Acceptance Criteria
 
 - MCP tools listed in Workflow ownership modules are registered and callable over stdio
-- CLI `init` / `view` / help work against the resolved package root
-- CLI `init` installs `.cursor/permissions.json` when missing (via `installCursorPermissions`)
+- CLI `init` / `view` / `check` / help work against the resolved package root
+- `check` and `check --for-main` exit 0/1 with `Blocked:` lines
 - Mutations that succeed refresh the Mermaid map on disk
-- Graph mutate tools return `changed_files` for paths written or deleted
-- `force_unship` clears `shipped_at` via `patchFrontmatter(..., { clearShippedAt: true })` after Rule 10 validation
-- Verified via `npm test` (smoke)
+- Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Register `force_unship` with confirm + optional `new_status`
-- [x] Persist unship (clear `shipped_at`, set pre-ship state, recompute Journeys, refresh map)
-- [x] Include `force_unship` in mutate `changed_files` / map refresh path
-- [x] Wire `installCursorPermissions` into CLI `init` report
+- [x] Wire `mindplan-mcp check` / `--for-main` / `--base` CLI
+- [x] Document `cancelled` on `update_node_status` schema help
+- [x] Hide cancelled in export tool descriptions (`include_retired`)
 - [x] Verified via `npm test`
 
 ## Attachments

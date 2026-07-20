@@ -3,9 +3,10 @@ id: f-github-actions
 type: Foundation
 title: "GitHub Actions assembler"
 description: "Assembler — GitHub Actions mounting CI and release workflows for the mindplan-mcp repo."
-state: ready
+state: stable
+shipped_at: 2026-07-20T20:11:40.696Z
 created_at: 2026-07-19T20:19:02.547Z
-updated_at: 2026-07-19T20:25:38.465Z
+updated_at: 2026-07-20T20:11:40.696Z
 depends_on:
   - f-npm-registry
 ---
@@ -32,7 +33,10 @@ Do not duplicate Atomic Ops for writing `publish.yml` on this Foundation.
 
 - File: `.github/workflows/ci.yml`
 - Triggers: push/PR to `main` / `master`
-- Matrix: Node 18, 20, 22 — `npm ci` → `npm run build` → `npm test`
+- Matrix: Node 18, 20, 22 — `npm ci` → `npm run build` → `npm test` → integrity checks
+- PR: `node dist/index.js check --base <PR base sha>` (dirty-src + packages)
+- Every run: `node dist/index.js check --for-main` (no mid-pipeline states)
+- Branch protection SHOULD require the `--for-main` job and disallow direct pushes to `main`
 - Release automation MUST NOT weaken this gate
 
 ### Conventions for publish jobs (consumed by `wf-npm-tag-publish`)
@@ -66,10 +70,12 @@ Package: `src/foundations/f-github-actions/`. CI YAML lives under `.github/workf
 
 ## Checklist
 
-- [ ] Document CI substrate (`.github/workflows/ci.yml`) as owned by this Foundation
-- [ ] Document OIDC / `registry-url` / `id-token: write` conventions for publish jobs
-- [ ] Document ownership split: `publish.yml` owned solely by `wf-npm-tag-publish`
-- [ ] Document that CI-mode publish must run tests via the shared script (no bare publish)
+- [x] Document CI substrate (`.github/workflows/ci.yml`) as owned by this Foundation
+- [x] Wire `mindplan-mcp check` / `--for-main` into CI (build-from-source)
+- [x] Document OIDC / `registry-url` / `id-token: write` conventions for publish jobs
+- [x] Document ownership split: `publish.yml` owned solely by `wf-npm-tag-publish`
+- [x] Document that CI-mode publish must run tests via the shared script (no bare publish)
+- [x] Document branch protection: require PR + `--for-main` status; no direct push to main
 
 ## Attachments
 

@@ -2,17 +2,19 @@
 id: wf-mutate-graph
 type: Workflow
 title: "Mutate graph"
-description: "Mutate graph; owns force_unship alongside other write-path tools"
+description: "Mutate graph; update_node_status accepts cancelled for pre-ship abandon"
 state: stable
-shipped_at: 2026-07-19T20:40:37.714Z
+shipped_at: 2026-07-20T20:11:40.803Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-07-19T20:40:37.714Z
+updated_at: 2026-07-20T20:11:40.803Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-mcp-runtime
   - f-compiler-rules
 ---
+
+
 
 
 # Mutate graph
@@ -49,10 +51,10 @@ Compiler gates live in `f-compiler-rules`. Depends on: `f-mcp-runtime`, `f-compi
 
 ## Atomic Ops
 
-- [x] Add `force_unship` to `MUTATE_TOOLS`
-- [x] Document `force_unship` in this territory and SPEC / playbook
-- [x] Smoke-test confirm / next-open / shipped-dependents / happy-path gates
-- [x] Keep `patch_node_territory` as optional fallback (path echo)
+- [x] Surface `cancelled` via `update_node_status` (compiler-backed)
+- [x] Document pre-ship cancel in territory / playbook
+- [x] Smoke coverage for cancel gates (dependents, terminal, hide from view)
+- [x] Keep mutate tool list and `changed_files` contract intact
 
 ## Attachments
 

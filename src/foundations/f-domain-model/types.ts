@@ -15,6 +15,7 @@ export const EXECUTION_STATES = [
   "ready",
   "in-progress",
   "in-review",
+  "cancelled",
   "deprecated",
 ] as const;
 export type ExecutionState = (typeof EXECUTION_STATES)[number];
@@ -103,10 +104,11 @@ export const EXECUTION_TRANSITIONS: Record<
   ExecutionState,
   readonly (ExecutionState | typeof SHIP_TRANSITION)[]
 > = {
-  draft: ["ready"],
-  ready: ["in-progress", "draft"],
-  "in-progress": ["in-review", "ready"],
-  "in-review": [SHIP_TRANSITION, "in-progress"],
+  draft: ["ready", "cancelled"],
+  ready: ["in-progress", "draft", "cancelled"],
+  "in-progress": ["in-review", "ready", "cancelled"],
+  "in-review": [SHIP_TRANSITION, "in-progress", "cancelled"],
+  cancelled: [],
   deprecated: [],
 };
 

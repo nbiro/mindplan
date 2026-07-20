@@ -201,18 +201,22 @@ Foundations and Workflows move through a manual build pipeline, then enter produ
 | 3 | `in-progress` | Active execution; Atomic Ops checked off |
 | 4 | `in-review` | Frozen pending external review (human or another agent), PR approval, or CI gate |
 | 5 | `stable` / `unstable` | Computed production posture; entered via `ship`, never set manually (§3.5) |
-| 6 | `deprecated` | Retired (from `stable`/`unstable` only) |
+| 6 | `cancelled` | Pre-ship abandon (from `draft`/`ready`/`in-progress`/`in-review` only); terminal |
+| 7 | `deprecated` | Retired (from `stable`/`unstable` only) |
 
 **Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. Agent playbooks MUST treat `in-review` as a handoff: the implementing agent MUST NOT call `ship` (or Bug `resolved`) on its own work — a human or a different agent reviews first. The server does not enforce reviewer identity.
 
-| From \ To | draft | ready | in-progress | in-review | stable/unstable | deprecated |
-|---|---|---|---|---|---|---|
-| **draft** | — | ✔ | ✘ | ✘ | ✘ | ✘ |
-| **ready** | ✔ | — | ✔ | ✘ | ✘ | ✘ |
-| **in-progress** | ✘ | ✔ | — | ✔ | ✘ | ✘ |
-| **in-review** | ✘ | ✘ | ✔ | — | ✔ | ✘ |
-| **stable/unstable** | ✘ | ✘ | ✘ | ✘ | ✘ | ✔ |
-| **deprecated** | ✘ | ✘ | ✘ | ✘ | ✘ | — |
+**Cancel transition:** `update_node_status(..., "cancelled")` abandons a Foundation or Workflow that never shipped. It is blocked while `next.mdx` is open, or while any **active** (non-`cancelled`/`deprecated`/`resolved`/`wontfix`) node still `depends_on` this node. Packages and territory folders are left on disk. There is no uncancel in v1 — cancelled is terminal like `deprecated`.
+
+| From \ To | draft | ready | in-progress | in-review | stable/unstable | cancelled | deprecated |
+|---|---|---|---|---|---|---|---|
+| **draft** | — | ✔ | ✘ | ✘ | ✘ | ✔ | ✘ |
+| **ready** | ✔ | — | ✔ | ✘ | ✘ | ✔ | ✘ |
+| **in-progress** | ✘ | ✔ | — | ✔ | ✘ | ✔ | ✘ |
+| **in-review** | ✘ | ✘ | ✔ | — | ✔ | ✔ | ✘ |
+| **stable/unstable** | ✘ | ✘ | ✘ | ✘ | ✘ | ✘ | ✔ |
+| **cancelled** | ✘ | ✘ | ✘ | ✘ | ✘ | — | ✘ |
+| **deprecated** | ✘ | ✘ | ✘ | ✘ | ✘ | ✘ | — |
 
 **Exception — `force_unship` (Rule 10):** a dedicated recovery tool may clear `shipped_at` and move a `stable`/`unstable` Foundation/Workflow to `draft`/`ready`/`in-progress`/`in-review` only when the caller passes `confirm: "unship:<node_id>"` after explicit human confirmation. This is not a normal transition and MUST NOT be used as a substitute for `open_next` evolution.
 
@@ -322,7 +326,7 @@ Notes:
 - **Bugs do not affect Journey states.** A Workflow flipping `stable` → `unstable` does not change its Journey.
 - `in-review` counts toward `P`, whether on `current.mdx` (unshipped Workflow) or `next.mdx` (evolution of a shipped Workflow).
 - A shipped Workflow with no open `next.mdx`, or whose `next.mdx` is still `draft`/`ready`, contributes to `S` but not `P`.
-- Workflows in `draft`, `ready`, or `deprecated` (and not evolving) contribute to neither count.
+- Workflows in `draft`, `ready`, `cancelled`, or `deprecated` (and not evolving) contribute to neither count.
 - Any attempt to set a Journey's state through the status-update tool MUST be rejected.
 - When a recomputation changes a Journey's state, the server MUST persist the new state to the Journey's `current.mdx` frontmatter, and SHOULD report the change in the tool response (`journeys_recomputed`).
 
@@ -675,7 +679,7 @@ Workflows with no `belongs_to` into a Journey present in the view appear under a
 
 By default, views MUST exclude:
 
-- nodes in state `deprecated`
+- nodes in state `deprecated` or `cancelled`
 - Bugs in terminal states `resolved` or `wontfix`
 
 Pass `include_retired: true` (MCP) or `--include-retired` (CLI) to include them.
@@ -705,7 +709,7 @@ Exports a deterministic typed-DAG projection (§7.4) as Mermaid or DOT. Prefer `
 - **Input:**
   - `format` (`mermaid` \| `dot`, optional, default `mermaid`)
   - `focus` (slug, optional) — when set, export focus + 1-hop neighborhood only
-  - `include_retired` (boolean, optional, default `false`) — include deprecated nodes and closed bugs
+  - `include_retired` (boolean, optional, default `false`) — include deprecated/cancelled nodes and closed bugs
 - **Output:**
 
 ```jsonc
@@ -931,9 +935,20 @@ Guardrails are evaluated at the moment of transition, against the graph and Terr
 
 The reference implementation assumes a single writer (one MCP server instance per project). Deployments requiring concurrent writers MUST serialize mutations externally.
 
-### 9.5 Deprecation and orphans
+### 9.5 Deprecation, cancel, and orphans
 
-Transitioning a Workflow to `deprecated` SHOULD be followed by an orphan review: any Foundation whose only consumers are now deprecated is a candidate for deprecation itself. When change is due to a **replacement of scope on live work** rather than retirement, use `open_next` instead — the node keeps its id and edges and simply gains new territory and state under the same folder until the evolution ships (§3.6); there is no predecessor to auto-deprecate in the stable-id model. Implementations MAY automate orphan checks; the reference implementation leaves it to the operator (the graph query is trivial via `get_mindplan_graph` or `get_blast_radius`).
+Transitioning a Workflow to `deprecated` (post-ship) or `cancelled` (pre-ship) SHOULD be followed by an orphan review: any Foundation whose only consumers are now retired is a candidate for deprecation or cancel itself. When change is due to a **replacement of scope on live work** rather than retirement, use `open_next` instead — the node keeps its id and edges and simply gains new territory and state under the same folder until the evolution ships (§3.6); there is no predecessor to auto-deprecate in the stable-id model. Implementations MAY automate orphan checks; the reference implementation leaves it to the operator (the graph query is trivial via `get_mindplan_graph` or `get_blast_radius`).
+
+### 9.6 Offline integrity check (`mindplan-mcp check`)
+
+The package binary exposes an offline CLI (same entry as MCP stdio, no stdio session required) that audits territory without mutating it:
+
+| Mode | Command | Checks |
+|------|---------|--------|
+| Default | `mindplan-mcp check [--base <ref>]` | Graph load; every non-retired Foundation/Workflow has `src/{foundations\|workflows}/<id>/`; no orphan package dirs; dirty `src/` ownership: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`); **committed** paths vs `base...HEAD` allow `in-progress`/`in-review`/`stable`/`unstable`/`cancelled`/`deprecated`, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts (not draft/ready). Explicit `--base` fails closed on git errors. |
+| Main gate | `mindplan-mcp check --for-main` | Graph load + packages; fail if any Foundation/Workflow is `in-progress`/`in-review` (or `next` in those states), or any Bug is `fixing`/`in-review`. Does **not** run dirty-src |
+
+Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source (`node dist/index.js check …`). Consumer repos SHOULD use the published bin after npm release.
 
 ---
 
