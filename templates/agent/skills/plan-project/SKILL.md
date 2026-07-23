@@ -27,7 +27,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 - **No application code** — do not create, edit, or delete files under `src/workflows/<id>/` or `src/foundations/<id>/` (except ignoring empty `.gitkeep` scaffolds that `create_node` already made when packages are `required`). When packages are `off`, do not start implementing in the existing app layout either — plan-only means graph/territory only.
 - **No implementation pipeline** — do not move Foundations/Workflows to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
-- **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, finish links, PRD, and unchecked Atomic Ops at `draft`, then **stop** and hand off for Plan Review (`mindplan/agent/skills/review-work/`). Do not self-advance to `ready`. See **Shipping a plan** below.
+- **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, finish links, PRD, and unchecked Atomic Ops at `draft`, then run the **Plan Review loop** (spawn Reviewer via `review-work`) until `ready` or escalate. Do not self-advance to `ready`. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
 - Mutate graph state only through MindPlan MCP. Treat every `Blocked: <reason>` as a hard failure — fix the plan, do not retry blindly.
 
@@ -57,7 +57,7 @@ Follow `mindplan/agent/skills/define-entities/`:
 Greenfield order:
 
 ```
-Journey(s) → Foundation(s) → Workflow(s) → link_nodes → enrich territory → stop at draft → Plan Review handoff
+Journey(s) → Foundation(s) → Workflow(s) → link_nodes → enrich territory → Plan Review loop → ready (then stop if plan-only)
 ```
 
 ### 4. Enrich territory (full contracts)
@@ -75,31 +75,29 @@ After each `create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_ne
 3. Confirm the visualization with `export_mindplan_view` or a fresh neighborhood read
 4. On `Blocked:` or mismatch — stop and fix; do not continue
 
-### 6. Hand off
+### 6. Plan Review loop, then stop
 
-End the plan session when:
+When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
-- The graph matches the user’s product model
-- Territory is a full contract (not stubs)
-- Nodes sit at `draft` (or Bugs at `open` / `triaged`), ready for Plan Review
-- You have shown or offered `export_mindplan_view` so humans can review the map
+1. For each Foundation/Workflow that should leave `draft`, run the **Plan Review loop** (playbook): spawn a fresh Reviewer (`review-work` Procedure A); fix from Findings in the verdict message; re-spawn up to 3 rejects; escalate to the human if still blocked.
+2. Do **not** self-call `update_node_status → ready`.
+3. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → Implementation review loop. Do not start implementation unless the user explicitly switches modes.
+4. Show or offer `export_mindplan_view` so humans can review the map.
 
-Tell the user the plan is ready for a **Plan Review** session (`mindplan/agent/skills/review-work/`). After Plan Review advances nodes to `ready`, a later **execution session** runs under the always-on playbook (`in-progress` → implement → `in-review`). Do not start either of those in the same plan-only session unless they explicitly switch modes.
+## Shipping a plan (Plan Review loop → ready)
 
-## Shipping a plan (hand off for Plan Review)
+When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means finish at `draft` and run the Plan Review loop until `ready` (or escalate), not self-advance to `ready`, and not the build-pipeline `ship` transition.
 
-When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means finish at `draft` and hand off for Plan Review, not self-advance to `ready`, and not the build-pipeline `ship` transition.
-
-Requirements before handoff:
+Requirements before spawning Plan Review:
 
 - Links complete (Workflows: at least one `belongs_to` + one `depends_on`; Bugs past `open`: `affects`)
 - Territory is a full contract with **unchecked** Atomic Ops
-- Nodes remain at `draft` — do not call `update_node_status` → `ready`
+- Nodes remain at `draft` until the Reviewer advances them — do not call `update_node_status` → `ready` yourself
 - **No** application code under `src/`
 - **No** `in-progress` / `in-review` / `ship` / `stable`
 - **No** checking off checklist boxes
 
-Then **stop**. Hand off for Plan Review (`mindplan/agent/skills/review-work/`). Do not interpret “ship” here as `update_node_status` → `ship` or as permission to advance to `ready` yourself.
+Then run the Plan Review loop. Do not interpret “ship” here as `update_node_status` → `ship`.
 
 ## Never do (this skill)
 

@@ -1,91 +1,114 @@
 ---
 name: mindplan-review-work
 description: >-
-  Independent Reviewer gates for MindPlan: Plan Review (draft → ready) and
-  Implementation review (in-review → ship / resolved). Use when a separate
-  session must approve a plan or ship/resolve work — never when this session
-  authored the plan or implemented the node.
+  Independent Reviewer role for MindPlan gates: Plan Review (draft → ready) and
+  Implementation review (in-review → ship / resolved). Run as a spawned
+  Reviewer subagent (or separate session) — never when this session authored
+  the plan or implemented the node. Findings return as a structured verdict
+  message; do not write Review Notes into territory.
 ---
 
 # Review Work
 
-Use for two distinct gates, both run by an independent Reviewer session:
+Use when you are the **Reviewer** in an orchestrated Review loop (parent
+spawns you). Two procedures:
 
-- Procedure A — a Workflow or Foundation needs a `draft → ready` decision
-  (Plan Review).
-- Procedure B — a Workflow/Foundation/Bug `in-review` node needs a
-  ship / resolved decision (Implementation review).
+- Procedure A — Workflow/Foundation `draft → ready` (Plan Review).
+- Procedure B — Workflow/Foundation/Bug `in-review` → ship / resolved
+  (Implementation review).
+
+The **parent** owns the retry loop (fix → re-enter gate → re-spawn). You
+review once per spawn, return a structured verdict, and stop.
 
 ## Preconditions (both procedures)
-- This session must be independent of the session that authored the plan
-  (Procedure A) or the implementation (Procedure B) for this node. If you
-  wrote what you're about to review, stop.
-- Orient with `orient_for_work` or `get_node_context` before doing anything
-  else.
-- Mutation boundary: you may call `update_node_status` only. Never
-  `link_nodes`, `unlink_nodes`, or `create_node` — fixing the plan or the
-  graph to make your own approval work is not review.
+
+- This run must be independent of the session that authored the plan
+  (Procedure A) or the implementation (Procedure B). If you wrote what you
+  are about to review, stop and return Reject with that Finding.
+- Orient with `orient_for_work` or `get_node_context` before anything else.
+- Mutation boundary: `update_node_status` only. Never `link_nodes`,
+  `unlink_nodes`, or `create_node`.
+- **Never** write `## Review Notes` (or equivalent) into `current.mdx` /
+  `next.mdx`. Put all findings in your final structured verdict message.
+- If `Read` on `mindplan/agent/**` fails (cursorignore), load this skill via
+  shell/`cat`, or follow the procedure steps embedded in the parent prompt.
+
+## Structured verdict message (required final output)
+
+```
+Verdict: Approve | Reject
+Procedure: PlanReview | ImplementationReview
+Node: <id> (slot: next)   # include slot when evolving
+Findings: <itemized list, or none>
+StatusAttempted: ready | ship | resolved | in-progress | fixing | none
+```
+
+Implementation Approve Findings must include short Evidence lines per
+Atomic Op and Fit (domain / dependency / decomposition). Reject Findings
+must be actionable gaps only.
 
 ## Procedure A: Plan Review (draft → ready)
-1. Pull the node's PRD / Execution Logic, Acceptance Criteria, Atomic Ops,
-   and current edges from the body.
-2. `get_blast_radius` — note anything that already depends on this node.
-3. Check the plan is buildable: specific enough to build from without
-   guessing intent, with real checkable Acceptance Criteria.
-4. Check domain fit: does `belongs_to` (Journey) or the Foundation's role
-   tag actually match what the PRD describes?
-5. Check dependency completeness: do the declared `depends_on` edges cover
-   what the plan will need, and nothing it won't?
-6. Check decomposition quality: do the Atomic Ops fully cover the
-   Acceptance Criteria, each one scoped to this node, at the right grain?
-7. Check scope: is this one coherent use case, or several that should be
-   split into separate nodes before implementation starts?
-8. Write a `## Review Notes` section into `current.mdx` (or `next.mdx` if
-   evolving) via file tools: date, verdict, findings.
-9. Approve → `update_node_status → ready`.
-   Reject → leave at `draft`, citing the Review Notes section.
+
+1. Pull PRD / Execution Logic, Acceptance Criteria, Atomic Ops, and edges
+   from the active body (`next` when evolving).
+2. `get_blast_radius` — note existing dependents.
+3. Buildable: specific enough without guessing intent; real checkable AC.
+4. Domain fit: `belongs_to` Journey or Foundation role tag matches PRD.
+5. Dependency completeness: declared `depends_on` cover what is needed.
+6. Decomposition: Atomic Ops cover AC, scoped to this node, right grain.
+7. Scope: one coherent use case (not several that should be split).
+8. Approve → `update_node_status → ready`. Reject → leave at `draft`.
+9. Return the structured verdict message. Do not edit territory for feedback.
 
 ## Procedure B: Implementation Review (in-review → ship / resolved)
-1. Pull the node's PRD / Execution Logic, Acceptance Criteria, and Atomic
-   Ops from the body (current or next slot).
-2. `get_blast_radius` — note transitive dependents and `journeys_at_risk`.
-3. For every checked Atomic Op, verify independently:
-   - Code exists and does what the item claims — read it.
-   - Tests exist and pass — run them, don't assume.
-   - Behavior matches Acceptance Criteria — check actual output, not the
-     description of it.
-4. Check domain fit. Read the Journey(s) this node belongs_to (or the
-   Foundation's role tag). Confirm what got built actually belongs to that
-   domain, not to a different Journey, Workflow, or Foundation.
-5. Check dependency accuracy. Compare the diff's real imports/calls against
-   the node's declared `depends_on` edges. Flag any undeclared coupling —
-   the graph is only honest if this matches.
-6. Check decomposition quality. Confirm the Atomic Ops fully cover the
-   Acceptance Criteria, each op is scoped to this node only, and no op
-   secretly describes work that belongs to a different node. If this node
-   passed Plan Review already, this is mainly a drift check against what
-   was approved there.
-7. Compare territory prose to the real diff. Flag any silent scope drift.
-8. Write a `## Review Notes` section into the active file (current.mdx, or
-   next.mdx if a next slot is open) via file tools: date, verdict, an
-   Evidence subsection (per-item verification) and a Fit subsection
-   (domain, dependency, decomposition findings).
-9. Approve → `update_node_status → ship` (Workflow/Foundation) or
-   `→ resolved` (Bug).
-   Reject → `update_node_status → in-progress` or `→ fixing`, citing the
-   Review Notes section. If the gap is structural (missing edge, wrong
-   node, bad decomposition), say so explicitly — the fix may need a
-   `plan-project` pass, not just more code.
 
-## Anti-patterns (both procedures)
-- Approving a plan to `ready` because Ghost Workflow's edge check passed —
-  that's a structural check, not a quality one.
-- Approving because "the checklist is checked" without independently
-  verifying every checked item — skimming the diff is not review.
-- Approving a fully-checked list that's covering the wrong Journey,
-  duplicating a Foundation's job, or missing ops for real Acceptance
-  Criteria.
-- Fixing a plan or graph gap yourself with `link_nodes` or `create_node`
-  instead of rejecting it for the author to fix.
-- Leaving verbal-only feedback in chat instead of writing it into the file.
+1. Pull PRD / Execution Logic, Acceptance Criteria, Atomic Ops (current or
+   next slot).
+2. `get_blast_radius` — note transitive dependents and `journeys_at_risk`.
+3. For every checked Atomic Op, verify independently (read code, run tests,
+   check behavior against AC). Unverified checked boxes → Reject.
+4. Domain fit — built work belongs to the declared Journey / Foundation role.
+5. Dependency accuracy — imports/calls match declared `depends_on`.
+6. Decomposition — ops cover AC, scoped to this node; drift vs Plan Review.
+7. Territory prose vs real diff — flag silent scope drift.
+8. **Diff hygiene** — Reject if the working tree / branch diff includes
+   scratch helpers, one-off patch scripts (e.g. `_patch_*.py`), temp dumps,
+   or files outside this node’s Atomic Ops / package ownership.
+9. **General code review (host-native first):**
+   - **Host built-in** — If the host exposes a native code-review skill or
+     command (e.g. Cursor `/code-review`, Claude Code bundled `/code-review`,
+     Cursor `review` / `review-bugbot` when that is the host’s standard),
+     follow its instructions. Load the matching `SKILL.md` from host skill
+     dirs when one exists. Slash commands often cannot be fired from a
+     subagent UI — apply the command’s published criteria (bugs, regressions,
+     security, missing tests; findings primary; no drive-by edits) as if run.
+   - **Else community skill** — If `code-review-skill` or `code-review` is
+     installed (e.g. awesome-skills/code-review-skill), follow that `SKILL.md`
+     (load only language guides that match the diff).
+   - **Else** follow `mindplan/agent/skills/code-review/SKILL.md` (thin skill
+     installed by init; use shell/`cat` if `Read` is blocked).
+   - Fold **blocking** findings into the verdict `Findings`. Blocking → Reject.
+   - Parent spawn prompts SHOULD name the host affordance when known
+     (e.g. “also apply Cursor `/code-review` criteria”).
+10. Approve → `update_node_status → ship` (Workflow/Foundation) or
+    `→ resolved` (Bug). Reject → `→ in-progress` or `→ fixing`.
+11. Return the structured verdict message. If the gap is structural (missing
+    edge, wrong node, bad decomposition), say so — parent may need
+    `plan-project`, not just more code. Do not edit territory for feedback.
+
+## Anti-patterns
+
+- Approving because Ghost Workflow edge check passed — that is structural,
+  not quality.
+- Approving because “the checklist is checked” without independent evidence.
+- Approving a fully-checked list on the wrong Journey / duplicating a
+  Foundation / missing ops for real AC.
+- Approving while scratch/patch/temp files remain in the diff or working tree.
+- Skipping general code review when application or skill code changed.
+- Fixing plan or graph gaps yourself with `link_nodes` / `create_node`.
+- Writing Review Notes into territory files.
+- Leading yourself (or accepting a parent prompt) to “approve unless
+  catastrophic.”
 - Reviewing your own plan or implementation in the same session.
+- Soft-approving when `update_node_status` was Blocked — report failed
+  transition in Findings / StatusAttempted honestly.

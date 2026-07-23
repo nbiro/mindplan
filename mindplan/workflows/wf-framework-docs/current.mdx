@@ -2,11 +2,11 @@
 id: wf-framework-docs
 type: Workflow
 title: "Framework docs"
-description: "Playbooks instruct: leave main via pull --ff-only then feature branch before any edits (including MCP writes); skip ritual when already on the correct branch."
+description: "Implementation review prefers host-native code-review (built-in skill/command e.g. Cursor /code-review), then community code-review-skill, else thin MindPlan skill."
 state: stable
-shipped_at: 2026-07-23T19:35:26.610Z
+shipped_at: 2026-07-23T20:38:01.706Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-23T19:35:26.610Z
+updated_at: 2026-07-23T20:38:01.706Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
@@ -15,11 +15,15 @@ depends_on:
 ---
 
 
+
+
+
+
 # Framework documentation
 
 ## Purpose
 
-Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, Plan Review and Implementation review handoffs, territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), Git delivery (feature-branch startup before any edits), and how to evolve shipped work without destroying the living contract.
+Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, orchestrated Plan Review and Implementation review loops (independent Reviewer subagent; findings via agent messages — not territory Review Notes), territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), Git delivery (feature-branch startup before any edits), and how to evolve shipped work without destroying the living contract.
 
 ## Execution Logic
 
@@ -32,8 +36,9 @@ Surfaces owned by this Workflow:
 - `templates/agent/playbook.md` — consumer playbook shipped by `mindplan-mcp init`
 - `mindplan/agent/playbook.md` — local mirror of the playbook
 - `templates/agent/skills/define-entities/` (+ mindplan/agent mirror) — entity scaffolding skill (note when packages are not scaffolded)
-- `templates/agent/skills/plan-project/` (+ mindplan/agent mirror) — plan-only sessions (no application code); parks at `draft` for Plan Review
-- `templates/agent/skills/review-work/` (+ mindplan/agent mirror) — Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / `resolved`)
+- `templates/agent/skills/plan-project/` (+ mindplan/agent mirror) — plan-only sessions (no application code); run Plan Review loop to `ready`
+- `templates/agent/skills/review-work/` (+ mindplan/agent mirror) — Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / `resolved`) as Reviewer role for a spawned subagent
+- `templates/agent/skills/code-review/` (+ mindplan/agent mirror) — thin portable Implementation code-review checklist; prefer host-native built-in skill/command (e.g. Cursor `/code-review`), else community `code-review-skill`, else this thin skill
 - `README.md` — product framing, taxonomy summary, and brownfield layout-free adoption
 
 Foundation scaffold copy that mentions roles lives in `src/foundations/f-territory-store/store.ts` (touched when role/description conventions change).
@@ -57,16 +62,44 @@ Assembler, Infra, Design system, Adapter — documentation groupings only (not N
 
 ### Plan-only sessions
 
-When the user wants to model or restructure the product plan without writing application code, agents follow `mindplan/agent/skills/plan-project/`. Planning sessions leave modeled Foundations/Workflows at `draft` (links, PRD, Atomic Ops complete) and hand off for Plan Review — they do not self-advance to `ready`. The always-on playbook forbids advancing into implementation (`in-progress` / `src/`) until a later execution session after Plan Review has moved the node to `ready`.
+When the user wants to model or restructure the product plan without writing application code, agents follow `mindplan/agent/skills/plan-project/`. Planning sessions finish modeled Foundations/Workflows at `draft` (links, PRD, Atomic Ops complete), then run the **Plan Review loop** (spawn independent Reviewer) until `ready` or escalate — they do not self-advance to `ready`. After `ready`, plan-only sessions stop (no `in-progress` / `src/`). **“Ship the plan”** means finish at `draft` and run that Plan Review loop to `ready` — not build-pipeline `ship`.
 
-### Review gates
+### Review gates (orchestrated loop)
 
-Two independent Reviewer sessions (skill: `mindplan/agent/skills/review-work/`):
+Skill: `mindplan/agent/skills/review-work/`. Parent (author/implementer) **orchestrates**; does not self-approve.
 
-1. **Plan Review** — `draft → ready` for Workflows/Foundations. Checks buildability, domain fit, dependency completeness, decomposition quality, and scope before any code exists. Reviewer calls `update_node_status` only; writes `## Review Notes` into the body.
-2. **Implementation review** — `in-review → ship` / Bug `resolved`. Evidence-checks every Atomic Op; verifies fit (domain, dependency accuracy, decomposition) and territory-vs-diff drift. Same mutation boundary.
+1. **Plan Review** — `draft → ready` for Workflows/Foundations. Checks buildability, domain fit, dependency completeness, decomposition quality, and scope before any code exists.
+2. **Implementation review** — `in-review → ship` / Bug `resolved`. Evidence-checks every Atomic Op; verifies fit (domain, dependency accuracy, decomposition) and territory-vs-diff drift.
 
-Plan authors and implementers park and hand off; they do not self-advance through these gates.
+**Loop (both gates):**
+
+1. Parent reaches the gate (`draft` complete, or all Atomic Ops `[x]` then `update_node_status → in-review`).
+2. Parent spawns a **fresh** independent Reviewer subagent (Cursor `Task` or host equivalent) each round — never `resume` a prior Reviewer; never same-session self-approve. Prefer synchronous; if background-forced, wait for completion before advancing.
+3. Reviewer follows `review-work`, calls `update_node_status` only on verdict, returns a **structured verdict message** to the parent. Reviewer **must not** write `## Review Notes` (or equivalent) into `current.mdx` / `next.mdx`.
+4. Parent re-reads MCP (`record.state` / `next.state`). Chat claim alone is insufficient.
+5. Approve + MCP confirms → continue. Reject + MCP confirms → parent fixes from Findings in the message, re-enters the gate (Implementation: re-check Atomic Ops and advance to `in-review` again before re-spawn), re-spawns.
+6. Approve claimed but state unchanged (Blocked) → failed transition; re-spawn after fixing the block, or escalate. Counts toward the failure budget.
+7. After **3** rejects/failed transitions at the same gate → escalate to the human with the latest verdict message. Do not self-approve.
+
+**Structured verdict message** (Reviewer → Parent): `Verdict` (Approve|Reject), `Procedure` (PlanReview|ImplementationReview), `Node` (+ slot when evolving), `Findings` (itemized; Evidence+Fit on Implementation Approve), `StatusAttempted`.
+
+### Implementation code review (host-native first)
+
+Procedure B **also** runs a general code review, using the **host agent’s** capability when available:
+
+1. **Host built-in** — If the host exposes a native code-review skill or command (e.g. Cursor `/code-review`, Claude Code bundled `/code-review`, Cursor `review` / `review-bugbot` when that is the host’s standard), follow its instructions. Load the matching `SKILL.md` from the host skill dirs when one exists. Slash commands cannot always be invoked from a subagent UI — apply the command’s published criteria (bugs, regressions, security, missing tests; findings primary; no drive-by edits) as if that command were run.
+2. **Else community skill** — If `code-review-skill` or `code-review` is installed in host skill dirs (e.g. [awesome-skills/code-review-skill](https://github.com/awesome-skills/code-review-skill)), follow that `SKILL.md` (load only language guides that match the diff).
+3. **Else thin MindPlan skill** — Follow `mindplan/agent/skills/code-review/SKILL.md` (installed by init).
+4. Fold **blocking** findings into the structured verdict `Findings`. Blocking → Reject (do not ship).
+5. Init does **not** vendor open-source trees — only the thin skill is guaranteed.
+
+Parent spawn prompts SHOULD name the host affordance when known (e.g. “also apply Cursor `/code-review` criteria”).
+
+**Diff hygiene:** Reject if the working tree / branch diff includes scratch helpers, one-off patch scripts (e.g. `_patch_*.py`), or other files outside the node’s Atomic Ops / package ownership. Implementer must delete them before re-review.
+
+Hosts without subagents: independent Reviewer chat (legacy). Still preferred over self-approve.
+
+Reviewer inherits the parent’s git branch; does not re-run the main→feature-branch ritual mid-loop.
 
 ### Authority split (graph vs prose)
 
@@ -98,35 +131,22 @@ Rationale: reduces the risk that concurrent agent sessions both write on `main`.
 
 - SPEC documents Territory Completeness, Foundation roles, the MCP=graph / file-tools=prose authority split, and `implementation_packages` required vs off
 - Playbooks (AGENTS + templates + mindplan mirror) instruct agents for both layout modes and forbid hand-editing server-owned frontmatter
-- Playbooks route plan-only / architecture-modeling asks to the `plan-project` skill; planning sessions park at `draft` for Plan Review (mandatory for every Workflow/Foundation)
-- Playbooks route `draft → ready` and `in-review → ship` / `resolved` decisions to the `review-work` skill (separate Reviewer session)
+- Playbooks route plan-only / architecture-modeling asks to the `plan-project` skill; **“Ship the plan”** means finish at `draft` and run the Plan Review loop until `ready` (or escalate) — not park for a human, and not build-pipeline `ship`
+- Playbooks define the **Review loop** for Plan Review and Implementation review: spawn independent Reviewer subagent, structured verdict message (no territory Review Notes), MCP re-read, re-entry rules, failed-transition handling, 3-reject escalate
 - Playbooks **Git delivery** instructs: when on `main`/`master` or starting fresh work, checkout default branch → `pull --ff-only` → feature branch → **then** any repo write (file tools or MCP); skip ritual when already on the correct feature branch; stop on dirty-tree or non-ff-only pull failure; Never-do forbids writing on `main`/`master`
-- define-entities, plan-project, and review-work skills align with the authority split, layout-free guidance, and review mutation boundary (`update_node_status` only for reviewers)
+- define-entities, plan-project, review-work, and thin code-review skills align with the Review loop; Implementation review prefers **host-native** code-review (built-in skill/command) then community `code-review-skill`, else thin skill; Reject on scratch/unrelated files; findings via agent message
 - README and SPEC abstract summarize Foundation roles, agent skills (including `review-work`), and brownfield layout-free adoption
-- `mindplan-mcp init` + integration guides install/discover `review-work` (owned with `wf-project-init` / `wf-agent-integrations` / `f-mcp-runtime`); guides keep pointing at playbook Git delivery (no duplicate normative ritual in this Workflow)
+- `mindplan-mcp init` + integration guides install/discover `review-work` (owned with `wf-project-init` / `wf-agent-integrations` / `f-mcp-runtime`); guides keep pointing at playbook Git delivery (no duplicate normative ritual in this Workflow). Integration one-liner wording may lag until a separate `wf-agent-integrations` evolution
 - Active MindPlan Journey/Foundation/Workflow territories describe full repo state (not stubs or latest-change deltas)
 
 ## Atomic Ops
 
-- [x] Sync playbooks (`AGENTS.md`, `templates/agent/playbook.md`, `mindplan/agent/playbook.md`): Git delivery startup ritual with skip-if-on-correct-branch, dirty-tree stop, `pull --ff-only`, MCP writes included; Never-do: do not write on main/master
+- [x] Update `review-work` Procedure B (+ mirrors): host-native code-review first (built-in skill/command), then community skill, else thin MindPlan skill; parent spawn may name the host affordance
+- [x] Update thin `code-review` skill (+ mirrors): same discovery order; document that slash commands are followed by criteria when UI invoke is unavailable
+- [x] Playbooks (+ mirrors): Implementation code-review section uses host-native-first wording
 - [x] Keep this next.mdx a full successor contract (not a changelog)
+
 
 ## Attachments
 
 _Wireframes and notes go in `attachments/` / `next-attachments/`._
-
-## Review Notes
-
-**Date:** 2026-07-23  
-**Verdict:** Approve — ship (Implementation review)  
-**Reviewer:** same-session review at human request (“review anyway”); eligibility separation waived by user
-
-### Evidence
-- **Sync playbooks:** `cmp` confirms `AGENTS.md` ≡ `templates/agent/playbook.md` ≡ `mindplan/agent/playbook.md`. All three contain: before any repo writes; Repo writes include MCP; skip-if-on-correct-branch + re-run clarification; dirty-tree stop; `git pull --ff-only`; Never-do “Write on main/master”
-- **Keep next.mdx full successor:** `next.mdx` retains Purpose, Execution Logic (incl. Git delivery), Acceptance Criteria, Atomic Ops — not a changelog-only body. Both Atomic Ops `[x]`; no unchecked `- [ ]`
-
-### Fit
-- **Domain:** Framework docs / playbooks under `j-agent-onboarding` + `j-territory-sdlc` — matches
-- **Dependencies:** Diff touches playbooks + this Workflow territory (+ journey `evolving` / map from MCP). Still `depends_on` `f-domain-model` only; no undeclared integrations/`src/` coupling. Blast radius: `wf-layout-free`; journeys_at_risk: `j-agent-onboarding`
-- **Decomposition:** Ops match approved Plan Review AC; no cross-Workflow integrations edits
-- **Territory vs diff:** Playbook Git delivery text matches `next` Execution Logic / AC; no silent scope drift

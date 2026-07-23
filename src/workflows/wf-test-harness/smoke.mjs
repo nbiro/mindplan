@@ -807,10 +807,14 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "review-work", "SKILL.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install review-work skill");
+} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "code-review", "SKILL.md"))) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install code-review skill");
 } else if (
   !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-define-entities", "SKILL.md")) ||
   !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-plan-project", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md"))
+  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md")) ||
+  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-code-review", "SKILL.md"))
 ) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install Cursor skills under .cursor/skills/");

@@ -2,16 +2,18 @@
 id: wf-test-harness
 type: Workflow
 title: "Test harness"
-description: "Smoke asserts mindplan-mcp init installs Cursor-native skills under .cursor/skills/ and the playbook rule at .cursor/rules/mindplan.mdc."
+description: "Smoke asserts init installs mindplan/agent/skills/code-review and .cursor/skills/mindplan-code-review."
 state: stable
-shipped_at: 2026-07-23T19:59:25.009Z
+shipped_at: 2026-07-23T20:28:43.382Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-07-23T19:59:25.009Z
+updated_at: 2026-07-23T20:28:43.382Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-mcp-runtime
 ---
+
+
 
 
 # Test harness
@@ -28,8 +30,8 @@ Package: `src/workflows/wf-test-harness/`
 - `search.test.mjs` — ranking excludes retired nodes
 - `check.test.mjs` — integrity check CLI (orphan, dirty-src, `--for-main`)
 - `smoke.mjs` — MCP stdio end-to-end + init + `force_unship` + `cancelled` gates; after CLI `init` in a temp root, assert:
-  - existing: playbook, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`, integrations, `mindplan/agent/skills/{plan-project,review-work}/SKILL.md`, default layout config
-  - new: `.cursor/skills/mindplan-define-entities/SKILL.md`, `.cursor/skills/mindplan-plan-project/SKILL.md`, `.cursor/skills/mindplan-review-work/SKILL.md`, `.cursor/rules/mindplan.mdc` (contains `alwaysApply: true` and playbook substance)
+  - existing: playbook, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`, integrations, `mindplan/agent/skills/{plan-project,review-work,code-review}/SKILL.md`, default layout config
+  - Cursor: `.cursor/skills/mindplan-define-entities|plan-project|review-work|code-review/SKILL.md`, `.cursor/rules/mindplan.mdc`
 
 Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`. Paired with `wf-project-init` + `f-mcp-runtime` nexts for `bug-init-cursor-skills`.
 
@@ -37,15 +39,16 @@ Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j
 
 - `npm test` runs build + view + search + check + smoke successfully
 - Smoke covers cancel (dependents block, terminal, view hide/`include_retired`)
-- Smoke asserts `mindplan-mcp init` installs `review-work` skill (alongside plan-project) under `mindplan/agent/skills/`
+- Smoke asserts `mindplan-mcp init` installs `review-work` and thin `code-review` under `mindplan/agent/skills/` and `.cursor/skills/mindplan-code-review/`
 - Smoke asserts `mindplan-mcp init` installs Cursor-native `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc`
 - Check harness covers orphan package, dirty ownership, `--for-main`
 
 ## Atomic Ops
 
-- [x] Smoke: assert init installs `.cursor/skills/mindplan-define-entities|plan-project|review-work/SKILL.md`
-- [x] Smoke: assert init installs `.cursor/rules/mindplan.mdc` with alwaysApply frontmatter
-- [x] Keep cancel / check / view / search / prior init coverage green
+- [x] Smoke: assert init installs `mindplan/agent/skills/code-review/SKILL.md`
+- [x] Smoke: assert init installs `.cursor/skills/mindplan-code-review/SKILL.md`
+- [x] Keep this next.mdx a full successor contract (not a changelog)
+
 
 ## Attachments
 

@@ -150,7 +150,8 @@ node /absolute/path/to/mindplan/dist/index.js init
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
 - `mindplan/agent/skills/plan-project/` — plan-only sessions (model the graph; no application code)
-- `mindplan/agent/skills/review-work/` — Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / `resolved`)
+- `mindplan/agent/skills/review-work/` — Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / `resolved`) via orchestrated Reviewer-subagent loop
+- `mindplan/agent/skills/code-review/` — thin portable code-review checklist (prefer host-native `/code-review` or equivalent, else community `code-review-skill`, else this skill)
 - `mindplan/agent/mcp.json.example` — MCP server config snippet
 - `mindplan/agent/integrations/` — setup guides for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP clients
 - `AGENTS.md` at the project root — created only when missing (many agents auto-read this file)

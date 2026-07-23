@@ -2,29 +2,31 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP stdio runtime"
-description: "Assembler — CLI init also calls/reports installCursorSkills and installCursorRule so Cursor-native paths are installed alongside mindplan/agent copies."
+description: "CLI init calls/reports installCodeReviewSkill alongside review-work and Cursor skill copies including mindplan-code-review."
 state: stable
-shipped_at: 2026-07-23T19:59:18.674Z
+shipped_at: 2026-07-23T20:27:38.652Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-07-23T19:59:18.674Z
+updated_at: 2026-07-23T20:27:38.652Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
 ---
 
 
+
+
 # MCP stdio runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including define-entities, plan-project, review-work skills under `mindplan/agent/`, Cursor-native copies under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`, and `.cursor/permissions.json`.
+Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including define-entities, plan-project, review-work, and thin code-review skills under `mindplan/agent/`, Cursor-native copies under `.cursor/skills/` (including `mindplan-code-review`) and `.cursor/rules/mindplan.mdc`, and `.cursor/permissions.json`.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
 - `server.ts` — MCP server registration; CLI (`init`, `view`, `check`, help); wires compiler + store + search + view projection + `wf-integrity-check`; registers read/write tools; auto-persists `mindplan/map.md` after successful graph mutations; `update_node_status` documents `cancelled`; `init` calls install helpers from `wf-project-init`, including:
-  - existing: playbook, define-entities / plan-project / review-work (mindplan/agent), MCP example, integrations, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`
+  - existing: playbook, define-entities / plan-project / review-work / code-review (mindplan/agent), MCP example, integrations, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`
   - new: `installCursorSkills`, `installCursorRule` — report each Cursor skill path and `mindplan.mdc` like other install results
 
 Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, view-projection, and `wf-integrity-check` at runtime). Helper implementations live in `wf-project-init` (paired `next`); this Foundation only imports, calls, and reports them. Smoke coverage for Cursor paths: `wf-test-harness` (paired `next`). Fixes: `bug-init-cursor-skills`.
@@ -33,7 +35,7 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, vie
 
 - MCP tools listed in Workflow ownership modules are registered and callable over stdio
 - CLI `init` / `view` / `check` / help work against the resolved package root
-- CLI `init` installs the `review-work` skill and reports it
+- CLI `init` installs and reports `review-work` and thin `code-review` skills (mindplan/agent + Cursor `mindplan-code-review`)
 - CLI `init` calls `installCursorSkills` and `installCursorRule` and reports their install paths (`.cursor/skills/mindplan-*`, `.cursor/rules/mindplan.mdc`)
 - `check` and `check --for-main` exit 0/1 with `Blocked:` lines
 - Mutations that succeed refresh the Mermaid map on disk
@@ -41,9 +43,10 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, vie
 
 ## Atomic Ops
 
-- [x] Import and call `installCursorSkills` + `installCursorRule` from CLI `init`
-- [x] Report each Cursor skill path and `.cursor/rules/mindplan.mdc` (installed vs already present)
-- [x] Keep existing review-work install/report + upgrade tip behavior
+- [x] Wire `installCodeReviewSkill` into CLI init; report path like review-work
+- [x] Ensure Cursor skill install report includes `mindplan-code-review` (via existing `installCursorSkills` loop once project-init adds the copy)
+- [x] Keep this next.mdx a full successor contract (not a changelog)
+
 
 ## Attachments
 

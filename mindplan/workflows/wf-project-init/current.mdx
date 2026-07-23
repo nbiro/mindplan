@@ -2,11 +2,11 @@
 id: wf-project-init
 type: Workflow
 title: "Init a consumer project"
-description: "Init also copies Cursor-native skills into .cursor/skills/ and the always-on playbook into .cursor/rules/mindplan.mdc, matching the .cursorignore contract that hides mindplan/agent/**."
+description: "Init installs thin code-review skill to mindplan/agent/skills/code-review and .cursor/skills/mindplan-code-review; export installCodeReviewSkill."
 state: stable
-shipped_at: 2026-07-23T19:59:23.732Z
+shipped_at: 2026-07-23T20:27:44.245Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-07-23T19:59:23.732Z
+updated_at: 2026-07-23T20:27:44.245Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -14,11 +14,13 @@ depends_on:
 ---
 
 
+
+
 # Init a consumer project
 
 ## Purpose
 
-Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, project config (`mindplan/config.json`) choosing prescribed vs layout-free packages, always-on agent playbook, define-entities / plan-project / review-work skills, MCP example config, per-agent integration guides, root `AGENTS.md`, Cursor-native copies under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`, `.cursorignore` that ignores the derived map (and agent asset copies under `mindplan/agent/**`) while allowing agent file tools to edit territory MDX prose, and `.cursor/permissions.json` that allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on playbook-required graph mutations.
+Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, project config (`mindplan/config.json`) choosing prescribed vs layout-free packages, always-on agent playbook, define-entities / plan-project / review-work / code-review skills, MCP example config, per-agent integration guides, root `AGENTS.md`, Cursor-native copies under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`, `.cursorignore` that ignores the derived map (and agent asset copies under `mindplan/agent/**`) while allowing agent file tools to edit territory MDX prose, and `.cursor/permissions.json` that allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on playbook-required graph mutations.
 
 ## Execution Logic
 
@@ -30,10 +32,12 @@ Package: `src/workflows/wf-project-init/`
   - `installDefineEntitiesSkill` — skill under `mindplan/agent/skills/define-entities/`
   - `installPlanProjectSkill` — skill under `mindplan/agent/skills/plan-project/`
   - `installReviewWorkSkill` — skill under `mindplan/agent/skills/review-work/`
-  - `installCursorSkills` — copy the three skills into Cursor discovery paths from package templates (idempotent, skip if dest exists):
+  - `installCodeReviewSkill` — thin skill under `mindplan/agent/skills/code-review/`
+  - `installCursorSkills` — copy skills into Cursor discovery paths from package templates (idempotent, skip if dest exists):
     - → `.cursor/skills/mindplan-define-entities/`
     - → `.cursor/skills/mindplan-plan-project/`
     - → `.cursor/skills/mindplan-review-work/`
+    - → `.cursor/skills/mindplan-code-review/`
     Returns one install result per skill path (or a single aggregate — implementer’s choice) so the CLI can report each path. Source is `templates/agent/skills/…`, not the on-disk `mindplan/agent` copy.
   - `installCursorRule` — write `.cursor/rules/mindplan.mdc` when missing: Cursor rule frontmatter (`alwaysApply: true`) plus the playbook body from `templates/agent/playbook.md`
   - `installMcpExample` — `mcp.json.example`
@@ -50,8 +54,8 @@ Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`. Consumer use 
 
 - `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
 - `init` writes `mindplan/config.json`; `--layout free` sets `implementation_packages` to `off`; default/prescribed sets `required`
-- Playbook, define-entities, plan-project, and review-work skills, integrations, MCP example, AGENTS.md, `.cursorignore`, and `.cursor/permissions.json` are installed from `templates/`
-- This package exports `installCursorSkills` and `installCursorRule` that install `.cursor/skills/mindplan-define-entities|plan-project|review-work/` (each with `SKILL.md`) and `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body), idempotently
+- Playbook, define-entities, plan-project, review-work, and thin code-review skills, integrations, MCP example, AGENTS.md, `.cursorignore`, and `.cursor/permissions.json` are installed from `templates/`
+- This package exports `installCodeReviewSkill`, `installCursorSkills`, and `installCursorRule` that install thin code-review under `mindplan/agent/skills/code-review/` and `.cursor/skills/mindplan-define-entities|plan-project|review-work|code-review/` plus `.cursor/rules/mindplan.mdc`, idempotently
 - Template `.cursorignore` does not list `mindplan/**/current.mdx` or `mindplan/**/next.mdx`, and its comment accurately describes the `.cursor/rules` + `.cursor/skills` copies
 - Cursor integration guide states that init installs those Cursor paths (manual copy only if missing)
 - Template `.cursor/permissions.json` allowlists `mindplan:*` and steers Auto-review for playbook mutations
@@ -60,10 +64,10 @@ Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`. Consumer use 
 
 ## Atomic Ops
 
-- [x] Add `installCursorSkills` → `.cursor/skills/mindplan-{define-entities,plan-project,review-work}/` (template-sourced, idempotent)
-- [x] Add `installCursorRule` → `.cursor/rules/mindplan.mdc` (frontmatter + playbook body, idempotent)
-- [x] Update Cursor integration guide + `.cursorignore` comment to match real init behavior
-- [x] Keep prior install helpers idempotent; export new helpers for CLI consumption
+- [x] Add `installCodeReviewSkill` → `mindplan/agent/skills/code-review/` (template-sourced, idempotent); export for CLI
+- [x] Extend `installCursorSkills` / `CURSOR_SKILL_COPIES` with `code-review` → `mindplan-code-review`
+- [x] Keep this next.mdx a full successor contract (not a changelog)
+
 
 ## Attachments
 
