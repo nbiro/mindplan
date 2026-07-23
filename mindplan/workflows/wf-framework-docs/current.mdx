@@ -2,11 +2,11 @@
 id: wf-framework-docs
 type: Workflow
 title: "Framework docs"
-description: "Docs cover Plan Review (draft→ready) and Implementation review via review-work skill; layout-free adoption guidance unchanged."
+description: "Playbooks instruct: leave main via pull --ff-only then feature branch before any edits (including MCP writes); skip ritual when already on the correct branch."
 state: stable
-shipped_at: 2026-07-23T19:11:51.940Z
+shipped_at: 2026-07-23T19:35:26.610Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-23T19:11:51.940Z
+updated_at: 2026-07-23T19:35:26.610Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
@@ -15,13 +15,11 @@ depends_on:
 ---
 
 
-
-
 # Framework documentation
 
 ## Purpose
 
-Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, Plan Review and Implementation review handoffs, territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), and how to evolve shipped work without destroying the living contract.
+Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, Plan Review and Implementation review handoffs, territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), Git delivery (feature-branch startup before any edits), and how to evolve shipped work without destroying the living contract.
 
 ## Execution Logic
 
@@ -78,25 +76,39 @@ Plan authors and implementers park and hand off; they do not self-advance throug
 - **Orient** via MCP; never treat on-disk frontmatter as graph authority — trust MCP `record`.
 - Keep `mindplan/map.md` out of agent ignore-bypass as a derived snapshot only.
 
+### Git delivery (feature-branch startup)
+
+Playbooks (`AGENTS.md`, `templates/agent/playbook.md`, `mindplan/agent/playbook.md`) MUST instruct agents to leave `main`/`master` **before any repo writes**, not only before commit. Applies to plan-only, Reviewer, and implementation sessions alike.
+
+**Repo writes** include host file-tool edits **and** MCP graph mutations that write files (`create_node`, `open_next`, `link_nodes`, `update_node_status`, etc. via `changed_files`). Normative text lives only in the playbooks; integration guides (`wf-agent-integrations`) may point at this section and must not duplicate it.
+
+**When already on the correct feature branch** for this session’s owning work: do **not** re-run the startup ritual — continue on that branch. Do not checkout `main` mid-session if it would abandon or conflict with in-flight WIP. Re-run only when starting work that should **not** land on the current branch (new owning node id, or the user asked for a fresh branch from latest main).
+
+**When HEAD is on `main`/`master` (or detached), or starting work that should not land on the current branch:**
+
+1. If the working tree is dirty in a way that blocks checkout/pull: **stop** — ask the user how to proceed (stash, commit on a branch, or discard). Do not invent destructive resets.
+2. `git checkout main` (or `master`)
+3. `git pull --ff-only` — if this fails (diverged history, conflicts): **stop** and report; do not create merge commits on main
+4. Create or switch to a **feature branch** (prefer naming from the owning node id, e.g. `wf-integrity-check`)
+5. **Only then** perform repo writes (file tools or MCP mutations)
+
+Rationale: reduces the risk that concurrent agent sessions both write on `main`. Landing remains feature branch + PR; never push to `main`/`master`.
+
 ## Acceptance Criteria
 
 - SPEC documents Territory Completeness, Foundation roles, the MCP=graph / file-tools=prose authority split, and `implementation_packages` required vs off
 - Playbooks (AGENTS + templates + mindplan mirror) instruct agents for both layout modes and forbid hand-editing server-owned frontmatter
 - Playbooks route plan-only / architecture-modeling asks to the `plan-project` skill; planning sessions park at `draft` for Plan Review (mandatory for every Workflow/Foundation)
 - Playbooks route `draft → ready` and `in-review → ship` / `resolved` decisions to the `review-work` skill (separate Reviewer session)
+- Playbooks **Git delivery** instructs: when on `main`/`master` or starting fresh work, checkout default branch → `pull --ff-only` → feature branch → **then** any repo write (file tools or MCP); skip ritual when already on the correct feature branch; stop on dirty-tree or non-ff-only pull failure; Never-do forbids writing on `main`/`master`
 - define-entities, plan-project, and review-work skills align with the authority split, layout-free guidance, and review mutation boundary (`update_node_status` only for reviewers)
 - README and SPEC abstract summarize Foundation roles, agent skills (including `review-work`), and brownfield layout-free adoption
-- `mindplan-mcp init` + integration guides install/discover `review-work` (owned with `wf-project-init` / `wf-agent-integrations` / `f-mcp-runtime`)
+- `mindplan-mcp init` + integration guides install/discover `review-work` (owned with `wf-project-init` / `wf-agent-integrations` / `f-mcp-runtime`); guides keep pointing at playbook Git delivery (no duplicate normative ritual in this Workflow)
 - Active MindPlan Journey/Foundation/Workflow territories describe full repo state (not stubs or latest-change deltas)
 
 ## Atomic Ops
 
-- [x] Playbooks: Plan Review + Implementation review sections; Shipping a plan parks at draft; request routing + compiler rules (Plan Review / External Review)
-- [x] Add `templates/agent/skills/review-work/SKILL.md` (+ mindplan/agent mirror)
-- [x] Align `plan-project` + `define-entities` skills: stop at draft; hand off for Plan Review (no self-advance to ready) — including `open_next` / evolution path
-- [x] Versioning shipped work + SPEC layout modes: Plan Review mandatory on `next` draft→ready; External Review is playbook-not-server
-- [x] README + SPEC abstract mention `review-work`; Plan Review mandatory wording unambiguous
-- [x] Sync AGENTS.md + mindplan/agent mirrors with templates
+- [x] Sync playbooks (`AGENTS.md`, `templates/agent/playbook.md`, `mindplan/agent/playbook.md`): Git delivery startup ritual with skip-if-on-correct-branch, dirty-tree stop, `pull --ff-only`, MCP writes included; Never-do: do not write on main/master
 - [x] Keep this next.mdx a full successor contract (not a changelog)
 
 ## Attachments
@@ -106,16 +118,15 @@ _Wireframes and notes go in `attachments/` / `next-attachments/`._
 ## Review Notes
 
 **Date:** 2026-07-23  
-**Verdict:** Approve — ship  
-**Reviewer:** human-authorized Implementation review after `/code-review` approve + explicit “ship it”
+**Verdict:** Approve — ship (Implementation review)  
+**Reviewer:** same-session review at human request (“review anyway”); eligibility separation waived by user
 
 ### Evidence
-- All Atomic Ops checked; no unchecked `- [ ]` remain on next slots
-- Playbooks + `review-work` skill + define-entities/plan-project Plan Review handoffs present in templates and mirrors
-- README + SPEC abstract/layout modes document `review-work` and playbook vs compiler gates
-- Init/integrations/runtime/harness sibling nodes cover install + discovery; `npm test` passed during implementation
+- **Sync playbooks:** `cmp` confirms `AGENTS.md` ≡ `templates/agent/playbook.md` ≡ `mindplan/agent/playbook.md`. All three contain: before any repo writes; Repo writes include MCP; skip-if-on-correct-branch + re-run clarification; dirty-tree stop; `git pull --ff-only`; Never-do “Write on main/master”
+- **Keep next.mdx full successor:** `next.mdx` retains Purpose, Execution Logic (incl. Git delivery), Acceptance Criteria, Atomic Ops — not a changelog-only body. Both Atomic Ops `[x]`; no unchecked `- [ ]`
 
 ### Fit
-- **Domain:** Framework docs under `j-agent-onboarding` / `j-territory-sdlc` — matches
-- **Dependencies:** Still `depends_on` `f-domain-model` only — accurate for docs surface
-- **Decomposition:** Ops cover Acceptance Criteria; full successor contract (not a changelog)
+- **Domain:** Framework docs / playbooks under `j-agent-onboarding` + `j-territory-sdlc` — matches
+- **Dependencies:** Diff touches playbooks + this Workflow territory (+ journey `evolving` / map from MCP). Still `depends_on` `f-domain-model` only; no undeclared integrations/`src/` coupling. Blast radius: `wf-layout-free`; journeys_at_risk: `j-agent-onboarding`
+- **Decomposition:** Ops match approved Plan Review AC; no cross-Workflow integrations edits
+- **Territory vs diff:** Playbook Git delivery text matches `next` Execution Logic / AC; no silent scope drift

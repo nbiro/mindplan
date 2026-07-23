@@ -351,13 +351,28 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 
 ## Git delivery (always PR)
 
-Agents MUST land work via a **feature branch + pull request**. Never push to `main`/`master`.
+Agents MUST land work via a **feature branch + pull request**. Never push to `main`/`master`. Leave `main`/`master` **before any repo writes**, not only before commit. Applies to plan-only, Reviewer, and implementation sessions alike.
 
-1. Before committing implementation work, ensure HEAD is **not** on `main`/`master`. If it is, create/switch to a feature branch (prefer naming from the owning node id, e.g. `wf-integrity-check`).
-2. Push the feature branch with `-u`, then open a PR (`gh pr create`).
-3. On the feature branch, run `mindplan-mcp check` as day-to-day hygiene (when packages are `required`: dirty-src ownership — uncommitted real `src/` needs `in-progress`; committed diffs vs base also allow `in-review` / shipped so PRs stay green through review; `create_node` `.gitkeep` scaffolds alone are allowed at `draft`/`ready` so plan-only PRs can merge). When packages are `off`, check still loads the graph but skips package/dirty-src ownership.
-4. Before merge, run `mindplan-mcp check --for-main`. If it fails (any Foundation/Workflow `in-progress`/`in-review`, open `next` in those states, or Bug `fixing`/`in-review`): do not merge — ship, `cancelled`, or retreat to `draft`/`ready` first.
-5. If the user asks to push or commit directly to `main`/`master`, **refuse** and offer a branch + PR instead — even when they say “just push it.”
+**Repo writes** include host file-tool edits **and** MCP graph mutations that write files (`create_node`, `open_next`, `link_nodes`, `update_node_status`, etc. via `changed_files`).
+
+**When already on the correct feature branch** for this session’s owning work: do **not** re-run the startup ritual — continue on that branch. Do not checkout `main` mid-session if it would abandon or conflict with in-flight WIP. Re-run only when starting work that should **not** land on the current branch (new owning node id, or the user asked for a fresh branch from latest main).
+
+**When HEAD is on `main`/`master` (or detached), or starting work that should not land on the current branch:**
+
+1. If the working tree is dirty in a way that blocks checkout/pull: **stop** — ask the user how to proceed (stash, commit on a branch, or discard). Do not invent destructive resets.
+2. `git checkout main` (or `master`)
+3. `git pull --ff-only` — if this fails (diverged history, conflicts): **stop** and report; do not create merge commits on main
+4. Create or switch to a **feature branch** (prefer naming from the owning node id, e.g. `wf-integrity-check`)
+5. **Only then** perform repo writes (file tools or MCP mutations)
+
+Then deliver:
+
+1. Push the feature branch with `-u`, then open a PR (`gh pr create`).
+2. On the feature branch, run `mindplan-mcp check` as day-to-day hygiene (when packages are `required`: dirty-src ownership — uncommitted real `src/` needs `in-progress`; committed diffs vs base also allow `in-review` / shipped so PRs stay green through review; `create_node` `.gitkeep` scaffolds alone are allowed at `draft`/`ready` so plan-only PRs can merge). When packages are `off`, check still loads the graph but skips package/dirty-src ownership.
+3. Before merge, run `mindplan-mcp check --for-main`. If it fails (any Foundation/Workflow `in-progress`/`in-review`, open `next` in those states, or Bug `fixing`/`in-review`): do not merge — ship, `cancelled`, or retreat to `draft`/`ready` first.
+4. If the user asks to push or commit directly to `main`/`master`, **refuse** and offer a branch + PR instead — even when they say “just push it.”
+
+Rationale: reduces the risk that concurrent agent sessions both write on `main`.
 
 Pre-ship dead ends: `update_node_status(..., "cancelled")` — not `deprecated` (production only) and not `discard_next` (evolution only).
 
@@ -385,6 +400,7 @@ Pre-ship dead ends: `update_node_status(..., "cancelled")` — not `deprecated` 
 - Call `force_unship` without an explicit human yes in the conversation, or invent the `confirm` token
 - Open a second `next.mdx` while one is already in flight — `discard_next` or ship it first
 - Rewrite `next.mdx` as a delta/changelog only, or promote a body that would leave `current.mdx` describing only the latest change instead of the node's full repo contract (Territory Completeness)
+- Write on `main`/`master` (file tools or MCP mutations) — run the Git delivery startup ritual first; never use main as a working branch
 - Push, force-push, or merge commits **directly to `main`/`master`**
 - Commit implementation work while checked out on `main`/`master` — switch branches first
 - Merge a PR while `mindplan-mcp check --for-main` would fail
