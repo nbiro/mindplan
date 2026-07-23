@@ -13,7 +13,7 @@
 }
 ```
 
-2. **Playbook (always apply)** — copy or symlink `mindplan/agent/playbook.md` to `.cursor/rules/mindplan.mdc` (Cursor rules use `.mdc` frontmatter):
+2. **Playbook (always apply)** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body) when missing. If that file was deleted, recreate it from `mindplan/agent/playbook.md` with:
 
 ```yaml
 ---
@@ -22,14 +22,16 @@ alwaysApply: true
 ---
 ```
 
-Paste the playbook body below the frontmatter. This rule must apply to every session — it is the operational process for all software work.
+Paste the playbook body below the frontmatter. This rule must apply to every session — it is the operational process for all software work. Root `AGENTS.md` (also installed by init when missing) is a second always-on copy for agents that read it.
 
-3. **Skills** — copy for Cursor-native skill discovery:
-   - `mindplan/agent/skills/define-entities/` → `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Workflow, Bug nodes)
-   - `mindplan/agent/skills/plan-project/` → `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
-   - `mindplan/agent/skills/review-work/` → `.cursor/skills/mindplan-review-work/` (Plan Review `draft → ready` and Implementation review `in-review → ship` / `resolved`)
+3. **Skills** — `mindplan-mcp init` installs Cursor-native skill discovery paths when missing:
+   - `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Workflow, Bug nodes)
+   - `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
+   - `.cursor/skills/mindplan-review-work/` (Plan Review `draft → ready` and Implementation review `in-review → ship` / `resolved`)
 
-4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It ignores the derived map and copied agent assets — **not** territory MDX:
+   Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories or re-run init only if the `.cursor/skills/` trees were removed.
+
+4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It ignores the derived map and copied agent assets under `mindplan/agent/**` — **not** territory MDX — because Cursor-facing copies live under `.cursor/rules` and `.cursor/skills`:
 
 ```gitignore
 mindplan/map.md

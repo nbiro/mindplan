@@ -2,11 +2,11 @@
 id: wf-project-init
 type: Workflow
 title: "Init a consumer project"
-description: "Init also installs the review-work skill (Plan Review + Implementation review) alongside define-entities and plan-project."
+description: "Init also copies Cursor-native skills into .cursor/skills/ and the always-on playbook into .cursor/rules/mindplan.mdc, matching the .cursorignore contract that hides mindplan/agent/**."
 state: stable
-shipped_at: 2026-07-23T19:11:52.354Z
+shipped_at: 2026-07-23T19:59:23.732Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-07-23T19:11:52.354Z
+updated_at: 2026-07-23T19:59:23.732Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -14,68 +14,119 @@ depends_on:
 ---
 
 
-
-
 # Init a consumer project
 
 ## Purpose
 
-Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, project config (`mindplan/config.json`) choosing prescribed vs layout-free packages, always-on agent playbook, define-entities / plan-project / review-work skills, MCP example config, per-agent integration guides, root `AGENTS.md`, `.cursorignore` that ignores the derived map (and agent asset copies) while allowing agent file tools to edit territory MDX prose, and `.cursor/permissions.json` that allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on playbook-required graph mutations.
+Scaffold a consumer repo for MindPlan: empty `mindplan/` territory layout, project config (`mindplan/config.json`) choosing prescribed vs layout-free packages, always-on agent playbook, define-entities / plan-project / review-work skills, MCP example config, per-agent integration guides, root `AGENTS.md`, Cursor-native copies under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`, `.cursorignore` that ignores the derived map (and agent asset copies under `mindplan/agent/**`) while allowing agent file tools to edit territory MDX prose, and `.cursor/permissions.json` that allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on playbook-required graph mutations.
 
 ## Execution Logic
 
 Package: `src/workflows/wf-project-init/`
 
-- `init.ts` — `initProject` plus install helpers:
+- `init.ts` — `initProject` plus install helpers (exported for CLI wiring in `f-mcp-runtime`):
   - `installProjectConfig` — writes `mindplan/config.json` with `implementation_packages`: `required` (default / `--layout prescribed`) or `off` (`--layout free`). Missing config is treated as `required` by loaders elsewhere. Idempotent: create when missing; update only when an explicit `--layout` flag is passed
   - `installAgentPlaybook` — `templates/agent/playbook.md` → `mindplan/agent/`
   - `installDefineEntitiesSkill` — skill under `mindplan/agent/skills/define-entities/`
   - `installPlanProjectSkill` — skill under `mindplan/agent/skills/plan-project/`
   - `installReviewWorkSkill` — skill under `mindplan/agent/skills/review-work/`
+  - `installCursorSkills` — copy the three skills into Cursor discovery paths from package templates (idempotent, skip if dest exists):
+    - → `.cursor/skills/mindplan-define-entities/`
+    - → `.cursor/skills/mindplan-plan-project/`
+    - → `.cursor/skills/mindplan-review-work/`
+    Returns one install result per skill path (or a single aggregate — implementer’s choice) so the CLI can report each path. Source is `templates/agent/skills/…`, not the on-disk `mindplan/agent` copy.
+  - `installCursorRule` — write `.cursor/rules/mindplan.mdc` when missing: Cursor rule frontmatter (`alwaysApply: true`) plus the playbook body from `templates/agent/playbook.md`
   - `installMcpExample` — `mcp.json.example`
-  - `installAgentIntegrations` — guides into `mindplan/agent/integrations/` (document `--layout free` for brownfield)
+  - `installAgentIntegrations` — guides into `mindplan/agent/integrations/` (Cursor guide documents that init installs `.cursor/skills` + `.cursor/rules`; manual copy only if those files were deleted)
   - `installRootAgentsMd` — root `AGENTS.md` from template
-  - `installCursorIgnore` — installs `templates/agent/cursorignore` (ignores `mindplan/map.md` + `mindplan/agent/**`; does **not** block `current.mdx` / `next.mdx`)
-  - `installCursorPermissions` — installs `templates/agent/permissions.json` → `.cursor/permissions.json` when missing (`mindplan:*` / `project-0-mindplan-mindplan:*` / `*mindplan*:*` MCP allowlist + Auto-review allow/block instructions)
-- Invoked by CLI `mindplan-mcp init [--layout free|prescribed]` in `f-mcp-runtime` (package root resolved by walking up to `templates/agent`)
+  - `installCursorIgnore` — installs `templates/agent/cursorignore` (ignores `mindplan/map.md` + `mindplan/agent/**`; does **not** block `current.mdx` / `next.mdx`). Comment must match real behavior: init copies agent instructions to `.cursor/rules` and `.cursor/skills`
+  - `installCursorPermissions` — installs `templates/agent/permissions.json` → `.cursor/permissions.json` when missing
 
-Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`. Consumer use case: `wf-layout-free`.
+CLI call/report of these helpers lives in `f-mcp-runtime` (paired `next`). Smoke asserts for Cursor paths live in `wf-test-harness` (paired `next`).
+
+Depends on: `f-territory-store`. Belongs to: `j-agent-onboarding`. Consumer use case: `wf-layout-free`. Fixes: `bug-init-cursor-skills` (with paired `f-mcp-runtime` + `wf-test-harness` nexts).
 
 ## Acceptance Criteria
 
 - `mindplan-mcp init` creates/updates consumer mindplan + agent assets idempotently where intended
 - `init` writes `mindplan/config.json`; `--layout free` sets `implementation_packages` to `off`; default/prescribed sets `required`
 - Playbook, define-entities, plan-project, and review-work skills, integrations, MCP example, AGENTS.md, `.cursorignore`, and `.cursor/permissions.json` are installed from `templates/`
-- Template `.cursorignore` does not list `mindplan/**/current.mdx` or `mindplan/**/next.mdx`
+- This package exports `installCursorSkills` and `installCursorRule` that install `.cursor/skills/mindplan-define-entities|plan-project|review-work/` (each with `SKILL.md`) and `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body), idempotently
+- Template `.cursorignore` does not list `mindplan/**/current.mdx` or `mindplan/**/next.mdx`, and its comment accurately describes the `.cursor/rules` + `.cursor/skills` copies
+- Cursor integration guide states that init installs those Cursor paths (manual copy only if missing)
 - Template `.cursor/permissions.json` allowlists `mindplan:*` and steers Auto-review for playbook mutations
 - Init helpers live in this package (not in the territory store)
-- Smoke test covers init template install including plan-project, review-work, cursorignore, permissions.json, and layout config
+- CLI wiring/reporting is owned by `f-mcp-runtime` next; Cursor-path smoke asserts by `wf-test-harness` next
 
 ## Atomic Ops
 
-- [x] Add `installReviewWorkSkill` → `mindplan/agent/skills/review-work/`
-- [x] Keep layout config + prior skill installs idempotent
-- [x] Smoke asserts review-work skill is installed
+- [x] Add `installCursorSkills` → `.cursor/skills/mindplan-{define-entities,plan-project,review-work}/` (template-sourced, idempotent)
+- [x] Add `installCursorRule` → `.cursor/rules/mindplan.mdc` (frontmatter + playbook body, idempotent)
+- [x] Update Cursor integration guide + `.cursorignore` comment to match real init behavior
+- [x] Keep prior install helpers idempotent; export new helpers for CLI consumption
 
 ## Attachments
 
 _Wireframes and notes go in `attachments/` / `next-attachments/`._
 
-
 ## Review Notes
 
 **Date:** 2026-07-23  
+**Verdict:** Reject — leave at draft  
+**Reviewer:** Plan Review (independent session)
+
+### Findings
+
+1. **Decomposition — CLI wiring is `f-mcp-runtime` work.** Atomic Op “Wire both from CLI init reporting” edits `src/foundations/f-mcp-runtime/server.ts` (where every other init installer is called/reported). The last Cursor/skill init evolution kept that surface on an `f-mcp-runtime` `next` slot with its own AC/ops. Open `next` on `f-mcp-runtime` for calling/reporting `installCursorSkills` + `installCursorRule`, and drop that op from this Workflow (or reduce it to exporting the helpers only).
+
+2. **Decomposition — smoke assert is `wf-test-harness` work.** Atomic Op “Smoke asserts Cursor skill dirs and mindplan.mdc” lands in `src/workflows/wf-test-harness/smoke.mjs`. Plan that as a `wf-test-harness` evolution (or an explicit paired `next`), not as an op scoped only to `wf-project-init`.
+
+3. **Dependency / Foundation contract drift.** After this change, shipped `f-mcp-runtime` AC still only claims CLI init installs review-work — not the Cursor-native paths. Without a Foundation `next`, Implementation review will see undeclared package edits and a stale Assembler contract. Keep `depends_on: f-territory-store` for helpers; do not invent a reverse edge just to paper over CLI ownership.
+
+### What already looks good
+
+- Full successor territory (Purpose / Execution Logic / AC), not a changelog
+- Domain fit: `belongs_to` `j-agent-onboarding`; closes `bug-init-cursor-skills`
+- Helper design is buildable: template-sourced copies, idempotent skip-if-exists, paths, guide + `.cursorignore` comment alignment
+- Blast radius noted: `wf-layout-free` (distance 1); journey at risk `j-agent-onboarding`
+
+### Revision (plan author — same session as reject fix)
+
+Addressed findings without self-advancing:
+
+1. Dropped CLI wiring Atomic Op from this Workflow; helpers are exported only. Paired `f-mcp-runtime` `next` owns call/report.
+2. Dropped smoke Atomic Op; paired `wf-test-harness` `next` owns Cursor-path asserts.
+3. Opened `f-mcp-runtime` `next` with updated Assembler contract for Cursor-native install/report. Kept `depends_on: f-territory-store` only (no reverse edge).
+4. Linked `bug-init-cursor-skills` `affects` → `f-mcp-runtime` and `wf-test-harness` as well.
+
+## Review Notes (re-review)
+
+**Date:** 2026-07-23  
+**Verdict:** Approve — ready  
+**Reviewer:** Plan Review (independent session, second pass)
+
+### Findings
+- Prior reject findings addressed: CLI/smoke ops removed; helpers export-only; paired `f-mcp-runtime` + `wf-test-harness` nexts present; bug `affects` all three; `depends_on` stays `f-territory-store`
+- Buildable: template-sourced `installCursorSkills` / `installCursorRule`, idempotent, guide + `.cursorignore` comment in-scope
+- Domain fit: `belongs_to` `j-agent-onboarding`
+- Decomposition: ops scoped to this package; AC names ownership of CLI/smoke on paired nodes
+- Scope: one coherent init-helper evolution; Territory Completeness held
+- Blast radius: `wf-layout-free`; journey at risk `j-agent-onboarding`
+
+## Review Notes (Implementation)
+
+**Date:** 2026-07-23  
 **Verdict:** Approve — ship  
-**Reviewer:** human-authorized Implementation review after `/code-review` approve + explicit “ship it”
+**Reviewer:** Implementation review (independent session; Plan Review only in this session, not implementer)
 
 ### Evidence
-- All Atomic Ops checked; no unchecked `- [ ]` remain on next slots
-- `installReviewWorkSkill` in `src/workflows/wf-project-init/init.ts`; CLI wires it in `src/foundations/f-mcp-runtime/server.ts` (install + report + upgrade tip)
-- Smoke asserts `mindplan/agent/skills/review-work/SKILL.md` after init (`src/workflows/wf-test-harness/smoke.mjs`)
-- `npm test` passed (build + view/search/check/smoke) during implementation
-- Templates + mirrors: `templates/agent/skills/review-work/`, playbooks, define-entities/plan-project Plan Review handoffs, integrations, README, SPEC
+- [x] `installCursorSkills` — `src/workflows/wf-project-init/init.ts` exports template-sourced copies to `.cursor/skills/mindplan-{define-entities,plan-project,review-work}/` via `installTemplateDir` (skip if dest exists)
+- [x] `installCursorRule` — same file writes `.cursor/rules/mindplan.mdc` with `alwaysApply: true` frontmatter + `templates/agent/playbook.md` body when missing
+- [x] Cursor guide + `.cursorignore` — `templates/agent/integrations/cursor.md` states init installs Cursor paths; `templates/agent/cursorignore` comment matches; mirrored `mindplan/agent/integrations/cursor.md`
+- [x] Prior helpers still exported; new helpers exported for CLI
+- `npm test` passed (build + view/search/check/smoke) during this review
 
 ### Fit
-- **Domain:** Docs / init / integrations / MCP runtime / harness — matches each node’s Journey and Foundation role
-- **Dependencies:** Declared `depends_on` match the packages touched; no undeclared coupling introduced
-- **Decomposition:** Ops cover Acceptance Criteria; evolution-scoped checklists remain complete successor contracts
+- **Domain:** `belongs_to` `j-agent-onboarding`; helpers only — no CLI/smoke drift
+- **Dependencies:** `depends_on` `f-territory-store` only; package edits confined to `wf-project-init` (+ templates it owns)
+- **Decomposition:** Matches approved Plan Review split

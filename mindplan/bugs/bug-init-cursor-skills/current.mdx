@@ -1,0 +1,58 @@
+---
+id: bug-init-cursor-skills
+type: Bug
+title: "Init does not install Cursor skills"
+description: "mindplan-mcp init reports skills installed under mindplan/agent/skills, but never copies them to .cursor/skills (or the playbook to .cursor/rules). .cursorignore then hides mindplan/agent/**, so Cursor cannot discover or read the skills."
+state: resolved
+created_at: 2026-07-23T19:39:51.630Z
+updated_at: 2026-07-23T19:57:10.801Z
+affects:
+  - wf-project-init
+  - wf-test-harness
+  - f-mcp-runtime
+---
+
+# Init does not install Cursor skills
+
+## Summary
+
+`mindplan-mcp init` installs skills under `mindplan/agent/skills/` and then ignores that tree via `.cursorignore`, without copying them into `.cursor/skills/` (or the playbook into `.cursor/rules/`), so Cursor cannot discover the skills.
+
+## Repro Steps
+
+1. Run `mindplan-mcp init` in a consumer project (or re-run in this repo).
+2. Observe CLI output claiming define-entities / plan-project / review-work skills are installed at `mindplan/agent/skills/...`.
+3. Confirm `.cursorignore` contains `mindplan/agent/**` and the comment that agent instructions are copied to `.cursor/rules` and `.cursor/skills`.
+4. List `.cursor/skills/` and `.cursor/rules/mindplan.mdc`.
+
+## Expected / Actual
+
+**Expected:** Init copies Cursor-discoverable assets to `.cursor/skills/mindplan-*` and `.cursor/rules/mindplan.mdc` (idempotent), so skills remain available after `mindplan/agent/**` is ignored.
+
+**Actual:** Skills exist only under `mindplan/agent/skills/` (hidden from Cursor). `.cursor/skills/` is missing; `.cursor/rules/mindplan.mdc` is not installed. Agents report that skills are unavailable / permission-denied when reading the ignored tree.
+
+## Fix Checklist
+
+- [x] Root cause identified — init never called Cursor-native install helpers; `.cursorignore` comment overstated behavior
+- [x] Fix implemented — helpers in `wf-project-init`; CLI call/report in `f-mcp-runtime`; Cursor guide + `.cursorignore` comment updated
+- [x] Regression test added — `wf-test-harness` smoke asserts `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc` after init
+
+## Attachments
+
+_Logs, screenshots, and HAR files go in `attachments/`._
+
+## Review Notes
+
+**Date:** 2026-07-23  
+**Verdict:** Approve — resolved  
+**Reviewer:** Implementation review (independent session)
+
+### Evidence
+- [x] Root cause — init previously installed only under `mindplan/agent/skills` while `.cursorignore` hid that tree; helpers/CLI never wrote `.cursor/skills` or `mindplan.mdc`
+- [x] Fix — `installCursorSkills` + `installCursorRule` in `wf-project-init`; CLI wire/report in `f-mcp-runtime`; Cursor guide updated
+- [x] Regression — smoke asserts Cursor skill dirs + `mindplan.mdc`; `npm test` passed
+
+### Fit
+- **Domain:** Affects the three nodes that own helpers / CLI / smoke
+- **Dependencies:** Graph `affects` matches packages touched
+- **Decomposition:** Checklist maps 1:1 to the three paired evolutions
