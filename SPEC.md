@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHALL, SHOULD, and MAY in this document are to be 
 
 MindPlan is a strictly deterministic Software Development Life Cycle (SDLC) framework designed natively for autonomous AI agents and human engineering teams. It operates as a compiler-style state machine and a "GitOps for Issue Tracking" system: all planning state lives inside the repository, every state mutation is validated against architectural guardrails before it is persisted, and any violation is rejected with a machine-parsable error. The result is that software architecture and project requirements remain perfectly synchronized with the code they describe — there is no external tracker to drift from reality.
 
-MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP) server. The server is the single write path to MindPlan state. Direct file edits to the graph are out of contract (see §9.3). Consumer projects receive an operational always-on agent playbook at `mindplan/agent/playbook.md` (installed by `mindplan-mcp init` from `templates/agent/playbook.md`) — the playbook is the SDLC execution process agents MUST follow for all software work; entity scaffolding lives in the separate `define-entities` skill; plan-only product-modeling sessions (no application code) live in the `plan-project` skill. Many agents also read root `AGENTS.md`, which `init` creates when missing.
+MindPlan is exposed to agents exclusively through a Model Context Protocol (MCP) server. The server is the single write path to MindPlan state. Direct file edits to the graph are out of contract (see §9.3). Consumer projects receive an operational always-on agent playbook at `mindplan/agent/playbook.md` (installed by `mindplan-mcp init` from `templates/agent/playbook.md`) — the playbook is the SDLC execution process agents MUST follow for all software work; entity scaffolding lives in the separate `define-entities` skill; plan-only product-modeling sessions (no application code) live in the `plan-project` skill; Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / Bug `resolved`) live in the `review-work` skill (playbook gates; not server-enforced). Many agents also read root `AGENTS.md`, which `init` creates when missing.
 
 ---
 
@@ -106,7 +106,7 @@ When packages are `off`:
 - `mindplan-mcp check` MUST skip package presence, orphan, and dirty-src ownership checks; graph load and `--for-main` mid-pipeline bans still apply
 - Agents implement in the project's existing layout; they still advance MindPlan states and MUST NOT invent tickets outside the graph
 
-Graph compiler gates (Ghost Workflows/Bugs, Infrastructure First, Completion Check, External Review) are unchanged in both modes.
+Graph compiler gates (Ghost Workflows/Bugs, Infrastructure First, Completion Check) are unchanged in both modes. Playbook gates (Plan Review for `draft → ready`, External Review for ship / Bug `resolved`) also apply in both modes — they are not server-enforced.
 
 ---
 

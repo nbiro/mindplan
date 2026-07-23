@@ -15,7 +15,7 @@ See [Continue MCP docs](https://docs.continue.dev/customization/mcp) for the cur
 2. **Instructions** — reference in Continue rules or root `AGENTS.md`:
 
 ```
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding MindPlan nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code).
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding MindPlan nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for Plan Review and Implementation review.
 ```
 
 3. Restart Continue or reload config.

@@ -27,7 +27,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 - **No application code** — do not create, edit, or delete files under `src/workflows/<id>/` or `src/foundations/<id>/` (except ignoring empty `.gitkeep` scaffolds that `create_node` already made when packages are `required`). When packages are `off`, do not start implementing in the existing app layout either — plan-only means graph/territory only.
 - **No implementation pipeline** — do not move Foundations/Workflows to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
-- **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, advance Workflows/Foundations to `ready` only (Ghost Workflow / Ghost Bug link gates must pass) — then **stop**. See **Shipping a plan** below.
+- **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, finish links, PRD, and unchecked Atomic Ops at `draft`, then **stop** and hand off for Plan Review (`mindplan/agent/skills/review-work/`). Do not self-advance to `ready`. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
 - Mutate graph state only through MindPlan MCP. Treat every `Blocked: <reason>` as a hard failure — fix the plan, do not retry blindly.
 
@@ -57,14 +57,14 @@ Follow `mindplan/agent/skills/define-entities/`:
 Greenfield order:
 
 ```
-Journey(s) → Foundation(s) → Workflow(s) → link_nodes → enrich territory → optional ready → stop
+Journey(s) → Foundation(s) → Workflow(s) → link_nodes → enrich territory → stop at draft → Plan Review handoff
 ```
 
 ### 4. Enrich territory (full contracts)
 
 Prefer host file tools on `current_path` / `next_path` for body / title / description (so humans see native diffs). `patch_node_territory` is an optional fallback. Replace scaffold stubs with real Purpose, PRD / Execution Logic / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
 
-Territory Completeness still applies: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius` then `open_next` before changing live scope; edit the `next` slot into a complete proposed successor — still without implementing code or advancing past `ready` on `next`.
+Territory Completeness still applies: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius` then `open_next` before changing live scope; edit the `next` slot into a complete proposed successor — still without implementing code or advancing `next` past `draft` (Plan Review owns `draft` → `ready`).
 
 ### 5. Validate after every mutation
 
@@ -81,34 +81,31 @@ End the plan session when:
 
 - The graph matches the user’s product model
 - Territory is a full contract (not stubs)
-- Nodes sit at `draft` or `ready` (or Bugs at `open` / `triaged`)
+- Nodes sit at `draft` (or Bugs at `open` / `triaged`), ready for Plan Review
 - You have shown or offered `export_mindplan_view` so humans can review the map
 
-Tell the user the plan is ready for an **execution session** under the always-on playbook (`in-progress` → implement in prescribed packages → `in-review`). Do not start that work in the same plan-only session unless they explicitly switch modes.
+Tell the user the plan is ready for a **Plan Review** session (`mindplan/agent/skills/review-work/`). After Plan Review advances nodes to `ready`, a later **execution session** runs under the always-on playbook (`in-progress` → implement → `in-review`). Do not start either of those in the same plan-only session unless they explicitly switch modes.
 
-## Shipping a plan (`draft` → `ready`)
+## Shipping a plan (hand off for Plan Review)
 
-When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means **pre-flight to `ready`**, not the build-pipeline `ship` transition.
+When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means finish at `draft` and hand off for Plan Review, not self-advance to `ready`, and not the build-pipeline `ship` transition.
 
-```
-update_node_status({ node_id, new_status: "ready" })
-```
-
-Requirements:
+Requirements before handoff:
 
 - Links complete (Workflows: at least one `belongs_to` + one `depends_on`; Bugs past `open`: `affects`)
 - Territory is a full contract with **unchecked** Atomic Ops
+- Nodes remain at `draft` — do not call `update_node_status` → `ready`
 - **No** application code under `src/`
 - **No** `in-progress` / `in-review` / `ship` / `stable`
 - **No** checking off checklist boxes
 
-Then **stop**. Hand off for a later execution session under the always-on playbook. Do not interpret “ship” here as `update_node_status` → `ship`.
+Then **stop**. Hand off for Plan Review (`mindplan/agent/skills/review-work/`). Do not interpret “ship” here as `update_node_status` → `ship` or as permission to advance to `ready` yourself.
 
 ## Never do (this skill)
 
 - Write or “just scaffold” real implementation in `src/workflows/` / `src/foundations/`
-- Advance to `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`
-- Treat “ship the plan” as build-pipeline `ship` / `stable` or as permission to check Atomic Ops
+- Advance to `ready` / `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`
+- Treat “ship the plan” as build-pipeline `ship` / `stable`, as self-advance to `ready`, or as permission to check Atomic Ops
 - Check off Atomic Ops without implementation
 - Create a Workflow with no matching Journey
 - Hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)

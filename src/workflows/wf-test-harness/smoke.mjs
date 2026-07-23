@@ -804,6 +804,9 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "plan-project", "SKILL.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install plan-project skill");
+} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "review-work", "SKILL.md"))) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install review-work skill");
 } else if (
   (() => {
     const cfgPath = path.join(initRoot, "mindplan", "config.json");

@@ -2,7 +2,7 @@
 
 **Always apply.** For any software work in this repository, follow MindPlan. Orient on the graph before coding. Mutate graph state only through the **MindPlan MCP server**. Treat every `Blocked: <reason>` as a hard failure — read it, fix the plan, then retry. Do not retry blindly.
 
-Normative reference: `SPEC.md` (in the mindplan-mcp package or repo). Entity scaffolding (create/link nodes, Journey-first): `mindplan/agent/skills/define-entities/SKILL.md`. Plan-only sessions (model the product graph with no application code): `mindplan/agent/skills/plan-project/SKILL.md`.
+Normative reference: `SPEC.md` (in the mindplan-mcp package or repo). Entity scaffolding (create/link nodes, Journey-first): `mindplan/agent/skills/define-entities/SKILL.md`. Plan-only sessions (model the product graph with no application code): `mindplan/agent/skills/plan-project/SKILL.md`. Plan Review and Implementation review (independent Reviewer session): `mindplan/agent/skills/review-work/SKILL.md`.
 
 ## Authority model
 
@@ -73,8 +73,10 @@ Then classify:
 
 | If the user wants… | Do this |
 |--------------------|---------|
-| **Plan / model / architect only** (greenfield product map, reshape the graph, enrich PRDs — no application code) | Follow `mindplan/agent/skills/plan-project/` — stay in `draft` or stop at `ready`; do not enter the build pipeline or edit `src/` |
-| **Ship the plan** / “ship it” after planning (no code) | **`draft` → `ready` only** — see **Shipping a plan** below. Never `ship` / `stable`, never check Atomic Ops, never write `src/` |
+| **Plan / model / architect only** (greenfield product map, reshape the graph, enrich PRDs — no application code) | Follow `mindplan/agent/skills/plan-project/` — stay in `draft` and hand off for Plan Review; do not enter the build pipeline or edit `src/` |
+| **Ship the plan** / “ship it” after planning (no code) | Leave modeled nodes at `draft` with links/PRD/Atomic Ops complete; hand off for **Plan Review** — see **Shipping a plan** below. Never self-advance to `ready`, never `ship` / `stable`, never check Atomic Ops, never write `src/` |
+| A Workflow or Foundation moved from draft to ready | Follow `mindplan/agent/skills/review-work/` (Plan Review) — do not self-advance |
+| A ship / resolved decision on an in-review node | Follow `mindplan/agent/skills/review-work/` (Implementation review) — do not resume the implementer session |
 | New Journey, Foundation, Workflow, or Bug (as part of execution, or a small add while building) | Follow `mindplan/agent/skills/define-entities/` (Journey must exist before any Workflow; refuse Workflow creation when no matching Journey is in the graph) |
 | Implement or advance an existing Foundation/Workflow | **Build pipeline loop** below |
 | Report or fix a defect | **Bug lifecycle loop** below |
@@ -84,21 +86,152 @@ Do not invent tickets outside MindPlan. Do not start substantial implementation 
 
 ### Shipping a plan
 
-In a **plan-only** session (or when the user says “ship the plan” / “ship it” meaning the MindPlan graph, not product code), **shipping the plan** means:
-
-```
-update_node_status({ node_id, new_status: "ready" })
-```
-
-for each Foundation/Workflow whose links satisfy Ghost Workflow gates — **`draft` → `ready` only**.
+In a **plan-only** session (or when the user says “ship the plan” / “ship it” meaning the MindPlan graph, not product code), **shipping the plan** means finishing the model at `draft` and handing off for Plan Review — not advancing to `ready` yourself. `draft` → `ready` is the Reviewer’s transition (see **Plan review** below).
 
 | Do | Do not |
 |----|--------|
-| Advance modeled nodes to `ready` when links are complete | Call `ship` or move to `in-progress` / `in-review` / `stable` |
+| Leave modeled nodes at `draft` once links, PRD, and Atomic Ops are complete, and hand off for Plan Review | Advance a node to `ready` yourself — that's the Reviewer's transition now |
 | Leave all Atomic Ops unchecked | Check off checklist items (that means implementation happened) |
-| Stop after `ready` and hand off for a later execution session | Write or “just scaffold” code under `src/` |
+| Stop after `draft` and hand off for Plan Review | Write or “just scaffold” code under `src/`, or call `ship` / `in-progress` / `in-review` / `stable` |
 
-`update_node_status` → `ship` is the **build pipeline** promotion after real work and external review — never the meaning of “ship the plan.”
+`update_node_status` → `ship` is the **build pipeline** promotion after real work and Implementation review — never the meaning of “ship the plan.”
+
+### Plan review (draft → ready)
+
+Gates every Workflow and Foundation before an implementer commits to it.
+Catches a bad plan while it's still a text edit, not a revert — before any
+code exists. Does not apply to Bugs (no draft/ready state) or Journeys
+(computed, no build pipeline).
+
+**Why this pays for itself.** Every check below already exists in
+Implementation review, applied to a *finished* diff. Running the same
+checks against a draft PRD and Atomic Ops list is strictly cheaper than
+discovering the same problem after implementation. Once a plan passes
+here, Implementation review's Fit/Decomposition checks become a drift
+check ("does the shipped work still match what was approved") instead of
+a first-pass analysis.
+
+**Cost worth naming up front.** This adds a second mandatory review
+touchpoint per node, on top of the one at in-review. That compounds
+directly with the "ship thin Foundations fast" pattern — more, smaller
+Foundations means paying the review handoff twice as often, not once.
+Plan Review is still mandatory for every Workflow and Foundation
+`draft → ready` (including a `next` slot): the cost is accepted so Fit /
+Decomposition failures stay text edits.
+
+**Eligibility check.** Same rule as Implementation review: if this session
+authored or edited this node's plan, stop and hand off to a new session.
+
+**Orient.** `get_node_context` on the focus. Read PRD / Execution Logic,
+Acceptance Criteria, Atomic Ops, and current edges. `get_blast_radius` to
+see what, if anything, already depends on this node.
+
+**Check the plan is buildable.** Is the PRD/Execution Logic specific
+enough that an implementer could build from it without guessing at intent?
+Are there real, checkable Acceptance Criteria — not a restated description?
+
+**Check domain fit, before code exists.** Does the Workflow's `belongs_to`
+Journey actually match what the PRD describes? Does a Foundation's role
+tag (Assembler / Infra / Design system / Adapter) match what it's being
+asked to hold? A misfiled node is a re-file now, or a rebuild later.
+
+**Check dependency completeness.** Do the declared `depends_on` edges
+cover what the plan will actually need, and nothing it won't? A missing
+edge caught here never becomes an undeclared-coupling finding later.
+
+**Check decomposition quality.** Same standard as Implementation review's
+decomposition check, applied to a draft list instead of a finished one: do
+the Atomic Ops fully cover the Acceptance Criteria, is each one scoped to
+this node, and is the grain right — not so coarse it hides real
+complexity, not so fragmented that "all boxes checked" stops meaning
+"done"?
+
+**Check scope.** Does the PRD describe one coherent use case, or several
+that should be split into separate Workflow nodes before anyone starts
+building? Splitting a draft is a rewrite; splitting after implementation
+starts is a re-implementation.
+
+| Outcome | Do | Do not |
+|---|---|---|
+| Approve | `update_node_status → ready` | Wave it through because edges exist — Ghost Workflow only checks that links are *present*, not that they're the *right* links |
+| Reject | Leave at `draft`; write itemized Review Notes (PRD gaps, misfit, missing edges, decomposition problems) | Fix the plan yourself — same mutation boundary as Implementation review; you verify, the plan author revises |
+
+Write the verdict into the body the same way as Implementation review — a
+`## Review Notes` section — so the next planning pass sees exactly what to
+fix.
+
+### Implementation review (in-review → ship / resolved)
+
+Reviews in-review Workflows, Foundations, and Bugs; performs `ship` /
+`resolved`. Never implements. Never advances a node into `in-progress` /
+`fixing` on someone else's behalf.
+
+**Eligibility check — do this first.** If this session has any
+implementation history on this node in this cycle (wrote code, checked an
+Atomic Op, or called `update_node_status → in-review`), stop. Hand off to a
+new session. A reviewer that just finished implementing is not a reviewer.
+
+**Orient.** `get_node_context` on the focus (or next slot when evolving).
+Read PRD / Execution Logic, Acceptance Criteria, Atomic Ops. Call
+`get_blast_radius`; note `journeys_at_risk`.
+
+**Verify with evidence, not trust.** For every checked `[x]` Atomic Op,
+produce one line of independent verification — run the test and cite the
+result, read the referenced file and cite the lines, or reproduce the
+behavior. A checked box with no verification line is treated as unverified.
+
+**Verify territory matches reality.** Compare description / PRD /
+Acceptance Criteria against the actual diff. If scope drifted during
+implementation and the territory prose wasn't updated to match, that's a
+fail even if the code works.
+
+**Verify fit — not just completion.** If the plan passed Plan Review, this
+is now mainly a drift check: did the implementation stay inside the
+Journey/Foundation-role fit and dependency edges that were already
+approved? Two failure modes evidence-checking alone won't catch:
+
+- *Domain fit.* Read the Journey(s) this Workflow belongs_to (or the
+  Foundation's role tag — Assembler / Infra / Design system / Adapter).
+  Does what actually got built belong to that domain, or did it quietly
+  take on responsibility that belongs to a different Journey, a different
+  Workflow, or a Foundation? A Workflow reimplementing shared substrate
+  that should live in a depends_on Foundation is a fit failure even if
+  every Atomic Op is checked and every test passes.
+- *Dependency accuracy.* Check the diff's actual imports/calls against the
+  node's declared `depends_on` edges. Anything the code reaches into that
+  isn't a declared dependency means the graph is describing an
+  architecture that isn't real — `get_blast_radius` and `journeys_at_risk`
+  on every other node are only as honest as this edge list.
+- *Decomposition quality.* The Atomic Ops themselves can be wrong,
+  independent of whether each one is done: an op that actually describes
+  work for a different node, Acceptance Criteria with no corresponding op
+  at all, or a single op hiding several unrelated claims. A fully-checked
+  list built on a bad decomposition still fails review.
+
+**Reviewer mutation boundary.** Reviewer calls `update_node_status` only —
+never `link_nodes`, `unlink_nodes`, or `create_node`. A reviewer who
+patches the graph to make its own approval work is a rubber stamp with
+extra steps. A fit or decomposition failure gets rejected with the
+specific structural gap named in Review Notes (missing edge, misplaced op,
+wrong node); the implementer — or a `plan-project` pass, if the fix is a
+real graph restructuring rather than a code fix — makes that correction
+next.
+
+**Write the verdict into the body before transitioning state.** Append a
+`## Review Notes` section — date, verdict, an Evidence subsection
+(per-item verification) and a Fit subsection (domain, dependency, and
+decomposition findings) — to `current.mdx` (or `next.mdx` while a next
+slot is open) with file tools. This survives `ship`'s promotion of next
+over current, so shipped nodes carry their review record.
+
+| Outcome | Do | Do not |
+|---|---|---|
+| Approve | `update_node_status → ship` (or `→ resolved` for a Bug) | Ship on a hunch — every checked item needs a cited verification line |
+| Reject | `update_node_status → in-progress` (or `→ fixing`) with itemized, actionable Review Notes | Leave feedback only in chat — it has to live in the file or the next session won't see it |
+
+Solo builders: running Reviewer yourself does not make this step optional.
+The evidence table is the gate — approving without producing it is the
+rubber-stamp failure mode this loop exists to prevent.
 
 ## Validate after every plan change
 
@@ -121,11 +254,11 @@ For a shipped node evolving via `open_next`, this same pipeline runs against the
 
 1. **Orient** — `orient_for_work` or `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Call `get_blast_radius` on the focus node before substantial implementation; note transitive dependents and `journeys_at_risk`. Read PRD, Acceptance Criteria, and Atomic Ops from `body` (or `next.body` when a next slot is open).
 2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress`. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
-3. **Commit to work** — `update_node_status` → `ready`, then `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway.
+3. **Commit to work** — Node must already be `ready` (after Plan Review). Then `update_node_status` → `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway; do not self-advance `draft` → `ready`.
 4. **Execute** — When `implementation_packages` is `required` (default), implement in the node's prescribed package (`src/workflows/<id>/` or `src/foundations/<id>/`). When `off` (layout-free / `mindplan-mcp init --layout free`), implement in the project's existing layout instead — still keep territory in sync. Keep territory updated with **file tools** on `current_path` / `next_path`: update PRD body, toggle Atomic Ops checkboxes. Never check a box without doing the work. (`patch_node_territory` remains an optional fallback.) Query architecture with `get_node_implementation` plus the graph (`root` is null when packages are off).
 5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`. Then **stop**. Do not immediately `ship`. Hand off for review by a human or a different agent (not the same session that implemented the work).
 6. **Ship** — Only after that external review approves. The **reviewer** (human or another agent) calls `update_node_status` → `ship` from `in-review` (or from `next` `in-review` when evolving). Server sets `shipped_at` and computes `stable` or `unstable`; if a `next` slot was open, ship promotes it over `current` and deletes `next.mdx`.
-   - **External Review:** the implementing agent MUST NOT `ship` (or Bug `resolved`) their own work. Wait for a human or a different agent to review and perform the ship/resolve transition.
+   - **External Review:** the implementing agent MUST NOT `ship` (or Bug `resolved`) their own work. Hand off to a separate Reviewer session running Implementation review (`mindplan/agent/skills/review-work/`).
    - **Infrastructure First:** a Workflow cannot ship until every direct `depends_on` Foundation and Workflow is `stable`. Ship Foundations (and prerequisite Workflows) first.
    - Never set Journey, `stable`, or `unstable` manually — they are computed.
 
@@ -165,7 +298,7 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 1. `get_blast_radius` on the live node — note dependents and `journeys_at_risk` before opening an evolution.
 2. `open_next` — opens `next.mdx` on the **same** node id, seeded from `current.mdx` (`draft` state, inherited outgoing `belongs_to`/`depends_on`, optional new `title`/`description`). The live node keeps serving unchanged under `current.mdx`; `get_node_context` / `orient_for_work` surface the live `record` plus a `next` slot.
 3. **Territory Completeness** — edit `next` into a **complete proposed successor** of the live contract (Purpose, PRD/Execution Logic/Shared Substrate Spec, Acceptance Criteria). Seed is the starting point; do not replace the body with a changelog, “diff vs current,” or “this evolution only” narrative. Atomic Ops / checklist items on `next` MAY be evolution-scoped (reset for this build); spec sections MUST stay a full post-ship document. `current.mdx` MUST always describe full repo state for the node — never only the latest change.
-4. Run the **build pipeline loop** against the next slot: `update_node_status` transitions `next.state` through `draft → ready → in-progress → in-review`; edit `next.mdx` prose with file tools at `next_path` (or `patch_node_territory`, which defaults to `next` while a next slot is open — pass `slot: "current"` to explicitly target the live file instead).
+4. Run the **build pipeline loop** against the next slot — but park for Plan Review at `draft → ready` (separate Reviewer session via `mindplan/agent/skills/review-work/`), then `in-progress` → `in-review` in an execution session; edit `next.mdx` prose with file tools at `next_path` (or `patch_node_territory`, which defaults to `next` while a next slot is open — pass `slot: "current"` to explicitly target the live file instead). Do not self-advance `next` from `draft` to `ready`.
 5. Before `next` → `in-review`, **verify Territory Completeness**: if you removed the full contract and left only evolution work items or a changelog, stop and restore a full successor body.
 6. `update_node_status` → `ship` is only legal from `next` `in-review`. It re-checks **Infrastructure First** against the next slot's `depends_on`, promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, sets `shipped_at`, and recomputes `stable`/`unstable` — same id throughout.
 7. `discard_next` abandons an in-flight evolution at any point — deletes `next.mdx` (and `next-attachments/`); `current.mdx` is untouched. Only one `next.mdx` may be open per node at a time — `open_next` is blocked while one already exists; discard or ship it first.
@@ -185,7 +318,8 @@ Foundations and Workflows keep one stable id forever — there is no new node id
 | **No Ghost Workflows** | `ready`/`in-progress` (incl. `next` slot) | At least one `belongs_to` + at least one `depends_on` via `link_nodes` |
 | **No Ghost Bugs** | `triaged`/`fixing` | `link_nodes` with `affects` first |
 | **Infrastructure First** | Workflow `ship` (current or `next`) | Ship linked Foundations and dependent Workflows to `stable` first |
-| **External Review** | Workflow/Foundation `ship`, Bug `resolved` | Implementing agent parks at `in-review`; a human or different agent reviews then ships/resolves (playbook; not a server gate) |
+| **Plan Review** | Workflow/Foundation `draft → ready` | Planning agent parks at draft; a separate Reviewer session runs Plan Review (`mindplan/agent/skills/review-work/`) and advances to ready — playbook + skill; not a server gate |
+| **External Review** | Workflow/Foundation ship, Bug resolved | Implementing agent parks at in-review; a separate Reviewer session runs Implementation review (`mindplan/agent/skills/review-work/`) and ships/resolves — playbook + skill; not a server gate |
 | **Completion Check** | `in-review`, `ship`, Bug `in-review`/`resolved` | Check off all `- [ ]` in `current.mdx` / `next.mdx` |
 | **Computed Journeys** | manual Journey status | Never set — server computes from Workflows |
 | **Computed Stability** | manual `stable`/`unstable` | Never set — use `ship` from `in-review`; Bugs drive `unstable` via `affects` |
@@ -235,7 +369,8 @@ Pre-ship dead ends: `update_node_status(..., "cancelled")` — not `deprecated` 
 - Treat on-disk frontmatter or `mindplan/map.md` as graph authority — use MCP `record` / `export_mindplan_view`
 - Mutate the plan and continue without validating (re-read focus / graph via MCP after mutations)
 - Implement under `draft`/`ready` instead of moving to `in-progress` (or Bug `fixing`) first
-- Treat “ship the plan” / plan-only “ship it” as `ship` / `stable` — that phrase means **`draft` → `ready` only** (see **Shipping a plan**)
+- Treat “ship the plan” / plan-only “ship it” as `ship` / `stable`, or self-advance `draft` → `ready` — that phrase means leave at `draft` and hand off for Plan Review (see **Shipping a plan**)
+- Approve `draft` → `ready` or `in-review` → `ship` / `resolved` in the same session that authored the plan or implementation — follow `mindplan/agent/skills/review-work/` in a separate Reviewer session
 - Check off Atomic Ops without completing the work
 - Create a Workflow when no matching Journey exists — refuse; ask the user to define the Journey first
 - Hand-edit frontmatter `state`, `updated_at`, `shipped_at`, or edge arrays

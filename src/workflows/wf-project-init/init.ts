@@ -121,6 +121,17 @@ export function installPlanProjectSkill(packageRoot: string): InstallSkillResult
   );
 }
 
+/** Copies the review-work skill into mindplan/agent/skills/review-work/ (idempotent). */
+export function installReviewWorkSkill(packageRoot: string): InstallSkillResult {
+  const root = agentTemplateRoot(packageRoot);
+  const destDir = path.join(agentRoot(), "skills", "review-work");
+  return installTemplateDir(
+    path.join(root, "skills", "review-work"),
+    destDir,
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "review-work")
+  );
+}
+
 /** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent). */
 export function installMcpExample(packageRoot: string): InstallAgentRuleResult {
   const root = agentTemplateRoot(packageRoot);

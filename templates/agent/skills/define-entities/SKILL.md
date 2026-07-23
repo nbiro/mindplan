@@ -176,7 +176,7 @@ get_mindplan_graph
 get_node_context({ node_id })
 ```
 
-Confirm edges, folder paths, and territory content before moving to `ready` or beyond.
+Confirm edges, folder paths, and territory content. Leave Foundations/Workflows at `draft` for Plan Review (`mindplan/agent/skills/review-work/`) — do not self-advance to `ready`.
 
 ## Definition order (greenfield project)
 
@@ -187,10 +187,11 @@ Confirm edges, folder paths, and territory content before moving to `ready` or b
 4. link_nodes Workflow → Journey (belongs_to)   ← once per Journey; multiple allowed
 5. link_nodes Workflow → Foundation (depends_on)
 6. Edit each node body (and title/description if needed) via file tools at `current_path` / `next_path`
-7. update_node_status when gates pass (Workflows: ready only after both links)
+7. Stop at `draft` with links + territory complete; hand off for Plan Review
+   (`mindplan/agent/skills/review-work/`) — Reviewer advances to `ready`
 ```
 
-Ship order: Foundations → `stable` before Workflow `ship`.
+Ship order: Foundations → `stable` before Workflow `ship`. Plan Review owns `draft → ready`.
 
 ## Evolving a shipped node
 
@@ -205,7 +206,7 @@ open_next({
 })
 ```
 
-`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Run the build pipeline (`update_node_status` + file-tool prose edits on `next_path`) against the next slot until `in-review`, then `ship`: that promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
+`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Enrich the `next` slot to a full successor contract, then **stop at `draft`** and hand off for Plan Review (`mindplan/agent/skills/review-work/`) — do not self-advance `next` to `ready`. After Plan Review, an execution session runs `in-progress` → `in-review`; Implementation review then `ship`s, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
 
 ## Common mistakes
 

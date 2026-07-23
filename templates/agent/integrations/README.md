@@ -18,6 +18,7 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 - `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
 - `mindplan/agent/skills/define-entities/` — entity creation guide (scaffolding)
 - `mindplan/agent/skills/plan-project/` — plan-only product modeling (no application code)
+- `mindplan/agent/skills/review-work/` — Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / `resolved`)
 - `mindplan/agent/mcp.json.example` — MCP server snippet (adjust the path)
 
 If your agent reads root **`AGENTS.md`**, `init` creates one when missing. Otherwise, point the agent at `mindplan/agent/playbook.md` manually.

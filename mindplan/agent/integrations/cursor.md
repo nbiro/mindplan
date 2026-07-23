@@ -27,6 +27,7 @@ Paste the playbook body below the frontmatter. This rule must apply to every ses
 3. **Skills** — copy for Cursor-native skill discovery:
    - `mindplan/agent/skills/define-entities/` → `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Workflow, Bug nodes)
    - `mindplan/agent/skills/plan-project/` → `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
+   - `mindplan/agent/skills/review-work/` → `.cursor/skills/mindplan-review-work/` (Plan Review `draft → ready` and Implementation review `in-review → ship` / `resolved`)
 
 4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It ignores the derived map and copied agent assets — **not** territory MDX:
 

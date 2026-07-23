@@ -30,7 +30,7 @@ codex mcp add mindplan --env MINDPLAN_ROOT="$(pwd)" -- npx -y mindplan-mcp
 2. **Instructions** — Codex auto-reads root `AGENTS.md`. `mindplan-mcp init` creates one when missing (it points at the playbook). Ensure it includes:
 
 ```markdown
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code).
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for Plan Review and Implementation review.
 ```
 
 3. **Verify** — start Codex and run `/mcp`, or:

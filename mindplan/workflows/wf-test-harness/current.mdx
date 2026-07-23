@@ -2,16 +2,18 @@
 id: wf-test-harness
 type: Workflow
 title: "Test harness"
-description: "Test harness; cancelled transitions + integrity check smoke coverage"
+description: "Smoke test asserts mindplan-mcp init installs the review-work skill."
 state: stable
-shipped_at: 2026-07-20T20:11:40.858Z
+shipped_at: 2026-07-23T19:11:53.587Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-07-20T20:11:40.858Z
+updated_at: 2026-07-23T19:11:53.587Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-mcp-runtime
 ---
+
+
 
 
 
@@ -37,15 +39,33 @@ Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j
 
 - `npm test` runs build + view + search + check + smoke successfully
 - Smoke covers cancel (dependents block, terminal, view hide/`include_retired`)
+- Smoke asserts `mindplan-mcp init` installs `review-work` skill (alongside plan-project)
 - Check harness covers orphan package, dirty ownership, `--for-main`
 
 ## Atomic Ops
 
-- [x] Add `cancelled` smoke cases
-- [x] Add `check.test.mjs` for integrity CLI
-- [x] Wire `check.test.mjs` into `npm test`
-- [x] Keep view/search/init coverage green
+- [x] Smoke: assert init installs `mindplan/agent/skills/review-work/SKILL.md`
+- [x] Keep cancel / check / view / search / init coverage green
 
 ## Attachments
 
 _Wireframes and notes go in `attachments/` / `next-attachments/`._
+
+
+## Review Notes
+
+**Date:** 2026-07-23  
+**Verdict:** Approve — ship  
+**Reviewer:** human-authorized Implementation review after `/code-review` approve + explicit “ship it”
+
+### Evidence
+- All Atomic Ops checked; no unchecked `- [ ]` remain on next slots
+- `installReviewWorkSkill` in `src/workflows/wf-project-init/init.ts`; CLI wires it in `src/foundations/f-mcp-runtime/server.ts` (install + report + upgrade tip)
+- Smoke asserts `mindplan/agent/skills/review-work/SKILL.md` after init (`src/workflows/wf-test-harness/smoke.mjs`)
+- `npm test` passed (build + view/search/check/smoke) during implementation
+- Templates + mirrors: `templates/agent/skills/review-work/`, playbooks, define-entities/plan-project Plan Review handoffs, integrations, README, SPEC
+
+### Fit
+- **Domain:** Docs / init / integrations / MCP runtime / harness — matches each node’s Journey and Foundation role
+- **Dependencies:** Declared `depends_on` match the packages touched; no undeclared coupling introduced
+- **Decomposition:** Ops cover Acceptance Criteria; evolution-scoped checklists remain complete successor contracts
