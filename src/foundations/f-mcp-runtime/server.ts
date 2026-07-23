@@ -56,6 +56,7 @@ import {
   installDefineEntitiesSkill,
   installPlanProjectSkill,
   installReviewWorkSkill,
+  installCodeReviewSkill,
   installMcpExample,
   installProjectConfig,
   installRootAgentsMd,
@@ -1146,6 +1147,7 @@ function runCli() {
       const skill = installDefineEntitiesSkill(packageRoot);
       const planSkill = installPlanProjectSkill(packageRoot);
       const reviewSkill = installReviewWorkSkill(packageRoot);
+      const codeReviewSkill = installCodeReviewSkill(packageRoot);
       const mcpExample = installMcpExample(packageRoot);
       const integrations = installAgentIntegrations(packageRoot);
       const agentsMd = installRootAgentsMd(packageRoot);
@@ -1179,6 +1181,7 @@ function runCli() {
       report("define-entities skill", skill);
       report("plan-project skill", planSkill);
       report("review-work skill", reviewSkill);
+      report("code-review skill", codeReviewSkill);
       report("MCP example", mcpExample);
       report("agent integrations", integrations);
       report("AGENTS.md", agentsMd);

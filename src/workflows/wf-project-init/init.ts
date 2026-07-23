@@ -132,6 +132,17 @@ export function installReviewWorkSkill(packageRoot: string): InstallSkillResult 
   );
 }
 
+/** Copies the thin code-review skill into mindplan/agent/skills/code-review/ (idempotent). */
+export function installCodeReviewSkill(packageRoot: string): InstallSkillResult {
+  const root = agentTemplateRoot(packageRoot);
+  const destDir = path.join(agentRoot(), "skills", "code-review");
+  return installTemplateDir(
+    path.join(root, "skills", "code-review"),
+    destDir,
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "code-review")
+  );
+}
+
 /** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent). */
 export function installMcpExample(packageRoot: string): InstallAgentRuleResult {
   const root = agentTemplateRoot(packageRoot);
@@ -175,6 +186,7 @@ const CURSOR_SKILL_COPIES = [
   { template: "define-entities", dest: "mindplan-define-entities" },
   { template: "plan-project", dest: "mindplan-plan-project" },
   { template: "review-work", dest: "mindplan-review-work" },
+  { template: "code-review", dest: "mindplan-code-review" },
 ] as const;
 
 /** Copies skills into `.cursor/skills/mindplan-*` for Cursor discovery (idempotent).
