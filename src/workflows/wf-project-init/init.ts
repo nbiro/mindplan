@@ -171,6 +171,49 @@ export function installCursorIgnore(packageRoot: string): InstallAgentRuleResult
   return installTemplateFile(templatePath, destPath, ".cursorignore");
 }
 
+const CURSOR_SKILL_COPIES = [
+  { template: "define-entities", dest: "mindplan-define-entities" },
+  { template: "plan-project", dest: "mindplan-plan-project" },
+  { template: "review-work", dest: "mindplan-review-work" },
+] as const;
+
+/** Copies skills into `.cursor/skills/mindplan-*` for Cursor discovery (idempotent).
+ * Sources `templates/agent/skills/…` — not the on-disk `mindplan/agent` copy.
+ */
+export function installCursorSkills(packageRoot: string): InstallSkillResult[] {
+  const root = agentTemplateRoot(packageRoot);
+  return CURSOR_SKILL_COPIES.map(({ template, dest }) =>
+    installTemplateDir(
+      path.join(root, "skills", template),
+      path.join(projectRoot(), ".cursor", "skills", dest),
+      path.posix.join(".cursor", "skills", dest)
+    )
+  );
+}
+
+const CURSOR_RULE_FRONTMATTER =
+  "---\n" +
+  "description: MindPlan SDLC execution process — always-on development workflow, MCP mutations, compiler rules\n" +
+  "alwaysApply: true\n" +
+  "---\n\n";
+
+/** Writes `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body) when missing. */
+export function installCursorRule(packageRoot: string): InstallAgentRuleResult {
+  const destPath = path.join(projectRoot(), ".cursor", "rules", "mindplan.mdc");
+  const projectRelativePath = ".cursor/rules/mindplan.mdc";
+  if (fs.existsSync(destPath)) {
+    return { installed: false, path: projectRelativePath };
+  }
+  const templatePath = path.join(agentTemplateRoot(packageRoot), "playbook.md");
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Agent template not found at ${templatePath}`);
+  }
+  const body = fs.readFileSync(templatePath, "utf-8");
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.writeFileSync(destPath, CURSOR_RULE_FRONTMATTER + body, "utf-8");
+  return { installed: true, path: projectRelativePath };
+}
+
 /** Installs `.cursor/permissions.json` when missing (idempotent).
  * Allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on
  * playbook-required graph mutations (status transitions, create/link, etc.).

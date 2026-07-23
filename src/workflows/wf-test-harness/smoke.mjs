@@ -808,6 +808,24 @@ if (initResult.status !== 0) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install review-work skill");
 } else if (
+  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-define-entities", "SKILL.md")) ||
+  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-plan-project", "SKILL.md")) ||
+  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md"))
+) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install Cursor skills under .cursor/skills/");
+} else if (!fs.existsSync(path.join(initRoot, ".cursor", "rules", "mindplan.mdc"))) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install .cursor/rules/mindplan.mdc");
+} else if (
+  (() => {
+    const rule = fs.readFileSync(path.join(initRoot, ".cursor", "rules", "mindplan.mdc"), "utf-8");
+    return !rule.includes("alwaysApply: true") || !rule.includes("MindPlan Agent Playbook");
+  })()
+) {
+  failures++;
+  console.log("FAIL .cursor/rules/mindplan.mdc must include alwaysApply frontmatter and playbook body");
+} else if (
   (() => {
     const cfgPath = path.join(initRoot, "mindplan", "config.json");
     if (!fs.existsSync(cfgPath)) return true;

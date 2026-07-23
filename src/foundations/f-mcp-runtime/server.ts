@@ -51,6 +51,8 @@ import {
   installAgentIntegrations,
   installCursorIgnore,
   installCursorPermissions,
+  installCursorRule,
+  installCursorSkills,
   installDefineEntitiesSkill,
   installPlanProjectSkill,
   installReviewWorkSkill,
@@ -1148,6 +1150,8 @@ function runCli() {
       const integrations = installAgentIntegrations(packageRoot);
       const agentsMd = installRootAgentsMd(packageRoot);
       const cursorIgnore = installCursorIgnore(packageRoot);
+      const cursorSkills = installCursorSkills(packageRoot);
+      const cursorRule = installCursorRule(packageRoot);
       const cursorPermissions = installCursorPermissions(packageRoot);
 
       if (created) {
@@ -1179,6 +1183,10 @@ function runCli() {
       report("agent integrations", integrations);
       report("AGENTS.md", agentsMd);
       report(".cursorignore", cursorIgnore);
+      for (const cursorSkill of cursorSkills) {
+        report("Cursor skill", cursorSkill);
+      }
+      report("Cursor rule", cursorRule);
       report(".cursor/permissions.json", cursorPermissions);
 
       if (!agentsMd.installed) {

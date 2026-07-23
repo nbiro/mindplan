@@ -2,11 +2,11 @@
 id: wf-test-harness
 type: Workflow
 title: "Test harness"
-description: "Smoke test asserts mindplan-mcp init installs the review-work skill."
+description: "Smoke asserts mindplan-mcp init installs Cursor-native skills under .cursor/skills/ and the playbook rule at .cursor/rules/mindplan.mdc."
 state: stable
-shipped_at: 2026-07-23T19:11:53.587Z
+shipped_at: 2026-07-23T19:59:25.009Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-07-23T19:11:53.587Z
+updated_at: 2026-07-23T19:59:25.009Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -14,15 +14,11 @@ depends_on:
 ---
 
 
-
-
-
-
 # Test harness
 
 ## Purpose
 
-Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers `force_unship` recovery gates and init install of `.cursor/permissions.json`.
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers `force_unship` recovery gates, init install of `.cursor/permissions.json`, and Cursor-native skill/rule paths under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`.
 
 ## Execution Logic
 
@@ -31,41 +27,55 @@ Package: `src/workflows/wf-test-harness/`
 - `view.test.mjs` — Mermaid/DOT projection unit tests
 - `search.test.mjs` — ranking excludes retired nodes
 - `check.test.mjs` — integrity check CLI (orphan, dirty-src, `--for-main`)
-- `smoke.mjs` — MCP stdio end-to-end + init + `force_unship` + `cancelled` gates
+- `smoke.mjs` — MCP stdio end-to-end + init + `force_unship` + `cancelled` gates; after CLI `init` in a temp root, assert:
+  - existing: playbook, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`, integrations, `mindplan/agent/skills/{plan-project,review-work}/SKILL.md`, default layout config
+  - new: `.cursor/skills/mindplan-define-entities/SKILL.md`, `.cursor/skills/mindplan-plan-project/SKILL.md`, `.cursor/skills/mindplan-review-work/SKILL.md`, `.cursor/rules/mindplan.mdc` (contains `alwaysApply: true` and playbook substance)
 
-Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`.
+Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`. Paired with `wf-project-init` + `f-mcp-runtime` nexts for `bug-init-cursor-skills`.
 
 ## Acceptance Criteria
 
 - `npm test` runs build + view + search + check + smoke successfully
 - Smoke covers cancel (dependents block, terminal, view hide/`include_retired`)
-- Smoke asserts `mindplan-mcp init` installs `review-work` skill (alongside plan-project)
+- Smoke asserts `mindplan-mcp init` installs `review-work` skill (alongside plan-project) under `mindplan/agent/skills/`
+- Smoke asserts `mindplan-mcp init` installs Cursor-native `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc`
 - Check harness covers orphan package, dirty ownership, `--for-main`
 
 ## Atomic Ops
 
-- [x] Smoke: assert init installs `mindplan/agent/skills/review-work/SKILL.md`
-- [x] Keep cancel / check / view / search / init coverage green
+- [x] Smoke: assert init installs `.cursor/skills/mindplan-define-entities|plan-project|review-work/SKILL.md`
+- [x] Smoke: assert init installs `.cursor/rules/mindplan.mdc` with alwaysApply frontmatter
+- [x] Keep cancel / check / view / search / prior init coverage green
 
 ## Attachments
 
 _Wireframes and notes go in `attachments/` / `next-attachments/`._
 
-
 ## Review Notes
 
 **Date:** 2026-07-23  
+**Verdict:** Approve — ready  
+**Reviewer:** Plan Review (independent session)
+
+### Findings
+- Domain fit: `belongs_to` `j-territory-sdlc`; `depends_on` `f-mcp-runtime`
+- Buildable: concrete smoke paths for three Cursor skills + `mindplan.mdc` (alwaysApply + playbook substance)
+- Decomposition: regression-only ops; no helper/CLI work on this node
+- Blast radius: none (leaf); pairs with the other two nexts for `bug-init-cursor-skills`
+
+## Review Notes (Implementation)
+
+**Date:** 2026-07-23  
 **Verdict:** Approve — ship  
-**Reviewer:** human-authorized Implementation review after `/code-review` approve + explicit “ship it”
+**Reviewer:** Implementation review (independent session)
 
 ### Evidence
-- All Atomic Ops checked; no unchecked `- [ ]` remain on next slots
-- `installReviewWorkSkill` in `src/workflows/wf-project-init/init.ts`; CLI wires it in `src/foundations/f-mcp-runtime/server.ts` (install + report + upgrade tip)
-- Smoke asserts `mindplan/agent/skills/review-work/SKILL.md` after init (`src/workflows/wf-test-harness/smoke.mjs`)
-- `npm test` passed (build + view/search/check/smoke) during implementation
-- Templates + mirrors: `templates/agent/skills/review-work/`, playbooks, define-entities/plan-project Plan Review handoffs, integrations, README, SPEC
+- [x] Smoke asserts three `.cursor/skills/mindplan-*/SKILL.md` paths after init (`smoke.mjs`)
+- [x] Smoke asserts `.cursor/rules/mindplan.mdc` includes `alwaysApply: true` and playbook title substance
+- [x] Prior init/cancel/check/view/search coverage still green — full `npm test` passed
+- `npm test` passed during this review (ALL CHECKS PASSED)
 
 ### Fit
-- **Domain:** Docs / init / integrations / MCP runtime / harness — matches each node’s Journey and Foundation role
-- **Dependencies:** Declared `depends_on` match the packages touched; no undeclared coupling introduced
-- **Decomposition:** Ops cover Acceptance Criteria; evolution-scoped checklists remain complete successor contracts
+- **Domain:** `j-territory-sdlc` regression harness; `depends_on` `f-mcp-runtime`
+- **Dependencies:** Only harness package + CLI under declared Assembler
+- **Decomposition:** Assert-only; no helper/CLI work here
