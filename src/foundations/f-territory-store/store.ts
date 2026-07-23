@@ -530,19 +530,36 @@ export function writeMarkdown(
   fs.writeFileSync(markdownPath(node, slot), content, "utf-8");
 }
 
+/** Requires a territory MDX file with parseable YAML frontmatter for mutations. */
+function requireMutableFrontmatter(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot
+): { file: string; raw: string; fence: string; inner: string } {
+  const file = markdownPath(node, slot);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `Blocked: ${slot} file not found for node "${node.id}" (expected at ${file}).`
+    );
+  }
+  const raw = fs.readFileSync(file, "utf-8");
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) {
+    throw new Error(
+      `Blocked: ${slot} file for "${node.id}" has no YAML frontmatter; cannot mutate graph state.`
+    );
+  }
+  return { file, raw, fence: match[0], inner: match[1] };
+}
+
 /** Patches server-owned state fields in current.mdx or next.mdx frontmatter. */
 export function patchFrontmatter(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">,
   slot: TerritorySlot = "current",
   opts?: { clearShippedAt?: boolean }
 ): void {
-  const file = markdownPath(node, slot);
-  if (!fs.existsSync(file)) return;
-  const raw = fs.readFileSync(file, "utf-8");
-  const frontmatter = raw.match(/^---\r?\n[\s\S]*?\r?\n---/);
-  if (!frontmatter) return;
+  const { file, raw, fence } = requireMutableFrontmatter(node, slot);
 
-  let patched = frontmatter[0]
+  let patched = fence
     .replace(/^state:.*$/m, `state: ${node.state}`)
     .replace(/^updated_at:.*$/m, `updated_at: ${node.updated_at}`);
 
@@ -558,8 +575,8 @@ export function patchFrontmatter(
     }
   }
 
-  if (patched !== frontmatter[0]) {
-    fs.writeFileSync(file, raw.replace(frontmatter[0], patched), "utf-8");
+  if (patched !== fence) {
+    fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
   }
 }
 
@@ -570,14 +587,14 @@ export function patchFrontmatterEdges(
   updated_at: string,
   slot: TerritorySlot = "current"
 ): void {
-  const file = markdownPath(node, slot);
-  if (!fs.existsSync(file)) return;
-  const raw = fs.readFileSync(file, "utf-8");
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return;
+  const { file, raw, fence, inner: rawInner } = requireMutableFrontmatter(node, slot);
 
   const parsed = parseFrontmatter(raw);
-  if (!parsed) return;
+  if (!parsed) {
+    throw new Error(
+      `Blocked: ${slot} file for "${node.id}" has unreadable YAML frontmatter; cannot mutate edges.`
+    );
+  }
 
   const merged: Record<EdgeField, string[]> = {
     belongs_to: edges.belongs_to ?? parsed.arrays.belongs_to,
@@ -585,13 +602,13 @@ export function patchFrontmatterEdges(
     affects: edges.affects ?? parsed.arrays.affects,
   };
 
-  let inner = stripEdgeFieldLines(match[1]);
+  let inner = stripEdgeFieldLines(rawInner);
   inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${updated_at}`);
 
   const edgeLines = formatEdgeFieldLines(merged);
   const rebuiltInner = edgeLines ? `${inner}\n${edgeLines}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
-  fs.writeFileSync(file, raw.replace(match[0], rebuilt), "utf-8");
+  fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
 }
 
 /** Resolves which territory slot receives belongs_to/depends_on mutations. */
@@ -615,7 +632,11 @@ export function addEdgeToFrontmatter(
   const slot = edgeWriteSlot(node, edgeType);
   const raw = readMarkdown(node, slot);
   const parsed = parseFrontmatter(raw);
-  if (!parsed) return;
+  if (!parsed) {
+    throw new Error(
+      `Blocked: ${slot} file for "${node.id}" has unreadable YAML frontmatter; cannot add ${edgeType} edge.`
+    );
+  }
 
   const field = edgeType as EdgeField;
   const current = [...parsed.arrays[field]];
@@ -634,7 +655,11 @@ export function removeEdgesFromFrontmatter(
     if (slot === "next" && !nextExists(node)) continue;
     const raw = readMarkdown(node, slot);
     const parsed = parseFrontmatter(raw);
-    if (!parsed) continue;
+    if (!parsed) {
+      throw new Error(
+        `Blocked: ${slot} file for "${node.id}" has unreadable YAML frontmatter; cannot remove edges.`
+      );
+    }
     patchFrontmatterEdges(
       node,
       {

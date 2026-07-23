@@ -384,7 +384,7 @@ Rationale: concrete must be poured before the roof is built. A feature cannot go
 
 ### 5.4 Rule 3 — The Completion Check
 
-A Workflow MUST NOT transition to `in-review` or `ship` while its active territory file (`current.mdx`, or `next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `in-review` or `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
+A Workflow or Foundation MUST NOT transition to `in-review` or `ship` while its active territory file (`current.mdx`, or `next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `in-review` or `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
 
 Rationale: review is a gate on *finished* work. The checklist in the Territory is the definition of done.
 
@@ -407,11 +407,11 @@ Edge creation MUST validate:
 - both node ids exist in territory,
 - the edge shape is legal per §2.2,
 - the edge is not a self-link and not a duplicate,
-- `depends_on` edges do not create a cycle (§2.2).
+- `depends_on` edges do not create a cycle (§2.2). Cycle detection MUST use the **effective** `depends_on` set for each node: `next.depends_on` while that node has an open `next.mdx`, otherwise live `depends_on`. Ship from next `in-review` MUST re-assert effective acyclicity before promoting.
 
 ### 5.9 Rule 8 — Dependency Closure
 
-When linking a Workflow to a Journey via `belongs_to`, the server MUST verify that **every** Workflow in the transitive `depends_on` closure of the source Workflow already has a `belongs_to` edge to the same Journey.
+When linking a Workflow to a Journey via `belongs_to`, the server MUST verify that **every** Workflow in the transitive **effective** `depends_on` closure of the source Workflow already has an **effective** `belongs_to` edge to the same Journey (`next.belongs_to` while evolving, otherwise live).
 
 If any dependency Workflow is missing from the Journey, the link MUST be rejected unless the caller passes `link_dependent: true` on `link_nodes`. When `link_dependent` is true, the server MUST automatically add `belongs_to` edges from each missing dependency Workflow to the same Journey before persisting the requested link.
 
@@ -713,7 +713,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes exactly fourteen tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly fifteen tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -1042,7 +1042,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `current.mdx`/`next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node `current.mdx` frontmatter and assemble at runtime per §7; `next.mdx` proposed edges are not live graph edges.
-- [ ] The fourteen-tool MCP surface matches §8 (names, inputs, outputs, errors).
+- [ ] The fifteen-tool MCP surface matches §8 (names, inputs, outputs, errors).
 - [ ] Mutations are deterministic and atomic per §9.
 
 ---

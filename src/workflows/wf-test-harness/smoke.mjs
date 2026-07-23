@@ -741,6 +741,87 @@ await expectOk("cancel f-needed after discard_next", "update_node_status", {
   new_status: "cancelled",
 });
 
+// --- next-slot depends_on cycle + corrupt frontmatter + bug retreat ---
+async function shipWorkflow(id, title) {
+  await expectOk(`create ${id}`, "create_node", {
+    id,
+    type: "Workflow",
+    title,
+    description: `${title} for cycle smoke`,
+  });
+  await expectOk(`link ${id} journey`, "link_nodes", {
+    source_id: id,
+    target_id: "j-ordering",
+    edge_type: "belongs_to",
+  });
+  await expectOk(`link ${id} foundation`, "link_nodes", {
+    source_id: id,
+    target_id: "f-db",
+    edge_type: "depends_on",
+  });
+  await expectOk(`${id} -> ready`, "update_node_status", { node_id: id, new_status: "ready" });
+  await expectOk(`${id} -> in-progress`, "update_node_status", {
+    node_id: id,
+    new_status: "in-progress",
+  });
+  const p = path.join(root, "mindplan", "workflows", id, "current.mdx");
+  fs.writeFileSync(p, fs.readFileSync(p, "utf-8").replaceAll("[ ]", "[x]"));
+  await expectOk(`${id} -> in-review`, "update_node_status", {
+    node_id: id,
+    new_status: "in-review",
+  });
+  await expectOk(`${id} -> ship`, "update_node_status", { node_id: id, new_status: "ship" });
+}
+await shipWorkflow("wf-cyc-a", "Cycle A");
+await shipWorkflow("wf-cyc-b", "Cycle B");
+await expectOk("open_next wf-cyc-a", "open_next", { node_id: "wf-cyc-a" });
+await expectOk("open_next wf-cyc-b", "open_next", { node_id: "wf-cyc-b" });
+await expectOk("link wf-cyc-a next depends_on wf-cyc-b", "link_nodes", {
+  source_id: "wf-cyc-a",
+  target_id: "wf-cyc-b",
+  edge_type: "depends_on",
+});
+await expectBlocked("next depends_on cycle", "link_nodes", {
+  source_id: "wf-cyc-b",
+  target_id: "wf-cyc-a",
+  edge_type: "depends_on",
+});
+await expectOk("discard_next wf-cyc-a", "discard_next", { node_id: "wf-cyc-a" });
+await expectOk("discard_next wf-cyc-b", "discard_next", { node_id: "wf-cyc-b" });
+
+const corruptPath = path.join(root, "mindplan", "workflows", "wf-tips", "current.mdx");
+const corruptRaw = fs.readFileSync(corruptPath, "utf-8");
+fs.writeFileSync(corruptPath, corruptRaw.replace(/^---\r?\n[\s\S]*?\r?\n---/, "# no frontmatter\n"));
+await expectBlocked("corrupt frontmatter status", "update_node_status", {
+  node_id: "wf-tips",
+  new_status: "in-progress",
+});
+fs.writeFileSync(corruptPath, corruptRaw);
+
+await expectOk("create bug-retreat", "create_node", {
+  id: "bug-retreat",
+  type: "Bug",
+  title: "Retreat smoke",
+  description: "covers fixing -> open",
+});
+await expectOk("link bug-retreat affects", "link_nodes", {
+  source_id: "bug-retreat",
+  target_id: "wf-cyc-a",
+  edge_type: "affects",
+});
+await expectOk("bug-retreat -> triaged", "update_node_status", {
+  node_id: "bug-retreat",
+  new_status: "triaged",
+});
+await expectOk("bug-retreat -> fixing", "update_node_status", {
+  node_id: "bug-retreat",
+  new_status: "fixing",
+});
+await expectOk("bug-retreat fixing -> open", "update_node_status", {
+  node_id: "bug-retreat",
+  new_status: "open",
+});
+
 const viewNoRetired = JSON.parse(
   await expectOk("view hides cancelled", "export_mindplan_view", { format: "mermaid" })
 );

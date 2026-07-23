@@ -122,7 +122,7 @@ export const PRODUCTION_TRANSITIONS: Record<ProductionState, readonly ExecutionS
 export const BUG_TRANSITIONS: Record<BugState, readonly BugState[]> = {
   open: ["triaged", "wontfix"],
   triaged: ["fixing", "open"],
-  fixing: ["in-review", "triaged"],
+  fixing: ["in-review", "triaged", "open"],
   "in-review": ["resolved", "fixing"],
   resolved: [],
   wontfix: [],
