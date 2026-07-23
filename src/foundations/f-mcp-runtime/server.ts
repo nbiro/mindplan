@@ -53,6 +53,7 @@ import {
   installCursorPermissions,
   installDefineEntitiesSkill,
   installPlanProjectSkill,
+  installReviewWorkSkill,
   installMcpExample,
   installProjectConfig,
   installRootAgentsMd,
@@ -1142,6 +1143,7 @@ function runCli() {
       const playbook = installAgentPlaybook(packageRoot);
       const skill = installDefineEntitiesSkill(packageRoot);
       const planSkill = installPlanProjectSkill(packageRoot);
+      const reviewSkill = installReviewWorkSkill(packageRoot);
       const mcpExample = installMcpExample(packageRoot);
       const integrations = installAgentIntegrations(packageRoot);
       const agentsMd = installRootAgentsMd(packageRoot);
@@ -1172,6 +1174,7 @@ function runCli() {
       report("agent playbook", playbook);
       report("define-entities skill", skill);
       report("plan-project skill", planSkill);
+      report("review-work skill", reviewSkill);
       report("MCP example", mcpExample);
       report("agent integrations", integrations);
       report("AGENTS.md", agentsMd);
@@ -1180,6 +1183,12 @@ function runCli() {
 
       if (!agentsMd.installed) {
         console.log("Tip: add a reference to mindplan/agent/playbook.md in your existing AGENTS.md.");
+      }
+
+      if (reviewSkill.installed && !playbook.installed) {
+        console.log(
+          "Tip: refresh mindplan/agent/playbook.md (and root AGENTS.md if you use it) from the package templates — Plan Review (`draft → ready`) is now mandatory; the on-disk playbook may still describe the old self-advance path."
+        );
       }
 
       if (projectConfig.config.implementation_packages === "off") {

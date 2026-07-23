@@ -2,16 +2,18 @@
 id: wf-agent-integrations
 type: Workflow
 title: "Agent integrations"
-description: "Per-agent MCP setup guides including territory authority split and review surfaces"
+description: "Integration guides wire review-work skill discovery for Cursor/Claude Code and mention it in shared README."
 state: stable
-shipped_at: 2026-07-19T20:13:36.146Z
+shipped_at: 2026-07-23T19:11:52.213Z
 created_at: 2026-07-15T18:51:38.117Z
-updated_at: 2026-07-19T20:13:36.146Z
+updated_at: 2026-07-23T19:11:52.213Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
   - f-mcp-runtime
 ---
+
+
 
 
 
@@ -27,24 +29,44 @@ Per-agent MCP setup guides so a consumer can wire MindPlan into Cursor, Claude C
 - Installed into `mindplan/agent/integrations/` by `wf-project-init` (`installAgentIntegrations`)
 - Package folder `src/workflows/wf-agent-integrations/` is a pointer (docs-only Workflow)
 
-Each guide covers MCP registration for that agent and where playbook/skill assets land after init. Cursor (and the shared README) document: MCP for graph mutations; host file tools for territory prose; `.cursorignore` still ignores `mindplan/map.md` (and `mindplan/agent/**`) but not `current.mdx`/`next.mdx`; graph tool results include `changed_files`; review prose via native edit UI / Source Control.
+Each guide covers MCP registration for that agent and where playbook/skill assets land after init — including `define-entities`, `plan-project`, and `review-work`. Cursor and Claude Code document copying `review-work` into host skill dirs for discovery. Shared README lists all three skills. Guides also document: MCP for graph mutations; host file tools for territory prose; `.cursorignore` still ignores `mindplan/map.md` (and `mindplan/agent/**`) but not `current.mdx`/`next.mdx`; graph tool results include `changed_files`; review prose via native edit UI / Source Control.
 
 Depends on: `f-mcp-runtime`. Belongs to: `j-agent-onboarding`.
 
 ## Acceptance Criteria
 
 - Guides exist for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP
-- Integrations README indexes the set and notes authority split / `changed_files`
-- Cursor guide documents ignore policy, authority split, and review surfaces
+- Integrations README indexes the set, notes authority split / `changed_files`, and lists `review-work`
+- Cursor and Claude Code guides document copying `review-work` into host skill discovery paths
+- Other guides mention `review-work` alongside plan-project
 - Init installs the guides into the consumer `mindplan/agent/integrations/` tree
 - Covered by init path in smoke tests
 
 ## Atomic Ops
 
-- [x] Update `templates/agent/integrations/cursor.md` for authority split + ignore policy
-- [x] Update `templates/agent/integrations/README.md` shared note
-- [x] Mirror under `mindplan/agent/integrations/` if present
+- [x] Wire `review-work` into Cursor + Claude Code skill copy lists
+- [x] Mention `review-work` in README + remaining agent guides
+- [x] Mirror under `mindplan/agent/integrations/`
 
 ## Attachments
 
 _Wireframes and notes go in `attachments/` / `next-attachments/`._
+
+
+## Review Notes
+
+**Date:** 2026-07-23  
+**Verdict:** Approve — ship  
+**Reviewer:** human-authorized Implementation review after `/code-review` approve + explicit “ship it”
+
+### Evidence
+- All Atomic Ops checked; no unchecked `- [ ]` remain on next slots
+- `installReviewWorkSkill` in `src/workflows/wf-project-init/init.ts`; CLI wires it in `src/foundations/f-mcp-runtime/server.ts` (install + report + upgrade tip)
+- Smoke asserts `mindplan/agent/skills/review-work/SKILL.md` after init (`src/workflows/wf-test-harness/smoke.mjs`)
+- `npm test` passed (build + view/search/check/smoke) during implementation
+- Templates + mirrors: `templates/agent/skills/review-work/`, playbooks, define-entities/plan-project Plan Review handoffs, integrations, README, SPEC
+
+### Fit
+- **Domain:** Docs / init / integrations / MCP runtime / harness — matches each node’s Journey and Foundation role
+- **Dependencies:** Declared `depends_on` match the packages touched; no undeclared coupling introduced
+- **Decomposition:** Ops cover Acceptance Criteria; evolution-scoped checklists remain complete successor contracts

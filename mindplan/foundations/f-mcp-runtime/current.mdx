@@ -2,11 +2,11 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP stdio runtime"
-description: "MCP runtime; mindplan-mcp check CLI (graph, packages, dirty-src, --for-main)"
+description: "CLI init installs review-work skill when scaffolding consumer agent assets."
 state: stable
-shipped_at: 2026-07-20T20:11:40.648Z
+shipped_at: 2026-07-23T19:11:43.698Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-07-20T20:11:40.648Z
+updated_at: 2026-07-23T19:11:43.698Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
@@ -15,17 +15,19 @@ depends_on:
 
 
 
+
+
 # MCP stdio runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including `.cursor/permissions.json`.
+Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including define-entities, plan-project, review-work skills and `.cursor/permissions.json`.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
-- `server.ts` — MCP server registration; CLI (`init`, `view`, `check`, help); wires compiler + store + search + view projection + `wf-integrity-check`; registers read/write tools; auto-persists `mindplan/map.md` after successful graph mutations; `update_node_status` documents `cancelled`
+- `server.ts` — MCP server registration; CLI (`init`, `view`, `check`, help); wires compiler + store + search + view projection + `wf-integrity-check`; registers read/write tools; auto-persists `mindplan/map.md` after successful graph mutations; `update_node_status` documents `cancelled`; `init` calls `installReviewWorkSkill` from `wf-project-init`
 
 Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, view-projection, and `wf-integrity-check` at runtime).
 
@@ -33,17 +35,36 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, vie
 
 - MCP tools listed in Workflow ownership modules are registered and callable over stdio
 - CLI `init` / `view` / `check` / help work against the resolved package root
+- CLI `init` installs the `review-work` skill and reports it
 - `check` and `check --for-main` exit 0/1 with `Blocked:` lines
 - Mutations that succeed refresh the Mermaid map on disk
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Wire `mindplan-mcp check` / `--for-main` / `--base` CLI
-- [x] Document `cancelled` on `update_node_status` schema help
-- [x] Hide cancelled in export tool descriptions (`include_retired`)
-- [x] Verified via `npm test`
+- [x] CLI `init` calls `installReviewWorkSkill` and reports install path
+- [x] Tip when `review-work` is newly installed but an older playbook already exists
+- [x] Verified via smoke init path
 
 ## Attachments
 
 _Schemas and diagrams go in `attachments/` / `next-attachments/`._
+
+
+## Review Notes
+
+**Date:** 2026-07-23  
+**Verdict:** Approve — ship  
+**Reviewer:** human-authorized Implementation review after `/code-review` approve + explicit “ship it”
+
+### Evidence
+- All Atomic Ops checked; no unchecked `- [ ]` remain on next slots
+- `installReviewWorkSkill` in `src/workflows/wf-project-init/init.ts`; CLI wires it in `src/foundations/f-mcp-runtime/server.ts` (install + report + upgrade tip)
+- Smoke asserts `mindplan/agent/skills/review-work/SKILL.md` after init (`src/workflows/wf-test-harness/smoke.mjs`)
+- `npm test` passed (build + view/search/check/smoke) during implementation
+- Templates + mirrors: `templates/agent/skills/review-work/`, playbooks, define-entities/plan-project Plan Review handoffs, integrations, README, SPEC
+
+### Fit
+- **Domain:** Docs / init / integrations / MCP runtime / harness — matches each node’s Journey and Foundation role
+- **Dependencies:** Declared `depends_on` match the packages touched; no undeclared coupling introduced
+- **Decomposition:** Ops cover Acceptance Criteria; evolution-scoped checklists remain complete successor contracts
