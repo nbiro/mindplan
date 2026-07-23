@@ -1,0 +1,44 @@
+---
+id: bug-spec-contract-drift
+type: Bug
+title: "SPEC and README drift from shipped contracts"
+description: "SPEC lists fourteen tools, omits Foundation Completion Check, allows fixing→open while code does not; README omits force_unship; SPEC Status still Unreleased."
+state: resolved
+created_at: 2026-07-23T20:53:53.847Z
+updated_at: 2026-07-23T20:58:24.388Z
+affects:
+  - wf-framework-docs
+  - f-domain-model
+---
+
+# SPEC and README drift from shipped contracts
+
+## Summary
+
+Normative SPEC and consumer README disagree with the shipped runtime (and each other) on tool count, Completion Check scope, Bug retreat transitions, `force_unship` visibility, and release status — so agents and humans following docs hit surprises.
+
+## Repro Steps
+
+1. Grep SPEC for "fourteen tools" and compare to the registered MCP tool list (15).
+2. Read SPEC §5.4 Completion Check vs Foundation `in-review`/`ship` enforcement in `rules.ts`.
+3. Compare SPEC Bug transition table (`fixing` → `open`) vs `BUG_TRANSITIONS` in `types.ts` (`fixing` → `triaged` only).
+4. Read README MCP Tools / Compiler Rules tables — `force_unship` / Rule 10 missing.
+5. Read SPEC Status line — still `Unreleased` while `package.json` is `0.1.0`.
+
+## Expected / Actual
+
+**Expected:** SPEC matches runtime contracts; README lists all mutation tools including `force_unship`; Status reflects release posture (flip to Released when 0.1.0 publishes; until then keep Unreleased but stop claiming fourteen tools and wrong transitions). Domain model transitions match SPEC (or SPEC is corrected deliberately).
+
+**Actual (fixed):** Aligned code Bug retreat `fixing` → `open` with SPEC; documented Foundation Completion Check and effective next-edge cycle/closure in SPEC; tool count fifteen; README includes Rule 10 + `force_unship`. Status remains Unreleased until npm publish (`wf-npm-publish`).
+
+## Fix Checklist
+
+- [x] Root cause identified — SPEC/README not updated with last compiler/tool changes
+- [x] Fix implemented — SPEC errata + README `force_unship`; `BUG_TRANSITIONS.fixing` includes `open`
+- [x] Regression test added — smoke asserts `fixing` → `open` is allowed
+
+## Attachments
+
+_Logs, screenshots, and HAR files go in `attachments/`._
+
+{/* MDX: Affects, ReproSteps, Severity, ExpectedActual — see SPEC.md §6.4. */}

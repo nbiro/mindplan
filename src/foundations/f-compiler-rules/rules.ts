@@ -181,8 +181,56 @@ export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeTyp
   }
 }
 
-/** Returns true if targetId is reachable from startId via existing depends_on edges. */
-function hasDependsOnPath(graph: MindPlanGraph, startId: string, targetId: string): boolean {
+/**
+ * Outgoing depends_on for cycle/closure checks: proposed next.depends_on while
+ * evolving a shipped Foundation/Workflow, otherwise live depends_on.
+ */
+export function effectiveDependsOn(node: MindPlanNode): string[] {
+  if (
+    node.next &&
+    (node.type === "Workflow" || node.type === "Foundation")
+  ) {
+    return node.next.depends_on ?? [];
+  }
+  return node.depends_on ?? [];
+}
+
+/**
+ * Outgoing belongs_to for Dependency Closure: proposed next.belongs_to while
+ * evolving a shipped Workflow, otherwise live belongs_to.
+ */
+export function effectiveBelongsTo(node: MindPlanNode): string[] {
+  if (node.next && node.type === "Workflow") {
+    return node.next.belongs_to ?? [];
+  }
+  return node.belongs_to ?? [];
+}
+
+/** Outgoing depends_on targets for a node id, optionally including a proposed edge. */
+function dependsOnTargets(
+  graph: MindPlanGraph,
+  nodeId: string,
+  proposed?: { source: string; target: string }
+): string[] {
+  const node = graph.nodes.find((n) => n.id === nodeId);
+  const targets = node ? [...effectiveDependsOn(node)] : [];
+  if (
+    proposed &&
+    proposed.source === nodeId &&
+    !targets.includes(proposed.target)
+  ) {
+    targets.push(proposed.target);
+  }
+  return targets;
+}
+
+/** Returns true if targetId is reachable from startId via effective depends_on edges. */
+function hasDependsOnPath(
+  graph: MindPlanGraph,
+  startId: string,
+  targetId: string,
+  proposed?: { source: string; target: string }
+): boolean {
   const visited = new Set<string>();
   const stack = [startId];
   while (stack.length > 0) {
@@ -190,29 +238,69 @@ function hasDependsOnPath(graph: MindPlanGraph, startId: string, targetId: strin
     if (current === targetId) return true;
     if (visited.has(current)) continue;
     visited.add(current);
-    for (const edge of graph.edges) {
-      if (edge.source === current && edge.type === "depends_on") {
-        stack.push(edge.target);
-      }
+    for (const t of dependsOnTargets(graph, current, proposed)) {
+      stack.push(t);
     }
   }
   return false;
 }
 
-/** Rejects depends_on edges that would create a cycle in the dependency graph. */
+/** Rejects depends_on edges that would create a cycle in the effective dependency graph. */
 export function assertAcyclicDependsOn(
   graph: MindPlanGraph,
   sourceId: string,
   targetId: string
 ): void {
-  if (hasDependsOnPath(graph, targetId, sourceId)) {
+  if (sourceId === targetId) {
+    throw blocked(
+      `depends_on edge ${sourceId} -> ${targetId} would create a dependency cycle.`
+    );
+  }
+  const proposed = { source: sourceId, target: targetId };
+  if (hasDependsOnPath(graph, targetId, sourceId, proposed)) {
     throw blocked(
       `depends_on edge ${sourceId} -> ${targetId} would create a dependency cycle.`
     );
   }
 }
 
-/** Transitive closure of Workflow targets reachable via depends_on from workflowId. */
+/**
+ * Rejects a cyclic effective depends_on DAG (live + next.depends_on).
+ * Used as a ship-promote safety net after link-time checks.
+ */
+export function assertEffectiveDependsOnAcyclic(graph: MindPlanGraph): void {
+  const WHITE = 0;
+  const GRAY = 1;
+  const BLACK = 2;
+  const color = new Map<string, number>();
+  for (const n of graph.nodes) color.set(n.id, WHITE);
+
+  function visit(id: string): string | null {
+    color.set(id, GRAY);
+    for (const t of dependsOnTargets(graph, id)) {
+      const c = color.get(t) ?? WHITE;
+      if (c === GRAY) return id;
+      if (c === WHITE) {
+        const hit = visit(t);
+        if (hit) return hit;
+      }
+    }
+    color.set(id, BLACK);
+    return null;
+  }
+
+  for (const n of graph.nodes) {
+    if ((color.get(n.id) ?? WHITE) !== WHITE) continue;
+    const hit = visit(n.id);
+    if (hit) {
+      throw blocked(
+        `depends_on graph contains a cycle involving proposed next edges (detected near "${hit}").`
+      );
+    }
+  }
+}
+
+/** Transitive closure of Workflow targets reachable via effective depends_on from workflowId. */
 export function transitiveWorkflowDependencies(
   graph: MindPlanGraph,
   workflowId: string
@@ -223,9 +311,10 @@ export function transitiveWorkflowDependencies(
 
   while (stack.length > 0) {
     const current = stack.pop()!;
-    for (const edge of graph.edges) {
-      if (edge.source !== current || edge.type !== "depends_on") continue;
-      const target = findNode(graph, edge.target);
+    const currentNode = graph.nodes.find((n) => n.id === current);
+    const depIds = currentNode ? effectiveDependsOn(currentNode) : [];
+    for (const targetId of depIds) {
+      const target = findNode(graph, targetId);
       if (target.type !== "Workflow") continue;
       if (seen.has(target.id)) continue;
       seen.add(target.id);
@@ -237,19 +326,14 @@ export function transitiveWorkflowDependencies(
   return result.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** Dependency workflows missing a belongs_to edge to the given Journey. */
+/** Dependency workflows missing an effective belongs_to edge to the given Journey. */
 export function missingJourneyDependents(
   graph: MindPlanGraph,
   workflow: MindPlanNode,
   journeyId: string
 ): MindPlanNode[] {
   const deps = transitiveWorkflowDependencies(graph, workflow.id);
-  return deps.filter(
-    (dep) =>
-      !graph.edges.some(
-        (e) => e.type === "belongs_to" && e.source === dep.id && e.target === journeyId
-      )
-  );
+  return deps.filter((dep) => !effectiveBelongsTo(dep).includes(journeyId));
 }
 
 /** Validates open_next preconditions (Rule 9). */
@@ -342,6 +426,7 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
       );
     }
     runCompletionCheck(node, SHIP_TRANSITION, "next");
+    assertEffectiveDependsOnAcyclic(graph);
 
     if (node.type === "Workflow") {
       const depIds = node.next.depends_on ?? [];

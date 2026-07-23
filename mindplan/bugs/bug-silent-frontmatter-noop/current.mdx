@@ -1,0 +1,41 @@
+---
+id: bug-silent-frontmatter-noop
+type: Bug
+title: "Frontmatter patches silently no-op"
+description: "patchFrontmatter / addEdgeToFrontmatter return without error when frontmatter is missing or malformed, so mutations can report success while disk is unchanged."
+state: resolved
+created_at: 2026-07-23T20:53:49.128Z
+updated_at: 2026-07-23T20:58:55.428Z
+affects:
+  - f-territory-store
+---
+
+# Frontmatter patches silently no-op
+
+## Summary
+
+Territory mutation helpers return without throwing when the MDX file is missing or frontmatter cannot be parsed, so MCP tools can report `ok` / `changed_files` while the on-disk graph never updates.
+
+## Repro Steps
+
+1. Create a valid Workflow via MCP.
+2. Hand-edit its `current.mdx` to remove the opening `---` frontmatter fence (or corrupt it so parse fails).
+3. Call `update_node_status` or `link_nodes` targeting that node.
+
+## Expected / Actual
+
+**Expected:** Mutation fails with `Blocked:` naming the node/file and that frontmatter is missing or unreadable. Disk and response stay consistent (no success without a write).
+
+**Actual:** `patchFrontmatter` / `patchFrontmatterEdges` / `addEdgeToFrontmatter` in `store.ts` early-`return` when the file is missing or frontmatter parse fails. Callers still return success. In-memory graph can diverge from disk for the rest of the session until reload.
+
+## Fix Checklist
+
+- [x] Root cause identified — silent returns in frontmatter patch helpers
+- [x] Fix implemented — throw `Blocked:` on missing file / unparseable frontmatter for mutation paths
+- [x] Regression test added — corrupt frontmatter → Blocked on status mutation
+
+## Attachments
+
+_Logs, screenshots, and HAR files go in `attachments/`._
+
+{/* MDX: Affects, ReproSteps, Severity, ExpectedActual — see SPEC.md §6.4. */}

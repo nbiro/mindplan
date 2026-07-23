@@ -228,12 +228,13 @@ Every violation throws an error starting with `Blocked: `.
 1. **No Ghost Workflows** — Workflow cannot reach `ready`/`in-progress` without at least one `belongs_to` + at least one `depends_on`.
 2. **No Ghost Bugs** — Bug cannot reach `triaged`/`fixing` without at least one `affects` edge.
 3. **Infrastructure First** — Workflow cannot `ship` unless all linked Foundations and Workflows are `stable`.
-4. **Completion Check** — unchecked `[ ]` in `current.mdx` (or `next.mdx` while evolving) block `in-review`, `ship`, and Bug `in-review`/`resolved`.
+4. **Completion Check** — unchecked `[ ]` in `current.mdx` (or `next.mdx` while evolving) block Workflow/Foundation `in-review`/`ship` and Bug `in-review`/`resolved`.
 5. **Computed Journey States** — from shipped + in-progress Workflows only; Bugs do not affect Journeys.
 6. **Computed Stability** — shipped nodes flip `stable` ↔ `unstable` when open Bugs are linked, unlinked, or resolved.
-7. **Taxonomy Enforcement** — edge creation must use a legal shape/type pairing, no self-links or duplicates, no `depends_on` cycles.
+7. **Taxonomy Enforcement** — edge creation must use a legal shape/type pairing, no self-links or duplicates, no `depends_on` cycles (including proposed `next.depends_on`).
 8. **Dependency Closure** — linking a Workflow to a Journey is rejected when transitively depended-on Workflows are not already in that Journey; pass `link_dependent: true` to auto-link them.
 9. **Next Evolution** — only shipped (`stable`/`unstable`) Foundations/Workflows can `open_next`; blocked while a `next.mdx` is already open. `ship` from next `in-review` promotes `next.mdx` over `current.mdx` in place — same id, no new node.
+10. **Force Unship** — recovery only: reverse a mistaken Foundation/Workflow ship after explicit human confirmation (`confirm: "unship:<id>"`); blocked while `next` is open or shipped dependents exist.
 
 ## MCP Tools
 
@@ -253,6 +254,7 @@ Every violation throws an error starting with `Blocked: `.
 | `link_nodes` | mutation | `belongs_to`, `depends_on` (Foundation or Workflow), or `affects`; optional `link_dependent` for journey closure; writes to `next` slot while one is open, otherwise source-node frontmatter; recomputes Journey + stability |
 | `unlink_nodes` | mutation | Removes edge(s) from source-node frontmatter (current and next); recomputes Journey + stability |
 | `update_node_status` | mutation | Transitions + `ship`; applies to the `next` slot while one is open; ship promotes `next.mdx` over `current.mdx` in place; recomputes stability and Journey states |
+| `force_unship` | mutation | Mistaken-ship recovery: clear `shipped_at` and set a pre-ship state; requires `confirm: "unship:<id>"` after explicit user yes |
 
 ## CLI
 

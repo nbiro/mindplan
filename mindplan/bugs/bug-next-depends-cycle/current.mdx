@@ -1,0 +1,44 @@
+---
+id: bug-next-depends-cycle
+type: Bug
+title: "Next-slot depends_on cycles not rejected"
+description: "assertAcyclicDependsOn and Dependency Closure only walk live edges, so mutual next.depends_on can ship a cyclic graph."
+state: resolved
+created_at: 2026-07-23T20:53:48.606Z
+updated_at: 2026-07-23T20:59:42.452Z
+affects:
+  - f-compiler-rules
+  - wf-mutate-graph
+---
+
+# Next-slot depends_on cycles not rejected
+
+## Summary
+
+While a Foundation/Workflow has an open `next.mdx`, `link_nodes(depends_on)` writes proposed edges onto the next slot, but acyclicity and Dependency Closure only inspect live `current` edges — so two evolving nodes can form a cycle that survives ship.
+
+## Repro Steps
+
+1. Ship two Workflows `wf-a` and `wf-b` (stable), each with valid Journey/Foundation links.
+2. `open_next` on both.
+3. `link_nodes({ source_id: "wf-a", target_id: "wf-b", edge_type: "depends_on" })` (writes to `wf-a` next).
+4. `link_nodes({ source_id: "wf-b", target_id: "wf-a", edge_type: "depends_on" })` (writes to `wf-b` next).
+5. Advance both next slots through `in-review` and `ship`.
+
+## Expected / Actual
+
+**Expected:** Step 4 (or ship of the second node) returns `Blocked:` for a dependency cycle. The graph never contains a `depends_on` cycle after promotion.
+
+**Actual:** Both links succeed; ship promotes cyclic `depends_on` edges. `assertAcyclicDependsOn` in `rules.ts` only walks `graph.edges` (live), and `link_nodes` / `promoteNextSlot` never re-check against proposed next edges. Dependency Closure has the same live-only blind spot.
+
+## Fix Checklist
+
+- [x] Root cause identified — effective edge set (live + next.depends_on / next.belongs_to where relevant) for cycle and closure checks
+- [x] Fix implemented — reject cyclic next links at `link_nodes`; re-assert acyclicity before ship promotes next
+- [x] Regression test added — smoke covers mutual next.depends_on → Blocked
+
+## Attachments
+
+_Logs, screenshots, and HAR files go in `attachments/`._
+
+{/* MDX: Affects, ReproSteps, Severity, ExpectedActual — see SPEC.md §6.4. */}
