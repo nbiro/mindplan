@@ -2,11 +2,11 @@
 id: wf-framework-docs
 type: Workflow
 title: "Framework docs"
-description: "Implementation review prefers host-native code-review (built-in skill/command e.g. Cursor /code-review), then community code-review-skill, else thin MindPlan skill."
+description: "Agent skills and playbooks prescribe use-case-first greenfield definition order: Journey → draft Workflows → derive/link Foundations → Plan Review Foundations then Workflows."
 state: stable
-shipped_at: 2026-07-23T20:38:01.706Z
+shipped_at: 2026-07-24T19:59:00.116Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-07-23T20:58:24.389Z
+updated_at: 2026-07-24T19:59:00.116Z
 belongs_to:
   - j-territory-sdlc
   - j-agent-onboarding
@@ -19,11 +19,13 @@ depends_on:
 
 
 
+
+
 # Framework documentation
 
 ## Purpose
 
-Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, plan-only planning sessions, orchestrated Plan Review and Implementation review loops (independent Reviewer subagent; findings via agent messages — not territory Review Notes), territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), Git delivery (feature-branch startup before any edits), and how to evolve shipped work without destroying the living contract.
+Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, use-case-first greenfield definition order (Journey → draft Workflows → derive/link Foundations → Plan Review Foundations then Workflows), plan-only planning sessions, orchestrated Plan Review and Implementation review loops (independent Reviewer subagent; findings via agent messages — not territory Review Notes), territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), Git delivery (feature-branch startup before any edits), and how to evolve shipped work without destroying the living contract.
 
 ## Execution Logic
 
@@ -42,6 +44,22 @@ Surfaces owned by this Workflow:
 - `README.md` — product framing, taxonomy summary, and brownfield layout-free adoption
 
 Foundation scaffold copy that mentions roles lives in `src/foundations/f-territory-store/store.ts` (touched when role/description conventions change).
+
+### Definition order (use-case-first)
+
+Greenfield entity creation in `define-entities` / `plan-project` and the playbook MUST use use-case-first order — derive Foundations from drafted Workflows, not the reverse:
+
+```
+Journey(s) → Workflow(s) at draft → Foundation(s) derived from those drafts → link_nodes → enrich territory → Plan Review Foundations → Plan Review Workflows → ready
+```
+
+Gate facts agents MUST state with that order:
+
+- Journey MUST exist before `create_node` for a Workflow (unchanged refusal rule).
+- A Workflow MAY sit at `draft` without links; `belongs_to` + `depends_on` are required only to leave `draft` (No Ghost Workflows).
+- Foundation `ready` before Workflow `ready` is sequencing preference; Infrastructure First at Workflow `ship` still requires Foundations `stable`.
+
+Canonical edits land in `templates/agent/`; mirrors (`mindplan/agent/`, `.cursor/skills/mindplan-*`, `AGENTS.md`, `.cursor/rules/mindplan.mdc`) stay byte-identical to the templates / playbook body.
 
 ### Layout modes
 
@@ -62,7 +80,7 @@ Assembler, Infra, Design system, Adapter — documentation groupings only (not N
 
 ### Plan-only sessions
 
-When the user wants to model or restructure the product plan without writing application code, agents follow `mindplan/agent/skills/plan-project/`. Planning sessions finish modeled Foundations/Workflows at `draft` (links, PRD, Atomic Ops complete), then run the **Plan Review loop** (spawn independent Reviewer) until `ready` or escalate — they do not self-advance to `ready`. After `ready`, plan-only sessions stop (no `in-progress` / `src/`). **“Ship the plan”** means finish at `draft` and run that Plan Review loop to `ready` — not build-pipeline `ship`.
+When the user wants to model or restructure the product plan without writing application code, agents follow `mindplan/agent/skills/plan-project/`. Greenfield modeling uses use-case-first definition order (Journey → draft Workflows → derive/link Foundations). Planning sessions finish modeled Foundations/Workflows at `draft` (links, PRD, Atomic Ops complete), then run the **Plan Review loop** (spawn independent Reviewer) — Foundations first, then their dependent Workflows — until `ready` or escalate — they do not self-advance to `ready`. After `ready`, plan-only sessions stop (no `in-progress` / `src/`). **“Ship the plan”** means finish at `draft` and run that Plan Review loop to `ready` — not build-pipeline `ship`.
 
 ### Review gates (orchestrated loop)
 
@@ -138,12 +156,13 @@ Rationale: reduces the risk that concurrent agent sessions both write on `main`.
 - README and SPEC abstract summarize Foundation roles, agent skills (including `review-work`), and brownfield layout-free adoption
 - `mindplan-mcp init` + integration guides install/discover `review-work` (owned with `wf-project-init` / `wf-agent-integrations` / `f-mcp-runtime`); guides keep pointing at playbook Git delivery (no duplicate normative ritual in this Workflow). Integration one-liner wording may lag until a separate `wf-agent-integrations` evolution
 - Active MindPlan Journey/Foundation/Workflow territories describe full repo state (not stubs or latest-change deltas)
+- `define-entities`, `plan-project`, and playbooks prescribe use-case-first greenfield definition order (Journey → draft Workflows → derive/link Foundations → Plan Review Foundations then Workflows), including gate facts (draft Workflows need no links; Foundations `ready` first; Infra First at ship); `.cursor` skill copies and `mindplan.mdc` stay in sync
 
 ## Atomic Ops
 
-- [x] Update `review-work` Procedure B (+ mirrors): host-native code-review first (built-in skill/command), then community skill, else thin MindPlan skill; parent spawn may name the host affordance
-- [x] Update thin `code-review` skill (+ mirrors): same discovery order; document that slash commands are followed by criteria when UI invoke is unavailable
-- [x] Playbooks (+ mirrors): Implementation code-review section uses host-native-first wording
+- [x] Rewrite Definition order in `templates/agent/skills/define-entities/SKILL.md` (+ mirrors) to use-case-first; re-sequence greenfield walkthrough in `examples.md`
+- [x] Update `templates/agent/skills/plan-project/SKILL.md` (+ mirrors): when-to-use row, step-3 list, Greenfield order block, Plan Review Foundations-before-Workflows in step 6
+- [x] Add Definition order block to `templates/agent/playbook.md` (+ `AGENTS.md` / `mindplan/agent` / `.cursor/rules/mindplan.mdc` mirrors) and Build pipeline pre-flight pointer
 - [x] Keep this next.mdx a full successor contract (not a changelog)
 
 
