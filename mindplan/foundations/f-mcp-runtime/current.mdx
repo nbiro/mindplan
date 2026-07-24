@@ -2,11 +2,11 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP stdio runtime"
-description: "CLI init calls/reports installCodeReviewSkill alongside review-work and Cursor skill copies including mindplan-code-review."
+description: "CLI init accepts -f/--force and passes it to install helpers so upgrades overwrite agent assets."
 state: stable
-shipped_at: 2026-07-23T20:27:38.652Z
+shipped_at: 2026-07-24T20:12:13.052Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-07-23T20:27:38.652Z
+updated_at: 2026-07-24T20:12:13.052Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
@@ -15,21 +15,25 @@ depends_on:
 
 
 
+
+
 # MCP stdio runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including define-entities, plan-project, review-work, and thin code-review skills under `mindplan/agent/`, Cursor-native copies under `.cursor/skills/` (including `mindplan-code-review`) and `.cursor/rules/mindplan.mdc`, and `.cursor/permissions.json`.
+Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Workflows and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including define-entities, plan-project, review-work, and thin code-review skills under `mindplan/agent/`, Cursor-native copies under `.cursor/skills/` (including `mindplan-code-review`) and `.cursor/rules/mindplan.mdc`, and `.cursor/permissions.json`. Supports `init -f` / `--force` so package upgrades can reinstall those assets over existing copies.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
 - `server.ts` — MCP server registration; CLI (`init`, `view`, `check`, help); wires compiler + store + search + view projection + `wf-integrity-check`; registers read/write tools; auto-persists `mindplan/map.md` after successful graph mutations; `update_node_status` documents `cancelled`; `init` calls install helpers from `wf-project-init`, including:
-  - existing: playbook, define-entities / plan-project / review-work / code-review (mindplan/agent), MCP example, integrations, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`
-  - new: `installCursorSkills`, `installCursorRule` — report each Cursor skill path and `mindplan.mdc` like other install results
+  - playbook, define-entities / plan-project / review-work / code-review (mindplan/agent), MCP example, integrations, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`
+  - `installCursorSkills`, `installCursorRule` — report each Cursor skill path and `mindplan.mdc` like other install results
+  - Init argv parser accepts `--layout free|prescribed`, `-f`, and `--force`. `-f` / `--force` set `force: true` on all agent-asset installers. `--layout` still independently forces config rewrite. Help text documents both.
+  - Note: `view`/`export` already uses `-f` as shorthand for `--format`; that is a different command — init's `-f` means force overwrite only under `init`.
 
-Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, view-projection, and `wf-integrity-check` at runtime). Helper implementations live in `wf-project-init` (paired `next`); this Foundation only imports, calls, and reports them. Smoke coverage for Cursor paths: `wf-test-harness` (paired `next`). Fixes: `bug-init-cursor-skills`.
+Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, view-projection, and `wf-integrity-check` at runtime). Helper implementations live in `wf-project-init` (paired `next`); this Foundation only imports, calls, and reports them. Smoke coverage for force overwrite: `wf-test-harness` (paired `next`).
 
 ## Acceptance Criteria
 
@@ -37,47 +41,18 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, vie
 - CLI `init` / `view` / `check` / help work against the resolved package root
 - CLI `init` installs and reports `review-work` and thin `code-review` skills (mindplan/agent + Cursor `mindplan-code-review`)
 - CLI `init` calls `installCursorSkills` and `installCursorRule` and reports their install paths (`.cursor/skills/mindplan-*`, `.cursor/rules/mindplan.mdc`)
+- CLI `init -f` and `init --force` pass `{ force: true }` to every agent-asset installer; help documents `-f` / `--force`
+- Bare `init` (no force) remains skip-if-exists; `--layout` still overwrites config independently of `-f`
 - `check` and `check --for-main` exit 0/1 with `Blocked:` lines
 - Mutations that succeed refresh the Mermaid map on disk
-- Verified via `npm test` (Cursor-path asserts owned by `wf-test-harness` next)
+- Verified via `npm test` (force-overwrite asserts owned by `wf-test-harness` next)
 
 ## Atomic Ops
 
-- [x] Wire `installCodeReviewSkill` into CLI init; report path like review-work
-- [x] Ensure Cursor skill install report includes `mindplan-code-review` (via existing `installCursorSkills` loop once project-init adds the copy)
-- [x] Keep this next.mdx a full successor contract (not a changelog)
-
+- [x] Parse `-f` / `--force` in init argv; reject unknown options with a clear `Blocked:` message that mentions `--layout` and `-f|--force`
+- [x] Pass `{ force: true }` to all agent-asset install helpers when force is set; keep `installProjectConfig` force tied to `--layout` only
+- [x] Document `-f` / `--force` in CLI help under Init options
 
 ## Attachments
 
 _Schemas and diagrams go in `attachments/` / `next-attachments/`._
-
-## Review Notes
-
-**Date:** 2026-07-23  
-**Verdict:** Approve — ready  
-**Reviewer:** Plan Review (independent session)
-
-### Findings
-- Role: Assembler — CLI import/call/report only; helpers remain in `wf-project-init`
-- Buildable AC/ops for Cursor skill + `mindplan.mdc` reporting; keeps review-work tip
-- Dependencies: `f-compiler-rules`, `f-territory-store` unchanged and sufficient for this Foundation
-- Decomposition matches prior review-work init split; no smoke ownership leak
-- Blast radius: many Workflow dependents; journeys at risk include `j-agent-onboarding`, `j-territory-sdlc` (CLI surface change is additive/idempotent)
-
-## Review Notes (Implementation)
-
-**Date:** 2026-07-23  
-**Verdict:** Approve — ship  
-**Reviewer:** Implementation review (independent session)
-
-### Evidence
-- [x] Import/call — `src/foundations/f-mcp-runtime/server.ts` imports `installCursorSkills` + `installCursorRule` and calls them in CLI `init`
-- [x] Report — loops Cursor skill results + reports Cursor rule (installed vs already present)
-- [x] review-work install/report + upgrade tip unchanged below the new reports
-- `npm test` passed during this review
-
-### Fit
-- **Domain:** Assembler — call/report only; helpers remain in `wf-project-init`
-- **Dependencies:** `f-compiler-rules`, `f-territory-store`; no new undeclared coupling
-- **Decomposition:** Matches paired plan; no smoke ownership on this node

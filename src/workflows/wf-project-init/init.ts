@@ -24,6 +24,11 @@ export type InitResult = {
   created: boolean;
 };
 
+export type InstallOptions = {
+  /** When true, overwrite existing agent assets from templates. */
+  force?: boolean;
+};
+
 export type InstallAgentRuleResult = {
   installed: boolean;
   path: string;
@@ -60,9 +65,11 @@ function agentTemplateRoot(packageRoot: string): string {
 function installTemplateFile(
   templatePath: string,
   destPath: string,
-  projectRelativePath: string
+  projectRelativePath: string,
+  options: InstallOptions = {}
 ): InstallAgentRuleResult {
-  if (fs.existsSync(destPath)) {
+  const force = options.force === true;
+  if (fs.existsSync(destPath) && !force) {
     return { installed: false, path: projectRelativePath };
   }
   if (!fs.existsSync(templatePath)) {
@@ -76,110 +83,149 @@ function installTemplateFile(
 function installTemplateDir(
   templateDir: string,
   destDir: string,
-  projectRelativePath: string
+  projectRelativePath: string,
+  options: InstallOptions = {}
 ): InstallSkillResult {
-  if (fs.existsSync(destDir)) {
+  const force = options.force === true;
+  if (fs.existsSync(destDir) && !force) {
     return { installed: false, path: projectRelativePath };
   }
   if (!fs.existsSync(templateDir)) {
     throw new Error(`Agent template not found at ${templateDir}`);
   }
+  if (fs.existsSync(destDir) && force) {
+    fs.rmSync(destDir, { recursive: true, force: true });
+  }
   copyDirRecursive(templateDir, destDir);
   return { installed: true, path: projectRelativePath };
 }
 
-/** Copies the bundled playbook into mindplan/agent/playbook.md (idempotent). */
-export function installAgentPlaybook(packageRoot: string): InstallAgentRuleResult {
+/** Copies the bundled playbook into mindplan/agent/playbook.md (idempotent unless force). */
+export function installAgentPlaybook(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallAgentRuleResult {
   const root = agentTemplateRoot(packageRoot);
   const destPath = path.join(agentRoot(), "playbook.md");
   return installTemplateFile(
     path.join(root, "playbook.md"),
     destPath,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "playbook.md")
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "playbook.md"),
+    options
   );
 }
 
-/** Copies the define-entities skill into mindplan/agent/skills/define-entities/ (idempotent). */
-export function installDefineEntitiesSkill(packageRoot: string): InstallSkillResult {
+/** Copies the define-entities skill into mindplan/agent/skills/define-entities/ (idempotent unless force). */
+export function installDefineEntitiesSkill(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallSkillResult {
   const root = agentTemplateRoot(packageRoot);
   const destDir = path.join(agentRoot(), "skills", "define-entities");
   return installTemplateDir(
     path.join(root, "skills", "define-entities"),
     destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "define-entities")
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "define-entities"),
+    options
   );
 }
 
-/** Copies the plan-project skill into mindplan/agent/skills/plan-project/ (idempotent). */
-export function installPlanProjectSkill(packageRoot: string): InstallSkillResult {
+/** Copies the plan-project skill into mindplan/agent/skills/plan-project/ (idempotent unless force). */
+export function installPlanProjectSkill(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallSkillResult {
   const root = agentTemplateRoot(packageRoot);
   const destDir = path.join(agentRoot(), "skills", "plan-project");
   return installTemplateDir(
     path.join(root, "skills", "plan-project"),
     destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "plan-project")
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "plan-project"),
+    options
   );
 }
 
-/** Copies the review-work skill into mindplan/agent/skills/review-work/ (idempotent). */
-export function installReviewWorkSkill(packageRoot: string): InstallSkillResult {
+/** Copies the review-work skill into mindplan/agent/skills/review-work/ (idempotent unless force). */
+export function installReviewWorkSkill(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallSkillResult {
   const root = agentTemplateRoot(packageRoot);
   const destDir = path.join(agentRoot(), "skills", "review-work");
   return installTemplateDir(
     path.join(root, "skills", "review-work"),
     destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "review-work")
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "review-work"),
+    options
   );
 }
 
-/** Copies the thin code-review skill into mindplan/agent/skills/code-review/ (idempotent). */
-export function installCodeReviewSkill(packageRoot: string): InstallSkillResult {
+/** Copies the thin code-review skill into mindplan/agent/skills/code-review/ (idempotent unless force). */
+export function installCodeReviewSkill(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallSkillResult {
   const root = agentTemplateRoot(packageRoot);
   const destDir = path.join(agentRoot(), "skills", "code-review");
   return installTemplateDir(
     path.join(root, "skills", "code-review"),
     destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "code-review")
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "code-review"),
+    options
   );
 }
 
-/** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent). */
-export function installMcpExample(packageRoot: string): InstallAgentRuleResult {
+/** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent unless force). */
+export function installMcpExample(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallAgentRuleResult {
   const root = agentTemplateRoot(packageRoot);
   const destPath = path.join(agentRoot(), "mcp.json.example");
   return installTemplateFile(
     path.join(root, "mcp.json.example"),
     destPath,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "mcp.json.example")
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "mcp.json.example"),
+    options
   );
 }
 
-/** Copies per-agent integration guides into mindplan/agent/integrations/ (idempotent). */
-export function installAgentIntegrations(packageRoot: string): InstallSkillResult {
+/** Copies per-agent integration guides into mindplan/agent/integrations/ (idempotent unless force). */
+export function installAgentIntegrations(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallSkillResult {
   const root = agentTemplateRoot(packageRoot);
   const destDir = path.join(agentRoot(), "integrations");
   return installTemplateDir(
     path.join(root, "integrations"),
     destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "integrations")
+    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "integrations"),
+    options
   );
 }
 
-/** Creates root AGENTS.md from the playbook when missing (idempotent). */
-export function installRootAgentsMd(packageRoot: string): InstallAgentRuleResult {
+/** Creates root AGENTS.md from the playbook when missing (idempotent unless force). */
+export function installRootAgentsMd(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallAgentRuleResult {
   const templatePath = path.join(agentTemplateRoot(packageRoot), "playbook.md");
   const destPath = path.join(projectRoot(), "AGENTS.md");
-  return installTemplateFile(templatePath, destPath, "AGENTS.md");
+  return installTemplateFile(templatePath, destPath, "AGENTS.md", options);
 }
 
-/** Installs `.cursorignore` at project root when missing (idempotent).
+/** Installs `.cursorignore` at project root when missing (idempotent unless force).
  * Template ignores `mindplan/map.md` + `mindplan/agent/**` only —
  * territory `current.mdx` / `next.mdx` stay editable via host file tools.
  */
-export function installCursorIgnore(packageRoot: string): InstallAgentRuleResult {
+export function installCursorIgnore(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallAgentRuleResult {
   const templatePath = path.join(agentTemplateRoot(packageRoot), "cursorignore");
   const destPath = path.join(projectRoot(), ".cursorignore");
-  return installTemplateFile(templatePath, destPath, ".cursorignore");
+  return installTemplateFile(templatePath, destPath, ".cursorignore", options);
 }
 
 const CURSOR_SKILL_COPIES = [
@@ -189,16 +235,20 @@ const CURSOR_SKILL_COPIES = [
   { template: "code-review", dest: "mindplan-code-review" },
 ] as const;
 
-/** Copies skills into `.cursor/skills/mindplan-*` for Cursor discovery (idempotent).
+/** Copies skills into `.cursor/skills/mindplan-*` for Cursor discovery (idempotent unless force).
  * Sources `templates/agent/skills/…` — not the on-disk `mindplan/agent` copy.
  */
-export function installCursorSkills(packageRoot: string): InstallSkillResult[] {
+export function installCursorSkills(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallSkillResult[] {
   const root = agentTemplateRoot(packageRoot);
   return CURSOR_SKILL_COPIES.map(({ template, dest }) =>
     installTemplateDir(
       path.join(root, "skills", template),
       path.join(projectRoot(), ".cursor", "skills", dest),
-      path.posix.join(".cursor", "skills", dest)
+      path.posix.join(".cursor", "skills", dest),
+      options
     )
   );
 }
@@ -209,11 +259,15 @@ const CURSOR_RULE_FRONTMATTER =
   "alwaysApply: true\n" +
   "---\n\n";
 
-/** Writes `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body) when missing. */
-export function installCursorRule(packageRoot: string): InstallAgentRuleResult {
+/** Writes `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body) when missing (or force). */
+export function installCursorRule(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallAgentRuleResult {
   const destPath = path.join(projectRoot(), ".cursor", "rules", "mindplan.mdc");
   const projectRelativePath = ".cursor/rules/mindplan.mdc";
-  if (fs.existsSync(destPath)) {
+  const force = options.force === true;
+  if (fs.existsSync(destPath) && !force) {
     return { installed: false, path: projectRelativePath };
   }
   const templatePath = path.join(agentTemplateRoot(packageRoot), "playbook.md");
@@ -226,18 +280,22 @@ export function installCursorRule(packageRoot: string): InstallAgentRuleResult {
   return { installed: true, path: projectRelativePath };
 }
 
-/** Installs `.cursor/permissions.json` when missing (idempotent).
+/** Installs `.cursor/permissions.json` when missing (idempotent unless force).
  * Allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on
  * playbook-required graph mutations (status transitions, create/link, etc.).
  */
-export function installCursorPermissions(packageRoot: string): InstallAgentRuleResult {
+export function installCursorPermissions(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallAgentRuleResult {
   const templatePath = path.join(agentTemplateRoot(packageRoot), "permissions.json");
   const destPath = path.join(projectRoot(), ".cursor", "permissions.json");
-  return installTemplateFile(templatePath, destPath, ".cursor/permissions.json");
+  return installTemplateFile(templatePath, destPath, ".cursor/permissions.json", options);
 }
 
 /** Installs mindplan/config.json for prescribed or layout-free adoption.
  * Creates when missing. Overwrites only when `force` is true (explicit --layout).
+ * Agent-asset `-f` does not control this helper.
  */
 export function installProjectConfig(
   layout: InitLayout = "prescribed",

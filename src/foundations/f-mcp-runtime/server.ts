@@ -1093,9 +1093,15 @@ Options:
   }
 }
 
-function parseInitLayout(argv: string[]): { layout: InitLayout; forceLayout: boolean; error?: string } {
+function parseInitArgs(argv: string[]): {
+  layout: InitLayout;
+  forceLayout: boolean;
+  force: boolean;
+  error?: string;
+} {
   let layout: InitLayout = "prescribed";
   let forceLayout = false;
+  let force = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--layout") {
@@ -1104,6 +1110,7 @@ function parseInitLayout(argv: string[]): { layout: InitLayout; forceLayout: boo
         return {
           layout: "prescribed",
           forceLayout: false,
+          force: false,
           error: `Blocked: --layout must be "free" or "prescribed" (got ${value ?? "(missing)"}).`,
         };
       }
@@ -1115,46 +1122,51 @@ function parseInitLayout(argv: string[]): { layout: InitLayout; forceLayout: boo
         return {
           layout: "prescribed",
           forceLayout: false,
+          force: false,
           error: `Blocked: --layout must be "free" or "prescribed" (got ${value}).`,
         };
       }
       layout = value;
       forceLayout = true;
+    } else if (arg === "-f" || arg === "--force") {
+      force = true;
     } else {
       return {
         layout: "prescribed",
         forceLayout: false,
-        error: `Blocked: unknown init option "${arg}". Use --layout free|prescribed.`,
+        force: false,
+        error: `Blocked: unknown init option "${arg}". Use --layout free|prescribed and/or -f|--force.`,
       };
     }
   }
-  return { layout, forceLayout };
+  return { layout, forceLayout, force };
 }
 
 function runCli() {
   const cmd = process.argv[2];
   if (cmd === "init") {
     try {
-      const parsed = parseInitLayout(process.argv.slice(3));
+      const parsed = parseInitArgs(process.argv.slice(3));
       if (parsed.error) {
         console.error(parsed.error);
         process.exit(1);
       }
       const packageRoot = resolvePackageRoot(import.meta.url);
+      const installOpts = { force: parsed.force };
       const { root, created } = initProject();
       const projectConfig = installProjectConfig(parsed.layout, { force: parsed.forceLayout });
-      const playbook = installAgentPlaybook(packageRoot);
-      const skill = installDefineEntitiesSkill(packageRoot);
-      const planSkill = installPlanProjectSkill(packageRoot);
-      const reviewSkill = installReviewWorkSkill(packageRoot);
-      const codeReviewSkill = installCodeReviewSkill(packageRoot);
-      const mcpExample = installMcpExample(packageRoot);
-      const integrations = installAgentIntegrations(packageRoot);
-      const agentsMd = installRootAgentsMd(packageRoot);
-      const cursorIgnore = installCursorIgnore(packageRoot);
-      const cursorSkills = installCursorSkills(packageRoot);
-      const cursorRule = installCursorRule(packageRoot);
-      const cursorPermissions = installCursorPermissions(packageRoot);
+      const playbook = installAgentPlaybook(packageRoot, installOpts);
+      const skill = installDefineEntitiesSkill(packageRoot, installOpts);
+      const planSkill = installPlanProjectSkill(packageRoot, installOpts);
+      const reviewSkill = installReviewWorkSkill(packageRoot, installOpts);
+      const codeReviewSkill = installCodeReviewSkill(packageRoot, installOpts);
+      const mcpExample = installMcpExample(packageRoot, installOpts);
+      const integrations = installAgentIntegrations(packageRoot, installOpts);
+      const agentsMd = installRootAgentsMd(packageRoot, installOpts);
+      const cursorIgnore = installCursorIgnore(packageRoot, installOpts);
+      const cursorSkills = installCursorSkills(packageRoot, installOpts);
+      const cursorRule = installCursorRule(packageRoot, installOpts);
+      const cursorPermissions = installCursorPermissions(packageRoot, installOpts);
 
       if (created) {
         console.log(`Initialized MindPlan at ${root}`);
@@ -1246,6 +1258,9 @@ Init options:
   --layout free|prescribed  Write mindplan/config.json (free = off packages; prescribed = required).
                             With --layout, always overwrites existing config. Without --layout,
                             creates config only if missing (default prescribed / required).
+  -f, --force               Overwrite existing agent assets (playbook, skills, Cursor copies,
+                            AGENTS.md, .cursorignore, permissions, etc.) from package templates.
+                            Does not change layout config unless --layout is also passed.
 
 View options:
   --format, -f mermaid|dot  Diagram format (default: mermaid)
