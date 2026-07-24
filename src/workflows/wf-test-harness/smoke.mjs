@@ -975,6 +975,81 @@ if (prescribeAfterFree.status !== 0) {
   } else console.log("ok   --layout prescribed overwrites free config");
 }
 
+// init -f / --force: overwrite mutated agent assets; preserve layout-free config without --layout
+{
+  const forceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-force-"));
+  const forceEnv = { ...process.env, MINDPLAN_ROOT: forceRoot };
+  const first = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
+    cwd: forceRoot,
+    env: forceEnv,
+    encoding: "utf-8",
+  });
+  if (first.status !== 0) {
+    failures++;
+    console.log(`FAIL init --layout free (force suite) exit ${first.status}: ${first.stderr || first.stdout}`);
+  } else {
+    const playbookPath = path.join(forceRoot, "mindplan", "agent", "playbook.md");
+    const marker = "FORCE_OVERWRITE_MARKER_DO_NOT_SHIP";
+    fs.writeFileSync(playbookPath, marker, "utf-8");
+
+    const bare = spawnSync(process.execPath, [serverEntry, "init"], {
+      cwd: forceRoot,
+      env: forceEnv,
+      encoding: "utf-8",
+    });
+    if (bare.status !== 0) {
+      failures++;
+      console.log(`FAIL bare init (force suite) exit ${bare.status}: ${bare.stderr || bare.stdout}`);
+    } else if (fs.readFileSync(playbookPath, "utf-8") !== marker) {
+      failures++;
+      console.log("FAIL bare init must not overwrite existing playbook");
+    } else {
+      console.log("ok   bare init leaves mutated playbook");
+    }
+
+    const forced = spawnSync(process.execPath, [serverEntry, "init", "-f"], {
+      cwd: forceRoot,
+      env: forceEnv,
+      encoding: "utf-8",
+    });
+    if (forced.status !== 0) {
+      failures++;
+      console.log(`FAIL init -f exit ${forced.status}: ${forced.stderr || forced.stdout}`);
+    } else {
+      const restored = fs.readFileSync(playbookPath, "utf-8");
+      if (restored === marker || !restored.includes("MindPlan Agent Playbook")) {
+        failures++;
+        console.log("FAIL init -f must restore playbook from package templates");
+      } else {
+        console.log("ok   init -f overwrites mutated playbook from templates");
+      }
+      const cfg = JSON.parse(fs.readFileSync(path.join(forceRoot, "mindplan", "config.json"), "utf-8"));
+      if (cfg.implementation_packages !== "off") {
+        failures++;
+        console.log(`FAIL init -f must preserve layout-free config: ${JSON.stringify(cfg)}`);
+      } else {
+        console.log("ok   init -f preserves existing layout-free config");
+      }
+    }
+
+    fs.writeFileSync(playbookPath, marker, "utf-8");
+    const forcedLong = spawnSync(process.execPath, [serverEntry, "init", "--force"], {
+      cwd: forceRoot,
+      env: forceEnv,
+      encoding: "utf-8",
+    });
+    if (forcedLong.status !== 0) {
+      failures++;
+      console.log(`FAIL init --force exit ${forcedLong.status}: ${forcedLong.stderr || forcedLong.stdout}`);
+    } else if (fs.readFileSync(playbookPath, "utf-8") === marker) {
+      failures++;
+      console.log("FAIL init --force must overwrite mutated playbook");
+    } else {
+      console.log("ok   init --force overwrites mutated playbook");
+    }
+  }
+}
+
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();
 process.exit(failures === 0 ? 0 : 1);

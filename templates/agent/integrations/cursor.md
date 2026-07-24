@@ -13,7 +13,7 @@
 }
 ```
 
-2. **Playbook (always apply)** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body) when missing. If that file was deleted, recreate it from `mindplan/agent/playbook.md` with:
+2. **Playbook (always apply)** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body) when missing. After upgrading MindPlan, re-run `mindplan-mcp init -f` (or `--force`) to refresh playbook/skills/Cursor copies from the package templates. If that file was deleted without force, recreate it from `mindplan/agent/playbook.md` with:
 
 ```yaml
 ---
@@ -29,7 +29,7 @@ Paste the playbook body below the frontmatter. This rule must apply to every ses
    - `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
    - `.cursor/skills/mindplan-review-work/` (Plan Review `draft → ready` and Implementation review `in-review → ship` / `resolved`)
 
-   Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories or re-run init only if the `.cursor/skills/` trees were removed.
+   Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories, or re-run `mindplan-mcp init -f` after a MindPlan upgrade / if the `.cursor/skills/` trees were removed.
 
 4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It ignores the derived map and copied agent assets under `mindplan/agent/**` — **not** territory MDX — because Cursor-facing copies live under `.cursor/rules` and `.cursor/skills`:
 

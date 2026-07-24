@@ -2,11 +2,11 @@
 id: wf-test-harness
 type: Workflow
 title: "Test harness"
-description: "Smoke asserts init installs mindplan/agent/skills/code-review and .cursor/skills/mindplan-code-review."
+description: "Smoke asserts init -f/--force overwrites existing agent template files."
 state: stable
-shipped_at: 2026-07-23T20:28:43.382Z
+shipped_at: 2026-07-24T20:12:12.345Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-07-23T20:28:43.382Z
+updated_at: 2026-07-24T20:12:12.345Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,11 +16,13 @@ depends_on:
 
 
 
+
+
 # Test harness
 
 ## Purpose
 
-Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers `force_unship` recovery gates, init install of `.cursor/permissions.json`, and Cursor-native skill/rule paths under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`.
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers `force_unship` recovery gates, init install of `.cursor/permissions.json`, Cursor-native skill/rule paths under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`, and `init -f` / `--force` overwriting previously installed agent assets after an upgrade.
 
 ## Execution Logic
 
@@ -32,8 +34,9 @@ Package: `src/workflows/wf-test-harness/`
 - `smoke.mjs` — MCP stdio end-to-end + init + `force_unship` + `cancelled` gates; after CLI `init` in a temp root, assert:
   - existing: playbook, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`, integrations, `mindplan/agent/skills/{plan-project,review-work,code-review}/SKILL.md`, default layout config
   - Cursor: `.cursor/skills/mindplan-define-entities|plan-project|review-work|code-review/SKILL.md`, `.cursor/rules/mindplan.mdc`
+  - Force overwrite: after a successful init, mutate a known installed file (e.g. playbook and/or a Cursor skill), run `init -f` (and/or `--force`), assert the file content is restored from the package template; assert bare `init` (no `-f`) does **not** restore a mutated file; assert `-f` alone does not flip an existing layout-free `config.json`
 
-Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`. Paired with `wf-project-init` + `f-mcp-runtime` nexts for `bug-init-cursor-skills`.
+Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`. Paired with `wf-project-init` + `f-mcp-runtime` nexts for init force overwrite.
 
 ## Acceptance Criteria
 
@@ -41,44 +44,16 @@ Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j
 - Smoke covers cancel (dependents block, terminal, view hide/`include_retired`)
 - Smoke asserts `mindplan-mcp init` installs `review-work` and thin `code-review` under `mindplan/agent/skills/` and `.cursor/skills/mindplan-code-review/`
 - Smoke asserts `mindplan-mcp init` installs Cursor-native `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc`
+- Smoke asserts `mindplan-mcp init -f` overwrites a previously mutated agent asset from templates; bare re-init does not
+- Smoke asserts `init -f` preserves existing `implementation_packages: "off"` when `--layout` is not passed
 - Check harness covers orphan package, dirty ownership, `--for-main`
 
 ## Atomic Ops
 
-- [x] Smoke: assert init installs `mindplan/agent/skills/code-review/SKILL.md`
-- [x] Smoke: assert init installs `.cursor/skills/mindplan-code-review/SKILL.md`
+- [x] Smoke: after init, mutate playbook (or equivalent), bare re-init leaves mutation, `init -f` restores template content
+- [x] Smoke: `init -f` on a layout-free project leaves `implementation_packages: "off"`
 - [x] Keep this next.mdx a full successor contract (not a changelog)
-
 
 ## Attachments
 
 _Wireframes and notes go in `attachments/` / `next-attachments/`._
-
-## Review Notes
-
-**Date:** 2026-07-23  
-**Verdict:** Approve — ready  
-**Reviewer:** Plan Review (independent session)
-
-### Findings
-- Domain fit: `belongs_to` `j-territory-sdlc`; `depends_on` `f-mcp-runtime`
-- Buildable: concrete smoke paths for three Cursor skills + `mindplan.mdc` (alwaysApply + playbook substance)
-- Decomposition: regression-only ops; no helper/CLI work on this node
-- Blast radius: none (leaf); pairs with the other two nexts for `bug-init-cursor-skills`
-
-## Review Notes (Implementation)
-
-**Date:** 2026-07-23  
-**Verdict:** Approve — ship  
-**Reviewer:** Implementation review (independent session)
-
-### Evidence
-- [x] Smoke asserts three `.cursor/skills/mindplan-*/SKILL.md` paths after init (`smoke.mjs`)
-- [x] Smoke asserts `.cursor/rules/mindplan.mdc` includes `alwaysApply: true` and playbook title substance
-- [x] Prior init/cancel/check/view/search coverage still green — full `npm test` passed
-- `npm test` passed during this review (ALL CHECKS PASSED)
-
-### Fit
-- **Domain:** `j-territory-sdlc` regression harness; `depends_on` `f-mcp-runtime`
-- **Dependencies:** Only harness package + CLI under declared Assembler
-- **Decomposition:** Assert-only; no helper/CLI work here
