@@ -18,7 +18,7 @@ flowchart TB
     f_view_projection["f-view-projection · View projection · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
   end
-  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
+  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
     wf_agent_integrations__in__j_agent_onboarding["wf-agent-integrations · Agent integrations · stable"]
     wf_framework_docs__in__j_agent_onboarding["wf-framework-docs · Framework docs · stable"]
     wf_layout_free__in__j_agent_onboarding["wf-layout-free · Layout-free adoption · stable"]
@@ -37,7 +37,7 @@ flowchart TB
     wf_status_board__in__j_plan_console["wf-status-board · Status board · ready"]
     wf_territory_viewer__in__j_plan_console["wf-territory-viewer · Read territory · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
     wf_export_views__in__j_territory_sdlc["wf-export-views · See the map · stable"]
     wf_framework_docs__in__j_territory_sdlc["wf-framework-docs · Framework docs · stable"]
     wf_impl_packages__in__j_territory_sdlc["wf-impl-packages · Prescribe implementation packages · stable"]
