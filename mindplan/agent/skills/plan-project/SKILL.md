@@ -18,7 +18,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 | User intent | Use this skill? |
 |-------------|-----------------|
 | “Let’s plan / model / map the product” | Yes |
-| Greenfield: define Journeys → Foundations → Workflows | Yes |
+| Greenfield: define Journeys → draft Workflows → derive Foundations | Yes |
 | Restructure edges, enrich PRDs, rewrite Atomic Ops | Yes |
 | “Implement / build / fix / ship this Workflow” | No — playbook build or Bug loop |
 | Mixed “plan then code” in one ask | Plan first with this skill; **stop** and confirm before any implementation session |
@@ -50,15 +50,18 @@ Decide what the plan session must produce: new Journeys, Foundations (with roles
 Follow `mindplan/agent/skills/define-entities/`:
 
 1. Journeys first (refuse Workflows with no matching Journey)
-2. Foundations with role tags in `description`
-3. Workflows with `belongs_to` + `depends_on`
-4. Bugs with `affects` only when filing defects into the plan (stay at `open` or `triaged` — do not `fixing`)
+2. Workflows at `draft` (use-case / PRD thinking; links not required yet)
+3. Foundations derived from those drafts (role tags in `description`)
+4. Link Workflows (`belongs_to` + `depends_on`) once substrate is clear
+5. Bugs with `affects` only when filing defects into the plan (stay at `open` or `triaged` — do not `fixing`)
 
 Greenfield order:
 
 ```
-Journey(s) → Foundation(s) → Workflow(s) → link_nodes → enrich territory → Plan Review loop → ready (then stop if plan-only)
+Journey(s) → Workflow(s) at draft → Foundation(s) derived from those drafts → link_nodes → enrich territory → Plan Review Foundations → Plan Review Workflows → ready (then stop if plan-only)
 ```
+
+Gate facts: Journey before any Workflow create; draft Workflows may lack links until leaving `draft`; Foundation `ready` before Workflow `ready` is preference — Infrastructure First at Workflow `ship` still requires Foundations `stable`.
 
 ### 4. Enrich territory (full contracts)
 
@@ -79,7 +82,7 @@ After each `create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_ne
 
 When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
-1. For each Foundation/Workflow that should leave `draft`, run the **Plan Review loop** (playbook): spawn a fresh Reviewer (`review-work` Procedure A); fix from Findings in the verdict message; re-spawn up to 3 rejects; escalate to the human if still blocked.
+1. For each Foundation/Workflow that should leave `draft`, run the **Plan Review loop** (playbook): spawn a fresh Reviewer (`review-work` Procedure A); fix from Findings in the verdict message; re-spawn up to 3 rejects; escalate to the human if still blocked. Prefer Plan Review on Foundations **before** their dependent Workflows so Workflows do not leave `draft` against missing substrate.
 2. Do **not** self-call `update_node_status → ready`.
 3. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → Implementation review loop. Do not start implementation unless the user explicitly switches modes.
 4. Show or offer `export_mindplan_view` so humans can review the map.

@@ -17,18 +17,49 @@
 ## Greenfield feature
 
 **Goal:** Add a "Split & pay checkout" feature to an "Ordering" Journey.
+Use-case-first: draft the Workflow, then mint Foundations from what its Execution Logic needs.
 
-### 1. Create entities
+### 1. Create Journey, then draft Workflow
 
 ```
 create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders and pays for food" })
-create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables for orders and payments" })
-create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
-create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router mounting workflow packages" })
 create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
 ```
 
-### 2. Link Workflow
+Workflow may sit at `draft` with no links yet while you sketch the use case.
+
+### 2. Enrich Workflow territory (derive substrate needs)
+
+Edit `mindplan/workflows/wf-checkout-split/current.mdx` via file tools:
+
+```
+## Execution Logic
+
+1. Diner selects split mode (even / by item / custom)
+2. System calculates per-person totals
+3. Each diner pays their share via configured PSP
+
+## Checklist
+
+- [ ] Requirements defined
+- [ ] Split calculation implemented
+- [ ] Payment flow complete
+- [ ] Verified via smoke test
+```
+
+Optional fallback: `patch_node_territory({ node_id: "wf-checkout-split", body: "…" })`.
+
+From that Execution Logic, shared needs are: order/payment tables, UI primitives, and an app shell to mount the Workflow package.
+
+### 3. Create Foundations derived from the draft Workflow
+
+```
+create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables for orders and payments" })
+create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
+create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router mounting workflow packages" })
+```
+
+### 4. Link Workflow
 
 ```
 link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
@@ -37,7 +68,7 @@ link_nodes({ source_id: "wf-checkout-split", target_id: "f-design-system", edge_
 link_nodes({ source_id: "wf-checkout-split", target_id: "f-nextjs", edge_type: "depends_on" })
 ```
 
-### 3. Enrich Foundation territory
+### 5. Enrich Foundation territory
 
 Prefer host file tools on `current_path` from `get_node_context` (body below `---`, plus title/description scalars). Example bodies:
 
@@ -89,31 +120,17 @@ Prefer host file tools on `current_path` from `get_node_context` (body below `--
 
 Optional fallback (automation / weak file tools): `patch_node_territory({ node_id, body: "…" })`.
 
-### 4. Enrich Workflow territory
+### 6. Advance states (after links + content)
 
-Edit `mindplan/workflows/wf-checkout-split/current.mdx` via file tools:
-
-```
-## Execution Logic
-
-1. Diner selects split mode (even / by item / custom)
-2. System calculates per-person totals
-3. Each diner pays their share via configured PSP
-
-## Checklist
-
-- [ ] Requirements defined
-- [ ] Split calculation implemented
-- [ ] Payment flow complete
-- [ ] Verified via smoke test
-```
-
-Optional fallback: `patch_node_territory({ node_id: "wf-checkout-split", body: "…" })`.
-
-### 5. Advance states (after links + content)
+Plan Review Foundations first, then the Workflow (spawn Reviewer via `review-work` — do not self-`ready`):
 
 ```
-update_node_status({ node_id: "wf-checkout-split", new_status: "ready" })
+# After Plan Review Approve on each Foundation:
+# update_node_status({ node_id: "f-db-core", new_status: "ready" })  # Reviewer only
+# …same for f-design-system, f-nextjs…
+# After Plan Review Approve on the Workflow:
+# update_node_status({ node_id: "wf-checkout-split", new_status: "ready" })  # Reviewer only
+# Later execution session:
 update_node_status({ node_id: "wf-checkout-split", new_status: "in-progress" })
 ```
 

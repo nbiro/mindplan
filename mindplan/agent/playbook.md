@@ -53,6 +53,22 @@ Orient and mutate **graph structure** only through MCP. Write **territory prose*
 
 A Journey's assembler(s) are derived from member Workflows' `depends_on` — Journeys still have no outgoing edges. Different Journeys MAY use different assemblers.
 
+## Definition order (use-case-first)
+
+Greenfield entity creation follows use-case-first order — derive Foundations from drafted Workflows:
+
+```
+Journey(s) → Workflow(s) at draft → Foundation(s) derived from those drafts → link_nodes → enrich territory → Plan Review Foundations → Plan Review Workflows → ready
+```
+
+Gate facts:
+
+- Journey MUST exist before `create_node` for a Workflow.
+- A Workflow MAY sit at `draft` without links; `belongs_to` + `depends_on` are required only to leave `draft` (No Ghost Workflows).
+- Foundation `ready` before Workflow `ready` is sequencing preference; Infrastructure First at Workflow `ship` still requires Foundations `stable`.
+
+Details: `mindplan/agent/skills/define-entities/` and `mindplan/agent/skills/plan-project/`.
+
 ## Request routing
 
 Every request starts the same way:
@@ -168,7 +184,7 @@ draft → ready → in-progress → in-review → ship → stable/unstable
 For a shipped node evolving via `open_next`, this same pipeline runs against the `next.mdx` slot — `update_node_status` applies to `next` automatically while it exists (see Versioning shipped work below). The live node keeps serving under `current.mdx` for the whole loop; only `ship` promotes `next` over `current`.
 
 1. **Orient** — `orient_for_work` or `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Call `get_blast_radius` on the focus node before substantial implementation; note transitive dependents and `journeys_at_risk`. Read PRD, Acceptance Criteria, and Atomic Ops from `body` (or `next.body` when a next slot is open).
-2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress`. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
+2. **Pre-flight (leave `draft`)** — Workflows need at least one `belongs_to` and at least one `depends_on` before `ready`/`in-progress` (draft Workflows may exist unlinked while Foundations are derived — see **Definition order**). Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing).
 3. **Commit to work** — Node must already be `ready` (after Plan Review). Then `update_node_status` → `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway; do not self-advance `draft` → `ready`.
 4. **Execute** — When `implementation_packages` is `required` (default), implement in the node's prescribed package (`src/workflows/<id>/` or `src/foundations/<id>/`). When `off` (layout-free / `mindplan-mcp init --layout free`), implement in the project's existing layout instead — still keep territory in sync. Keep territory updated with **file tools** on `current_path` / `next_path`: update PRD body, toggle Atomic Ops checkboxes. Never check a box without doing the work. (`patch_node_territory` remains an optional fallback.) Query architecture with `get_node_implementation` plus the graph (`root` is null when packages are off).
 5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`. Do not immediately `ship`. Run the **Review loop** (Implementation review): spawn a fresh Reviewer subagent.

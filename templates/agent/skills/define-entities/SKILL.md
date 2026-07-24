@@ -180,16 +180,25 @@ Confirm edges, folder paths, and territory content. Leave Foundations/Workflows 
 
 ## Definition order (greenfield project)
 
+Use-case-first: draft Workflows so Foundations are derived from real use cases, not invented ahead of them.
+
 ```
 1. create_node Journey          ← always first; required before any Workflow
-2. create_node Foundation(s)
-3. create_node Workflow(s)      ← only after step 1; link with belongs_to (repeat per Journey)
+2. create_node Workflow(s)      ← only after step 1; may stay at draft with no links yet
+3. create_node Foundation(s)    ← derive from drafted Workflow PRDs / Execution Logic; role-tag descriptions
 4. link_nodes Workflow → Journey (belongs_to)   ← once per Journey; multiple allowed
 5. link_nodes Workflow → Foundation (depends_on)
 6. Edit each node body (and title/description if needed) via file tools at `current_path` / `next_path`
 7. Stop at `draft` with links + territory complete; run Plan Review loop per
-   node (`mindplan/agent/skills/review-work/`) — Reviewer advances to `ready`
+   node (`mindplan/agent/skills/review-work/`) — Foundations first, then their
+   dependent Workflows — Reviewer advances to `ready`
 ```
+
+Gate facts:
+
+- Journey MUST exist before `create_node` for a Workflow (refusal rule above).
+- A Workflow MAY sit at `draft` without links; `belongs_to` + `depends_on` are required only to leave `draft` (No Ghost Workflows).
+- Foundation `ready` before Workflow `ready` is sequencing preference; Infrastructure First at Workflow `ship` still requires Foundations `stable`.
 
 Ship order: Foundations → `stable` before Workflow `ship`. Plan Review owns `draft → ready`.
 
