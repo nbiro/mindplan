@@ -1,13 +1,14 @@
 ---
 name: mindplan-define-entities
 description: >-
-  Defines MindPlan SDLC entities (Journey, Foundation, Workflow, Bug) via MCP —
-  taxonomy selection, Foundation roles (Assembler/Infra/Design system/Adapter),
-  ID naming, edge linking, and current.mdx territory. Journey MUST exist before
-  Workflow; refuses Workflow creation when no matching Journey is in the graph.
-  Use when creating planning nodes, scaffolding features, mapping domain
-  capabilities and use cases, adding shared substrate (assembler/infra/design
-  system/adapters), filing bugs, or structuring a MindPlan graph.
+  Defines MindPlan SDLC entities (Journey, Foundation, Interaction, Interface,
+  Bug) via MCP — taxonomy selection, Foundation roles (Assembler/Infra/Design
+  system/Adapter), ID naming, edge linking (belongs_to, depends_on, exposes,
+  leads_to, affects), and current.mdx territory. Journey MUST exist before
+  Interaction; refuses Interaction creation when no matching Journey is in the
+  graph. Use when creating planning nodes, scaffolding behavior and surfaces,
+  mapping domain capabilities, adding shared substrate, filing bugs, or
+  structuring a MindPlan graph.
 ---
 
 # Define MindPlan Entities
@@ -22,62 +23,68 @@ Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. Normati
 get_mindplan_graph
 ```
 
-Note existing Journeys, Foundations, Workflows, Bugs, and edges before creating duplicates.
+Note existing Journeys, Foundations, Interactions, Interfaces, Bugs, and edges before creating duplicates.
 
 ## Journey first (mandatory)
 
-**A Journey MUST exist before any Workflow is created. A Workflow may belong to **one or more** Journeys.**
+**A Journey MUST exist before any Interaction is created. An Interaction may belong to **one or more** Journeys.**
 
-When the user asks for a Workflow (use case, feature, shared screen with its own behaviour):
+When the user asks for an Interaction (behavior, use case, actor-triggered flow — **not** a UI page by itself):
 
 1. Run `get_mindplan_graph` and inspect existing Journeys
 2. Decide whether the request maps to an **existing** Journey (by title, description, or user-stated parent Journey id)
-3. If **no** matching Journey exists → **stop and refuse**. Do **not** call `create_node` for the Workflow. Do **not** silently create a Journey on the user's behalf unless they explicitly ask to define one
+3. If **no** matching Journey exists → **stop and refuse**. Do **not** call `create_node` for the Interaction. Do **not** silently create a Journey on the user's behalf unless they explicitly ask to define one
 
 **Refusal message** (use verbatim):
 
-> I cannot define this Workflow yet — every Workflow must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the domain capability this use case belongs to). Once the Journey exists, I can create the Workflow and link it with `belongs_to`.
+> I cannot define this Interaction yet — every Interaction must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the domain capability this behavior belongs to). Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
 
 If the user names a Journey that is not in the graph, same refusal — define that Journey first.
 
-**Allowed without a Journey:** Foundation and Bug creation (Bugs link via `affects`, not `belongs_to`).
+**Allowed without a Journey:** Foundation, Interface, and Bug creation (Interfaces link via `exposes`; Bugs via `affects`). Prefer defining the Interaction before its Interface so `exposes` has a target.
 
 ## Step 2 — Pick the entity type
 
 | If the work is… | Type | Why |
 |-----------------|------|-----|
-| A domain capability the product is about (e.g. "Table ordering", "Billing") | **Journey** | Architecture scream; permanent use-case container; state computed from Workflows |
-| Shared substrate with no standalone use case (assembler, DB, auth, design system, adapters) | **Foundation** | Pick a role (§ below); consumed via `depends_on`; must ship before dependent Workflows |
-| A stakeholder-recognizable use case / screen (e.g. "Split & pay", "User picker", "Character editor") | **Workflow** | Execution work; `belongs_to` one or more Journeys; `depends_on` Foundations and optionally other Workflows |
-| A defect on shipped or in-flight substrate/use-case work | **Bug** | Dedicated lifecycle; links via `affects` only |
+| A domain capability the product is about (e.g. "Table ordering", "Billing") | **Journey** | Architecture scream; permanent container; state computed from Interactions |
+| Shared substrate with no standalone behavior (assembler, DB, auth, design system, adapters) | **Foundation** | Pick a role (§ below); consumed via `depends_on`; must ship before dependent Interactions |
+| Self-contained **behavior** by any actor — human, system, or agent — independent of how it is surfaced (e.g. "Split & pay", "Orient on plan", "Check integrity") | **Interaction** | Behavior unit; `belongs_to` Journeys; `depends_on` Foundations only; MAY `leads_to` other Interactions |
+| A **surface** that exposes Interactions — Page, CLI, MCP toolset, Webhook, Cron, script (e.g. "Checkout page", "mindplan-mcp CLI", "MCP tools") | **Interface** | Exposure unit; `exposes` Interactions; optional Foundation `depends_on` |
+| A defect on shipped or in-flight substrate/behavior/surface | **Bug** | Dedicated lifecycle; links via `affects` only |
 
 **Classification litmus** (in order):
 1. Domain capability the product *is about*? → Journey
-2. Stakeholder-recognizable use case / screen with its own behaviour (even if many features embed it)? → Workflow
-3. Shared code/UI with **no** standalone use case, only consumed by use cases? → Foundation (then pick a **role**)
-4. Broken behaviour on an existing node? → Bug
+2. Self-contained behavior (what happens), reusable across surfaces? → Interaction (**not** UI)
+3. How that behavior is reached (page/CLI/MCP/cron/…)? → Interface
+4. Shared code/UI substrate with **no** standalone behavior, only consumed? → Foundation (then pick a **role**)
+5. Broken behaviour on an existing node? → Bug
+
+**Do not** model a screen/page as an Interaction. The page is an Interface that `exposes` one or more Interactions.
 
 **Foundation roles** (docs convention — not NodeTypes). After classifying as Foundation, pick one:
 
 | Role | When | Description tag example |
 |------|------|-------------------------|
-| **Assembler** | External framework/runtime that mounts Workflow packages into a deployable surface | `"Assembler — Next.js app shell mounting workflow packages"` |
+| **Assembler** | External framework/runtime that **composes** Journeys, Interactions, Interfaces, and Foundations into a deployable surface | `"Assembler — Next.js app shell composing interactions and interfaces"` |
 | **Adapter** | Vendor/protocol boundary SDK only | `"Adapter — Stripe SDK wrapper"` |
 | **Design system** | Tokens + dumb presentational UI | `"Design system — tokens and Button/Input primitives"` |
 | **Infra** | Persistence, messaging, storage, observability, homegrown auth | `"Infra — Postgres schema and migrations"` |
 
 Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth is Infra unless it is a vendor adapter (`f-clerk` → Adapter). Keep tokens and UI kit as Design system (one role).
 
-**Assembler linking:** Workflows that run on a given backbone SHOULD `depends_on` that Assembler Foundation (e.g. UI workflows → `f-nextjs`; cron workflows → `f-vercel-cron`). This is guidance, not a compiler gate — Ghost Workflows still only require any Foundation `depends_on`. A Journey's assembler(s) are derived from member Workflows' `depends_on` — never give Journeys outgoing edges. Different Journeys MAY use different assemblers.
+**Assembler linking:** Interactions/Interfaces that run on a given backbone SHOULD `depends_on` that Assembler Foundation (e.g. page Interfaces → `f-nextjs`; cron Interfaces → `f-vercel-cron`). This is guidance, not a compiler gate — Ghost Interactions still only require any Foundation `depends_on`. A Journey's assembler(s) are derived from member Interactions' and Interfaces' `depends_on` — never give Journeys outgoing edges. Different Journeys MAY use different assemblers.
 
-**Reuse rule:** Before inventing shared UI or a shared screen inside a Workflow, find or create the right Foundation (substrate) or Workflow (use case) and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node.
+**Reuse rule:** Before inventing shared UI or shared state inside an Interaction, find or create the right Foundation and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node. Cross-Interaction flow uses `leads_to`, never `depends_on` (Interaction Independence).
 
 **Anti-patterns:**
 - Journey named after tech (`API`, `Frontend`, `Database`) — wrong; use domain language
-- Primary button / design tokens as a Workflow — wrong; that is Foundation (Design system)
+- Primary button / design tokens as an Interaction — wrong; that is Foundation (Design system)
 - Next.js / cron runtime as a Journey — wrong; that is Foundation (Assembler)
-- Character editor / user-picker flow as a Foundation — wrong; that is Workflow (reuse via `depends_on` / multi-Journey `belongs_to`)
-- Business use-case behaviour living only in a Foundation — move it to a Workflow
+- A checkout **page** as an Interaction — wrong; that is Interface (`if-…`); the pay/split **behavior** is the Interaction
+- Character editor / user-picker **behavior** as a Foundation — wrong; that is Interaction
+- Interaction → Interaction `depends_on` — illegal; share via Foundation or navigate via `leads_to`
+- Business behavior living only in a Foundation — move it to an Interaction
 
 ## Step 3 — Name the node
 
@@ -87,35 +94,47 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 |------|--------|---------|
 | Journey | `j-` | `j-ordering` |
 | Foundation | `f-` | `f-db-core`, `f-nextjs` |
-| Workflow | `wf-` | `wf-checkout-split` |
+| Interaction | `i-` | `i-checkout-split` |
+| Interface | `if-` | `if-checkout-page`, `if-mcp-tools`, `if-cli` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Title:** short human-readable name. **Description:** one sentence. For Foundations, agents SHOULD lead with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`). Both are written to `current.mdx` frontmatter at creation. Change them afterward with host file tools on `current_path` / `next_path` (preferred) or `patch_node_territory({ node_id, title?, description? })` as a fallback. For a shipped Workflow or Foundation, call `open_next` first — then edit the `next` slot.
+**Title:** short human-readable name. **Description:** one sentence. For Foundations, agents SHOULD lead with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`). Both are written to `current.mdx` frontmatter at creation. Change them afterward with host file tools on `current_path` / `next_path` (preferred) or `patch_node_territory({ node_id, title?, description? })` as a fallback. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then edit the `next` slot.
 
 ## Step 4 — Create via MCP
 
-**Workflow gate:** only call `create_node` for a Workflow after confirming a matching Journey exists (see Journey first above).
+**Interaction gate:** only call `create_node` for an Interaction after confirming a matching Journey exists (see Journey first above).
 
 ```
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). For **Workflow** and **Foundation**, when `implementation_packages` is `required` (default), also scaffolds the prescribed implementation package: `src/workflows/<id>/` or `src/foundations/<id>/` (with `.gitkeep`). When `implementation_packages` is `off` (layout-free / `mindplan-mcp init --layout free`), only territory is created — no `src/` package. Journeys and Bugs have no code package. Edge arrays are added by `link_nodes`. This id is permanent — Foundations and Workflows never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
+Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). For **Interaction**, **Interface**, and **Foundation**, when `implementation_packages` is `required` (default), also scaffolds the prescribed implementation package: `src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/` (with `.gitkeep`). When `implementation_packages` is `off` (layout-free / `mindplan-mcp init --layout free`), only territory is created — no `src/` package. Journeys and Bugs have no code package. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
 
-Query the package with `get_node_implementation({ node_id })` (`root` is null when packages are off). When packages are `required`, implement **only** inside that package; reuse across use cases via Foundation packages or `depends_on` Workflow packages. When packages are `off`, implement in the project's existing layout.
+Query the package with `get_node_implementation({ node_id })` (`root` is null when packages are off). When packages are `required`, implement **only** inside that package; reuse across behaviors via Foundation packages. When packages are `off`, implement in the project's existing layout.
 
 ## Step 5 — Link edges (before advancing state)
 
 | Type | Required links | MCP call |
 |------|----------------|----------|
-| **Workflow** | `belongs_to` → one or more Journeys, `depends_on` → Foundation or Workflow | `link_nodes` per Journey + per dependency |
+| **Interaction** | `belongs_to` → one or more Journeys; `depends_on` → Foundation(s) only | `link_nodes` per Journey + per Foundation |
+| **Interface** | `exposes` → one or more Interactions; optional `depends_on` → Foundation | `link_nodes` |
 | **Foundation** | optional `depends_on` → other Foundation | `link_nodes` if layered |
-| **Bug** | `affects` → Workflow or Foundation (before `triaged`) | `link_nodes` |
-| **Journey** | none (Workflows link to it) | — |
+| **Bug** | `affects` → Interaction, Interface, or Foundation (before `triaged`) | `link_nodes` |
+| **Journey** | none (Interactions link to it) | — |
 
-Multiple `belongs_to` edges from the same Workflow are allowed — membership reuse across Journeys.
+Optional navigation:
 
-Composition reuse: a Workflow MAY `depends_on` another Workflow (shared use case) or a Foundation (shared substrate). When a Workflow `depends_on` another Workflow, every dependency in the transitive chain must also `belongs_to` the same Journey. If not, `link_nodes(belongs_to)` is rejected unless you pass `link_dependent: true`, which auto-links the missing dependency Workflows to that Journey.
+```
+link_nodes({ source_id: "i-orient-plan", target_id: "i-steer-plan", edge_type: "leads_to" })
+```
+
+`leads_to` is navigation only — not a ship gate and not a substitute for sharing state. Cycles are allowed.
+
+Multiple `belongs_to` edges from the same Interaction are allowed — membership reuse across Journeys.
+
+**Interaction Independence:** an Interaction MUST NOT `depends_on` another Interaction. The compiler rejects that shape. Share state through Foundations; model flow with `leads_to`.
+
+There is **no** `link_dependent` parameter and **no** Dependency Closure rule.
 
 ```
 link_nodes({ source_id, target_id, edge_type })
@@ -138,27 +157,38 @@ Replace scaffold placeholders with real content. Section guidance:
 
 ### Journey
 
-- **Overview** — domain capability this Journey owns and which use cases belong inside it (Journey titles alone should scream the product purpose)
-- **Linked Workflows** — note which Workflows will `belongs_to` here
+- **Overview** — domain capability this Journey owns and which Interactions belong inside it (Journey titles alone should scream the product purpose)
+- **Linked Interactions** — note which Interactions will `belongs_to` here
 - No checklist (Journeys have no completion gate)
 
 ### Foundation
 
-- **Shared Substrate Spec** — schemas, adapters, design system, contracts (not use-case behaviour). Put the role tag in frontmatter `description` at create time, not here.
+- **Shared Substrate Spec** — schemas, adapters, design system, contracts (not behavior). Put the role tag in frontmatter `description` at create time, not here.
 - **Implementation** — code under `src/foundations/<id>/` only
 - **Checklist** — PR-sized Atomic Ops (`- [ ]` / `- [x]`):
   - Spec written
   - Implementation complete
   - Verified in target environment
 
-### Workflow
+### Interaction
 
-- **Execution Logic** — step-by-step use-case behaviour
-- **Implementation** — code under `src/workflows/<id>/` only (no Journey-owned folders — Workflows may belong to many Journeys)
+- **Purpose** — one-sentence behavior outcome
+- **Actor & Trigger** — who/what starts it (human, system, agent, schedule)
+- **Inputs & Outputs** — data in/out (not UI layout)
+- **PRD / Execution Logic** — step-by-step behavior
+- **Implementation** — code under `src/interactions/<id>/` only
 - **Checklist** — Atomic Ops, e.g.:
   - Requirements defined
   - Implementation complete
   - Tests passing
+
+### Interface
+
+- **Kind** — Page | CLI | MCP | Webhook | Cron | Script | …
+- **Exposed Interactions** — which Interactions this surface `exposes` and how
+- **Spec** — routing, commands, tool names, schedules, auth boundaries of the surface
+- **Implementation** — code under `src/interfaces/<id>/` only
+- **Checklist** — Atomic Ops for wiring the surface to exposed Interactions
 
 ### Bug
 
@@ -176,63 +206,71 @@ get_mindplan_graph
 get_node_context({ node_id })
 ```
 
-Confirm edges, folder paths, and territory content. Leave Foundations/Workflows at `draft` until Plan Review. When a node is about to leave `draft`, run one Plan Review loop for **that** node (spawn Reviewer via `review-work`) — do not self-advance to `ready`, and do not batch-rubber-stamp multiple nodes in one Reviewer pass.
+Confirm edges, folder paths, and territory content. Leave Foundations/Interactions/Interfaces at `draft` until Plan Review. When a node is about to leave `draft`, run one Plan Review loop for **that** node (spawn Reviewer via `review-work`) — do not self-advance to `ready`, and do not batch-rubber-stamp multiple nodes in one Reviewer pass.
 
 ## Definition order (greenfield project)
 
-Use-case-first: draft Workflows so Foundations are derived from real use cases, not invented ahead of them.
+Behavior-first: draft Interactions so Foundations and Interfaces are derived from real behavior, not invented ahead of them.
 
 ```
-1. create_node Journey          ← always first; required before any Workflow
-2. create_node Workflow(s)      ← only after step 1; may stay at draft with no links yet
-3. create_node Foundation(s)    ← derive from drafted Workflow PRDs / Execution Logic; role-tag descriptions
-4. link_nodes Workflow → Journey (belongs_to)   ← once per Journey; multiple allowed
-5. link_nodes Workflow → Foundation (depends_on)
-6. Edit each node body (and title/description if needed) via file tools at `current_path` / `next_path`
-7. Stop at `draft` with links + territory complete; run Plan Review loop per
-   node (`mindplan/agent/skills/review-work/`) — Foundations first, then their
-   dependent Workflows — Reviewer advances to `ready`
+1. create_node Journey              ← always first; required before any Interaction
+2. create_node Interaction(s)       ← only after step 1; may stay at draft with no links yet
+3. create_node Interface(s)         ← surfaces that will expose those Interactions
+4. create_node Foundation(s)        ← derive from drafted Interaction PRDs; role-tag descriptions
+5. link_nodes Interaction → Journey (belongs_to)
+6. link_nodes Interaction → Foundation (depends_on)   ← Foundations only
+7. link_nodes Interface → Interaction (exposes)
+8. link_nodes Interface → Foundation (depends_on)     ← optional
+9. link_nodes Interaction → Interaction (leads_to)    ← navigation only, as needed
+10. Edit each node body (and title/description if needed) via file tools at `current_path` / `next_path`
+11. Stop at `draft` with links + territory complete; run Plan Review loop per
+    node (`mindplan/agent/skills/review-work/`) — Foundations first, then
+    Interactions, then Interfaces — Reviewer advances to `ready`
 ```
 
 Gate facts:
 
-- Journey MUST exist before `create_node` for a Workflow (refusal rule above).
-- A Workflow MAY sit at `draft` without links; `belongs_to` + `depends_on` are required only to leave `draft` (No Ghost Workflows).
-- Foundation `ready` before Workflow `ready` is sequencing preference; Infrastructure First at Workflow `ship` still requires Foundations `stable`.
+- Journey MUST exist before `create_node` for an Interaction (refusal rule above).
+- An Interaction MAY sit at `draft` without links; `belongs_to` + Foundation `depends_on` are required only to leave `draft` (No Ghost Interactions).
+- An Interface MAY sit at `draft` without links; ≥1 `exposes` is required to leave `draft` (No Ghost Interfaces).
+- Foundation `ready` before Interaction `ready` is sequencing preference; Infrastructure First at Interaction `ship` still requires Foundations `stable`. Behavior First at Interface `ship` requires exposed Interactions `stable`.
 
-Ship order: Foundations → `stable` before Workflow `ship`. Plan Review owns `draft → ready`.
+Ship order: Foundations → `stable` before Interaction `ship`; Interactions → `stable` before Interface `ship`. Plan Review owns `draft → ready`.
 
 ## Evolving a shipped node
 
-Foundations and Workflows keep one id forever — there is no `-v2` node. When a shipped Workflow or Foundation needs a change:
+Foundations, Interactions, and Interfaces keep one id forever — there is no `-v2` node. When a shipped node needs a change:
 
 ```
-get_blast_radius({ node_id: "wf-checkout-split" })   // find dependents first
+get_blast_radius({ node_id: "i-checkout-split" })   // dependents + reachability first
 open_next({
-  node_id: "wf-checkout-split",
+  node_id: "i-checkout-split",
   title: "Split & pay checkout v2",              // optional
   description: "Revised checkout with new split rules"  // optional
 })
 ```
 
-`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Enrich the `next` slot to a full successor contract, then run the Plan Review loop (`mindplan/agent/skills/review-work/`) — do not self-advance `next` to `ready`. After Plan Review, an execution session runs `in-progress` → `in-review`; Implementation review loop then `ship`s, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
+`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Enrich the `next` slot to a full successor contract, then run the Plan Review loop (`mindplan/agent/skills/review-work/`) — do not self-advance `next` to `ready`. After Plan Review, an execution session runs `in-progress` → `in-review`; Implementation review loop then `ship`s, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
 
 ## Common mistakes
 
 | Mistake | Result |
 |---------|--------|
-| Create Workflow with no Journey in graph | **Refuse** — ask user to define the Journey first |
-| Workflow → `ready` without links | `Blocked: Ghost Workflow` |
-| Workflow → Journey with unlinked workflow dependencies | `Blocked: Dependency Closure` — link dependents first or use `link_dependent: true` |
+| Create Interaction with no Journey in graph | **Refuse** — ask user to define the Journey first |
+| Interaction → `ready` without links | `Blocked: Ghost Interaction` |
+| Interface → `ready` without `exposes` | `Blocked: Ghost Interface` |
+| Interaction → Interaction `depends_on` | `Blocked: Interaction Independence` — use Foundation or `leads_to` |
 | Bug → `triaged` without `affects` | `Blocked: Ghost Bug` |
-| Foundation described as a user feature / use case | Scope creep — split into Foundation (substrate) + Workflow (use case) |
-| Business use-case behaviour in a Foundation node | Wrong taxonomy — move logic to Workflow; keep design system / infra as Foundation |
-| Inventing a new primary button inside a Workflow | Reuse — depend on `f-design-system` (or create that Foundation first) |
-| Implementing Workflow code outside `src/workflows/<id>/` when packages are `required` | Wrong architecture — use the prescribed package (query via `get_node_implementation`); layout-free/`off` projects use the existing app layout |
+| Modeling a Page as an Interaction | Wrong taxonomy — Interface exposes Interaction(s) |
+| Foundation described as user behavior | Scope creep — split into Foundation (substrate) + Interaction (behavior) |
+| Business behavior in a Foundation node | Wrong taxonomy — move logic to Interaction |
+| Inventing a new primary button inside an Interaction | Reuse — depend on `f-design-system` (or create that Foundation first) |
+| Implementing Interaction code outside `src/interactions/<id>/` when packages are `required` | Wrong architecture — use the prescribed package (query via `get_node_implementation`); layout-free/`off` projects use the existing app layout |
 | Manual Journey / `stable` / `unstable` status | Rejected — computed only |
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
 | `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |
 | `open_next` while a `next.mdx` is already open | `Blocked` — `discard_next` or ship it first |
+| Expecting `link_dependent` / Dependency Closure | Removed — Interactions do not depend on each other |
 
 ## Examples
 

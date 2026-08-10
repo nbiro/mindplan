@@ -7,7 +7,7 @@ state: resolved
 created_at: 2026-07-15T19:53:46.391Z
 updated_at: 2026-07-15T19:56:27.199Z
 affects:
-  - wf-mutate-graph
+  - i-steer-plan
 ---
 
 # Version dependents relinked while successor is still draft
@@ -20,7 +20,7 @@ Duplicating dependents onto a draft successor at version-creation time blocks un
 
 ## Repro Steps
 
-1. Ship a Foundation/Workflow (`wf-a`) that has an unshipped dependent (`wf-b` with `depends_on: wf-a`).
+1. Ship a Foundation/Interaction (`wf-a`) that has an unshipped dependent (`wf-b` with `depends_on: wf-a`).
 2. Call `create_node_version` for `wf-a` → `wf-a-v2` (draft).
 3. Attempt to ship `wf-b` while `wf-a-v2` is still draft.
 

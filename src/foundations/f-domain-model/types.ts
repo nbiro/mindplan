@@ -1,15 +1,15 @@
 /**
  * MindPlan data model — node records and edges persisted in current.mdx frontmatter.
- * Optional next.mdx holds an in-flight evolution of a shipped Foundation/Workflow.
+ * Optional next.mdx holds an in-flight evolution of a shipped Foundation/Interaction/Interface.
  */
 
 /** Schema generation reported by get_mindplan_graph (no file on disk). */
 export const GRAPH_VERSION = 1;
 
-export const NODE_TYPES = ["Journey", "Foundation", "Workflow", "Bug"] as const;
+export const NODE_TYPES = ["Journey", "Interaction", "Interface", "Foundation", "Bug"] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
-/** Manual build pipeline for Foundations and Workflows (pre-production). */
+/** Manual build pipeline for Foundations, Interactions, and Interfaces (pre-production). */
 export const EXECUTION_STATES = [
   "draft",
   "ready",
@@ -23,7 +23,7 @@ export type ExecutionState = (typeof EXECUTION_STATES)[number];
 /** Pseudo-transition from in-review to production; sets shipped_at and computed stable/unstable. */
 export const SHIP_TRANSITION = "ship" as const;
 
-/** Computed production health for shipped Foundations and Workflows. Never set manually. */
+/** Computed production health for shipped Foundations, Interactions, and Interfaces. Never set manually. */
 export const PRODUCTION_STATES = ["stable", "unstable"] as const;
 export type ProductionState = (typeof PRODUCTION_STATES)[number];
 
@@ -37,14 +37,14 @@ export type OpenBugState = (typeof OPEN_BUG_STATES)[number];
 
 /**
  * Computed-only states for Journeys. Never set manually.
- * "draft" is the resting state when no Workflow is in-progress/in-review/shipped.
+ * "draft" is the resting state when no Interaction is in-progress/in-review/shipped.
  */
 export const JOURNEY_STATES = ["draft", "incubation", "stable", "evolving"] as const;
 export type JourneyState = (typeof JOURNEY_STATES)[number];
 
 export type NodeState = ExecutionState | ProductionState | JourneyState | BugState;
 
-export const EDGE_TYPES = ["depends_on", "belongs_to", "affects"] as const;
+export const EDGE_TYPES = ["depends_on", "belongs_to", "exposes", "leads_to", "affects"] as const;
 export type EdgeType = (typeof EDGE_TYPES)[number];
 
 export const BUG_SEVERITIES = ["low", "medium", "high", "critical"] as const;
@@ -54,16 +54,20 @@ export type BugSeverity = (typeof BUG_SEVERITIES)[number];
 export const NEXT_PIPELINE_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
 export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
 
-/** In-flight evolution of a shipped Foundation/Workflow (from next.mdx). */
+/** In-flight evolution of a shipped Foundation/Interaction/Interface (from next.mdx). */
 export interface NextSlot {
   state: NextPipelineState;
   title: string;
   description: string;
   updated_at: string;
-  /** Proposed Workflow → Journey ids; applied to current on ship. */
+  /** Proposed Interaction → Journey ids; applied to current on ship. */
   belongs_to?: string[];
   /** Proposed depends_on targets; applied to current on ship. */
   depends_on?: string[];
+  /** Proposed Interface → Interaction ids; applied to current on ship. */
+  exposes?: string[];
+  /** Proposed Interaction → Interaction navigation; applied to current on ship. */
+  leads_to?: string[];
 }
 
 export interface MindPlanNode {
@@ -76,13 +80,17 @@ export interface MindPlanNode {
   updated_at: string;
   shipped_at?: string;
   severity?: BugSeverity;
-  /** MCP-only. Workflow → Journey ids. */
+  /** MCP-only. Interaction → Journey ids. */
   belongs_to?: string[];
-  /** MCP-only. Workflow → Foundation|Workflow ids; Foundation → Foundation ids. */
+  /** MCP-only. Interaction/Interface → Foundation ids; Foundation → Foundation ids. */
   depends_on?: string[];
-  /** MCP-only. Bug → Workflow|Foundation ids. */
+  /** MCP-only. Interface → Interaction ids. */
+  exposes?: string[];
+  /** MCP-only. Interaction → Interaction navigation (not implementation dependency). */
+  leads_to?: string[];
+  /** MCP-only. Bug → Interaction|Interface|Foundation ids. */
   affects?: string[];
-  /** Present when next.mdx exists (Foundation/Workflow evolution in progress). */
+  /** Present when next.mdx exists (Foundation/Interaction/Interface evolution in progress). */
   next?: NextSlot;
 }
 
@@ -148,9 +156,19 @@ export function isNextPipelineState(state: string): state is NextPipelineState {
   return (NEXT_PIPELINE_STATES as readonly string[]).includes(state);
 }
 
-/** Pre-ship build states where Workflow description/title may change when scope shifts. */
-export const PRE_SHIP_WORKFLOW_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
-export type PreShipWorkflowState = (typeof PRE_SHIP_WORKFLOW_STATES)[number];
+/** Types that use the Foundation/Interaction/Interface build pipeline and may open next. */
+export function isPipelineNodeType(type: NodeType): boolean {
+  return type === "Foundation" || type === "Interaction" || type === "Interface";
+}
+
+/** Pre-ship build states where Interaction/Interface description/title may change when scope shifts. */
+export const PRE_SHIP_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
+export type PreShipState = (typeof PRE_SHIP_STATES)[number];
+
+/** @deprecated Use PRE_SHIP_STATES */
+export const PRE_SHIP_WORKFLOW_STATES = PRE_SHIP_STATES;
+/** @deprecated Use PreShipState */
+export type PreShipWorkflowState = PreShipState;
 
 export function initialStateForType(type: NodeType): NodeState {
   return type === "Bug" ? "open" : "draft";

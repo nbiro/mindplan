@@ -1,0 +1,48 @@
+---
+id: i-orient-plan
+type: Interaction
+title: "Orient on the plan"
+description: "Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context, get_blast_radius, orient_for_work, get_node_implementation."
+state: stable
+shipped_at: 2026-07-19T18:51:25.002Z
+created_at: 2026-07-19T18:33:36.789Z
+updated_at: 2026-07-19T19:39:39.381Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-mcp-runtime
+  - f-graph-search
+leads_to:
+  - i-steer-plan
+---
+
+# Orient on the plan
+
+## Purpose
+
+Read-path orientation for agents and humans: find the owning node, its 1-hop neighborhood, territory body, blast radius, and prescribed implementation package before coding.
+
+## Execution Logic
+
+Package: `src/interactions/i-orient-plan/`
+
+- `tools.ts` — ownership list `QUERY_TOOLS` registered by `f-mcp-runtime/server.ts`:
+  - `get_mindplan_graph` — full graph dump
+  - `find_related_nodes` — ranked focus + 1-hop summaries
+  - `get_blast_radius` — transitive dependents + `journeys_at_risk`
+  - `get_node_context` — record + body (+ `next` when evolving)
+  - `orient_for_work` — composite find + context + blast radius
+  - `get_node_implementation` — `src/foundations/<id>/` or `src/interactions/<id>/`
+
+Ranking substrate: `f-graph-search`. Depends on: `f-mcp-runtime`, `f-graph-search`. Belongs to: `j-territory-sdlc`.
+
+## Acceptance Criteria
+
+- [x] All six read tools are registered and return authoritative graph/territory data
+- [x] Orientation excludes retired nodes from default ranking
+- [x] `orient_for_work` includes blast radius for Foundation/Interaction focus
+- [x] Verified via `npm test`
+
+## Attachments
+
+_Wireframes and notes go in `attachments/`._

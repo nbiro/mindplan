@@ -49,8 +49,10 @@ via `mindplan-mcp init`.
 4. **Security** — injection, XSS, secrets in diff, unsafe authz, path traversal.
 5. **Missing tests** — new behavior without coverage when the project normally
    tests this layer; note gaps as blocking or important.
-6. **Fit with MindPlan** — no undeclared `src/` coupling outside `depends_on`;
-   docs/skills stay in the owning Workflow’s surfaces.
+6. **Fit with MindPlan** — no undeclared `src/` coupling outside Foundation
+   `depends_on`; Interaction packages stay independent (no Interaction→
+   Interaction coupling); Interface packages only wire their `exposes`
+   targets; docs/skills stay in the owning Interaction/Interface surfaces.
 
 ## Severity
 

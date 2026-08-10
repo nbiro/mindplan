@@ -1,49 +1,70 @@
 ---
 id: f-compiler-rules
 type: Foundation
-title: "Compiler rules engine"
-description: "Compiler rules; cancelled transitions + active-dependent cancel gate"
+title: "Compiler rules (interaction-centric)"
+description: "Compiler rules for Interaction Independence, No Ghost Interfaces, Behavior First, leads_to reachability; drop Dependency Closure."
 state: stable
-shipped_at: 2026-07-20T20:11:40.506Z
+shipped_at: 2026-08-10T13:51:06.833Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-07-23T20:59:42.453Z
+updated_at: 2026-08-10T13:51:06.833Z
 depends_on:
   - f-domain-model
 ---
-
-
 
 
 # Compiler rules engine
 
 ## Purpose
 
-Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly. Includes Rule 10 force-unship recovery and pre-ship `cancelled` abandon gates.
+Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly. Includes Rule 10 force-unship recovery, pre-ship `cancelled` abandon gates, Interaction Independence, Interface exposure gates, Infrastructure First / Behavior First at ship, Completion Check, and reachability helpers for Journey/`leads_to` impact analysis.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-compiler-rules/`
 
-- `rules.ts` — find-node helpers; Rule 1 Ghost Workflow / Ghost Bug; Rule 2 Infrastructure First; Rule 3 Completion Check; taxonomy / dependency closure; status transition tables (including `cancelled`); Journey state recompute; production stability from open Bugs; `open_next` / `discard_next` / ship-promote gates (Rule 9); `resolveForceUnship` (Rule 10); cancel gates (no open `next`, no active dependents); shipped Workflow title/description freeze on `current`
+- `rules.ts` — find-node helpers; taxonomy `validateLink` for Interaction-centric edge shapes:
+  - Interaction → Journey (`belongs_to`)
+  - Interaction/Interface → Foundation; Foundation → Foundation (`depends_on`)
+  - Interface → Interaction (`exposes`)
+  - Interaction → Interaction (`leads_to`, navigation only; cycles allowed)
+  - Bug → Interaction|Interface|Foundation (`affects`)
+- **Interaction Independence** — reject Interaction → Interaction `depends_on` (share state through Foundations)
+- **No Ghost Interactions** — `belongs_to` Journey + ≥1 Foundation `depends_on` before ready/in-progress
+- **No Ghost Interfaces** — ≥1 `exposes` Interaction before ready/in-progress (`depends_on` optional)
+- **No Ghost Bugs** — `affects` required before triaged/fixing
+- **Infrastructure First** — Interaction ship requires all `depends_on` Foundations `stable`
+- **Behavior First** — Interface ship requires all exposed Interactions `stable` (and any Foundation deps stable)
+- **Completion Check** — ship and `in-review` require all checkboxes checked against the active territory file (`current` or `next`)
+- Status transition tables (including `cancelled`); Journey state recompute from member Interactions; production stability from open Bugs
+- `open_next` / `discard_next` / ship-promote gates (Rule 9); `resolveForceUnship` (Rule 10); cancel gates (no open `next`, no active dependents)
+- Shipped Interaction/Interface title/description freeze on `current` (scalar freeze)
+- Drop Dependency Closure (`transitiveInteractionDependencies`, `missingJourneyDependents`, `link_dependent`)
+- `depends_on` acyclicity retained; `leads_to` allows cycles (no gate)
+- Reachability helpers: downstream closure via `leads_to`, Interfaces exposing an Interaction, Journeys containing an Interaction
 
 Depends on: `f-domain-model`. Uses `countUncheckedBoxes` from `f-territory-store`.
 
 ## Acceptance Criteria
 
-- Illegal transitions and edge shapes are rejected with `Blocked:` messages
+- Illegal transitions and edge shapes are rejected with `Blocked:` messages (including Interaction Independence)
+- Ghost Interaction / Ghost Interface / Ghost Bug gates fire before leaving draft/open as specified
+- Interface ship blocked while any exposed Interaction is not stable; Interaction ship blocked while Foundation deps are not stable
 - `cancelled` is allowed from draft/ready/in-progress/in-review; blocked with active dependents or open `next`
 - Journey and `stable`/`unstable` are computed, never set manually through this layer’s callers
 - Ship and `in-review` require Completion Check against the active territory file (`current` or `next`)
+- No Dependency Closure APIs remain
+- Reachability helpers return deterministic sorted results
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Honor `cancelled` transitions from domain model
-- [x] Block cancel when active dependents or next.mdx exist
-- [x] Block cancel when another node's next.depends_on targets this id
-- [x] Reject `cancelled` on next-slot pipeline
-- [x] Verified via `npm test` (cancel smoke)
+- [x] Rewrite `validateLink` for Interaction/Interface/exposes/leads_to; reject Interaction→Interaction depends_on
+- [x] Replace Ghost Interaction with Ghost Interaction; add Ghost Interface; keep Ghost Bug; Behavior First at Interface ship
+- [x] Delete Dependency Closure helpers; update Journey compute and stability/cancel/unship/freeze for Interaction+Interface
+- [x] Add leads_to reachability helpers
+- [x] Keep Completion Check, open_next/ship-promote, force_unship, cancel gates intact
+- [x] Verified via `npm test`
 
 ## Attachments
 
-_Schemas and diagrams go in `attachments/` / `next-attachments/`._
+_Schemas and diagrams go in `next-attachments/`._

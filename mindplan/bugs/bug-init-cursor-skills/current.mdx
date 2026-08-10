@@ -7,8 +7,8 @@ state: resolved
 created_at: 2026-07-23T19:39:51.630Z
 updated_at: 2026-07-23T19:57:10.801Z
 affects:
-  - wf-project-init
-  - wf-test-harness
+  - i-init-project
+  - f-test-harness
   - f-mcp-runtime
 ---
 
@@ -34,8 +34,8 @@ affects:
 ## Fix Checklist
 
 - [x] Root cause identified — init never called Cursor-native install helpers; `.cursorignore` comment overstated behavior
-- [x] Fix implemented — helpers in `wf-project-init`; CLI call/report in `f-mcp-runtime`; Cursor guide + `.cursorignore` comment updated
-- [x] Regression test added — `wf-test-harness` smoke asserts `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc` after init
+- [x] Fix implemented — helpers in `i-init-project`; CLI call/report in `f-mcp-runtime`; Cursor guide + `.cursorignore` comment updated
+- [x] Regression test added — `f-test-harness` smoke asserts `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc` after init
 
 ## Attachments
 
@@ -49,7 +49,7 @@ _Logs, screenshots, and HAR files go in `attachments/`._
 
 ### Evidence
 - [x] Root cause — init previously installed only under `mindplan/agent/skills` while `.cursorignore` hid that tree; helpers/CLI never wrote `.cursor/skills` or `mindplan.mdc`
-- [x] Fix — `installCursorSkills` + `installCursorRule` in `wf-project-init`; CLI wire/report in `f-mcp-runtime`; Cursor guide updated
+- [x] Fix — `installCursorSkills` + `installCursorRule` in `i-init-project`; CLI wire/report in `f-mcp-runtime`; Cursor guide updated
 - [x] Regression — smoke asserts Cursor skill dirs + `mindplan.mdc`; `npm test` passed
 
 ### Fit

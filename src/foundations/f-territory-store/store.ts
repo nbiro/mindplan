@@ -6,13 +6,15 @@
  *   /mindplan/components/                  — project-specific MDX components (opaque to the compiler)
  *   /mindplan/journeys/<id>/current.mdx
  *   /mindplan/foundations/<id>/current.mdx (+ optional next.mdx)
- *   /mindplan/workflows/<id>/current.mdx (+ optional next.mdx)
+ *   /mindplan/interactions/<id>/current.mdx (+ optional next.mdx)
+ *   /mindplan/interfaces/<id>/current.mdx (+ optional next.mdx)
  *   /mindplan/bugs/<id>/current.mdx
- *   /src/workflows/<id>/                   — Workflow implementation package
+ *   /src/interactions/<id>/                — Interaction implementation package
+ *   /src/interfaces/<id>/                  — Interface implementation package
  *   /src/foundations/<id>/                 — Foundation implementation package
  *
  * Live node records and outgoing edge arrays live in current.mdx YAML frontmatter.
- * While evolving a shipped Foundation/Workflow, next.mdx holds the draft pipeline + proposed edges.
+ * While evolving a shipped Foundation/Interaction/Interface, next.mdx holds the draft pipeline + proposed edges.
  */
 
 import * as fs from "fs";
@@ -27,7 +29,13 @@ import type {
   NextSlot,
   NodeType,
 } from "../f-domain-model/types.js";
-import { BUG_SEVERITIES, GRAPH_VERSION, isNextPipelineState, NODE_TYPES } from "../f-domain-model/types.js";
+import {
+  BUG_SEVERITIES,
+  GRAPH_VERSION,
+  isNextPipelineState,
+  isPipelineNodeType,
+  NODE_TYPES,
+} from "../f-domain-model/types.js";
 import {
   implementationPackagesRequired,
   loadProjectConfig,
@@ -49,18 +57,20 @@ export {
 const TYPE_DIRS: Record<NodeType, string> = {
   Journey: "journeys",
   Foundation: "foundations",
-  Workflow: "workflows",
+  Interaction: "interactions",
+  Interface: "interfaces",
   Bug: "bugs",
 };
 
 const DIR_TO_TYPE: Record<string, NodeType> = {
   journeys: "Journey",
   foundations: "Foundation",
-  workflows: "Workflow",
+  interactions: "Interaction",
+  interfaces: "Interface",
   bugs: "Bug",
 };
 
-const EDGE_FIELDS = ["belongs_to", "depends_on", "affects"] as const;
+const EDGE_FIELDS = ["belongs_to", "depends_on", "exposes", "leads_to", "affects"] as const;
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
@@ -87,24 +97,24 @@ export function typeDir(type: NodeType): string {
   return TYPE_DIRS[type];
 }
 
-/** Absolute path to an entity's folder, e.g. /mindplan/workflows/wf-checkout */
+/** Absolute path to an entity's folder, e.g. /mindplan/interactions/i-orient-plan */
 export function entityDir(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.join(mindplanRoot(), TYPE_DIRS[node.type], node.id);
 }
 
-/** Project-relative path to an entity folder, e.g. mindplan/workflows/wf-checkout */
+/** Project-relative path to an entity folder, e.g. mindplan/interactions/i-orient-plan */
 export function entityRelativePath(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.posix.join(MINDPLAN_DIR, TYPE_DIRS[node.type], node.id);
 }
 
 /**
- * Project-relative implementation package root for Workflow/Foundation, or null for Journey/Bug.
- * e.g. src/workflows/wf-checkout
+ * Project-relative implementation package root for Interaction/Interface/Foundation, or null for Journey/Bug.
+ * e.g. src/interactions/i-orient-plan
  */
 export function implementationRelativePath(
   node: Pick<MindPlanNode, "id" | "type">
 ): string | null {
-  if (node.type !== "Workflow" && node.type !== "Foundation") return null;
+  if (!isPipelineNodeType(node.type)) return null;
   return path.posix.join(SRC_DIR, TYPE_DIRS[node.type], node.id);
 }
 
@@ -115,7 +125,7 @@ export function implementationDir(node: Pick<MindPlanNode, "id" | "type">): stri
   return path.join(projectRoot(), ...rel.split("/"));
 }
 
-/** Scaffolds src/workflows/<id> or src/foundations/<id> with .gitkeep. No-op for Journey/Bug or when packages are off. */
+/** Scaffolds src/interactions|interfaces|foundations/<id> with .gitkeep. No-op for Journey/Bug or when packages are off. */
 export function scaffoldImplementationPackage(
   node: Pick<MindPlanNode, "id" | "type">
 ): string | null {
@@ -149,15 +159,15 @@ export type NodeImplementationInfo = {
 };
 
 /**
- * Returns prescribed implementation package info for a Workflow or Foundation.
+ * Returns prescribed implementation package info for an Interaction, Interface, or Foundation.
  * When implementation_packages is off, root is null and exists is false —
  * that means packages are not applicable, not that a package is missing.
  * Throws Blocked for Journey/Bug.
  */
 export function getNodeImplementation(node: MindPlanNode): NodeImplementationInfo {
-  if (node.type !== "Workflow" && node.type !== "Foundation") {
+  if (!isPipelineNodeType(node.type)) {
     throw new Error(
-      `Blocked: get_node_implementation only applies to Workflow and Foundation nodes; "${node.id}" is a ${node.type}.`
+      `Blocked: get_node_implementation only applies to Interaction, Interface, and Foundation nodes; "${node.id}" is a ${node.type}.`
     );
   }
   const mode = loadProjectConfig().implementation_packages;
@@ -267,6 +277,8 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
   const arrays: Record<EdgeField, string[]> = {
     belongs_to: [],
     depends_on: [],
+    exposes: [],
+    leads_to: [],
     affects: [],
   };
 
@@ -322,7 +334,7 @@ function stripEdgeFieldLines(inner: string): string {
   const result: string[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (/^(belongs_to|depends_on|affects):/.test(lines[i])) {
+    if (/^(belongs_to|depends_on|exposes|leads_to|affects):/.test(lines[i])) {
       i++;
       while (i < lines.length && /^\s+-\s+/.test(lines[i])) i++;
       continue;
@@ -392,6 +404,8 @@ function parseNodeFromFrontmatter(
   }
   if (parsed.arrays.belongs_to.length > 0) node.belongs_to = [...parsed.arrays.belongs_to];
   if (parsed.arrays.depends_on.length > 0) node.depends_on = [...parsed.arrays.depends_on];
+  if (parsed.arrays.exposes.length > 0) node.exposes = [...parsed.arrays.exposes];
+  if (parsed.arrays.leads_to.length > 0) node.leads_to = [...parsed.arrays.leads_to];
   if (parsed.arrays.affects.length > 0) node.affects = [...parsed.arrays.affects];
   return node;
 }
@@ -424,6 +438,8 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot {
   };
   if (parsed.arrays.belongs_to.length > 0) slot.belongs_to = [...parsed.arrays.belongs_to];
   if (parsed.arrays.depends_on.length > 0) slot.depends_on = [...parsed.arrays.depends_on];
+  if (parsed.arrays.exposes.length > 0) slot.exposes = [...parsed.arrays.exposes];
+  if (parsed.arrays.leads_to.length > 0) slot.leads_to = [...parsed.arrays.leads_to];
   return slot;
 }
 
@@ -443,9 +459,9 @@ export function discoverNodes(): MindPlanNode[] {
       const node = parseNodeFromFrontmatter(entry.name, nodeType, currentFile);
       const nextFile = path.join(typePath, entry.name, NEXT_FILENAME);
       if (fs.existsSync(nextFile)) {
-        if (nodeType !== "Foundation" && nodeType !== "Workflow") {
+        if (!isPipelineNodeType(nodeType)) {
           throw new Error(
-            `Blocked: next.mdx is only allowed for Foundations and Workflows (found on ${nodeType} "${entry.name}").`
+            `Blocked: next.mdx is only allowed for Foundations, Interactions, and Interfaces (found on ${nodeType} "${entry.name}").`
           );
         }
         node.next = parseNextSlot(entry.name, nextFile);
@@ -468,6 +484,16 @@ export function discoverEdges(nodes: MindPlanNode[]): MindPlanEdge[] {
     if (node.depends_on) {
       for (const target of node.depends_on) {
         edges.push({ source: node.id, target, type: "depends_on" });
+      }
+    }
+    if (node.exposes) {
+      for (const target of node.exposes) {
+        edges.push({ source: node.id, target, type: "exposes" });
+      }
+    }
+    if (node.leads_to) {
+      for (const target of node.leads_to) {
+        edges.push({ source: node.id, target, type: "leads_to" });
       }
     }
     if (node.affects) {
@@ -599,6 +625,8 @@ export function patchFrontmatterEdges(
   const merged: Record<EdgeField, string[]> = {
     belongs_to: edges.belongs_to ?? parsed.arrays.belongs_to,
     depends_on: edges.depends_on ?? parsed.arrays.depends_on,
+    exposes: edges.exposes ?? parsed.arrays.exposes,
+    leads_to: edges.leads_to ?? parsed.arrays.leads_to,
     affects: edges.affects ?? parsed.arrays.affects,
   };
 
@@ -611,12 +639,15 @@ export function patchFrontmatterEdges(
   fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
 }
 
-/** Resolves which territory slot receives belongs_to/depends_on mutations. */
+/** Resolves which territory slot receives edge mutations for pipeline nodes. */
 export function edgeWriteSlot(node: MindPlanNode, edgeType: EdgeType): TerritorySlot {
   if (
     node.next &&
-    (edgeType === "belongs_to" || edgeType === "depends_on") &&
-    (node.type === "Workflow" || node.type === "Foundation")
+    isPipelineNodeType(node.type) &&
+    (edgeType === "belongs_to" ||
+      edgeType === "depends_on" ||
+      edgeType === "exposes" ||
+      edgeType === "leads_to")
   ) {
     return "next";
   }
@@ -665,6 +696,8 @@ export function removeEdgesFromFrontmatter(
       {
         belongs_to: parsed.arrays.belongs_to.filter((id) => id !== targetId),
         depends_on: parsed.arrays.depends_on.filter((id) => id !== targetId),
+        exposes: parsed.arrays.exposes.filter((id) => id !== targetId),
+        leads_to: parsed.arrays.leads_to.filter((id) => id !== targetId),
         affects: parsed.arrays.affects.filter((id) => id !== targetId),
       },
       now,
@@ -711,9 +744,9 @@ export function scaffoldEntity(
         "",
         "_Name the domain capability this Journey owns and which use cases belong inside it. Journey titles alone should scream the product purpose — not the tech stack._",
         "",
-        "## Linked Workflows",
+        "## Linked Interactions",
         "",
-        "_Workflows link here via `belongs_to` in their frontmatter. The Journey state is computed automatically._",
+        "_Interactions link here via `belongs_to` in their frontmatter. The Journey state is computed automatically from member Interactions._",
         "",
         "## Attachments",
         "",
@@ -732,8 +765,8 @@ export function scaffoldEntity(
         "## Shared Substrate Spec",
         "",
         packagesRequired
-          ? "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. Implement code only under `src/foundations/<id>/`._"
-          : "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable use-case behaviour — that belongs in Workflows. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/foundations/<id>/`._",
+          ? "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable Interaction behaviour — that belongs in Interactions. Implement code only under `src/foundations/<id>/`._"
+          : "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable Interaction behaviour — that belongs in Interactions. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/foundations/<id>/`._",
         "",
         "## Checklist",
         "",
@@ -749,19 +782,35 @@ export function scaffoldEntity(
         "",
       ].join("\n");
       break;
-    case "Workflow":
+    case "Interaction":
       body = [
         `# ${meta.title}`,
         "",
         meta.description,
         "",
-        "## Execution Logic",
+        "## Purpose",
+        "",
+        "_Self-contained unit of behavior initiated by an actor (user, system, scheduler, external service, CLI/MCP/API caller). Not a screen, button, or endpoint — Interfaces expose this Interaction._",
+        "",
+        "## Actor & Trigger",
+        "",
+        "_Who initiates this Interaction and how (user action, cron, webhook, MCP tool call, …)._",
+        "",
+        "## Inputs & Outputs",
+        "",
+        "_Inputs consumed and outputs produced. Shared application state belongs in Foundations — Interactions must not depend_on other Interactions._",
+        "",
+        "## PRD / Execution Logic",
         "",
         packagesRequired
-          ? "_Describe the use case step by step — the application-specific business logic this feature implements. Implement code only under `src/workflows/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._"
-          : "_Describe the use case step by step — the application-specific business logic this feature implements. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/workflows/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._",
+          ? "_Describe the behavior step by step. Implement code only under `src/interactions/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._"
+          : "_Describe the behavior step by step. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/interactions/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._",
         "",
-        "## Checklist",
+        "## Acceptance Criteria",
+        "",
+        "_Checkable outcomes for this Interaction._",
+        "",
+        "## Atomic Ops",
         "",
         "- [ ] Requirements defined",
         "- [ ] Implementation complete",
@@ -770,6 +819,44 @@ export function scaffoldEntity(
         "## Attachments",
         "",
         `_Wireframes, screenshots, and spec PDFs go in \`attachments/\`._`,
+        "",
+        "{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}",
+        "",
+      ].join("\n");
+      break;
+    case "Interface":
+      body = [
+        `# ${meta.title}`,
+        "",
+        meta.description,
+        "",
+        "## Kind",
+        "",
+        "_How an actor enters or accesses Interactions: Page, Dialog, CLI command, MCP tool, REST endpoint, Webhook, Cron, Message queue consumer, …_",
+        "",
+        "## Exposed Interactions",
+        "",
+        "_List Interactions this Interface exposes (also link via `exposes` edges). An Interface must not contain core Interaction behavior._",
+        "",
+        "## Spec",
+        "",
+        packagesRequired
+          ? "_Presentation/transport/exposure only. Implement under `src/interfaces/<id>/`. Connect to Foundations as needed via `depends_on`._"
+          : "_Presentation/transport/exposure only. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/interfaces/<id>/`. Connect to Foundations as needed via `depends_on`._",
+        "",
+        "## Acceptance Criteria",
+        "",
+        "_Checkable outcomes for this Interface._",
+        "",
+        "## Atomic Ops",
+        "",
+        "- [ ] Spec written",
+        "- [ ] Implementation complete",
+        "- [ ] Verified against exposed Interactions",
+        "",
+        "## Attachments",
+        "",
+        `_Wireframes, OpenAPI snippets, CLI help dumps go in \`attachments/\`._`,
         "",
         "{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}",
         "",
@@ -851,6 +938,8 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.severity) record.severity = node.severity;
   if (node.belongs_to?.length) record.belongs_to = [...node.belongs_to];
   if (node.depends_on?.length) record.depends_on = [...node.depends_on];
+  if (node.exposes?.length) record.exposes = [...node.exposes];
+  if (node.leads_to?.length) record.leads_to = [...node.leads_to];
   if (node.affects?.length) record.affects = [...node.affects];
   if (node.next) {
     record.next = {
@@ -860,6 +949,8 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
       updated_at: node.next.updated_at,
       ...(node.next.belongs_to?.length ? { belongs_to: [...node.next.belongs_to] } : {}),
       ...(node.next.depends_on?.length ? { depends_on: [...node.next.depends_on] } : {}),
+      ...(node.next.exposes?.length ? { exposes: [...node.next.exposes] } : {}),
+      ...(node.next.leads_to?.length ? { leads_to: [...node.next.leads_to] } : {}),
     };
   }
   return record;
@@ -875,7 +966,7 @@ export type PatchNodeTerritoryInput = {
 };
 
 /**
- * Default patch target: when a shipped Foundation/Workflow has next.mdx, patches go to next.
+ * Default patch target: when a shipped Foundation/Interaction/Interface has next.mdx, patches go to next.
  * Otherwise current. Explicit `slot` overrides.
  */
 export function resolveTerritorySlot(
@@ -890,7 +981,7 @@ export function resolveTerritorySlot(
   }
   if (
     node.next &&
-    (node.type === "Foundation" || node.type === "Workflow") &&
+    isPipelineNodeType(node.type) &&
     (node.state === "stable" || node.state === "unstable")
   ) {
     return "next";
@@ -991,7 +1082,7 @@ export function patchNodeTerritory(
 }
 
 /**
- * Opens next.mdx for a shipped Foundation/Workflow by copying current territory into a draft slot.
+ * Opens next.mdx for a shipped Foundation/Interaction/Interface by copying current territory into a draft slot.
  */
 export function openNextSlot(
   node: MindPlanNode,
@@ -1027,6 +1118,14 @@ export function openNextSlot(
     frontmatterLines.push("depends_on:");
     for (const id of node.depends_on) frontmatterLines.push(`  - ${id}`);
   }
+  if (node.exposes?.length) {
+    frontmatterLines.push("exposes:");
+    for (const id of node.exposes) frontmatterLines.push(`  - ${id}`);
+  }
+  if (node.leads_to?.length) {
+    frontmatterLines.push("leads_to:");
+    for (const id of node.leads_to) frontmatterLines.push(`  - ${id}`);
+  }
   frontmatterLines.push("---");
 
   writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${split.body}`, "next");
@@ -1042,6 +1141,8 @@ export function openNextSlot(
   };
   if (node.belongs_to?.length) slot.belongs_to = [...node.belongs_to];
   if (node.depends_on?.length) slot.depends_on = [...node.depends_on];
+  if (node.exposes?.length) slot.exposes = [...node.exposes];
+  if (node.leads_to?.length) slot.leads_to = [...node.leads_to];
   return slot;
 }
 
@@ -1084,6 +1185,8 @@ export function promoteNextSlot(
   const description = nextParsed.scalars.description ?? node.next.description;
   const belongs_to = nextParsed.arrays.belongs_to;
   const depends_on = nextParsed.arrays.depends_on;
+  const exposes = nextParsed.arrays.exposes;
+  const leads_to = nextParsed.arrays.leads_to;
 
   const frontmatterLines = [
     "---",
@@ -1103,6 +1206,14 @@ export function promoteNextSlot(
   if (depends_on.length > 0) {
     frontmatterLines.push("depends_on:");
     for (const id of depends_on) frontmatterLines.push(`  - ${id}`);
+  }
+  if (exposes.length > 0) {
+    frontmatterLines.push("exposes:");
+    for (const id of exposes) frontmatterLines.push(`  - ${id}`);
+  }
+  if (leads_to.length > 0) {
+    frontmatterLines.push("leads_to:");
+    for (const id of leads_to) frontmatterLines.push(`  - ${id}`);
   }
   frontmatterLines.push("---");
 
@@ -1130,5 +1241,9 @@ export function promoteNextSlot(
   else delete node.belongs_to;
   if (depends_on.length > 0) node.depends_on = [...depends_on];
   else delete node.depends_on;
+  if (exposes.length > 0) node.exposes = [...exposes];
+  else delete node.exposes;
+  if (leads_to.length > 0) node.leads_to = [...leads_to];
+  else delete node.leads_to;
   delete node.next;
 }

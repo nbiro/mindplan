@@ -1,14 +1,14 @@
 # MindPlan Entity Definition Examples
 
-## Refused Workflow (no Journey)
+## Refused Interaction (no Journey)
 
-**User request:** "Define a workflow for split & pay checkout."
+**User request:** "Define an interaction for split & pay checkout."
 
 **Agent action:** `get_mindplan_graph` → no Journeys in graph (or none matching "ordering"/"checkout" capability).
 
-**Do not** call `create_node` for the Workflow. Respond:
+**Do not** call `create_node` for the Interaction. Respond:
 
-> I cannot define this Workflow yet — every Workflow must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the domain capability this use case belongs to). Once the Journey exists, I can create the Workflow and link it with `belongs_to`.
+> I cannot define this Interaction yet — every Interaction must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the domain capability this behavior belongs to). Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
 
 **Next step (after user agrees):** define Journey `j-ordering`, then proceed with the greenfield example below.
 
@@ -16,24 +16,37 @@
 
 ## Greenfield feature
 
-**Goal:** Add a "Split & pay checkout" feature to an "Ordering" Journey.
-Use-case-first: draft the Workflow, then mint Foundations from what its Execution Logic needs.
+**Goal:** Add "Split & pay" behavior plus a checkout Page Interface to an "Ordering" Journey.
+Behavior-first: draft the Interaction, then mint Interfaces and Foundations from what its PRD needs.
 
-### 1. Create Journey, then draft Workflow
+### 1. Create Journey, then draft Interaction
 
 ```
 create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders and pays for food" })
-create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
+create_node({ id: "i-checkout-split", type: "Interaction", title: "Split & pay", description: "Diner splits bill and pays" })
 ```
 
-Workflow may sit at `draft` with no links yet while you sketch the use case.
+Interaction may sit at `draft` with no links yet while you sketch the behavior.
 
-### 2. Enrich Workflow territory (derive substrate needs)
+### 2. Enrich Interaction territory (derive substrate and surfaces)
 
-Edit `mindplan/workflows/wf-checkout-split/current.mdx` via file tools:
+Edit `mindplan/interactions/i-checkout-split/current.mdx` via file tools:
 
 ```
-## Execution Logic
+## Purpose
+
+Let diners split a bill and complete payment for their share.
+
+## Actor & Trigger
+
+Diner starts split after items are confirmed on the table order.
+
+## Inputs & Outputs
+
+- In: order id, split mode, payment method
+- Out: per-person totals, payment confirmation
+
+## PRD / Execution Logic
 
 1. Diner selects split mode (even / by item / custom)
 2. System calculates per-person totals
@@ -47,28 +60,33 @@ Edit `mindplan/workflows/wf-checkout-split/current.mdx` via file tools:
 - [ ] Verified via smoke test
 ```
 
-Optional fallback: `patch_node_territory({ node_id: "wf-checkout-split", body: "…" })`.
+Optional fallback: `patch_node_territory({ node_id: "i-checkout-split", body: "…" })`.
 
-From that Execution Logic, shared needs are: order/payment tables, UI primitives, and an app shell to mount the Workflow package.
+From that PRD, shared needs are: order/payment tables, UI primitives, an app shell Assembler, and a **Page** Interface that exposes the Interaction.
 
-### 3. Create Foundations derived from the draft Workflow
+### 3. Create Interface and Foundations
 
 ```
+create_node({ id: "if-checkout-page", type: "Interface", title: "Checkout page", description: "Page — exposes split & pay in the ordering console" })
 create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables for orders and payments" })
 create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
-create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router mounting workflow packages" })
+create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router composing journeys, interactions, and interfaces" })
 ```
 
-### 4. Link Workflow
+### 4. Link Interaction, Interface, Foundations
 
 ```
-link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "f-nextjs", edge_type: "depends_on" })
+link_nodes({ source_id: "i-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
+link_nodes({ source_id: "i-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ source_id: "if-checkout-page", target_id: "i-checkout-split", edge_type: "exposes" })
+link_nodes({ source_id: "if-checkout-page", target_id: "f-nextjs", edge_type: "depends_on" })
+link_nodes({ source_id: "if-checkout-page", target_id: "f-design-system", edge_type: "depends_on" })
 ```
 
-### 5. Enrich Foundation territory
+Do **not** add Interaction → Interaction `depends_on`. Navigation to a follow-on tip Interaction would use `leads_to`.
+
+### 5. Enrich Foundation and Interface territory
 
 Prefer host file tools on `current_path` from `get_node_context` (body below `---`, plus title/description scalars). Example bodies:
 
@@ -87,19 +105,27 @@ Prefer host file tools on `current_path` from `get_node_context` (body below `--
 - [ ] Verified in staging
 ```
 
-**`mindplan/foundations/f-design-system/current.mdx` body:**
+**`mindplan/interfaces/if-checkout-page/current.mdx` body:**
 
 ```
-## Shared Substrate Spec
+## Kind
 
-- Primary button, typography, spacing tokens
-- Forms and feedback primitives used across Journeys
+Page
+
+## Exposed Interactions
+
+- `i-checkout-split` via `/orders/[id]/checkout`
+
+## Spec
+
+- App Router route mounts the Interaction package
+- Auth: signed-in diner for the table
 
 ## Checklist
 
-- [ ] Spec written
-- [ ] Components implemented
-- [ ] Documented for consumers
+- [ ] Route wired
+- [ ] Interaction mounted
+- [ ] Smoke-tested in browser
 ```
 
 **`mindplan/foundations/f-nextjs/current.mdx` body:**
@@ -108,8 +134,8 @@ Prefer host file tools on `current_path` from `get_node_context` (body below `--
 ## Shared Substrate Spec
 
 - App Router `app/` layout and providers
-- How Workflow packages under `src/workflows/` are mounted into routes
-- Env and deploy constraints Workflows must respect
+- How Interface packages under `src/interfaces/` and Interaction packages under `src/interactions/` are composed
+- Env and deploy constraints Interfaces must respect
 
 ## Checklist
 
@@ -122,48 +148,58 @@ Optional fallback (automation / weak file tools): `patch_node_territory({ node_i
 
 ### 6. Advance states (after links + content)
 
-Plan Review Foundations first, then the Workflow (spawn Reviewer via `review-work` — do not self-`ready`):
+Plan Review Foundations first, then the Interaction, then the Interface (spawn Reviewer via `review-work` — do not self-`ready`):
 
 ```
 # After Plan Review Approve on each Foundation:
 # update_node_status({ node_id: "f-db-core", new_status: "ready" })  # Reviewer only
 # …same for f-design-system, f-nextjs…
-# After Plan Review Approve on the Workflow:
-# update_node_status({ node_id: "wf-checkout-split", new_status: "ready" })  # Reviewer only
+# After Plan Review Approve on the Interaction:
+# update_node_status({ node_id: "i-checkout-split", new_status: "ready" })  # Reviewer only
+# After Plan Review Approve on the Interface:
+# update_node_status({ node_id: "if-checkout-page", new_status: "ready" })  # Reviewer only
 # Later execution session:
-update_node_status({ node_id: "wf-checkout-split", new_status: "in-progress" })
+update_node_status({ node_id: "i-checkout-split", new_status: "in-progress" })
 ```
 
 ---
 
 ## Design system Foundation (shared UI substrate)
 
-**Goal:** Stop inventing a new primary button per Workflow — one Foundation, many dependents.
+**Goal:** Stop inventing a new primary button per Interface — one Foundation, many dependents.
 
 ```
-create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Shared UI primitives including primary button" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
-link_nodes({ source_id: "wf-user-picker", target_id: "f-design-system", edge_type: "depends_on" })
+create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
+link_nodes({ source_id: "if-checkout-page", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ source_id: "if-user-picker-page", target_id: "f-design-system", edge_type: "depends_on" })
 ```
 
-Ship `f-design-system` to `stable` before dependent Workflows can ship (Infrastructure First).
+Ship `f-design-system` to `stable` before dependent Interactions/Interfaces can ship (Infrastructure First).
 
 ---
 
-## Shared Workflow composition (user picker)
+## Shared Interaction + leads_to navigation (user picker)
 
-**Goal:** Checkout embeds a real user-picker use case; picker is a Workflow, not a Foundation.
+**Goal:** Checkout flow navigates to a user-picker **behavior**; picker is an Interaction, not a Foundation. Surfaces that show it are Interfaces.
 
 ```
-create_node({ id: "wf-user-picker", type: "Workflow", title: "User picker", description: "Search and select a user" })
-create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
-link_nodes({ source_id: "wf-user-picker", target_id: "j-ordering", edge_type: "belongs_to" })
-link_nodes({ source_id: "wf-user-picker", target_id: "f-design-system", edge_type: "depends_on" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "wf-user-picker", edge_type: "depends_on" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to", link_dependent: true })
+create_node({ id: "i-user-picker", type: "Interaction", title: "User picker", description: "Search and select a user" })
+create_node({ id: "i-checkout-split", type: "Interaction", title: "Split & pay", description: "Diner splits bill and pays" })
+create_node({ id: "if-user-picker-page", type: "Interface", title: "User picker page", description: "Page — exposes user picker" })
+link_nodes({ source_id: "i-user-picker", target_id: "j-ordering", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-user-picker", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ source_id: "if-user-picker-page", target_id: "i-user-picker", edge_type: "exposes" })
+link_nodes({ source_id: "i-checkout-split", target_id: "i-user-picker", edge_type: "leads_to" })
 ```
 
-Composition reuse = `depends_on` between Workflows. If the picker also serves Admin, add a second `belongs_to` to `j-admin` (membership reuse).
+Illegal (rejected by Interaction Independence):
+
+```
+link_nodes({ source_id: "i-checkout-split", target_id: "i-user-picker", edge_type: "depends_on" })
+→ Blocked: Interaction Independence
+```
+
+If the picker also serves Admin, add a second `belongs_to` to `j-admin` (membership reuse). Shared state goes through Foundations, not Interaction→Interaction deps.
 
 ---
 
@@ -172,69 +208,57 @@ Composition reuse = `depends_on` between Workflows. If the picker also serves Ad
 **Goal:** Auth service depends on a lower-level config Foundation.
 
 ```
-create_node({ id: "f-config", type: "Foundation", title: "App config", description: "Environment and secrets loading" })
-create_node({ id: "f-auth", type: "Foundation", title: "Authentication", description: "JWT issuance and validation" })
+create_node({ id: "f-config", type: "Foundation", title: "App config", description: "Infra — environment and secrets loading" })
+create_node({ id: "f-auth", type: "Foundation", title: "Authentication", description: "Infra — JWT issuance and validation" })
 link_nodes({ source_id: "f-auth", target_id: "f-config", edge_type: "depends_on" })
 ```
 
-Ship `f-config` before `f-auth`. Workflows depending on `f-auth` cannot ship until `f-auth` is `stable`.
+Ship `f-config` before `f-auth`. Interactions depending on `f-auth` cannot ship until `f-auth` is `stable`.
 
 ---
 
-## Workflow spanning multiple Journeys
+## Interaction spanning multiple Journeys
 
-**Goal:** A shared "User profile" Workflow belongs to both "Ordering" and "Loyalty" Journeys.
+**Goal:** A shared "User profile" Interaction belongs to both "Ordering" and "Loyalty" Journeys.
 
 ```
 create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
 create_node({ id: "j-loyalty", type: "Journey", title: "Loyalty", description: "Points and rewards" })
-create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Core tables" })
-create_node({ id: "wf-user-profile", type: "Workflow", title: "User profile", description: "Shared profile across domain capabilities" })
-link_nodes({ source_id: "wf-user-profile", target_id: "j-ordering", edge_type: "belongs_to" })
-link_nodes({ source_id: "wf-user-profile", target_id: "j-loyalty", edge_type: "belongs_to" })
-link_nodes({ source_id: "wf-user-profile", target_id: "f-db-core", edge_type: "depends_on" })
+create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables" })
+create_node({ id: "i-user-profile", type: "Interaction", title: "User profile", description: "Shared profile across domain capabilities" })
+link_nodes({ source_id: "i-user-profile", target_id: "j-ordering", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-user-profile", target_id: "j-loyalty", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-user-profile", target_id: "f-db-core", edge_type: "depends_on" })
 ```
 
-One Workflow, two `belongs_to` edges — membership reuse across Journeys.
+One Interaction, two `belongs_to` edges — membership reuse across Journeys.
 
 ---
 
-## Workflow dependency and journey closure
+## MCP Interface exposing multiple Interactions
 
-**Goal:** Checkout depends on an Auth workflow; both must belong to the Ordering Journey.
-
-```
-create_node({ id: "wf-auth", type: "Workflow", title: "Authentication", description: "Login and session" })
-create_node({ id: "wf-checkout-split", type: "Workflow", title: "Split & pay checkout", description: "Diner splits bill and pays" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "wf-auth", edge_type: "depends_on" })
-link_nodes({ source_id: "wf-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
-```
-
-Linking checkout to the Journey without auth present is rejected:
+**Goal:** One MCP toolset Interface exposes orient, steer, and export Behaviors.
 
 ```
-link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
-→ Blocked: Dependency Closure. "wf-checkout-split" depends on workflow(s) not linked to journey "j-ordering": "wf-auth". Link them first, or retry with link_dependent: true.
+create_node({ id: "if-mcp-tools", type: "Interface", title: "MCP tools", description: "MCP — exposes plan orient/steer/export interactions" })
+link_nodes({ source_id: "if-mcp-tools", target_id: "i-orient-plan", edge_type: "exposes" })
+link_nodes({ source_id: "if-mcp-tools", target_id: "i-steer-plan", edge_type: "exposes" })
+link_nodes({ source_id: "if-mcp-tools", target_id: "i-export-map", edge_type: "exposes" })
+link_nodes({ source_id: "i-orient-plan", target_id: "i-steer-plan", edge_type: "leads_to" })
+link_nodes({ source_id: "i-steer-plan", target_id: "i-export-map", edge_type: "leads_to" })
 ```
 
-Retry with cascade:
-
-```
-link_nodes({ source_id: "wf-checkout-split", target_id: "j-ordering", edge_type: "belongs_to", link_dependent: true })
-→ ok; dependents_linked includes wf-auth -> j-ordering
-```
-
-Both Workflows must ship in dependency order: `wf-auth` must reach `stable` before `wf-checkout-split` can `ship`.
+Behavior First: `if-mcp-tools` cannot `ship` until `i-orient-plan`, `i-steer-plan`, and `i-export-map` are each `stable`.
 
 ---
 
-## Bug on shipped Workflow
+## Bug on shipped Interaction
 
-**Goal:** Report a race condition affecting checkout.
+**Goal:** Report a race condition affecting checkout behavior.
 
 ```
 create_node({ id: "bug-double-charge", type: "Bug", title: "Double charge on retry", description: "Payment retried after timeout causes duplicate charge" })
-link_nodes({ source_id: "bug-double-charge", target_id: "wf-checkout-split", edge_type: "affects" })
+link_nodes({ source_id: "bug-double-charge", target_id: "i-checkout-split", edge_type: "affects" })
 
 # Prefer file tools on bug current_path for Summary / Repro / Expected; optional fallback:
 patch_node_territory({
@@ -270,38 +294,46 @@ Then:
 update_node_status({ node_id: "bug-double-charge", new_status: "triaged" })
 ```
 
-`wf-checkout-split` flips to `unstable` when the `affects` link is created (if already shipped).
+`i-checkout-split` flips to `unstable` when the `affects` link is created (if already shipped).
 
 ---
 
-## Evolving a shipped Workflow
+## Evolving a shipped Interaction
 
-**Goal:** Revise shipped checkout's split calculation while v1 keeps serving until cutover. The Workflow keeps its id (`wf-checkout-split`) throughout — there is no `-v2` node.
+**Goal:** Revise shipped checkout's split calculation while v1 keeps serving until cutover. The Interaction keeps its id (`i-checkout-split`) throughout — there is no `-v2` node.
 
 ```
-get_blast_radius({ node_id: "wf-checkout-split" })
-→ { affected: [{ id: "wf-tips", type: "Workflow", distance: 1, ... }], journeys_at_risk: ["j-ordering"] }
+get_blast_radius({ node_id: "i-checkout-split" })
+→ {
+    affected: [{ id: "f-…", ... }],   // reverse depends_on if any
+    journeys_at_risk: ["j-ordering"],
+    reachability: {
+      exposing_interfaces: ["if-checkout-page"],
+      containing_journeys: ["j-ordering"],
+      leads_to_downstream: ["i-tips"]
+    }
+  }
 
 open_next({
-  node_id: "wf-checkout-split",
+  node_id: "i-checkout-split",
   description: "Revised split calculation"
 })
 → live node stays stable, still serving under current.mdx
-→ next.mdx created: { state: "draft", title, description, belongs_to, depends_on } inherited from current
+→ next.mdx created: { state: "draft", title, description, belongs_to, depends_on, leads_to } inherited from current
 
-update_node_status({ node_id: "wf-checkout-split", new_status: "ready" })
-update_node_status({ node_id: "wf-checkout-split", new_status: "in-progress" })
+update_node_status({ node_id: "i-checkout-split", new_status: "ready" })
+update_node_status({ node_id: "i-checkout-split", new_status: "in-progress" })
 # Prefer file tools on next_path to toggle checkboxes / edit body; optional:
-# patch_node_territory({ node_id: "wf-checkout-split", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
+# patch_node_territory({ node_id: "i-checkout-split", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
 → status transitions apply to next.mdx automatically while it exists (record.next.state advances; live record.state is unchanged)
 
-update_node_status({ node_id: "wf-checkout-split", new_status: "in-review" })
+update_node_status({ node_id: "i-checkout-split", new_status: "in-review" })
 
 // After external review approves:
-update_node_status({ node_id: "wf-checkout-split", new_status: "ship" })
+update_node_status({ node_id: "i-checkout-split", new_status: "ship" })
 → ship is only legal from next in-review; re-checks Infrastructure First against next's depends_on
 → promotes next.mdx over current.mdx (title/description/body/edges); next.mdx is deleted
 → response: { promoted_next: true, new_state: "stable" | "unstable", next_state: null }
 ```
 
-`discard_next({ node_id: "wf-checkout-split" })` abandons the evolution at any point — deletes `next.mdx` and `next-attachments/`; `current.mdx` is untouched.
+`discard_next({ node_id: "i-checkout-split" })` abandons the evolution at any point — deletes `next.mdx` and `next-attachments/`; `current.mdx` is untouched.

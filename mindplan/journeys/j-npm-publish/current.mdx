@@ -18,14 +18,14 @@ Domain capability: release `mindplan-mcp` to the public npm registry so maintain
 
 Maintainers claim the package once, then publish through a **repeatable publish script** (dry-run → test → publish → verify). Later releases are the same script, triggered automatically when a `v*` git tag is pushed, authenticated with npm Trusted Publishing (OIDC) — no long-lived `NPM_TOKEN`.
 
-Journey state is **computed** from member Workflows. Assembler for automation: `f-github-actions`. Registry boundary: `f-npm-registry`.
+Journey state is **computed** from member Interactions. Assembler for automation: `f-github-actions`. Registry boundary: `f-npm-registry`.
 
-Consumer install docs also surface under Adopt MindPlan (`j-agent-onboarding`) via dual membership of `wf-npm-publish`.
+Consumer install docs also surface under Adopt MindPlan (`j-agent-onboarding`) via dual membership of `i-npm-publish`.
 
-## Linked Workflows
+## Linked Interactions
 
-- `wf-npm-publish` — first claim + reusable publish script + consumer install docs
-- `wf-npm-tag-publish` — tag-driven GitHub Actions publish wrapping that script via OIDC
+- `i-npm-publish` — first claim + reusable publish script + consumer install docs
+- `i-npm-tag-publish` — tag-driven GitHub Actions publish wrapping that script via OIDC
 
 ## What “healthy” means
 

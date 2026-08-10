@@ -1,16 +1,15 @@
 ---
 id: f-graph-search
 type: Foundation
-title: "Graph search"
-description: "Graph search; hide cancelled nodes from default ranking like deprecated"
+title: "Graph search (interaction-centric)"
+description: "Graph search ranks Interaction and Interface nodes."
 state: stable
-shipped_at: 2026-07-20T20:11:40.600Z
+shipped_at: 2026-08-10T13:55:21.462Z
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-07-20T20:11:40.600Z
+updated_at: 2026-08-10T13:55:21.462Z
 depends_on:
   - f-domain-model
 ---
-
 
 
 # Graph search
@@ -23,7 +22,10 @@ Infra — orientation ranking and 1-hop neighborhood expansion for `find_related
 
 Package: `src/foundations/f-graph-search/`
 
-- `search.ts` — `tokenize` / `scoreNode` / `rankNodes`; `expandNeighborhood`; `findRelatedNodes` (focus + linked summaries); default/max find limits; excludes `deprecated`/`cancelled` nodes and closed Bugs from ranking by default (aligned with map export policy)
+- `search.ts` — `tokenize` / `scoreNode` / `rankNodes`; `expandNeighborhood`; `findRelatedNodes` (focus + linked summaries); default/max find limits (`DEFAULT_FIND_LIMIT` / `MAX_FIND_LIMIT`); excludes `deprecated`/`cancelled` nodes and closed Bugs from ranking by default (aligned with map export policy)
+- Ranking covers all node types including Interaction and Interface (id/title/description scoring; no Interaction-specific branches — ranking is type-agnostic aside from retired filters)
+- `expandNeighborhood` walks all incident edge types including `exposes` and `leads_to`
+- Tests/fixtures must cover Interaction/Interface nodes and `exposes`/`leads_to` neighborhoods once the domain model ships those types
 
 Depends on: `f-domain-model`.
 
@@ -32,13 +34,16 @@ Depends on: `f-domain-model`.
 - Query ranking returns a focus plus 1-hop neighborhood summaries
 - Retired nodes (`deprecated`, `cancelled`, closed Bugs) are excluded from default orientation ranking
 - Limits respect DEFAULT_FIND_LIMIT / MAX_FIND_LIMIT
+- Queries matching Interaction/Interface titles return them as focus candidates
+- 1-hop neighborhoods include `exposes` and `leads_to` neighbors
 - Verified via `npm test` (`search.test.mjs`)
 
 ## Atomic Ops
 
-- [x] Treat `cancelled` as retired in ranking filter
+- [x] Ensure ranking/neighborhood work for Interaction and Interface once types exist; add fixtures for `exposes`/`leads_to` neighbors
+- [x] Remove any Interaction-only fixtures from search tests; keep retired-node and find-limit behavior
 - [x] Verified via `npm test`
 
 ## Attachments
 
-_Schemas and diagrams go in `attachments/`._
+_Schemas and diagrams go in `next-attachments/`._

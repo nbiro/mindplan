@@ -87,7 +87,7 @@ function nodeLabel(node: MindPlanNode): string {
 }
 
 function belongsToJourneys(node: MindPlanNode, edges: MindPlanEdge[]): string[] {
-  if (node.type !== "Workflow") return [];
+  if (node.type !== "Interaction") return [];
   const fromEdges = edges
     .filter((e) => e.source === node.id && e.type === "belongs_to")
     .map((e) => e.target);
@@ -96,15 +96,15 @@ function belongsToJourneys(node: MindPlanNode, edges: MindPlanEdge[]): string[] 
 }
 
 /**
- * Mermaid node id for a workflow placed in a journey cluster.
+ * Mermaid node id for an Interaction placed in a Journey cluster.
  * Multi-membership: one visual instance per Journey.
  */
-function workflowInstanceId(workflowId: string, journeyId: string): string {
-  return mermaidSafeId(`${workflowId}__in__${journeyId}`);
+function interactionInstanceId(interactionId: string, journeyId: string): string {
+  return mermaidSafeId(`${interactionId}__in__${journeyId}`);
 }
 
-function workflowCanonicalId(workflowId: string): string {
-  return mermaidSafeId(workflowId);
+function interactionCanonicalId(interactionId: string): string {
+  return mermaidSafeId(interactionId);
 }
 
 /** Resolve display id for an edge endpoint (prefer a known instance). */
@@ -136,12 +136,15 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
   const foundations = view.nodes
     .filter((n) => n.type === "Foundation")
     .sort((a, b) => a.id.localeCompare(b.id));
-  const workflows = view.nodes
-    .filter((n) => n.type === "Workflow")
+  const interactions = view.nodes
+    .filter((n) => n.type === "Interaction")
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const interfaces = view.nodes
+    .filter((n) => n.type === "Interface")
     .sort((a, b) => a.id.localeCompare(b.id));
   const bugs = view.nodes.filter((n) => n.type === "Bug").sort((a, b) => a.id.localeCompare(b.id));
 
-  /** workflowId → list of mermaid instance ids */
+  /** interactionId → list of mermaid instance ids */
   const instanceMap = new Map<string, string[]>();
 
   if (foundations.length > 0) {
@@ -152,37 +155,45 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
     lines.push(`  end`);
   }
 
+  if (interfaces.length > 0) {
+    lines.push(`  subgraph interfaces["Interfaces"]`);
+    for (const iface of interfaces) {
+      lines.push(`    ${mermaidSafeId(iface.id)}{{"${nodeLabel(iface)}"}}`);
+    }
+    lines.push(`  end`);
+  }
+
   const journeyIds = new Set(journeys.map((j) => j.id));
   const unassigned: MindPlanNode[] = [];
 
   for (const j of journeys) {
     const sgId = mermaidSafeId(`journey_${j.id}`);
     lines.push(`  subgraph ${sgId}["${escapeLabel(`${j.id} · ${j.title} · ${j.state}`)}"]`);
-    for (const wf of workflows) {
-      const owners = belongsToJourneys(wf, view.edges).filter((id) => journeyIds.has(id));
+    for (const ix of interactions) {
+      const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
       if (!owners.includes(j.id)) continue;
-      const inst = workflowInstanceId(wf.id, j.id);
-      const list = instanceMap.get(wf.id) ?? [];
+      const inst = interactionInstanceId(ix.id, j.id);
+      const list = instanceMap.get(ix.id) ?? [];
       list.push(inst);
-      instanceMap.set(wf.id, list);
-      lines.push(`    ${inst}["${nodeLabel(wf)}"]`);
+      instanceMap.set(ix.id, list);
+      lines.push(`    ${inst}["${nodeLabel(ix)}"]`);
     }
     lines.push(`  end`);
   }
 
-  for (const wf of workflows) {
-    const owners = belongsToJourneys(wf, view.edges).filter((id) => journeyIds.has(id));
+  for (const ix of interactions) {
+    const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
     if (owners.length === 0) {
-      unassigned.push(wf);
-      const inst = workflowCanonicalId(wf.id);
-      instanceMap.set(wf.id, [inst]);
+      unassigned.push(ix);
+      const inst = interactionCanonicalId(ix.id);
+      instanceMap.set(ix.id, [inst]);
     }
   }
 
   if (unassigned.length > 0) {
-    lines.push(`  subgraph unassigned["Unassigned workflows"]`);
-    for (const wf of unassigned) {
-      lines.push(`    ${workflowCanonicalId(wf.id)}["${nodeLabel(wf)}"]`);
+    lines.push(`  subgraph unassigned["Unassigned interactions"]`);
+    for (const ix of unassigned) {
+      lines.push(`    ${interactionCanonicalId(ix.id)}["${nodeLabel(ix)}"]`);
     }
     lines.push(`  end`);
   }
@@ -191,7 +202,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
     lines.push(`  ${mermaidSafeId(bug.id)}["${nodeLabel(bug)}"]`);
   }
 
-  // Edges: omit belongs_to (encoded by clustering); style depends_on / affects
+  // Edges: omit belongs_to (encoded by clustering); style depends_on / exposes / leads_to / affects
   for (const e of view.edges) {
     if (e.type === "belongs_to") continue;
     if (!byId.has(e.source) || !byId.has(e.target)) continue;
@@ -201,11 +212,33 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
     if (e.type === "depends_on") {
       const srcInstances = instanceMap.get(e.source) ?? [mermaidSafeId(e.source)];
       const tgt =
-        targetNode.type === "Workflow"
+        targetNode.type === "Interaction"
           ? (instanceMap.get(e.target) ?? [mermaidSafeId(e.target)])[0]
           : mermaidSafeId(e.target);
       for (const src of srcInstances) {
         lines.push(`  ${src} --> ${tgt}`);
+      }
+      continue;
+    }
+
+    if (e.type === "exposes") {
+      const src = mermaidSafeId(e.source);
+      const tgt =
+        targetNode.type === "Interaction"
+          ? (instanceMap.get(e.target) ?? [mermaidSafeId(e.target)])[0]
+          : mermaidSafeId(e.target);
+      lines.push(`  ${src} -->|exposes| ${tgt}`);
+      continue;
+    }
+
+    if (e.type === "leads_to") {
+      const srcInstances = instanceMap.get(e.source) ?? [mermaidSafeId(e.source)];
+      const tgt =
+        targetNode.type === "Interaction"
+          ? (instanceMap.get(e.target) ?? [mermaidSafeId(e.target)])[0]
+          : mermaidSafeId(e.target);
+      for (const src of srcInstances) {
+        lines.push(`  ${src} -.->|leads_to| ${tgt}`);
       }
       continue;
     }
@@ -234,8 +267,10 @@ function shapeFor(type: NodeType): string {
       return "folder";
     case "Foundation":
       return "box";
-    case "Workflow":
+    case "Interaction":
       return "ellipse";
+    case "Interface":
+      return "hexagon";
     case "Bug":
       return "octagon";
     default:
@@ -256,8 +291,11 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
   const foundations = view.nodes
     .filter((n) => n.type === "Foundation")
     .sort((a, b) => a.id.localeCompare(b.id));
-  const workflows = view.nodes
-    .filter((n) => n.type === "Workflow")
+  const interactions = view.nodes
+    .filter((n) => n.type === "Interaction")
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const interfaces = view.nodes
+    .filter((n) => n.type === "Interface")
     .sort((a, b) => a.id.localeCompare(b.id));
   const bugs = view.nodes.filter((n) => n.type === "Bug").sort((a, b) => a.id.localeCompare(b.id));
   const journeyIds = new Set(journeys.map((j) => j.id));
@@ -274,6 +312,18 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     lines.push("  }");
   }
 
+  if (interfaces.length > 0) {
+    lines.push("  subgraph cluster_interfaces {");
+    lines.push('    label="Interfaces";');
+    lines.push("    style=rounded;");
+    for (const iface of interfaces) {
+      lines.push(
+        `    ${dotSafeId(iface.id)} [label="${dotLabel(iface)}", shape=${shapeFor("Interface")}];`
+      );
+    }
+    lines.push("  }");
+  }
+
   for (const j of journeys) {
     const clusterId = j.id.replace(/[^a-zA-Z0-9_]/g, "_");
     const clusterLabel = `${j.id} · ${j.title} · ${j.state}`.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -283,8 +333,8 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     lines.push(
       `    ${dotSafeId(j.id)} [label="${dotLabel(j)}", shape=${shapeFor("Journey")}, style=dashed];`
     );
-    for (const wf of workflows) {
-      const owners = belongsToJourneys(wf, view.edges).filter((id) => journeyIds.has(id));
+    for (const ix of interactions) {
+      const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
       if (!owners.includes(j.id)) continue;
       // DOT cluster membership is exclusive — place in lexicographically first owning Journey.
       const primary = owners[0];
@@ -292,24 +342,24 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
       const multi =
         owners.length > 1 ? `\\n[also: ${owners.slice(1).join(", ")}]` : "";
       lines.push(
-        `    ${dotSafeId(wf.id)} [label="${dotLabel(wf)}${multi}", shape=${shapeFor("Workflow")}];`
+        `    ${dotSafeId(ix.id)} [label="${dotLabel(ix)}${multi}", shape=${shapeFor("Interaction")}];`
       );
     }
     lines.push("  }");
   }
 
   const assigned = new Set<string>();
-  for (const wf of workflows) {
-    const owners = belongsToJourneys(wf, view.edges).filter((id) => journeyIds.has(id));
+  for (const ix of interactions) {
+    const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
     if (owners.length > 0) {
-      assigned.add(wf.id);
+      assigned.add(ix.id);
     }
   }
 
-  for (const wf of workflows) {
-    if (assigned.has(wf.id)) continue;
+  for (const ix of interactions) {
+    if (assigned.has(ix.id)) continue;
     lines.push(
-      `  ${dotSafeId(wf.id)} [label="${dotLabel(wf)}", shape=${shapeFor("Workflow")}];`
+      `  ${dotSafeId(ix.id)} [label="${dotLabel(ix)}", shape=${shapeFor("Interaction")}];`
     );
   }
 
@@ -321,8 +371,25 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
 
   for (const e of view.edges) {
     if (e.type === "belongs_to") continue;
-    const style = e.type === "affects" ? "style=dashed" : "style=solid";
-    lines.push(`  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [${style}];`);
+    if (e.type === "depends_on") {
+      lines.push(`  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [style=solid];`);
+      continue;
+    }
+    if (e.type === "exposes") {
+      lines.push(
+        `  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [style=solid, label="exposes"];`
+      );
+      continue;
+    }
+    if (e.type === "leads_to") {
+      lines.push(
+        `  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [style=dashed, label="leads_to"];`
+      );
+      continue;
+    }
+    if (e.type === "affects") {
+      lines.push(`  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [style=dashed];`);
+    }
   }
 
   lines.push("}");

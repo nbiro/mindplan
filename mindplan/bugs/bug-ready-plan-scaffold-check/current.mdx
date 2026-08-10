@@ -7,18 +7,18 @@ state: resolved
 created_at: 2026-07-20T21:28:07.130Z
 updated_at: 2026-07-20T21:33:01.750Z
 affects:
-  - wf-integrity-check
+  - i-check-integrity
 ---
 
 # Ready plans blocked by scaffold package dirty-src
 
 ## Summary
 
-`create_node` scaffolds `src/.../.gitkeep` for Foundations/Workflows. Plan-only PRs advance nodes to `ready` and commit those scaffolds. `mindplan-mcp check --base` treated that as dirty-src ownership failure, blocking merge of ready plans.
+`create_node` scaffolds `src/.../.gitkeep` for Foundations/Interactions. Plan-only PRs advance nodes to `ready` and commit those scaffolds. `mindplan-mcp check --base` treated that as dirty-src ownership failure, blocking merge of ready plans.
 
 ## Repro Steps
 
-1. Plan-only session: create Foundations/Workflows, link Ghost Workflow gates, `update_node_status` → `ready`.
+1. Plan-only session: create Foundations/Interactions, link Ghost Interaction gates, `update_node_status` → `ready`.
 2. Commit territory + scaffold `.gitkeep` packages (no application code).
 3. CI runs `node dist/index.js check --base <merge-base>`.
 
@@ -30,10 +30,10 @@ affects:
 
 ## Fix Checklist
 
-- [x] Exempt `src/{foundations,workflows}/<id>/.gitkeep` from dirty-src when owner (or next) is `draft`/`ready`
+- [x] Exempt `src/{foundations,interactions}/<id>/.gitkeep` from dirty-src when owner (or next) is `draft`/`ready`
 - [x] Keep real package files blocked at `draft`/`ready` (working tree and commits)
 - [x] Regression in `check.test.mjs` for ready-plan scaffold commit
-- [x] Document scaffold exemption on `wf-integrity-check` territory
+- [x] Document scaffold exemption on `i-check-integrity` territory
 - [x] Review follow-up: committed real code at ready fails; scaffold test not masked by in-progress peer; failure hints mention scaffold caveat
 
 ## Attachments
