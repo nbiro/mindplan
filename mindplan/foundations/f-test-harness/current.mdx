@@ -1,0 +1,57 @@
+---
+id: f-test-harness
+type: Foundation
+title: "Test harness"
+description: "Smoke asserts init -f/--force overwrites existing agent template files."
+state: stable
+shipped_at: 2026-07-24T20:12:12.345Z
+created_at: 2026-07-15T18:51:38.385Z
+updated_at: 2026-07-24T20:12:12.345Z
+depends_on:
+  - f-mcp-runtime
+---
+
+
+
+
+
+
+# Test harness
+
+## Purpose
+
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers `force_unship` recovery gates, init install of `.cursor/permissions.json`, Cursor-native skill/rule paths under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`, and `init -f` / `--force` overwriting previously installed agent assets after an upgrade.
+
+## Execution Logic
+
+Package: `src/interactions/f-test-harness/`
+
+- `view.test.mjs` — Mermaid/DOT projection unit tests
+- `search.test.mjs` — ranking excludes retired nodes
+- `check.test.mjs` — integrity check CLI (orphan, dirty-src, `--for-main`)
+- `smoke.mjs` — MCP stdio end-to-end + init + `force_unship` + `cancelled` gates; after CLI `init` in a temp root, assert:
+  - existing: playbook, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`, integrations, `mindplan/agent/skills/{plan-project,review-work,code-review}/SKILL.md`, default layout config
+  - Cursor: `.cursor/skills/mindplan-define-entities|plan-project|review-work|code-review/SKILL.md`, `.cursor/rules/mindplan.mdc`
+  - Force overwrite: after a successful init, mutate a known installed file (e.g. playbook and/or a Cursor skill), run `init -f` (and/or `--force`), assert the file content is restored from the package template; assert bare `init` (no `-f`) does **not** restore a mutated file; assert `-f` alone does not flip an existing layout-free `config.json`
+
+Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`. Paired with `i-init-project` + `f-mcp-runtime` nexts for init force overwrite.
+
+## Acceptance Criteria
+
+- `npm test` runs build + view + search + check + smoke successfully
+- Smoke covers cancel (dependents block, terminal, view hide/`include_retired`)
+- Smoke asserts `mindplan-mcp init` installs `review-work` and thin `code-review` under `mindplan/agent/skills/` and `.cursor/skills/mindplan-code-review/`
+- Smoke asserts `mindplan-mcp init` installs Cursor-native `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc`
+- Smoke asserts `mindplan-mcp init -f` overwrites a previously mutated agent asset from templates; bare re-init does not
+- Smoke asserts `init -f` preserves existing `implementation_packages: "off"` when `--layout` is not passed
+- Check harness covers orphan package, dirty ownership, `--for-main`
+
+## Atomic Ops
+
+- [x] Smoke: after init, mutate playbook (or equivalent), bare re-init leaves mutation, `init -f` restores template content
+- [x] Smoke: `init -f` on a layout-free project leaves `implementation_packages: "off"`
+- [x] Keep this next.mdx a full successor contract (not a changelog)
+
+## Attachments
+
+_Wireframes and notes go in `attachments/` / `next-attachments/`._

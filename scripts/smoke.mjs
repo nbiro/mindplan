@@ -1,1 +1,1 @@
-import "../src/workflows/wf-test-harness/smoke.mjs";
+import "../src/foundations/f-test-harness/smoke.mjs";

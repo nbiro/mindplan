@@ -18,7 +18,7 @@ Territory mutation helpers return without throwing when the MDX file is missing 
 
 ## Repro Steps
 
-1. Create a valid Workflow via MCP.
+1. Create a valid Interaction via MCP.
 2. Hand-edit its `current.mdx` to remove the opening `---` frontmatter fence (or corrupt it so parse fails).
 3. Call `update_node_status` or `link_nodes` targeting that node.
 

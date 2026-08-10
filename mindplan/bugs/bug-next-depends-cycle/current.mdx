@@ -8,18 +8,18 @@ created_at: 2026-07-23T20:53:48.606Z
 updated_at: 2026-07-23T20:59:42.452Z
 affects:
   - f-compiler-rules
-  - wf-mutate-graph
+  - i-steer-plan
 ---
 
 # Next-slot depends_on cycles not rejected
 
 ## Summary
 
-While a Foundation/Workflow has an open `next.mdx`, `link_nodes(depends_on)` writes proposed edges onto the next slot, but acyclicity and Dependency Closure only inspect live `current` edges — so two evolving nodes can form a cycle that survives ship.
+While a Foundation/Interaction has an open `next.mdx`, `link_nodes(depends_on)` writes proposed edges onto the next slot, but acyclicity and Dependency Closure only inspect live `current` edges — so two evolving nodes can form a cycle that survives ship.
 
 ## Repro Steps
 
-1. Ship two Workflows `wf-a` and `wf-b` (stable), each with valid Journey/Foundation links.
+1. Ship two Interactions `wf-a` and `wf-b` (stable), each with valid Journey/Foundation links.
 2. `open_next` on both.
 3. `link_nodes({ source_id: "wf-a", target_id: "wf-b", edge_type: "depends_on" })` (writes to `wf-a` next).
 4. `link_nodes({ source_id: "wf-b", target_id: "wf-a", edge_type: "depends_on" })` (writes to `wf-b` next).

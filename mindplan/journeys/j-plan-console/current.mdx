@@ -21,18 +21,18 @@ Humans open a Next.js console pointed at a project root. Three pillars share one
 
 1. **See** — status board, interactive XYFlow graph, territory viewer
 2. **Mutate** — lifecycle and edge edits via the same compiler agents use
-3. **Model** — create and link Journeys, Foundations, Workflows, Bugs (human define-entities)
+3. **Model** — create and link Journeys, Foundations, Interactions, Bugs (human define-entities)
 
-Journey state is **computed** from member Workflows. Assembler: `f-nextjs` (via Workflow `depends_on`). Data path: browser → `f-console-bridge` → MindPlan store/compiler (no second authority).
+Journey state is **computed** from member Interactions. Assembler: `f-nextjs` (via Interaction `depends_on`). Data path: browser → `f-console-bridge` → MindPlan store/compiler (no second authority).
 
-## Linked Workflows
+## Linked Interactions
 
-- `wf-console-shell` — shared chrome (project root, nav)
-- `wf-status-board` — see: delivery board
-- `wf-graph-explore` — see: XYFlow canvas
-- `wf-territory-viewer` — see: PRD / Atomic Ops
-- `wf-console-mutate` — mutate: steer the plan
-- `wf-model-plan` — model: define structure
+- `f-console-shell` — shared chrome (project root, nav)
+- `i-view-status` — see: delivery board
+- `i-explore-graph` — see: XYFlow canvas
+- `i-browse-territory` — see: PRD / Atomic Ops
+- `i-mutate-plan` — mutate: steer the plan
+- `i-model-plan` — model: define structure
 
 ## What “healthy” means
 

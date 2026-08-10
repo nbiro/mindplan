@@ -15,15 +15,15 @@ depends_on:
 
 ## Purpose
 
-Assembler that mounts CI and release jobs for this repository on GitHub Actions. Owns the **CI substrate** and **OIDC permission conventions** for any job that publishes. Does **not** own the release workflow YAML body — that is `wf-npm-tag-publish`.
+Assembler that mounts CI and release jobs for this repository on GitHub Actions. Owns the **CI substrate** and **OIDC permission conventions** for any job that publishes. Does **not** own the release interaction YAML body — that is `i-npm-tag-publish`.
 
 ## Ownership split
 
 | Surface | Owner |
 |---------|--------|
-| `.github/workflows/ci.yml` (test CI) | **This Foundation** |
+| `.github/interactions/ci.yml` (test CI) | **This Foundation** |
 | OIDC / `registry-url` / `id-token: write` conventions for publish jobs | **This Foundation** (applies `f-npm-registry` contract) |
-| `.github/workflows/publish.yml` (tag-driven release job steps) | **`wf-npm-tag-publish` only** |
+| `.github/interactions/publish.yml` (tag-driven release job steps) | **`i-npm-tag-publish` only** |
 
 Do not duplicate Atomic Ops for writing `publish.yml` on this Foundation.
 
@@ -31,7 +31,7 @@ Do not duplicate Atomic Ops for writing `publish.yml` on this Foundation.
 
 ### Existing CI
 
-- File: `.github/workflows/ci.yml`
+- File: `.github/interactions/ci.yml`
 - Triggers: push/PR to `main` / `master`
 - Matrix: Node 18, 20, 22 — `npm ci` → `npm run build` → `npm test` → integrity checks
 - PR: `node dist/index.js check --base <PR base sha>` (dirty-src + packages)
@@ -39,44 +39,44 @@ Do not duplicate Atomic Ops for writing `publish.yml` on this Foundation.
 - Branch protection SHOULD require the `--for-main` job and disallow direct pushes to `main`
 - Release automation MUST NOT weaken this gate
 
-### Conventions for publish jobs (consumed by `wf-npm-tag-publish`)
+### Conventions for publish jobs (consumed by `i-npm-tag-publish`)
 
-When `wf-npm-tag-publish` authors `.github/workflows/publish.yml`, it MUST follow:
+When `i-npm-tag-publish` authors `.github/interactions/publish.yml`, it MUST follow:
 
 - Permissions: `contents: read`, `id-token: write` (per `f-npm-registry`)
 - `actions/setup-node` with `registry-url: https://registry.npmjs.org`
 - Node: pin one LTS aligned with CI (prefer 22 or 20); no matrix publish
-- Invoke the shared publish script from `wf-npm-publish` in CI mode (that mode **must** run `npm test` — do not drop tests for a bare `npm publish`)
+- Invoke the shared publish script from `i-npm-publish` in CI mode (that mode **must** run `npm test` — do not drop tests for a bare `npm publish`)
 
 ### Depends on
 
-- `f-npm-registry` — OIDC / Trusted Publishing **contract** (docs); live npm binding is still `wf-npm-tag-publish`
+- `f-npm-registry` — OIDC / Trusted Publishing **contract** (docs); live npm binding is still `i-npm-tag-publish`
 
 ### Out of scope
 
-- Authoring or owning `publish.yml` job steps (Workflow `wf-npm-tag-publish`)
-- Publish script contents (Workflow `wf-npm-publish`)
+- Authoring or owning `publish.yml` job steps (Interaction `i-npm-tag-publish`)
+- Publish script contents (Interaction `i-npm-publish`)
 - Changelog automation
 
 ## Implementation
 
-Package: `src/foundations/f-github-actions/`. CI YAML lives under `.github/workflows/ci.yml` as the deployable surface this Assembler owns. Release YAML is written by `wf-npm-tag-publish` under `.github/workflows/publish.yml` (repo-root workflow path is an intentional exception to prescribed packages, same as CI).
+Package: `src/foundations/f-github-actions/`. CI YAML lives under `.github/interactions/ci.yml` as the deployable surface this Assembler owns. Release YAML is written by `i-npm-tag-publish` under `.github/interactions/publish.yml` (repo-root interaction path is an intentional exception to prescribed packages, same as CI).
 
 ## Acceptance Criteria
 
-- CI workflow remains green on PRs after any assembler changes
-- OIDC + `registry-url` conventions for publish jobs are documented for Workflow consumers
-- Ownership of `publish.yml` is clearly assigned to `wf-npm-tag-publish` only
+- CI interaction remains green on PRs after any assembler changes
+- OIDC + `registry-url` conventions for publish jobs are documented for Interaction consumers
+- Ownership of `publish.yml` is clearly assigned to `i-npm-tag-publish` only
 
 ## Checklist
 
-- [x] Document CI substrate (`.github/workflows/ci.yml`) as owned by this Foundation
+- [x] Document CI substrate (`.github/interactions/ci.yml`) as owned by this Foundation
 - [x] Wire `mindplan-mcp check` / `--for-main` into CI (build-from-source)
 - [x] Document OIDC / `registry-url` / `id-token: write` conventions for publish jobs
-- [x] Document ownership split: `publish.yml` owned solely by `wf-npm-tag-publish`
+- [x] Document ownership split: `publish.yml` owned solely by `i-npm-tag-publish`
 - [x] Document that CI-mode publish must run tests via the shared script (no bare publish)
 - [x] Document branch protection: require PR + `--for-main` status; no direct push to main
 
 ## Attachments
 
-Optional: workflow diagrams under `attachments/`.
+Optional: interaction diagrams under `attachments/`.

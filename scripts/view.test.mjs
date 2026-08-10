@@ -1,1 +1,1 @@
-import "../src/workflows/wf-test-harness/view.test.mjs";
+import "../src/foundations/f-test-harness/view.test.mjs";

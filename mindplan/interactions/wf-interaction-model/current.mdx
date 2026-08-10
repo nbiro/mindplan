@@ -1,0 +1,58 @@
+---
+id: wf-interaction-model
+type: Interaction
+title: "Interaction-centric model"
+description: "Replace Workflow with Interaction, add Interface + leads_to/exposes edges, Interaction Independence, reachability analysis, and re-model the self-hosted graph."
+state: cancelled
+created_at: 2026-08-10T13:06:38.151Z
+updated_at: 2026-08-10T13:23:31.399Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-domain-model
+  - f-compiler-rules
+  - f-territory-store
+  - f-mcp-runtime
+  - f-view-projection
+  - f-graph-search
+---
+
+# Interaction-centric model
+
+## Purpose
+
+Migrate MindPlan from a Interaction-centric process model to an Interaction-centric architectural model so AI agents query a persistent, machine-readable representation of system behavior (Journeys, Interactions, Interfaces, Foundations) instead of reconstructing architecture from source on every task.
+
+This is a breaking, unreleased-schema change: `GRAPH_VERSION` stays `1`; no consumer compat layer.
+
+## Execution Logic
+
+1. Evolve Foundations (`f-domain-model`, `f-compiler-rules`, `f-territory-store`, `f-mcp-runtime`, `f-view-projection`, `f-graph-search`) via their `next` slots to the Interaction-centric taxonomy.
+2. Update dependent Interaction packages still named under `src/interactions/` (integrity check, tests, init, query/mutate/export tool ownership) so they compile against the new types — then re-model them in the self-hosted graph.
+3. Rewrite SPEC, README, agent playbook, and skills around Interaction Independence, Interfaces, `leads_to` / `exposes`, Assembler composition, and AI-first purpose.
+4. Re-model the self-hosted `mindplan/` graph per [attachments/classification.md](./attachments/classification.md) (Interactions → Interactions / Interfaces / Foundations; dissolve illegal Interaction→Interaction `depends_on`; add `leads_to` and `exposes`).
+5. Move implementation packages: `src/interactions/<id>/` → `src/interactions/<id>/` (or `src/foundations/` / `src/interfaces/` when reclassified); fix imports.
+6. Verify with `npm test`, `mindplan-mcp check`, `check --for-main`, and `export_mindplan_view`.
+
+## Acceptance Criteria
+
+- Node types are Journey, Interaction, Interface, Foundation, Bug — no Interaction
+- Edge types are `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`
+- Interaction → Interaction `depends_on` is rejected (Interaction Independence)
+- Interfaces use the full build pipeline and `src/interfaces/<id>/` packages
+- `get_blast_radius` / `orient_for_work` return `reachability` for Interaction focus (exposing Interfaces, containing Journeys, `leads_to` downstream) alongside reverse-`depends_on` affected
+- Self-hosted graph has no Interaction nodes or `interactions/` territory dirs
+- Tests, SPEC, playbook, and skills match the new model
+- Source-file/symbol mapping is documented as SPEC roadmap only (not implemented)
+
+## Atomic Ops
+
+- [ ] Ship Foundation next slots for domain model, compiler rules, territory store, MCP runtime, view projection, and graph search
+- [ ] Update integrity-check, test harness, project-init, and tool-ownership packages for the new taxonomy
+- [ ] Rewrite SPEC.md, README.md, templates/agent playbook + skills; sync mindplan/agent, AGENTS.md, .cursor copies
+- [ ] Re-model self-hosted graph (ids, edges, territory dirs, src package moves) per classification
+- [ ] `npm test`, `mindplan-mcp check`, `check --for-main`, and export view all green
+
+## Attachments
+
+- [classification.md](./attachments/classification.md) — authoritative Stage 6 remapping table (Foundations / Interactions / Interfaces / absorbs / leads_to / package moves).

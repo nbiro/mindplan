@@ -23,8 +23,9 @@ import {
   isExecutionState,
   isNextPipelineState,
   isOpenBugState,
+  isPipelineNodeType,
   isProductionState,
-  PRE_SHIP_WORKFLOW_STATES,
+  PRE_SHIP_STATES,
   PRODUCTION_TRANSITIONS,
   SHIP_TRANSITION,
 } from "../f-domain-model/types.js";
@@ -48,16 +49,21 @@ function edgesFrom(graph: MindPlanGraph, sourceId: string, type: EdgeType): Mind
     .map((e) => findNode(graph, e.target));
 }
 
-/** Workflows linked to a Journey via belongs_to edges. */
-export function workflowsOfJourney(graph: MindPlanGraph, journeyId: string): MindPlanNode[] {
+/** Interactions linked to a Journey via belongs_to edges. */
+export function interactionsOfJourney(graph: MindPlanGraph, journeyId: string): MindPlanNode[] {
   return graph.edges
     .filter((e) => e.type === "belongs_to" && e.target === journeyId)
     .map((e) => findNode(graph, e.source))
-    .filter((n) => n.type === "Workflow");
+    .filter((n) => n.type === "Interaction");
+}
+
+/** @deprecated Use interactionsOfJourney */
+export function workflowsOfJourney(graph: MindPlanGraph, journeyId: string): MindPlanNode[] {
+  return interactionsOfJourney(graph, journeyId);
 }
 
 function isShipped(node: MindPlanNode): boolean {
-  return (node.type === "Workflow" || node.type === "Foundation") && !!node.shipped_at;
+  return isPipelineNodeType(node.type) && !!node.shipped_at;
 }
 
 /** Open Bugs with an affects edge pointing at targetId. */
@@ -97,13 +103,13 @@ function runCompletionCheck(
   }
 }
 
-/** Pre-ship Workflow title/description edits; shipped scope changes use open_next. */
-export function assertWorkflowTerritoryScalarsEditable(
+/** Pre-ship Interaction/Interface title/description edits; shipped scope changes use open_next. */
+export function assertPipelineTerritoryScalarsEditable(
   node: MindPlanNode,
   field: "title" | "description",
   slot: "current" | "next" = "current"
 ): void {
-  if (node.type !== "Workflow") return;
+  if (node.type !== "Interaction" && node.type !== "Interface") return;
   if (slot === "next") {
     if (!node.next) {
       throw blocked(`cannot edit ${field} on next: "${node.id}" has no next.mdx.`);
@@ -112,26 +118,39 @@ export function assertWorkflowTerritoryScalarsEditable(
   }
   if (isProductionState(node.state) || node.state === "deprecated" || node.state === "cancelled") {
     throw blocked(
-      `${field} cannot be changed on Workflow "${node.id}" (${node.state}). ` +
+      `${field} cannot be changed on ${node.type} "${node.id}" (${node.state}). ` +
         (node.state === "cancelled"
-          ? "Cancelled Workflows are terminal."
+          ? `Cancelled ${node.type}s are terminal.`
           : "Use open_next for material scope changes on live work.")
     );
   }
-  if (!(PRE_SHIP_WORKFLOW_STATES as readonly string[]).includes(node.state)) {
+  if (!(PRE_SHIP_STATES as readonly string[]).includes(node.state)) {
     throw blocked(
-      `${field} cannot be changed on Workflow "${node.id}" in state "${node.state}". ` +
-        `Allowed pre-ship states: ${PRE_SHIP_WORKFLOW_STATES.join(", ")}.`
+      `${field} cannot be changed on ${node.type} "${node.id}" in state "${node.state}". ` +
+        `Allowed pre-ship states: ${PRE_SHIP_STATES.join(", ")}.`
     );
   }
 }
 
+/** @deprecated Use assertPipelineTerritoryScalarsEditable */
+export function assertWorkflowTerritoryScalarsEditable(
+  node: MindPlanNode,
+  field: "title" | "description",
+  slot: "current" | "next" = "current"
+): void {
+  assertPipelineTerritoryScalarsEditable(node, field, slot);
+}
+
 /**
  * Taxonomy rules for link_nodes:
- *   Workflow --belongs_to--> Journey
- *   Workflow --depends_on--> Foundation|Workflow
+ *   Interaction --belongs_to--> Journey
+ *   Interaction|Interface --depends_on--> Foundation
  *   Foundation --depends_on--> Foundation
- *   Bug --affects--> Workflow|Foundation
+ *   Interface --exposes--> Interaction
+ *   Interaction --leads_to--> Interaction
+ *   Bug --affects--> Interaction|Interface|Foundation
+ *
+ * Interaction → Interaction depends_on is illegal (Interaction Independence).
  */
 export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeType: EdgeType): void {
   if (source.id === target.id) {
@@ -143,67 +162,101 @@ export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeTyp
         `affects edges must originate from a Bug. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
       );
     }
-    if (target.type !== "Workflow" && target.type !== "Foundation") {
+    if (
+      target.type !== "Interaction" &&
+      target.type !== "Interface" &&
+      target.type !== "Foundation"
+    ) {
       throw blocked(
-        `affects edges must target a Workflow or Foundation. Got Bug "${source.id}" -> ${target.type} "${target.id}".`
+        `affects edges must target an Interaction, Interface, or Foundation. Got Bug "${source.id}" -> ${target.type} "${target.id}".`
       );
     }
     return;
   }
   if (edgeType === "belongs_to") {
-    if (source.type !== "Workflow" || target.type !== "Journey") {
+    if (source.type !== "Interaction" || target.type !== "Journey") {
       throw blocked(
-        `belongs_to edges must go Workflow -> Journey. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
+        `belongs_to edges must go Interaction -> Journey. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
+      );
+    }
+    return;
+  }
+  if (edgeType === "exposes") {
+    if (source.type !== "Interface" || target.type !== "Interaction") {
+      throw blocked(
+        `exposes edges must go Interface -> Interaction. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
+      );
+    }
+    return;
+  }
+  if (edgeType === "leads_to") {
+    if (source.type !== "Interaction" || target.type !== "Interaction") {
+      throw blocked(
+        `leads_to edges must go Interaction -> Interaction. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
       );
     }
     return;
   }
   // depends_on
-  if (target.type === "Journey") {
+  if (source.type === "Interaction" && target.type === "Interaction") {
     throw blocked(
-      `depends_on edges must target a Foundation or Workflow. Got ${source.type} "${source.id}" -> Journey "${target.id}".`
+      `Interaction Independence. Interactions must not depend_on each other. ` +
+        `"${source.id}" -> "${target.id}" is illegal — share application state through a Foundation instead. ` +
+        `Use leads_to for Journey navigation/progression only.`
     );
   }
-  if (target.type === "Workflow" && source.type !== "Workflow") {
+  if (target.type !== "Foundation") {
     throw blocked(
-      `depends_on edges to a Workflow must originate from a Workflow. Got ${source.type} "${source.id}" -> Workflow "${target.id}".`
+      `depends_on edges must target a Foundation. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
     );
   }
-  if (target.type === "Foundation" && source.type !== "Workflow" && source.type !== "Foundation") {
+  if (
+    source.type !== "Interaction" &&
+    source.type !== "Interface" &&
+    source.type !== "Foundation"
+  ) {
     throw blocked(
-      `depends_on edges to a Foundation must originate from a Workflow or Foundation. Got ${source.type} "${source.id}" -> Foundation "${target.id}".`
-    );
-  }
-  if (source.type === "Journey" || source.type === "Bug") {
-    throw blocked(
-      `a ${source.type} cannot depend on a Foundation. Only Workflows and Foundations may use depends_on.`
+      `depends_on edges must originate from an Interaction, Interface, or Foundation. Got ${source.type} "${source.id}" -> Foundation "${target.id}".`
     );
   }
 }
 
 /**
  * Outgoing depends_on for cycle/closure checks: proposed next.depends_on while
- * evolving a shipped Foundation/Workflow, otherwise live depends_on.
+ * evolving a shipped pipeline node, otherwise live depends_on.
  */
 export function effectiveDependsOn(node: MindPlanNode): string[] {
-  if (
-    node.next &&
-    (node.type === "Workflow" || node.type === "Foundation")
-  ) {
+  if (node.next && isPipelineNodeType(node.type)) {
     return node.next.depends_on ?? [];
   }
   return node.depends_on ?? [];
 }
 
 /**
- * Outgoing belongs_to for Dependency Closure: proposed next.belongs_to while
- * evolving a shipped Workflow, otherwise live belongs_to.
+ * Outgoing belongs_to: proposed next.belongs_to while evolving a shipped Interaction,
+ * otherwise live belongs_to.
  */
 export function effectiveBelongsTo(node: MindPlanNode): string[] {
-  if (node.next && node.type === "Workflow") {
+  if (node.next && node.type === "Interaction") {
     return node.next.belongs_to ?? [];
   }
   return node.belongs_to ?? [];
+}
+
+/** Outgoing exposes: proposed next.exposes while evolving a shipped Interface. */
+export function effectiveExposes(node: MindPlanNode): string[] {
+  if (node.next && node.type === "Interface") {
+    return node.next.exposes ?? [];
+  }
+  return node.exposes ?? [];
+}
+
+/** Outgoing leads_to: proposed next.leads_to while evolving a shipped Interaction. */
+export function effectiveLeadsTo(node: MindPlanNode): string[] {
+  if (node.next && node.type === "Interaction") {
+    return node.next.leads_to ?? [];
+  }
+  return node.leads_to ?? [];
 }
 
 /** Outgoing depends_on targets for a node id, optionally including a proposed edge. */
@@ -300,52 +353,16 @@ export function assertEffectiveDependsOnAcyclic(graph: MindPlanGraph): void {
   }
 }
 
-/** Transitive closure of Workflow targets reachable via effective depends_on from workflowId. */
-export function transitiveWorkflowDependencies(
-  graph: MindPlanGraph,
-  workflowId: string
-): MindPlanNode[] {
-  const result: MindPlanNode[] = [];
-  const seen = new Set<string>();
-  const stack = [workflowId];
-
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-    const currentNode = graph.nodes.find((n) => n.id === current);
-    const depIds = currentNode ? effectiveDependsOn(currentNode) : [];
-    for (const targetId of depIds) {
-      const target = findNode(graph, targetId);
-      if (target.type !== "Workflow") continue;
-      if (seen.has(target.id)) continue;
-      seen.add(target.id);
-      result.push(target);
-      stack.push(target.id);
-    }
-  }
-
-  return result.sort((a, b) => a.id.localeCompare(b.id));
-}
-
-/** Dependency workflows missing an effective belongs_to edge to the given Journey. */
-export function missingJourneyDependents(
-  graph: MindPlanGraph,
-  workflow: MindPlanNode,
-  journeyId: string
-): MindPlanNode[] {
-  const deps = transitiveWorkflowDependencies(graph, workflow.id);
-  return deps.filter((dep) => !effectiveBelongsTo(dep).includes(journeyId));
-}
-
 /** Validates open_next preconditions (Rule 9). */
 export function validateOpenNext(node: MindPlanNode): void {
-  if (node.type !== "Workflow" && node.type !== "Foundation") {
+  if (!isPipelineNodeType(node.type)) {
     throw blocked(
-      `only Foundations and Workflows can open a next evolution. Got ${node.type} "${node.id}".`
+      `only Foundations, Interactions, and Interfaces can open a next evolution. Got ${node.type} "${node.id}".`
     );
   }
   if (node.state !== "stable" && node.state !== "unstable") {
     throw blocked(
-      `only shipped Foundations/Workflows (stable or unstable) can open next. "${node.id}" is currently "${node.state}".`
+      `only shipped Foundations/Interactions/Interfaces (stable or unstable) can open next. "${node.id}" is currently "${node.state}".`
     );
   }
   if (node.next) {
@@ -406,6 +423,100 @@ function reverseDependsOnClosure(
   );
 }
 
+export type ReachabilityEntry = { node: MindPlanNode; distance: number };
+
+/** Downstream Interactions reachable via leads_to (BFS). Cycles allowed; each node once. */
+export function leadsToDownstream(
+  graph: MindPlanGraph,
+  interactionId: string
+): ReachabilityEntry[] {
+  const result: ReachabilityEntry[] = [];
+  const seen = new Set<string>([interactionId]);
+  const queue: { id: string; distance: number }[] = [{ id: interactionId, distance: 0 }];
+
+  while (queue.length > 0) {
+    const { id: current, distance } = queue.shift()!;
+    const currentNode = graph.nodes.find((n) => n.id === current);
+    const targets = currentNode ? effectiveLeadsTo(currentNode) : [];
+    // Also walk live edges in case frontmatter arrays and edges diverge
+    for (const edge of graph.edges) {
+      if (edge.source === current && edge.type === "leads_to" && !targets.includes(edge.target)) {
+        targets.push(edge.target);
+      }
+    }
+    for (const targetId of targets) {
+      if (seen.has(targetId)) continue;
+      seen.add(targetId);
+      const node = findNode(graph, targetId);
+      if (node.type !== "Interaction") continue;
+      const d = distance + 1;
+      result.push({ node, distance: d });
+      queue.push({ id: targetId, distance: d });
+    }
+  }
+
+  return result.sort(
+    (a, b) => a.distance - b.distance || a.node.id.localeCompare(b.node.id)
+  );
+}
+
+/** Interfaces that expose the given Interaction (via exposes edges / effectiveExposes). */
+export function interfacesExposing(
+  graph: MindPlanGraph,
+  interactionId: string
+): MindPlanNode[] {
+  const result: MindPlanNode[] = [];
+  const seen = new Set<string>();
+  for (const edge of graph.edges) {
+    if (edge.type !== "exposes" || edge.target !== interactionId) continue;
+    if (seen.has(edge.source)) continue;
+    seen.add(edge.source);
+    const node = findNode(graph, edge.source);
+    if (node.type === "Interface") result.push(node);
+  }
+  for (const node of graph.nodes) {
+    if (node.type !== "Interface") continue;
+    if (effectiveExposes(node).includes(interactionId) && !seen.has(node.id)) {
+      seen.add(node.id);
+      result.push(node);
+    }
+  }
+  return result.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Journeys that contain the given Interaction via belongs_to. */
+export function journeysContaining(
+  graph: MindPlanGraph,
+  interactionId: string
+): MindPlanNode[] {
+  const interaction = findNode(graph, interactionId);
+  const journeyIds = effectiveBelongsTo(interaction);
+  const fromEdges = graph.edges
+    .filter((e) => e.type === "belongs_to" && e.source === interactionId)
+    .map((e) => e.target);
+  const all = new Set([...journeyIds, ...fromEdges]);
+  return [...all]
+    .map((id) => findNode(graph, id))
+    .filter((n) => n.type === "Journey")
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** Reachability impact analysis for an Interaction focus. */
+export function interactionReachability(
+  graph: MindPlanGraph,
+  interactionId: string
+): {
+  exposing_interfaces: MindPlanNode[];
+  containing_journeys: MindPlanNode[];
+  leads_to_downstream: ReachabilityEntry[];
+} {
+  return {
+    exposing_interfaces: interfacesExposing(graph, interactionId),
+    containing_journeys: journeysContaining(graph, interactionId),
+    leads_to_downstream: leadsToDownstream(graph, interactionId),
+  };
+}
+
 export type StatusChangeResult = {
   state: NodeState;
   /** When true, caller must set shipped_at before persisting (first ship or promote next). */
@@ -415,8 +526,8 @@ export type StatusChangeResult = {
 };
 
 function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): ProductionState {
-  if (node.type !== "Workflow" && node.type !== "Foundation") {
-    throw blocked(`only Foundations and Workflows can ship to production.`);
+  if (!isPipelineNodeType(node.type)) {
+    throw blocked(`only Foundations, Interactions, and Interfaces can ship to production.`);
   }
 
   if (node.next) {
@@ -428,16 +539,38 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     runCompletionCheck(node, SHIP_TRANSITION, "next");
     assertEffectiveDependsOnAcyclic(graph);
 
-    if (node.type === "Workflow") {
+    if (node.type === "Interaction") {
       const depIds = node.next.depends_on ?? [];
       const deps = depIds.map((id) => findNode(graph, id));
       const foundations = deps.filter((n) => n.type === "Foundation");
-      const workflows = deps.filter((n) => n.type === "Workflow");
-      const notStable = [...foundations, ...workflows].filter((n) => n.state !== "stable");
+      const notStable = foundations.filter((n) => n.state !== "stable");
       if (notStable.length > 0) {
         const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Infrastructure First. Workflow "${node.id}" next cannot ship while linked Foundations or Workflows are not stable: ${list}.`
+          `Infrastructure First. Interaction "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
+        );
+      }
+    }
+
+    if (node.type === "Interface") {
+      const exposedIds = node.next.exposes ?? [];
+      const exposed = exposedIds.map((id) => findNode(graph, id));
+      const notStable = exposed.filter((n) => n.state !== "stable");
+      if (notStable.length > 0) {
+        const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
+        throw blocked(
+          `Behavior First. Interface "${node.id}" next cannot ship while exposed Interactions are not stable: ${list}.`
+        );
+      }
+      const depIds = node.next.depends_on ?? [];
+      const foundations = depIds
+        .map((id) => findNode(graph, id))
+        .filter((n) => n.type === "Foundation");
+      const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+      if (foundationsNotStable.length > 0) {
+        const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
+        throw blocked(
+          `Infrastructure First. Interface "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
         );
       }
     }
@@ -452,18 +585,36 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
   }
   runCompletionCheck(node, SHIP_TRANSITION, "current");
 
-  if (node.type === "Workflow") {
+  if (node.type === "Interaction") {
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const workflows = edgesFrom(graph, node.id, "depends_on").filter(
-      (n) => n.type === "Workflow"
-    );
-    const notStable = [...foundations, ...workflows].filter((n) => n.state !== "stable");
+    const notStable = foundations.filter((n) => n.state !== "stable");
     if (notStable.length > 0) {
       const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Workflow "${node.id}" cannot ship while linked Foundations or Workflows are not stable: ${list}.`
+        `Infrastructure First. Interaction "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+      );
+    }
+  }
+
+  if (node.type === "Interface") {
+    const exposed = edgesFrom(graph, node.id, "exposes");
+    const notStable = exposed.filter((n) => n.state !== "stable");
+    if (notStable.length > 0) {
+      const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
+      throw blocked(
+        `Behavior First. Interface "${node.id}" cannot ship while exposed Interactions are not stable: ${list}.`
+      );
+    }
+    const foundations = edgesFrom(graph, node.id, "depends_on").filter(
+      (n) => n.type === "Foundation"
+    );
+    const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+    if (foundationsNotStable.length > 0) {
+      const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
+      throw blocked(
+        `Infrastructure First. Interface "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
       );
     }
   }
@@ -477,7 +628,7 @@ function validateBugRules(graph: MindPlanGraph, bug: MindPlanNode, newStatus: Bu
   if (newStatus === "triaged" || newStatus === "fixing") {
     if (targets.length === 0) {
       throw blocked(
-        `Ghost Bug. "${bug.id}" has no affects edge to a Workflow or Foundation. Link it with link_nodes before moving it to "${newStatus}".`
+        `Ghost Bug. "${bug.id}" has no affects edge to an Interaction, Interface, or Foundation. Link it with link_nodes before moving it to "${newStatus}".`
       );
     }
   }
@@ -487,8 +638,8 @@ function validateBugRules(graph: MindPlanGraph, bug: MindPlanNode, newStatus: Bu
   }
 }
 
-function validateWorkflowRulesForEdges(
-  workflow: MindPlanNode,
+function validateInteractionRulesForEdges(
+  interaction: MindPlanNode,
   newStatus: ExecutionState | NextPipelineState,
   belongsTo: string[],
   dependsOn: string[],
@@ -497,7 +648,7 @@ function validateWorkflowRulesForEdges(
   if (newStatus === "ready" || newStatus === "in-progress") {
     if (belongsTo.length === 0) {
       throw blocked(
-        `Ghost Workflow. "${workflow.id}" has no belongs_to edge to a Journey. Link it with link_nodes before moving it to "${newStatus}".`
+        `Ghost Interaction. "${interaction.id}" has no belongs_to edge to a Journey. Link it with link_nodes before moving it to "${newStatus}".`
       );
     }
     const foundations = dependsOn
@@ -505,29 +656,68 @@ function validateWorkflowRulesForEdges(
       .filter((n) => n.type === "Foundation");
     if (foundations.length === 0) {
       throw blocked(
-        `Ghost Workflow. "${workflow.id}" has no depends_on edge to a Foundation. Link it with link_nodes before moving it to "${newStatus}".`
+        `Ghost Interaction. "${interaction.id}" has no depends_on edge to a Foundation. Link it with link_nodes before moving it to "${newStatus}".`
       );
     }
   }
 }
 
-function validateWorkflowRules(
+function validateInterfaceRulesForEdges(
+  iface: MindPlanNode,
+  newStatus: ExecutionState | NextPipelineState,
+  exposes: string[],
+  graph: MindPlanGraph
+): void {
+  if (newStatus === "ready" || newStatus === "in-progress") {
+    if (exposes.length === 0) {
+      throw blocked(
+        `Ghost Interface. "${iface.id}" has no exposes edge to an Interaction. Link it with link_nodes before moving it to "${newStatus}".`
+      );
+    }
+    for (const id of exposes) {
+      const target = findNode(graph, id);
+      if (target.type !== "Interaction") {
+        throw blocked(
+          `Ghost Interface. "${iface.id}" exposes target "${id}" is a ${target.type}, not an Interaction.`
+        );
+      }
+    }
+  }
+}
+
+function validateInteractionRules(
   graph: MindPlanGraph,
-  workflow: MindPlanNode,
+  interaction: MindPlanNode,
   newStatus: ExecutionState
 ): void {
   const journeys = graph.edges
-    .filter((e) => e.source === workflow.id && e.type === "belongs_to")
+    .filter((e) => e.source === interaction.id && e.type === "belongs_to")
     .map((e) => e.target);
 
   const dependsOn = graph.edges
-    .filter((e) => e.source === workflow.id && e.type === "depends_on")
+    .filter((e) => e.source === interaction.id && e.type === "depends_on")
     .map((e) => e.target);
 
-  validateWorkflowRulesForEdges(workflow, newStatus, journeys, dependsOn, graph);
+  validateInteractionRulesForEdges(interaction, newStatus, journeys, dependsOn, graph);
 
   if (newStatus === "in-review") {
-    runCompletionCheck(workflow, newStatus, "current");
+    runCompletionCheck(interaction, newStatus, "current");
+  }
+}
+
+function validateInterfaceRules(
+  graph: MindPlanGraph,
+  iface: MindPlanNode,
+  newStatus: ExecutionState
+): void {
+  const exposes = graph.edges
+    .filter((e) => e.source === iface.id && e.type === "exposes")
+    .map((e) => e.target);
+
+  validateInterfaceRulesForEdges(iface, newStatus, exposes, graph);
+
+  if (newStatus === "in-review") {
+    runCompletionCheck(iface, newStatus, "current");
   }
 }
 
@@ -545,9 +735,9 @@ const RETIRED_OR_CLOSED = new Set([
  * depends_on on another node's open next.mdx.
  */
 function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): void {
-  if (node.type !== "Workflow" && node.type !== "Foundation") {
+  if (!isPipelineNodeType(node.type)) {
     throw blocked(
-      `cancelled only applies to Foundations and Workflows. Got ${node.type} "${node.id}".`
+      `cancelled only applies to Foundations, Interactions, and Interfaces. Got ${node.type} "${node.id}".`
     );
   }
   if (node.next) {
@@ -616,14 +806,19 @@ function resolveNextStatusChange(
     );
   }
 
-  if (node.type === "Workflow") {
-    validateWorkflowRulesForEdges(
+  if (node.type === "Interaction") {
+    validateInteractionRulesForEdges(
       node,
       newStatus,
       next.belongs_to ?? [],
       next.depends_on ?? [],
       graph
     );
+    if (newStatus === "in-review") {
+      runCompletionCheck(node, newStatus, "next");
+    }
+  } else if (node.type === "Interface") {
+    validateInterfaceRulesForEdges(node, newStatus, next.exposes ?? [], graph);
     if (newStatus === "in-review") {
       runCompletionCheck(node, newStatus, "next");
     }
@@ -644,7 +839,7 @@ export function resolveStatusChange(
 ): StatusChangeResult {
   if (node.type === "Journey") {
     throw blocked(
-      `Journey states are computed automatically from their Workflows and cannot be set manually.`
+      `Journey states are computed automatically from their Interactions and cannot be set manually.`
     );
   }
 
@@ -661,7 +856,7 @@ export function resolveStatusChange(
       `illegal transition "${node.state}" -> "${newStatus}" for node "${node.id}". ` +
         `Allowed from "${node.state}": ${allowed.join(", ") || "(none)"}. ` +
         `Production posture (stable/unstable) is computed automatically from open Bugs. ` +
-        `Use open_next to evolve a shipped Foundation/Workflow. ` +
+        `Use open_next to evolve a shipped Foundation/Interaction/Interface. ` +
         `To undo a mistaken ship, ask the user then call force_unship with confirm: "unship:${node.id}".`
     );
   }
@@ -686,7 +881,7 @@ export function resolveStatusChange(
     return { state: newStatus, ship: false, promote_next: false };
   }
 
-  // Foundation / Workflow (first build, no next)
+  // Foundation / Interaction / Interface (first build, no next)
   if (newStatus === SHIP_TRANSITION) {
     const productionState = validateShipTransition(graph, node);
     return { state: productionState, ship: true, promote_next: false };
@@ -719,8 +914,10 @@ export function resolveStatusChange(
     validateCancelTransition(graph, node);
   }
 
-  if (node.type === "Workflow") {
-    validateWorkflowRules(graph, node, newStatus);
+  if (node.type === "Interaction") {
+    validateInteractionRules(graph, node, newStatus);
+  } else if (node.type === "Interface") {
+    validateInterfaceRules(graph, node, newStatus);
   } else if (node.type === "Foundation" && newStatus === "in-review") {
     runCompletionCheck(node, newStatus, "current");
   }
@@ -750,9 +947,9 @@ export function resolveForceUnship(
     );
   }
 
-  if (node.type !== "Workflow" && node.type !== "Foundation") {
+  if (!isPipelineNodeType(node.type)) {
     throw blocked(
-      `force_unship only applies to Foundations and Workflows. Got ${node.type} "${node.id}".`
+      `force_unship only applies to Foundations, Interactions, and Interfaces. Got ${node.type} "${node.id}".`
     );
   }
 
@@ -785,8 +982,10 @@ export function resolveForceUnship(
     );
   }
 
-  if (node.type === "Workflow") {
-    validateWorkflowRules(graph, node, newStatus);
+  if (node.type === "Interaction") {
+    validateInteractionRules(graph, node, newStatus);
+  } else if (node.type === "Interface") {
+    validateInterfaceRules(graph, node, newStatus);
   } else if (node.type === "Foundation" && newStatus === "in-review") {
     runCompletionCheck(node, newStatus, "current");
   }
@@ -795,18 +994,18 @@ export function resolveForceUnship(
 }
 
 /**
- * Computed Journey States (Workflow activity only; Bugs do not affect Journeys):
- *   evolving   — shipped Workflows (stable/unstable) + in-progress/in-review building (incl. next)
- *   stable     — shipped Workflows, 0 in-progress/in-review
+ * Computed Journey States (Interaction activity only; Bugs do not affect Journeys):
+ *   evolving   — shipped Interactions (stable/unstable) + in-progress/in-review building (incl. next)
+ *   stable     — shipped Interactions, 0 in-progress/in-review
  *   incubation — in-progress/in-review, 0 shipped
  *   draft      — otherwise
  */
 export function computeJourneyState(graph: MindPlanGraph, journeyId: string): JourneyState {
-  const workflows = workflowsOfJourney(graph, journeyId);
-  const shipped = workflows.filter(
+  const interactions = interactionsOfJourney(graph, journeyId);
+  const shipped = interactions.filter(
     (w) => w.shipped_at && (w.state === "stable" || w.state === "unstable")
   ).length;
-  const inProgress = workflows.filter((w) => {
+  const inProgress = interactions.filter((w) => {
     if (w.next && (w.next.state === "in-progress" || w.next.state === "in-review")) {
       return true;
     }
@@ -834,12 +1033,12 @@ export function recomputeJourneyStates(graph: MindPlanGraph): MindPlanNode[] {
   return changed;
 }
 
-/** Recomputes stable/unstable for every shipped Foundation and Workflow. */
+/** Recomputes stable/unstable for every shipped Foundation, Interaction, and Interface. */
 export function recomputeStability(graph: MindPlanGraph): MindPlanNode[] {
   const changed: MindPlanNode[] = [];
   const now = new Date().toISOString();
   for (const node of graph.nodes) {
-    if (node.type !== "Workflow" && node.type !== "Foundation") continue;
+    if (!isPipelineNodeType(node.type)) continue;
     if (!node.shipped_at) continue;
     if (node.state === "deprecated" || node.state === "cancelled") continue;
     const next = computeProductionState(graph, node.id);

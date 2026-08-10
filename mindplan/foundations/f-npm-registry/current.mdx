@@ -22,11 +22,11 @@ npm Trusted Publishing is normally configured on an **already-published** packag
 |-----------------------------|----------------------|
 | Package identity + OIDC contract are documented | Live Trusted Publisher binding on npmjs.com |
 | Manual / break-glass OTP path is documented | Package already claimed on the registry |
-| Downstream Workflows know `id-token: write` + `registry-url` rules | Release workflow YAML exists |
+| Downstream Interactions know `id-token: write` + `registry-url` rules | Release interaction YAML exists |
 
-**Live binding** (npm UI: Trusted Publisher → GitHub Actions → `nbiro/mindplan` + publish workflow file) is an Atomic Op on **`wf-npm-tag-publish`**, performed **after** `wf-npm-publish` has claimed the package. Do not block first publish on a live Trusted Publisher.
+**Live binding** (npm UI: Trusted Publisher → GitHub Actions → `nbiro/mindplan` + publish interaction file) is an Atomic Op on **`i-npm-tag-publish`**, performed **after** `i-npm-publish` has claimed the package. Do not block first publish on a live Trusted Publisher.
 
-`wf-npm-publish` depends on this Foundation for registry identity and the documented OIDC contract — not for a completed npm UI binding.
+`i-npm-publish` depends on this Foundation for registry identity and the documented OIDC contract — not for a completed npm UI binding.
 
 ## Shared Substrate Spec
 
@@ -39,14 +39,14 @@ npm Trusted Publishing is normally configured on an **already-published** packag
 ### Trusted Publishing (OIDC) contract
 
 - Target binding (after first claim): npmjs.com package `mindplan-mcp` → Trusted Publisher → GitHub Actions
-- Bind to repo `nbiro/mindplan` and the **release workflow file owned by `wf-npm-tag-publish`** (`.github/workflows/publish.yml`)
+- Bind to repo `nbiro/mindplan` and the **release interaction file owned by `i-npm-tag-publish`** (`.github/interactions/publish.yml`)
 - CI jobs that publish MUST request `permissions: id-token: write` and use `actions/setup-node` with `registry-url: https://registry.npmjs.org`
 - **No** repository secret `NPM_TOKEN` for the automated path
-- This Foundation documents the contract; `f-github-actions` documents how Assembler jobs apply it; `wf-npm-tag-publish` performs the live npm UI bind
+- This Foundation documents the contract; `f-github-actions` documents how Assembler jobs apply it; `i-npm-tag-publish` performs the live npm UI bind
 
 ### Manual publish (first claim / emergency)
 
-- Maintainer interactive `npm login` + OTP remains valid for the first claim and break-glass publishes (`wf-npm-publish`)
+- Maintainer interactive `npm login` + OTP remains valid for the first claim and break-glass publishes (`i-npm-publish`)
 - After live Trusted Publishing is bound, prefer tag-driven OIDC for routine releases
 
 ### Provenance
@@ -55,9 +55,9 @@ npm Trusted Publishing is normally configured on an **already-published** packag
 
 ### Out of scope
 
-- SemVer policy and publish script steps (Workflows)
-- Release workflow YAML body (Workflow `wf-npm-tag-publish`)
-- Live npm Trusted Publisher UI click-through (Workflow `wf-npm-tag-publish`, post–first claim)
+- SemVer policy and publish script steps (Interactions)
+- Release interaction YAML body (Interaction `i-npm-tag-publish`)
+- Live npm Trusted Publisher UI click-through (Interaction `i-npm-tag-publish`, post–first claim)
 
 ## Implementation
 
@@ -73,7 +73,7 @@ Package: `src/foundations/f-npm-registry/`. Docs + contract only for ship; no ru
 ## Checklist
 
 - [ ] Package identity + OIDC contract documented (`id-token: write`, `registry-url`, no `NPM_TOKEN`)
-- [ ] Documented that live Trusted Publisher binding happens after first claim on `wf-npm-tag-publish`
+- [ ] Documented that live Trusted Publisher binding happens after first claim on `i-npm-tag-publish`
 - [ ] Break-glass / first-publish interactive login path documented
 - [ ] Ship gate explicitly does not require live npm UI binding
 

@@ -2,10 +2,10 @@
 /**
  * MindPlan MCP server — f-mcp-runtime shell.
  * Tool ownership (screaming packages):
- *   wf-query-graph   — read/orient tools (../../workflows/wf-query-graph/tools.ts)
- *   wf-mutate-graph  — write tools (../../workflows/wf-mutate-graph/tools.ts)
- *   wf-export-views  — export_mindplan_view (../../workflows/wf-export-views/tools.ts)
- *   wf-project-init  — CLI init (../../workflows/wf-project-init/init.ts)
+ *   i-orient-plan   — read/orient tools (../../interactions/i-orient-plan/tools.ts)
+ *   i-steer-plan  — write tools (../../interactions/i-steer-plan/tools.ts)
+ *   i-export-map  — export_mindplan_view (../../interactions/i-export-map/tools.ts)
+ *   i-init-project  — CLI init (../../interactions/i-init-project/init.ts)
  * Substrate: f-domain-model, f-compiler-rules, f-territory-store, f-graph-search, f-view-projection.
  */
 
@@ -16,7 +16,15 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { NODE_TYPES, initialStateForType, isNextPipelineState, type MindPlanNode } from "../f-domain-model/types.js";
+import {
+  NODE_TYPES,
+  EDGE_TYPES,
+  initialStateForType,
+  isNextPipelineState,
+  isPipelineNodeType,
+  type MindPlanGraph,
+  type MindPlanNode,
+} from "../f-domain-model/types.js";
 import {
   ensureDirectories,
   ATTACHMENTS_DIR,
@@ -61,7 +69,7 @@ import {
   installProjectConfig,
   installRootAgentsMd,
   type InitLayout,
-} from "../../workflows/wf-project-init/init.js";
+} from "../../interactions/i-init-project/init.js";
 import {
   blocked,
   findNode,
@@ -71,14 +79,14 @@ import {
   resolveForceUnship,
   validateLink,
   assertAcyclicDependsOn,
-  missingJourneyDependents,
   validateOpenNext,
   blastRadiusDependents,
-  assertWorkflowTerritoryScalarsEditable,
+  assertPipelineTerritoryScalarsEditable,
+  interactionReachability,
 } from "../f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "../f-graph-search/search.js";
 import { VIEW_FORMATS, exportMindPlanView, persistMindPlanMap } from "../f-view-projection/view.js";
-import { runIntegrityCheck } from "../../workflows/wf-integrity-check/check.js";
+import { runIntegrityCheck } from "../../interactions/i-check-integrity/check.js";
 
 const server = new McpServer({
   name: "mindplan",
@@ -177,6 +185,54 @@ function refreshPersistedMap(): void {
   persistMindPlanMap(loadGraph());
 }
 
+function summarizeGraphNode(n: MindPlanNode): {
+  id: string;
+  type: MindPlanNode["type"];
+  state: MindPlanNode["state"];
+  title: string;
+} {
+  return { id: n.id, type: n.type, state: n.state, title: n.title };
+}
+
+/** Reverse-depends_on blast radius; Interaction focus also includes reachability. */
+function buildBlastRadiusPayload(
+  graph: MindPlanGraph,
+  node: MindPlanNode
+): Record<string, unknown> {
+  const { affected: entries } = blastRadiusDependents(graph, node.id);
+  const journeysAtRisk = new Set<string>();
+  for (const { node: affected } of entries) {
+    if (affected.type !== "Interaction") continue;
+    for (const edge of graph.edges) {
+      if (edge.source === affected.id && edge.type === "belongs_to") {
+        journeysAtRisk.add(edge.target);
+      }
+    }
+  }
+  const payload: Record<string, unknown> = {
+    node_id: node.id,
+    affected: entries.map(({ node: n, distance }) => ({
+      id: n.id,
+      type: n.type,
+      state: n.state,
+      distance,
+    })),
+    journeys_at_risk: [...journeysAtRisk].sort(),
+  };
+  if (node.type === "Interaction") {
+    const reach = interactionReachability(graph, node.id);
+    payload.reachability = {
+      exposing_interfaces: reach.exposing_interfaces.map(summarizeGraphNode),
+      containing_journeys: reach.containing_journeys.map(summarizeGraphNode),
+      leads_to_downstream: reach.leads_to_downstream.map(({ node: n, distance }) => ({
+        ...summarizeGraphNode(n),
+        distance,
+      })),
+    };
+  }
+  return payload;
+}
+
 function buildNodeContextPayload(node: MindPlanNode): Record<string, unknown> {
   const rel = entityRelativePath(node);
   const currentRaw = readMarkdown(node, "current");
@@ -207,6 +263,8 @@ function buildNodeContextPayload(node: MindPlanNode): Record<string, unknown> {
         updated_at: node.next.updated_at,
         ...(node.next.belongs_to?.length ? { belongs_to: node.next.belongs_to } : {}),
         ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
+        ...(node.next.exposes?.length ? { exposes: node.next.exposes } : {}),
+        ...(node.next.leads_to?.length ? { leads_to: node.next.leads_to } : {}),
       },
       body: nextSplit?.body ?? "",
       raw: nextRaw,
@@ -324,11 +382,13 @@ server.registerTool(
   {
     title: "Get node implementation",
     description:
-      "Returns implementation package info for a Workflow or Foundation. " +
-      "When implementation_packages is required: root is src/workflows/<id> or src/foundations/<id>, plus exists/entries. " +
+      "Returns implementation package info for an Interaction, Interface, or Foundation. " +
+      "When implementation_packages is required: root is src/interactions/<id>, src/interfaces/<id>, or src/foundations/<id>, plus exists/entries. " +
       "When off (layout-free): root is null and exists is false — packages are not applicable; check implementation_packages before treating as missing.",
     inputSchema: {
-      node_id: NODE_ID.describe("Workflow or Foundation id whose implementation package to read."),
+      node_id: NODE_ID.describe(
+        "Interaction, Interface, or Foundation id whose implementation package to read."
+      ),
     },
   },
   guarded(({ node_id }) => {
@@ -362,7 +422,9 @@ server.registerTool(
     title: "Orient for work",
     description:
       "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
-      "plus get_blast_radius when focus is a Foundation or Workflow. Prefer this to start a work session.",
+      "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
+      "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream). " +
+      "Prefer this to start a work session.",
     inputSchema: {
       query: z
         .string()
@@ -400,27 +462,8 @@ server.registerTool(
     if (related.focus) {
       const node = findNode(graph, related.focus);
       context = buildNodeContextPayload(node);
-      if (node.type === "Foundation" || node.type === "Workflow") {
-        const { affected: entries } = blastRadiusDependents(graph, node.id);
-        const journeysAtRisk = new Set<string>();
-        for (const { node: affected } of entries) {
-          if (affected.type !== "Workflow") continue;
-          for (const edge of graph.edges) {
-            if (edge.source === affected.id && edge.type === "belongs_to") {
-              journeysAtRisk.add(edge.target);
-            }
-          }
-        }
-        blast_radius = {
-          node_id: node.id,
-          affected: entries.map(({ node: n, distance }) => ({
-            id: n.id,
-            type: n.type,
-            state: n.state,
-            distance,
-          })),
-          journeys_at_risk: [...journeysAtRisk].sort(),
-        };
+      if (isPipelineNodeType(node.type)) {
+        blast_radius = buildBlastRadiusPayload(graph, node);
       }
     }
 
@@ -434,12 +477,19 @@ server.registerTool(
     title: "Patch node territory",
     description:
       "Patches territory-owned content: body (PRD, checklists), optional title/description " +
-      "(pre-ship Workflows or next slot), toggle_checkboxes. " +
-      "When a shipped Foundation/Workflow has next.mdx, patches default to next. Optional slot: current|next.",
+      "(pre-ship Interaction/Interface or next slot), toggle_checkboxes. " +
+      "When a shipped Foundation/Interaction/Interface has next.mdx, patches default to next. Optional slot: current|next.",
     inputSchema: {
       node_id: NODE_ID.describe("Node whose territory to patch."),
-      title: z.string().min(1).optional().describe("New title (pre-ship Workflow or next slot)."),
-      description: z.string().optional().describe("New description (pre-ship Workflow or next slot)."),
+      title: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("New title (pre-ship Interaction/Interface or next slot)."),
+      description: z
+        .string()
+        .optional()
+        .describe("New description (pre-ship Interaction/Interface or next slot)."),
       body: z.string().optional().describe("Replace entire territory body below frontmatter."),
       toggle_checkboxes: z
         .array(
@@ -462,15 +512,15 @@ server.registerTool(
     const resolvedSlot: TerritorySlot =
       slot ??
       (node.next &&
-      (node.type === "Foundation" || node.type === "Workflow") &&
+      isPipelineNodeType(node.type) &&
       (node.state === "stable" || node.state === "unstable")
         ? "next"
         : "current");
     if (title !== undefined) {
-      assertWorkflowTerritoryScalarsEditable(node, "title", resolvedSlot);
+      assertPipelineTerritoryScalarsEditable(node, "title", resolvedSlot);
     }
     if (description !== undefined) {
-      assertWorkflowTerritoryScalarsEditable(node, "description", resolvedSlot);
+      assertPipelineTerritoryScalarsEditable(node, "description", resolvedSlot);
     }
     const result = patchNodeTerritory(node, {
       title,
@@ -494,12 +544,13 @@ server.registerTool(
   {
     title: "Create node",
     description:
-      "Creates a Journey, Foundation, Workflow, or Bug: scaffolds territory folder + current.mdx frontmatter. " +
-      "When implementation_packages is required (default), Workflow/Foundation also scaffold src/workflows/<id> or src/foundations/<id>. " +
+      "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + current.mdx frontmatter. " +
+      "When implementation_packages is required (default), Interaction/Interface/Foundation also scaffold " +
+      "src/interactions/<id>, src/interfaces/<id>, or src/foundations/<id>. " +
       "When off (layout-free), only territory is created.",
     inputSchema: {
       id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
-      type: z.enum(NODE_TYPES).describe("Journey | Foundation | Workflow | Bug"),
+      type: z.enum(NODE_TYPES).describe("Journey | Interaction | Interface | Foundation | Bug"),
       title: z.string().min(1).describe("Human-readable title (written to current.mdx frontmatter)."),
       description: z.string().describe("Short description (written to current.mdx frontmatter)."),
     },
@@ -546,25 +597,20 @@ server.registerTool(
   {
     title: "Link nodes",
     description:
-      "Adds an edge to the DAG. Legal shapes: Workflow -belongs_to-> Journey (multiple per Workflow allowed), " +
-      "Workflow -depends_on-> Foundation|Workflow, Foundation -depends_on-> Foundation, Bug -affects-> Workflow|Foundation. " +
-      "When linking a Workflow to a Journey via belongs_to, pass link_dependent: true to auto-link transitively depended-on Workflows to the same Journey (Dependency Closure). " +
-      "While a node has next.mdx, belongs_to/depends_on writes go to the next slot (proposed edges applied on ship).",
+      "Adds an edge to the DAG. Legal shapes: Interaction -belongs_to-> Journey, " +
+      "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
+      "Interface -exposes-> Interaction, Interaction -leads_to-> Interaction, " +
+      "Bug -affects-> Interaction|Interface|Foundation. " +
+      "While a node has next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship).",
     inputSchema: {
       source_id: NODE_ID.describe("The id of the edge source node."),
       target_id: NODE_ID.describe("The id of the edge target node."),
       edge_type: z
-        .enum(["depends_on", "belongs_to", "affects"])
-        .describe("depends_on | belongs_to | affects"),
-      link_dependent: z
-        .boolean()
-        .optional()
-        .describe(
-          "When linking a Workflow to a Journey via belongs_to, auto-link any transitively depended-on Workflow to the same Journey instead of rejecting (Dependency Closure)."
-        ),
+        .enum(EDGE_TYPES)
+        .describe("belongs_to | depends_on | exposes | leads_to | affects"),
     },
   },
-  guarded(({ source_id, target_id, edge_type, link_dependent }) => {
+  guarded(({ source_id, target_id, edge_type }) => {
     const graph = loadGraph();
     const source = findNode(graph, source_id);
     const target = findNode(graph, target_id);
@@ -581,34 +627,17 @@ server.registerTool(
           ? (source.next.belongs_to ?? []).includes(target_id)
           : edge_type === "depends_on"
             ? (source.next.depends_on ?? []).includes(target_id)
-            : false
+            : edge_type === "exposes"
+              ? (source.next.exposes ?? []).includes(target_id)
+              : edge_type === "leads_to"
+                ? (source.next.leads_to ?? []).includes(target_id)
+                : false
         : graph.edges.some(
             (e) => e.source === source_id && e.target === target_id && e.type === edge_type
           );
 
     if (existingOnSlot) {
       throw blocked(`edge ${source_id} -${edge_type}-> ${target_id} already exists.`);
-    }
-
-    const dependentsLinked: { source: string; target: string; type: "belongs_to" }[] = [];
-
-    if (
-      edge_type === "belongs_to" &&
-      source.type === "Workflow" &&
-      target.type === "Journey"
-    ) {
-      const missing = missingJourneyDependents(graph, source, target_id);
-      if (missing.length > 0) {
-        if (!link_dependent) {
-          const ids = missing.map((n) => `"${n.id}"`).join(", ");
-          throw blocked(
-            `Dependency Closure. "${source_id}" depends on workflow(s) not linked to journey "${target_id}": ${ids}. Link them first, or retry with link_dependent: true.`
-          );
-        }
-        for (const dep of missing) {
-          dependentsLinked.push({ source: dep.id, target: target_id, type: "belongs_to" });
-        }
-      }
     }
 
     if (writeSlot === "current") {
@@ -618,15 +647,13 @@ server.registerTool(
         source.next.belongs_to = [...(source.next.belongs_to ?? []), target_id];
       } else if (edge_type === "depends_on") {
         source.next.depends_on = [...(source.next.depends_on ?? []), target_id];
+      } else if (edge_type === "exposes") {
+        source.next.exposes = [...(source.next.exposes ?? []), target_id];
+      } else if (edge_type === "leads_to") {
+        source.next.leads_to = [...(source.next.leads_to ?? []), target_id];
       }
     }
     addEdgeToFrontmatter(source, edge_type, target_id);
-
-    for (const link of dependentsLinked) {
-      const dep = findNode(graph, link.source);
-      graph.edges.push({ source: link.source, target: link.target, type: link.type });
-      addEdgeToFrontmatter(dep, link.type, link.target);
-    }
 
     const changedJourneys = recomputeJourneyStates(graph);
     const changedStability = recomputeStability(graph);
@@ -634,14 +661,12 @@ server.registerTool(
     refreshPersistedMap();
     const files = [
       territoryPath(source, writeSlot),
-      ...dependentsLinked.map((link) => territoryPath(findNode(graph, link.source), "current")),
       ...changedJourneys.map((j) => territoryPath(j)),
       ...changedStability.map((n) => territoryPath(n)),
     ];
     return ok({
       linked: { source: source_id, target: target_id, type: edge_type },
       slot: writeSlot,
-      dependents_linked: dependentsLinked,
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       changed_files: changedFiles(files, true),
@@ -654,11 +679,13 @@ server.registerTool(
   {
     title: "Open next evolution",
     description:
-      "Opens next.mdx for a shipped Foundation or Workflow (stable/unstable). Copies current body and " +
-      "outgoing belongs_to/depends_on into a draft next slot. The live node keeps serving under the same id. " +
+      "Opens next.mdx for a shipped Foundation, Interaction, or Interface (stable/unstable). Copies current body and " +
+      "outgoing belongs_to/depends_on/exposes/leads_to into a draft next slot. The live node keeps serving under the same id. " +
       "Ship from next in-review to promote next over current; discard_next to abandon.",
     inputSchema: {
-      node_id: NODE_ID.describe("Id of the shipped Workflow or Foundation to evolve."),
+      node_id: NODE_ID.describe(
+        "Id of the shipped Foundation, Interaction, or Interface to evolve."
+      ),
       title: z.string().min(1).optional().describe("Optional new title for the next slot."),
       description: z.string().optional().describe("Optional new description for the next slot."),
     },
@@ -690,7 +717,7 @@ server.registerTool(
   {
     title: "Discard next evolution",
     description:
-      "Deletes next.mdx (and next-attachments/) for a Foundation or Workflow, abandoning an in-flight evolution. " +
+      "Deletes next.mdx (and next-attachments/) for a Foundation, Interaction, or Interface, abandoning an in-flight evolution. " +
       "The live current.mdx is unchanged.",
     inputSchema: {
       node_id: NODE_ID.describe("Id of the node whose next slot to discard."),
@@ -722,34 +749,16 @@ server.registerTool(
     title: "Get blast radius",
     description:
       "Returns all nodes that depend on the given node (transitive reverse depends_on closure), " +
-      "with hop distance and journeys_at_risk for affected Workflows.",
+      "with hop distance and journeys_at_risk for affected Interactions. " +
+      "When the focus is an Interaction, also returns reachability: exposing Interfaces, containing Journeys, and leads_to downstream.",
     inputSchema: {
       node_id: NODE_ID.describe("The id of the node whose dependents to analyze."),
     },
   },
   guarded(({ node_id }) => {
     const graph = loadGraph();
-    findNode(graph, node_id);
-    const { affected: entries } = blastRadiusDependents(graph, node_id);
-    const journeysAtRisk = new Set<string>();
-    for (const { node } of entries) {
-      if (node.type !== "Workflow") continue;
-      for (const edge of graph.edges) {
-        if (edge.source === node.id && edge.type === "belongs_to") {
-          journeysAtRisk.add(edge.target);
-        }
-      }
-    }
-    return ok({
-      node_id,
-      affected: entries.map(({ node, distance }) => ({
-        id: node.id,
-        type: node.type,
-        state: node.state,
-        distance,
-      })),
-      journeys_at_risk: [...journeysAtRisk].sort(),
-    });
+    const node = findNode(graph, node_id);
+    return ok(buildBlastRadiusPayload(graph, node));
   })
 );
 
@@ -777,11 +786,22 @@ server.registerTool(
     if (source.next) {
       const nextBelongs = source.next.belongs_to ?? [];
       const nextDepends = source.next.depends_on ?? [];
-      if (nextBelongs.includes(target_id) || nextDepends.includes(target_id)) {
+      const nextExposes = source.next.exposes ?? [];
+      const nextLeadsTo = source.next.leads_to ?? [];
+      if (
+        nextBelongs.includes(target_id) ||
+        nextDepends.includes(target_id) ||
+        nextExposes.includes(target_id) ||
+        nextLeadsTo.includes(target_id)
+      ) {
         source.next.belongs_to = nextBelongs.filter((id) => id !== target_id);
         source.next.depends_on = nextDepends.filter((id) => id !== target_id);
+        source.next.exposes = nextExposes.filter((id) => id !== target_id);
+        source.next.leads_to = nextLeadsTo.filter((id) => id !== target_id);
         if (source.next.belongs_to.length === 0) delete source.next.belongs_to;
         if (source.next.depends_on?.length === 0) delete source.next.depends_on;
+        if (source.next.exposes?.length === 0) delete source.next.exposes;
+        if (source.next.leads_to?.length === 0) delete source.next.leads_to;
         removed += 1;
       }
     }
@@ -816,7 +836,7 @@ server.registerTool(
   {
     title: "Update node status",
     description:
-      "Transitions a Foundation, Workflow, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
+      "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
       "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
       "When next.mdx exists, build-pipeline transitions apply to the next slot; ship promotes next over current. " +
       "Journey and production stable/unstable are computed automatically.",
@@ -825,7 +845,7 @@ server.registerTool(
       new_status: z
         .string()
         .describe(
-          "Foundation/Workflow: draft | ready | in-progress | in-review | ship | cancelled | deprecated. " +
+          "Foundation/Interaction/Interface: draft | ready | in-progress | in-review | ship | cancelled | deprecated. " +
             "Bug: open | triaged | fixing | in-review | resolved | wontfix. " +
             "From stable/unstable: deprecated only (or open_next then build/ship next). " +
             "Pre-ship abandon: cancelled from draft|ready|in-progress|in-review."
@@ -858,6 +878,16 @@ server.registerTool(
       if (node.depends_on) {
         for (const t of node.depends_on) {
           graph.edges.push({ source: node_id, target: t, type: "depends_on" });
+        }
+      }
+      if (node.exposes) {
+        for (const t of node.exposes) {
+          graph.edges.push({ source: node_id, target: t, type: "exposes" });
+        }
+      }
+      if (node.leads_to) {
+        for (const t of node.leads_to) {
+          graph.edges.push({ source: node_id, target: t, type: "leads_to" });
         }
       }
     } else if (resolved.ship) {
@@ -923,10 +953,12 @@ server.registerTool(
     title: "Force unship (mistaken ship recovery)",
     description:
       "DANGEROUS recovery only. Ask the user first and wait for an explicit yes — never invent confirmation. " +
-      "Reverses a mistaken Foundation/Workflow ship: clears shipped_at and sets a pre-ship state (default ready). " +
+      "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
       'Requires confirm exactly equal to "unship:<node_id>". Blocked while next.mdx is open or shipped dependents exist.',
     inputSchema: {
-      node_id: NODE_ID.describe("Stable/unstable Foundation or Workflow to unship."),
+      node_id: NODE_ID.describe(
+        "Stable/unstable Foundation, Interaction, or Interface to unship."
+      ),
       confirm: z
         .string()
         .describe('Exact token after user confirmation: "unship:<node_id>". Do not invent this.'),
@@ -1216,7 +1248,7 @@ function runCli() {
 
       if (projectConfig.config.implementation_packages === "off") {
         console.log(
-          "Layout-free mode: create_node will not scaffold src/foundations|workflows packages; check skips package/dirty-src ownership."
+          "Layout-free mode: create_node will not scaffold src/foundations|interactions|interfaces packages; check skips package/dirty-src ownership."
         );
       }
 
@@ -1270,7 +1302,7 @@ View options:
 
 Check options:
   --base <ref>              Git base for dirty-src commit diff
-  --for-main                Fail if any mid-pipeline Foundation/Workflow/Bug states
+  --for-main                Fail if any mid-pipeline Foundation/Interaction/Interface/Bug states
 
 Environment:
   MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);

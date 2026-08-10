@@ -12,28 +12,28 @@ updated_at: 2026-07-20T21:17:09.330Z
 
 ## Purpose
 
-Assembler — Next.js App Router runtime that mounts console Workflow packages into a local deployable UI. Owns app bootstrap, routing shell hooks, and how Workflow UIs are composed — not stakeholder use-case behaviour (board, graph, mutate, model).
+Assembler — Next.js App Router runtime that mounts console Interaction packages into a local deployable UI. Owns app bootstrap, routing shell hooks, and how Interaction UIs are composed — not stakeholder use-case behaviour (board, graph, mutate, model).
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-nextjs/`
 
 - App Router entry and layout primitives for the MindPlan console
-- Mount points for Workflow packages under `src/workflows/wf-*`
-- Local-dev conventions (project root env / launch) consumed by `wf-console-shell`
+- Mount points for Interaction packages under `src/interactions/wf-*`
+- Local-dev conventions (project root env / launch) consumed by `f-console-shell`
 
-MUST NOT own status-board, graph-explore, territory, mutate, or model screens — those are Workflows.
+MUST NOT own status-board, graph-explore, territory, mutate, or model screens — those are Interactions.
 
 ## Acceptance Criteria
 
-- Console Workflows can be mounted as App Router routes/packages
+- Console Interactions can be mounted as App Router routes/packages
 - Assembler stays free of product use-case logic
 - Local `next dev` (or equivalent) can boot the shell against a chosen project root
 
 ## Atomic Ops
 
 - [ ] Scaffold Next.js App Router assembler package
-- [ ] Define Workflow mount convention for console routes
+- [ ] Define Interaction mount convention for console routes
 - [ ] Document local-dev project-root wiring for the shell
 
 ## Attachments

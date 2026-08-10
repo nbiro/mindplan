@@ -1,135 +1,103 @@
 # MindPlan
 
-**MindPlan is the product plan AI agents work from.**  
-Software cannot be written without knowing what the system is. MindPlan keeps that knowledge in the repo — capabilities, infrastructure, dependencies, and what's allowed to ship — so agents build against a real model of the project instead of guessing from tickets and chat.
+**MindPlan is the persistent architectural model AI agents work from.**  
+Agents cannot build correctly without knowing what the system *does*. MindPlan keeps that knowledge in the repo — Journeys, Interactions, Interfaces, Foundations, dependencies, and what is allowed to ship — so agents query a living model instead of guessing from tickets and chat.
 
 Plan state lives next to the code. Every change to it is checked; illegal moves are rejected.
 
 ## The problem
 
-How can AI agents write software if they do not know what the project is about? Without a durable model of the product — what capabilities exist, what infrastructure is ready, what is legal to build next — agents improvise from chat history and stale tickets. They build on unfinished plumbing, ship over unstable dependencies, or mark work done while checklist items are still open.
+Without a durable model of the product — what behaviors exist, how actors enter them, what substrate is ready — agents improvise from chat history and stale tickets. They ship over unfinished Foundations, wire entry surfaces to unfinished behaviors, or mark work done while checklists are still open.
 
-External trackers (Jira, Linear, GitHub Projects) do not fix that: they list intent, but they do not give agents a living picture of the system, and nothing refuses an illegal move when the ticket says "ship."
+External trackers list intent; they do not give agents a machine-queryable architecture, and nothing refuses an illegal move when the ticket says "ship."
 
 ## A plan that can refuse
 
-Traditional issue trackers answer: *what should someone work on?*
-
 MindPlan answers:
 
-- What **is** this project — which capabilities and infrastructure exist?
+- What **is** this project — which capabilities, behaviors, and entry surfaces exist?
 - What **can** be worked on next?
 - Is this change **architecturally valid**?
-- What will this **break**?
+- What will this **break** (dependents + Interaction reachability)?
 - Is this feature even **allowed to ship**?
 
-That plan is not advisory. Every mutation is validated like a compile step for planning — guardrails reject violations with a machine-parsable error:
+Every mutation is validated like a compile step:
 
 ```
-Blocked: Infrastructure First. Workflow "wf-checkout" cannot ship while
-linked Foundations or Workflows are not stable: "f-payments" (in-progress).
+Blocked: Infrastructure First. Interaction "i-checkout" cannot ship while
+linked Foundations are not stable: "f-payments" (in-progress).
 ```
 
-No ghost workflows without a capability and foundation, no shipping on unstable deps, no review while Atomic Ops are unchecked. Agents get a focus node, its links, and blast radius *before* they touch code — not after something breaks.
+No ghost Interactions without a Journey and Foundation, no Interface ship while exposed Interactions are unfinished (**Behavior First**), no Interaction→Interaction `depends_on` (**Interaction Independence**), no review while Atomic Ops are unchecked.
 
 ## Plans are made to be changed
 
-Every constraint and dependency is an engineering decision — and decisions change. MindPlan's compiler refuses *illegal* moves; it does not freeze the plan.
+The compiler refuses *illegal* moves; it does not freeze the plan.
 
-You change the graph under the rules:
-
-- **Rewire** — `link_nodes` / `unlink_nodes` when dependencies or Journey membership shift
-- **Retreat** — move `in-review` back to `in-progress` when scope or checklist reality changes
-- **Evolve** — shipped Foundations and Workflows keep the same id forever; `open_next` opens a `next.mdx` draft, you run the build pipeline against it, and `ship` promotes it over `current.mdx`
-- **Retire** — move production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
-
-In traditional trackers, shipping often means closing the ticket and losing it from the living map. MindPlan keeps Journeys permanent and Workflows as live product surface: evolve in place, or deprecate — don't pretend "done" erased the capability.
+- **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`)
+- **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
+- **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `next.mdx` → `ship` promotes over `current.mdx`
+- **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees
 
-After every graph mutation, MindPlan refreshes [`mindplan/map.md`](mindplan/map.md) — a Mermaid diagram of Journeys, Foundations, Workflows, and Bugs. Node labels include delivery state (`id · title · state`), so you can scan what is stable, in flight, or blocked by dependencies the same way an agent does via MCP.
+After every graph mutation, MindPlan refreshes [`mindplan/map.md`](mindplan/map.md) — Journeys, Interactions, Interfaces, Foundations, and Bugs. On demand: MCP `export_mindplan_view` or CLI `mindplan-mcp view`.
 
-On demand:
-
-- MCP `export_mindplan_view` — Mermaid or DOT (full map or focus + 1-hop)
-- CLI `mindplan-mcp view` — same projection from the terminal
-
-Today's map is an **architecture + state** projection, not a kanban board. A richer **status board** (done / in-flight / blocked at a glance) is planned; until then, open `map.md` on GitHub or run `view` to read the same graph the tools expose.
+Today's map is an **architecture + state** projection. A richer status board is planned.
 
 ## Worked example: scrambled eggs
 
-Imagine planning breakfast the way you'd plan a product. Capability, shared stove, and use cases — with states you can see.
+Capability, shared stove, behaviors, and how you start them:
 
 ```mermaid
 flowchart TB
   subgraph jBreakfast ["Journey: j-breakfast · Make breakfast · incubation"]
-    wfCrack["wf-crack-eggs · Crack eggs · stable"]
-    wfWhisk["wf-whisk · Whisk · stable"]
-    wfCook["wf-cook-scramble · Cook scramble · in-progress"]
+    iCrack["i-crack-eggs · Crack eggs · stable"]
+    iWhisk["i-whisk · Whisk · stable"]
+    iCook["i-cook-scramble · Cook scramble · in-progress"]
   end
   subgraph foundations ["Foundations"]
     fStove["f-stove · Stove · ready"]
   end
-  wfWhisk -->|"depends_on"| wfCrack
-  wfCook -->|"depends_on"| wfWhisk
-  wfCook -->|"depends_on"| fStove
+  subgraph interfaces ["Interfaces"]
+    ifCli["if-breakfast-cli · Breakfast CLI · ready"]
+  end
+  iCrack -->|"leads_to"| iWhisk
+  iWhisk -->|"leads_to"| iCook
+  iCook -->|"depends_on"| fStove
+  ifCli -->|"exposes"| iCook
 ```
 
-Arrows are MindPlan `depends_on` (dependent → dependency), same as `map.md` — not cooking-step order.
-
-- **Journey** `j-breakfast` — permanent capability ("Make breakfast"), not a sprint
+- **Journey** `j-breakfast` — permanent capability
 - **Foundation** `f-stove` — shared substrate; cook cannot ship until the stove is `stable`
-- **Workflows**
-  - `wf-crack-eggs` — no Workflow deps in this sketch
-  - `wf-whisk` — `depends_on` `wf-crack-eggs` (you whisk what you cracked)
-  - `wf-cook-scramble` — the cooking Workflow; `depends_on` `wf-whisk` and `f-stove`
-
-Trying to ship `wf-cook-scramble` while `f-stove` is still `ready` fails:
+- **Interactions** — self-contained behaviors; they share state via Foundations, never `depends_on` each other. `leads_to` is navigation only (cycles allowed, not a ship gate)
+- **Interface** `if-breakfast-cli` — how an actor starts cooking; ship needs exposed Interactions `stable` (**Behavior First**)
 
 ```
-Blocked: Infrastructure First. Workflow "wf-cook-scramble" cannot ship while
-linked Foundations or Workflows are not stable: "f-stove" (ready).
+Blocked: Infrastructure First. Interaction "i-cook-scramble" cannot ship while
+linked Foundations are not stable: "f-stove" (ready).
 ```
-
-When the plan changes — say you add toast that also needs the stove — you don't fight the compiler: create `wf-make-toast`, `link_nodes` it to `j-breakfast` and `f-stove`, and keep going. When the scramble recipe itself changes after ship, `open_next` on `wf-cook-scramble` (same id) and evolve under `next.mdx`.
-
-Snapshot in the diagram: crack and whisk are done (`stable`); cook is underway; stove isn't shippable infrastructure yet — so cook is blocked from shipping until you finish the foundation.
 
 ## How it's built
 
-Plan state lives in the repository as `current.mdx` files under `mindplan/` (Journeys, Foundations, Workflows, Bugs) — plus an optional `next.mdx` next to a shipped Foundation's or Workflow's `current.mdx` while it evolves in place. Node ids are stable forever: there is no new id for a revision. By default, Workflow and Foundation nodes also own prescribed implementation packages under `src/workflows/<id>/` and `src/foundations/<id>/`. Brownfield projects can opt out with `mindplan-mcp init --layout free` (`implementation_packages: "off"`) and keep their existing app layout. An MCP server is the single write path for plan mutations; it validates against architectural rules and exposes a queryable graph plus `get_node_implementation` so agents can inspect software architecture, not only delivery state.
+Territory under `mindplan/` (Journeys, Foundations, Interactions, Interfaces, Bugs) plus optional `next.mdx` while a shipped node evolves. By default, packages live at `src/interactions/<id>/`, `src/interfaces/<id>/`, and `src/foundations/<id>/` (`implementation_packages: "off"` for brownfield). An MCP server is the single write path.
 
-- **[SPEC.md](SPEC.md)** — full framework specification (taxonomy, state machines, compiler rules, file formats, tool contract)
-- **`src/`** — TypeScript MCP server (stdio transport)
+- **[SPEC.md](SPEC.md)** — full framework specification
+- **`src/`** — TypeScript MCP server (stdio)
 
 ## This repo's live plan
 
-This repository dogfoods MindPlan. Live territory: [`mindplan/`](mindplan/). The auto-generated map is at [mindplan/map.md](mindplan/map.md).
+This repository dogfoods MindPlan. Live territory: [`mindplan/`](mindplan/). Map: [mindplan/map.md](mindplan/map.md).
 
 ## Who is this for
 
-MindPlan is built for people who ship **with AI agents** and need those agents to know what the project is — a living product plan, not a stale ticket list.
-
-It works best for **indie developers and small, tightly collaborating teams**. Plan state is plain-text `current.mdx` / `next.mdx` in git, so concurrency follows git — the same way two people build two features on different files.
-
-That is a good fit when:
-
-- You're a solo builder, or a small team where agents and humans often work on **different** Workflows or Foundations in parallel (merge conflicts stay rare, like distinct feature work)
-- You want planning and code to live and merge together
-- Your agents need a queryable source of truth that can refuse illegal moves
-
-The real limit is concurrent edits to the **same** node's frontmatter (state, edges) — that can produce ordinary git conflicts the rules engine does not resolve for you. MCP is the write gate and validator, not a multi-writer lock; the system does not "crash" under collaboration.
-
-It's a poor fit today for:
-
-- Organizations that need multi-user permissions, audit trails, or sync with existing PM tools (Jira, Linear, GitHub Projects) — MindPlan intentionally has no external sync
-- Teams that expect a shared live board with locking instead of git-based merges
+Built for people who ship **with AI agents** and need a living product architecture, not a stale ticket list. Best for indie developers and small teams where plan state is plain-text in git. Poor fit today for orgs that need multi-user permissions, audit trails, or sync with Jira/Linear.
 
 ## Quick start
 
 **Not yet published to npm — install from source.**
 
-1. Clone and build the server:
+1. Clone and build:
 
 ```bash
 git clone https://github.com/nbiro/mindplan.git
@@ -137,142 +105,97 @@ cd mindplan
 npm install && npm run build
 ```
 
-2. From your project's root directory, run `init` against the built server to scaffold `mindplan/` and install agent instructions:
+2. From your project root, scaffold with the built server:
 
 ```bash
 node /absolute/path/to/mindplan/dist/index.js init
 ```
 
-`init` uses the current working directory as the project root (override with `MINDPLAN_ROOT`) and installs:
+`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), and `AGENTS.md` when missing.
 
-- `.cursorignore` — ignores derived `mindplan/map.md` (and `mindplan/agent/**`); agents orient via MCP for graph authority and edit territory prose with host file tools
-- `.cursor/permissions.json` — allowlists `mindplan:*` MCP tools so Cursor Auto-review does not prompt on playbook graph mutations
-- `mindplan/agent/playbook.md` — always-on SDLC execution process for all software work
-- `mindplan/agent/skills/define-entities/` — guide for defining Journey, Foundation, Workflow, and Bug nodes
-- `mindplan/agent/skills/plan-project/` — plan-only sessions (model the graph; no application code)
-- `mindplan/agent/skills/review-work/` — Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / `resolved`) via orchestrated Reviewer-subagent loop
-- `mindplan/agent/skills/code-review/` — thin portable code-review checklist (prefer host-native `/code-review` or equivalent, else community `code-review-skill`, else this skill)
-- `mindplan/agent/mcp.json.example` — MCP server config snippet
-- `mindplan/agent/integrations/` — setup guides for Cursor, Claude Code, Codex, Copilot, Windsurf, Cline, Continue, and generic MCP clients
-- `AGENTS.md` at the project root — created only when missing (many agents auto-read this file)
+3. Register the MCP server — see `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
-3. Register the MCP server with your coding agent — pick the guide that matches your tool:
-
-```
-mindplan/agent/integrations/
-```
-
-See [integrations README](templates/agent/integrations/README.md) in this repo for the full list.
-
-4. Reload MCP servers in your agent after config changes.
+4. Reload MCP servers after config changes.
 
 ## File system layout (consumer project)
 
 ```
 <project-root>/
-├── AGENTS.md                        # Agent instructions (optional; created by init when missing)
 ├── mindplan/
-│   ├── agent/                       # Agent integration assets (installed by init)
-│   │   ├── playbook.md
-│   │   ├── mcp.json.example
-│   │   ├── integrations/            # Per-agent MCP setup guides
-│   │   └── skills/
-│   │       ├── define-entities/
-│   │       ├── plan-project/
-│   │       └── review-work/
-│   ├── components/                # Project-specific MDX components (optional)
-│   ├── journeys/<id>/             # Plan only — no src/ package
-│   │   ├── current.mdx
-│   │   └── attachments/
-│   ├── foundations/<id>/
-│   │   ├── current.mdx
-│   │   ├── next.mdx              # optional — in-flight evolution of a shipped Foundation
-│   │   └── attachments/
-│   ├── workflows/<id>/
-│   │   ├── current.mdx
-│   │   ├── next.mdx              # optional — in-flight evolution of a shipped Workflow
-│   │   └── attachments/
+│   ├── agent/                     # playbook + skills (installed by init)
+│   ├── journeys/<id>/
+│   ├── foundations/<id>/          # + optional next.mdx
+│   ├── interactions/<id>/         # + optional next.mdx
+│   ├── interfaces/<id>/           # + optional next.mdx
 │   └── bugs/<id>/
-│       ├── current.mdx           # Repro, expected/actual, fix checklist
-│       └── attachments/
 └── src/
-    ├── workflows/<workflow-id>/   # Use-case implementation package (scaffolded by create_node)
-    └── foundations/<foundation-id>/  # Substrate implementation package
+    ├── interactions/<id>/
+    ├── interfaces/<id>/
+    └── foundations/<id>/
 ```
 
-Territory files are MDX. Node records and outgoing edge arrays (`belongs_to`, `depends_on`, `affects`) live in YAML frontmatter. A node's id never changes — `next.mdx` holds a draft evolution of a shipped Foundation/Workflow under the same id; `ship` promotes it over `current.mdx`. Implementation packages are prescribed by type+id (`src/workflows/<id>`, `src/foundations/<id>`) when `implementation_packages` is `required` (default); set to `off` for layout-free brownfield adoption. Journeys have no code package because Workflows may belong to many Journeys. See SPEC.md §1.2, §1.2.1, §6.1 and §7.
+Edge arrays in frontmatter: `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`. See SPEC.md §1–§2.
 
 ## Taxonomy
 
 | Type | What it is | States |
 |------|------------|--------|
-| **Journey** | A named domain capability the architecture should scream (e.g. "Table ordering", "Billing"). Not an epic, sprint, or tech layer — a permanent container for related use cases. | Computed (`draft`, `incubation`, `stable`, `evolving`) |
-| **Foundation** | Shared substrate with no standalone use case, sorted by **role** (Assembler, Infra, Design system, Adapter — e.g. Next.js app shell, auth, DB schema, Stripe SDK, design system, primary button). Workflows depend on it; must be stable before those Workflows can ship. | Build pipeline + computed production (`stable` / `unstable`) |
-| **Workflow** | A concrete use case (e.g. "Split the check", "User picker", "Character editor"). May belong to one or more Journeys; may depend on Foundations and other Workflows. | Build pipeline + computed production (`stable` / `unstable`) |
-| **Bug** | A defect on a Workflow or Foundation. The only type with a real closed end (`resolved` / `wontfix`). | Dedicated: `open → triaged → fixing → in-review → resolved \| wontfix` |
+| **Journey** | Domain capability the architecture screams | Computed (`draft`, `incubation`, `stable`, `evolving`) |
+| **Interaction** | Self-contained behavior (any actor) — **not** a UI component | Build pipeline + `stable`/`unstable` |
+| **Interface** | How an actor enters an Interaction (Page, CLI, MCP, Webhook, Cron, …) | Build pipeline + `stable`/`unstable` |
+| **Foundation** | Shared substrate by role (Assembler, Infra, Design system, Adapter) | Build pipeline + `stable`/`unstable` |
+| **Bug** | Defect on Interaction, Interface, or Foundation | `open → triaged → fixing → in-review → resolved \| wontfix` |
 
-Journeys scream the domain · Workflows are the use cases · Foundations are the shared substrate.
+Journeys scream the domain · Interactions are behaviors · Interfaces are entry · Foundations are shared substrate · Assembler composes them.
 
-**Foundation roles** (documentation convention — not new NodeTypes): **Assembler** (framework/runtime that mounts Workflow packages, e.g. Next.js or Vercel Cron), **Infra** (DB, queues, observability), **Design system** (tokens + dumb UI), **Adapter** (vendor SDKs). Agents SHOULD lead the Foundation `description` with the role tag. A Journey's assembler is derived from its Workflows' `depends_on` — different Journeys may use different assemblers.
-
-**Build pipeline** (Foundation/Workflow): `draft → ready → in-progress → in-review → ship` (sets `shipped_at`, computes `stable` or `unstable`).
-
-**Production posture** (`stable` / `unstable`) is computed from open Bugs via `affects` edges — never set manually. Open bug = `open`, `triaged`, `fixing`, or `in-review`.
-
-In traditional trackers, epics close when a milestone ships — then drop out of the living product map even though the same flows keep getting developed. MindPlan doesn't do that: Journeys stay permanent and move between `incubation`, `stable`, and `evolving`; Workflows stay `stable`/`unstable` and evolve in place (`open_next` → `next.mdx` → `ship` promotes it over `current.mdx`, same id) instead of closing. Only Bugs close.
+**Build pipeline** (Foundation/Interaction/Interface): `draft → ready → in-progress → in-review → ship` → computed `stable`/`unstable`.
 
 ## Compiler Rules
 
-Every violation throws an error starting with `Blocked: `.
+Every violation starts with `Blocked: `.
 
-1. **No Ghost Workflows** — Workflow cannot reach `ready`/`in-progress` without at least one `belongs_to` + at least one `depends_on`.
-2. **No Ghost Bugs** — Bug cannot reach `triaged`/`fixing` without at least one `affects` edge.
-3. **Infrastructure First** — Workflow cannot `ship` unless all linked Foundations and Workflows are `stable`.
-4. **Completion Check** — unchecked `[ ]` in `current.mdx` (or `next.mdx` while evolving) block Workflow/Foundation `in-review`/`ship` and Bug `in-review`/`resolved`.
-5. **Computed Journey States** — from shipped + in-progress Workflows only; Bugs do not affect Journeys.
-6. **Computed Stability** — shipped nodes flip `stable` ↔ `unstable` when open Bugs are linked, unlinked, or resolved.
-7. **Taxonomy Enforcement** — edge creation must use a legal shape/type pairing, no self-links or duplicates, no `depends_on` cycles (including proposed `next.depends_on`).
-8. **Dependency Closure** — linking a Workflow to a Journey is rejected when transitively depended-on Workflows are not already in that Journey; pass `link_dependent: true` to auto-link them.
-9. **Next Evolution** — only shipped (`stable`/`unstable`) Foundations/Workflows can `open_next`; blocked while a `next.mdx` is already open. `ship` from next `in-review` promotes `next.mdx` over `current.mdx` in place — same id, no new node.
-10. **Force Unship** — recovery only: reverse a mistaken Foundation/Workflow ship after explicit human confirmation (`confirm: "unship:<id>"`); blocked while `next` is open or shipped dependents exist.
+1. **No Ghost Interactions** — need `belongs_to` + Foundation `depends_on` before `ready`/`in-progress`
+2. **No Ghost Interfaces** — need `exposes` before `ready`/`in-progress`
+3. **No Ghost Bugs** — need `affects` before `triaged`/`fixing`
+4. **Infrastructure First** — Interaction `ship` needs all Foundation deps `stable`
+5. **Behavior First** — Interface `ship` needs all exposed Interactions (and Foundation deps) `stable`
+6. **Completion Check** — unchecked `[ ]` block `in-review`/`ship` (and Bug `resolved`)
+7. **Interaction Independence** — no Interaction → Interaction `depends_on` (share state via Foundations)
+8. **Computed Journeys / Stability** — never set manually
+9. **Taxonomy** — legal edge shapes; `depends_on` acyclic; `leads_to` cycles allowed
+10. **Next Evolution / Force Unship** — stable-id `open_next`; recovery only with explicit `confirm`
+
+No Dependency Closure / `link_dependent`.
 
 ## MCP Tools
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `find_related_nodes` | read | Rank nodes by text query; return focus + 1-hop linked neighborhood (summaries) |
-| `orient_for_work` | read | Composite: find_related_nodes + context (record+body) + blast radius for Foundation/Workflow focus |
-| `get_mindplan_graph` | read | Nodes and edges assembled from territory frontmatter |
-| `export_mindplan_view` | read | Mermaid or DOT typed-DAG projection (full map or focus + 1-hop) |
-| `get_blast_radius` | read | Transitive dependents of a node (reverse depends_on); journeys_at_risk |
-| `get_node_context` | read | Returns `record`, `body`, attachment paths, and `next` slot when evolving; `raw_context` deprecated |
-| `get_node_implementation` | read | Package info for Workflow/Foundation; `root: null` when layout-free (`implementation_packages: off`) |
-| `patch_node_territory` | mutation | Optional fallback for body/checkboxes/title/description; defaults to `next` when evolving; prefer host file tools for prose |
-| `create_node` | mutation | Creates Journey, Foundation, Workflow, or Bug folder + `current.mdx` |
-| `open_next` | mutation | Opens `next.mdx` on a shipped Foundation/Workflow (same id) seeded from `current.mdx`; live node keeps serving unchanged |
-| `discard_next` | mutation | Deletes `next.mdx` (and `next-attachments/`), abandoning an in-flight evolution; `current.mdx` unchanged |
-| `link_nodes` | mutation | `belongs_to`, `depends_on` (Foundation or Workflow), or `affects`; optional `link_dependent` for journey closure; writes to `next` slot while one is open, otherwise source-node frontmatter; recomputes Journey + stability |
-| `unlink_nodes` | mutation | Removes edge(s) from source-node frontmatter (current and next); recomputes Journey + stability |
-| `update_node_status` | mutation | Transitions + `ship`; applies to the `next` slot while one is open; ship promotes `next.mdx` over `current.mdx` in place; recomputes stability and Journey states |
-| `force_unship` | mutation | Mistaken-ship recovery: clear `shipped_at` and set a pre-ship state; requires `confirm: "unship:<id>"` after explicit user yes |
+| `orient_for_work` | read | find + context + blast radius (Interaction focus includes `reachability`) |
+| `find_related_nodes` | read | Rank by query; focus + 1-hop |
+| `get_mindplan_graph` | read | Assembled nodes/edges (`version: 1`) |
+| `export_mindplan_view` | read | Mermaid or DOT |
+| `get_blast_radius` | read | Reverse-`depends_on` affected + Interaction reachability |
+| `get_node_context` | read | `record` + `body` (+ `next` when evolving) |
+| `get_node_implementation` | read | Package root for Interaction/Interface/Foundation |
+| `patch_node_territory` | mutation | Optional prose fallback; prefer host file tools |
+| `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug |
+| `open_next` / `discard_next` | mutation | Evolve / abandon shipped node in place |
+| `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent` |
+| `update_node_status` | mutation | Pipeline + `ship` (promotes `next` when open) |
+| `force_unship` | mutation | Mistaken-ship recovery (`confirm: "unship:<id>"`) |
 
 ## CLI
 
 | Command | Description |
 |---------|-------------|
-| `mindplan-mcp` | Start the MCP server (stdio) |
-| `mindplan-mcp init` | Scaffold `mindplan/`, agent playbook, skills, integrations, `.cursorignore`, `.cursor/permissions.json`, and `AGENTS.md` |
-| `mindplan-mcp view` | Print a Mermaid/DOT projection of the territory graph (`export` is an alias) |
-| `mindplan-mcp check` | Offline integrity: graph, packages, dirty `src/` ownership; `--for-main` bans mid-pipeline states |
-| `mindplan-mcp help` | Show usage |
+| `mindplan-mcp` | Start MCP server (stdio) |
+| `mindplan-mcp init` | Scaffold territory + agent assets |
+| `mindplan-mcp view` | Print Mermaid/DOT (`export` alias) |
+| `mindplan-mcp check` | Offline integrity; `--for-main` merge gate |
+| `mindplan-mcp help` | Usage |
 
-`view` options: `--format mermaid|dot`, `--focus <node-id>`, `--include-retired` (includes deprecated/cancelled + closed bugs), `--output <file>`.
-
-`check` options: `--base <ref>` (dirty-src commit base), `--for-main` (merge gate).
-
-Set `MINDPLAN_ROOT` to override the project root (defaults to `process.cwd()`).
-
-Graph views are read-only projections of the assembled graph (see SPEC §7.4). They do not replace MDX viewers or external board sync. A richer status board is planned; see [See what the agent sees](#see-what-the-agent-sees).
+Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`).
 
 ## Development
 

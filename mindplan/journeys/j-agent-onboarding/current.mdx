@@ -18,17 +18,17 @@ Domain capability: adopt MindPlan in a consumer project and wire it into coding 
 
 A consumer runs `mindplan-mcp init` (or installs from npm once published) and gets territory layout, an always-on playbook (`AGENTS.md` / `mindplan/agent/playbook.md`), the define-entities skill, `.cursorignore`, and integration guides for major agent hosts. Brownfield repos can opt into layout-free mode (`--layout free`) so they keep their existing `src/` layout while still using the MindPlan graph and lifecycle. Framework docs (SPEC, README, roles, Territory Completeness) are shared with Plan software so consumers and this repo speak the same language.
 
-Journey state is **computed** from member Workflows. Assembler for init/runtime paths: `f-mcp-runtime` (via Workflow `depends_on`).
+Journey state is **computed** from member Interactions. Assembler for init/runtime paths: `f-mcp-runtime` (via Interaction `depends_on`).
 
-## Linked Workflows
+## Linked Interactions
 
-- `wf-project-init` — scaffold `mindplan/` + agent assets + `mindplan/config.json`
-- `wf-layout-free` — brownfield opt-out of prescribed `src/foundations|workflows` packages
-- `wf-agent-integrations` — per-agent MCP setup guides
-- `wf-npm-publish` — first claim + publish script + consumer install docs (also belongs to Ship to npm / `j-npm-publish`)
-- `wf-framework-docs` — README / SPEC / playbook / skills (shared with Plan software)
+- `i-init-project` — scaffold `mindplan/` + agent assets + `mindplan/config.json`
+- `i-init-project` — brownfield opt-out of prescribed `src/foundations|interactions` packages
+- `f-framework-docs` — per-agent MCP setup guides
+- `i-npm-publish` — first claim + publish script + consumer install docs (also belongs to Ship to npm / `j-npm-publish`)
+- `f-framework-docs` — README / SPEC / playbook / skills (shared with Plan software)
 
-Deprecated historical suffixes (`wf-project-init-v2`, `wf-framework-docs-v3`, …) are not active members of the living capability.
+Deprecated historical suffixes (`i-init-project-v2`, `f-framework-docs-v3`, …) are not active members of the living capability.
 
 ## What “healthy” means
 
