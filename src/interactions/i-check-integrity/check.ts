@@ -323,6 +323,8 @@ function checkDirtySrc(
   };
 
   for (const rel of dirty.workingTree) {
+    // Deleted paths still appear in porcelain; only enforce ownership for paths that exist.
+    if (!fs.existsSync(path.join(cwd, ...rel.split("/")))) continue;
     checkPath(
       rel,
       ownerAllowsWorkingTree,
@@ -333,6 +335,8 @@ function checkDirtySrc(
 
   for (const rel of dirty.commits) {
     if (workingSet.has(rel)) continue; // already gated by stricter working-tree rule
+    // Removals of retired package roots (e.g. former src/workflows/) need no living owner.
+    if (!fs.existsSync(path.join(cwd, ...rel.split("/")))) continue;
     checkPath(
       rel,
       ownerAllowsCommitDiff,
