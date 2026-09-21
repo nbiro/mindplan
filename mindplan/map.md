@@ -1,23 +1,23 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (40 nodes, 90 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (40 nodes, 91 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
   subgraph foundations["Foundations"]
-    f_compiler_rules["f-compiler-rules · Compiler rules (interaction-centric) · stable"]
+    f_compiler_rules["f-compiler-rules · Compiler rules (lighter process) · stable"]
     f_console_bridge["f-console-bridge · Console bridge · ready"]
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
     f_domain_model["f-domain-model · Domain model (interaction-centric) · stable"]
-    f_framework_docs["f-framework-docs · Framework docs · stable"]
+    f_framework_docs["f-framework-docs · Framework docs (lighter process) · stable"]
     f_github_actions["f-github-actions · GitHub Actions assembler · stable"]
     f_graph_search["f-graph-search · Graph search (interaction-centric) · stable"]
-    f_mcp_runtime["f-mcp-runtime · MCP runtime (interaction-centric) · stable"]
+    f_mcp_runtime["f-mcp-runtime · MCP runtime (lighter process) · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
     f_npm_registry["f-npm-registry · npm registry adapter · ready"]
-    f_territory_store["f-territory-store · Territory store (interaction-centric) · stable"]
-    f_test_harness["f-test-harness · Test harness · stable"]
+    f_territory_store["f-territory-store · Territory store (shape scaffolds) · stable"]
+    f_test_harness["f-test-harness · Test harness (shape smoke) · stable"]
     f_view_projection["f-view-projection · View projection (interaction-centric) · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
   end
@@ -54,6 +54,7 @@ flowchart TB
     i_steer_plan__in__j_territory_sdlc["i-steer-plan · Mutate graph · stable"]
   end
   f_compiler_rules --> f_domain_model
+  f_compiler_rules --> f_territory_store
   f_console_bridge --> f_compiler_rules
   f_console_bridge --> f_graph_search
   f_console_bridge --> f_mcp_runtime

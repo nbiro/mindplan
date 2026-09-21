@@ -1,11 +1,11 @@
 ---
 name: mindplan-review-work
 description: >-
-  Independent Reviewer role for MindPlan gates: Plan Review (draft → ready) and
-  Implementation review (in-review → ship / resolved). Run as a spawned
-  Reviewer subagent (or separate session) — never when this session authored
-  the plan or implemented the node. Findings return as a structured verdict
-  message; do not write Review Notes into territory.
+  Independent Reviewer role for MindPlan gates: Plan Review (draft → ready,
+  subgraph-scoped) and Implementation review (change-set / revision-bound
+  in-review → ship / resolved). Run as a spawned Reviewer subagent — never when
+  this session authored the plan or implementation. Findings return as a
+  structured verdict message; do not write Review Notes into territory.
 ---
 
 # Review Work
@@ -13,141 +13,117 @@ description: >-
 Use when you are the **Reviewer** in an orchestrated Review loop (parent
 spawns you). Two procedures:
 
-- Procedure A — Interaction/Interface/Foundation `draft → ready` (Plan Review).
-- Procedure B — Interaction/Interface/Foundation/Bug `in-review` → ship /
-  resolved (Implementation review).
+- Procedure A — Plan Review for a **frozen subgraph** of draft nodes → `ready`.
+- Procedure B — Implementation review for an **immutable revision** /
+  change-set → `ship` / `resolved`.
 
-The **parent** owns the retry loop (fix → re-enter gate → re-spawn). You
-review once per spawn, return a structured verdict, and stop.
+The **parent** owns the retry loop (fix → re-enter gate → re-spawn a **fresh**
+Reviewer). You review once per spawn, return a structured verdict, and stop.
+
+One approval gate per **immutable revision** — not one Reviewer invocation forever.
+Reject, blocked transition, or any change after the verdict voids approval.
 
 ## Preconditions (both procedures)
 
-- This run must be independent of the session that authored the plan
-  (Procedure A) or the implementation (Procedure B). If you wrote what you
-  are about to review, stop and return Reject with that Finding.
-- Orient with `orient_for_work` or `get_node_context` before anything else.
-- Mutation boundary: `update_node_status` only. Never `link_nodes`,
-  `unlink_nodes`, or `create_node`.
-- **Never** write `## Review Notes` (or equivalent) into `current.mdx` /
-  `next.mdx`. Put all findings in your final structured verdict message.
-- If `Read` on `mindplan/agent/**` fails (cursorignore), load this skill via
-  shell/`cat`, or follow the procedure steps embedded in the parent prompt.
+- Independent of the session that authored the plan (A) or implementation (B).
+  If you wrote what you are about to review, Reject with that Finding.
+- Orient with `orient_for_work` / `get_node_context` / `get_blast_radius` before judging.
+- Mutation boundary: `update_node_status` only. Never `link_nodes` / `create_node`.
+- **Never** write `## Review Notes` into territory. Findings stay in the verdict message.
+- If `Read` on `mindplan/agent/**` fails, load this skill via shell/`cat`.
 
-## Structured verdict message (required final output)
+## Structured verdict message (required)
 
 ```
 Verdict: Approve | Reject
 Procedure: PlanReview | ImplementationReview
-Node: <id> (slot: next)   # include slot when evolving
-Findings: <itemized list, or none>
-StatusAttempted: ready | ship | resolved | in-progress | fixing | none
+Revision: { base_sha, head_sha, clean_tree, changed_files[], node_ids[] }
+  # Plan Review may omit SHAs if no code; still freeze node_ids membership
+Nodes:
+  - id: <id> (slot: next?)  Verdict: Approve|Reject  StatusAttempted: ...  Result: ...
+Findings: <itemized; per-node evidence on Approve>
+StatusAttempted: summary
 ```
 
-Implementation Approve Findings must include short Evidence lines per
-Atomic Op and Fit (domain / dependency / decomposition / Interaction
-Independence / Interface–Interaction fit). Reject Findings must be
-actionable gaps only.
+Implementation Approve Findings must include Evidence lines per Atomic Op and Fit
+(domain / dependency / decomposition / Interaction Independence /
+Interface–Interaction fit) **plus** general code-review / tests / diff hygiene.
+Reject Findings must be actionable gaps only.
 
-## Procedure A: Plan Review (draft → ready)
+## Procedure A: Plan Review (subgraph → ready)
 
-1. Pull PRD / Actor & Trigger / Kind / Spec, Acceptance Criteria, Atomic Ops,
-   and edges from the active body (`next` when evolving).
-2. `get_blast_radius` — note reverse-`depends_on` dependents and, for
-   Interaction focus, `reachability` (`leads_to` downstream, exposing
-   Interfaces, containing Journeys).
-3. Buildable: specific enough without guessing intent; real checkable AC.
-4. Domain fit: Interaction `belongs_to` Journey; Foundation role tag matches
-   Spec; Interface Kind matches surface.
-5. Dependency completeness: Interaction `depends_on` Foundations only (no
-   Interaction→Interaction deps — **Interaction Independence**). Interface
-   `exposes` the right Interactions; optional Foundation deps are coherent.
-6. **Interface/Interaction fit:** exposed Interactions match the Interface
-   Kind/Spec; a Page/CLI/MCP does not smuggle unrelated behavior. **Reject**
-   Interface territory that implies screen bodies or core domain live in the
-   Interface (`interfaces/…/ui/` or `screens/` as feature UI). When Kind is
-   Page (or any UI surface), require the Interaction PRD to include a
-   mount/view surface. When Kind is CLI/MCP/Webhook/Cron, require the
-   Interaction PRD to name the exportable handler/module — not a
-   `*-view.tsx`. One Interface per actor surface, not per screen.
-7. Decomposition: Atomic Ops cover AC, scoped to this node, right grain.
-8. Scope: one coherent behavior (Interaction) or one surface (Interface) —
-   not several that should be split; do not treat a UI page as an Interaction;
-   do not mint one Interface per screen.
-9. Approve → `update_node_status → ready`. Reject → leave at `draft`.
-10. Return the structured verdict message. Do not edit territory for feedback.
+1. Parent freezes **membership** = nodes created/materially changed in this planning
+   revision. You review that list only; a later-added or materially changed member
+   invalidates the subgraph approval.
+2. For each member: pull PRD / Kind / Spec / AC / Atomic Ops / edges from the active
+   body (`next` when evolving).
+3. `get_blast_radius` on focus members.
+4. Checks (same substance as before): buildable AC; domain fit; dependency
+   completeness (Foundations only for Interactions — **Interaction Independence**);
+   Interface/Interaction fit (no Interface-owned screen bodies; Kind-gated
+   mount/view or handler); decomposition; scope (one behavior / one surface).
+5. Mechanical stub detection is **Minimum Territory Shape** (compiler) — you judge
+   semantic Territory Completeness and decomposition, not missing headings alone.
+6. Approve → `update_node_status → ready` **per approved member**. Reject → leave
+   remaining at `draft`. Report per-node Results.
+7. Return the structured verdict. Do not edit territory for feedback.
 
-## Procedure B: Implementation Review (in-review → ship / resolved)
+## Procedure B: Implementation Review (revision / change-set → ship)
 
-1. Pull PRD / Actor & Trigger / Kind / Spec, Acceptance Criteria, Atomic Ops
-   (current or next slot).
-2. `get_blast_radius` — note transitive dependents, `journeys_at_risk`, and
-   Interaction `reachability`.
-3. For every checked Atomic Op, verify independently (read code, run tests,
-   check behavior against AC). Unverified checked boxes → Reject.
-4. Domain fit — built work belongs to the declared Journey / Foundation role /
-   Interface Kind.
-5. Dependency accuracy — imports/calls match declared Foundation `depends_on`;
-   no undeclared coupling that should be a Foundation or `leads_to`.
-6. **Interaction Independence** — Reject if implementation couples two
-   Interaction packages as if one depended on the other instead of sharing
-   via Foundations.
-7. **Interface/Interaction fit** — Interface package wires only its `exposes`
-   targets; Interaction package does not own surface routing/CLI/MCP glue that
-   belongs in an Interface.
-   - **Reject** if the Interface package contains behavior UI or domain logic
-     that should live in an `exposes` Interaction package (allow: shell,
-     guards, nav, composition of exposed Interactions).
-   - **Reject** if the Interaction package owns routing/CLI/MCP glue that
-     belongs in an Interface.
-   - **Pass evidence (Kind-gated):** Page/UI — Interaction exports a
-     mountable view; Interface screen only mounts it (Shell + nav callbacks).
-     CLI/MCP/Webhook/Cron — Interaction exports the handler/module; Interface
-     only wires it.
-8. Decomposition — ops cover AC, scoped to this node; drift vs Plan Review.
-9. Territory prose vs real diff — flag silent scope drift.
-10. **Diff hygiene** — Reject if the working tree / branch diff includes
-    scratch helpers, one-off patch scripts (e.g. `_patch_*.py`), temp dumps,
-    or files outside this node’s Atomic Ops / package ownership.
-11. **General code review (host-native first):**
-    - **Host built-in** — If the host exposes a native code-review skill or
-      command (e.g. Cursor `/code-review`, Claude Code bundled `/code-review`,
-      Cursor `review` / `review-bugbot` when that is the host’s standard),
-      follow its instructions. Load the matching `SKILL.md` from host skill
-      dirs when one exists. Slash commands often cannot be fired from a
-      subagent UI — apply the command’s published criteria (bugs, regressions,
-      security, missing tests; findings primary; no drive-by edits) as if run.
-    - **Else community skill** — If `code-review-skill` or `code-review` is
-      installed (e.g. awesome-skills/code-review-skill), follow that `SKILL.md`
-      (load only language guides that match the diff).
-    - **Else** follow `mindplan/agent/skills/code-review/SKILL.md` (thin skill
-      installed by init; use shell/`cat` if `Read` is blocked).
-    - Fold **blocking** findings into the verdict `Findings`. Blocking → Reject.
-    - Parent spawn prompts SHOULD name the host affordance when known
-      (e.g. “also apply Cursor `/code-review` criteria”).
-12. Approve → `update_node_status → ship` (Interaction/Interface/Foundation) or
-    `→ resolved` (Bug). Reject → `→ in-progress` or `→ fixing`.
-13. Return the structured verdict message. If the gap is structural (missing
-    edge, wrong node, bad decomposition, Interaction Independence violation),
-    say so — parent may need `plan-project`, not just more code. Do not edit
-    territory for feedback.
+### Bind the revision
+
+Require from parent (or compute yourself):
+
+```
+revision = { base_sha, head_sha, clean_tree: true, changed_files[], node_ids[] }
+```
+
+- Reject undeclared changed files outside `node_ids` ownership / Atomic Ops.
+- Reject dirty tree (`clean_tree: false`).
+- If HEAD or the working tree changes after your verdict, approval is void.
+
+### Review everything before any mutation
+
+1. Orient + `get_blast_radius` on focus nodes.
+2. For **every** node in `node_ids` and the **entire** diff:
+   - Verify each checked Atomic Op independently (read code, run tests/CI vs AC).
+   - Domain fit, dependency accuracy, Interaction Independence, Interface/Interaction fit
+     (Kind-gated mount/view or handler).
+   - Decomposition drift; territory prose vs real diff.
+   - **Semantic Territory Completeness** — especially `next.mdx` is a full successor,
+     not a changelog (SPEC §3.6).
+   - Diff hygiene — no scratch/patch/temp/unrelated files.
+   - General code review (host-native first, e.g. Cursor `/code-review`; else community
+     skill; else `mindplan/agent/skills/code-review/`). Blocking findings → Reject.
+3. Produce **per-node** verdicts with evidence. Do **not** call `ship` until the whole
+   set is reviewed.
+
+### Then transition in order (non-atomic today)
+
+MCP `update_node_status` is single-node. Infrastructure First / Behavior First force:
+
+1. Foundations → `ship`
+2. Interactions → `ship`
+3. Interfaces → `ship`
+4. Bugs → `resolved` with their targets as applicable
+
+After each transition: re-read MCP state. If any transition fails or is `Blocked:`,
+**stop**. Do not claim the set approved. Report what shipped, what did not, and why.
+
+Reject (before any ship) → retreat nodes to `in-progress` / `fixing` as needed.
+
+### Fit is not enough
+
+Architecture Fit checks do **not** replace AC verification, tests, security/regression
+review, or diff hygiene.
 
 ## Anti-patterns
 
-- Approving because Ghost Interaction / Ghost Interface edge check passed —
-  that is structural, not quality.
-- Approving because “the checklist is checked” without independent evidence.
-- Approving a fully-checked list on the wrong Journey / duplicating a
-  Foundation / missing ops for real AC.
-- Approving an Interaction that is really a Page/CLI (should be Interface).
-- Approving Interface territory or code that owns feature screen bodies (should live in the `exposes` Interaction).
-- Approving an Interaction package that imports `src/interfaces/…` or owns routing/CLI/MCP glue.
-- Approving while Interaction→Interaction coupling violates Independence.
-- Approving while scratch/patch/temp files remain in the diff or working tree.
-- Skipping general code review when application or skill code changed.
-- Fixing plan or graph gaps yourself with `link_nodes` / `create_node`.
-- Writing Review Notes into territory files.
-- Leading yourself (or accepting a parent prompt) to “approve unless
-  catastrophic.”
+- Approving because Ghost / Minimum Territory Shape passed — that is structural, not quality.
+- Approving checked boxes without independent evidence.
+- Claiming set approval after a partial ship / failed later transition.
+- Soft-approving when `update_node_status` was Blocked.
+- Skipping general code review when application code changed.
+- Writing Review Notes into territory.
 - Reviewing your own plan or implementation in the same session.
-- Soft-approving when `update_node_status` was Blocked — report failed
-  transition in Findings / StatusAttempted honestly.
+- Treating “once per change-set” as “never re-review after fixes.”

@@ -47,6 +47,51 @@ async function expectBlockedContaining(label, tool, args, needle) {
   }
 }
 
+/** Replace create_node scaffold stubs so Minimum Territory Shape can pass. */
+function fillMinimumTerritoryShape(filePath) {
+  let raw = fs.readFileSync(filePath, "utf-8");
+  raw = raw.replace(/^_.*?_$/gm, (line) => {
+    if (line.includes("attachments/") || line.includes("`attachments/`")) return line;
+    return "Smoke-filled territory content for Minimum Territory Shape.";
+  });
+  raw = raw.replace(/^(\d+\.\s+)_.*?_$/gm, "$1Smoke repro step.");
+  raw = raw.replace(/\*\*Expected:\*\*\s*_.*?_/g, "**Expected:** Smoke expected outcome");
+  raw = raw.replace(/\*\*Actual:\*\*\s*_.*?_/g, "**Actual:** Smoke actual outcome");
+  // Foundations created before Purpose/AC existed still need those sections.
+  if (filePath.includes(`${path.sep}foundations${path.sep}`) && !/^## Purpose\s*$/m.test(raw)) {
+    raw = raw.replace(
+      /(# [^\n]+\n\n[^\n]+\n\n)/,
+      "$1## Purpose\n\nSmoke-filled territory content for Minimum Territory Shape.\n\n"
+    );
+  }
+  if (
+    filePath.includes(`${path.sep}foundations${path.sep}`) &&
+    !/^## Acceptance Criteria\s*$/m.test(raw)
+  ) {
+    raw = raw.replace(
+      /(## Shared Substrate Spec\n\n[\s\S]*?\n\n)/,
+      "$1## Acceptance Criteria\n\nSmoke-filled territory content for Minimum Territory Shape.\n\n"
+    );
+  }
+  if (filePath.includes(`${path.sep}interfaces${path.sep}`) && !/^## Purpose\s*$/m.test(raw)) {
+    raw = raw.replace(
+      /(# [^\n]+\n\n[^\n]+\n\n)/,
+      "$1## Purpose\n\nSmoke-filled territory content for Minimum Territory Shape.\n\n"
+    );
+  }
+  // Rename legacy ## Checklist to ## Atomic Ops when present.
+  raw = raw.replace(/^## Checklist\s*$/m, "## Atomic Ops");
+  fs.writeFileSync(filePath, raw);
+}
+
+function territoryPath(...parts) {
+  return path.join(root, "mindplan", ...parts, "current.mdx");
+}
+
+function nextTerritoryPath(...parts) {
+  return path.join(root, "mindplan", ...parts, "next.mdx");
+}
+
 // --- create nodes ---
 const createdJourney = JSON.parse(
   await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
@@ -54,7 +99,7 @@ const createdJourney = JSON.parse(
 if (!createdJourney.changed_files?.includes("mindplan/journeys/j-ordering/current.mdx") || !createdJourney.changed_files?.includes("mindplan/map.md")) {
   failures++; console.log(`FAIL create_node changed_files journey: ${JSON.stringify(createdJourney.changed_files)}`);
 } else console.log("ok   create_node changed_files (journey)");
-await expectOk("create foundation", "create_node", { id: "f-db", type: "Foundation", title: "Database schema", description: "Core tables" });
+await expectOk("create foundation", "create_node", { id: "f-db", type: "Foundation", title: "Database schema", description: "Infra — Core tables" });
 const createdIx = JSON.parse(
   await expectOk("create interaction", "create_node", { id: "i-checkout", type: "Interaction", title: "Checkout", description: "Split & pay" })
 );
@@ -152,6 +197,13 @@ await expectOk("link exposes", "link_nodes", {
 await expectOk("link interface depends_on f-db", "link_nodes", {
   source_id: "if-web", target_id: "f-db", edge_type: "depends_on",
 });
+await expectBlockedContaining(
+  "minimum territory shape (interface scaffold)",
+  "update_node_status",
+  { node_id: "if-web", new_status: "ready" },
+  "Minimum Territory Shape"
+);
+fillMinimumTerritoryShape(territoryPath("interfaces", "if-web"));
 await expectOk("interface -> ready", "update_node_status", { node_id: "if-web", new_status: "ready" });
 
 // --- taxonomy: legal / illegal edge shapes ---
@@ -230,6 +282,13 @@ if (emptyFind.focus !== null || (emptyFind.matches?.length ?? 0) !== 0) {
   failures++; console.log(`FAIL empty find: ${JSON.stringify(emptyFind)}`);
 } else console.log("ok   find_related_nodes empty matches");
 
+await expectBlockedContaining(
+  "minimum territory shape (interaction scaffold)",
+  "update_node_status",
+  { node_id: "i-checkout", new_status: "ready" },
+  "Minimum Territory Shape"
+);
+fillMinimumTerritoryShape(territoryPath("interactions", "i-checkout"));
 const ixReady = JSON.parse(
   await expectOk("interaction -> ready", "update_node_status", { node_id: "i-checkout", new_status: "ready" })
 );
@@ -290,6 +349,7 @@ await expectBlockedContaining(
   "Infrastructure First"
 );
 const fPath = path.join(root, "mindplan", "foundations", "f-db", "current.mdx");
+fillMinimumTerritoryShape(fPath);
 fs.writeFileSync(fPath, fs.readFileSync(fPath, "utf-8").replaceAll("[ ]", "[x]"));
 for (const s of ["ready", "in-progress", "in-review"]) {
   await expectOk(`foundation -> ${s}`, "update_node_status", { node_id: "f-db", new_status: s });
@@ -332,6 +392,7 @@ await expectOk("link if-pending exposes", "link_nodes", {
 await expectOk("link if-pending depends_on", "link_nodes", {
   source_id: "if-pending", target_id: "f-db", edge_type: "depends_on",
 });
+fillMinimumTerritoryShape(territoryPath("interfaces", "if-pending"));
 await expectOk("if-pending -> ready", "update_node_status", { node_id: "if-pending", new_status: "ready" });
 await expectOk("if-pending -> in-progress", "update_node_status", { node_id: "if-pending", new_status: "in-progress" });
 const ifPendingPath = path.join(root, "mindplan", "interfaces", "if-pending", "current.mdx");
@@ -380,6 +441,7 @@ await expectOk("bug -> fixing", "update_node_status", { node_id: "bug-race", new
 
 const bugPath = path.join(root, "mindplan", "bugs", "bug-race", "current.mdx");
 await expectBlocked("bug completion check", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
+fillMinimumTerritoryShape(bugPath);
 fs.writeFileSync(bugPath, fs.readFileSync(bugPath, "utf-8").replaceAll("[ ]", "[x]"));
 await expectOk("bug -> in-review", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
 await expectOk("bug -> resolved", "update_node_status", { node_id: "bug-race", new_status: "resolved" });
@@ -405,6 +467,7 @@ if (ixAfterFix.state !== "stable") { failures++; console.log(`FAIL interaction s
 else console.log("ok   interaction stable after bug resolved");
 
 // --- evolving: second in-progress interaction ---
+fillMinimumTerritoryShape(territoryPath("interactions", "i-tips"));
 await expectOk("i-tips -> ready", "update_node_status", { node_id: "i-tips", new_status: "ready" });
 const res = JSON.parse(await expectOk("i-tips -> in-progress", "update_node_status", { node_id: "i-tips", new_status: "in-progress" }));
 if (res.journeys_recomputed?.[0]?.state !== "evolving") { failures++; console.log(`FAIL journey evolving: ${JSON.stringify(res.journeys_recomputed)}`); }
@@ -785,8 +848,9 @@ await expectOk("create f-deadend", "create_node", {
   id: "f-deadend",
   type: "Foundation",
   title: "Dead end",
-  description: "Abandoned before ship",
+  description: "Infra — Abandoned before ship",
 });
+fillMinimumTerritoryShape(territoryPath("foundations", "f-deadend"));
 await expectOk("f-deadend -> ready", "update_node_status", {
   node_id: "f-deadend",
   new_status: "ready",
@@ -844,6 +908,7 @@ await expectOk("create f-needed", "create_node", {
   title: "Needed",
   description: "Infra — required by next evolution",
 });
+fillMinimumTerritoryShape(territoryPath("foundations", "f-needed"));
 await expectOk("f-needed -> ready", "update_node_status", {
   node_id: "f-needed",
   new_status: "ready",
@@ -874,8 +939,9 @@ async function shipFoundation(id, title) {
     id,
     type: "Foundation",
     title,
-    description: `${title} for cycle smoke`,
+    description: `Infra — ${title} for cycle smoke`,
   });
+  fillMinimumTerritoryShape(territoryPath("foundations", id));
   await expectOk(`${id} -> ready`, "update_node_status", { node_id: id, new_status: "ready" });
   await expectOk(`${id} -> in-progress`, "update_node_status", {
     node_id: id,

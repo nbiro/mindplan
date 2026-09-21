@@ -1,18 +1,15 @@
 ---
 id: f-test-harness
 type: Foundation
-title: "Test harness"
-description: "Smoke asserts init -f/--force overwrites existing agent template files."
+title: "Test harness (shape smoke)"
+description: "Infra — smoke/check harness fills Minimum Territory Shape before ready; asserts shape Blocked on scaffold."
 state: stable
-shipped_at: 2026-07-24T20:12:12.345Z
+shipped_at: 2026-09-21T10:15:19.689Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-07-24T20:12:12.345Z
+updated_at: 2026-09-21T10:15:19.689Z
 depends_on:
   - f-mcp-runtime
 ---
-
-
-
 
 
 
@@ -20,37 +17,31 @@ depends_on:
 
 ## Purpose
 
-Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init` template install. `npm test` builds then runs this harness. Covers `force_unship` recovery gates, init install of `.cursor/permissions.json`, Cursor-native skill/rule paths under `.cursor/skills/` and `.cursor/rules/mindplan.mdc`, and `init -f` / `--force` overwriting previously installed agent assets after an upgrade.
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init`. Covers Minimum Territory Shape (scaffold Blocked, fill helper, role-tagged Foundations), `force_unship`, cancel gates, layout-free config, and init force overwrite.
 
-## Execution Logic
+## Shared Substrate Spec
 
-Package: `src/interactions/f-test-harness/`
+Package: `src/foundations/f-test-harness/`
 
-- `view.test.mjs` — Mermaid/DOT projection unit tests
-- `search.test.mjs` — ranking excludes retired nodes
-- `check.test.mjs` — integrity check CLI (orphan, dirty-src, `--for-main`)
-- `smoke.mjs` — MCP stdio end-to-end + init + `force_unship` + `cancelled` gates; after CLI `init` in a temp root, assert:
-  - existing: playbook, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`, integrations, `mindplan/agent/skills/{plan-project,review-work,code-review}/SKILL.md`, default layout config
-  - Cursor: `.cursor/skills/mindplan-define-entities|plan-project|review-work|code-review/SKILL.md`, `.cursor/rules/mindplan.mdc`
-  - Force overwrite: after a successful init, mutate a known installed file (e.g. playbook and/or a Cursor skill), run `init -f` (and/or `--force`), assert the file content is restored from the package template; assert bare `init` (no `-f`) does **not** restore a mutated file; assert `-f` alone does not flip an existing layout-free `config.json`
+- `view.test.mjs` / `search.test.mjs` / `check.test.mjs` / `smoke.mjs`
+- `fillMinimumTerritoryShape` helpers in smoke + check replace scaffold italic stubs before `ready` / `in-review`
+- Smoke asserts `Blocked: Minimum Territory Shape` on unfilled Interface/Interaction scaffolds after Ghost gates pass
+- Foundation creates use role-tagged descriptions (`Infra — …`)
 
-Depends on: `f-mcp-runtime` (and transitively store/search/view). Belongs to: `j-territory-sdlc`. Paired with `i-init-project` + `f-mcp-runtime` nexts for init force overwrite.
+Depends on: `f-mcp-runtime`.
 
 ## Acceptance Criteria
 
-- `npm test` runs build + view + search + check + smoke successfully
-- Smoke covers cancel (dependents block, terminal, view hide/`include_retired`)
-- Smoke asserts `mindplan-mcp init` installs `review-work` and thin `code-review` under `mindplan/agent/skills/` and `.cursor/skills/mindplan-code-review/`
-- Smoke asserts `mindplan-mcp init` installs Cursor-native `.cursor/skills/mindplan-*/SKILL.md` and `.cursor/rules/mindplan.mdc`
-- Smoke asserts `mindplan-mcp init -f` overwrites a previously mutated agent asset from templates; bare re-init does not
-- Smoke asserts `init -f` preserves existing `implementation_packages: "off"` when `--layout` is not passed
-- Check harness covers orphan package, dirty ownership, `--for-main`
+- `npm test` passes (build + view + search + check + smoke)
+- Smoke proves Minimum Territory Shape blocks scaffold and passes after fill
+- Existing cancel / force_unship / init / layout-free coverage remains green
 
 ## Atomic Ops
 
-- [x] Smoke: after init, mutate playbook (or equivalent), bare re-init leaves mutation, `init -f` restores template content
-- [x] Smoke: `init -f` on a layout-free project leaves `implementation_packages: "off"`
-- [x] Keep this next.mdx a full successor contract (not a changelog)
+- [x] Add `fillMinimumTerritoryShape` to smoke and check harnesses
+- [x] Assert shape Blocked on Interface/Interaction scaffold before fill
+- [x] Role-tag Foundation creates used in ready/ship paths
+- [x] Verified via `npm test`
 
 ## Attachments
 

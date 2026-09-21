@@ -1,56 +1,53 @@
 ---
 id: f-territory-store
 type: Foundation
-title: "Territory store (interaction-centric)"
-description: "Territory dirs interactions/interfaces; EDGE_FIELDS exposes/leads_to; package scaffolds src/interactions|interfaces."
+title: "Territory store (shape scaffolds)"
+description: "Infra — Foundation/Interface scaffolds gain Purpose (+ Foundation Acceptance Criteria / Atomic Ops) aligned with Minimum Territory Shape."
 state: stable
-shipped_at: 2026-08-10T13:51:07.150Z
+shipped_at: 2026-09-21T10:14:59.643Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-08-10T13:51:07.150Z
+updated_at: 2026-09-21T10:14:59.643Z
 depends_on:
   - f-domain-model
 ---
+
 
 
 # Territory filesystem store
 
 ## Purpose
 
-Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities (and prescribed `src/` packages when configured), and owns `next.mdx` open/promote/discard plus territory body patches. Supports clearing `shipped_at` when recovering a mistaken ship via `force_unship`. Reads `mindplan/config.json` so layout-free projects can opt out of prescribed implementation packages.
+Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities (and prescribed `src/` packages when configured), and owns `next.mdx` open/promote/discard plus territory body patches. Supports clearing `shipped_at` when recovering a mistaken ship via `force_unship`. Reads `mindplan/config.json` so layout-free projects can opt out of prescribed implementation packages. Create scaffolds stay aligned with the compiler’s **Minimum Territory Shape** gate.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-territory-store/`
 
-- `store.ts` — path helpers (`mindplanRoot`, `entityDir`, `implementationDir`, …); frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + optional implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` (optional `{ clearShippedAt: true }` removes the `shipped_at:` line) / edge writers (respecting next-slot edge writes); `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory` (slot resolution `current`|`next`); `countUncheckedBoxes`; `getNodeImplementation`; **project config loader** for `implementation_packages` (`required` | `off`, default `required` when file missing)
-- `TYPE_DIRS`: Journey → `journeys`, Interaction → `interactions`, Interface → `interfaces`, Foundation → `foundations`, Bug → `bugs` (no `interactions`)
-- `EDGE_FIELDS`: `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`
-- When `implementation_packages` is `off`: `scaffoldImplementationPackage` is a no-op; `getNodeImplementation` reports packages off / no implied prescribed root (callers must not treat absence as integrity failure)
+- `store.ts` — path helpers; frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + optional implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` / edge writers; `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory`; `countUncheckedBoxes`; `getNodeImplementation`; **project config** for `implementation_packages`
+- `TYPE_DIRS` / `EDGE_FIELDS` for Interaction-centric taxonomy
+- When `implementation_packages` is `off`: no prescribed package dirs
 - When `required`: Foundations → `src/foundations/<id>/`, Interactions → `src/interactions/<id>/`, Interfaces → `src/interfaces/<id>/`
-- Body scaffolds: Interaction (Purpose / Actor & Trigger / Inputs & Outputs / PRD / AC / Atomic Ops); Interface (Kind / Exposed Interactions / Spec / AC / Atomic Ops); Foundation and Bug unchanged in spirit
-- `open_next` seeds body and outgoing edges (including `exposes`/`leads_to`); `ship` promotes next over current; `discard_next` leaves current untouched
-- Territory patches target `current` or `next`; default to `next` when an evolution is open
-
-Consumer init/install helpers live in the project-init Interaction package (not this Foundation).
+- **Body scaffolds (shape-aligned):**
+  - Interaction: Purpose / Actor & Trigger / Inputs & Outputs / PRD / AC / Atomic Ops
+  - Interface: **Purpose** / Kind / Exposed Interactions / Spec / AC / Atomic Ops
+  - Foundation: **Purpose** / Shared Substrate Spec / **Acceptance Criteria** / **Atomic Ops** (replaces Checklist)
+  - Bug: Summary / Repro / Expected·Actual / Fix Checklist
+- `open_next` / ship-promote / discard_next unchanged in spirit
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- Graph load matches on-disk `current.mdx` (+ optional `next.mdx`) frontmatter for all node types including Interaction and Interface
-- `open_next` seeds body and outgoing edges; `ship` promotes next over current; `discard_next` leaves current untouched
-- Territory patches can target `current` or `next`; default to `next` when an evolution is open on that node
-- With `required` (or missing config): Foundations/Interactions/Interfaces get prescribed packages under `src/foundations|interactions|interfaces/<id>/`
-- With `off`: `create_node` / scaffold creates territory only; no prescribed package dirs; `get_node_implementation` surfaces packages-off clearly
-- `patchFrontmatter(..., { clearShippedAt: true })` removes `shipped_at` from `current.mdx`
-- `exposes` / `leads_to` round-trip in frontmatter and `NextSlot`
+- Graph load matches on-disk `current.mdx` (+ optional `next.mdx`) frontmatter
+- Foundation and Interface scaffolds include Purpose; Foundation includes Acceptance Criteria and Atomic Ops
+- Scaffold italic stubs remain detectable by Minimum Territory Shape markers
+- Layout-free and prescribed package modes still behave as before
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Update `TYPE_DIRS` and `EDGE_FIELDS`; remove Interaction/interactions
-- [x] Scaffold packages and body templates for Interaction and Interface
-- [x] Persist/read `exposes` and `leads_to` on current and next slots
+- [x] Add Purpose (+ Foundation AC / Atomic Ops) to Foundation and Interface `scaffoldEntity` bodies
+- [x] Keep Interaction / Bug scaffolds compatible with Minimum Territory Shape
 - [x] Verified via `npm test`
 
 ## Attachments
