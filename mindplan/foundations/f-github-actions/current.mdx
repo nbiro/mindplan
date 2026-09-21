@@ -2,14 +2,17 @@
 id: f-github-actions
 type: Foundation
 title: "GitHub Actions assembler"
-description: "Assembler — GitHub Actions mounting CI and release workflows for the mindplan-mcp repo."
+description: "Assembler — CI runs graph/package integrity only; no mid-pipeline or dirty-src merge gates."
 state: stable
-shipped_at: 2026-07-20T20:11:40.696Z
+shipped_at: 2026-09-21T12:44:44.611Z
 created_at: 2026-07-19T20:19:02.547Z
-updated_at: 2026-07-20T20:11:40.696Z
+updated_at: 2026-09-21T12:44:44.611Z
 depends_on:
   - f-npm-registry
 ---
+
+
+
 
 # GitHub Actions assembler
 
@@ -17,31 +20,33 @@ depends_on:
 
 Assembler that mounts CI and release jobs for this repository on GitHub Actions. Owns the **CI substrate** and **OIDC permission conventions** for any job that publishes. Does **not** own the release interaction YAML body — that is `i-npm-tag-publish`.
 
+CI verifies that the loaded MindPlan graph and prescribed packages are structurally sound. It does **not** block PRs because work is mid-pipeline or because dirty-src ownership is unfinished — those are agent/local concerns, not merge gates.
+
 ## Ownership split
 
 | Surface | Owner |
 |---------|--------|
-| `.github/interactions/ci.yml` (test CI) | **This Foundation** |
+| `.github/workflows/ci.yml` (integrity CI) | **This Foundation** |
 | OIDC / `registry-url` / `id-token: write` conventions for publish jobs | **This Foundation** (applies `f-npm-registry` contract) |
-| `.github/interactions/publish.yml` (tag-driven release job steps) | **`i-npm-tag-publish` only** |
+| `.github/workflows/publish.yml` (tag-driven release job steps) | **`i-npm-tag-publish` only** |
 
 Do not duplicate Atomic Ops for writing `publish.yml` on this Foundation.
 
 ## Shared Substrate Spec
 
-### Existing CI
+### CI (integrity only)
 
-- File: `.github/interactions/ci.yml`
+- File: `.github/workflows/ci.yml`
 - Triggers: push/PR to `main` / `master`
-- Matrix: Node 18, 20, 22 — `npm ci` → `npm run build` → `npm test` → integrity checks
-- PR: `node dist/index.js check --base <PR base sha>` (dirty-src + packages)
-- Every run: `node dist/index.js check --for-main` (no mid-pipeline states)
-- Branch protection SHOULD require the `--for-main` job and disallow direct pushes to `main`
-- Release automation MUST NOT weaken this gate
+- Matrix: Node 18, 20, 22 — `npm ci` → `npm run build` → `npm test` → `node dist/index.js check`
+- `check` is the default integrity mode from `i-check-integrity`: **graph load + package presence/orphans** when `implementation_packages` is `required`. No `--base` (dirty-src) and no `--for-main` (mid-pipeline ban).
+- Branch protection SHOULD require this CI job and disallow direct pushes to `main`
+- Release automation MUST NOT weaken this integrity gate
+- Optional local hygiene (`check --base`, `check --for-main`) is documented by `i-check-integrity` / `f-mcp-runtime` — **not** wired into CI
 
 ### Conventions for publish jobs (consumed by `i-npm-tag-publish`)
 
-When `i-npm-tag-publish` authors `.github/interactions/publish.yml`, it MUST follow:
+When `i-npm-tag-publish` authors `.github/workflows/publish.yml`, it MUST follow:
 
 - Permissions: `contents: read`, `id-token: write` (per `f-npm-registry`)
 - `actions/setup-node` with `registry-url: https://registry.npmjs.org`
@@ -57,26 +62,25 @@ When `i-npm-tag-publish` authors `.github/interactions/publish.yml`, it MUST fol
 - Authoring or owning `publish.yml` job steps (Interaction `i-npm-tag-publish`)
 - Publish script contents (Interaction `i-npm-publish`)
 - Changelog automation
+- Enforcing “finish the work before merge” via `--for-main` or dirty-src in CI
 
 ## Implementation
 
-Package: `src/foundations/f-github-actions/`. CI YAML lives under `.github/interactions/ci.yml` as the deployable surface this Assembler owns. Release YAML is written by `i-npm-tag-publish` under `.github/interactions/publish.yml` (repo-root interaction path is an intentional exception to prescribed packages, same as CI).
+Package: `src/foundations/f-github-actions/`. CI YAML lives under `.github/workflows/ci.yml` as the deployable surface this Assembler owns. Release YAML is written by `i-npm-tag-publish` under `.github/workflows/publish.yml` (repo-root path is an intentional exception to prescribed packages, same as CI).
 
 ## Acceptance Criteria
 
-- CI interaction remains green on PRs after any assembler changes
-- OIDC + `registry-url` conventions for publish jobs are documented for Interaction consumers
-- Ownership of `publish.yml` is clearly assigned to `i-npm-tag-publish` only
+- CI runs build, test, and default `node dist/index.js check` (graph + packages) on push/PR
+- CI does **not** invoke `check --for-main` or `check --base`
+- OIDC + `registry-url` conventions for publish jobs remain documented
+- Ownership of `publish.yml` remains assigned to `i-npm-tag-publish` only
 
-## Checklist
+## Atomic Ops
 
-- [x] Document CI substrate (`.github/interactions/ci.yml`) as owned by this Foundation
-- [x] Wire `mindplan-mcp check` / `--for-main` into CI (build-from-source)
-- [x] Document OIDC / `registry-url` / `id-token: write` conventions for publish jobs
-- [x] Document ownership split: `publish.yml` owned solely by `i-npm-tag-publish`
-- [x] Document that CI-mode publish must run tests via the shared script (no bare publish)
-- [x] Document branch protection: require PR + `--for-main` status; no direct push to main
+- [x] Rewrite `.github/workflows/ci.yml` to drop `--for-main` and PR `--base` steps; keep matrix build/test + default `check`
+- [x] Align territory paths to `.github/workflows/` (not `.github/interactions/`)
+- [x] Document that mid-pipeline / dirty-src gates are optional local tools, not CI
 
 ## Attachments
 
-Optional: interaction diagrams under `attachments/`.
+_None._

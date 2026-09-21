@@ -2,11 +2,11 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules (lighter process)"
-description: "Infra — Minimum Territory Shape gate; Interaction Independence, Ghost, Behavior First, Completion Check unchanged."
+description: "Infra — Completion Check at ship only; reject all-[x] while draft/ready/in-progress."
 state: stable
-shipped_at: 2026-09-21T10:15:05.646Z
+shipped_at: 2026-09-21T12:44:42.165Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-09-21T10:15:05.646Z
+updated_at: 2026-09-21T12:44:42.165Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -18,62 +18,34 @@ depends_on:
 
 ## Purpose
 
-Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly. Includes Rule 10 force-unship recovery, pre-ship `cancelled` abandon gates, Interaction Independence, Interface exposure gates, Infrastructure First / Behavior First at ship, Completion Check, **Minimum Territory Shape** (structural document gate — not semantic Territory Completeness), and reachability helpers for Journey/`leads_to` impact analysis.
+Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly. Includes Rule 10 force-unship recovery, pre-ship `cancelled` abandon gates, Interaction Independence, Interface exposure gates, Infrastructure First / Behavior First at ship, **Completion Check at ship/resolved only**, **Open Checklist While Building** (reject completing all checkboxes while draft/ready/in-progress or Bug open/triaged/fixing — agent must advance to in-review themselves; no auto-advance), Minimum Territory Shape, and reachability helpers.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-compiler-rules/`
 
-- `rules.ts` — find-node helpers; taxonomy `validateLink` for Interaction-centric edge shapes:
-  - Interaction → Journey (`belongs_to`)
-  - Interaction/Interface → Foundation; Foundation → Foundation (`depends_on`)
-  - Interface → Interaction (`exposes`)
-  - Interaction → Interaction (`leads_to`, navigation only; cycles allowed)
-  - Bug → Interaction|Interface|Foundation (`affects`)
-- **Interaction Independence** — reject Interaction → Interaction `depends_on` (share state through Foundations)
-- **No Ghost Interactions** — `belongs_to` Journey + ≥1 Foundation `depends_on` before ready/in-progress
-- **No Ghost Interfaces** — ≥1 `exposes` Interaction before ready/in-progress (`depends_on` optional)
-- **No Ghost Bugs** — `affects` required before triaged/fixing
-- **Infrastructure First** — Interaction ship requires all `depends_on` Foundations `stable`
-- **Behavior First** — Interface ship requires all exposed Interactions `stable` (and any Foundation deps stable)
-- **Completion Check** — ship and `in-review` require all checkboxes checked against the active territory file (`current` or `next`)
-- **Minimum Territory Shape** — structural gate on leaving `draft` (`ready`), `in-review`, and `ship`/`resolved` (active slot):
-  - Type-specific required headings with non-empty, non-scaffold section bodies
-  - Interaction: Purpose; Actor & Trigger; PRD heading accepted as exactly one of `PRD / Execution Logic` | `Execution Logic` | `PRD`; Acceptance Criteria; Atomic Ops
-  - Interface: Purpose; Kind; Spec; Acceptance Criteria; Atomic Ops
-  - Foundation: role-tagged description (Assembler/Infra/Design system/Adapter); Purpose; Shared Substrate Spec; Acceptance Criteria; Atomic Ops (or Checklist)
-  - Bug: Summary; Repro Steps; Fix Checklist (at `in-review` / `resolved`)
-  - Rejects known `create_node` italic scaffold placeholders
-  - Does **not** prove semantic Territory Completeness (full successor contract) — that remains a Reviewer judgment
-- Status transition tables (including `cancelled`); Journey state recompute from member Interactions; production stability from open Bugs
-- `open_next` / `discard_next` / ship-promote gates (Rule 9); `resolveForceUnship` (Rule 10); cancel gates (no open `next`, no active dependents)
-- Shipped Interaction/Interface title/description freeze on `current` (scalar freeze)
-- Drop Dependency Closure (`transitiveInteractionDependencies`, `missingJourneyDependents`, `link_dependent`)
-- `depends_on` acyclicity retained; `leads_to` allows cycles (no gate)
-- Reachability helpers: downstream closure via `leads_to`, Interfaces exposing an Interaction, Journeys containing an Interaction
+- `rules.ts` — taxonomy validateLink; Ghost / Infrastructure First / Behavior First; status transitions
+- **Completion Check (Rule 5)** — Foundation/Interaction/Interface MUST NOT `ship` while unchecked boxes remain on the active slot; Bug MUST NOT `resolved` while unchecked remain. Does **not** gate `in-review` (agents enter review with open DoD items, then tick them in `in-review`)
+- **Open Checklist While Building** — when a territory body patch / checkbox toggle would leave ≥1 checkbox and 0 unchecked while the active slot is `draft`/`ready`/`in-progress` (or Bug `open`/`triaged`/`fixing`), reject with `Blocked:` telling the agent to `update_node_status` → `in-review` first (or leave ≥1 Atomic Op open). No auto-advance
+- Minimum Territory Shape, cancel gates, open_next/ship-promote, force_unship, reachability helpers unchanged in spirit from prior next
 
-Depends on: `f-domain-model`, `f-territory-store` (uses `countUncheckedBoxes`, `readMarkdown`, `splitContext`). Scaffold string alignment for create_node bodies is owned by `f-territory-store`; smoke/check coverage by `f-test-harness`.
+Depends on: `f-domain-model`, `f-territory-store`.
 
 ## Acceptance Criteria
 
-- Illegal transitions and edge shapes are rejected with `Blocked:` messages (including Interaction Independence)
-- Ghost Interaction / Ghost Interface / Ghost Bug gates fire before leaving draft/open as specified
-- Interface ship blocked while any exposed Interaction is not stable; Interaction ship blocked while Foundation deps are not stable
-- `cancelled` is allowed from draft/ready/in-progress/in-review; blocked with active dependents or open `next`
-- Journey and `stable`/`unstable` are computed, never set manually through this layer’s callers
-- Ship and `in-review` require Completion Check against the active territory file (`current` or `next`)
-- Leaving `draft` (`ready`), `in-review`, and `ship`/`resolved` require Minimum Territory Shape on the active slot; scaffold stubs are `Blocked:`
-- Interaction PRD section accepts aliases `PRD / Execution Logic`, `Execution Logic`, or `PRD`
-- No Dependency Closure APIs remain
-- Reachability helpers return deterministic sorted results
-- Verified via `npm test` (with peer Foundations’ harness/scaffold updates)
+- `in-progress` → `in-review` succeeds with unchecked Atomic Ops still present
+- `ship` / Bug `resolved` still Blocked when unchecked remain
+- Completing the last checkbox (or body replace that clears all `[ ]`) while draft/ready/in-progress (or Bug fixing/open/triaged) is `Blocked:` with guidance to advance state; state is not auto-changed
+- Completing all checkboxes while `in-review` succeeds
+- Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Add `assertMinimumTerritoryShape` / `runMinimumTerritoryShape` with type-specific sections, PRD heading aliases, and scaffold rejection
-- [x] Wire shape gate into ready, in-review, ship, and Bug resolved paths (current and next slots)
-- [x] Link `depends_on` → `f-territory-store` on the next slot
-- [x] Verified via `npm test` (compiler unit path covered by smoke/check)
+- [x] Move Completion Check off `in-review`; keep on `ship` / Bug `resolved`
+- [x] Add `assertOpenChecklistWhileBuilding` (or equivalent) for proposed body text + active slot state
+- [x] Export helper and wire from `patch_node_territory` path in `f-mcp-runtime`
+- [x] Update smoke: in-review with unchecked allowed; last-box-while-building rejected; ship still requires complete
+- [x] Update SPEC §5.6 + appendix error examples
 
 ## Attachments
 

@@ -2,54 +2,45 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store (shape scaffolds)"
-description: "Infra — Foundation/Interface scaffolds gain Purpose (+ Foundation Acceptance Criteria / Atomic Ops) aligned with Minimum Territory Shape."
+description: "Infra — open_next resets checkboxes so next draft does not inherit completed DoD."
 state: stable
-shipped_at: 2026-09-21T10:14:59.643Z
+shipped_at: 2026-09-21T12:44:39.374Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-09-21T10:14:59.643Z
+updated_at: 2026-09-21T12:44:39.374Z
 depends_on:
   - f-domain-model
 ---
 
 
 
-# Territory filesystem store
+# Territory store
 
 ## Purpose
 
-Infra — GitOps persistence for the MindPlan territory under `mindplan/`. Discovers the graph from MDX frontmatter, scaffolds entities (and prescribed `src/` packages when configured), and owns `next.mdx` open/promote/discard plus territory body patches. Supports clearing `shipped_at` when recovering a mistaken ship via `force_unship`. Reads `mindplan/config.json` so layout-free projects can opt out of prescribed implementation packages. Create scaffolds stay aligned with the compiler’s **Minimum Territory Shape** gate.
+Infra — persists MindPlan territory on disk (frontmatter, bodies, packages, `open_next` / promote). When opening a `next` evolution, resets completed checkboxes to open so a new DoD starts unfinished (pairs with Open Checklist While Building on `f-compiler-rules`).
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-territory-store/`
 
-- `store.ts` — path helpers; frontmatter parse/write; `discoverNodes` / `discoverEdges` / `loadGraph`; scaffold entity + optional implementation package; `readMarkdown` / `writeMarkdown` / `patchFrontmatter` / edge writers; `openNextSlot` / `discardNextSlot` / `promoteNextSlot`; `patchNodeTerritory`; `countUncheckedBoxes`; `getNodeImplementation`; **project config** for `implementation_packages`
-- `TYPE_DIRS` / `EDGE_FIELDS` for Interaction-centric taxonomy
-- When `implementation_packages` is `off`: no prescribed package dirs
-- When `required`: Foundations → `src/foundations/<id>/`, Interactions → `src/interactions/<id>/`, Interfaces → `src/interfaces/<id>/`
-- **Body scaffolds (shape-aligned):**
-  - Interaction: Purpose / Actor & Trigger / Inputs & Outputs / PRD / AC / Atomic Ops
-  - Interface: **Purpose** / Kind / Exposed Interactions / Spec / AC / Atomic Ops
-  - Foundation: **Purpose** / Shared Substrate Spec / **Acceptance Criteria** / **Atomic Ops** (replaces Checklist)
-  - Bug: Summary / Repro / Expected·Actual / Fix Checklist
-- `open_next` / ship-promote / discard_next unchanged in spirit
+- `store.ts` — load/graph, scaffolds, patches, `openNextSlot`, `countCheckboxesInText` / `isChecklistComplete`
+- **`openNextSlot`** copies current body into `next.mdx` but rewrites `- [x]` → `- [ ]` so draft/ready/in-progress next slots never inherit a completed checklist from the shipped current
+- Exports `toggleCheckboxesInBody` for patch preview + write
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- Graph load matches on-disk `current.mdx` (+ optional `next.mdx`) frontmatter
-- Foundation and Interface scaffolds include Purpose; Foundation includes Acceptance Criteria and Atomic Ops
-- Scaffold italic stubs remain detectable by Minimum Territory Shape markers
-- Layout-free and prescribed package modes still behave as before
+- `open_next` on a shipped node whose current checklist is fully checked yields a next body with those boxes unchecked
+- `isChecklistComplete` / `countCheckboxesInText` available to compiler and integrity check
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Add Purpose (+ Foundation AC / Atomic Ops) to Foundation and Interface `scaffoldEntity` bodies
-- [x] Keep Interaction / Bug scaffolds compatible with Minimum Territory Shape
+- [x] Reset checkboxes to `[ ]` when writing `next.mdx` in `openNextSlot`
+- [x] Export `countCheckboxesInText`, `isChecklistComplete`, `toggleCheckboxesInBody`
 - [x] Verified via `npm test`
 
 ## Attachments
 
-_Schemas and diagrams go in `next-attachments/`._
+_None._
