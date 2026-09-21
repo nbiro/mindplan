@@ -41,6 +41,16 @@ async function call(tool, args) {
   return JSON.parse(res.content?.[0]?.text ?? "{}");
 }
 
+function fillMinimumTerritoryShape(filePath) {
+  let raw = fs.readFileSync(filePath, "utf-8");
+  raw = raw.replace(/^_.*?_$/gm, (line) => {
+    if (line.includes("attachments/") || line.includes("`attachments/`")) return line;
+    return "Check-test filled territory for Minimum Territory Shape.";
+  });
+  raw = raw.replace(/^## Checklist\s*$/m, "## Atomic Ops");
+  fs.writeFileSync(filePath, raw);
+}
+
 await call("create_node", {
   id: "j-app",
   type: "Journey",
@@ -69,6 +79,8 @@ await call("link_nodes", {
   target_id: "f-core",
   edge_type: "depends_on",
 });
+fillMinimumTerritoryShape(path.join(root, "mindplan", "foundations", "f-core", "current.mdx"));
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "current.mdx"));
 await call("update_node_status", { node_id: "f-core", new_status: "ready" });
 await call("update_node_status", { node_id: "f-core", new_status: "in-progress" });
 await call("update_node_status", { node_id: "i-feature", new_status: "ready" });
@@ -192,6 +204,7 @@ await call("create_node", {
 });
 await call("link_nodes", { source_id: "i-dead", target_id: "j-app", edge_type: "belongs_to" });
 await call("link_nodes", { source_id: "i-dead", target_id: "f-core", edge_type: "depends_on" });
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-dead", "current.mdx"));
 await call("update_node_status", { node_id: "i-dead", new_status: "ready" });
 await call("update_node_status", { node_id: "i-dead", new_status: "in-progress" });
 // Commit scaffold while claimed so cancelled package is not untracked dirty later
@@ -237,6 +250,7 @@ await call("create_node", {
 });
 await call("link_nodes", { source_id: "i-evolve", target_id: "j-app", edge_type: "belongs_to" });
 await call("link_nodes", { source_id: "i-evolve", target_id: "f-core", edge_type: "depends_on" });
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-evolve", "current.mdx"));
 await call("update_node_status", { node_id: "i-evolve", new_status: "ready" });
 await call("update_node_status", { node_id: "i-evolve", new_status: "in-progress" });
 const evolvePath = path.join(root, "mindplan", "interactions", "i-evolve", "current.mdx");

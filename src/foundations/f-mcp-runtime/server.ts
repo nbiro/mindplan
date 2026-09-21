@@ -194,6 +194,46 @@ function summarizeGraphNode(n: MindPlanNode): {
   return { id: n.id, type: n.type, state: n.state, title: n.title };
 }
 
+/**
+ * Re-anchor payload for successful graph mutations: active-slot record + 1-hop
+ * neighborhood so agents need not call find_related_nodes after every write.
+ */
+function buildMutationAnchor(
+  graph: MindPlanGraph,
+  nodeId: string
+): {
+  anchor: {
+    record: Record<string, unknown>;
+    neighborhood: ReturnType<typeof findRelatedNodes>;
+    next: Record<string, unknown> | null;
+  };
+} {
+  const node = findNode(graph, nodeId);
+  const neighborhood = findRelatedNodes(graph, {
+    query: "",
+    node_id: nodeId,
+    limit: DEFAULT_FIND_LIMIT,
+  });
+  return {
+    anchor: {
+      record: nodeToRecord(node),
+      neighborhood,
+      next: node.next
+        ? {
+            state: node.next.state,
+            title: node.next.title,
+            description: node.next.description,
+            updated_at: node.next.updated_at,
+            ...(node.next.belongs_to?.length ? { belongs_to: node.next.belongs_to } : {}),
+            ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
+            ...(node.next.exposes?.length ? { exposes: node.next.exposes } : {}),
+            ...(node.next.leads_to?.length ? { leads_to: node.next.leads_to } : {}),
+          }
+        : null,
+    },
+  };
+}
+
 /** Reverse-depends_on blast radius; Interaction focus also includes reachability. */
 function buildBlastRadiusPayload(
   graph: MindPlanGraph,
@@ -535,6 +575,7 @@ server.registerTool(
       ...result,
       path: pathWritten,
       changed_files: changedFiles([pathWritten]),
+      ...buildMutationAnchor(loadGraph(), node_id),
     });
   })
 );
@@ -579,6 +620,7 @@ server.registerTool(
     refreshPersistedMap();
     const files = [current, `${attachments}/.gitkeep`];
     if (implementation) files.push(`${implementation}/.gitkeep`);
+    const graph = loadGraph();
     return ok({
       created: node,
       folder: rel,
@@ -588,6 +630,7 @@ server.registerTool(
       ...(implementation ? { implementation } : {}),
       ...(packagesOn ? {} : { implementation_packages: "off" as const }),
       changed_files: changedFiles(files, true),
+      ...buildMutationAnchor(graph, id),
     });
   })
 );
@@ -670,6 +713,7 @@ server.registerTool(
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       changed_files: changedFiles(files, true),
+      ...buildMutationAnchor(loadGraph(), source_id),
     });
   })
 );
@@ -708,6 +752,7 @@ server.registerTool(
       current,
       next_path,
       changed_files: changedFiles([next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`], true),
+      ...buildMutationAnchor(loadGraph(), node_id),
     });
   })
 );
@@ -739,6 +784,7 @@ server.registerTool(
       discarded: true,
       live_state: node.state,
       changed_files: changedFiles([next_path, ...slotFiles], true),
+      ...buildMutationAnchor(loadGraph(), node_id),
     });
   })
 );
@@ -827,6 +873,7 @@ server.registerTool(
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       changed_files: changedFiles(files, true),
+      ...buildMutationAnchor(loadGraph(), source_id),
     });
   })
 );
@@ -943,6 +990,7 @@ server.registerTool(
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       changed_files: changedFiles(files, true),
+      ...buildMutationAnchor(loadGraph(), node_id),
     });
   })
 );
@@ -1002,6 +1050,7 @@ server.registerTool(
       stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
       journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
       changed_files: changedFiles(files, true),
+      ...buildMutationAnchor(loadGraph(), node_id),
     });
   })
 );

@@ -29,10 +29,202 @@ import {
   PRODUCTION_TRANSITIONS,
   SHIP_TRANSITION,
 } from "../f-domain-model/types.js";
-import { countUncheckedBoxes } from "../f-territory-store/store.js";
+import {
+  countUncheckedBoxes,
+  readMarkdown,
+  splitContext,
+} from "../f-territory-store/store.js";
 
 export function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
+}
+
+const FOUNDATION_ROLE_TAG = /^(Assembler|Infra|Design system|Adapter)\b/i;
+
+/** Known create_node scaffold italic stubs — leaving these unedited fails Minimum Territory Shape. */
+const SCAFFOLD_PLACEHOLDER_MARKERS = [
+  "Name the domain capability this Journey owns",
+  "Self-contained unit of behavior initiated by an actor",
+  "Who initiates this Interaction and how",
+  "Inputs consumed and outputs produced",
+  "Describe the behavior step by step",
+  "Checkable outcomes for this Interaction",
+  "How an actor enters or accesses Interactions: Page, Dialog",
+  "List Interactions this Interface exposes",
+  "Presentation/transport/exposure only",
+  "Checkable outcomes for this Interface",
+  "Role belongs in frontmatter `description` at create time",
+  "One-line description of the defect",
+  "_Step one_",
+  "What should happen",
+  "What happens instead",
+  "Name the purpose of this Foundation",
+  "Checkable outcomes for this Foundation",
+  "Name the purpose of this Interface",
+] as const;
+
+type ShapeSectionSpec =
+  | { kind: "prose"; headings: string[] }
+  | { kind: "checklist"; headings: string[] };
+
+function extractSection(body: string, heading: string): string | null {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `^##\\s+${escaped}\\s*\\r?\\n([\\s\\S]*?)(?=^##\\s+|\\Z)`,
+    "im"
+  );
+  const match = body.match(re);
+  return match ? match[1] : null;
+}
+
+function normalizeSectionText(section: string): string {
+  return section
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/^\s*[-*+]\s+\[[ xX]\]\s+/gm, "")
+    .trim();
+}
+
+function sectionLooksLikeScaffold(section: string): boolean {
+  const normalized = normalizeSectionText(section);
+  if (!normalized) return true;
+  for (const marker of SCAFFOLD_PLACEHOLDER_MARKERS) {
+    if (normalized.includes(marker)) return true;
+  }
+  const substantive = normalized
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !/^_.*_$/.test(line));
+  return substantive.length === 0;
+}
+
+function sectionHasCheckbox(section: string): boolean {
+  return /^\s*[-*+]\s+\[[ xX]\]/m.test(section);
+}
+
+function requireShapeSections(
+  node: MindPlanNode,
+  body: string,
+  file: string,
+  specs: ShapeSectionSpec[]
+): void {
+  for (const spec of specs) {
+    let foundHeading: string | null = null;
+    let foundSection: string | null = null;
+    for (const heading of spec.headings) {
+      const section = extractSection(body, heading);
+      if (section !== null) {
+        foundHeading = heading;
+        foundSection = section;
+        break;
+      }
+    }
+    if (foundHeading === null || foundSection === null) {
+      throw blocked(
+        `Minimum Territory Shape. "${node.id}"/${file} is missing required section ` +
+          `"## ${spec.headings[0]}"` +
+          (spec.headings.length > 1
+            ? ` (or ## ${spec.headings.slice(1).join(" / ## ")})`
+            : "") +
+          `. Replace scaffold stubs before leaving draft / entering in-review / shipping.`
+      );
+    }
+    if (spec.kind === "checklist") {
+      if (!sectionHasCheckbox(foundSection)) {
+        throw blocked(
+          `Minimum Territory Shape. "${node.id}"/${file} section "## ${foundHeading}" ` +
+            `must include at least one Markdown checkbox (- [ ] / - [x]).`
+        );
+      }
+      continue;
+    }
+    if (sectionLooksLikeScaffold(foundSection)) {
+      throw blocked(
+        `Minimum Territory Shape. "${node.id}"/${file} section "## ${foundHeading}" ` +
+          `is empty or still contains create_node scaffold placeholder text. ` +
+          `Write a real contract before leaving draft / entering in-review / shipping.`
+      );
+    }
+  }
+}
+
+/**
+ * Minimum Territory Shape — structural document gate (not semantic Territory Completeness).
+ * Fires on leaving draft (`ready`), `in-review`, and `ship`/`resolved` (active slot).
+ */
+export function assertMinimumTerritoryShape(
+  node: MindPlanNode,
+  slot: "current" | "next" = "current"
+): void {
+  if (node.type === "Journey") return;
+
+  const file = slot === "next" ? "next.mdx" : "current.mdx";
+  const raw = readMarkdown(node, slot);
+  const split = splitContext(raw);
+  const body = split?.body ?? "";
+
+  if (node.type === "Foundation") {
+    const description =
+      slot === "next" && node.next ? node.next.description : node.description;
+    if (!FOUNDATION_ROLE_TAG.test(description ?? "")) {
+      throw blocked(
+        `Minimum Territory Shape. Foundation "${node.id}" description must start with a role tag ` +
+          `(Assembler / Infra / Design system / Adapter), e.g. "Infra — …".`
+      );
+    }
+    requireShapeSections(node, body, file, [
+      { kind: "prose", headings: ["Purpose"] },
+      { kind: "prose", headings: ["Shared Substrate Spec"] },
+      { kind: "prose", headings: ["Acceptance Criteria"] },
+      { kind: "checklist", headings: ["Atomic Ops", "Checklist"] },
+    ]);
+    return;
+  }
+
+  if (node.type === "Interaction") {
+    requireShapeSections(node, body, file, [
+      { kind: "prose", headings: ["Purpose"] },
+      { kind: "prose", headings: ["Actor & Trigger"] },
+      { kind: "prose", headings: ["PRD / Execution Logic", "Execution Logic", "PRD"] },
+      { kind: "prose", headings: ["Acceptance Criteria"] },
+      { kind: "checklist", headings: ["Atomic Ops"] },
+    ]);
+    return;
+  }
+
+  if (node.type === "Interface") {
+    requireShapeSections(node, body, file, [
+      { kind: "prose", headings: ["Purpose"] },
+      { kind: "prose", headings: ["Kind"] },
+      { kind: "prose", headings: ["Spec"] },
+      { kind: "prose", headings: ["Acceptance Criteria"] },
+      { kind: "checklist", headings: ["Atomic Ops"] },
+    ]);
+    return;
+  }
+
+  if (node.type === "Bug") {
+    requireShapeSections(node, body, file, [
+      { kind: "prose", headings: ["Summary"] },
+      { kind: "prose", headings: ["Repro Steps"] },
+      { kind: "checklist", headings: ["Fix Checklist"] },
+    ]);
+  }
+}
+
+function runMinimumTerritoryShape(
+  node: MindPlanNode,
+  newStatus: string,
+  slot: "current" | "next" = "current"
+): void {
+  if (
+    newStatus === "ready" ||
+    newStatus === "in-review" ||
+    newStatus === SHIP_TRANSITION ||
+    newStatus === "resolved"
+  ) {
+    assertMinimumTerritoryShape(node, slot);
+  }
 }
 
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {
@@ -537,6 +729,7 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
       );
     }
     runCompletionCheck(node, SHIP_TRANSITION, "next");
+    runMinimumTerritoryShape(node, SHIP_TRANSITION, "next");
     assertEffectiveDependsOnAcyclic(graph);
 
     if (node.type === "Interaction") {
@@ -584,6 +777,7 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     );
   }
   runCompletionCheck(node, SHIP_TRANSITION, "current");
+  runMinimumTerritoryShape(node, SHIP_TRANSITION, "current");
 
   if (node.type === "Interaction") {
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
@@ -635,6 +829,7 @@ function validateBugRules(graph: MindPlanGraph, bug: MindPlanNode, newStatus: Bu
 
   if (newStatus === "in-review" || newStatus === "resolved") {
     runCompletionCheck(bug, newStatus, "current");
+    runMinimumTerritoryShape(bug, newStatus, "current");
   }
 }
 
@@ -699,6 +894,7 @@ function validateInteractionRules(
     .map((e) => e.target);
 
   validateInteractionRulesForEdges(interaction, newStatus, journeys, dependsOn, graph);
+  runMinimumTerritoryShape(interaction, newStatus, "current");
 
   if (newStatus === "in-review") {
     runCompletionCheck(interaction, newStatus, "current");
@@ -715,6 +911,7 @@ function validateInterfaceRules(
     .map((e) => e.target);
 
   validateInterfaceRulesForEdges(iface, newStatus, exposes, graph);
+  runMinimumTerritoryShape(iface, newStatus, "current");
 
   if (newStatus === "in-review") {
     runCompletionCheck(iface, newStatus, "current");
@@ -814,16 +1011,21 @@ function resolveNextStatusChange(
       next.depends_on ?? [],
       graph
     );
+    runMinimumTerritoryShape(node, newStatus, "next");
     if (newStatus === "in-review") {
       runCompletionCheck(node, newStatus, "next");
     }
   } else if (node.type === "Interface") {
     validateInterfaceRulesForEdges(node, newStatus, next.exposes ?? [], graph);
+    runMinimumTerritoryShape(node, newStatus, "next");
     if (newStatus === "in-review") {
       runCompletionCheck(node, newStatus, "next");
     }
-  } else if (node.type === "Foundation" && newStatus === "in-review") {
-    runCompletionCheck(node, newStatus, "next");
+  } else if (node.type === "Foundation") {
+    runMinimumTerritoryShape(node, newStatus, "next");
+    if (newStatus === "in-review") {
+      runCompletionCheck(node, newStatus, "next");
+    }
   }
 
   return { state: newStatus, ship: false, promote_next: false };
@@ -918,8 +1120,11 @@ export function resolveStatusChange(
     validateInteractionRules(graph, node, newStatus);
   } else if (node.type === "Interface") {
     validateInterfaceRules(graph, node, newStatus);
-  } else if (node.type === "Foundation" && newStatus === "in-review") {
-    runCompletionCheck(node, newStatus, "current");
+  } else if (node.type === "Foundation") {
+    runMinimumTerritoryShape(node, newStatus, "current");
+    if (newStatus === "in-review") {
+      runCompletionCheck(node, newStatus, "current");
+    }
   }
 
   return { state: newStatus, ship: false, promote_next: false };

@@ -1,0 +1,45 @@
+---
+id: f-test-harness
+type: Foundation
+title: "Test harness (shape smoke)"
+description: "Infra — smoke/check harness fills Minimum Territory Shape before ready; asserts shape Blocked on scaffold."
+state: in-review
+updated_at: 2026-09-21T10:11:24.428Z
+depends_on:
+  - f-mcp-runtime
+---
+
+
+# Test harness
+
+## Purpose
+
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init`. Covers Minimum Territory Shape (scaffold Blocked, fill helper, role-tagged Foundations), `force_unship`, cancel gates, layout-free config, and init force overwrite.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-test-harness/`
+
+- `view.test.mjs` / `search.test.mjs` / `check.test.mjs` / `smoke.mjs`
+- `fillMinimumTerritoryShape` helpers in smoke + check replace scaffold italic stubs before `ready` / `in-review`
+- Smoke asserts `Blocked: Minimum Territory Shape` on unfilled Interface/Interaction scaffolds after Ghost gates pass
+- Foundation creates use role-tagged descriptions (`Infra — …`)
+
+Depends on: `f-mcp-runtime`.
+
+## Acceptance Criteria
+
+- `npm test` passes (build + view + search + check + smoke)
+- Smoke proves Minimum Territory Shape blocks scaffold and passes after fill
+- Existing cancel / force_unship / init / layout-free coverage remains green
+
+## Atomic Ops
+
+- [x] Add `fillMinimumTerritoryShape` to smoke and check harnesses
+- [x] Assert shape Blocked on Interface/Interaction scaffold before fill
+- [x] Role-tag Foundation creates used in ready/ship paths
+- [x] Verified via `npm test`
+
+## Attachments
+
+_Wireframes and notes go in `attachments/` / `next-attachments/`._
