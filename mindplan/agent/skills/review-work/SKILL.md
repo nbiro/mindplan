@@ -62,10 +62,17 @@ actionable gaps only.
    Interaction→Interaction deps — **Interaction Independence**). Interface
    `exposes` the right Interactions; optional Foundation deps are coherent.
 6. **Interface/Interaction fit:** exposed Interactions match the Interface
-   Kind/Spec; a Page/CLI/MCP does not smuggle unrelated behavior.
+   Kind/Spec; a Page/CLI/MCP does not smuggle unrelated behavior. **Reject**
+   Interface territory that implies screen bodies or core domain live in the
+   Interface (`interfaces/…/ui/` or `screens/` as feature UI). When Kind is
+   Page (or any UI surface), require the Interaction PRD to include a
+   mount/view surface. When Kind is CLI/MCP/Webhook/Cron, require the
+   Interaction PRD to name the exportable handler/module — not a
+   `*-view.tsx`. One Interface per actor surface, not per screen.
 7. Decomposition: Atomic Ops cover AC, scoped to this node, right grain.
 8. Scope: one coherent behavior (Interaction) or one surface (Interface) —
-   not several that should be split; do not treat a UI page as an Interaction.
+   not several that should be split; do not treat a UI page as an Interaction;
+   do not mint one Interface per screen.
 9. Approve → `update_node_status → ready`. Reject → leave at `draft`.
 10. Return the structured verdict message. Do not edit territory for feedback.
 
@@ -87,6 +94,15 @@ actionable gaps only.
 7. **Interface/Interaction fit** — Interface package wires only its `exposes`
    targets; Interaction package does not own surface routing/CLI/MCP glue that
    belongs in an Interface.
+   - **Reject** if the Interface package contains behavior UI or domain logic
+     that should live in an `exposes` Interaction package (allow: shell,
+     guards, nav, composition of exposed Interactions).
+   - **Reject** if the Interaction package owns routing/CLI/MCP glue that
+     belongs in an Interface.
+   - **Pass evidence (Kind-gated):** Page/UI — Interaction exports a
+     mountable view; Interface screen only mounts it (Shell + nav callbacks).
+     CLI/MCP/Webhook/Cron — Interaction exports the handler/module; Interface
+     only wires it.
 8. Decomposition — ops cover AC, scoped to this node; drift vs Plan Review.
 9. Territory prose vs real diff — flag silent scope drift.
 10. **Diff hygiene** — Reject if the working tree / branch diff includes
@@ -123,6 +139,8 @@ actionable gaps only.
 - Approving a fully-checked list on the wrong Journey / duplicating a
   Foundation / missing ops for real AC.
 - Approving an Interaction that is really a Page/CLI (should be Interface).
+- Approving Interface territory or code that owns feature screen bodies (should live in the `exposes` Interaction).
+- Approving an Interaction package that imports `src/interfaces/…` or owns routing/CLI/MCP glue.
 - Approving while Interaction→Interaction coupling violates Independence.
 - Approving while scratch/patch/temp files remain in the diff or working tree.
 - Skipping general code review when application or skill code changed.

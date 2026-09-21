@@ -86,9 +86,9 @@ By default (and when `mindplan/config.json` is missing), Interaction, Interface,
 
 | Node type | Implementation root | Purpose |
 |---|---|---|
-| Interaction | `src/interactions/<id>/` | Self-contained behavior; shared across Journeys via `belongs_to` in the graph only |
-| Interface | `src/interfaces/<id>/` | How an actor enters/accesses one or more Interactions (Page, CLI, MCP tool, Webhook, Cron, …) |
-| Foundation | `src/foundations/<id>/` | Shared substrate by role (assembler, infra, design system, adapter) |
+| Interaction | `src/interactions/<id>/` | Self-contained behavior: domain/view-model **and** the exportable surface (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module). Shared across Journeys via `belongs_to` in the graph only |
+| Interface | `src/interfaces/<id>/` | How an actor enters/accesses one or more Interactions (Page, CLI, MCP tool, Webhook, Cron, …). **Mounts or wires** Interaction packages — MUST NOT own screen bodies or core domain |
+| Foundation | `src/foundations/<id>/` | Shared substrate by role (assembler, infra, design system, adapter) — not Journey-specific screen flows |
 | Journey | *(none)* | Plan container — architecture for a Journey is the union of member Interaction packages plus the Interfaces that expose them |
 | Bug | *(none)* | Fixes land in the affected Interaction/Interface/Foundation package |
 
@@ -120,6 +120,20 @@ When packages are `off`:
 
 Graph compiler gates (Ghost Interactions/Interfaces/Bugs, Infrastructure First, Behavior First, Completion Check, Interaction Independence) are unchanged in both modes. Playbook gates (Plan Review for `draft → ready`, External Review for ship / Bug `resolved` — orchestrated Reviewer-subagent loops) also apply in both modes — they are not server-enforced.
 
+#### 1.2.2 Package ownership (Interaction owns the body; Interface mounts)
+
+**Interaction owns the behavior surface. Interface only mounts or wires it.**
+
+- **Interaction package** owns domain logic, view-model, and the exportable surface for that behavior (Page/UI: mountable `*-view` / equivalent; CLI/MCP/Webhook/Cron: handler/module). It MUST NOT own app routing, device/staff shell chrome, or cross-Interaction navigation. It MUST NOT import `src/interfaces/…`.
+- **Interface package** owns routes/entry, providers, guards, thin mounts/wiring, shared shell chrome, and nav callbacks. It MAY compose multiple exposed Interactions (e.g. a badge from pickup on floor chrome). It MUST NOT reimplement order/checkout/floor/etc. behavior UI or domain rules that belong in an `exposes` target.
+- **Interface `ui/`** (when present) is chrome wrappers only — not feature screen bodies. Agents MUST NOT dump screens under `interfaces/…/ui/` as if that were the Interaction view.
+- **One Interface per actor surface**, not one Interface per screen/tab. A Waiter POS (or equivalent console) remains one Interface that `exposes` many Interactions; each route/tab mounts the matching Interaction package.
+- Layout-free projects (`implementation_packages: "off"`) follow the same ownership split in the existing app layout.
+
+**Build order (per exposed Interaction):** Interaction `in-progress` → implement domain + exportable surface → only then Interface thin mount/wire for that entry (pass shell/nav or call the handler; no reimplementation).
+
+Default Atomic Ops templates (§6.3) and playbook/review-work gates encode this split. Taxonomy edges (`exposes`, `leads_to`, Interaction Independence) are unchanged.
+
 ### 1.3 Screaming architecture
 
 A glance at the territory MUST scream what the product *is*, not which frameworks or delivery mechanisms it uses:
@@ -149,8 +163,8 @@ MindPlan tracks **architecture and delivery together**. The build taxonomy is In
 | Entity | Definition | Routing rules |
 |---|---|---|
 | **Journey** | A named **domain capability** — a permanent architectural boundary for related behaviors (e.g. "Table Ordering", "Billing", "Agency Site Generator"). The set of Journey titles is the product's scream. Journeys are continuous containers, not closable epics, sprints, or technical layers. | Permanent container. MUST NOT execute code directly. MUST NOT have outgoing edges. State is computed, never set manually (§4). MUST be named in domain language. |
-| **Interaction** | A **self-contained behavior** initiated by any actor — user, system, scheduler, external service, CLI, or MCP client. Examples: "Split the check", "Orient on the plan", "Check integrity", "Process payment webhook payload". An Interaction is **not** a UI component, page, route, or screen — those are Interfaces (or Design-system Foundations). | MUST belong to one or more Journeys via `belongs_to`. MUST `depends_on` at least one Foundation. MUST NOT `depends_on` another Interaction (§5.9 Interaction Independence). MAY `leads_to` other Interactions (navigation only; not a ship gate). **Agents MUST define the Journey before creating an Interaction** — if the user requests an Interaction that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
-| **Interface** | **How an actor enters or accesses** one or more Interactions. Examples: Page, CLI command, MCP tool surface, Webhook endpoint, Cron trigger, publish script. Interfaces have the **full build pipeline** and own `src/interfaces/<id>/`. | MUST `exposes` at least one Interaction before leaving `draft` (§5.3). MAY `depends_on` Foundations (e.g. Assembler, Adapter). MUST NOT `belongs_to` a Journey (membership is on Interactions). Ship is gated by **Behavior First** (§5.4): every exposed Interaction MUST be `stable`. |
+| **Interaction** | A **self-contained behavior** initiated by any actor — user, system, scheduler, external service, CLI, or MCP client. Examples: "Split the check", "Orient on the plan", "Check integrity", "Process payment webhook payload". An Interaction is **not** a page, route, CLI, MCP toolset, or other **entry surface** — those are Interfaces. When the behavior has a UI, the Interaction package owns the **screen body** (domain + mountable view). When the behavior is CLI/MCP/Webhook/Cron, the Interaction package owns the handler/module the Interface wires. | MUST belong to one or more Journeys via `belongs_to`. MUST `depends_on` at least one Foundation. MUST NOT `depends_on` another Interaction (§5.9 Interaction Independence). MAY `leads_to` other Interactions (navigation only; not a ship gate). MUST NOT import Interface packages. **Agents MUST define the Journey before creating an Interaction** — if the user requests an Interaction that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
+| **Interface** | **How an actor enters or accesses** one or more Interactions. Examples: Page, CLI command, MCP tool surface, Webhook endpoint, Cron trigger, publish script. Interfaces have the **full build pipeline** and own `src/interfaces/<id>/`. They **mount or wire** Interaction packages; they MUST NOT own core domain logic or screen bodies. One Interface per actor surface (e.g. Waiter POS), not one Interface per screen/tab. | MUST `exposes` at least one Interaction before leaving `draft` (§5.3). MAY `depends_on` Foundations (e.g. Assembler, Adapter). MUST NOT `belongs_to` a Journey (membership is on Interactions). Ship is gated by **Behavior First** (§5.4): every exposed Interaction MUST be `stable`. Spec boilerplate: App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies. |
 | **Foundation** | **Shared substrate** with no standalone behavior: infrastructure *and* reusable product platform, organized by **role** (assembler, infra, design system, adapter — see §2.0.1). Examples: Next.js app shell, database schemas, auth, Stripe SDK, design tokens. Behaviors consume Foundations via `depends_on` without becoming them. Shared state between Interactions MUST live in Foundations. | Exists solely to be consumed by Interactions, Interfaces, or other Foundations. MUST be shipped (`stable`) before dependent Interactions can ship (Infrastructure First). MAY depend on other Foundations. MUST NOT own stakeholder-recognizable product behavior — that belongs in Interactions. Foundations are not Journey members. |
 | **Bug** | A defect afflicting one or more Interactions, Interfaces, or Foundations. | MUST link to targets via `affects` (Bug → Interaction\|Interface\|Foundation). Dedicated defect lifecycle (§3.2). Does not affect Journey computation. |
 
@@ -169,9 +183,10 @@ Agents MUST classify new work with these checks, in order:
 - Primary button / design tokens → Foundation, Design system role. Not an Interaction.
 - Next.js / Vercel Cron / Supabase Functions app shell → Foundation, Assembler role. Not a Journey named "Frontend".
 - Stripe / Resend / Slack SDK wrappers → Foundation, Adapter role. Checkout/billing behaviour stays in Interactions.
-- "Split the check" behaviour → Interaction (`i-checkout-split`). A phone page that hosts it → Interface (`if-checkout-page`) that `exposes` the Interaction.
-- MCP tools that orient / mutate the plan → Interactions (`i-orient-plan`, `i-steer-plan`) exposed by an Interface (`if-mcp-tools`).
-- User-picker *behaviour* (search/select flow) → Interaction; a dumb combobox with no product behaviour MAY live under the design-system Foundation instead.
+- "Split the check" behaviour → Interaction (`i-checkout-split`) owns domain + mountable view. A phone page that hosts it → Interface (`if-checkout-page`) that `exposes` the Interaction and **only mounts** that view.
+- MCP tools that orient / mutate the plan → Interactions (`i-orient-plan`, `i-steer-plan`) own the handlers; one Interface (`if-mcp-tools`) wires those exports.
+- User-picker *behaviour* (search/select flow) → Interaction (view lives in the Interaction package); expose it from the same ordering/POS Interface rather than minting one Interface per screen. A dumb combobox with no product behaviour MAY live under the design-system Foundation instead.
+- Waiter POS with floor / checkout / pickup tabs → **one** Interface exposing many Interactions. Not one Interface per tab.
 
 **Two axes** (keep distinct):
 
@@ -188,7 +203,7 @@ Foundations remain a single NodeType. Agents SHOULD classify each Foundation int
 |------|------|----------|--------------|
 | **Assembler** | External framework/runtime that **composes** Journeys, Interactions, Interfaces, and Foundations into a deployable surface | `f-nextjs`, `f-vercel-cron`, `f-supabase-functions` | Product behaviors (Interactions), entry wiring beyond mount conventions (Interfaces) |
 | **Infra** | Persistence, messaging, storage, compute plumbing, observability — including **shared state** Interactions must not own pairwise | `f-db`, `f-queue`, `f-blob-store`, `f-otel` | Product features that happen to use a DB |
-| **Design system** | Tokens, typography, theme, layout primitives, and dumb presentational UI | `f-design-system` (tokens + Button, Input, Stack) | Screens/pages with product behaviour (Interface + Interaction) |
+| **Design system** | Tokens, typography, theme, layout primitives, and dumb presentational UI | `f-design-system` (tokens + Button, Input, Stack) | Journey-specific screen bodies (Interaction packages) and page/CLI/MCP entry (Interfaces) |
 | **Adapter** | Third-party / boundary SDKs and protocol wrappers | `f-stripe`, `f-resend`, `f-slack-api` | Checkout/billing Interactions on top |
 
 **Role discoverability:** agents SHOULD write the role as the leading tag of the Foundation's `description` — e.g. `"Assembler — Next.js app shell composing interactions and interfaces"`. This is the only place the role lives; it surfaces in `find_related_nodes`, `export_mindplan_view` labels, and graph dumps without a schema change. Missing role tags are not compiler violations (SHOULD, never MUST).
@@ -564,9 +579,9 @@ Step-by-step behaviour…
 
 ## Checklist
 
-- [x] Requirements defined
-- [ ] Implementation complete
-- [ ] Tests passing
+- [x] Domain API against Foundations (no Interaction→Interaction `depends_on`)
+- [ ] Mountable view exported from package
+- [ ] View accepts shell/nav as props/callbacks — does not import Interface packages
 
 ## Attachments
 
@@ -617,11 +632,11 @@ Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the fi
 
 - **Journey** — Overview section (domain capability + behaviors it owns), Linked Interactions note, Attachments note. No checklist (Journeys have no completion gate). No implementation package.
 - **Foundation** — Shared Substrate Spec section (role tag belongs in frontmatter `description` at create time — Assembler | Infra | Design system | Adapter), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/foundations/<id>/` (§1.2).
-- **Interaction** — Execution Logic section (behaviour steps / actor initiation), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/interactions/<id>/` (§1.2).
-- **Interface** — Entry Surface Spec section (actor, channel, how it reaches exposed Interactions), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/interfaces/<id>/` (§1.2).
+- **Interaction** — Purpose / Actor & Trigger / Inputs & Outputs / PRD, Checklist. Default Atomic Ops (Kind-aware): Domain API against Foundations; exportable behavior surface (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module); surface does not import Interface packages. Also scaffolds `src/interactions/<id>/` (§1.2).
+- **Interface** — Kind / Exposed Interactions / Spec (boilerplate: App Router or CLI/MCP mounts Interaction packages; Interface does not own core domain or screen bodies), Checklist. Default Atomic Ops (Kind-aware): thin wiring for each `exposes` target; no duplicated domain/behavior UI; Page/UI only — shell chrome under `ui/`. Also scaffolds `src/interfaces/<id>/` (§1.2).
 - **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4). No implementation package.
 
-Default checklist items are placeholders; teams SHOULD replace them with real Atomic Ops during `draft` or triage.
+Default checklist items are Kind-aware package-ownership placeholders (§1.2.2); teams SHOULD replace them with real PR-sized Atomic Ops during `draft` or triage, but MUST keep the Interaction-owns-surface / Interface-mounts split.
 
 #### 6.3.1 Implementation packages
 
