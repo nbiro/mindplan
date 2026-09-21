@@ -1,23 +1,24 @@
 ---
 id: f-mcp-runtime
 type: Foundation
-title: "MCP runtime (interaction-centric)"
-description: "MCP tools accept Interaction/Interface and exposes/leads_to; blast radius reachability; drop link_dependent."
+title: "MCP runtime (lighter process)"
+description: "Assembler — MCP stdio/CLI; mutation responses include anchor (record + 1-hop neighborhood) for re-anchoring; init/view/check/force_unship unchanged."
 state: stable
-shipped_at: 2026-08-10T13:51:07.745Z
+shipped_at: 2026-09-21T10:15:10.502Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-08-10T13:51:07.745Z
+updated_at: 2026-09-21T10:15:10.502Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
 ---
 
 
+
 # MCP stdio runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Interactions and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including define-entities, plan-project, review-work, and thin code-review skills under `mindplan/agent/`, Cursor-native copies under `.cursor/skills/` (including `mindplan-code-review`) and `.cursor/rules/mindplan.mdc`, and `.cursor/permissions.json`. Supports `init -f` / `--force` so package upgrades can reinstall those assets over existing copies.
+Assembler — the `mindplan-mcp` process: MCP stdio server and CLI shell that registers tools owned by Interactions and boots from thin `src/index.ts`. Resolves the package root (for `templates/`) by walking up to `templates/agent`. Mutate handlers return `changed_files` so agents and humans can see which paths MCP wrote, and an **`anchor`** object (`record` + 1-hop `neighborhood` + optional `next`) so agents can re-anchor without a mandatory second orient. CLI includes `init`, `view`/`export`, and offline `check` (integrity). Registers `force_unship` for mistaken-ship recovery (user-confirmed). CLI `init` installs consumer agent assets including define-entities, plan-project, review-work, and thin code-review skills under `mindplan/agent/`, Cursor-native copies under `.cursor/skills/` (including `mindplan-code-review`) and `.cursor/rules/mindplan.mdc`, and `.cursor/permissions.json`. Supports `init -f` / `--force` so package upgrades can reinstall those assets over existing copies.
 
 Tools speak the Interaction-centric taxonomy: Journey, Interaction, Interface, Foundation, Bug; edges `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`.
 
@@ -30,6 +31,7 @@ Package: `src/foundations/f-mcp-runtime/`
 - `create_node` scaffolds Interaction/Interface; `link_nodes` validates new shapes; **no `link_dependent`**
 - `get_blast_radius` / `orient_for_work`: for Interaction focus, include `reachability` = { exposing Interfaces, containing Journeys, leads_to downstream } alongside reverse-`depends_on` `affected`
 - `update_node_status` documents `cancelled`; `force_unship` retained
+- **`buildMutationAnchor`** — on successful `create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, `update_node_status`, `force_unship`, `patch_node_territory`, attach `anchor: { record, neighborhood, next }` where `neighborhood` is `findRelatedNodes` focused on the mutated node
 - `init` calls install helpers from the project-init package, including:
   - playbook, define-entities / plan-project / review-work / code-review (mindplan/agent), MCP example, integrations, AGENTS.md, `.cursorignore`, `.cursor/permissions.json`
   - `installCursorSkills`, `installCursorRule` — report each Cursor skill path and `mindplan.mdc`
@@ -50,14 +52,15 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, vie
 - Bare `init` (no force) remains skip-if-exists; `--layout` still overwrites config independently of `-f`
 - `check` and `check --for-main` exit 0/1 with `Blocked:` lines
 - Mutations that succeed refresh the Mermaid map on disk and return `changed_files`
+- Successful mutations also return `anchor.record` and `anchor.neighborhood`; `anchor.next` when a next slot is open
 - `force_unship` remains registered for mistaken-ship recovery
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Update Zod enums and tool docs for Interaction/Interface/exposes/leads_to
-- [x] Remove `link_dependent` from `link_nodes`
-- [x] Add reachability payload to `get_blast_radius` and `orient_for_work`
+- [x] Add `buildMutationAnchor` using `findRelatedNodes` + `nodeToRecord`
+- [x] Attach `anchor` to create/link/unlink/open_next/discard_next/update_node_status/force_unship/patch responses
+- [x] Keep existing Interaction-centric enums, reachability, init/-f, force_unship, changed_files behavior
 - [x] Verified via `npm test`
 
 ## Attachments

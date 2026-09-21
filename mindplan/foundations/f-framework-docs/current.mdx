@@ -1,229 +1,73 @@
 ---
 id: f-framework-docs
 type: Foundation
-title: "Framework docs"
-description: "Assembler/docs — Interaction owns the screen body (domain + mountable view); Interface only mounts. Package ownership, Atomic Ops templates, and review gates."
+title: "Framework docs (lighter process)"
+description: "Assembler/docs — systems dialect + revision-bound change-set review; strip per-node waterfall and compiler-duplicating Never-do."
 state: stable
-shipped_at: 2026-09-21T09:22:05.080Z
+shipped_at: 2026-09-21T10:15:23.833Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-09-21T09:22:05.080Z
+updated_at: 2026-09-21T10:15:23.833Z
 depends_on:
   - f-domain-model
 ---
+
 
 
 # Framework documentation
 
 ## Purpose
 
-Own MindPlan’s normative documentation surfaces so agents and humans share one process: taxonomy, compiler gates, Territory Completeness, Foundation roles, **package ownership** (Interaction owns the behavior surface — UI screen body / mountable view, or CLI/MCP handler; Interface only mounts or wires it), use-case-first greenfield definition order (Journey → draft Interaction → exposing Interfaces → Foundations → Plan Review Foundations, then Interaction, then Interfaces), plan-only planning sessions, orchestrated Plan Review and Implementation review loops (independent Reviewer subagent; findings via agent messages — not territory Review Notes), territory authority split (MCP = graph; agent file tools = prose), layout modes (prescribed packages vs layout-free brownfield adoption), Git delivery (feature-branch startup before any edits), and how to evolve shipped work without destroying the living contract.
+Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift / systems thinking) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook is a short systems dialect — not a waterfall of Never-do lists that duplicate the compiler.
 
 ## Shared Substrate Spec
 
-Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. The package folder `src/foundations/f-framework-docs/` is a pointer (no runtime TS).
+Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder `src/foundations/f-framework-docs/` is a pointer (no runtime TS).
 
-Surfaces owned by this Foundation:
+Surfaces:
 
-- `SPEC.md` — normative language (taxonomy, versioning, Territory Completeness, compiler rules, authority split, mutate `changed_files`, **`mindplan/config.json` / `implementation_packages`**, **package ownership / behavior-surface vs mount**)
-- `AGENTS.md` — always-applied agent playbook (repo root)
-- `templates/agent/playbook.md` — consumer playbook shipped by `mindplan-mcp init`
-- `mindplan/agent/playbook.md` — local mirror of the playbook
-- `templates/agent/skills/define-entities/` (+ mindplan/agent mirror) — entity scaffolding skill (note when packages are not scaffolded)
-- `templates/agent/skills/plan-project/` (+ mindplan/agent mirror) — plan-only sessions (no application code); run Plan Review loop to `ready`
-- `templates/agent/skills/review-work/` (+ mindplan/agent mirror) — Plan Review (`draft → ready`) and Implementation review (`in-review → ship` / `resolved`) as Reviewer role for a spawned subagent
-- `templates/agent/skills/code-review/` (+ mindplan/agent mirror) — thin portable Implementation code-review checklist; prefer host-native built-in skill/command (e.g. Cursor `/code-review`), else community `code-review-skill`, else this thin skill
-- `README.md` — product framing, taxonomy summary, and brownfield layout-free adoption
+- `SPEC.md` — normative taxonomy, compiler gates (including Minimum Territory Shape), Territory Completeness (semantic), package ownership
+- `AGENTS.md` / `templates/agent/playbook.md` / `mindplan/agent/playbook.md` / `.cursor/rules/mindplan.mdc` — **systems dialect** always-on playbook (byte-identical mirrors)
+- `templates/agent/skills/review-work/` (+ mirrors) — subgraph Plan Review + **revision-bound change-set** Implementation review
+- `define-entities` / `plan-project` / `code-review` skills — on demand
+- `README.md` — product framing
 
-Foundation scaffold copy (default Atomic Ops / body stubs) lives in `src/foundations/f-territory-store/store.ts` and is touched when role, description, or **package-ownership checklist** conventions change. Smoke assertions that toggle a scaffold checkbox string live in `src/foundations/f-test-harness/smoke.mjs` (mechanical string match only).
+Canonical edits: `templates/agent/`; mirrors stay in sync.
 
-Canonical edits land in `templates/agent/`; mirrors (`mindplan/agent/`, `.cursor/skills/mindplan-*`, `AGENTS.md`, `.cursor/rules/mindplan.mdc`) stay byte-identical to the templates / playbook body.
+### Always-on dialect
 
-### Package ownership (Interaction owns the body; Interface mounts)
+1. Orient via `orient_for_work`
+2. Place work on the graph; MCP structure / file-tool prose
+3. `Blocked:` = hard failure — classify cause, then fix
+4. Own package (or layout-free logical ownership)
+5. Shipped change: blast radius + `open_next`
+6. Do not self-`ship` / self-`resolved` — one independent Reviewer per immutable revision
 
-Normative rule (SPEC §1.2 / playbook / skills):
+Trust mutation `anchor` after writes; no mandatory re-orient after every link.
 
-**Interaction owns the screen body (domain + view). Interface only mounts it** (shell chrome, auth/device guards, navigation/wiring, composition of exposed Interactions).
+### Review (quality gate)
 
-Do **not** invent one Interface per screen. One surface (e.g. Waiter POS) remains one Interface that `exposes` many Interactions; each route/tab mounts the matching Interaction package.
+- Plan Review: frozen subgraph membership → per-node `ready`
+- Implementation review: freeze `{base_sha, head_sha, clean_tree, changed_files, node_ids}`; review all before any ship; ordered Foundations → Interactions → Interfaces; void on dirty tree / failed transition / post-verdict change
+- Full Procedure B contract retained (AC, tests, Fit, Completeness, hygiene, general code review)
 
-| Package | Owns | Must not own |
-| --- | --- | --- |
-| `src/interactions/<id>/` | Domain/view-model (`domain.ts`), mountable view (`*-view.tsx` or equivalent), Interaction-local UI for that behavior | App routing, device/staff shell chrome, cross-Interaction nav |
-| `src/interfaces/<id>/` | Routes/entry, providers, guards, thin screen mounts, shared shell (`PosScreen`-style chrome, tabs), nav callbacks | Order/checkout/floor/etc. behavior UI and domain rules |
-| Foundations | Shared substrate (store, design tokens, dumb primitives) | Journey-specific screen flows |
+### Package ownership
 
-Interface `ui/` = **chrome wrappers only**, not feature screen bodies. Territory MUST NOT tell agents to “compose wireframe UX under `interfaces/…/ui/`” as if screens live there.
-
-Interactions MAY use Foundations (and host UI kits). They MUST NOT import `src/interfaces/...`.
-
-Taxonomy edges (`exposes`, `leads_to`, Interaction Independence) are unchanged.
-
-**Build order (per exposed Interaction)** — playbook Execute step:
-
-1. Interaction `in-progress`
-2. Implement Interaction `domain` + exportable behavior surface (UI: mount view; otherwise handler/module)
-3. Only then: Interface thin mount/wire for that entry (Page: pass Shell + nav callbacks; CLI/MCP: call the export; no reimplementation)
-4. Interface MAY compose multiple Interactions (e.g. passCount from pickup on floor chrome) — composition is Interface work; bodies stay in Interaction packages
-
-**Territory / Atomic Ops templates** (define-entities + `create_node` scaffolds). Gate UI-specific items by Interface Kind; do not force `*-view.tsx` / Shell / `ui/` onto CLI, MCP, Webhook, or Cron.
-
-Every Interaction checklist MUST include (before ready/in-review) — template items (not this node's completion boxes):
-
-- `` `[ ] Domain API against Foundations (no Interaction→Interaction depends_on)` ``
-- `` `[ ] Exportable behavior surface in the Interaction package (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module the Interface wires)` ``
-- `` `[ ] Behavior surface does not import Interface packages (UI: view accepts shell/nav as props/callbacks)` ``
-
-Every Interface checklist MUST include:
-
-- `` `[ ] Thin wiring for each exposes target (Page: screen file wires Shell + guards + nav only; CLI/MCP/Webhook/Cron: command/tool/route/job calls the Interaction export only)` ``
-- `` `[ ] No duplicated domain logic / behavior UI that belongs in an exposed Interaction` ``
-- `` `[ ] Page/UI only: shell chrome under ui/ only — not feature screen bodies` ``
-
-Interface Spec boilerplate: “App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies.”
-
-define-entities examples MUST show a ~15-line thin **Page** mount next to “Interaction mounted,” not only “route wired.” Prefer one Interface exposing many Interactions (POS/console) over one Interface per screen. MCP/CLI examples already show one Interface exposing many Interactions — keep that, and state the handler (not a view) lives in the Interaction package.
-
-**Review gates** (`review-work`):
-
-- **Plan Review:** Reject Interface territory that implies screen bodies or core domain live in the Interface. When Kind is Page (or any UI surface), require Interaction PRDs to include a mount/view surface. When Kind is CLI/MCP/Webhook/Cron, require the Interaction PRD to name the exportable handler/module the Interface will wire — not a `*-view.tsx`.
-- **Implementation review:** Reject if the Interface package contains behavior UI or domain logic that should live in an `exposes` Interaction package (allow: shell, guards, nav, composition, transport glue). Reject if the Interaction package owns routing/CLI/MCP glue that belongs in an Interface. Pass evidence (Kind-gated): Page/UI — Interaction exports a view and the Interface screen only mounts it. CLI/MCP/Webhook/Cron — Interaction exports the handler/module and the Interface only wires it.
-
-### Definition order (use-case-first)
-
-Greenfield entity creation in `define-entities` / `plan-project` and the playbook MUST use use-case-first order — derive Foundations and Interfaces from drafted Interactions, not the reverse. Interfaces are drafted with the Interactions they will `exposes`, then Plan-Reviewed after those Interactions:
-
-```
-Journey(s)
-→ for each Interaction:
-    draft Interaction
-    → Interfaces that expose it (draft)
-    → Foundations for that Interaction (one by one)
-    → link_nodes (belongs_to, depends_on, exposes, leads_to) + enrich territory
-    → Plan Review each still-draft Foundation → ready
-    → Plan Review Interaction → ready
-    → Plan Review Interfaces that expose it → ready
-```
-
-Gate facts agents MUST state with that order:
-
-- Journey MUST exist before `create_node` for an Interaction (unchanged refusal rule).
-- An Interaction MAY sit at `draft` without links; `belongs_to` + `depends_on` are required only to leave `draft` (No Ghost Interactions).
-- An Interface MAY sit at `draft` without links; ≥1 `exposes` is required only to leave `draft` (No Ghost Interfaces).
-- Foundation `ready` before Interaction `ready` is sequencing preference; Infrastructure First at Interaction `ship` still requires Foundations `stable`. Behavior First at Interface `ship` requires exposed Interactions `stable`.
-- An Interface is one **surface**, not one screen: draft Interfaces that `exposes` the Interactions they mount; do not mint `if-*` per tab.
-
-### Layout modes
-
-| Mode | Config | When |
-|------|--------|------|
-| Prescribed (default) | `implementation_packages: "required"` or missing file | Greenfield / this MindPlan repo — architecture screams from `src/foundations\|interactions\|interfaces/<id>/` |
-| Layout-free | `implementation_packages: "off"` | Brownfield — graph + territory + playbook only; agents implement in the existing app layout (same ownership rule: Interaction body, Interface mount) |
-
-Set at init via `mindplan-mcp init --layout free|prescribed` (`i-init-project`). Compiler graph gates are identical; only package scaffolding and package/dirty-src integrity checks differ.
-
-### Territory Completeness
-
-`current.mdx` is the complete contract of what a node *is* in the repository now. `next.mdx` is a complete proposed successor of that same contract (seeded from current, edited in place). Atomic Ops on `next` may be evolution-scoped; PRD/spec sections must remain a full post-ship document. Delta-only or changelog-only `next` bodies are forbidden because `ship` promotes `next` over `current`.
-
-### Foundation roles (docs convention)
-
-Assembler, Infra, Design system, Adapter — documentation groupings only (not NodeTypes). Agents SHOULD tag the role at the start of a Foundation `description`. Design system owns tokens and dumb primitives — not Journey-specific screen bodies (those stay in Interaction packages). Assembler documents mount conventions; Interfaces still own the thin mounts.
-
-### Plan-only sessions
-
-When the user wants to model or restructure the product plan without writing application code, agents follow `mindplan/agent/skills/plan-project/`. Greenfield modeling uses use-case-first definition order (Journey → draft Interaction → exposing Interfaces → Foundations). Planning sessions finish modeled Foundations, Interactions, **and exposing Interfaces** at `draft` (links, PRD, Atomic Ops complete), then run the **Plan Review loop** (spawn independent Reviewer) — Foundations first, then their dependent Interactions, **then Interfaces that expose those Interactions** — until `ready` or escalate — they do not self-advance to `ready`. After `ready`, plan-only sessions stop (no `in-progress` / `src/`). **“Ship the plan”** means finish at `draft` and run that Plan Review loop to `ready` — not build-pipeline `ship`.
-
-Plan-only enrichment MUST still apply Kind-gated package-ownership templates: when Kind is Page/UI, Interaction PRDs include a mount/view surface; when Kind is CLI/MCP/Webhook/Cron, Interaction PRDs name the exportable handler/module (not `*-view.tsx`). Interface Specs say the surface mounts or wires Interaction packages and do not imply screen bodies or core domain live in the Interface.
-
-### Review gates (orchestrated loop)
-
-Skill: `mindplan/agent/skills/review-work/`. Parent (author/implementer) **orchestrates**; does not self-approve.
-
-1. **Plan Review** — `draft → ready` for Interactions/Interfaces/Foundations. Checks buildability, domain fit, dependency completeness, **Interface/Interaction package fit** (no Interface-owned screen bodies; Interaction PRD includes mount/view when Kind is Page/UI), decomposition quality, and scope before any code exists.
-2. **Implementation review** — `in-review → ship` / Bug `resolved`. Evidence-checks every Atomic Op; verifies fit (domain, dependency accuracy, decomposition, **mount vs body package ownership**) and territory-vs-diff drift.
-
-**Loop (both gates):**
-
-1. Parent reaches the gate (`draft` complete, or all Atomic Ops `[x]` then `update_node_status → in-review`).
-2. Parent spawns a **fresh** independent Reviewer subagent (Cursor `Task` or host equivalent) each round — never `resume` a prior Reviewer; never same-session self-approve. Prefer synchronous; if background-forced, wait for completion before advancing.
-3. Reviewer follows `review-work`, calls `update_node_status` only on verdict, returns a **structured verdict message** to the parent. Reviewer **must not** write `## Review Notes` (or equivalent) into `current.mdx` / `next.mdx`.
-4. Parent re-reads MCP (`record.state` / `next.state`). Chat claim alone is insufficient.
-5. Approve + MCP confirms → continue. Reject + MCP confirms → parent fixes from Findings in the message, re-enters the gate (Implementation: re-check Atomic Ops and advance to `in-review` again before re-spawn), re-spawns.
-6. Approve claimed but state unchanged (Blocked) → failed transition; re-spawn after fixing the block, or escalate. Counts toward the failure budget.
-7. After **3** rejects/failed transitions at the same gate → escalate to the human with the latest verdict message. Do not self-approve.
-
-**Structured verdict message** (Reviewer → Parent): `Verdict` (Approve|Reject), `Procedure` (PlanReview|ImplementationReview), `Node` (+ slot when evolving), `Findings` (itemized; Evidence+Fit on Implementation Approve), `StatusAttempted`.
-
-### Implementation code review (host-native first)
-
-Procedure B **also** runs a general code review, using the **host agent’s** capability when available:
-
-1. **Host built-in** — If the host exposes a native code-review skill or command (e.g. Cursor `/code-review`, Claude Code bundled `/code-review`, Cursor `review` / `review-bugbot` when that is the host’s standard), follow its instructions. Load the matching `SKILL.md` from the host skill dirs when one exists. Slash commands cannot always be invoked from a subagent UI — apply the command’s published criteria (bugs, regressions, security, missing tests; findings primary; no drive-by edits) as if that command were run.
-2. **Else community skill** — If `code-review-skill` or `code-review` is installed in host skill dirs (e.g. [awesome-skills/code-review-skill](https://github.com/awesome-skills/code-review-skill)), follow that `SKILL.md` (load only language guides that match the diff).
-3. **Else thin MindPlan skill** — Follow `mindplan/agent/skills/code-review/SKILL.md` (installed by init).
-4. Fold **blocking** findings into the structured verdict `Findings`. Blocking → Reject (do not ship).
-5. Init does **not** vendor open-source trees — only the thin skill is guaranteed.
-
-Parent spawn prompts SHOULD name the host affordance when known (e.g. “also apply Cursor `/code-review` criteria”).
-
-**Diff hygiene:** Reject if the working tree / branch diff includes scratch helpers, one-off patch scripts (e.g. `_patch_*.py`), or other files outside the node’s Atomic Ops / package ownership. Implementer must delete them before re-review.
-
-Hosts without subagents: independent Reviewer chat (legacy). Still preferred over self-approve.
-
-Reviewer inherits the parent’s git branch; does not re-run the main→feature-branch ritual mid-loop.
-
-### Authority split (graph vs prose)
-
-- **MCP only:** `create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `open_next`, `discard_next`, and all server-owned frontmatter (`state`, timestamps, edge arrays).
-- **Agent file tools (preferred):** `title`, `description`, body (PRD / Atomic Ops), checkbox toggles at `current_path` / `next_path` from orientation — so host “changed files” UIs show prose edits.
-- **`patch_node_territory`:** optional fallback for automation / weak file-tool hosts.
-- **Orient** via MCP; never treat on-disk frontmatter as graph authority — trust MCP `record`.
-- Keep `mindplan/map.md` out of agent ignore-bypass as a derived snapshot only.
-
-### Git delivery (feature-branch startup)
-
-Playbooks (`AGENTS.md`, `templates/agent/playbook.md`, `mindplan/agent/playbook.md`) MUST instruct agents to leave `main`/`master` **before any repo writes**, not only before commit. Applies to plan-only, Reviewer, and implementation sessions alike.
-
-**Repo writes** include host file-tool edits **and** MCP graph mutations that write files (`create_node`, `open_next`, `link_nodes`, `update_node_status`, etc. via `changed_files`). Normative text lives only in the playbooks; integration guides (`f-framework-docs`) may point at this section and must not duplicate it.
-
-**When already on the correct feature branch** for this session’s owning work: do **not** re-run the startup ritual — continue on that branch. Do not checkout `main` mid-session if it would abandon or conflict with in-flight WIP. Re-run only when starting work that should **not** land on the current branch (new owning node id, or the user asked for a fresh branch from latest main).
-
-**When HEAD is on `main`/`master` (or detached), or starting work that should not land on the current branch:**
-
-1. If the working tree is dirty in a way that blocks checkout/pull: **stop** — ask the user how to proceed (stash, commit on a branch, or discard). Do not invent destructive resets.
-2. `git checkout main` (or `master`)
-3. `git pull --ff-only` — if this fails (diverged history, conflicts): **stop** and report; do not create merge commits on main
-4. Create or switch to a **feature branch** (prefer naming from the owning node id, e.g. `i-check-integrity`)
-5. **Only then** perform repo writes (file tools or MCP mutations)
-
-Rationale: reduces the risk that concurrent agent sessions both write on `main`. Landing remains feature branch + PR; never push to `main`/`master`.
+Interaction owns body; Interface mounts/wires. One Interface per actor surface.
 
 ## Acceptance Criteria
 
-- SPEC documents Territory Completeness, Foundation roles, the MCP=graph / file-tools=prose authority split, `implementation_packages` required vs off, and **package ownership**: Interaction owns domain + exportable behavior surface (UI view or non-UI handler); Interface only mounts/wires; one Interface per surface not per screen
-- Playbooks (AGENTS + templates + mindplan mirror) instruct agents for both layout modes, forbid hand-editing server-owned frontmatter, and include a **Package ownership** note plus per-exposed-Interaction build order (Interaction body before Interface mount)
-- Playbooks route plan-only / architecture-modeling asks to the `plan-project` skill; **“Ship the plan”** means finish at `draft` and run the Plan Review loop until `ready` (or escalate) — not park for a human, and not build-pipeline `ship`
-- Playbooks define the **Review loop** for Plan Review and Implementation review: spawn independent Reviewer subagent, structured verdict message (no territory Review Notes), MCP re-read, re-entry rules, failed-transition handling, 3-reject escalate
-- Playbooks **Git delivery** instructs: when on `main`/`master` or starting fresh work, checkout default branch → `pull --ff-only` → feature branch → **then** any repo write (file tools or MCP); skip ritual when already on the correct feature branch; stop on dirty-tree or non-ff-only pull failure; Never-do forbids writing on `main`/`master`
-- define-entities, plan-project, review-work, and thin code-review skills align with the Review loop; define-entities examples include a thin Page mount (~15 lines) and Kind-gated Interaction/Interface Atomic Ops; Plan Review rejects Interface-owned domain/screen bodies; Implementation review requires Kind-gated export + thin-mount/wire evidence
-- `create_node` Interaction/Interface body scaffolds (store.ts) use Kind-aware package-ownership Atomic Ops (UI view vs non-UI handler); smoke still toggles a scaffold checkbox
-- README and SPEC abstract summarize Foundation roles, agent skills (including `review-work`), brownfield layout-free adoption, and Interaction-owns-view / Interface-mounts
-- `mindplan-mcp init` + integration guides install/discover `review-work` (owned with `i-init-project` / `f-framework-docs` / `f-mcp-runtime`); guides keep pointing at playbook Git delivery (no duplicate normative ritual in this Foundation). Integration one-liner wording may lag until a separate `f-framework-docs` evolution
-- Active MindPlan Journey/Foundation/Interaction territories describe full repo state (not stubs or latest-change deltas)
-- `define-entities`, `plan-project`, and playbooks prescribe use-case-first greenfield definition order (Journey → draft Interaction → draft exposing Interfaces → derive/link Foundations → Plan Review Foundations, then Interaction, then Interfaces), including gate facts (draft Interactions need no links; Foundations `ready` first; Infra First at Interaction ship; Behavior First at Interface ship); `.cursor` skill copies and `mindplan.mdc` stay in sync
-- Out of scope: taxonomy edge shapes; minting new product graph IDs; “one Interface per POS tab”
+- Always-on playbook is systems dialect + short SDLC (materially shorter than the prior waterfall)
+- `review-work` documents revision-bound change-set review and subgraph Plan Review
+- Mirrors (`AGENTS.md`, `mindplan/agent/`, `.cursor/skills|rules`) match templates
+- Compiler-duplicating Never-do lists and per-node Reviewer waterfall are gone from always-on
+- Verified by reading mirrors and `npm test` (docs Foundation has no runtime)
 
 ## Atomic Ops
 
-- [x] SPEC §1.2 + taxonomy: Interaction owns behavior surface (UI: screen body + mountable view; non-UI: handler/module); Interface only mounts/wires; one Interface per surface; Kind-gated default Atomic Ops in §6.3
-- [x] Playbook/AGENTS: Package ownership note + per-exposed-Interaction build order; Never-do inverted packages; Interface-inclusive Definition order (Journey → Interaction → exposing Interfaces → Foundations → Plan Review Foundations, then Interaction, then Interfaces)
-- [x] define-entities skill + examples: Kind-gated Interaction/Interface checklists, Spec boilerplate, ~15-line thin Page mount, not one Interface per screen; greenfield Definition order includes draft exposing Interfaces and Plan Review of those Interfaces
-- [x] plan-project: Kind-gated enrichment — Page/UI Interaction PRDs include mount/view; CLI/MCP/Webhook/Cron PRDs name the handler/module; Interface Specs never imply screen bodies or domain live in the Interface; greenfield / Plan Review order includes exposing Interfaces after the Interaction
-- [x] review-work: Plan Review + Implementation review mount/body checks + pass evidence
-- [x] SPEC §6.3 + define-entities document Kind-aware create_node Atomic Ops (UI view vs non-UI handler); `store.ts` scaffold strings are specified here and land with `f-territory-store` (this Foundation does not write another package’s `src/`)
-- [x] README taxonomy one-liner; keep `AGENTS.md` / `.cursor` mirrors in sync with templates
-- [x] Keep this next.mdx a full successor contract (not a changelog)
+- [x] Rewrite `templates/agent/playbook.md` as systems dialect; sync AGENTS / mindplan/agent / mindplan.mdc
+- [x] Rewrite `review-work` for subgraph Plan Review + revision-bound Implementation review; sync mirrors
+- [x] Update this Foundation next.mdx to a full successor contract
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/` / `next-attachments/`._
+_Schemas and diagrams go in `next-attachments/`._
