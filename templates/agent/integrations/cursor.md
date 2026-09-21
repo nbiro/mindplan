@@ -49,6 +49,6 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
    - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
    - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
 
-8. **Git delivery** — always feature branch + PR. Never push to `main`/`master` (see playbook **Git delivery**). Run `mindplan-mcp check` on the branch (graph + packages). Optionally `mindplan-mcp check --base <ref>` for dirty-src ownership, or `check --for-main` for local mid-pipeline hygiene — neither is a CI merge gate.
+8. **Validity + Git delivery** — always feature branch + PR. Never push to `main`/`master`. Before Plan Review or Implementation review handoff (and before re-spawning a Reviewer), run default `mindplan-mcp check` and get exit `0` (playbook **Check before review handoff**). Optionally `check --base <ref>` / `check --for-main` for local hygiene — neither is a CI merge gate.
 
 9. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).

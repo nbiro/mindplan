@@ -27,6 +27,9 @@ Reject, blocked transition, or any change after the verdict voids approval.
 
 - Independent of the session that authored the plan (A) or implementation (B).
   If you wrote what you are about to review, Reject with that Finding.
+- **Parent MUST have a green default `mindplan-mcp check`** before spawning you
+  (Plan Review, Implementation review, or re-spawn after Reject). If check would
+  fail, Reject with that Finding and do not advance status.
 - Orient with `orient_for_work` / `get_node_context` / `get_blast_radius` before judging.
 - Mutation boundary: `update_node_status` only. Never `link_nodes` / `create_node`.
 - **Never** write `## Review Notes` into territory. Findings stay in the verdict message.
