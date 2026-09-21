@@ -2,15 +2,16 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime (lighter process)"
-description: "Assembler — MCP stdio/CLI; mutation responses include anchor (record + 1-hop neighborhood) for re-anchoring; init/view/check/force_unship unchanged."
+description: "Assembler — CLI help: default check is graph+packages; --base opt-in dirty-src; --for-main optional, not CI."
 state: stable
-shipped_at: 2026-09-21T10:15:10.502Z
+shipped_at: 2026-09-21T12:44:48.135Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-09-21T10:15:10.502Z
+updated_at: 2026-09-21T12:44:48.135Z
 depends_on:
   - f-compiler-rules
   - f-territory-store
 ---
+
 
 
 
@@ -37,6 +38,7 @@ Package: `src/foundations/f-mcp-runtime/`
   - `installCursorSkills`, `installCursorRule` — report each Cursor skill path and `mindplan.mdc`
   - Init argv parser accepts `--layout free|prescribed`, `-f`, and `--force`. `-f` / `--force` set `force: true` on all agent-asset installers. `--layout` still independently forces config rewrite.
   - Note: `view`/`export` already uses `-f` as shorthand for `--format`; that is a different command — init's `-f` means force overwrite only under `init`.
+- **`check` CLI help** — default = graph + packages; `--base <ref>` opt-in dirty-src; `--for-main` optional local mid-pipeline hygiene (not a documented CI merge gate)
 
 Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, view-projection, and integrity-check at runtime).
 
@@ -50,7 +52,7 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, vie
 - CLI `init` calls `installCursorSkills` and `installCursorRule` and reports their install paths
 - CLI `init -f` and `init --force` pass `{ force: true }` to every agent-asset installer; help documents `-f` / `--force`
 - Bare `init` (no force) remains skip-if-exists; `--layout` still overwrites config independently of `-f`
-- `check` and `check --for-main` exit 0/1 with `Blocked:` lines
+- Default `check`, `check --base`, and `check --for-main` exit 0/1 with `Blocked:` lines; help text matches `i-check-integrity` modes
 - Mutations that succeed refresh the Mermaid map on disk and return `changed_files`
 - Successful mutations also return `anchor.record` and `anchor.neighborhood`; `anchor.next` when a next slot is open
 - `force_unship` remains registered for mistaken-ship recovery
@@ -58,9 +60,8 @@ Depends on: `f-compiler-rules`, `f-territory-store` (also uses graph-search, vie
 
 ## Atomic Ops
 
-- [x] Add `buildMutationAnchor` using `findRelatedNodes` + `nodeToRecord`
-- [x] Attach `anchor` to create/link/unlink/open_next/discard_next/update_node_status/force_unship/patch responses
-- [x] Keep existing Interaction-centric enums, reachability, init/-f, force_unship, changed_files behavior
+- [x] Update `check` CLI help + success strings to describe default graph+packages, `--base` dirty-src, `--for-main` optional local hygiene
+- [x] Keep existing Interaction-centric enums, reachability, init/-f, force_unship, changed_files, anchor behavior
 - [x] Verified via `npm test`
 
 ## Attachments

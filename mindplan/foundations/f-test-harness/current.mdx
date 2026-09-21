@@ -2,14 +2,15 @@
 id: f-test-harness
 type: Foundation
 title: "Test harness (shape smoke)"
-description: "Infra — smoke/check harness fills Minimum Territory Shape before ready; asserts shape Blocked on scaffold."
+description: "Infra — Harness asserts default check skips dirty-src; --base opt-in ownership."
 state: stable
-shipped_at: 2026-09-21T10:15:19.689Z
+shipped_at: 2026-09-21T12:44:53.568Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-09-21T10:15:19.689Z
+updated_at: 2026-09-21T12:44:53.568Z
 depends_on:
   - f-mcp-runtime
 ---
+
 
 
 
@@ -17,7 +18,7 @@ depends_on:
 
 ## Purpose
 
-Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init`. Covers Minimum Territory Shape (scaffold Blocked, fill helper, role-tagged Foundations), `force_unship`, cancel gates, layout-free config, and init force overwrite.
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init`. Covers Minimum Territory Shape (scaffold Blocked, fill helper, role-tagged Foundations), `force_unship`, cancel gates, layout-free config, init force overwrite, and integrity-check modes (default graph+packages; opt-in `--base` dirty-src).
 
 ## Shared Substrate Spec
 
@@ -27,6 +28,7 @@ Package: `src/foundations/f-test-harness/`
 - `fillMinimumTerritoryShape` helpers in smoke + check replace scaffold italic stubs before `ready` / `in-review`
 - Smoke asserts `Blocked: Minimum Territory Shape` on unfilled Interface/Interaction scaffolds after Ghost gates pass
 - Foundation creates use role-tagged descriptions (`Infra — …`)
+- `check.test.mjs` asserts default `check` ignores dirty working tree; dirty-src cases pass `--base`
 
 Depends on: `f-mcp-runtime`.
 
@@ -34,13 +36,13 @@ Depends on: `f-mcp-runtime`.
 
 - `npm test` passes (build + view + search + check + smoke)
 - Smoke proves Minimum Territory Shape blocks scaffold and passes after fill
-- Existing cancel / force_unship / init / layout-free coverage remains green
+- Default integrity check does not fail on dirty `src/` while ready; `--base` still does
+- Existing cancel / force_unship / init / layout-free / `--for-main` coverage remains green
 
 ## Atomic Ops
 
-- [x] Add `fillMinimumTerritoryShape` to smoke and check harnesses
-- [x] Assert shape Blocked on Interface/Interaction scaffold before fill
-- [x] Role-tag Foundation creates used in ready/ship paths
+- [x] Update `check.test.mjs`: dirty-while-ready uses `--base`; assert bare `check` passes with dirty working tree
+- [x] Keep fillMinimumTerritoryShape, shape Blocked, role-tag, cancel, force_unship, layout-free coverage
 - [x] Verified via `npm test`
 
 ## Attachments
