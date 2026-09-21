@@ -115,7 +115,7 @@ When packages are `off`:
 
 - `create_node` MUST NOT scaffold `src/foundations|interactions|interfaces/<id>/`
 - `get_node_implementation` MUST report `implementation_packages: "off"` with `root: null` (not an integrity failure)
-- `mindplan-mcp check` MUST skip package presence, orphan, and dirty-src ownership checks; graph load and `--for-main` mid-pipeline bans still apply
+- `mindplan-mcp check` MUST skip package presence, orphan, and dirty-src ownership checks; graph load still applies. Opt-in `--for-main` mid-pipeline bans still apply when requested.
 - Agents implement in the project's existing layout; they still advance MindPlan states and MUST NOT invent tickets outside the graph
 
 Graph compiler gates (Ghost Interactions/Interfaces/Bugs, Infrastructure First, Behavior First, Completion Check, Interaction Independence) are unchanged in both modes. Playbook gates (Plan Review for `draft → ready`, External Review for ship / Bug `resolved` — orchestrated Reviewer-subagent loops) also apply in both modes — they are not server-enforced.
@@ -460,9 +460,13 @@ Rationale: an entry surface must not go live while the behaviours it exposes (or
 
 ### 5.6 Rule 5 — The Completion Check
 
-A Foundation, Interaction, or Interface MUST NOT transition to `in-review` or `ship` while its active territory file (`current.mdx`, or `next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `in-review` or `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
+A Foundation, Interaction, or Interface MUST NOT transition to `ship` while its active territory file (`current.mdx`, or `next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
 
-Rationale: review is a gate on *finished* work. The checklist in the Territory is the definition of done.
+`in-review` MUST NOT require a complete checklist. Agents enter `in-review` with open DoD items, then tick them while in review.
+
+**Open Checklist While Building.** A territory body patch or checkbox toggle that would leave at least one checkbox and zero unchecked boxes MUST be rejected while the active slot is `draft`, `ready`, or `in-progress` (Bug: `open`, `triaged`, or `fixing`). The rejection MUST tell the agent to leave an Atomic Op open or call `update_node_status` → `in-review` first. The server MUST NOT auto-advance state.
+
+Rationale: all boxes checked means build is done — that posture belongs in `in-review` or later. Completing the checklist while still “building” is an invalid state (either DoD is incomplete, or the agent forgot to request review).
 
 ### 5.7 Rule 6 — No Ghost Bugs
 
@@ -1089,12 +1093,13 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 | Mode | Command | Checks |
 |------|---------|--------|
-| Default (`required`) | `mindplan-mcp check [--base <ref>]` | Graph load; every non-retired Foundation/Interaction/Interface has `src/{foundations\|interactions\|interfaces}/<id>/`; no orphan package dirs; dirty `src/` ownership: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`); **committed** paths vs `base...HEAD` allow `in-progress`/`in-review`/`stable`/`unstable`/`cancelled`/`deprecated`, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts (not draft/ready). Explicit `--base` fails closed on git errors. |
-| Default (`off`) | `mindplan-mcp check [--base <ref>]` | Graph load only — skips package presence, orphans, and dirty-src ownership (layout-free / brownfield) |
+| Default (`required`) | `mindplan-mcp check` | Graph load; every non-retired Foundation/Interaction/Interface has `src/{foundations\|interactions\|interfaces}/<id>/`; no orphan package dirs. Does **not** run dirty-src. |
+| Default (`off`) | `mindplan-mcp check` | Graph load only — skips package presence and orphans (layout-free / brownfield) |
+| Dirty-src (opt-in) | `mindplan-mcp check --base <ref>` | Default checks plus dirty `src/` ownership vs `<ref>`: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`); **committed** paths vs `base...HEAD` allow `in-progress`/`in-review`/`stable`/`unstable`/`cancelled`/`deprecated`, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts (not draft/ready). Explicit `--base` fails closed on git errors. Skipped when packages are `off`. |
 | Invalid config | any check mode | Fail immediately if `mindplan/config.json` exists but is invalid (bad JSON / mode); do not treat as `required` |
-| Main gate | `mindplan-mcp check --for-main` | Graph load; package checks only when `required`; fail if any Foundation/Interaction/Interface is `in-progress`/`in-review` (or `next` in those states), or any Bug is `fixing`/`in-review`. Does **not** run dirty-src |
+| Local hygiene (opt-in) | `mindplan-mcp check --for-main` | Graph load; package checks only when `required`; fail if any Foundation/Interaction/Interface is `in-progress`/`in-review` (or `next` in those states), or any Bug is `fixing`/`in-review`. Does **not** run dirty-src. Optional local tool — **must not** be required by CI to merge unfinished work. |
 
-Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source (`node dist/index.js check …`). Consumer repos SHOULD use the published bin after npm release.
+Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + packages). Consumer repos SHOULD use the published bin after npm release.
 
 ---
 
@@ -1183,7 +1188,8 @@ An implementation is MindPlan-compliant if and only if:
 | ship: next not in-review | `Blocked: ship is only allowed from next in-review. "i-checkout" next is currently "in-progress".` |
 | discard_next: nothing to discard | `Blocked: node "i-checkout" has no next.mdx to discard.` |
 | deprecate while evolving | `Blocked: cannot deprecate "i-checkout" while next.mdx exists. Call discard_next first, or ship the evolution.` |
-| Rule 5 (Completion) | `Blocked: Completion Check. 3 unchecked checkbox(es) remain in i-checkout/current.mdx. All [ ] items must be [x] before moving to "in-review".` |
+| Rule 5 (Completion) | `Blocked: Completion Check. 3 unchecked checkbox(es) remain in i-checkout/current.mdx. All [ ] items must be [x] before moving to "ship".` |
+| Rule 5 (Open checklist) | `Blocked: Checklist Complete. All checkboxes are checked while "i-checkout" is "in-progress". Leave at least one Atomic Op open while building, or call update_node_status → "in-review" first (then complete the checklist; Completion Check applies at ship/resolved).` |
 | Rule 6 (Ghost Bug) | `Blocked: Ghost Bug. "bug-race" has no affects edge. Link it to an Interaction, Interface, or Foundation before moving it to "triaged".` |
 | Stability flip | (informational) `stability_recomputed: [{ "id": "i-checkout", "state": "unstable" }]` in tool response |
 | No edge to remove | `Blocked: no edge exists between "i-tips" and "f-db".` |

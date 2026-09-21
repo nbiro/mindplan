@@ -331,15 +331,43 @@ else console.log("ok   journey computed as incubation");
 
 await expectBlocked("manual journey state", "update_node_status", { node_id: "j-ordering", new_status: "stable" });
 
-// --- completion check ---
-await expectBlocked("completion check (unchecked boxes)", "update_node_status", { node_id: "i-checkout", new_status: "in-review" });
+// --- open checklist while building + Completion Check at ship ---
 const ixPath = path.join(root, "mindplan", "interactions", "i-checkout", "current.mdx");
+{
+  let ixRaw = fs.readFileSync(ixPath, "utf-8");
+  ixRaw = ixRaw
+    .replace("- [ ] Requirements defined", "- [x] Requirements defined")
+    .replace("- [ ] Implementation complete", "- [x] Implementation complete");
+  // leave "Tests passing" unchecked
+  fs.writeFileSync(ixPath, ixRaw);
+}
+await expectBlockedContaining(
+  "last checkbox while in-progress",
+  "patch_node_territory",
+  {
+    node_id: "i-checkout",
+    toggle_checkboxes: [{ contains: "Tests passing", checked: true }],
+  },
+  "Checklist Complete"
+);
+await expectOk("interaction -> in-review with unchecked", "update_node_status", {
+  node_id: "i-checkout",
+  new_status: "in-review",
+});
+await expectBlockedContaining(
+  "completion check blocks ship with unchecked",
+  "update_node_status",
+  { node_id: "i-checkout", new_status: "ship" },
+  "Completion Check"
+);
+await expectOk("complete last checkbox in-review", "patch_node_territory", {
+  node_id: "i-checkout",
+  toggle_checkboxes: [{ contains: "Tests passing", checked: true }],
+});
 fs.writeFileSync(
   ixPath,
-  fs.readFileSync(ixPath, "utf-8").replaceAll("[ ]", "[x]") +
-    '\n<StateBadge state="in-progress" />\n'
+  fs.readFileSync(ixPath, "utf-8") + '\n<StateBadge state="in-review" />\n'
 );
-await expectOk("interaction -> in-review", "update_node_status", { node_id: "i-checkout", new_status: "in-review" });
 
 // --- infrastructure first (ship requires stable foundations) ---
 await expectBlockedContaining(
@@ -440,10 +468,18 @@ await expectOk("bug -> triaged", "update_node_status", { node_id: "bug-race", ne
 await expectOk("bug -> fixing", "update_node_status", { node_id: "bug-race", new_status: "fixing" });
 
 const bugPath = path.join(root, "mindplan", "bugs", "bug-race", "current.mdx");
-await expectBlocked("bug completion check", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
 fillMinimumTerritoryShape(bugPath);
+await expectOk("bug -> in-review with unchecked", "update_node_status", {
+  node_id: "bug-race",
+  new_status: "in-review",
+});
+await expectBlockedContaining(
+  "bug completion check blocks resolved",
+  "update_node_status",
+  { node_id: "bug-race", new_status: "resolved" },
+  "Completion Check"
+);
 fs.writeFileSync(bugPath, fs.readFileSync(bugPath, "utf-8").replaceAll("[ ]", "[x]"));
-await expectOk("bug -> in-review", "update_node_status", { node_id: "bug-race", new_status: "in-review" });
 await expectOk("bug -> resolved", "update_node_status", { node_id: "bug-race", new_status: "resolved" });
 
 graph = JSON.parse(await expectOk("read graph after bug resolved", "get_mindplan_graph", {}));

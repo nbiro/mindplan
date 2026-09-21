@@ -46,6 +46,7 @@ import {
   splitContext,
   nodeToRecord,
   patchNodeTerritory,
+  toggleCheckboxesInBody,
   openNextSlot,
   discardNextSlot,
   promoteNextSlot,
@@ -82,6 +83,7 @@ import {
   validateOpenNext,
   blastRadiusDependents,
   assertPipelineTerritoryScalarsEditable,
+  assertOpenChecklistWhileBuilding,
   interactionReachability,
 } from "../f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT, findRelatedNodes } from "../f-graph-search/search.js";
@@ -561,6 +563,18 @@ server.registerTool(
     }
     if (description !== undefined) {
       assertPipelineTerritoryScalarsEditable(node, "description", resolvedSlot);
+    }
+    if (body !== undefined || (toggle_checkboxes?.length ?? 0) > 0) {
+      const raw = readMarkdown(node, resolvedSlot);
+      const split = splitContext(raw);
+      if (!split) {
+        throw blocked(`${resolvedSlot} file for "${node_id}" has no YAML frontmatter.`);
+      }
+      let nextBody = body !== undefined ? body : split.body;
+      if (toggle_checkboxes?.length) {
+        nextBody = toggleCheckboxesInBody(nextBody, toggle_checkboxes);
+      }
+      assertOpenChecklistWhileBuilding(node, nextBody, resolvedSlot);
     }
     const result = patchNodeTerritory(node, {
       title,
@@ -1160,12 +1174,13 @@ function runCheckCli(argv: string[]): void {
     const message = err instanceof Error ? err.message : String(err);
     if (message === "HELP") {
       console.log(`Usage:
-  mindplan-mcp check [--base <ref>]   Graph + packages + dirty src ownership
-  mindplan-mcp check --for-main       Graph + packages + no mid-pipeline states
+  mindplan-mcp check                  Graph load + packages (default; CI mode)
+  mindplan-mcp check --base <ref>     Also enforce dirty-src ownership vs base
+  mindplan-mcp check --for-main       Optional local hygiene: ban mid-pipeline states
 
 Options:
-  --base <ref>   Git base for commit diff (default: merge-base with main/master)
-  --for-main     Merge gate: ban in-progress/in-review (and Bug fixing/in-review)
+  --base <ref>   Opt-in dirty-src vs this git ref (not used by CI)
+  --for-main     Optional local hygiene: ban in-progress/in-review (and Bug fixing/in-review)
 `);
       return;
     }
@@ -1332,7 +1347,7 @@ function runCli() {
   mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and .cursorignore
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
-  mindplan-mcp check        Offline integrity: graph, packages, dirty src (or --for-main)
+  mindplan-mcp check        Offline integrity: graph + packages (default CI mode)
   mindplan-mcp help         Show this message
 
 Init options:
@@ -1350,8 +1365,8 @@ View options:
   --output, -o <file>       Write diagram to a file instead of stdout
 
 Check options:
-  --base <ref>              Git base for dirty-src commit diff
-  --for-main                Fail if any mid-pipeline Foundation/Interaction/Interface/Bug states
+  --base <ref>              Opt-in dirty-src ownership vs this git ref (not used by CI)
+  --for-main                Optional local hygiene: ban mid-pipeline states (not used by CI)
 
 Environment:
   MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);

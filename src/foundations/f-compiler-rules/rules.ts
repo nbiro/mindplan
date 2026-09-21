@@ -31,6 +31,7 @@ import {
 } from "../f-domain-model/types.js";
 import {
   countUncheckedBoxes,
+  isChecklistComplete,
   readMarkdown,
   splitContext,
 } from "../f-territory-store/store.js";
@@ -293,6 +294,42 @@ function runCompletionCheck(
       `Completion Check. ${unchecked} unchecked checkbox(es) remain in ${node.id}/${file}. All [ ] items must be [x] before moving to "${targetLabel}".`
     );
   }
+}
+
+/** States where completing every Atomic Op checkbox is illegal (work still “building”). */
+const BUILDING_CHECKLIST_STATES = new Set([
+  "draft",
+  "ready",
+  "in-progress",
+  "open",
+  "triaged",
+  "fixing",
+]);
+
+/**
+ * Reject completing all checkboxes while still building.
+ * Agent must transition to in-review themselves — no auto-advance.
+ */
+export function assertOpenChecklistWhileBuilding(
+  node: MindPlanNode,
+  proposedBodyOrFullMarkdown: string,
+  slot: "current" | "next" = "current"
+): void {
+  if (!isChecklistComplete(proposedBodyOrFullMarkdown)) return;
+
+  const state =
+    slot === "next" && node.next
+      ? node.next.state
+      : node.state;
+  if (!BUILDING_CHECKLIST_STATES.has(state)) return;
+
+  const reviewTarget =
+    node.type === "Bug" ? "in-review" : "in-review";
+  throw blocked(
+    `Checklist Complete. All checkboxes are checked while "${node.id}" is "${state}". ` +
+      `Leave at least one Atomic Op open while building, or call update_node_status → "${reviewTarget}" first ` +
+      `(then complete the checklist; Completion Check applies at ship/resolved).`
+  );
 }
 
 /** Pre-ship Interaction/Interface title/description edits; shipped scope changes use open_next. */
@@ -828,7 +865,9 @@ function validateBugRules(graph: MindPlanGraph, bug: MindPlanNode, newStatus: Bu
   }
 
   if (newStatus === "in-review" || newStatus === "resolved") {
-    runCompletionCheck(bug, newStatus, "current");
+    if (newStatus === "resolved") {
+      runCompletionCheck(bug, newStatus, "current");
+    }
     runMinimumTerritoryShape(bug, newStatus, "current");
   }
 }
@@ -895,10 +934,6 @@ function validateInteractionRules(
 
   validateInteractionRulesForEdges(interaction, newStatus, journeys, dependsOn, graph);
   runMinimumTerritoryShape(interaction, newStatus, "current");
-
-  if (newStatus === "in-review") {
-    runCompletionCheck(interaction, newStatus, "current");
-  }
 }
 
 function validateInterfaceRules(
@@ -912,10 +947,6 @@ function validateInterfaceRules(
 
   validateInterfaceRulesForEdges(iface, newStatus, exposes, graph);
   runMinimumTerritoryShape(iface, newStatus, "current");
-
-  if (newStatus === "in-review") {
-    runCompletionCheck(iface, newStatus, "current");
-  }
 }
 
 /** Terminal states that do not block cancelling a dependency target. */
@@ -1012,20 +1043,11 @@ function resolveNextStatusChange(
       graph
     );
     runMinimumTerritoryShape(node, newStatus, "next");
-    if (newStatus === "in-review") {
-      runCompletionCheck(node, newStatus, "next");
-    }
   } else if (node.type === "Interface") {
     validateInterfaceRulesForEdges(node, newStatus, next.exposes ?? [], graph);
     runMinimumTerritoryShape(node, newStatus, "next");
-    if (newStatus === "in-review") {
-      runCompletionCheck(node, newStatus, "next");
-    }
   } else if (node.type === "Foundation") {
     runMinimumTerritoryShape(node, newStatus, "next");
-    if (newStatus === "in-review") {
-      runCompletionCheck(node, newStatus, "next");
-    }
   }
 
   return { state: newStatus, ship: false, promote_next: false };
@@ -1122,9 +1144,6 @@ export function resolveStatusChange(
     validateInterfaceRules(graph, node, newStatus);
   } else if (node.type === "Foundation") {
     runMinimumTerritoryShape(node, newStatus, "current");
-    if (newStatus === "in-review") {
-      runCompletionCheck(node, newStatus, "current");
-    }
   }
 
   return { state: newStatus, ship: false, promote_next: false };
@@ -1192,7 +1211,7 @@ export function resolveForceUnship(
   } else if (node.type === "Interface") {
     validateInterfaceRules(graph, node, newStatus);
   } else if (node.type === "Foundation" && newStatus === "in-review") {
-    runCompletionCheck(node, newStatus, "current");
+    runMinimumTerritoryShape(node, newStatus, "current");
   }
 
   return newStatus;

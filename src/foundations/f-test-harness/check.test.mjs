@@ -120,11 +120,18 @@ git("commit", "-m", "f-core scaffold");
 
 fs.writeFileSync(path.join(root, "src", "interactions", "i-feature", "code.ts"), "export const x = 1;\n");
 
+// Default check is graph+packages only — dirty working tree must not fail.
 r = runCheck([]);
+if (r.status !== 0) {
+  failures++;
+  console.log(`FAIL default check should ignore dirty src: ${r.stderr || r.stdout}`);
+} else console.log("ok   default check ignores dirty working tree");
+
+r = runCheck(["--base", baseSha]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("i-feature")) {
   failures++;
   console.log(`FAIL dirty while ready: status=${r.status} out=${r.stderr || r.stdout}`);
-} else console.log("ok   dirty src while ready fails");
+} else console.log("ok   dirty src while ready fails with --base");
 
 // Committed real package files at ready must still fail (scaffold exemption is path-exact)
 git("add", "src/interactions/i-feature/code.ts");
