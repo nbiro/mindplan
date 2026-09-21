@@ -192,7 +192,7 @@ No Dependency Closure / `link_dependent`.
 | `mindplan-mcp` | Start MCP server (stdio) |
 | `mindplan-mcp init` | Scaffold territory + agent assets |
 | `mindplan-mcp view` | Print Mermaid/DOT (`export` alias) |
-| `mindplan-mcp check` | Offline integrity; `--for-main` merge gate |
+| `mindplan-mcp check` | Offline integrity (graph + packages); `--base` / `--for-main` opt-in |
 | `mindplan-mcp help` | Usage |
 
 Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`).

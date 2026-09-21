@@ -11,8 +11,10 @@ import { isPipelineNodeType } from "../../foundations/f-domain-model/types.js";
 import {
   getNodeImplementation,
   implementationPackagesRequired,
+  isChecklistComplete,
   loadGraph,
   projectRoot,
+  readMarkdown,
   SRC_DIR,
 } from "../../foundations/f-territory-store/store.js";
 
@@ -35,9 +37,12 @@ const CLAIMED_OR_CONCLUDED = new Set([
 const PRE_CLAIM = new Set(["draft", "ready"]);
 
 export interface CheckOptions {
-  /** Ban mid-pipeline states (merge-to-main gate). Skips dirty-src-vs-base. */
+  /** Ban mid-pipeline states (optional local hygiene). Skips dirty-src-vs-base. */
   forMain?: boolean;
-  /** Git base ref for commit diff (default: merge-base with main/master). */
+  /**
+   * When set, also enforce dirty-src ownership vs this git base.
+   * Default check skips dirty-src (graph + packages only).
+   */
   base?: string;
   /** Override project root (tests). */
   cwd?: string;
@@ -374,6 +379,42 @@ function checkForMain(graph: MindPlanGraph, failures: string[]): void {
   }
 }
 
+const BUILDING_CHECKLIST_STATES = new Set([
+  "draft",
+  "ready",
+  "in-progress",
+  "open",
+  "triaged",
+  "fixing",
+]);
+
+/** All checkboxes checked while still building is an invalid graph posture. */
+function checkChecklistBuilding(graph: MindPlanGraph, failures: string[]): void {
+  for (const node of graph.nodes) {
+    const slots: Array<{ slot: "current" | "next"; state: string }> = [
+      { slot: "current", state: node.state },
+    ];
+    if (node.next) {
+      slots.push({ slot: "next", state: node.next.state });
+    }
+    for (const { slot, state } of slots) {
+      if (!BUILDING_CHECKLIST_STATES.has(state)) continue;
+      try {
+        const raw = readMarkdown(node, slot);
+        if (!isChecklistComplete(raw)) continue;
+      } catch {
+        continue;
+      }
+      fail(
+        failures,
+        `Checklist Complete. All checkboxes are checked while "${node.id}" ` +
+          `${slot === "next" ? "next " : ""}is "${state}". ` +
+          `Leave an Atomic Op open while building, or advance to in-review.`
+      );
+    }
+  }
+}
+
 /**
  * Run integrity checks. Loads the territory graph from disk.
  */
@@ -400,12 +441,13 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
 
   try {
     const packagesOn = implementationPackagesRequired(root);
+    checkChecklistBuilding(graph, failures);
     if (packagesOn) {
       checkPackages(graph, root, failures);
     }
     if (options.forMain) {
       checkForMain(graph, failures);
-    } else if (packagesOn) {
+    } else if (packagesOn && options.base !== undefined) {
       checkDirtySrc(graph, root, options.base, failures);
     }
   } catch (err) {

@@ -923,9 +923,23 @@ export function countUncheckedBoxes(
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot = "current"
 ): number {
-  const raw = readMarkdown(node, slot);
-  const matches = raw.match(/^\s*[-*+]\s+\[ \]/gm);
-  return matches ? matches.length : 0;
+  return countCheckboxesInText(readMarkdown(node, slot)).unchecked;
+}
+
+/** Counts markdown task-list checkboxes in a territory body or full MDX string. */
+export function countCheckboxesInText(text: string): {
+  unchecked: number;
+  checked: number;
+} {
+  const unchecked = text.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0;
+  const checked = text.match(/^\s*[-*+]\s+\[[xX]\]/gm)?.length ?? 0;
+  return { unchecked, checked };
+}
+
+/** True when there is at least one checkbox and none remain unchecked. */
+export function isChecklistComplete(text: string): boolean {
+  const { unchecked, checked } = countCheckboxesInText(text);
+  return checked > 0 && unchecked === 0;
 }
 
 /** Splits raw territory MDX into YAML frontmatter block and body. */
@@ -1001,7 +1015,7 @@ export function resolveTerritorySlot(
   return "current";
 }
 
-function toggleCheckboxesInBody(
+export function toggleCheckboxesInBody(
   body: string,
   toggles: { contains: string; checked: boolean }[]
 ): string {
@@ -1140,7 +1154,9 @@ export function openNextSlot(
   }
   frontmatterLines.push("---");
 
-  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${split.body}`, "next");
+  // New evolution starts with an open DoD — do not inherit completed checkboxes from current.
+  const nextBody = split.body.replace(/^\s*([-*+]\s+)\[[xX]\]/gm, "$1[ ]");
+  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${nextBody}`, "next");
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
   if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf-8");

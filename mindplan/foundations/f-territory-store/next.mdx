@@ -1,0 +1,43 @@
+---
+id: f-territory-store
+type: Foundation
+title: "Territory store (shape scaffolds)"
+description: "Infra — open_next resets checkboxes so next draft does not inherit completed DoD."
+state: in-review
+updated_at: 2026-09-21T11:36:40.193Z
+depends_on:
+  - f-domain-model
+---
+
+
+# Territory store
+
+## Purpose
+
+Infra — persists MindPlan territory on disk (frontmatter, bodies, packages, `open_next` / promote). When opening a `next` evolution, resets completed checkboxes to open so a new DoD starts unfinished (pairs with Open Checklist While Building on `f-compiler-rules`).
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-territory-store/`
+
+- `store.ts` — load/graph, scaffolds, patches, `openNextSlot`, `countCheckboxesInText` / `isChecklistComplete`
+- **`openNextSlot`** copies current body into `next.mdx` but rewrites `- [x]` → `- [ ]` so draft/ready/in-progress next slots never inherit a completed checklist from the shipped current
+- Exports `toggleCheckboxesInBody` for patch preview + write
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- `open_next` on a shipped node whose current checklist is fully checked yields a next body with those boxes unchecked
+- `isChecklistComplete` / `countCheckboxesInText` available to compiler and integrity check
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Reset checkboxes to `[ ]` when writing `next.mdx` in `openNextSlot`
+- [x] Export `countCheckboxesInText`, `isChecklistComplete`, `toggleCheckboxesInBody`
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._
