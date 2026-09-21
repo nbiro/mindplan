@@ -35,8 +35,8 @@ Orient and mutate **graph structure** only through MCP. Write **territory prose*
 |------|---------|--------|
 | **Journey** | Domain capability the architecture screams; permanent container for Interactions | Computed only: `draft`, `incubation`, `stable`, `evolving` |
 | **Foundation** | Shared substrate by role (Assembler, Infra, Design system, Adapter) — no standalone behavior | `draft` → `ready` → `in-progress` → `in-review` → `ship` → `stable`/`unstable` (or `cancelled` pre-ship) |
-| **Interaction** | Self-contained behavior by any actor (human, system, agent) — **not** a UI surface | Same build pipeline as Foundation |
-| **Interface** | Surface that exposes one or more Interactions (Page, CLI, MCP, Webhook, Cron, …) | Same build pipeline as Foundation |
+| **Interaction** | Self-contained behavior by any actor (human, system, agent) — **not** an entry surface; owns domain + view/handler | Same build pipeline as Foundation |
+| **Interface** | Surface that exposes one or more Interactions (Page, CLI, MCP, Webhook, Cron, …) — **mounts/wires only** | Same build pipeline as Foundation |
 | **Bug** | Defect on an Interaction, Interface, or Foundation | `open` → `triaged` → `fixing` → `in-review` → `resolved` \| `wontfix` |
 
 **IDs:** `^[a-z0-9][a-z0-9-_]*$`. Prefer prefixes: `j-`, `f-`, `i-`, `if-`, `bug-`. IDs never change — evolution happens in place via `next.mdx`, not by minting a new id.
@@ -52,6 +52,16 @@ Orient and mutate **graph structure** only through MCP. Write **territory prose*
 | `affects` | Bug → Interaction \| Interface \| Foundation | Defect target |
 
 **Interaction Independence:** Interactions MUST NOT `depends_on` other Interactions. Share state only through Foundations. Navigation between Interactions uses `leads_to`, never `depends_on`.
+
+**Package ownership:** **Interaction owns the behavior surface; Interface only mounts or wires it.** Do not invent one Interface per screen — one actor surface (e.g. Waiter POS) `exposes` many Interactions; each route/tab mounts the matching package. Interface `ui/` is chrome only.
+
+| Package | Owns | Must not own |
+| --- | --- | --- |
+| `src/interactions/<id>/` | Domain/view-model, exportable surface (UI: `*-view`; CLI/MCP: handler) | App routing, shell chrome, cross-Interaction nav |
+| `src/interfaces/<id>/` | Routes/entry, guards, thin mounts, shared shell, nav callbacks | Feature screen bodies and domain rules |
+| Foundations | Shared substrate (store, tokens, dumb primitives) | Journey-specific screen flows |
+
+Interactions MUST NOT import `src/interfaces/…`. Build order per exposed Interaction: Interaction `in-progress` → domain + exportable surface → only then Interface thin mount/wire.
 
 **Foundation roles** (docs convention only — not NodeTypes or frontmatter). Agents SHOULD tag the role at the start of the Foundation `description` (e.g. `"Assembler — Next.js app shell"`):
 
@@ -179,9 +189,9 @@ Hosts without subagents: open an independent Reviewer chat (legacy). Still prefe
 
 #### Reviewer checks (summary)
 
-**Plan Review:** buildable PRD/AC; domain fit; dependency completeness (Foundations only for Interactions); **Interaction Independence** (no Interaction→Interaction `depends_on`); **Interface/Interaction fit** (`exposes` matches Kind/Spec); decomposition quality; scope (one behavior or one surface). Mutation boundary: `update_node_status` only — never `link_nodes` / `create_node` / fix the plan yourself.
+**Plan Review:** buildable PRD/AC; domain fit; dependency completeness (Foundations only for Interactions); **Interaction Independence** (no Interaction→Interaction `depends_on`); **Interface/Interaction fit** (`exposes` matches Kind/Spec; Reject Interface-owned screen bodies/domain; Page/UI Interaction PRDs include mount/view; CLI/MCP PRDs name the handler); decomposition quality; scope (one behavior or one surface — not one Interface per screen). Mutation boundary: `update_node_status` only — never `link_nodes` / `create_node` / fix the plan yourself.
 
-**Implementation review:** evidence line per checked Atomic Op; territory vs diff; domain fit; dependency accuracy; Interaction Independence; Interface/Interaction fit; decomposition drift; **diff hygiene** (Reject scratch/patch/temp/unrelated files); **general code review** — host-native first (built-in skill/command e.g. Cursor `/code-review`), else community `code-review-skill`/`code-review`, else thin `mindplan/agent/skills/code-review/`. Same mutation boundary. Never implements.
+**Implementation review:** evidence line per checked Atomic Op; territory vs diff; domain fit; dependency accuracy; Interaction Independence; Interface/Interaction fit (Reject Interface behavior UI that belongs in an `exposes` Interaction; Reject Interaction-owned routing/CLI/MCP glue; pass evidence: Interaction exports view/handler, Interface only mounts/wires); decomposition drift; **diff hygiene** (Reject scratch/patch/temp/unrelated files); **general code review** — host-native first (built-in skill/command e.g. Cursor `/code-review`), else community `code-review-skill`/`code-review`, else thin `mindplan/agent/skills/code-review/`. Same mutation boundary. Never implements.
 
 Solo builders: spawning Reviewer yourself does not make the gate optional — the evidence/Findings in the verdict message are the gate. Approving without them is rubber-stamping.
 
@@ -207,7 +217,7 @@ For a shipped node evolving via `open_next`, this same pipeline runs against the
 1. **Orient** — `orient_for_work` or `find_related_nodes` to resolve the owning node and links, then `get_node_context` for the focus. Call `get_blast_radius` on the focus node before substantial implementation; note reverse-`depends_on` dependents, `journeys_at_risk`, and Interaction `reachability` when present. Read PRD, Acceptance Criteria, and Atomic Ops from `body` (or `next.body` when a next slot is open).
 2. **Pre-flight (leave `draft`)** — Interactions need at least one `belongs_to` and at least one Foundation `depends_on` before `ready`/`in-progress` (draft Interactions may exist unlinked while Foundations are derived — see **Definition order**). Interfaces need at least one `exposes` → Interaction. Foundations may optionally `depends_on` other Foundations. Use `link_nodes` (or the define-entities skill if nodes/links are missing). Never add Interaction→Interaction `depends_on`.
 3. **Commit to work** — Node must already be `ready` (after Plan Review). Then `update_node_status` → `in-progress` **before** substantial implementation. Do not code under `draft`/`ready` as if the work were underway; do not self-advance `draft` → `ready`.
-4. **Execute** — When `implementation_packages` is `required` (default), implement in the node's prescribed package (`src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/`). When `off` (layout-free / `mindplan-mcp init --layout free`), implement in the project's existing layout instead — still keep territory in sync. Keep territory updated with **file tools** on `current_path` / `next_path`: update PRD body, toggle Atomic Ops checkboxes. Never check a box without doing the work. (`patch_node_territory` remains an optional fallback.) Query architecture with `get_node_implementation` plus the graph (`root` is null when packages are off).
+4. **Execute** — When `implementation_packages` is `required` (default), implement in the node's prescribed package (`src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/`). **Per exposed Interaction:** implement Interaction `domain` + exportable surface first, then the Interface thin mount/wire (pass Shell + nav or call the handler; do not reimplement the body). When `off` (layout-free / `mindplan-mcp init --layout free`), implement in the project's existing layout instead — still keep the same ownership split and territory in sync. Keep territory updated with **file tools** on `current_path` / `next_path`: update PRD body, toggle Atomic Ops checkboxes. Never check a box without doing the work. (`patch_node_territory` remains an optional fallback.) Query architecture with `get_node_implementation` plus the graph (`root` is null when packages are off).
 5. **Review gate** — When all Atomic Ops are `[x]`, `update_node_status` → `in-review`. Unchecked boxes → `Blocked: Completion Check`. Do not immediately `ship`. Run the **Review loop** (Implementation review): spawn a fresh Reviewer subagent.
 6. **Ship** — Only after Reviewer Approve + MCP confirms. The **Reviewer** (not the implementer session) calls `update_node_status` → `ship` from `in-review` (or from `next` `in-review` when evolving). Server sets `shipped_at` and computes `stable` or `unstable`; if a `next` slot was open, ship promotes it over `current` and deletes `next.mdx`.
    - **External Review (loop):** the implementing agent MUST NOT `ship` (or Bug `resolved`) their own work. Spawn Implementation review via `review-work`; iterate on Findings until Approve or escalate.
@@ -262,7 +272,7 @@ Foundations, Interactions, and Interfaces keep one stable id forever — there i
 - Checkbox state on disk gates `in-review`, `ship`, and Bug `in-review`/`resolved` — checked against whichever file is active (`current.mdx`, or `next.mdx` when evolving).
 - Enrich or replace scaffold checklist placeholders during `draft` / triage with real PR-sized work items.
 - Attachments live under `attachments/` (`next-attachments/` while evolving); reference them from the body with relative links.
-- Interaction / Interface / Foundation implementation: under `src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/` when packages are `required` (scaffolded by `create_node`); when `implementation_packages` is `off`, implement in the existing project layout. Query with `get_node_implementation`. Journeys have no code package — derive architecture from member Interactions via `belongs_to`.
+- Interaction / Interface / Foundation implementation: under `src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/` when packages are `required` (scaffolded by `create_node`); when `implementation_packages` is `off`, implement in the existing project layout with the same ownership split (§ Package ownership). Query with `get_node_implementation`. Journeys have no code package — derive architecture from member Interactions via `belongs_to`.
 
 ## Compiler rules
 
@@ -336,6 +346,10 @@ Pre-ship dead ends: `update_node_status(..., "cancelled")` — not `deprecated` 
 ## Never do
 
 - Implement Interaction/Interface/Foundation code outside its prescribed `src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/` package when `implementation_packages` is `required` (layout-free/`off` projects use the existing app layout instead)
+- Put feature screen bodies or domain rules in an Interface package (`src/interfaces/<id>/screens/` fat UIs) — those belong in the `exposes` Interaction; Interface only mounts/wires
+- Put app routing, CLI/MCP glue, or shell chrome in an Interaction package — those belong in an Interface
+- Invent one Interface per screen/tab — one surface exposes many Interactions
+- Import `src/interfaces/…` from an Interaction package
 - Start substantial coding without `orient_for_work` / `find_related_nodes` (or an explicit `node_id`) and a clear owning node
 - Start substantial implementation on a Foundation, Interaction, or Interface without `get_blast_radius` on the owning node
 - Treat on-disk frontmatter or `mindplan/map.md` as graph authority — use MCP `record` / `export_mindplan_view`

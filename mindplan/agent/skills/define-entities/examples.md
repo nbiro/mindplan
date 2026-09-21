@@ -52,12 +52,13 @@ Diner starts split after items are confirmed on the table order.
 2. System calculates per-person totals
 3. Each diner pays their share via configured PSP
 
+Mountable view: `src/interactions/i-checkout-split/checkout-split-view.tsx` (accepts shell/nav callbacks; does not import Interface packages).
+
 ## Checklist
 
-- [ ] Requirements defined
-- [ ] Split calculation implemented
-- [ ] Payment flow complete
-- [ ] Verified via smoke test
+- [ ] Domain API against Foundations (no Interaction→Interaction `depends_on`)
+- [ ] Mountable view exported from package
+- [ ] View accepts shell/nav as props/callbacks — does not import Interface packages
 ```
 
 Optional fallback: `patch_node_territory({ node_id: "i-checkout-split", body: "…" })`.
@@ -118,14 +119,36 @@ Page
 
 ## Spec
 
-- App Router route mounts the Interaction package
+App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies.
+
+- Route `/orders/[id]/checkout` mounts `CheckoutSplitView` from the Interaction package
 - Auth: signed-in diner for the table
+- Shell chrome (header, table chip) under `src/interfaces/if-checkout-page/ui/` only
 
 ## Checklist
 
-- [ ] Route wired
-- [ ] Interaction mounted
-- [ ] Smoke-tested in browser
+- [ ] Thin mount for `i-checkout-split` (screen file wires Shell + guards + nav only)
+- [ ] No duplicated domain logic / behavior UI that belongs in an exposed Interaction
+- [ ] Shell chrome under `ui/` only
+```
+
+Thin mount (Page) — this is “Interaction mounted,” not only “route wired”:
+
+```tsx
+// src/interfaces/if-checkout-page/screens/checkout.tsx
+import { CheckoutSplitView } from "../../../interactions/i-checkout-split/checkout-split-view";
+import { OrderingShell } from "../ui/OrderingShell";
+
+export default function CheckoutScreen({ orderId }: { orderId: string }) {
+  return (
+    <OrderingShell>
+      <CheckoutSplitView
+        orderId={orderId}
+        onPaid={() => router.push(`/orders/${orderId}`)}
+      />
+    </OrderingShell>
+  );
+}
 ```
 
 **`mindplan/foundations/f-nextjs/current.mdx` body:**
@@ -134,7 +157,7 @@ Page
 ## Shared Substrate Spec
 
 - App Router `app/` layout and providers
-- How Interface packages under `src/interfaces/` and Interaction packages under `src/interactions/` are composed
+- How Interface packages under `src/interfaces/` mount Interaction views from `src/interactions/` (chrome and routing only — not screen bodies)
 - Env and deploy constraints Interfaces must respect
 
 ## Checklist
@@ -171,7 +194,7 @@ update_node_status({ node_id: "i-checkout-split", new_status: "in-progress" })
 ```
 create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
 link_nodes({ source_id: "if-checkout-page", target_id: "f-design-system", edge_type: "depends_on" })
-link_nodes({ source_id: "if-user-picker-page", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ source_id: "if-ordering-console", target_id: "f-design-system", edge_type: "depends_on" })
 ```
 
 Ship `f-design-system` to `stable` before dependent Interactions/Interfaces can ship (Infrastructure First).
@@ -180,15 +203,16 @@ Ship `f-design-system` to `stable` before dependent Interactions/Interfaces can 
 
 ## Shared Interaction + leads_to navigation (user picker)
 
-**Goal:** Checkout flow navigates to a user-picker **behavior**; picker is an Interaction, not a Foundation. Surfaces that show it are Interfaces.
+**Goal:** Checkout flow navigates to a user-picker **behavior**; picker is an Interaction, not a Foundation. Expose it from the **same** ordering surface — do not mint `if-user-picker-page` as a second Interface for one screen.
 
 ```
 create_node({ id: "i-user-picker", type: "Interaction", title: "User picker", description: "Search and select a user" })
 create_node({ id: "i-checkout-split", type: "Interaction", title: "Split & pay", description: "Diner splits bill and pays" })
-create_node({ id: "if-user-picker-page", type: "Interface", title: "User picker page", description: "Page — exposes user picker" })
+create_node({ id: "if-ordering-console", type: "Interface", title: "Ordering console", description: "Page — waiter/diner surface exposing checkout and picker" })
 link_nodes({ source_id: "i-user-picker", target_id: "j-ordering", edge_type: "belongs_to" })
 link_nodes({ source_id: "i-user-picker", target_id: "f-design-system", edge_type: "depends_on" })
-link_nodes({ source_id: "if-user-picker-page", target_id: "i-user-picker", edge_type: "exposes" })
+link_nodes({ source_id: "if-ordering-console", target_id: "i-user-picker", edge_type: "exposes" })
+link_nodes({ source_id: "if-ordering-console", target_id: "i-checkout-split", edge_type: "exposes" })
 link_nodes({ source_id: "i-checkout-split", target_id: "i-user-picker", edge_type: "leads_to" })
 ```
 

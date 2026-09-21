@@ -141,12 +141,12 @@ Edge arrays in frontmatter: `belongs_to`, `depends_on`, `exposes`, `leads_to`, `
 | Type | What it is | States |
 |------|------------|--------|
 | **Journey** | Domain capability the architecture screams | Computed (`draft`, `incubation`, `stable`, `evolving`) |
-| **Interaction** | Self-contained behavior (any actor) — **not** a UI component | Build pipeline + `stable`/`unstable` |
-| **Interface** | How an actor enters an Interaction (Page, CLI, MCP, Webhook, Cron, …) | Build pipeline + `stable`/`unstable` |
+| **Interaction** | Self-contained behavior (any actor) — **not** an entry surface; owns domain + mountable view/handler | Build pipeline + `stable`/`unstable` |
+| **Interface** | How an actor enters an Interaction (Page, CLI, MCP, Webhook, Cron, …) — **mounts/wires only** | Build pipeline + `stable`/`unstable` |
 | **Foundation** | Shared substrate by role (Assembler, Infra, Design system, Adapter) | Build pipeline + `stable`/`unstable` |
 | **Bug** | Defect on Interaction, Interface, or Foundation | `open → triaged → fixing → in-review → resolved \| wontfix` |
 
-Journeys scream the domain · Interactions are behaviors · Interfaces are entry · Foundations are shared substrate · Assembler composes them.
+Journeys scream the domain · Interactions are behaviors (they own the screen body / handler) · Interfaces are entry (they only mount) · Foundations are shared substrate · Assembler composes them.
 
 **Build pipeline** (Foundation/Interaction/Interface): `draft → ready → in-progress → in-review → ship` → computed `stable`/`unstable`.
 

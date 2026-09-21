@@ -60,7 +60,17 @@ If the user names a Journey that is not in the graph, same refusal — define th
 4. Shared code/UI substrate with **no** standalone behavior, only consumed? → Foundation (then pick a **role**)
 5. Broken behaviour on an existing node? → Bug
 
-**Do not** model a screen/page as an Interaction. The page is an Interface that `exposes` one or more Interactions.
+**Do not** model a screen/page as an Interaction. The page is an Interface that `exposes` one or more Interactions. The Interaction package still owns the **screen body** (domain + mountable view) when Kind is Page; the Interface only mounts it. Do not invent one Interface per screen/tab.
+
+**Package ownership** (playbook + SPEC §1.2.2):
+
+| Package | Owns | Must not own |
+| --- | --- | --- |
+| `src/interactions/<id>/` | Domain/view-model, exportable surface (UI: `*-view`; CLI/MCP: handler) | App routing, device/staff shell chrome, cross-Interaction nav |
+| `src/interfaces/<id>/` | Routes/entry, providers, guards, thin mounts, shared shell, nav callbacks | Feature screen bodies and domain rules |
+| Foundations | Shared substrate (store, tokens, dumb primitives) | Journey-specific screen flows |
+
+Interface `ui/` = chrome wrappers only. Interactions MUST NOT import `src/interfaces/…`.
 
 **Foundation roles** (docs convention — not NodeTypes). After classifying as Foundation, pick one:
 
@@ -81,7 +91,9 @@ Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth i
 - Journey named after tech (`API`, `Frontend`, `Database`) — wrong; use domain language
 - Primary button / design tokens as an Interaction — wrong; that is Foundation (Design system)
 - Next.js / cron runtime as a Journey — wrong; that is Foundation (Assembler)
-- A checkout **page** as an Interaction — wrong; that is Interface (`if-…`); the pay/split **behavior** is the Interaction
+- A checkout **page** as an Interaction — wrong; that is Interface (`if-…`); the pay/split **behavior** (including the screen body) is the Interaction
+- One Interface per POS tab/screen — wrong; one surface `exposes` many Interactions and mounts each package
+- Fat UI screens inside `src/interfaces/<id>/screens/` with Interactions as thin store wrappers — inverted; move the body to the Interaction
 - Character editor / user-picker **behavior** as a Foundation — wrong; that is Interaction
 - Interaction → Interaction `depends_on` — illegal; share via Foundation or navigate via `leads_to`
 - Business behavior living only in a Foundation — move it to an Interaction
@@ -175,20 +187,23 @@ Replace scaffold placeholders with real content. Section guidance:
 - **Purpose** — one-sentence behavior outcome
 - **Actor & Trigger** — who/what starts it (human, system, agent, schedule)
 - **Inputs & Outputs** — data in/out (not UI layout)
-- **PRD / Execution Logic** — step-by-step behavior
-- **Implementation** — code under `src/interactions/<id>/` only
-- **Checklist** — Atomic Ops, e.g.:
-  - Requirements defined
-  - Implementation complete
-  - Tests passing
+- **PRD / Execution Logic** — step-by-step behavior. When a Page/UI Interface will `exposes` this Interaction, name the **mountable view**. When Kind is CLI/MCP/Webhook/Cron, name the **exportable handler/module** (not a `*-view.tsx`).
+- **Implementation** — code under `src/interactions/<id>/` only (domain + view/handler). MUST NOT import Interface packages.
+- **Checklist** — Atomic Ops MUST include (Kind-gated):
+  - Domain API against Foundations (no Interaction→Interaction `depends_on`)
+  - Exportable behavior surface in this package (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module)
+  - Behavior surface does not import Interface packages (UI: view accepts shell/nav as props/callbacks)
 
 ### Interface
 
 - **Kind** — Page | CLI | MCP | Webhook | Cron | Script | …
-- **Exposed Interactions** — which Interactions this surface `exposes` and how
-- **Spec** — routing, commands, tool names, schedules, auth boundaries of the surface
-- **Implementation** — code under `src/interfaces/<id>/` only
-- **Checklist** — Atomic Ops for wiring the surface to exposed Interactions
+- **Exposed Interactions** — which Interactions this surface `exposes` and how (one surface, many Interactions — not one Interface per screen)
+- **Spec** — routing, commands, tool names, schedules, auth boundaries of the surface. Boilerplate: **App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies.**
+- **Implementation** — code under `src/interfaces/<id>/` only. Thin mounts/wiring + shell chrome under `ui/` (Page). No duplicated domain/behavior UI.
+- **Checklist** — Atomic Ops MUST include:
+  - Thin wiring for each `exposes` target (Page: screen file wires Shell + guards + nav only; CLI/MCP/Webhook/Cron: command/tool/job calls the Interaction export only)
+  - No duplicated domain logic / behavior UI that belongs in an exposed Interaction
+  - Page/UI only: shell chrome under `ui/` only — not feature screen bodies
 
 ### Bug
 
@@ -261,7 +276,9 @@ open_next({
 | Interface → `ready` without `exposes` | `Blocked: Ghost Interface` |
 | Interaction → Interaction `depends_on` | `Blocked: Interaction Independence` — use Foundation or `leads_to` |
 | Bug → `triaged` without `affects` | `Blocked: Ghost Bug` |
-| Modeling a Page as an Interaction | Wrong taxonomy — Interface exposes Interaction(s) |
+| Modeling a Page as an Interaction | Wrong taxonomy — Interface exposes Interaction(s); Interaction still owns the screen body |
+| One Interface per screen/tab | Wrong — one surface exposes many Interactions; each route mounts the matching package |
+| Fat screens in `src/interfaces/<id>/` | Inverted packages — move domain + view to the Interaction; Interface only mounts |
 | Foundation described as user behavior | Scope creep — split into Foundation (substrate) + Interaction (behavior) |
 | Business behavior in a Foundation node | Wrong taxonomy — move logic to Interaction |
 | Inventing a new primary button inside an Interaction | Reuse — depend on `f-design-system` (or create that Foundation first) |

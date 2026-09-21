@@ -70,6 +70,13 @@ Gate facts: Journey before any Interaction create; draft Interactions may lack l
 
 Prefer host file tools on `current_path` / `next_path` for body / title / description (so humans see native diffs). `patch_node_territory` is an optional fallback. Replace scaffold stubs with real Purpose, Actor & Trigger / Kind / PRD / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
 
+Apply **package ownership** (SPEC §1.2.2) while enriching:
+
+- Interaction PRDs: when a Page/UI Interface will `exposes` this behavior, include a mount/view surface. When Kind is CLI/MCP/Webhook/Cron, name the exportable handler/module — not a `*-view.tsx`.
+- Interface Spec: “App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies.” Do not write territory that implies screen bodies live under `interfaces/…/ui/` or `screens/`.
+- One Interface per actor surface, not one Interface per screen/tab.
+- Keep Interaction/Interface Atomic Ops templates from `define-entities`.
+
 Territory Completeness still applies: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius` then `open_next` before changing live scope; edit the `next` slot into a complete proposed successor — still without implementing code or advancing `next` past `draft` (Plan Review owns `draft` → `ready`).
 
 ### 5. Validate after every mutation
@@ -114,6 +121,8 @@ Then run the Plan Review loop. Do not interpret “ship” here as `update_node_
 - Check off Atomic Ops without implementation
 - Create an Interaction with no matching Journey
 - Link Interaction → Interaction with `depends_on`
+- Write Interface territory as if it owns feature screen bodies, or mint one Interface per screen/tab
+- Omit mount/view (Page/UI) or handler/module (CLI/MCP/Webhook/Cron) from Interaction PRDs that an Interface will expose
 - Hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)
 - Set Journey, `stable`, or `unstable` manually
 - Treat `mindplan/map.md` as graph authority
