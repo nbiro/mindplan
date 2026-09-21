@@ -2,14 +2,15 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs (lighter process)"
-description: "Assembler/docs — systems dialect + revision-bound change-set review; strip per-node waterfall and compiler-duplicating Never-do."
+description: "Assembler/docs — playbook requires mindplan-mcp check before any Reviewer handoff."
 state: stable
-shipped_at: 2026-09-21T10:15:23.833Z
+shipped_at: 2026-09-21T11:51:56.965Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-09-21T10:15:23.833Z
+updated_at: 2026-09-21T11:51:56.965Z
 depends_on:
   - f-domain-model
 ---
+
 
 
 
@@ -17,7 +18,7 @@ depends_on:
 
 ## Purpose
 
-Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift / systems thinking) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook is a short systems dialect — not a waterfall of Never-do lists that duplicate the compiler.
+Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook stays a short systems dialect — and now requires **`mindplan-mcp check` before any Reviewer handoff**.
 
 ## Shared Substrate Spec
 
@@ -25,48 +26,41 @@ Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package
 
 Surfaces:
 
-- `SPEC.md` — normative taxonomy, compiler gates (including Minimum Territory Shape), Territory Completeness (semantic), package ownership
+- `SPEC.md` — normative taxonomy, compiler gates, Territory Completeness, package ownership
 - `AGENTS.md` / `templates/agent/playbook.md` / `mindplan/agent/playbook.md` / `.cursor/rules/mindplan.mdc` — **systems dialect** always-on playbook (byte-identical mirrors)
-- `templates/agent/skills/review-work/` (+ mirrors) — subgraph Plan Review + **revision-bound change-set** Implementation review
+- `templates/agent/skills/review-work/` (+ mirrors) — subgraph Plan Review + revision-bound Implementation review; parent must prove green `check` before spawn
 - `define-entities` / `plan-project` / `code-review` skills — on demand
 - `README.md` — product framing
+- `templates/agent/integrations/cursor.md` — Cursor Git delivery notes aligned with check-before-review
 
 Canonical edits: `templates/agent/`; mirrors stay in sync.
 
-### Always-on dialect
+### Validity before review
 
-1. Orient via `orient_for_work`
-2. Place work on the graph; MCP structure / file-tool prose
-3. `Blocked:` = hard failure — classify cause, then fix
-4. Own package (or layout-free logical ownership)
-5. Shipped change: blast radius + `open_next`
-6. Do not self-`ship` / self-`resolved` — one independent Reviewer per immutable revision
+Implementing agents MUST run default `mindplan-mcp check` (graph load + packages when `required`) and get exit `0` before:
 
-Trust mutation `anchor` after writes; no mandatory re-orient after every link.
+1. Spawning Plan Review (`draft` → `ready`)
+2. Moving to `in-review` / freezing a revision and spawning Implementation review
+3. Re-spawning a Reviewer after fixing a Reject
 
-### Review (quality gate)
+Fix every `Blocked:` first. Optional `--base` / `--for-main` remain local hygiene — not substitutes for default check, and not CI merge gates.
 
-- Plan Review: frozen subgraph membership → per-node `ready`
-- Implementation review: freeze `{base_sha, head_sha, clean_tree, changed_files, node_ids}`; review all before any ship; ordered Foundations → Interactions → Interfaces; void on dirty tree / failed transition / post-verdict change
-- Full Procedure B contract retained (AC, tests, Fit, Completeness, hygiene, general code review)
-
-### Package ownership
-
-Interaction owns body; Interface mounts/wires. One Interface per actor surface.
+Reviewers SHOULD re-run default `check` and Reject if it fails.
 
 ## Acceptance Criteria
 
-- Always-on playbook is systems dialect + short SDLC (materially shorter than the prior waterfall)
-- `review-work` documents revision-bound change-set review and subgraph Plan Review
-- Mirrors (`AGENTS.md`, `mindplan/agent/`, `.cursor/skills|rules`) match templates
-- Compiler-duplicating Never-do lists and per-node Reviewer waterfall are gone from always-on
-- Verified by reading mirrors and `npm test` (docs Foundation has no runtime)
+- Playbook systems dialect states check-before-review as a hard handoff rule
+- SDLC + Never-do call out the same gate; review-work preconditions mention it
+- Mirrors (`AGENTS.md`, `mindplan/agent/playbook.md`, review-work skill copies) match templates
+- Cursor integration text no longer treats check as optional Git-only advice for review handoff
+- Verified by reading mirrors (docs Foundation has no runtime)
 
 ## Atomic Ops
 
-- [x] Rewrite `templates/agent/playbook.md` as systems dialect; sync AGENTS / mindplan/agent / mindplan.mdc
-- [x] Rewrite `review-work` for subgraph Plan Review + revision-bound Implementation review; sync mirrors
-- [x] Update this Foundation next.mdx to a full successor contract
+- [x] Update `templates/agent/playbook.md` with check-before-review; sync `AGENTS.md` + `mindplan/agent/playbook.md`
+- [x] Update `templates/agent/skills/review-work/SKILL.md` (+ mirrors) parent/Reviewer preconditions
+- [x] Align `templates/agent/integrations/cursor.md` with the playbook gate
+- [x] Document this successor contract on this Foundation next slot
 
 ## Attachments
 
