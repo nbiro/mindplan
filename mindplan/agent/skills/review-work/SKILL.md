@@ -1,35 +1,58 @@
 ---
 name: mindplan-review-work
 description: >-
-  Independent Reviewer role for MindPlan gates: Plan Review (draft → ready,
-  subgraph-scoped) and Implementation review (change-set / revision-bound
-  in-review → ship / resolved). Run as a spawned Reviewer subagent — never when
-  this session authored the plan or implementation. Findings return as a
-  structured verdict message; do not write Review Notes into territory.
+  MindPlan Review gates: parent MUST spawn an independent Reviewer before
+  treating Plan Review (draft → ready) or Implementation review (in-review →
+  ship / resolved) as done — narration is not a substitute. Reviewer runs this
+  skill once per spawn and returns a structured verdict; do not write Review
+  Notes into territory. Also covers parent freeze / check / retry-loop duties.
 ---
 
 # Review Work
 
-Use when you are the **Reviewer** in an orchestrated Review loop (parent
-spawns you). Two procedures:
+Two audiences:
+
+- **Parent (implementing / planning agent)** — owns the Review loop: freeze, **spawn**, fix, re-spawn. Read **Parent obligations** below, then spawn a Reviewer; do not self-review.
+- **Reviewer (spawned subagent)** — follow Procedure A or B once per spawn, return a structured verdict, stop.
+
+Two procedures:
 
 - Procedure A — Plan Review for a **frozen subgraph** of draft nodes → `ready`.
 - Procedure B — Implementation review for an **immutable revision** /
   change-set → `ship` / `resolved`.
 
 The **parent** owns the retry loop (fix → re-enter gate → re-spawn a **fresh**
-Reviewer). You review once per spawn, return a structured verdict, and stop.
+Reviewer). You (Reviewer) review once per spawn, return a structured verdict, and stop.
 
 One approval gate per **immutable revision** — not one Reviewer invocation forever.
 Reject, blocked transition, or any change after the verdict voids approval.
 
-## Preconditions (both procedures)
+## Parent obligations (spawn before done)
+
+When a Review gate is due, the parent MUST:
+
+1. Run default `mindplan-mcp check` and get exit `0` (fix every `Blocked:` first).
+2. Enter the gate: leave nodes at `draft` for Plan Review, or `update_node_status` → `in-review` for Implementation review / Bug review.
+3. Freeze membership (Procedure A) or revision `{base_sha, head_sha, clean_tree, changed_files[], node_ids[]}` (Procedure B).
+4. **Spawn** an independent Reviewer subagent / separate session that loads this skill — pass the frozen list, procedure, and that check is green. On Cursor: use the Task / subagent tool pointed at `.cursor/skills/mindplan-review-work/`.
+5. Wait for the structured verdict. On Reject: fix Findings, re-check, re-enter the gate, re-spawn a **fresh** Reviewer (do not resume the same Reviewer for a new verdict). After ~3 Rejects, escalate to the human.
+6. On Approve: trust the Reviewer’s status transitions (`ready` / `ship` / `resolved`); do not re-`ship` yourself.
+
+**Done** = Reviewer returned Approve and advanced status, **or** human escalation after exhausted Rejects.
+
+**Not done** = ending the turn with “this wasn’t reviewed,” “needs a Reviewer,” or “please review this” without having spawned one while nodes sit at `draft` / `in-review`.
+
+## Preconditions (both procedures) — Reviewer
 
 - Independent of the session that authored the plan (A) or implementation (B).
   If you wrote what you are about to review, Reject with that Finding.
 - **Parent MUST have a green default `mindplan-mcp check`** before spawning you
-  (Plan Review, Implementation review, or re-spawn after Reject). If check would
-  fail, Reject with that Finding and do not advance status.
+  (Plan Review, Implementation review, or re-spawn after Reject). If **default**
+  check would fail, Reject with that Finding and do not advance status.
+- **Do not Reject because other nodes are in progress.** Graph-wide
+  `in-progress` / `in-review` / `draft` / `ready`, or Bug `fixing` / `in-review`,
+  outside the frozen membership or revision is allowed and mergeable.
+  Scope the verdict to the frozen set only.
 - Orient with `orient_for_work` / `get_node_context` / `get_blast_radius` before judging.
 - Mutation boundary: `update_node_status` only. Never `link_nodes` / `create_node`.
 - **Never** write `## Review Notes` into territory. Findings stay in the verdict message.
@@ -130,3 +153,5 @@ review, or diff hygiene.
 - Writing Review Notes into territory.
 - Reviewing your own plan or implementation in the same session.
 - Treating “once per change-set” as “never re-review after fixes.”
+- **Parent:** claiming the task done, or asking the human to review, without spawning a Reviewer when a gate is due.
+- **Reviewer:** Rejecting because other nodes are `in-progress` / `in-review` / Bug `fixing`. Unfinished work elsewhere is mergeable.

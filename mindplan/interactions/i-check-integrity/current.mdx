@@ -1,12 +1,12 @@
 ---
 id: i-check-integrity
 type: Interaction
-title: "Integrity check CLI"
-description: "Default check is graph+packages; dirty-src opt-in via --base; --for-main optional local hygiene, not CI."
+title: "Integrity check CLI (no --for-main)"
+description: "Default check is graph+packages; dirty-src opt-in via --base. The --for-main mid-pipeline ban is removed."
 state: stable
-shipped_at: 2026-09-21T12:44:55.939Z
+shipped_at: 2026-09-23T12:06:45.353Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-09-21T12:44:55.939Z
+updated_at: 2026-09-23T12:06:45.353Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -21,7 +21,7 @@ depends_on:
 
 ## Purpose
 
-Offline audit that CI and agents run without starting MCP stdio. Default mode validates that the territory **graph loads** and (when packages are `required`) prescribed packages match the graph — structural constraints only. Dirty-src ownership and mid-pipeline bans are **opt-in** local hygiene; they must not be required to merge open work.
+Offline audit that CI and agents run without starting MCP stdio. Default mode validates that the territory **graph loads** and (when packages are `required`) prescribed packages match the graph — structural constraints only. Dirty-src ownership is **opt-in** via `--base`. There is **no** mid-pipeline ban: `--for-main` is removed. In-progress and in-review work stays valid for check and for merge.
 
 ## Actor & Trigger
 
@@ -32,29 +32,29 @@ Offline audit that CI and agents run without starting MCP stdio. Default mode va
 
 1. Load `mindplan/config.json` (missing → `implementation_packages: "required"`).
 2. `mindplan-mcp check` (default) loads the territory graph.
-   - When `required`: verify every non-retired Foundation/Interaction/Interface has its prescribed package; reject orphan `src/` package dirs. **Do not** run dirty-src.
+   - When `required`: verify every non-retired Foundation/Interaction/Interface has its prescribed package; reject orphan `src/` package dirs. **Do not** run dirty-src. **Do not** fail because nodes are `in-progress` / `in-review` or Bugs are `fixing`.
    - When `off`: skip package presence and orphans. Still validate the graph loads.
 3. `mindplan-mcp check --base <ref>` (opt-in) additionally enforces dirty-src ownership vs that git base: uncommitted `src/` needs `in-progress` (or next in-progress / Bug fixing/in-review); committed diffs vs base allow review/shipped/cancelled/deprecated, but when `next.mdx` is open only next `in-progress`/`in-review` counts. Exception: `src/{foundations,interactions,interfaces}/<id>/.gitkeep` scaffolds from `create_node` are allowed while the owner (or open `next`) is `draft`/`ready`. Explicit `--base` fails closed on git errors. Requires `required` packages; skipped when `off`.
-4. `mindplan-mcp check --for-main` (opt-in local hygiene) runs graph (+ package checks only when `required`) and fails if any Foundation/Interaction/Interface is `in-progress`/`in-review` (including `next`), or any Bug is `fixing`/`in-review`. Skips dirty-src. **Not** wired into CI — unfinished work must remain mergeable.
+4. `CheckOptions.forMain` and `checkForMain` are deleted. The CLI does not accept `--for-main` (unknown option, owned by `f-mcp-runtime`).
 5. Wired from `f-mcp-runtime` CLI (`node dist/index.js check`); this repo’s CI builds from source and stays on `required`.
 
 Package: `src/interactions/i-check-integrity/`
 
-- `check.ts` — `runIntegrityCheck`, config-aware package/orphan/opt-in dirty-src/`--for-main` validators
+- `check.ts` — `runIntegrityCheck`, config-aware package/orphan/opt-in dirty-src validators. No mid-pipeline mode.
 
 ## Acceptance Criteria
 
-- Default check with `required`: fails on orphan/missing packages; **passes** with dirty unowned `src/` (dirty not run)
+- Default check with `required`: fails on orphan/missing packages; **passes** with dirty unowned `src/` (dirty not run); **passes** with mid-pipeline nodes
 - Default check with `off`: missing packages and dirty `src/` do not fail
 - `--base <ref>` with `required`: same dirty-src ownership rules as before (scaffold exemption, fail-closed bad ref)
-- `--for-main` fails on mid-pipeline states and passes on draft/ready/stable/cancelled/deprecated graphs; remains available but is not a CI merge gate
+- No `forMain` option and no `checkForMain` function remain in `check.ts`
 - Exit code 0/1 with `Blocked:` lines for CI
 
 ## Atomic Ops
 
-- [x] Default `runIntegrityCheck`: graph + packages only; run `checkDirtySrc` only when `base` is set and packages `required`
-- [x] Keep `--for-main` behavior; document as optional local hygiene, not CI
-- [x] Update harness expectations: dirty cases use `--base`; assert default check ignores dirty working tree
+- [x] Delete `forMain` from `CheckOptions`, delete `checkForMain`, and stop calling it from `runIntegrityCheck`
+- [x] Keep default graph+packages and `--base` dirty-src behavior
+- [x] Verified via `npm test`
 
 ## Attachments
 

@@ -49,6 +49,8 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
    - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
    - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
 
-8. **Validity + Git delivery** — always feature branch + PR. Never push to `main`/`master`. Before Plan Review or Implementation review handoff (and before re-spawning a Reviewer), run default `mindplan-mcp check` and get exit `0` (playbook **Check before review handoff**). Optionally `check --base <ref>` / `check --for-main` for local hygiene — neither is a CI merge gate.
+8. **Validity + Git delivery** — always feature branch + PR. Never push to `main`/`master`. Before Plan Review or Implementation review handoff (and before re-spawning a Reviewer), run default `mindplan-mcp check` and get exit `0` (playbook **Check before review handoff**). Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate.
 
-9. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
+9. **Spawn the Reviewer (required before done)** — when Plan Review or Implementation review is due, the parent MUST launch an independent Reviewer via the Task / subagent tool (load `.cursor/skills/mindplan-review-work/`, Procedure A or B, frozen subgraph or revision). Do not self-`ready` / self-`ship` / self-`resolved`. Do not end the turn saying the work “wasn’t reviewed” or “needs a Reviewer” instead of spawning. Own the Reject → fix → re-spawn loop; escalate to the human only after that loop is exhausted.
+
+10. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
