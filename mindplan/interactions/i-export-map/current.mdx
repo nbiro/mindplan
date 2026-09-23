@@ -2,41 +2,57 @@
 id: i-export-map
 type: Interaction
 title: "See the map"
-description: "Mermaid/DOT export plus automatic mindplan/map.md refresh after graph mutations."
+description: "Owns export_mindplan_view MCP handler and the view export used by the CLI view/export command."
 state: stable
-shipped_at: 2026-07-19T18:51:31.578Z
+shipped_at: 2026-09-23T13:27:24.596Z
 created_at: 2026-07-19T18:33:36.804Z
-updated_at: 2026-09-23T13:12:02.599Z
+updated_at: 2026-09-23T13:27:24.596Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-territory-store
   - f-view-projection
+  - f-compiler-rules
 ---
+
+
 
 # See the map
 
 ## Purpose
 
-Human-facing graph diagrams: on-demand Mermaid/DOT export and automatic persistence of `mindplan/map.md` after successful graph mutations so the repo always has a readable map (MCP remains authority).
+Export a deterministic Mermaid or DOT projection of the territory graph for PRs and docs. Also provides the view-export entry used by the CLI `view` / `export` commands.
+
+## Actor & Trigger
+
+- **Actor:** coding agent via MCP (`if-mcp-tools`) or human/CI via CLI (`if-cli`)
+- **Trigger:** `export_mindplan_view` tool or `mindplan-mcp view|export`
 
 ## Execution Logic
 
 Package: `src/interactions/i-export-map/`
 
-- `tools.ts` — ownership list `EXPORT_TOOLS`: `export_mindplan_view`
-- Projection substrate: `f-view-projection` (`graphToMermaid` / `graphToDot` / `persistMindPlanMap`)
-- Registration and post-mutation map refresh: `f-mcp-runtime/server.ts`
+- Handler for `export_mindplan_view` (registered by `if-mcp-tools`)
+- Export function callable by `if-cli` for `view` / `export` (format, focus, include_retired, output file)
+- Projection substrate: `f-view-projection`
+- Optional focus validation via `f-compiler-rules` `findNode`
+- Automatic `mindplan/map.md` refresh after mutations is owned by `i-steer-plan` (calls `f-view-projection` directly)
 
-Depends on: `f-mcp-runtime`, `f-territory-store`, `f-view-projection`. Belongs to: `j-territory-sdlc`.
+Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
 
 ## Acceptance Criteria
 
-- [x] `export_mindplan_view` returns Mermaid and/or DOT (full or focused)
-- [x] Graph mutations that succeed update `mindplan/map.md`
-- [x] Agents treat MCP export / orientation as authority, not the map file alone
-- [x] Verified via `npm test` (`view.test.mjs`)
+- `export_mindplan_view` returns Mermaid and DOT (full or focused)
+- CLI `view` / `export` produce the same diagram output as before
+- Handler lives under this package; Interfaces only wire it
+- `npm test` passes
+
+## Atomic Ops
+
+- [x] Move `export_mindplan_view` handler + CLI-callable export into this package
+- [x] Export functions for `if-mcp-tools` and `if-cli`
+- [x] Verify MCP export + CLI view via smoke/tests
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+_None._

@@ -1,62 +1,65 @@
 ---
 id: i-steer-plan
 type: Interaction
-title: "Mutate graph"
-description: "Mutate graph; update_node_status accepts cancelled for pre-ship abandon"
+title: "Steer the plan"
+description: "Owns mutate MCP tool handlers plus mutation anchors, changed_files, and post-mutation mindplan/map.md refresh."
 state: stable
-shipped_at: 2026-07-20T20:11:40.803Z
+shipped_at: 2026-09-23T13:27:20.521Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-09-23T13:12:02.524Z
+updated_at: 2026-09-23T13:27:20.521Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-compiler-rules
+  - f-graph-search
+  - f-view-projection
+  - f-territory-store
 leads_to:
   - i-export-map
 ---
 
 
 
-
-# Mutate graph
+# Steer the plan
 
 ## Purpose
 
-Write-path MindPlan tools: create/link nodes, advance pipeline state, optional territory patches, open/discard/promote evolutions, and mistaken-ship recovery via `force_unship` — always through the compiler. Successful graph mutations return `changed_files` (repo-relative paths written or deleted) so hosts can surface what MCP touched.
+Mutate the MindPlan graph through compiler-gated tools: create/link/unlink, status transitions, open_next/discard_next, territory patches, and force_unship. Successful mutations return `changed_files` and an `anchor`, and refresh `mindplan/map.md`.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`)
+- **Trigger:** MCP mutate tool calls
 
 ## Execution Logic
 
 Package: `src/interactions/i-steer-plan/`
 
-- `tools.ts` — ownership list `MUTATE_TOOLS` registered by `f-mcp-runtime/server.ts`:
+- Handler module(s) owning:
   - `create_node`, `link_nodes`, `unlink_nodes`
-  - `update_node_status` (current or `next` slot; `ship` promotes `next`)
-  - `force_unship` (user-confirmed recovery: clear `shipped_at`, set pre-ship state)
-  - `patch_node_territory` (optional fallback for body/title/description/checkbox toggles; defaults to `next` when evolving)
+  - `update_node_status` (current or `next` slot; `ship` promotes `next`; accepts `cancelled`)
+  - `force_unship` (user-confirmed recovery)
+  - `patch_node_territory`
   - `open_next`, `discard_next`
+- Helpers moved from `f-mcp-runtime/server.ts`: `buildMutationAnchor`, `changedFiles`, `territoryPath`, `nextSlotFsChangedFiles`, `refreshPersistedMap`, `syncNodes`
+- Post-mutation map refresh calls `persistMindPlanMap` from `f-view-projection` (this Interaction does **not** import `i-export-map`)
+- Uses compiler rules for link/status validation; `findRelatedNodes` for anchors
 
-Interactive agents prefer host file tools for territory prose (`title` / `description` / body / checkboxes) at `current_path` / `next_path`; MCP remains mandatory for graph structure and server-owned frontmatter. Graph mutate responses include `changed_files`. `patch_node_territory` remains for automation and hosts with weak file tools.
-
-`force_unship` requires an explicit human yes and `confirm: "unship:<node_id>"` — agents must not invent confirmation.
-
-Compiler gates live in `f-compiler-rules`. Depends on: `f-mcp-runtime`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
+Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`. Belongs to: `j-territory-sdlc`. Leads to: `i-export-map`.
 
 ## Acceptance Criteria
 
-- All eight mutate tools are registered and persist through the territory store
-- Illegal mutations return `Blocked:` and leave the graph unchanged
-- Successful graph mutations refresh `mindplan/map.md` via the runtime
-- Successful graph mutations (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `force_unship`, `open_next`, `discard_next`) return `changed_files` listing territory paths, optional `src/` scaffolds, and `mindplan/map.md` when refreshed
-- `patch_node_territory` remains usable and returns `changed_files` / `path` for the slot written
-- Verified via `npm test`
+- All mutate tools keep the same schemas, `Blocked:` behavior, `changed_files`, and `anchor`
+- `mindplan/map.md` refreshes after successful graph mutations
+- Handlers live under this package; `if-mcp-tools` only registers them
+- `npm test` passes
 
 ## Atomic Ops
 
-- [x] Surface `cancelled` via `update_node_status` (compiler-backed)
-- [x] Document pre-ship cancel in territory / playbook
-- [x] Smoke coverage for cancel gates (dependents, terminal, hide from view)
-- [x] Keep mutate tool list and `changed_files` contract intact
+- [x] Move mutate handlers + mutation helpers into this package
+- [x] Wire map refresh through `f-view-projection` (not `i-export-map`)
+- [x] Export handlers for `if-mcp-tools`; verify mutate path via smoke/tests
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/` / `next-attachments/`._
+_None._

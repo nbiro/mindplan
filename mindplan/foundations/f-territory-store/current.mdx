@@ -1,45 +1,46 @@
 ---
 id: f-territory-store
 type: Foundation
-title: "Territory store (shape scaffolds)"
-description: "Infra — open_next resets checkboxes so next draft does not inherit completed DoD."
+title: "Territory store (shared helpers)"
+description: "Infra — territory store plus shared graph summary helpers used by orient and steer Interactions."
 state: stable
-shipped_at: 2026-09-21T12:44:39.374Z
+shipped_at: 2026-09-23T13:27:02.772Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-09-21T12:44:39.374Z
+updated_at: 2026-09-23T13:27:02.772Z
 depends_on:
   - f-domain-model
 ---
 
 
 
-# Territory store
+# Territory store (shared helpers)
 
 ## Purpose
 
-Infra — persists MindPlan territory on disk (frontmatter, bodies, packages, `open_next` / promote). When opening a `next` evolution, resets completed checkboxes to open so a new DoD starts unfinished (pairs with Open Checklist While Building on `f-compiler-rules`).
+Infra — load/persist territory MDX, scaffolds, frontmatter patches, open_next / discard_next / promote_next, and shared graph node summary helpers used by orient and steer handlers after they leave `f-mcp-runtime`.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-territory-store/`
 
-- `store.ts` — load/graph, scaffolds, patches, `openNextSlot`, `countCheckboxesInText` / `isChecklistComplete`
-- **`openNextSlot`** copies current body into `next.mdx` but rewrites `- [x]` → `- [ ]` so draft/ready/in-progress next slots never inherit a completed checklist from the shipped current
-- Exports `toggleCheckboxesInBody` for patch preview + write
+- `store.ts` — existing territory I/O, graph load, scaffolds, patch/open/discard/promote APIs
+- Export `summarizeGraphNode(node)` — `{ id, type, state, title }` for blast-radius reachability and similar payloads (moved out of `f-mcp-runtime/server.ts`)
+- `config.ts` — `implementation_packages` project config (unchanged in this evolution)
+- MUST NOT own MCP tool handlers or CLI parsing
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- `open_next` on a shipped node whose current checklist is fully checked yields a next body with those boxes unchecked
-- `isChecklistComplete` / `countCheckboxesInText` available to compiler and integrity check
-- Verified via `npm test`
+- Orient and steer Interactions can import `summarizeGraphNode` from this package
+- All existing store/config APIs keep working for compiler, init, and check
+- No MCP registration or CLI argv parsing lives here
 
 ## Atomic Ops
 
-- [x] Reset checkboxes to `[ ]` when writing `next.mdx` in `openNextSlot`
-- [x] Export `countCheckboxesInText`, `isChecklistComplete`, `toggleCheckboxesInBody`
-- [x] Verified via `npm test`
+- [x] Move `summarizeGraphNode` from `f-mcp-runtime/server.ts` into `store.ts` and export it
+- [x] Update consumers (orient/steer) to import from this package
+- [x] Verify territory load/patch/open_next/promote still pass `npm test`
 
 ## Attachments
 

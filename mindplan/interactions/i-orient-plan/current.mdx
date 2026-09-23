@@ -2,46 +2,64 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context, get_blast_radius, orient_for_work, get_node_implementation."
+description: "Owns read-path MCP tool handlers: graph, find, context, blast radius, orient_for_work, get_node_implementation."
 state: stable
-shipped_at: 2026-07-19T18:51:25.002Z
+shipped_at: 2026-09-23T13:27:18.259Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-09-23T13:12:02.067Z
+updated_at: 2026-09-23T13:27:18.259Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-graph-search
+  - f-territory-store
+  - f-compiler-rules
 leads_to:
   - i-steer-plan
 ---
+
+
 
 # Orient on the plan
 
 ## Purpose
 
-Read-path orientation for agents and humans: find the owning node, its 1-hop neighborhood, territory body, blast radius, and prescribed implementation package before coding.
+Read-path orientation for agents and humans: find the owning node, its 1-hop neighborhood, territory body, blast radius, and implementation package before coding.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`)
+- **Trigger:** MCP tool calls listed below
 
 ## Execution Logic
 
 Package: `src/interactions/i-orient-plan/`
 
-- `tools.ts` — ownership list `QUERY_TOOLS` registered by `f-mcp-runtime/server.ts`:
+- Handler module(s) owning these tools (registered by `if-mcp-tools`, not by `f-mcp-runtime`):
   - `get_mindplan_graph` — full graph dump
   - `find_related_nodes` — ranked focus + 1-hop summaries
-  - `get_blast_radius` — transitive dependents + `journeys_at_risk`
+  - `get_blast_radius` — transitive dependents + `journeys_at_risk`; Interaction focus includes `reachability`
   - `get_node_context` — record + body (+ `next` when evolving)
   - `orient_for_work` — composite find + context + blast radius
-  - `get_node_implementation` — `src/foundations/<id>/` or `src/interactions/<id>/`
+  - `get_node_implementation` — prescribed package root / layout-free result
+- Helpers: `buildBlastRadiusPayload`, `buildNodeContextPayload` (moved from `f-mcp-runtime/server.ts`)
+- Uses `summarizeGraphNode` from `f-territory-store`; search from `f-graph-search`; reachability/blast from `f-compiler-rules`
+- `tools.ts` may keep the `QUERY_TOOLS` name list for ownership documentation
 
-Ranking substrate: `f-graph-search`. Depends on: `f-mcp-runtime`, `f-graph-search`. Belongs to: `j-territory-sdlc`.
+Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`. Leads to: `i-steer-plan`.
 
 ## Acceptance Criteria
 
-- [x] All six read tools are registered and return authoritative graph/territory data
-- [x] Orientation excludes retired nodes from default ranking
-- [x] `orient_for_work` includes blast radius for Foundation/Interaction focus
-- [x] Verified via `npm test`
+- All six query tools return the same payloads as before the split
+- Handlers live under this package; `if-mcp-tools` only registers them
+- Interaction-focused blast radius includes reachability
+- `npm test` passes
+
+## Atomic Ops
+
+- [x] Move orient handlers + `buildBlastRadiusPayload` / `buildNodeContextPayload` into this package
+- [x] Export handler functions for `if-mcp-tools` registration
+- [x] Update `tools.ts` ownership list; verify orient tools via smoke/tests
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+_None._
