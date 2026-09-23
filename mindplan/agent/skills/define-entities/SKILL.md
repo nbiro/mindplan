@@ -60,19 +60,19 @@ If the user names a Journey that is not in the graph, same refusal — define th
 4. Shared code/UI substrate with **no** standalone behavior, only consumed? → Foundation (then pick a **role**)
 5. Broken behaviour on an existing node? → Bug
 
-**Do not** model a screen/page as an Interaction. The page is an Interface that `exposes` one or more Interactions. The Interaction package still owns the **screen body** (domain + mountable view) when Kind is Page; the Interface only mounts it. Do not invent one Interface per screen/tab.
+**Do not** model a screen/page as an Interaction. The page is an Interface that `exposes` one or more Interactions. The Interaction still owns the **screen body** (domain + mountable view) when Kind is Page; the Interface only mounts it. Do not invent one Interface per screen/tab.
 
-**Package ownership** (playbook + SPEC §1.2.2):
+**File ownership** (playbook + SPEC §1.2.2) — declare with `set_implementation_files`:
 
-| Package | Owns | Must not own |
+| Owner | Owns | Must not own |
 | --- | --- | --- |
-| `src/interactions/<id>/` | Domain/view-model, exportable surface (UI: `*-view`; CLI/MCP: handler) | App routing, device/staff shell chrome, cross-Interaction nav |
-| `src/interfaces/<id>/` | Routes/entry, providers, guards, thin mounts, shared shell, nav callbacks | Feature screen bodies and domain rules |
-| Foundations | Shared substrate (store, tokens, dumb primitives) | Journey-specific screen flows |
+| Interaction | Domain/view-model, exportable surface (UI: `*-view`; CLI/MCP: handler) | App routing, device/staff shell chrome, cross-Interaction nav |
+| Interface | Routes/entry, providers, guards, thin mounts, shared shell, nav callbacks | Feature screen bodies and domain rules |
+| Foundation | Shared substrate (store, tokens, dumb primitives) | Journey-specific screen flows |
 
-Interface `ui/` = chrome wrappers only. Interactions MUST NOT import `src/interfaces/…`.
+Interactions MUST NOT import Interface-owned files (import matrix). Foundations use server-owned `role`: assembler | infra | design-system | adapter (`create_node` requires it).
 
-**Foundation roles** (docs convention — not NodeTypes). After classifying as Foundation, pick one:
+**Foundation roles.** After classifying as Foundation, pick one:
 
 | Role | When | Description tag example |
 |------|------|-------------------------|
@@ -83,7 +83,7 @@ Interface `ui/` = chrome wrappers only. Interactions MUST NOT import `src/interf
 
 Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth is Infra unless it is a vendor adapter (`f-clerk` → Adapter). Keep tokens and UI kit as Design system (one role).
 
-**Assembler linking:** Interactions/Interfaces that run on a given backbone SHOULD `depends_on` that Assembler Foundation (e.g. page Interfaces → `f-nextjs`; cron Interfaces → `f-vercel-cron`). This is guidance, not a compiler gate — Ghost Interactions still only require any Foundation `depends_on`. A Journey's assembler(s) are derived from member Interactions' and Interfaces' `depends_on` — never give Journeys outgoing edges. Different Journeys MAY use different assemblers.
+**Assembler linking:** Interactions/Interfaces that run on a given backbone SHOULD `depends_on` that Assembler Foundation (e.g. page Interfaces → `f-nextjs`; cron Interfaces → `f-vercel-cron`). This is guidance, not a compiler gate — Ghost Interactions still only require any Foundation `depends_on`. A Journey's assembler(s) are derived from member Interactions' and Interfaces' `depends_on` — never give Journeys outgoing edges. Different Journeys MAY use different assemblers. Assemblers may import Interfaces/Interactions that depend_on them.
 
 **Reuse rule:** Before inventing shared UI or shared state inside an Interaction, find or create the right Foundation and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node. Cross-Interaction flow uses `leads_to`, never `depends_on` (Interaction Independence).
 
@@ -120,7 +120,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps). For **Interaction**, **Interface**, and **Foundation**, when `implementation_packages` is `required` (default), also scaffolds the prescribed implementation package: `src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/` (with `.gitkeep`). When `implementation_packages` is `off` (layout-free / `mindplan-mcp init --layout free`), only territory is created — no `src/` package. Journeys and Bugs have no code package. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
+Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps; Foundations also `role`). Does **not** scaffold `src/` packages — declare files later with `set_implementation_files`. Journeys and Bugs have no code ownership. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
 
 Query the package with `get_node_implementation({ node_id })` (`root` is null when packages are off). When packages are `required`, implement **only** inside that package; reuse across behaviors via Foundation packages. When packages are `off`, implement in the project's existing layout.
 
@@ -188,7 +188,7 @@ Replace scaffold placeholders with real content. Section guidance:
 - **Actor & Trigger** — who/what starts it (human, system, agent, schedule)
 - **Inputs & Outputs** — data in/out (not UI layout)
 - **PRD / Execution Logic** — step-by-step behavior. When a Page/UI Interface will `exposes` this Interaction, name the **mountable view**. When Kind is CLI/MCP/Webhook/Cron, name the **exportable handler/module** (not a `*-view.tsx`).
-- **Implementation** — code under `src/interactions/<id>/` only (domain + view/handler). MUST NOT import Interface packages.
+- **Implementation** — code in files declared via `set_implementation_files` (domain + view/handler). MUST NOT import Interface-owned files.
 - **Checklist** — Atomic Ops MUST include (Kind-gated):
   - Domain API against Foundations (no Interaction→Interaction `depends_on`)
   - Exportable behavior surface in this package (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module)
@@ -282,7 +282,7 @@ open_next({
 | Foundation described as user behavior | Scope creep — split into Foundation (substrate) + Interaction (behavior) |
 | Business behavior in a Foundation node | Wrong taxonomy — move logic to Interaction |
 | Inventing a new primary button inside an Interaction | Reuse — depend on `f-design-system` (or create that Foundation first) |
-| Implementing Interaction code outside `src/interactions/<id>/` when packages are `required` | Wrong architecture — use the prescribed package (query via `get_node_implementation`); layout-free/`off` projects use the existing app layout |
+| Implementing Interaction code outside its `implements` claims | Wrong architecture — declare files with `set_implementation_files` and query via `get_node_implementation` |
 | Manual Journey / `stable` / `unstable` status | Rejected — computed only |
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
 | `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |

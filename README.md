@@ -80,7 +80,7 @@ linked Foundations are not stable: "f-stove" (ready).
 
 ## How it's built
 
-Territory under `mindplan/` (Journeys, Foundations, Interactions, Interfaces, Bugs) plus optional `next.mdx` while a shipped node evolves. By default, packages live at `src/interactions/<id>/`, `src/interfaces/<id>/`, and `src/foundations/<id>/` (`implementation_packages: "off"` for brownfield). An MCP server is the single write path.
+Territory under `mindplan/` (Journeys, Foundations, Interactions, Interfaces, Bugs) plus optional `next.mdx` while a shipped node evolves. Nodes declare owned source files via `implements` / `set_implementation_files` (`mindplan/config.json` `sources`/`exclude` define the coverage universe). An MCP server is the single write path for server-owned frontmatter.
 
 - **[SPEC.md](SPEC.md)** — full framework specification
 - **`src/`** — TypeScript MCP server (stdio)

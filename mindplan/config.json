@@ -1,3 +1,6 @@
 {
-  "implementation_packages": "required"
+  "sources": [
+    "src/**"
+  ],
+  "exclude": []
 }

@@ -13,6 +13,13 @@ const serverEntry = path.join(toolRoot, "dist/index.js");
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-smoke-"));
 console.log("Sandbox:", root);
 
+// Ownership universe config
+fs.mkdirSync(path.join(root, "mindplan"), { recursive: true });
+fs.writeFileSync(
+  path.join(root, "mindplan", "config.json"),
+  JSON.stringify({ sources: ["src/**"], exclude: [] }, null, 2) + "\n"
+);
+
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [serverEntry],
@@ -99,13 +106,19 @@ const createdJourney = JSON.parse(
 if (!createdJourney.changed_files?.includes("mindplan/journeys/j-ordering/current.mdx") || !createdJourney.changed_files?.includes("mindplan/map.md")) {
   failures++; console.log(`FAIL create_node changed_files journey: ${JSON.stringify(createdJourney.changed_files)}`);
 } else console.log("ok   create_node changed_files (journey)");
-await expectOk("create foundation", "create_node", { id: "f-db", type: "Foundation", title: "Database schema", description: "Infra — Core tables" });
+await expectOk("create foundation", "create_node", {
+  id: "f-db",
+  type: "Foundation",
+  title: "Database schema",
+  description: "Infra — Core tables",
+  role: "infra",
+});
 const createdIx = JSON.parse(
   await expectOk("create interaction", "create_node", { id: "i-checkout", type: "Interaction", title: "Checkout", description: "Split & pay" })
 );
 if (
   !createdIx.changed_files?.includes("mindplan/interactions/i-checkout/current.mdx") ||
-  !createdIx.changed_files?.includes("src/interactions/i-checkout/.gitkeep") ||
+  createdIx.changed_files?.some((f) => String(f).includes("src/interactions/")) ||
   !createdIx.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL create_node changed_files interaction: ${JSON.stringify(createdIx.changed_files)}`);
@@ -162,16 +175,30 @@ if (ixCtx.includes("## Affected Files")) {
 } else console.log("ok   interaction scaffold has no affected files section");
 const ixImplDir = path.join(root, "src", "interactions", "i-checkout");
 const fImplDir = path.join(root, "src", "foundations", "f-db");
-if (!fs.existsSync(path.join(ixImplDir, ".gitkeep"))) {
-  failures++; console.log("FAIL interaction implementation package not scaffolded");
-} else console.log("ok   interaction implementation package scaffolded");
-if (!fs.existsSync(path.join(fImplDir, ".gitkeep"))) {
-  failures++; console.log("FAIL foundation implementation package not scaffolded");
-} else console.log("ok   foundation implementation package scaffolded");
+if (fs.existsSync(ixImplDir) || fs.existsSync(fImplDir)) {
+  failures++; console.log("FAIL create_node must not scaffold src packages");
+} else console.log("ok   create_node skips package scaffolds");
 const jImplDir = path.join(root, "src", "journeys");
 if (fs.existsSync(jImplDir)) {
   failures++; console.log("FAIL journey must not have implementation package tree");
 } else console.log("ok   journey has no implementation package");
+
+// Claim implementation files for pipeline nodes that will reach in-review/ship
+fs.mkdirSync(ixImplDir, { recursive: true });
+fs.mkdirSync(fImplDir, { recursive: true });
+fs.writeFileSync(path.join(fImplDir, "schema.ts"), "export const tables = [];\n");
+fs.writeFileSync(
+  path.join(ixImplDir, "checkout.ts"),
+  'import { tables } from "../../foundations/f-db/schema.js";\nexport const checkout = tables;\n'
+);
+await expectOk("set implements f-db", "set_implementation_files", {
+  node_id: "f-db",
+  files: ["src/foundations/f-db/"],
+});
+await expectOk("set implements i-checkout", "set_implementation_files", {
+  node_id: "i-checkout",
+  files: ["src/interactions/i-checkout/"],
+});
 
 // --- Interface + exposes / Ghost Interface ---
 const createdIface = JSON.parse(
@@ -184,10 +211,19 @@ const createdIface = JSON.parse(
 );
 if (
   !createdIface.changed_files?.includes("mindplan/interfaces/if-web/current.mdx") ||
-  !createdIface.changed_files?.includes("src/interfaces/if-web/.gitkeep")
+  createdIface.changed_files?.some((f) => String(f).includes("src/interfaces/"))
 ) {
   failures++; console.log(`FAIL create_node changed_files interface: ${JSON.stringify(createdIface.changed_files)}`);
 } else console.log("ok   create_node changed_files (interface)");
+fs.mkdirSync(path.join(root, "src", "interfaces", "if-web"), { recursive: true });
+fs.writeFileSync(
+  path.join(root, "src", "interfaces", "if-web", "page.ts"),
+  'import { checkout } from "../../interactions/i-checkout/checkout.js";\nexport const page = checkout;\n'
+);
+await expectOk("set implements if-web", "set_implementation_files", {
+  node_id: "if-web",
+  files: ["src/interfaces/if-web/"],
+});
 await expectBlockedContaining("ghost interface (no exposes)", "update_node_status", {
   node_id: "if-web", new_status: "ready",
 }, "Ghost Interface");
@@ -421,6 +457,13 @@ await expectOk("link if-pending depends_on", "link_nodes", {
   source_id: "if-pending", target_id: "f-db", edge_type: "depends_on",
 });
 fillMinimumTerritoryShape(territoryPath("interfaces", "if-pending"));
+fs.mkdirSync(path.join(root, "src", "interfaces", "if-pending"), { recursive: true });
+fs.writeFileSync(path.join(root, "src", "interfaces", "if-pending", "ui.ts"), "export {};\n");
+await expectOk("set implements if-pending", "set_implementation_files", {
+  node_id: "if-pending",
+  files: ["src/interfaces/if-pending/"],
+});
+
 await expectOk("if-pending -> ready", "update_node_status", { node_id: "if-pending", new_status: "ready" });
 await expectOk("if-pending -> in-progress", "update_node_status", { node_id: "if-pending", new_status: "in-progress" });
 const ifPendingPath = path.join(root, "mindplan", "interfaces", "if-pending", "current.mdx");
@@ -593,48 +636,56 @@ if (!tipsAfterCheck.includes("- [x] Requirements defined")) {
   failures++; console.log("FAIL checkbox not toggled on disk");
 } else console.log("ok   patch_node_territory persisted checkbox");
 
-// --- implementation packages ---
+// --- implementation files ---
 const ixImpl = JSON.parse(
   await expectOk("get_node_implementation interaction", "get_node_implementation", { node_id: "i-checkout" })
 );
-if (
-  ixImpl.root !== "src/interactions/i-checkout" ||
-  ixImpl.exists !== true ||
-  ixImpl.implementation_packages !== "required" ||
-  !ixImpl.entries?.includes(".gitkeep")
-) {
+if (!Array.isArray(ixImpl.files) || !ixImpl.files.some((f) => String(f.path).includes("checkout.ts"))) {
   failures++; console.log(`FAIL interaction implementation: ${JSON.stringify(ixImpl)}`);
 } else console.log("ok   get_node_implementation interaction");
 const ifaceImpl = JSON.parse(
   await expectOk("get_node_implementation interface", "get_node_implementation", { node_id: "if-web" })
 );
-if (ifaceImpl.root !== "src/interfaces/if-web" || ifaceImpl.exists !== true) {
+if (!Array.isArray(ifaceImpl.files) || ifaceImpl.files.length < 1) {
   failures++; console.log(`FAIL interface implementation: ${JSON.stringify(ifaceImpl)}`);
 } else console.log("ok   get_node_implementation interface");
 const fImpl = JSON.parse(
   await expectOk("get_node_implementation foundation", "get_node_implementation", { node_id: "f-db" })
 );
-if (fImpl.root !== "src/foundations/f-db" || fImpl.exists !== true) {
+if (!Array.isArray(fImpl.files) || !fImpl.files.some((f) => String(f.path).includes("schema.ts"))) {
   failures++; console.log(`FAIL foundation implementation: ${JSON.stringify(fImpl)}`);
 } else console.log("ok   get_node_implementation foundation");
-fs.writeFileSync(path.join(root, "src", "interactions", "i-checkout", "checkout.ts"), "export {}\n");
-const ixImplPopulated = JSON.parse(
-  await expectOk("get_node_implementation with code", "get_node_implementation", { node_id: "i-checkout" })
+const pathLookup = JSON.parse(
+  await expectOk("get_node_implementation path", "get_node_implementation", {
+    path: "src/foundations/f-db/schema.ts",
+  })
 );
-if (
-  !ixImplPopulated.entries?.includes("checkout.ts") ||
-  !ixImplPopulated.entries?.includes(".gitkeep")
-) {
-  failures++; console.log(`FAIL implementation entries: ${JSON.stringify(ixImplPopulated)}`);
-} else console.log("ok   get_node_implementation lists package entries");
-await expectBlocked("get_node_implementation journey", "get_node_implementation", { node_id: "j-ordering" });
+if (pathLookup.owner?.node_id !== "f-db") {
+  failures++; console.log(`FAIL path lookup: ${JSON.stringify(pathLookup)}`);
+} else console.log("ok   get_node_implementation path lookup");
+const journeyImpl = JSON.parse(
+  await expectOk("get_node_implementation journey", "get_node_implementation", { node_id: "j-ordering" })
+);
+if (!Array.isArray(journeyImpl.files)) {
+  failures++; console.log(`FAIL journey rollup: ${JSON.stringify(journeyImpl)}`);
+} else console.log("ok   get_node_implementation journey rollup");
 const tipsCreate = JSON.parse(
   await expectOk("get tips implementation", "get_node_implementation", { node_id: "i-tips" })
 );
-if (tipsCreate.root !== "src/interactions/i-tips" || !tipsCreate.exists) {
+if (!Array.isArray(tipsCreate.files)) {
   failures++; console.log(`FAIL tips implementation: ${JSON.stringify(tipsCreate)}`);
-} else console.log("ok   i-tips implementation package exists");
+} else console.log("ok   i-tips implementation query");
 
+// Claim files for later-created nodes before they ship
+async function claimDir(nodeId, relDir, seedFile, contents = "export {};\n") {
+  const abs = path.join(root, ...relDir.split("/"));
+  fs.mkdirSync(abs, { recursive: true });
+  fs.writeFileSync(path.join(abs, seedFile), contents);
+  await expectOk(`set implements ${nodeId}`, "set_implementation_files", {
+    node_id: nodeId,
+    files: [`${relDir}/`],
+  });
+}
 // --- link_dependent / Dependency Closure must not exist ---
 {
   const { error, text } = await call("link_nodes", {
@@ -653,7 +704,7 @@ if (tipsCreate.root !== "src/interactions/i-tips" || !tipsCreate.exists) {
 
 // Foundation depends_on cycle still rejected
 await expectOk("create f-cache", "create_node", {
-  id: "f-cache", type: "Foundation", title: "Cache", description: "Infra — cache",
+  id: "f-cache", type: "Foundation", title: "Cache", description: "Infra — cache", role: "infra",
 });
 await expectOk("link f-cache depends_on f-db", "link_nodes", {
   source_id: "f-cache", target_id: "f-db", edge_type: "depends_on",
@@ -709,6 +760,16 @@ const nextCtx = fs.readFileSync(nextPath, "utf-8");
 if (!nextCtx.includes("state: draft") || !nextCtx.includes("belongs_to:") || !nextCtx.includes("depends_on:")) {
   failures++; console.log("FAIL next.mdx missing draft state or inherited edges");
 } else console.log("ok   next.mdx inherits edges and starts draft");
+if (!nextCtx.includes("implements:") || !ixCheckoutLive.implements?.includes("src/interactions/i-checkout/")) {
+  failures++; console.log(`FAIL open_next should copy implements: ${JSON.stringify(ixCheckoutLive.implements)}`);
+} else console.log("ok   open_next copies implements to next");
+
+await expectOk("set implements i-checkout next", "set_implementation_files", {
+  node_id: "i-checkout",
+  files: ["src/interactions/i-checkout/", "src/interactions/i-checkout/extra.ts"],
+  slot: "next",
+});
+fs.writeFileSync(path.join(root, "src", "interactions", "i-checkout", "extra.ts"), "export {};\n");
 
 await expectBlocked("open_next twice", "open_next", {
   node_id: "i-checkout", title: "Checkout v3", description: "v3",
@@ -717,6 +778,12 @@ await expectBlocked("open_next twice", "open_next", {
 // Sibling interaction can still ship against live foundations while next is draft.
 const tipsPath = path.join(root, "mindplan", "interactions", "i-tips", "current.mdx");
 fs.writeFileSync(tipsPath, fs.readFileSync(tipsPath, "utf-8").replaceAll("[ ]", "[x]"));
+fs.mkdirSync(path.join(root, "src", "interactions", "i-tips"), { recursive: true });
+fs.writeFileSync(path.join(root, "src", "interactions", "i-tips", "tips.ts"), "export {};\n");
+await expectOk("set implements i-tips", "set_implementation_files", {
+  node_id: "i-tips",
+  files: ["src/interactions/i-tips/"],
+});
 await expectOk("i-tips -> in-review while next draft", "update_node_status", {
   node_id: "i-tips", new_status: "in-review",
 });
@@ -726,9 +793,9 @@ await expectOk("i-tips -> ship while next draft", "update_node_status", {
 console.log("ok   sibling interaction can ship while next evolution is still draft");
 
 // Foundation reverse-depends_on blast radius (transitive Foundation chain + journeys_at_risk)
-await expectOk("create f-a", "create_node", { id: "f-a", type: "Foundation", title: "A", description: "base" });
-await expectOk("create f-b", "create_node", { id: "f-b", type: "Foundation", title: "B", description: "mid" });
-await expectOk("create f-c", "create_node", { id: "f-c", type: "Foundation", title: "C", description: "top" });
+await expectOk("create f-a", "create_node", { id: "f-a", type: "Foundation", title: "A", description: "Infra — base", role: "infra" });
+await expectOk("create f-b", "create_node", { id: "f-b", type: "Foundation", title: "B", description: "Infra — mid", role: "infra" });
+await expectOk("create f-c", "create_node", { id: "f-c", type: "Foundation", title: "C", description: "Infra — top", role: "infra" });
 await expectOk("link f-b depends_on f-a", "link_nodes", { source_id: "f-b", target_id: "f-a", edge_type: "depends_on" });
 await expectOk("link f-c depends_on f-b", "link_nodes", { source_id: "f-c", target_id: "f-b", edge_type: "depends_on" });
 await expectOk("create i-on-a", "create_node", {
@@ -801,6 +868,14 @@ const afterPromote = graph.nodes.find((n) => n.id === "i-checkout");
 if (afterPromote.next) {
   failures++; console.log(`FAIL next should be gone after promote: ${JSON.stringify(afterPromote.next)}`);
 } else console.log("ok   no next slot after promote");
+if (
+  !afterPromote.implements?.includes("src/interactions/i-checkout/") ||
+  !afterPromote.implements?.includes("src/interactions/i-checkout/extra.ts") ||
+  !currentAfter.includes("implements:") ||
+  !currentAfter.includes("src/interactions/i-checkout/extra.ts")
+) {
+  failures++; console.log(`FAIL promote must keep implements: ${JSON.stringify(afterPromote.implements)}`);
+} else console.log("ok   promote keeps implements on current");
 const tipsLeadsAfterPromote = graph.edges.filter(
   (e) => e.source === "i-tips" && e.type === "leads_to" && e.target === "i-checkout"
 );
@@ -885,6 +960,7 @@ await expectOk("create f-deadend", "create_node", {
   type: "Foundation",
   title: "Dead end",
   description: "Infra — Abandoned before ship",
+  role: "infra",
 });
 fillMinimumTerritoryShape(territoryPath("foundations", "f-deadend"));
 await expectOk("f-deadend -> ready", "update_node_status", {
@@ -943,6 +1019,7 @@ await expectOk("create f-needed", "create_node", {
   type: "Foundation",
   title: "Needed",
   description: "Infra — required by next evolution",
+  role: "infra",
 });
 fillMinimumTerritoryShape(territoryPath("foundations", "f-needed"));
 await expectOk("f-needed -> ready", "update_node_status", {
@@ -976,8 +1053,16 @@ async function shipFoundation(id, title) {
     type: "Foundation",
     title,
     description: `Infra — ${title} for cycle smoke`,
+    role: "infra",
   });
   fillMinimumTerritoryShape(territoryPath("foundations", id));
+  const pkg = path.join(root, "src", "foundations", id);
+  fs.mkdirSync(pkg, { recursive: true });
+  fs.writeFileSync(path.join(pkg, "index.ts"), "export {};\n");
+  await expectOk(`set implements ${id}`, "set_implementation_files", {
+    node_id: id,
+    files: [`src/foundations/${id}/`],
+  });
   await expectOk(`${id} -> ready`, "update_node_status", { node_id: id, new_status: "ready" });
   await expectOk(`${id} -> in-progress`, "update_node_status", {
     node_id: id,
@@ -1134,82 +1219,68 @@ if (initResult.status !== 0) {
     const cfgPath = path.join(initRoot, "mindplan", "config.json");
     if (!fs.existsSync(cfgPath)) return true;
     const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
-    return cfg.implementation_packages !== "required";
+    return !Array.isArray(cfg.sources) || !("exclude" in cfg);
   })()
 ) {
   failures++;
-  console.log("FAIL mindplan-mcp init should write implementation_packages required by default");
+  console.log("FAIL mindplan-mcp init should write { sources, exclude } by default");
 } else {
   console.log("ok   mindplan-mcp init installs templates from package root");
 }
 
-const freeInitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-free-"));
-const freeInit = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
-  cwd: freeInitRoot,
-  env: { ...process.env, MINDPLAN_ROOT: freeInitRoot },
+const layoutReject = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
+  cwd: fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-layout-")),
   encoding: "utf-8",
 });
-if (freeInit.status !== 0) {
+if (layoutReject.status === 0 || !(layoutReject.stderr || "").includes("--layout")) {
   failures++;
-  console.log(`FAIL init --layout free exit ${freeInit.status}: ${freeInit.stderr || freeInit.stdout}`);
-} else {
-  const cfg = JSON.parse(fs.readFileSync(path.join(freeInitRoot, "mindplan", "config.json"), "utf-8"));
-  if (cfg.implementation_packages !== "off") {
-    failures++;
-    console.log(`FAIL init --layout free config: ${JSON.stringify(cfg)}`);
-  } else console.log("ok   mindplan-mcp init --layout free writes packages off");
-}
+  console.log(`FAIL --layout should be rejected: ${layoutReject.stderr || layoutReject.stdout}`);
+} else console.log("ok   --layout is rejected");
 
-const bareAfterFree = spawnSync(process.execPath, [serverEntry, "init"], {
-  cwd: freeInitRoot,
-  env: { ...process.env, MINDPLAN_ROOT: freeInitRoot },
+// Migrate legacy implementation_packages
+const migrateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-migrate-"));
+fs.mkdirSync(path.join(migrateRoot, "mindplan"), { recursive: true });
+fs.writeFileSync(
+  path.join(migrateRoot, "mindplan", "config.json"),
+  JSON.stringify({ implementation_packages: "required" }, null, 2) + "\n"
+);
+const migrateInit = spawnSync(process.execPath, [serverEntry, "init"], {
+  cwd: migrateRoot,
+  env: { ...process.env, MINDPLAN_ROOT: migrateRoot },
   encoding: "utf-8",
 });
-if (bareAfterFree.status !== 0) {
+if (migrateInit.status !== 0) {
   failures++;
-  console.log(`FAIL bare init after free exit ${bareAfterFree.status}: ${bareAfterFree.stderr || bareAfterFree.stdout}`);
+  console.log(`FAIL init migration exit ${migrateInit.status}: ${migrateInit.stderr || migrateInit.stdout}`);
 } else {
-  const cfg = JSON.parse(fs.readFileSync(path.join(freeInitRoot, "mindplan", "config.json"), "utf-8"));
-  if (cfg.implementation_packages !== "off") {
+  const cfg = JSON.parse(fs.readFileSync(path.join(migrateRoot, "mindplan", "config.json"), "utf-8"));
+  if (!Array.isArray(cfg.sources) || cfg.sources[0] !== "src/**") {
     failures++;
-    console.log(`FAIL bare init must preserve free config: ${JSON.stringify(cfg)}`);
-  } else console.log("ok   bare init preserves existing layout-free config");
+    console.log(`FAIL migration sources: ${JSON.stringify(cfg)}`);
+  } else console.log("ok   init migrates implementation_packages → sources");
 }
 
-const prescribeAfterFree = spawnSync(process.execPath, [serverEntry, "init", "--layout", "prescribed"], {
-  cwd: freeInitRoot,
-  env: { ...process.env, MINDPLAN_ROOT: freeInitRoot },
-  encoding: "utf-8",
-});
-if (prescribeAfterFree.status !== 0) {
-  failures++;
-  console.log(
-    `FAIL init --layout prescribed exit ${prescribeAfterFree.status}: ${prescribeAfterFree.stderr || prescribeAfterFree.stdout}`
-  );
-} else {
-  const cfg = JSON.parse(fs.readFileSync(path.join(freeInitRoot, "mindplan", "config.json"), "utf-8"));
-  if (cfg.implementation_packages !== "required") {
-    failures++;
-    console.log(`FAIL --layout prescribed must overwrite free config: ${JSON.stringify(cfg)}`);
-  } else console.log("ok   --layout prescribed overwrites free config");
-}
-
-// init -f / --force: overwrite mutated agent assets; preserve layout-free config without --layout
+// init -f / --force: overwrite mutated agent assets; preserve sources config
 {
   const forceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-force-"));
   const forceEnv = { ...process.env, MINDPLAN_ROOT: forceRoot };
-  const first = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
+  const first = spawnSync(process.execPath, [serverEntry, "init"], {
     cwd: forceRoot,
     env: forceEnv,
     encoding: "utf-8",
   });
   if (first.status !== 0) {
     failures++;
-    console.log(`FAIL init --layout free (force suite) exit ${first.status}: ${first.stderr || first.stdout}`);
+    console.log(`FAIL init (force suite) exit ${first.status}: ${first.stderr || first.stdout}`);
   } else {
     const playbookPath = path.join(forceRoot, "mindplan", "agent", "playbook.md");
     const marker = "FORCE_OVERWRITE_MARKER_DO_NOT_SHIP";
     fs.writeFileSync(playbookPath, marker, "utf-8");
+    // Widen sources to prove -f does not overwrite config
+    fs.writeFileSync(
+      path.join(forceRoot, "mindplan", "config.json"),
+      JSON.stringify({ sources: ["app/**"], exclude: ["app/**/*.test.ts"] }, null, 2) + "\n"
+    );
 
     const bare = spawnSync(process.execPath, [serverEntry, "init"], {
       cwd: forceRoot,
@@ -1243,11 +1314,11 @@ if (prescribeAfterFree.status !== 0) {
         console.log("ok   init -f overwrites mutated playbook from templates");
       }
       const cfg = JSON.parse(fs.readFileSync(path.join(forceRoot, "mindplan", "config.json"), "utf-8"));
-      if (cfg.implementation_packages !== "off") {
+      if (cfg.sources?.[0] !== "app/**") {
         failures++;
-        console.log(`FAIL init -f must preserve layout-free config: ${JSON.stringify(cfg)}`);
+        console.log(`FAIL init -f must preserve sources config: ${JSON.stringify(cfg)}`);
       } else {
-        console.log("ok   init -f preserves existing layout-free config");
+        console.log("ok   init -f preserves existing sources config");
       }
     }
 

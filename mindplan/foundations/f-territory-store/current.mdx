@@ -1,44 +1,54 @@
 ---
 id: f-territory-store
 type: Foundation
-title: "Territory store (shape scaffolds)"
-description: "Infra — open_next resets checkboxes so next draft does not inherit completed DoD."
+role: infra
+title: "Territory store (implements + role)"
+description: "Infra — persist implements and role; stop package scaffolds; openNextSlot/promoteNextSlot carry new fields; territory scaffolds no longer prescribe src/<type>/<id>/."
 state: stable
-shipped_at: 2026-09-21T12:44:39.374Z
+shipped_at: 2026-09-23T14:05:21.526Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-09-21T12:44:39.374Z
+updated_at: 2026-09-23T14:08:09.263Z
 depends_on:
   - f-domain-model
+  - f-source-index
+implements:
+  - src/foundations/f-territory-store/
 ---
 
 
-
-# Territory store
+# Territory store (implements + role)
 
 ## Purpose
 
-Infra — persists MindPlan territory on disk (frontmatter, bodies, packages, `open_next` / promote). When opening a `next` evolution, resets completed checkboxes to open so a new DoD starts unfinished (pairs with Open Checklist While Building on `f-compiler-rules`).
+Infra — load/persist territory MDX, scaffolds, frontmatter patches, open_next / discard_next / promote_next. Persist server-owned `implements` and Foundation `role`. Stop scaffolding prescribed packages. Move `config.ts` ownership of source globs out to `f-source-index` (this store may re-export or stop owning config).
 
 ## Shared Substrate Spec
 
-Package: `src/foundations/f-territory-store/`
+Intended files: `src/foundations/f-territory-store/`
 
-- `store.ts` — load/graph, scaffolds, patches, `openNextSlot`, `countCheckboxesInText` / `isChecklistComplete`
-- **`openNextSlot`** copies current body into `next.mdx` but rewrites `- [x]` → `- [ ]` so draft/ready/in-progress next slots never inherit a completed checklist from the shipped current
-- Exports `toggleCheckboxesInBody` for patch preview + write
+- `store.ts` — frontmatter rebuild lists in `openNextSlot` / `promoteNextSlot` MUST include `implements` and `role` so they are not dropped
+- `create_node` path: do **not** write `src/<type>/<id>/.gitkeep`
+- Territory scaffold prose: replace "implement under `src/<type>/<id>/`" with declare files via `set_implementation_files`
+- Retired nodes may keep shrinking `implements` lists (enforced by steer/compiler; store must round-trip the field)
+- `summarizeGraphNode` stays here
+- Config for `sources`/`exclude` lives in `f-source-index`; remove or thin local `config.ts` accordingly
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- `open_next` on a shipped node whose current checklist is fully checked yields a next body with those boxes unchecked
-- `isChecklistComplete` / `countCheckboxesInText` available to compiler and integrity check
+- `open_next` copies `implements` and `role`; `ship` promotes them
+- New nodes do not get package scaffolds
+- Scaffold templates mention `set_implementation_files`, not prescribed folders
+- Existing load/patch APIs keep working
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Reset checkboxes to `[ ]` when writing `next.mdx` in `openNextSlot`
-- [x] Export `countCheckboxesInText`, `isChecklistComplete`, `toggleCheckboxesInBody`
+- [x] Extend openNextSlot/promoteNextSlot fixed field lists with `implements` and `role`
+- [x] Stop scaffolding `src/<type>/<id>/.gitkeep` on create
+- [x] Update territory scaffold text away from prescribed packages
+- [x] Hand config ownership to `f-source-index` (move or delete local config)
 - [x] Verified via `npm test`
 
 ## Attachments

@@ -1,48 +1,68 @@
 ---
 id: i-orient-plan
 type: Interaction
-title: "Orient on the plan"
-description: "Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context, get_blast_radius, orient_for_work, get_node_implementation."
+title: "Orient (file queries)"
+description: "get_node_implementation returns owned files (and path lookup); blast radius adds affected_files; record carries implements and role."
 state: stable
-shipped_at: 2026-07-19T18:51:25.002Z
+shipped_at: 2026-09-23T14:05:37.831Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-07-19T19:39:39.381Z
+updated_at: 2026-09-23T14:08:09.272Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
-  - f-mcp-runtime
   - f-graph-search
+  - f-territory-store
+  - f-compiler-rules
+  - f-source-index
 leads_to:
   - i-steer-plan
+implements:
+  - src/interactions/i-orient-plan/
 ---
 
-# Orient on the plan
+
+# Orient (file queries)
 
 ## Purpose
 
-Read-path orientation for agents and humans: find the owning node, its 1-hop neighborhood, territory body, blast radius, and prescribed implementation package before coding.
+Read-path orientation. `get_node_implementation` returns owned files (and supports path→owner lookup). Blast radius adds `affected_files`. Records carry `implements` and `role`. Owns `getNodeImplementation` logic moved out of territory-store.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
+- **Trigger:** MCP/HTTP orient tools
 
 ## Execution Logic
 
-Package: `src/interactions/i-orient-plan/`
+Intended files: `src/interactions/i-orient-plan/`
 
-- `tools.ts` — ownership list `QUERY_TOOLS` registered by `f-mcp-runtime/server.ts`:
-  - `get_mindplan_graph` — full graph dump
-  - `find_related_nodes` — ranked focus + 1-hop summaries
-  - `get_blast_radius` — transitive dependents + `journeys_at_risk`
-  - `get_node_context` — record + body (+ `next` when evolving)
-  - `orient_for_work` — composite find + context + blast radius
-  - `get_node_implementation` — `src/foundations/<id>/` or `src/interactions/<id>/`
+- Keep existing query tools
+- `get_node_implementation`:
+  - Interaction/Interface/Foundation → `{ node_id, files: [{ path, exists }], next_files? }`
+  - Journey → member Interaction files + exposing Interfaces, tagged with owner
+  - Bug → `affects` target files, tagged with owner
+  - Optional `path` arg → owning node
+  - Drop `root`, `implementation_packages`, `entries`
+- `get_blast_radius` adds `affected_files: [{ path, owner_id, owner_type, via }]` with `via` ∈ `focus|dependent|exposing|importer`
+- `orient_for_work` inherits `implements`/`role` on record and `affected_files` on blast radius
+- Uses `f-source-index` for expansion/universe
 
-Ranking substrate: `f-graph-search`. Depends on: `f-mcp-runtime`, `f-graph-search`. Belongs to: `j-territory-sdlc`.
+Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- [x] All six read tools are registered and return authoritative graph/territory data
-- [x] Orientation excludes retired nodes from default ranking
-- [x] `orient_for_work` includes blast radius for Foundation/Interaction focus
+- Implementation query returns files, not package roots
+- Path lookup returns the owner node
+- Blast radius includes importer via for composition roots
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Move getNodeImplementation into this Interaction; return files
+- [x] Add path lookup
+- [x] Add affected_files to blast radius (focus/dependent/exposing/importer)
 - [x] Verified via `npm test`
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/`._
+_None._

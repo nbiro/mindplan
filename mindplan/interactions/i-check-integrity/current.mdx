@@ -1,59 +1,58 @@
 ---
 id: i-check-integrity
 type: Interaction
-title: "Integrity check CLI (no --for-main)"
-description: "Default check is graph+packages; dirty-src opt-in via --base. The --for-main mid-pipeline ban is removed."
+title: "Integrity check (file ownership)"
+description: "Default check enforces exclusivity, coverage, presence, leftovers, and import matrix; --base uses implements index."
 state: stable
-shipped_at: 2026-09-23T12:06:45.353Z
+shipped_at: 2026-09-23T14:05:35.391Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-09-23T12:06:45.353Z
+updated_at: 2026-09-23T14:08:09.272Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-territory-store
   - f-compiler-rules
   - f-mcp-runtime
+  - f-source-index
+implements:
+  - src/interactions/i-check-integrity/
 ---
 
 
-
-# Integrity check CLI
+# Integrity check (file ownership)
 
 ## Purpose
 
-Offline audit that CI and agents run without starting MCP stdio. Default mode validates that the territory **graph loads** and (when packages are `required`) prescribed packages match the graph — structural constraints only. Dirty-src ownership is **opt-in** via `--base`. There is **no** mid-pipeline ban: `--for-main` is removed. In-progress and in-review work stays valid for check and for merge.
+Offline audit for CI and agents. Default mode loads the graph and enforces file ownership: exclusivity, coverage, presence, leftovers, and the import matrix. Opt-in `--base` applies lifecycle dirty-src rules using the implements index.
 
 ## Actor & Trigger
 
-- **Actor:** CI job, agent, or maintainer at the CLI
-- **Trigger:** `mindplan-mcp check` / `node dist/index.js check` (wired by `f-mcp-runtime`); this repo’s CI invokes the default mode after build
+- **Actor:** CI, agent, or maintainer via CLI (`if-cli`)
+- **Trigger:** `mindplan-mcp check` / `node dist/index.js check`
 
 ## Execution Logic
 
-1. Load `mindplan/config.json` (missing → `implementation_packages: "required"`).
-2. `mindplan-mcp check` (default) loads the territory graph.
-   - When `required`: verify every non-retired Foundation/Interaction/Interface has its prescribed package; reject orphan `src/` package dirs. **Do not** run dirty-src. **Do not** fail because nodes are `in-progress` / `in-review` or Bugs are `fixing`.
-   - When `off`: skip package presence and orphans. Still validate the graph loads.
-3. `mindplan-mcp check --base <ref>` (opt-in) additionally enforces dirty-src ownership vs that git base: uncommitted `src/` needs `in-progress` (or next in-progress / Bug fixing/in-review); committed diffs vs base allow review/shipped/cancelled/deprecated, but when `next.mdx` is open only next `in-progress`/`in-review` counts. Exception: `src/{foundations,interactions,interfaces}/<id>/.gitkeep` scaffolds from `create_node` are allowed while the owner (or open `next`) is `draft`/`ready`. Explicit `--base` fails closed on git errors. Requires `required` packages; skipped when `off`.
-4. `CheckOptions.forMain` and `checkForMain` are deleted. The CLI does not accept `--for-main` (unknown option, owned by `f-mcp-runtime`).
-5. Wired from `f-mcp-runtime` CLI (`node dist/index.js check`); this repo’s CI builds from source and stays on `required`.
+1. Load `mindplan/config.json` via `f-source-index` (`sources`/`exclude`; missing → `["src/**"]`; stale `implementation_packages` → Blocked → init).
+2. Default check: graph load + exclusivity + coverage + presence + leftovers + import matrix (using compiler reachable-Foundations / role rules).
+3. `--base <ref>`: same lifecycle dirty-src rules as before, but owners come from the implements index; changed file with no owner fails. Fail closed on git errors.
+4. Remove package presence, orphan-dir, and `.gitkeep` scaffold exemption paths.
 
-Package: `src/interactions/i-check-integrity/`
+Intended files: `src/interactions/i-check-integrity/`
 
-- `check.ts` — `runIntegrityCheck`, config-aware package/orphan/opt-in dirty-src validators. No mid-pipeline mode.
+Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- Default check with `required`: fails on orphan/missing packages; **passes** with dirty unowned `src/` (dirty not run); **passes** with mid-pipeline nodes
-- Default check with `off`: missing packages and dirty `src/` do not fail
-- `--base <ref>` with `required`: same dirty-src ownership rules as before (scaffold exemption, fail-closed bad ref)
-- No `forMain` option and no `checkForMain` function remain in `check.ts`
-- Exit code 0/1 with `Blocked:` lines for CI
+- Default check fails on double-owned, unowned universe, missing presence on in-review/shipped, retired leftovers, and illegal imports
+- Default check does not invent mid-pipeline bans
+- `--base` uses implements ownership
+- Exit 0/1 with `Blocked:` lines
 
 ## Atomic Ops
 
-- [x] Delete `forMain` from `CheckOptions`, delete `checkForMain`, and stop calling it from `runIntegrityCheck`
-- [x] Keep default graph+packages and `--base` dirty-src behavior
+- [x] Replace package/orphan/scaffold validators with ownership validators
+- [x] Wire import matrix via compiler + source-index
+- [x] Rewrite `--base` to use implements index
 - [x] Verified via `npm test`
 
 ## Attachments

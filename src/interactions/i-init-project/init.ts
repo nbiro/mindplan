@@ -1,23 +1,33 @@
 /**
  * Consumer project init — scaffolds mindplan/ and installs agent assets.
- * Owned by Workflow i-init-project.
+ * Migrates legacy implementation_packages → { sources, exclude } and seeds implements/role.
+ * Owned by Interaction i-init-project.
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
+import {
+  isPipelineNodeType,
+  type FoundationRole,
+} from "../../foundations/f-domain-model/types.js";
+import {
+  writeProjectConfig,
+  type MindPlanProjectConfig,
+} from "../../foundations/f-source-index/config.js";
 import {
   AGENT_DIR,
   MINDPLAN_DIR,
   agentRoot,
   ensureDirectories,
+  implementationDir,
+  implementationRelativePath,
+  loadGraph,
   mindplanRoot,
   projectRoot,
-  writeProjectConfig,
-  type ImplementationPackagesMode,
-  type MindPlanProjectConfig,
+  writeImplementsFrontmatter,
+  writeRoleFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
-
-export type InitLayout = "free" | "prescribed";
 
 export type InitResult = {
   root: string;
@@ -43,6 +53,9 @@ export type InstallProjectConfigResult = {
   installed: boolean;
   path: string;
   config: MindPlanProjectConfig;
+  migrated?: boolean;
+  seeded_implements?: number;
+  seeded_roles?: number;
 };
 
 function copyDirRecursive(src: string, dest: string): void {
@@ -115,7 +128,6 @@ export function installAgentPlaybook(
   );
 }
 
-/** Copies the define-entities skill into mindplan/agent/skills/define-entities/ (idempotent unless force). */
 export function installDefineEntitiesSkill(
   packageRoot: string,
   options: InstallOptions = {}
@@ -130,7 +142,6 @@ export function installDefineEntitiesSkill(
   );
 }
 
-/** Copies the plan-project skill into mindplan/agent/skills/plan-project/ (idempotent unless force). */
 export function installPlanProjectSkill(
   packageRoot: string,
   options: InstallOptions = {}
@@ -145,7 +156,6 @@ export function installPlanProjectSkill(
   );
 }
 
-/** Copies the review-work skill into mindplan/agent/skills/review-work/ (idempotent unless force). */
 export function installReviewWorkSkill(
   packageRoot: string,
   options: InstallOptions = {}
@@ -160,7 +170,6 @@ export function installReviewWorkSkill(
   );
 }
 
-/** Copies the thin code-review skill into mindplan/agent/skills/code-review/ (idempotent unless force). */
 export function installCodeReviewSkill(
   packageRoot: string,
   options: InstallOptions = {}
@@ -175,7 +184,6 @@ export function installCodeReviewSkill(
   );
 }
 
-/** Copies MCP config example into mindplan/agent/mcp.json.example (idempotent unless force). */
 export function installMcpExample(
   packageRoot: string,
   options: InstallOptions = {}
@@ -190,7 +198,6 @@ export function installMcpExample(
   );
 }
 
-/** Copies per-agent integration guides into mindplan/agent/integrations/ (idempotent unless force). */
 export function installAgentIntegrations(
   packageRoot: string,
   options: InstallOptions = {}
@@ -205,7 +212,6 @@ export function installAgentIntegrations(
   );
 }
 
-/** Creates root AGENTS.md from the playbook when missing (idempotent unless force). */
 export function installRootAgentsMd(
   packageRoot: string,
   options: InstallOptions = {}
@@ -215,10 +221,6 @@ export function installRootAgentsMd(
   return installTemplateFile(templatePath, destPath, "AGENTS.md", options);
 }
 
-/** Installs `.cursorignore` at project root when missing (idempotent unless force).
- * Template ignores `mindplan/map.md` + `mindplan/agent/**` only —
- * territory `current.mdx` / `next.mdx` stay editable via host file tools.
- */
 export function installCursorIgnore(
   packageRoot: string,
   options: InstallOptions = {}
@@ -235,9 +237,6 @@ const CURSOR_SKILL_COPIES = [
   { template: "code-review", dest: "mindplan-code-review" },
 ] as const;
 
-/** Copies skills into `.cursor/skills/mindplan-*` for Cursor discovery (idempotent unless force).
- * Sources `templates/agent/skills/…` — not the on-disk `mindplan/agent` copy.
- */
 export function installCursorSkills(
   packageRoot: string,
   options: InstallOptions = {}
@@ -259,7 +258,6 @@ const CURSOR_RULE_FRONTMATTER =
   "alwaysApply: true\n" +
   "---\n\n";
 
-/** Writes `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + playbook body) when missing (or force). */
 export function installCursorRule(
   packageRoot: string,
   options: InstallOptions = {}
@@ -280,10 +278,6 @@ export function installCursorRule(
   return { installed: true, path: projectRelativePath };
 }
 
-/** Installs `.cursor/permissions.json` when missing (idempotent unless force).
- * Allowlists MindPlan MCP tools so Cursor Auto-review does not prompt on
- * playbook-required graph mutations (status transitions, create/link, etc.).
- */
 export function installCursorPermissions(
   packageRoot: string,
   options: InstallOptions = {}
@@ -293,20 +287,167 @@ export function installCursorPermissions(
   return installTemplateFile(templatePath, destPath, ".cursor/permissions.json", options);
 }
 
-/** Installs mindplan/config.json for prescribed or layout-free adoption.
- * Creates when missing. Overwrites only when `force` is true (explicit --layout).
- * Agent-asset `-f` does not control this helper.
+function roleFromDescription(description: string): FoundationRole {
+  if (/^Assembler\b/i.test(description)) return "assembler";
+  if (/^Design system\b/i.test(description)) return "design-system";
+  if (/^Adapter\b/i.test(description)) return "adapter";
+  if (/^Infra\b/i.test(description)) return "infra";
+  return "infra";
+}
+
+function collectPackageFiles(absDir: string, relDir: string): string[] {
+  const out: string[] = [];
+  if (!fs.existsSync(absDir) || !fs.statSync(absDir).isDirectory()) return out;
+  for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
+    const rel = `${relDir}/${entry.name}`;
+    const abs = path.join(absDir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectPackageFiles(abs, rel));
+    } else if (entry.isFile() && entry.name !== ".gitkeep") {
+      out.push(rel.split(path.sep).join("/"));
+    }
+  }
+  return out;
+}
+
+/**
+ * Migrate legacy implementation_packages config and seed implements/role.
+ * One-time server-side write — works on shipped nodes without open_next.
  */
-export function installProjectConfig(
-  layout: InitLayout = "prescribed",
-  options: { force?: boolean } = {}
-): InstallProjectConfigResult {
-  const mode: ImplementationPackagesMode = layout === "free" ? "off" : "required";
-  const result = writeProjectConfig(mode, { force: options.force === true });
+export function migrateImplementationPackages(): {
+  migrated: boolean;
+  config: MindPlanProjectConfig;
+  seeded_implements: number;
+  seeded_roles: number;
+} {
+  const configPath = path.join(projectRoot(), MINDPLAN_DIR, "config.json");
+  let legacyMode: "required" | "off" | null = null;
+
+  if (fs.existsSync(configPath)) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(fs.readFileSync(configPath, "utf-8")) as unknown;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Blocked: invalid mindplan/config.json: could not parse JSON (${detail}). Fix or delete the file.`
+      );
+    }
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const obj = raw as Record<string, unknown>;
+      if ("implementation_packages" in obj) {
+        const mode = obj.implementation_packages;
+        if (mode !== "required" && mode !== "off") {
+          throw new Error(
+            `Blocked: invalid mindplan/config.json: "implementation_packages" must be "required" or "off" (got ${JSON.stringify(mode)}).`
+          );
+        }
+        legacyMode = mode;
+      } else if ("sources" in obj && "exclude" in obj) {
+        // Already migrated
+        return {
+          migrated: false,
+          config: {
+            sources: Array.isArray(obj.sources) ? (obj.sources as string[]) : ["src/**"],
+            exclude: Array.isArray(obj.exclude) ? (obj.exclude as string[]) : [],
+          },
+          seeded_implements: 0,
+          seeded_roles: 0,
+        };
+      }
+    }
+  }
+
+  const config: MindPlanProjectConfig =
+    legacyMode === "off"
+      ? { sources: [], exclude: [] }
+      : { sources: ["src/**"], exclude: [] };
+
+  const force = legacyMode !== null || !fs.existsSync(configPath);
+  writeProjectConfig(config, { force });
+
+  let seeded_implements = 0;
+  let seeded_roles = 0;
+
+  // Only seed from packages when migrating legacy configs (or first-time write with no prior sources).
+  const shouldSeed = legacyMode !== null;
+
+  if (shouldSeed) {
+    let graph;
+    try {
+      graph = loadGraph();
+    } catch {
+      return { migrated: true, config, seeded_implements, seeded_roles };
+    }
+
+    const seedPackages = legacyMode === "required";
+    const emptyImplements = legacyMode === "off";
+
+    for (const node of graph.nodes) {
+      if (!isPipelineNodeType(node.type)) continue;
+
+      if (node.type === "Foundation" && !node.role) {
+        const role = roleFromDescription(node.description);
+        writeRoleFrontmatter(node, role, "current");
+        seeded_roles++;
+        if (node.next && !node.next.role) {
+          writeRoleFrontmatter(node, role, "next");
+        }
+      }
+
+      if (emptyImplements) {
+        if (!node.implements) {
+          writeImplementsFrontmatter(node, [], "current");
+        }
+        continue;
+      }
+
+      if (!seedPackages) continue;
+
+      const relRoot = implementationRelativePath(node);
+      const absRoot = implementationDir(node);
+      if (!relRoot || !absRoot) continue;
+
+      const files =
+        fs.existsSync(absRoot) && fs.statSync(absRoot).isDirectory()
+          ? collectPackageFiles(absRoot, relRoot)
+          : [];
+
+      const claim = files.length > 0 ? [`${relRoot}/`] : [];
+
+      if (claim.length > 0 && !(node.implements && node.implements.length > 0)) {
+        writeImplementsFrontmatter(node, claim, "current");
+        seeded_implements++;
+      }
+      if (
+        node.next &&
+        claim.length > 0 &&
+        !(node.next.implements && node.next.implements.length > 0)
+      ) {
+        writeImplementsFrontmatter(node, claim, "next");
+      }
+    }
+  }
+
   return {
-    installed: result.written,
-    path: result.path,
+    migrated: legacyMode !== null,
+    config,
+    seeded_implements,
+    seeded_roles,
+  };
+}
+
+/** Installs or migrates mindplan/config.json to { sources, exclude }. */
+export function installProjectConfig(): InstallProjectConfigResult {
+  const beforeExists = fs.existsSync(path.join(projectRoot(), MINDPLAN_DIR, "config.json"));
+  const result = migrateImplementationPackages();
+  return {
+    installed: result.migrated || !beforeExists,
+    path: path.posix.join(MINDPLAN_DIR, "config.json"),
     config: result.config,
+    migrated: result.migrated,
+    seeded_implements: result.seeded_implements,
+    seeded_roles: result.seeded_roles,
   };
 }
 
@@ -316,4 +457,84 @@ export function initProject(): InitResult {
   const existed = fs.existsSync(root);
   ensureDirectories();
   return { root, created: !existed };
+}
+
+/** Walk up from this module until templates/agent exists (works from nested dist/...). */
+export function resolvePackageRoot(moduleUrl: string): string {
+  let dir = path.dirname(fileURLToPath(moduleUrl));
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, "templates", "agent"))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    "Could not locate MindPlan package root (templates/agent missing). " +
+      "Run mindplan-mcp from an installed package that includes templates/."
+  );
+}
+
+export type RunInitOptions = {
+  force: boolean;
+  packageRoot: string;
+};
+
+export type RunInitReport = {
+  root: string;
+  created: boolean;
+  projectConfig: InstallProjectConfigResult;
+  playbook: InstallAgentRuleResult;
+  skill: InstallSkillResult;
+  planSkill: InstallSkillResult;
+  reviewSkill: InstallSkillResult;
+  codeReviewSkill: InstallSkillResult;
+  mcpExample: InstallAgentRuleResult;
+  integrations: InstallSkillResult;
+  agentsMd: InstallAgentRuleResult;
+  cursorIgnore: InstallAgentRuleResult;
+  cursorSkills: InstallSkillResult[];
+  cursorRule: InstallAgentRuleResult;
+  cursorPermissions: InstallAgentRuleResult;
+};
+
+/**
+ * Runs all consumer installers and returns a structured report.
+ * CLI owns console output / exit codes — this package does not print or exit.
+ */
+export function runInit(opts: RunInitOptions): RunInitReport {
+  const installOpts = { force: opts.force };
+  const { root, created } = initProject();
+  const projectConfig = installProjectConfig();
+  const playbook = installAgentPlaybook(opts.packageRoot, installOpts);
+  const skill = installDefineEntitiesSkill(opts.packageRoot, installOpts);
+  const planSkill = installPlanProjectSkill(opts.packageRoot, installOpts);
+  const reviewSkill = installReviewWorkSkill(opts.packageRoot, installOpts);
+  const codeReviewSkill = installCodeReviewSkill(opts.packageRoot, installOpts);
+  const mcpExample = installMcpExample(opts.packageRoot, installOpts);
+  const integrations = installAgentIntegrations(opts.packageRoot, installOpts);
+  const agentsMd = installRootAgentsMd(opts.packageRoot, installOpts);
+  const cursorIgnore = installCursorIgnore(opts.packageRoot, installOpts);
+  const cursorSkills = installCursorSkills(opts.packageRoot, installOpts);
+  const cursorRule = installCursorRule(opts.packageRoot, installOpts);
+  const cursorPermissions = installCursorPermissions(opts.packageRoot, installOpts);
+
+  return {
+    root,
+    created,
+    projectConfig,
+    playbook,
+    skill,
+    planSkill,
+    reviewSkill,
+    codeReviewSkill,
+    mcpExample,
+    integrations,
+    agentsMd,
+    cursorIgnore,
+    cursorSkills,
+    cursorRule,
+    cursorPermissions,
+  };
 }

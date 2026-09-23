@@ -80,59 +80,52 @@ Rules:
 - `components/` MAY contain project-specific MDX components (§6.4.3). It is created by the server but never read by it.
 - The server MUST create missing directories on demand; a fresh project requires no manual scaffolding.
 
-### 1.2 Implementation packages (prescribed architecture)
+### 1.2 Declared file ownership
 
-By default (and when `mindplan/config.json` is missing), Interaction, Interface, and Foundation nodes own a **derived** filesystem package whose path is fixed by type and id (not a graph edge — targets are directories, not MindPlan nodes):
+Interaction, Interface, and Foundation nodes declare the files they own via server-owned frontmatter `implements: string[]` (written only by MCP — `set_implementation_files`). Entries are repo-relative POSIX paths: exact files, or directories ending in `/` that own everything beneath. Queries and `check` expand directories. Paths MUST NOT contain `..` or live under `mindplan/`. `.gitkeep` is ignored.
 
-| Node type | Implementation root | Purpose |
-|---|---|---|
-| Interaction | `src/interactions/<id>/` | Self-contained behavior: domain/view-model **and** the exportable surface (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module). Shared across Journeys via `belongs_to` in the graph only |
-| Interface | `src/interfaces/<id>/` | How an actor enters/accesses one or more Interactions (Page, CLI, MCP tool, Webhook, Cron, …). **Mounts or wires** Interaction packages — MUST NOT own screen bodies or core domain |
-| Foundation | `src/foundations/<id>/` | Shared substrate by role (assembler, infra, design system, adapter) — not Journey-specific screen flows |
-| Journey | *(none)* | Plan container — architecture for a Journey is the union of member Interaction packages plus the Interfaces that expose them |
-| Bug | *(none)* | Fixes land in the affected Interaction/Interface/Foundation package |
+| Node type | Ownership |
+|---|---|
+| Interaction | Declared files — domain/view-model **and** the exportable surface (UI: mountable view; CLI/MCP/Webhook/Cron: handler) |
+| Interface | Declared files — mounts/wires Interactions; MUST NOT own screen bodies or core domain |
+| Foundation | Declared files — shared substrate by `role` (assembler, infra, design-system, adapter) |
+| Journey | *(none)* — architecture is the union of member Interaction files plus Interfaces that expose them |
+| Bug | *(none)* — fixes land in affected targets' files |
 
-Rules (when `implementation_packages` is `required`):
+Rules:
 
-- Package folder name MUST equal the node `id` (e.g. `i-checkout-split` → `src/interactions/i-checkout-split/`).
-- `create_node` for Interaction, Interface, or Foundation MUST scaffold the package directory with a `.gitkeep` (§6.3).
-- Agents MUST implement that node's code **only** inside its package. Cross-cutting reuse MUST go through Foundation packages — not Interaction→Interaction `depends_on` (illegal; §2.2, §5.9) and not ad-hoc junk-drawer folders outside the prescribed roots.
-- Agents query architecture via the MindPlan graph **plus** `get_node_implementation` (§8.1). For a Journey, derive member packages by resolving `belongs_to` Interactions, then calling `get_node_implementation` on each (and on Interfaces that `exposes` those Interactions when entry surfaces matter).
+- Before `in-review` / `ship`, `implements` on the active slot MUST be non-empty and every entry MUST exist on disk. Plan Review may judge intended paths that do not exist yet while still building.
+- `open_next` copies `implements` (and Foundation `role`); `ship` promotes them. A live entry is **released** when open `next` omits it (another owner may claim it). Retired nodes (`cancelled`/`deprecated`) may only shrink their list.
+- Agents MUST implement only in files their node claims. Cross-cutting reuse goes through Foundations — not Interaction→Interaction `depends_on` (illegal; §2.2, §5.9).
+- Agents query files via `get_node_implementation` (§8.1) and blast-radius `affected_files`.
 
-#### 1.2.1 Layout-free adoption (`implementation_packages: "off"`)
-
-Existing (brownfield) projects MAY opt out of prescribed packages via `mindplan/config.json`:
+#### 1.2.1 Source universe (`mindplan/config.json`)
 
 ```json
 {
-  "implementation_packages": "off"
+  "sources": ["src/**"],
+  "exclude": []
 }
 ```
 
-`mindplan-mcp init --layout free` writes that config; `--layout prescribed` (or default init when missing) writes `"required"`. Missing config MUST be treated as `"required"` so greenfield and this reference repo keep screaming-architecture checks. A **present but invalid** `mindplan/config.json` (bad JSON, non-object, or `implementation_packages` not exactly `"required"`|`"off"`) MUST hard-fail with `Blocked: invalid mindplan/config.json: …` — tools (`create_node`, `get_node_implementation`, …), `mindplan-mcp check`, and bare `init` (preserve path) MUST NOT silently fall back to `"required"`. Fix the file or overwrite with `mindplan-mcp init --layout free|prescribed`.
+- Missing config → `sources: ["src/**"]`, `exclude: []`.
+- Brownfield may start with `sources: []` and widen over time.
+- A config that still has `implementation_packages` MUST hard-fail with `Blocked:` pointing at `mindplan-mcp init` (migration). Invalid JSON / shape also hard-fails.
+- `create_node` does **not** scaffold `src/<type>/<id>/`. Declare files with `set_implementation_files`.
+- Default `mindplan-mcp check` enforces exclusivity, coverage, presence, leftovers, and the import matrix over the universe. Opt-in `--base` applies dirty-src lifecycle using the implements index.
 
-When packages are `off`:
-
-- `create_node` MUST NOT scaffold `src/foundations|interactions|interfaces/<id>/`
-- `get_node_implementation` MUST report `implementation_packages: "off"` with `root: null` (not an integrity failure)
-- `mindplan-mcp check` MUST skip package presence, orphan, and dirty-src ownership checks; graph load still applies.
-- Agents implement in the project's existing layout; they still advance MindPlan states and MUST NOT invent tickets outside the graph
-
-Graph compiler gates (Ghost Interactions/Interfaces/Bugs, Infrastructure First, Behavior First, Completion Check, Interaction Independence) are unchanged in both modes. Playbook gates (Plan Review for `draft → ready`, External Review for ship / Bug `resolved` — orchestrated Reviewer-subagent loops) also apply in both modes — they are not server-enforced.
-
-#### 1.2.2 Package ownership (Interaction owns the body; Interface mounts)
+#### 1.2.2 Ownership split (Interaction owns the body; Interface mounts)
 
 **Interaction owns the behavior surface. Interface only mounts or wires it.**
 
-- **Interaction package** owns domain logic, view-model, and the exportable surface for that behavior (Page/UI: mountable `*-view` / equivalent; CLI/MCP/Webhook/Cron: handler/module). It MUST NOT own app routing, device/staff shell chrome, or cross-Interaction navigation. It MUST NOT import `src/interfaces/…`.
-- **Interface package** owns routes/entry, providers, guards, thin mounts/wiring, shared shell chrome, and nav callbacks. It MAY compose multiple exposed Interactions (e.g. a badge from pickup on floor chrome). It MUST NOT reimplement order/checkout/floor/etc. behavior UI or domain rules that belong in an `exposes` target.
-- **Interface `ui/`** (when present) is chrome wrappers only — not feature screen bodies. Agents MUST NOT dump screens under `interfaces/…/ui/` as if that were the Interaction view.
-- **One Interface per actor surface**, not one Interface per screen/tab. A Waiter POS (or equivalent console) remains one Interface that `exposes` many Interactions; each route/tab mounts the matching Interaction package.
-- Layout-free projects (`implementation_packages: "off"`) follow the same ownership split in the existing app layout.
+- **Interaction** owns domain logic, view-model, and the exportable surface. It MUST NOT own app routing, device/staff shell chrome, or cross-Interaction navigation. It MUST NOT import Interface-owned files (import matrix).
+- **Interface** owns routes/entry, providers, guards, thin mounts/wiring, shared shell chrome, and nav callbacks. It MUST NOT reimplement behavior that belongs in an `exposes` target.
+- **One Interface per actor surface**, not one Interface per screen/tab.
+- **Assembler** Foundations may import Interfaces/Interactions that `depends_on` them (composition root). Reachable Foundation closure for imports stops at assemblers.
 
-**Build order (per exposed Interaction):** Interaction `in-progress` → implement domain + exportable surface → only then Interface thin mount/wire for that entry (pass shell/nav or call the handler; no reimplementation).
+**Build order (per exposed Interaction):** Interaction `in-progress` → implement + declare files → only then Interface thin mount/wire.
 
-Default Atomic Ops templates (§6.3) and playbook/review-work gates encode this split. Taxonomy edges (`exposes`, `leads_to`, Interaction Independence) are unchanged.
+Default Atomic Ops templates (§6.3) and playbook/review-work gates encode this split.
 
 ### 1.3 Screaming architecture
 
@@ -150,7 +143,7 @@ Tech layers (`Frontend`, `API`, `Database`) MUST NOT be Journeys. Delivery mecha
 
 ### 1.4 Roadmap (not implemented)
 
-**Source-file / symbol mapping** — linking territory nodes to concrete source files or symbols for finer-grained blast radius — is **not** part of this specification version. Architecture is the graph plus prescribed package roots (`get_node_implementation`). Implementations MUST NOT claim file/symbol mapping as a v0.1 feature.
+Further refinements (e.g. symbol-level mapping inside a file) are out of scope. File ownership via `implements` is the v0.2 authority for architecture queries and check.
 
 ---
 
@@ -164,7 +157,7 @@ MindPlan tracks **architecture and delivery together**. The build taxonomy is In
 |---|---|---|
 | **Journey** | A named **domain capability** — a permanent architectural boundary for related behaviors (e.g. "Table Ordering", "Billing", "Agency Site Generator"). The set of Journey titles is the product's scream. Journeys are continuous containers, not closable epics, sprints, or technical layers. | Permanent container. MUST NOT execute code directly. MUST NOT have outgoing edges. State is computed, never set manually (§4). MUST be named in domain language. |
 | **Interaction** | A **self-contained behavior** initiated by any actor — user, system, scheduler, external service, CLI, or MCP client. Examples: "Split the check", "Orient on the plan", "Check integrity", "Process payment webhook payload". An Interaction is **not** a page, route, CLI, MCP toolset, or other **entry surface** — those are Interfaces. When the behavior has a UI, the Interaction package owns the **screen body** (domain + mountable view). When the behavior is CLI/MCP/Webhook/Cron, the Interaction package owns the handler/module the Interface wires. | MUST belong to one or more Journeys via `belongs_to`. MUST `depends_on` at least one Foundation. MUST NOT `depends_on` another Interaction (§5.9 Interaction Independence). MAY `leads_to` other Interactions (navigation only; not a ship gate). MUST NOT import Interface packages. **Agents MUST define the Journey before creating an Interaction** — if the user requests an Interaction that cannot be mapped to an existing Journey, the agent MUST refuse and ask the user to define the Journey first. |
-| **Interface** | **How an actor enters or accesses** one or more Interactions. Examples: Page, CLI command, MCP tool surface, Webhook endpoint, Cron trigger, publish script. Interfaces have the **full build pipeline** and own `src/interfaces/<id>/`. They **mount or wire** Interaction packages; they MUST NOT own core domain logic or screen bodies. One Interface per actor surface (e.g. Waiter POS), not one Interface per screen/tab. | MUST `exposes` at least one Interaction before leaving `draft` (§5.3). MAY `depends_on` Foundations (e.g. Assembler, Adapter). MUST NOT `belongs_to` a Journey (membership is on Interactions). Ship is gated by **Behavior First** (§5.4): every exposed Interaction MUST be `stable`. Spec boilerplate: App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies. |
+| **Interface** | **How an actor enters or accesses** one or more Interactions. Examples: Page, CLI command, MCP tool surface, Webhook endpoint, Cron trigger, publish script. Interfaces have the **full build pipeline** and declare owned files via `implements`. They **mount or wire** Interaction packages; they MUST NOT own core domain logic or screen bodies. One Interface per actor surface (e.g. Waiter POS), not one Interface per screen/tab. | MUST `exposes` at least one Interaction before leaving `draft` (§5.3). MAY `depends_on` Foundations (e.g. Assembler, Adapter). MUST NOT `belongs_to` a Journey (membership is on Interactions). Ship is gated by **Behavior First** (§5.4): every exposed Interaction MUST be `stable`. Spec boilerplate: App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies. |
 | **Foundation** | **Shared substrate** with no standalone behavior: infrastructure *and* reusable product platform, organized by **role** (assembler, infra, design system, adapter — see §2.0.1). Examples: Next.js app shell, database schemas, auth, Stripe SDK, design tokens. Behaviors consume Foundations via `depends_on` without becoming them. Shared state between Interactions MUST live in Foundations. | Exists solely to be consumed by Interactions, Interfaces, or other Foundations. MUST be shipped (`stable`) before dependent Interactions can ship (Infrastructure First). MAY depend on other Foundations. MUST NOT own stakeholder-recognizable product behavior — that belongs in Interactions. Foundations are not Journey members. |
 | **Bug** | A defect afflicting one or more Interactions, Interfaces, or Foundations. | MUST link to targets via `affects` (Bug → Interaction\|Interface\|Foundation). Dedicated defect lifecycle (§3.2). Does not affect Journey computation. |
 
@@ -644,7 +637,7 @@ Default checklist items are Kind-aware package-ownership placeholders (§1.2.2);
 
 #### 6.3.1 Implementation packages
 
-`create_node` for Interaction, Interface, and Foundation MUST create the prescribed implementation package (§1.2) with a `.gitkeep` so the folder is versionable — **unless** `implementation_packages` is `off` (§1.2.1), in which case only territory is scaffolded. The package path is derived — it is not stored in frontmatter and is not an edge.
+`create_node` scaffolds territory only. Owned files are declared with `set_implementation_files` (`implements` in frontmatter). Foundations require `role`.
 
 Agents MUST place all implementation for that node under its package. Agents query the package via `get_node_implementation` (§8.1). There is no per-file affected-files list in territory — architecture is the graph plus package roots (§1.4).
 
@@ -892,6 +885,11 @@ Where:
   - `exposing_interfaces` — Interfaces with an `exposes` edge to this Interaction,
   - `containing_journeys` — Journeys this Interaction `belongs_to`,
   - `leads_to_downstream` — transitive forward closure via `leads_to` (BFS; cycles truncated by visited set), each with `distance`.
+- `affected_files` lists `{ path, owner_id, owner_type, via }` where `via` is:
+  - `focus` — the node's own files
+  - `dependent` — files of reverse-`depends_on` dependents
+  - `exposing` — files of Interfaces that expose a focus Interaction
+  - `importer` — files owned by other nodes that import the focus node's files (composition-root reverse edge)
 
 - **Errors:** unknown `node_id`.
 - **Rationale:** calling this before substantial implementation or `open_next` surfaces both substrate dependents and Interaction-centric reachability (who exposes this behaviour, which Journeys contain it, where navigation flows next). The stable-id model means an evolution never changes what depends on the node.
@@ -943,36 +941,26 @@ Composite orientation for agents: `find_related_nodes` plus full territory for t
 
 #### `get_node_implementation`
 
-Returns the prescribed implementation package for an Interaction, Interface, or Foundation (§1.2), or a packages-off result when layout-free (§1.2.1).
+Returns declared file ownership (§1.2) for a node, or the owner of a path.
 
-- **Input:** `node_id` (slug; must be an Interaction, Interface, or Foundation).
-- **Output (packages required):**
-
-```jsonc
-{
-  "node_id": "i-checkout-split",
-  "root": "src/interactions/i-checkout-split",
-  "exists": true,
-  "implementation_packages": "required",
-  "entries": [".gitkeep"]
-}
-```
-
-- **Output (packages off):**
+- **Input:** `node_id` (optional slug) and/or `path` (optional repo-relative POSIX path). At least one is required.
+- **Output (by `node_id`, Interaction/Interface/Foundation):**
 
 ```jsonc
 {
   "node_id": "i-checkout-split",
-  "root": null,
-  "exists": false,
-  "implementation_packages": "off",
-  "entries": []
+  "files": [{ "path": "src/interactions/i-checkout-split/handlers.ts", "exists": true }],
+  "next_files": [{ "path": "src/interactions/i-checkout-split/handlers.ts", "exists": true }]
 }
 ```
 
-`root` is the derived project-relative package path when `implementation_packages` is `required`. When packages are `off`, `root` is always `null` and `exists` is always `false` — that means packages are **not applicable**, not that a package is missing. Agents MUST read `implementation_packages` before interpreting `exists`/`root`. When packages are `required` and `exists` is true, `entries` lists **top-level** names in the package (sorted); otherwise `entries` is omitted or empty.
+`next_files` is present only when an open `next` slot declares `implements`.
 
-- **Errors:** unknown `node_id`; node is a Journey or Bug (`Blocked: … only applies to Interaction, Interface, and Foundation nodes`).
+- **Output (Journey):** files of member Interactions plus Interfaces that expose them, tagged `{ path, owner_id, owner_type, exists }`.
+- **Output (Bug):** files of `affects` targets, tagged the same way.
+- **Output (by `path`):** `{ path, owner: <node summary> | null }`.
+
+- **Errors:** unknown `node_id`; neither `node_id` nor `path` provided.
 
 #### `patch_node_territory`
 
@@ -997,9 +985,9 @@ Patches territory-owned content on `current.mdx` or `next.mdx`. Server-owned fro
 
 | Concern | Who writes |
 |---------|------------|
-| Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` / `force_unship` | **MCP only** (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `force_unship`, `open_next`, `discard_next`) |
+| Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` / `force_unship`, `implements`, Foundation `role` | **MCP only** (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `force_unship`, `open_next`, `discard_next`, `set_implementation_files`) |
 | `title`, `description`, body (PRD / Atomic Ops), checkbox toggles | **Host file tools** preferred on `current_path` / `next_path` from orientation (so native “changed files” UIs show the edit); `patch_node_territory` is an optional fallback |
-| Server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays) | **MCP only** — agents MUST NOT hand-edit these fields |
+| Server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays, `implements`, `role`) | **MCP only** — agents MUST NOT hand-edit these fields |
 | `mindplan/map.md` | Server after graph mutations — derived snapshot, not graph authority |
 
 Orient and trust graph state via MCP `record` responses. Do not treat on-disk frontmatter as authoritative for `state` or edges.
@@ -1008,10 +996,17 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 
 #### `create_node`
 
-- **Input:** `id` (slug), `type` (`Journey|Foundation|Interaction|Interface|Bug`), `title` (non-empty), `description`.
-- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). For Interaction, Interface, and Foundation, when `implementation_packages` is `required`, also scaffolds the prescribed implementation package under `src/` (§1.2, §6.3.1); when `off`, only territory is created (§1.2.1). Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
-- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, implementation?, implementation_packages?, changed_files }` (project-relative paths; `context` is a deprecated alias for `current`; `implementation` is the package root when scaffolded; `implementation_packages: "off"` is set when packages are disabled).
-- **Errors:** duplicate `id`.
+- **Input:** `id` (slug), `type` (`Journey|Foundation|Interaction|Interface|Bug`), `title` (non-empty), `description`, `role` (required when `type` is Foundation: `assembler|infra|design-system|adapter`).
+- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). Does **not** scaffold `src/<type>/<id>/`. Declare owned files afterward with `set_implementation_files`. Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
+- **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, changed_files }` (project-relative paths; `context` is a deprecated alias for `current`).
+- **Errors:** duplicate `id`; Foundation missing/invalid `role`.
+
+#### `set_implementation_files`
+
+- **Input:** `node_id` (Interaction, Interface, or Foundation), `files` (string[] of repo-relative POSIX paths), optional `slot` (`current`|`next`).
+- **Effect:** replaces the active slot's `implements` list. Pre-ship nodes write `current`. Shipped nodes write only an open `next` (else `Blocked:` → `open_next`). Retired nodes (`cancelled`/`deprecated`) may only shrink their list. Rejects `..`, paths under `mindplan/`, and ownership conflicts with other live/next claims.
+- **Output:** `{ node_id, slot, implements, changed_files }`.
+- **Errors:** unknown/wrong type; shipped without open next; retired expand; bad path; exclusivity conflict.
 
 #### `open_next`
 
@@ -1077,7 +1072,7 @@ Guardrails are evaluated at the moment of transition, against the graph and Terr
 ### 9.3 Out-of-band edits
 
 - `current.mdx`/`next.mdx` **body** and frontmatter **`title:`** / **`description:`** edits are a first-class part of the process.
-- `current.mdx`/`next.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees. Manually creating, editing, or deleting `next.mdx` outside `open_next`/`update_node_status`/`discard_next` is likewise out of contract.
+- `current.mdx`/`next.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`, `implements`, `role`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees. Manually creating, editing, or deleting `next.mdx` outside `open_next`/`update_node_status`/`discard_next` is likewise out of contract.
 
 ### 9.4 Concurrency
 
@@ -1089,16 +1084,15 @@ Transitioning an Interaction or Interface to `deprecated` (post-ship) or `cancel
 
 ### 9.6 Offline integrity check (`mindplan-mcp check`)
 
-The package binary exposes an offline CLI (same entry as MCP stdio, no stdio session required) that audits territory without mutating it. Behavior depends on `mindplan/config.json` `implementation_packages` (missing → `required`):
+The package binary exposes an offline CLI (same entry as MCP stdio, no stdio session required) that audits territory without mutating it. Config is `mindplan/config.json` `{ sources, exclude }` (missing → `sources: ["src/**"]`). A config that still has `implementation_packages` hard-fails with `Blocked:` pointing at `mindplan-mcp init`.
 
 | Mode | Command | Checks |
 |------|---------|--------|
-| Default (`required`) | `mindplan-mcp check` | Graph load; every non-retired Foundation/Interaction/Interface has `src/{foundations\|interactions\|interfaces}/<id>/`; no orphan package dirs. Does **not** run dirty-src. |
-| Default (`off`) | `mindplan-mcp check` | Graph load only — skips package presence and orphans (layout-free / brownfield) |
-| Dirty-src (opt-in) | `mindplan-mcp check --base <ref>` | Default checks plus dirty `src/` ownership vs `<ref>`: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`); **committed** paths vs `base...HEAD` allow `in-progress`/`in-review`/`stable`/`unstable`/`cancelled`/`deprecated`, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts (not draft/ready). Explicit `--base` fails closed on git errors. Skipped when packages are `off`. |
-| Invalid config | any check mode | Fail immediately if `mindplan/config.json` exists but is invalid (bad JSON / mode); do not treat as `required` |
+| Default | `mindplan-mcp check` | Graph load; **exclusivity** (each universe file ≤1 owner); **coverage** (every universe file owned); **presence** (in-review/shipped entries exist); **leftovers** (retired-node claims until deleted/reassigned); **import matrix** (§1.2). Does **not** run dirty-src. Does **not** fail because nodes are mid-pipeline. |
+| Dirty-src (opt-in) | `mindplan-mcp check --base <ref>` | Default checks plus dirty universe ownership vs `<ref>` using the implements index: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`); **committed** paths vs `base...HEAD` allow review/shipped/cancelled/deprecated, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts. Changed file with no owner fails. Explicit `--base` fails closed on git errors. |
+| Invalid config | any check mode | Fail immediately if `mindplan/config.json` exists but is invalid (bad JSON / shape / lingering `implementation_packages`) |
 
-Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + packages). Consumer repos SHOULD use the published bin after npm release.
+Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
 
 ---
 

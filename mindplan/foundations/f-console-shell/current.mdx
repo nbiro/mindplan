@@ -1,46 +1,44 @@
 ---
 id: f-console-shell
 type: Foundation
+role: assembler
 title: "Console shell"
-description: "App shell: project root selection, layout, and navigation across see / mutate / model surfaces."
+description: "Assembler/shell — project root selection, layout, and navigation; uses f-console-client for API access."
 state: ready
 created_at: 2026-07-20T21:15:24.459Z
-updated_at: 2026-07-20T21:17:13.798Z
+updated_at: 2026-09-23T13:54:16.347Z
 depends_on:
   - f-nextjs
   - f-design-system
-  - f-console-bridge
+  - f-console-client
 ---
 
 # Console shell
 
 ## Purpose
 
-Shared app chrome for the MindPlan console: choose a project root, host layout, and navigate across see / mutate / model pillars. All other console Interactions mount inside this shell.
+App shell: project root selection, layout, and navigation across see / mutate / model surfaces. Depends on `f-console-client` for API access (not the cancelled bridge).
 
-## Execution Logic
+## Shared Substrate Spec
 
-Package: `src/interactions/f-console-shell/`
+- Layout chrome, nav, project-root picker
+- Uses `f-nextjs` mount conventions and `f-design-system` tokens/components
+- Uses `f-console-client` for any shell-level API needs
+- MUST NOT own board/graph/territory/mutate/model feature bodies
 
-- Project root picker / binding passed to `f-console-bridge`
-- Top-level nav: Status board · Graph · Territory · Steer · Model
-- Layout frame using `f-design-system`; mounted by `f-nextjs`
-- After mutations elsewhere, provide a refresh path so see surfaces reload graph state
-
-Belongs to: `j-plan-console`. Depends on: `f-nextjs`, `f-design-system`, `f-console-bridge`.
+Depends on: `f-nextjs`, `f-design-system`, `f-console-client`.
 
 ## Acceptance Criteria
 
-- User can bind a local MindPlan project root and open the console
-- Nav reaches all five pillar Interactions without leaving the shell
-- Shell itself does not implement board/graph/mutate/model behaviour
+- Shell no longer depends on `f-console-bridge`
+- Plan-only in this change-set (stops at ready)
 
 ## Atomic Ops
 
-- [ ] Project root binding UI wired to bridge session
-- [ ] App layout + pillar navigation
-- [ ] Global refresh after successful mutations
+- [ ] Spec updated for f-console-client dependency
+- [ ] Document shell vs Interaction ownership split
+- [ ] Ready for later implementation
 
 ## Attachments
 
-_Wireframes go in `attachments/`._
+_None._

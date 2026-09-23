@@ -1,5 +1,5 @@
 /**
- * Offline integrity check for MindPlan territory + prescribed packages.
+ * Offline integrity check for MindPlan territory + declared file ownership.
  * Used by `mindplan-mcp check` (CLI) — not MCP stdio.
  */
 
@@ -7,24 +7,35 @@ import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import type { MindPlanGraph, MindPlanNode } from "../../foundations/f-domain-model/types.js";
-import { isPipelineNodeType } from "../../foundations/f-domain-model/types.js";
 import {
-  getNodeImplementation,
-  implementationPackagesRequired,
+  isPipelineNodeType,
+  isProductionState,
+} from "../../foundations/f-domain-model/types.js";
+import {
+  effectiveRole,
+  importAllowed,
+} from "../../foundations/f-compiler-rules/rules.js";
+import {
+  buildOwnershipIndex,
+  exclusiveOwner,
+  ownerOfFile,
+  type OwnershipBuckets,
+} from "../../foundations/f-source-index/ownership.js";
+import { expandClaims } from "../../foundations/f-source-index/claims.js";
+import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
+import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
+import {
   isChecklistComplete,
   loadGraph,
+  loadProjectConfig,
   projectRoot,
   readMarkdown,
-  SRC_DIR,
 } from "../../foundations/f-territory-store/store.js";
 
-const PACKAGE_KINDS = ["foundations", "interactions", "interfaces"] as const;
-const RETIRED_PACKAGE_STATES = new Set(["cancelled", "deprecated"]);
+const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 const MID_PIPELINE = new Set(["in-progress", "in-review"]);
 const BUG_MID_PIPELINE = new Set(["fixing", "in-review"]);
-/** Working-tree edits require active build. */
 const ACTIVE_BUILD = new Set(["in-progress"]);
-/** Commit diffs vs base may also be in-review, shipped, or retired (abandoned in-branch). */
 const CLAIMED_OR_CONCLUDED = new Set([
   "in-progress",
   "in-review",
@@ -33,13 +44,13 @@ const CLAIMED_OR_CONCLUDED = new Set([
   "cancelled",
   "deprecated",
 ]);
-/** Plan-only states: create_node may leave only `.gitkeep` package scaffolds. */
-const PRE_CLAIM = new Set(["draft", "ready"]);
 
+export type { OwnershipBuckets };
+export { buildOwnershipIndex, exclusiveOwner, ownerOfFile };
 export interface CheckOptions {
   /**
    * When set, also enforce dirty-src ownership vs this git base.
-   * Default check skips dirty-src (graph + packages only).
+   * Default check skips dirty-src (graph + ownership only).
    */
   base?: string;
   /** Override project root (tests). */
@@ -65,38 +76,6 @@ class GitError extends Error {
 
 function fail(failures: string[], message: string): void {
   failures.push(message.startsWith("Blocked:") ? message : `Blocked: ${message}`);
-}
-
-function listPackageDirs(root: string, kind: (typeof PACKAGE_KINDS)[number]): string[] {
-  const dir = path.join(root, SRC_DIR, kind);
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return [];
-  return fs
-    .readdirSync(dir)
-    .filter((name) => {
-      if (name.startsWith(".")) return false;
-      try {
-        return fs.statSync(path.join(dir, name)).isDirectory();
-      } catch {
-        return false;
-      }
-    })
-    .sort((a, b) => a.localeCompare(b));
-}
-
-function packageOwnerFromSrcPath(relPosix: string): { kind: string; id: string } | null {
-  const m = relPosix.match(/^src\/(foundations|interactions|interfaces)\/([^/]+)(?:\/|$)/);
-  if (!m) return null;
-  return { kind: m[1], id: m[2] };
-}
-
-/** `create_node` package placeholder — not implementation work. */
-function isPackageScaffoldPath(relPosix: string): boolean {
-  return /^src\/(foundations|interactions|interfaces)\/[^/]+\/\.gitkeep$/.test(relPosix);
-}
-
-function ownerIsPreClaim(node: MindPlanNode): boolean {
-  if (node.next) return PRE_CLAIM.has(node.next.state);
-  return PRE_CLAIM.has(node.state);
 }
 
 function toPosix(p: string): string {
@@ -144,13 +123,11 @@ function parsePorcelainSrcPaths(porcelain: string): string[] {
     const cleaned = file.replace(/^"|"$/g, "").trim();
     if (cleaned) paths.push(toPosix(cleaned));
   }
-  return paths.filter((p) => p.startsWith("src/"));
+  return paths;
 }
 
 /**
- * Working-tree dirtiness vs commits ahead of base, filtered to src/.
- * When `base` is explicit, git failures are hard errors.
- * Outside a git repo (and without `--base`), dirty-src is skipped (package checks still run).
+ * Working-tree dirtiness vs commits ahead of base, filtered to universe later.
  */
 export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths {
   const explicitBase = base !== undefined;
@@ -162,7 +139,7 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
     return { workingTree: [], commits: [] };
   }
 
-  const porcelain = git(["status", "--porcelain", "-uall", "--", "src"], cwd, true);
+  const porcelain = git(["status", "--porcelain", "-uall"], cwd, true);
   const workingTree = [...new Set(parsePorcelainSrcPaths(porcelain))].sort((a, b) =>
     a.localeCompare(b)
   );
@@ -170,11 +147,7 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
   const commits = new Set<string>();
   const baseRef = base ?? resolveDefaultBase(cwd);
   if (baseRef) {
-    const diff = git(
-      ["diff", "--name-only", `${baseRef}...HEAD`, "--", "src"],
-      cwd,
-      explicitBase
-    );
+    const diff = git(["diff", "--name-only", `${baseRef}...HEAD`], cwd, explicitBase);
     for (const line of diff.split("\n")) {
       const p = line.trim();
       if (p) commits.add(toPosix(p));
@@ -185,8 +158,162 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
 
   return {
     workingTree,
-    commits: [...commits].filter((p) => p.startsWith("src/")).sort((a, b) => a.localeCompare(b)),
+    commits: [...commits].sort((a, b) => a.localeCompare(b)),
   };
+}
+
+function checkExclusivity(
+  graph: MindPlanGraph,
+  root: string,
+  failures: string[]
+): OwnershipBuckets {
+  const claims: { file: string; owner: string }[] = [];
+
+  for (const node of graph.nodes) {
+    if (!isPipelineNodeType(node.type)) continue;
+    if (RETIRED_STATES.has(node.state)) continue;
+    if (node.next) {
+      for (const f of expandClaims(node.next.implements, root)) {
+        claims.push({ file: f, owner: node.id });
+      }
+      const nextSet = new Set(expandClaims(node.next.implements, root));
+      for (const f of expandClaims(node.implements, root)) {
+        if (nextSet.has(f)) claims.push({ file: f, owner: node.id });
+      }
+    } else {
+      for (const f of expandClaims(node.implements, root)) {
+        claims.push({ file: f, owner: node.id });
+      }
+    }
+  }
+
+  const byFile = new Map<string, Set<string>>();
+  for (const c of claims) {
+    let set = byFile.get(c.file);
+    if (!set) {
+      set = new Set();
+      byFile.set(c.file, set);
+    }
+    set.add(c.owner);
+  }
+  for (const [file, owners] of byFile) {
+    if (owners.size > 1) {
+      fail(
+        failures,
+        `exclusivity: "${file}" claimed by multiple nodes: ${[...owners]
+          .sort()
+          .map((id) => `"${id}"`)
+          .join(", ")}.`
+      );
+    }
+  }
+
+  return buildOwnershipIndex(graph, root);
+}
+
+function checkCoverage(
+  buckets: OwnershipBuckets,
+  root: string,
+  failures: string[]
+): void {
+  const universe = listUniverseFiles(root);
+  for (const file of universe) {
+    const owner = ownerOfFile(buckets, file);
+    if (!owner) {
+      fail(failures, `coverage: universe file "${file}" has no owner (implements claim).`);
+    }
+  }
+}
+
+function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): void {
+  for (const node of graph.nodes) {
+    if (!isPipelineNodeType(node.type)) continue;
+    if (RETIRED_STATES.has(node.state)) continue;
+
+    const checkSlot = (
+      entries: string[] | undefined,
+      label: string,
+      require: boolean
+    ) => {
+      if (!require) return;
+      const list = entries ?? [];
+      for (const entry of list) {
+        const abs = path.join(root, ...entry.replace(/\/$/, "").split("/"));
+        const exists = entry.endsWith("/")
+          ? fs.existsSync(abs) && fs.statSync(abs).isDirectory()
+          : fs.existsSync(abs) && fs.statSync(abs).isFile();
+        if (!exists) {
+          fail(
+            failures,
+            `presence: "${node.id}" ${label} implements entry missing on disk: "${entry}".`
+          );
+        }
+      }
+    };
+
+    const liveNeedsPresence =
+      node.state === "in-review" || isProductionState(node.state);
+    checkSlot(node.implements, "live", liveNeedsPresence);
+
+    if (node.next && node.next.state === "in-review") {
+      checkSlot(node.next.implements, "next", true);
+    }
+  }
+}
+
+function checkLeftovers(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  root: string,
+  failures: string[]
+): void {
+  for (const node of graph.nodes) {
+    if (!isPipelineNodeType(node.type)) continue;
+    if (!RETIRED_STATES.has(node.state)) continue;
+    for (const f of expandClaims(node.implements, root)) {
+      const abs = path.join(root, ...f.split("/"));
+      if (!fs.existsSync(abs)) continue;
+      // Still on disk and still listed by retired node → leftover unless also owned elsewhere actively
+      const active = exclusiveOwner(buckets, f);
+      if (active && active !== node.id) continue;
+      fail(
+        failures,
+        `leftovers: retired "${node.id}" still lists "${f}" which exists on disk. ` +
+          `Delete the file or reassign it via set_implementation_files.`
+      );
+    }
+  }
+}
+
+function checkImports(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  root: string,
+  failures: string[]
+): void {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const universe = listUniverseFiles(root);
+  for (const file of universe) {
+    if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file)) continue;
+    const fromOwnerId = exclusiveOwner(buckets, file);
+    if (!fromOwnerId) continue;
+    const fromOwner = byId.get(fromOwnerId);
+    if (!fromOwner) continue;
+
+    for (const edge of listResolvedImports(file, root)) {
+      const toOwnerId = exclusiveOwner(buckets, edge.to);
+      if (!toOwnerId) continue;
+      const toOwner = byId.get(toOwnerId);
+      if (!toOwner) continue;
+      if (importAllowed(fromOwner, toOwner, graph)) continue;
+      fail(
+        failures,
+        `imports: "${file}" (owner "${fromOwnerId}") may not import "${edge.to}" ` +
+          `(owner "${toOwnerId}" / ${toOwner.type}` +
+          `${toOwner.type === "Foundation" ? ` role=${effectiveRole(toOwner) ?? "?"}` : ""}).`
+      );
+    }
+  }
 }
 
 function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
@@ -198,7 +325,6 @@ function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
   );
 }
 
-/** Uncommitted edits: must be actively building (current or next slot). */
 function ownerAllowsWorkingTree(graph: MindPlanGraph, node: MindPlanNode): boolean {
   if (node.next) {
     if (ACTIVE_BUILD.has(node.next.state)) return true;
@@ -208,12 +334,6 @@ function ownerAllowsWorkingTree(graph: MindPlanGraph, node: MindPlanNode): boole
   return bugAllowsDirty(graph, node.id);
 }
 
-/**
- * Committed diffs vs base: allow active build / in-review / shipped / cancelled / deprecated.
- * When `next.mdx` is open, only a claimed next pipeline (`in-progress`/`in-review`)
- * counts — bare stable + next draft/ready must not pass (evolution not claimed).
- * Retired live nodes with no next: committed package history is allowed (abandon left files on disk).
- */
 function ownerAllowsCommitDiff(graph: MindPlanGraph, node: MindPlanNode): boolean {
   if (node.next) {
     if (MID_PIPELINE.has(node.next.state)) return true;
@@ -223,60 +343,13 @@ function ownerAllowsCommitDiff(graph: MindPlanGraph, node: MindPlanNode): boolea
   return bugAllowsDirty(graph, node.id);
 }
 
-function packageKindForType(type: MindPlanNode["type"]): string | null {
-  if (type === "Foundation") return "foundations";
-  if (type === "Interaction") return "interactions";
-  if (type === "Interface") return "interfaces";
-  return null;
-}
-
-function checkPackages(graph: MindPlanGraph, root: string, failures: string[]): void {
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-
-  for (const node of graph.nodes) {
-    if (!isPipelineNodeType(node.type)) continue;
-    if (RETIRED_PACKAGE_STATES.has(node.state)) continue;
-    const impl = getNodeImplementation(node);
-    if (!impl.exists) {
-      fail(
-        failures,
-        `missing implementation package for ${node.type} "${node.id}" (expected ${impl.root}/).`
-      );
-    }
-  }
-
-  for (const kind of PACKAGE_KINDS) {
-    for (const id of listPackageDirs(root, kind)) {
-      const node = byId.get(id);
-      if (!node) {
-        fail(
-          failures,
-          `orphan package src/${kind}/${id}/ has no matching MindPlan node.`
-        );
-        continue;
-      }
-      const expectedKind = packageKindForType(node.type);
-      if (!expectedKind) {
-        fail(
-          failures,
-          `orphan package src/${kind}/${id}/: node "${id}" is a ${node.type}, not a package owner.`
-        );
-      } else if (kind !== expectedKind) {
-        fail(
-          failures,
-          `package src/${kind}/${id}/ does not match node type ${node.type} (expected src/${expectedKind}/${id}/).`
-        );
-      }
-    }
-  }
-}
-
 function describeOwner(node: MindPlanNode): string {
   return `"${node.id}" is "${node.state}"` + (node.next ? ` (next: ${node.next.state})` : "");
 }
 
 function checkDirtySrc(
   graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
   cwd: string,
   base: string | undefined,
   failures: string[]
@@ -291,6 +364,7 @@ function checkDirtySrc(
   }
 
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const universe = new Set(listUniverseFiles(cwd));
   const workingSet = new Set(dirty.workingTree);
 
   const checkPath = (
@@ -298,53 +372,47 @@ function checkDirtySrc(
     allow: (g: MindPlanGraph, n: MindPlanNode) => boolean,
     hint: string
   ): void => {
-    const owner = packageOwnerFromSrcPath(rel);
-    if (!owner) {
-      fail(
-        failures,
-        `unowned dirty path "${rel}" (must live under src/foundations/<id>/, src/interactions/<id>/, or src/interfaces/<id>/).`
-      );
+    if (!universe.has(rel) && !exclusiveOwner(buckets, rel) && !ownerOfFile(buckets, rel)) {
+      // Outside universe and unowned — ignore (docs, config, etc.)
+      // But if it's in universe and unowned, fail.
+    }
+    if (universe.has(rel) && !ownerOfFile(buckets, rel)) {
+      fail(failures, `unowned dirty path "${rel}" (no implements owner).`);
       return;
     }
-    const node = byId.get(owner.id);
+    const ownerId = exclusiveOwner(buckets, rel) ?? ownerOfFile(buckets, rel)?.id;
+    if (!ownerId) return; // not in universe / not owned — skip lifecycle
+    const node = byId.get(ownerId);
     if (!node) {
-      fail(failures, `dirty path "${rel}" maps to unknown node "${owner.id}".`);
+      fail(failures, `dirty path "${rel}" maps to unknown node "${ownerId}".`);
       return;
     }
-    if (!isPipelineNodeType(node.type)) {
-      fail(failures, `dirty path "${rel}" owner "${owner.id}" is a ${node.type}.`);
-      return;
-    }
-    // Ready/draft plans commit create_node scaffolds; that is not implementation work.
-    if (isPackageScaffoldPath(rel) && ownerIsPreClaim(node)) return;
     if (!allow(graph, node)) {
       fail(
         failures,
-        `dirty package src/${owner.kind}/${owner.id}/ while ${describeOwner(node)}. ${hint}`
+        `dirty file "${rel}" while ${describeOwner(node)}. ${hint}`
       );
     }
   };
 
   for (const rel of dirty.workingTree) {
-    // Deleted paths still appear in porcelain; only enforce ownership for paths that exist.
     if (!fs.existsSync(path.join(cwd, ...rel.split("/")))) continue;
+    if (!universe.has(rel) && !ownerOfFile(buckets, rel)) continue;
     checkPath(
       rel,
       ownerAllowsWorkingTree,
-      "Uncommitted src/ changes require in-progress (or next in-progress), or a Bug in fixing/in-review. " +
-        "Package-root .gitkeep scaffolds alone are allowed at draft/ready."
+      "Uncommitted changes require in-progress (or next in-progress), or a Bug in fixing/in-review."
     );
   }
 
   for (const rel of dirty.commits) {
-    if (workingSet.has(rel)) continue; // already gated by stricter working-tree rule
-    // Removals of retired package roots (e.g. former src/workflows/) need no living owner.
+    if (workingSet.has(rel)) continue;
     if (!fs.existsSync(path.join(cwd, ...rel.split("/")))) continue;
+    if (!universe.has(rel) && !ownerOfFile(buckets, rel)) continue;
     checkPath(
       rel,
       ownerAllowsCommitDiff,
-      "Committed src/ diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review. " +
-        "Package-root .gitkeep scaffolds alone are allowed at draft/ready; other files are not."
+      "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review."
     );
   }
 }
@@ -358,7 +426,6 @@ const BUILDING_CHECKLIST_STATES = new Set([
   "fixing",
 ]);
 
-/** All checkboxes checked while still building is an invalid graph posture. */
 function checkChecklistBuilding(graph: MindPlanGraph, failures: string[]): void {
   for (const node of graph.nodes) {
     const slots: Array<{ slot: "current" | "next"; state: string }> = [
@@ -398,6 +465,8 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
 
   let graph: MindPlanGraph;
   try {
+    // Config must load (Blocked on legacy implementation_packages).
+    loadProjectConfig(root);
     graph = loadGraph();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -410,13 +479,14 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   }
 
   try {
-    const packagesOn = implementationPackagesRequired(root);
     checkChecklistBuilding(graph, failures);
-    if (packagesOn) {
-      checkPackages(graph, root, failures);
-    }
-    if (packagesOn && options.base !== undefined) {
-      checkDirtySrc(graph, root, options.base, failures);
+    const buckets = checkExclusivity(graph, root, failures);
+    checkCoverage(buckets, root, failures);
+    checkPresence(graph, root, failures);
+    checkLeftovers(graph, buckets, root, failures);
+    checkImports(graph, buckets, root, failures);
+    if (options.base !== undefined) {
+      checkDirtySrc(graph, buckets, root, options.base, failures);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

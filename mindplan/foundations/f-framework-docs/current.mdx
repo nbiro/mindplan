@@ -1,51 +1,54 @@
 ---
 id: f-framework-docs
 type: Foundation
-title: "Framework docs (no --for-main)"
-description: "Assembler/docs — playbook, review-work, SPEC, and README no longer mention check --for-main."
+role: assembler
+title: "Framework docs (file ownership)"
+description: "Assembler/docs — SPEC, playbook, skills, README document declared file ownership instead of prescribed packages."
 state: stable
-shipped_at: 2026-09-23T12:06:43.099Z
+shipped_at: 2026-09-23T14:05:31.504Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-09-23T12:06:43.099Z
+updated_at: 2026-09-23T14:08:09.269Z
 depends_on:
   - f-domain-model
+implements:
+  - README.md
+  - SPEC.md
+  - templates/
 ---
 
 
-
-# Framework documentation
+# Framework documentation (file ownership)
 
 ## Purpose
 
-Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook stays a short systems dialect. It requires **default `mindplan-mcp check` before any Reviewer handoff**, requires the **parent to spawn the Reviewer** before treating a Review gate as done, and requires **Reviewers to ignore other nodes that are still in progress**. `check --for-main` is **removed** from the product: docs must not describe it as an optional mode.
+Own MindPlan’s normative documentation. Rewrite prescribed-package language to declared file ownership (`implements`, Foundation `role`, `sources`/`exclude`, import matrix). Keep systems dialect: check before Reviewer handoff, parent spawns Reviewer, ignore other mid-pipeline nodes.
 
 ## Shared Substrate Spec
 
-Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder `src/foundations/f-framework-docs/` is a pointer (no runtime TS).
+Claims (via `set_implementation_files`): `SPEC.md`, `README.md`, `templates/`
 
-Surfaces:
+- Rewrite SPEC §1.2–§1.2.2; strike §1.4 file-mapping deferral; add `role` to §2.0.1; update §6.3 scaffolds/Atomic Ops; §8.1–§8.2 tools; §9.6 check
+- Templates under `templates/agent/` (playbook, skills, cursor integration)
+- Regenerated installed copies via `init -f` (do not hand-edit AGENTS.md / `.cursor/*` / `mindplan/agent/*`)
+- review-work Procedure B: Reviewer maps each changed file to its owner; file owned outside frozen `node_ids[]` and new/changed `assembler` role need justifying
 
-- `SPEC.md` — no `--for-main` mode in §1.2.1 or §9.6; External Review still says Reviewers do not Reject other mid-pipeline nodes, without pointing at a removed flag
-- `AGENTS.md` / `templates/agent/playbook.md` / `mindplan/agent/playbook.md` / `.cursor/rules/mindplan.mdc` — systems dialect; optional local hygiene is `--base` only
-- `templates/agent/skills/review-work/` (+ mirrors) — Reviewers must not Reject other in-progress nodes; no instruction to run or avoid `--for-main`
-- `templates/agent/integrations/cursor.md` — check-before-review mentions default `check` and optional `--base` only
-- `README.md` — CLI table lists `check` with `--base` only
-
-Canonical edits: `templates/agent/`; mirrors stay in sync. Spawn-before-done and “in-progress elsewhere is not a Reject” stay.
+Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- No live doc (`SPEC.md`, `README.md`, playbook mirrors, review-work mirrors, cursor integration) documents `check --for-main` as a supported flag
-- Playbook still says Reviewers must not Reject because other nodes are mid-pipeline
-- Optional hygiene mentioned in the playbook is `--base` only
-- Verified by searching those surfaces (docs Foundation has no runtime)
+- No live normative doc still presents prescribed `src/<type>/<id>/` packages as the ownership authority
+- SPEC and templates describe `implements`, `role`, `set_implementation_files`, and the import matrix
+- review-work Procedure B includes owner mapping
+- Verified by reading edited surfaces
 
 ## Atomic Ops
 
-- [x] Scrub `--for-main` from playbook + mirrors, review-work + mirrors, cursor integration, SPEC, and README
-- [x] Keep spawn-before-done and the rule that other in-progress nodes are not a Reviewer Reject
-- [x] Verified by reading the edited surfaces
+- [x] Rewrite SPEC sections for declared ownership
+- [x] Update playbook, skills, cursor integration, README templates
+- [x] Add owner mapping to review-work Procedure B
+- [x] Regenerate installed copies with `init -f`
+- [x] Verified by reading surfaces
 
 ## Attachments
 
-_Schemas and diagrams go in `next-attachments/`._
+_None._

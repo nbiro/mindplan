@@ -1,53 +1,53 @@
 ---
 id: f-view-projection
 type: Foundation
-title: "View projection (interaction-centric)"
-description: "Mermaid/DOT: Interaction clusters, exposes + leads_to edge styles."
+role: infra
+title: "View projection"
+description: "Infra — Mermaid/DOT projection; depends on graph-search and territory-store for neighborhood expand and mindplan root."
 state: stable
-shipped_at: 2026-08-10T13:51:07.455Z
+shipped_at: 2026-09-23T13:27:07.830Z
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-08-10T13:51:07.455Z
+updated_at: 2026-09-23T13:54:16.368Z
 depends_on:
   - f-domain-model
+  - f-graph-search
+  - f-territory-store
+implements:
+  - src/foundations/f-view-projection/
 ---
+
+
 
 
 # View projection
 
 ## Purpose
 
-Infra — project the MindPlan graph into Mermaid or DOT for humans, and persist the canonical Mermaid map at `mindplan/map.md` after mutations. Agents must treat MCP export/`find_related_nodes` as authority, not the map file alone.
+Infra — deterministic Mermaid/DOT projection of the territory graph, plus `persistMindPlanMap` for the auto-refreshed `mindplan/map.md` snapshot after mutations.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-view-projection/`
 
-- `view.ts` — `prepareViewGraph` (optional focus, hide retired including `cancelled`/`deprecated`); `graphToMermaid` / `graphToDot`; `exportMindPlanView`; `persistMindPlanMap` / `mindPlanMapPath` (`MAP_FILENAME = map.md`)
-- Journey subgraphs cluster member Interactions (via `belongs_to`); `belongs_to` edges are **not** drawn as arrows — membership is encoded by clustering only (same as today for Interactions)
-- Interactions with multiple `belongs_to` appear in each Journey cluster; Interactions with no Journey sit outside clusters
-- Interface nodes render as their own type (no Interaction label)
-- Edge rendering: `depends_on` solid; `exposes` solid with `exposes` label; `leads_to` dotted/dashed arrow labeled `leads_to`; `affects` as today
-- Bug nodes and deterministic sort preserved
+- `view.ts` — `exportMindPlanView`, `persistMindPlanMap`, `graphToMermaid` / `graphToDot`, `VIEW_FORMATS`
+- Uses `expandNeighborhood` from `f-graph-search` and `mindplanRoot` from `f-territory-store` (already imported; edges now match)
+- Interaction-centric styling: Interaction clusters, `exposes` + `leads_to` edge styles
+- MUST NOT own MCP tool handlers; `i-export-map` and `i-steer-plan` call into this package
 
-Depends on: `f-domain-model`.
+Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 
 ## Acceptance Criteria
 
-- Mermaid and DOT exports render nodes, edges, and states for Journey, Interaction, Interface, Foundation, Bug
-- Focused and full-graph views are supported
-- `cancelled` and `deprecated` are hidden unless `include_retired`
-- Successful graph mutations can refresh `mindplan/map.md`
-- `exposes` and `leads_to` are visually distinct; `belongs_to` remains cluster-only
-- No Interaction label remains in projections
-- Deterministic ordering preserved
-- Verified via `npm test` (`view.test.mjs`)
+- `exportMindPlanView` returns Mermaid and DOT for full and focused graphs
+- `persistMindPlanMap` writes `mindplan/map.md` after mutations (called by steer)
+- Graph edges declare the imports this package already makes
 
 ## Atomic Ops
 
-- [x] Cluster Journeys by Interactions; render Interface nodes; drop Interaction labels
-- [x] Style `exposes` and `leads_to` edges distinctly in Mermaid and DOT; keep `belongs_to` cluster-only
-- [x] Verified via `npm test`
+- [x] Confirm `depends_on` matches imports (`f-graph-search`, `f-territory-store`)
+- [x] No code move required beyond edge alignment; keep projection APIs stable
+- [x] Verify export/view CLI and post-mutation map refresh via `npm test`
 
 ## Attachments
 
-_Schemas and diagrams go in `next-attachments/`._
+_None._

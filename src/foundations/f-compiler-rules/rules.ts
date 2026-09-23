@@ -7,6 +7,7 @@ import type {
   BugState,
   EdgeType,
   ExecutionState,
+  FoundationRole,
   JourneyState,
   MindPlanGraph,
   MindPlanNode,
@@ -29,6 +30,9 @@ import {
   PRODUCTION_TRANSITIONS,
   SHIP_TRANSITION,
 } from "../f-domain-model/types.js";
+import {
+  claimEntryExists,
+} from "../f-source-index/claims.js";
 import {
   countUncheckedBoxes,
   isChecklistComplete,
@@ -167,9 +171,12 @@ export function assertMinimumTerritoryShape(
   if (node.type === "Foundation") {
     const description =
       slot === "next" && node.next ? node.next.description : node.description;
-    if (!FOUNDATION_ROLE_TAG.test(description ?? "")) {
+    const role: FoundationRole | undefined =
+      slot === "next" && node.next ? node.next.role ?? node.role : node.role;
+    if (!role && !FOUNDATION_ROLE_TAG.test(description ?? "")) {
       throw blocked(
-        `Minimum Territory Shape. Foundation "${node.id}" description must start with a role tag ` +
+        `Minimum Territory Shape. Foundation "${node.id}" must have frontmatter role ` +
+          `(assembler|infra|design-system|adapter) or a description starting with a role tag ` +
           `(Assembler / Infra / Design system / Adapter), e.g. "Infra — …".`
       );
     }
@@ -332,13 +339,19 @@ export function assertOpenChecklistWhileBuilding(
   );
 }
 
-/** Pre-ship Interaction/Interface title/description edits; shipped scope changes use open_next. */
+/** Pre-ship Interaction/Interface/Foundation title/description/role edits; shipped scope changes use open_next. */
 export function assertPipelineTerritoryScalarsEditable(
   node: MindPlanNode,
-  field: "title" | "description",
+  field: "title" | "description" | "role",
   slot: "current" | "next" = "current"
 ): void {
-  if (node.type !== "Interaction" && node.type !== "Interface") return;
+  if (field === "role") {
+    if (node.type !== "Foundation") {
+      throw blocked(`role only applies to Foundations; "${node.id}" is a ${node.type}.`);
+    }
+  } else if (node.type !== "Interaction" && node.type !== "Interface" && node.type !== "Foundation") {
+    return;
+  }
   if (slot === "next") {
     if (!node.next) {
       throw blocked(`cannot edit ${field} on next: "${node.id}" has no next.mdx.`);
@@ -368,6 +381,138 @@ export function assertWorkflowTerritoryScalarsEditable(
   slot: "current" | "next" = "current"
 ): void {
   assertPipelineTerritoryScalarsEditable(node, field, slot);
+}
+
+/**
+ * Active-slot implements must be non-empty and every entry must exist on disk
+ * when entering in-review or ship.
+ */
+export function assertImplementsForReviewOrShip(
+  node: MindPlanNode,
+  slot: "current" | "next" = "current",
+  root?: string
+): void {
+  if (!isPipelineNodeType(node.type)) return;
+  const entries =
+    slot === "next" && node.next ? node.next.implements ?? [] : node.implements ?? [];
+  if (entries.length === 0) {
+    throw blocked(
+      `Implements required. "${node.id}" ${slot === "next" ? "next " : ""}must declare a non-empty ` +
+        `implements list via set_implementation_files before in-review / ship.`
+    );
+  }
+  const missing: string[] = [];
+  for (const entry of entries) {
+    if (!claimEntryExists(entry, root)) missing.push(entry);
+  }
+  if (missing.length > 0) {
+    throw blocked(
+      `Implements presence. "${node.id}" ${slot === "next" ? "next " : ""}implements entries ` +
+        `missing on disk: ${missing.map((m) => `"${m}"`).join(", ")}.`
+    );
+  }
+}
+
+function runImplementsGate(
+  node: MindPlanNode,
+  newStatus: string,
+  slot: "current" | "next" = "current"
+): void {
+  if (newStatus === "in-review" || newStatus === SHIP_TRANSITION) {
+    assertImplementsForReviewOrShip(node, slot);
+  }
+}
+
+/**
+ * Effective Foundation role (next.role while evolving, else live role, else description tag).
+ */
+export function effectiveRole(node: MindPlanNode): FoundationRole | undefined {
+  if (node.type !== "Foundation") return undefined;
+  if (node.next?.role) return node.next.role;
+  if (node.role) return node.role;
+  const desc = node.next?.description ?? node.description ?? "";
+  if (/^Assembler\b/i.test(desc)) return "assembler";
+  if (/^Infra\b/i.test(desc)) return "infra";
+  if (/^Design system\b/i.test(desc)) return "design-system";
+  if (/^Adapter\b/i.test(desc)) return "adapter";
+  return undefined;
+}
+
+/**
+ * Transitive depends_on Foundations. Stops at assembler (does not continue past it).
+ * While next is open, live and next edges both count (union of targets).
+ */
+export function reachableFoundations(
+  node: MindPlanNode,
+  graph: MindPlanGraph
+): MindPlanNode[] {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const result: MindPlanNode[] = [];
+  const seen = new Set<string>();
+  const stack: string[] = [];
+
+  function pushDeps(n: MindPlanNode): void {
+    const ids = new Set<string>(n.depends_on ?? []);
+    if (n.next?.depends_on) {
+      for (const id of n.next.depends_on) ids.add(id);
+    }
+    for (const id of ids) stack.push(id);
+  }
+
+  pushDeps(node);
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const target = byId.get(id);
+    if (!target || target.type !== "Foundation") continue;
+    result.push(target);
+    if (effectiveRole(target) === "assembler") continue;
+    pushDeps(target);
+  }
+  return result.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * Import matrix: may `fromOwner` import a file owned by `toOwner`?
+ */
+export function importAllowed(
+  fromOwner: MindPlanNode,
+  toOwner: MindPlanNode,
+  graph: MindPlanGraph
+): boolean {
+  if (fromOwner.id === toOwner.id) return true;
+
+  const reachableIds = new Set(reachableFoundations(fromOwner, graph).map((n) => n.id));
+
+  if (fromOwner.type === "Interaction") {
+    return toOwner.type === "Foundation" && reachableIds.has(toOwner.id);
+  }
+
+  if (fromOwner.type === "Interface") {
+    if (toOwner.type === "Foundation" && reachableIds.has(toOwner.id)) return true;
+    if (toOwner.type === "Interaction") {
+      return effectiveExposes(fromOwner).includes(toOwner.id);
+    }
+    return false;
+  }
+
+  if (fromOwner.type === "Foundation") {
+    if (toOwner.type === "Foundation" && reachableIds.has(toOwner.id)) return true;
+    if (effectiveRole(fromOwner) === "assembler") {
+      // Assembler may import Interfaces/Interactions that depends_on it (live or next).
+      if (toOwner.type === "Interface" || toOwner.type === "Interaction") {
+        const deps = new Set<string>(toOwner.depends_on ?? []);
+        if (toOwner.next?.depends_on) {
+          for (const id of toOwner.next.depends_on) deps.add(id);
+        }
+        return deps.has(fromOwner.id);
+      }
+    }
+    return false;
+  }
+
+  return false;
 }
 
 /**
@@ -767,6 +912,7 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     }
     runCompletionCheck(node, SHIP_TRANSITION, "next");
     runMinimumTerritoryShape(node, SHIP_TRANSITION, "next");
+    runImplementsGate(node, SHIP_TRANSITION, "next");
     assertEffectiveDependsOnAcyclic(graph);
 
     if (node.type === "Interaction") {
@@ -815,6 +961,7 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
   }
   runCompletionCheck(node, SHIP_TRANSITION, "current");
   runMinimumTerritoryShape(node, SHIP_TRANSITION, "current");
+  runImplementsGate(node, SHIP_TRANSITION, "current");
 
   if (node.type === "Interaction") {
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
@@ -934,6 +1081,7 @@ function validateInteractionRules(
 
   validateInteractionRulesForEdges(interaction, newStatus, journeys, dependsOn, graph);
   runMinimumTerritoryShape(interaction, newStatus, "current");
+  runImplementsGate(interaction, newStatus, "current");
 }
 
 function validateInterfaceRules(
@@ -947,6 +1095,7 @@ function validateInterfaceRules(
 
   validateInterfaceRulesForEdges(iface, newStatus, exposes, graph);
   runMinimumTerritoryShape(iface, newStatus, "current");
+  runImplementsGate(iface, newStatus, "current");
 }
 
 /** Terminal states that do not block cancelling a dependency target. */
@@ -1043,11 +1192,14 @@ function resolveNextStatusChange(
       graph
     );
     runMinimumTerritoryShape(node, newStatus, "next");
+    runImplementsGate(node, newStatus, "next");
   } else if (node.type === "Interface") {
     validateInterfaceRulesForEdges(node, newStatus, next.exposes ?? [], graph);
     runMinimumTerritoryShape(node, newStatus, "next");
+    runImplementsGate(node, newStatus, "next");
   } else if (node.type === "Foundation") {
     runMinimumTerritoryShape(node, newStatus, "next");
+    runImplementsGate(node, newStatus, "next");
   }
 
   return { state: newStatus, ship: false, promote_next: false };
@@ -1144,6 +1296,7 @@ export function resolveStatusChange(
     validateInterfaceRules(graph, node, newStatus);
   } else if (node.type === "Foundation") {
     runMinimumTerritoryShape(node, newStatus, "current");
+    runImplementsGate(node, newStatus, "current");
   }
 
   return { state: newStatus, ship: false, promote_next: false };
@@ -1212,6 +1365,7 @@ export function resolveForceUnship(
     validateInterfaceRules(graph, node, newStatus);
   } else if (node.type === "Foundation" && newStatus === "in-review") {
     runMinimumTerritoryShape(node, newStatus, "current");
+    runImplementsGate(node, newStatus, "current");
   }
 
   return newStatus;

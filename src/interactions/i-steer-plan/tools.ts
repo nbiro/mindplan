@@ -10,4 +10,5 @@ export const MUTATE_TOOLS = [
   "patch_node_territory",
   "open_next",
   "discard_next",
+  "set_implementation_files",
 ] as const;

@@ -1,63 +1,66 @@
 ---
 id: i-steer-plan
 type: Interaction
-title: "Mutate graph"
-description: "Mutate graph; update_node_status accepts cancelled for pre-ship abandon"
+title: "Steer (set_implementation_files)"
+description: "Adds set_implementation_files; create_node requires Foundation role; no package scaffolds."
 state: stable
-shipped_at: 2026-07-20T20:11:40.803Z
+shipped_at: 2026-09-23T14:05:40.466Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-07-23T20:59:42.453Z
+updated_at: 2026-09-23T14:08:09.273Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
-  - f-mcp-runtime
   - f-compiler-rules
+  - f-graph-search
+  - f-view-projection
+  - f-territory-store
+  - f-source-index
 leads_to:
   - i-export-map
+implements:
+  - src/interactions/i-steer-plan/
 ---
 
 
-
-
-# Mutate graph
+# Steer (set_implementation_files)
 
 ## Purpose
 
-Write-path MindPlan tools: create/link nodes, advance pipeline state, optional territory patches, open/discard/promote evolutions, and mistaken-ship recovery via `force_unship` — always through the compiler. Successful graph mutations return `changed_files` (repo-relative paths written or deleted) so hosts can surface what MCP touched.
+Mutate the graph through compiler-gated tools. Adds `set_implementation_files`. `create_node` requires Foundation `role`. No package scaffolds. Claim validation uses `f-source-index`.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
+- **Trigger:** MCP/HTTP mutate tools
 
 ## Execution Logic
 
-Package: `src/interactions/i-steer-plan/`
+Intended files: `src/interactions/i-steer-plan/`
 
-- `tools.ts` — ownership list `MUTATE_TOOLS` registered by `f-mcp-runtime/server.ts`:
-  - `create_node`, `link_nodes`, `unlink_nodes`
-  - `update_node_status` (current or `next` slot; `ship` promotes `next`)
-  - `force_unship` (user-confirmed recovery: clear `shipped_at`, set pre-ship state)
-  - `patch_node_territory` (optional fallback for body/title/description/checkbox toggles; defaults to `next` when evolving)
-  - `open_next`, `discard_next`
+- Keep existing mutate tools + map refresh via `f-view-projection`
+- New tool `set_implementation_files(node_id, files, slot?)`:
+  - Pre-ship writes `current`; shipped writes only open `next` (else Blocked → open_next); retired may only shrink
+  - Reject bad paths (`..`, under `mindplan/`) and immediate ownership conflicts
+- `create_node` for Foundations requires `role`
+- Do not scaffold `src/<type>/<id>/.gitkeep`
 
-Interactive agents prefer host file tools for territory prose (`title` / `description` / body / checkboxes) at `current_path` / `next_path`; MCP remains mandatory for graph structure and server-owned frontmatter. Graph mutate responses include `changed_files`. `patch_node_territory` remains for automation and hosts with weak file tools.
-
-`force_unship` requires an explicit human yes and `confirm: "unship:<node_id>"` — agents must not invent confirmation.
-
-Compiler gates live in `f-compiler-rules`. Depends on: `f-mcp-runtime`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
+Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- All eight mutate tools are registered and persist through the territory store
-- Illegal mutations return `Blocked:` and leave the graph unchanged
-- Successful graph mutations refresh `mindplan/map.md` via the runtime
-- Successful graph mutations (`create_node`, `link_nodes`, `unlink_nodes`, `update_node_status`, `force_unship`, `open_next`, `discard_next`) return `changed_files` listing territory paths, optional `src/` scaffolds, and `mindplan/map.md` when refreshed
-- `patch_node_territory` remains usable and returns `changed_files` / `path` for the slot written
+- `set_implementation_files` enforces slot rules and rejects conflicts
+- Foundation create without role is Blocked
+- No package scaffolds on create
+- Existing mutate behavior preserved
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Surface `cancelled` via `update_node_status` (compiler-backed)
-- [x] Document pre-ship cancel in territory / playbook
-- [x] Smoke coverage for cancel gates (dependents, terminal, hide from view)
-- [x] Keep mutate tool list and `changed_files` contract intact
+- [x] Implement `set_implementation_files` with slot/retired/conflict rules
+- [x] Require Foundation role on create_node
+- [x] Stop scaffolding packages from create path
+- [x] Verified via `npm test`
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/` / `next-attachments/`._
+_None._

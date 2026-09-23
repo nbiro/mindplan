@@ -1,19 +1,64 @@
 ---
 id: if-mcp-tools
 type: Interface
-title: "MCP tools"
-description: "MCP tool Interface exposing orient, steer, and export Interactions."
-state: ready
+title: "MCP tools (set_implementation_files)"
+description: "Registers set_implementation_files; depends_on includes Foundations used for schemas."
+state: stable
+shipped_at: 2026-09-23T14:05:49.388Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-08-10T13:44:20.502Z
+updated_at: 2026-09-23T14:08:09.275Z
+depends_on:
+  - f-mcp-runtime
+  - f-domain-model
+  - f-graph-search
+  - f-view-projection
 exposes:
   - i-orient-plan
   - i-steer-plan
   - i-export-map
-depends_on:
-  - f-mcp-runtime
+implements:
+  - src/interfaces/if-mcp-tools/
 ---
 
-# MCP tools
 
-MCP tool Interface exposing orient, steer, and export Interactions.
+# MCP tools (set_implementation_files)
+
+## Purpose
+
+MCP stdio Interface that registers orient, steer, and export tools. Adds registration for `set_implementation_files`. Depends on Foundations used for Zod schemas.
+
+## Kind
+
+MCP tool surface (stdio).
+
+## Exposed Interactions
+
+- `i-orient-plan` — read/orient tools (including file queries)
+- `i-steer-plan` — mutate tools including `set_implementation_files`
+- `i-export-map` — `export_mindplan_view`
+
+## Spec
+
+Intended files: `src/interfaces/if-mcp-tools/`
+
+- Register `set_implementation_files` with Zod schema (`node_id`, `files`, optional `slot`)
+- Update schemas for `get_node_implementation` (`path` optional) and any role field on create
+- Mount only; no domain logic
+- Depends on `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection` for schemas/types already imported
+
+## Acceptance Criteria
+
+- New tool is registered and callable
+- Existing tools keep names/envelopes
+- No domain logic under this Interface
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Register `set_implementation_files`
+- [x] Update create / get_node_implementation schemas for role and path
+- [x] Verified via MCP smoke
+
+## Attachments
+
+_None._

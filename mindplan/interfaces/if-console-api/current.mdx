@@ -1,0 +1,55 @@
+---
+id: if-console-api
+type: Interface
+title: "Console API"
+description: "HTTP Interface for the console: maps Blocked: to JSON, returns changed_files; mounts orient and steer."
+state: ready
+created_at: 2026-09-23T13:28:46.157Z
+updated_at: 2026-09-23T13:55:31.156Z
+depends_on:
+  - f-nextjs
+exposes:
+  - i-orient-plan
+  - i-steer-plan
+---
+
+# Console API
+
+## Purpose
+
+HTTP Interface for the MindPlan console. Maps compiler `Blocked:` errors to structured JSON, returns `changed_files` on successful mutations, and mounts the orient and steer Interactions that the cancelled `f-console-bridge` used to wrap incorrectly as an infra Foundation.
+
+## Kind
+
+REST / App Router HTTP endpoints (Next.js route handlers).
+
+## Exposed Interactions
+
+- `i-orient-plan` — read/orient operations for the console
+- `i-steer-plan` — mutate operations for the console
+
+## Spec
+
+- Route handlers under the Next.js app that call orient/steer handlers
+- Transport only: status codes + JSON for Blocked; no domain graph logic
+- Mounted by `f-nextjs` assembler
+- Console UI Interactions talk to this surface via `f-console-client`, not by importing Interaction handlers
+
+Depends on: `f-nextjs`. Exposes: `i-orient-plan`, `i-steer-plan`.
+
+## Acceptance Criteria
+
+- Blocked: surfaces as structured JSON errors
+- Successful mutations include `changed_files`
+- No Interaction domain logic lives in this Interface
+- Plan-only in this change-set (stops at ready; no console code yet)
+
+## Atomic Ops
+
+- [ ] Spec written for HTTP mount of orient/steer
+- [ ] Document Blocked → JSON and changed_files contract
+- [ ] Ready for later implementation (no code in this PR)
+
+## Attachments
+
+_None._
