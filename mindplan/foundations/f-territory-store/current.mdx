@@ -2,48 +2,54 @@
 id: f-territory-store
 type: Foundation
 role: infra
-title: "Territory store (shared helpers)"
-description: "Infra — territory store plus shared graph summary helpers used by orient and steer Interactions."
+title: "Territory store (implements + role)"
+description: "Infra — persist implements and role; stop package scaffolds; openNextSlot/promoteNextSlot carry new fields; territory scaffolds no longer prescribe src/<type>/<id>/."
 state: stable
-shipped_at: 2026-09-23T13:27:02.772Z
+shipped_at: 2026-09-23T14:05:21.526Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-09-23T13:54:16.362Z
+updated_at: 2026-09-23T14:08:09.263Z
 depends_on:
   - f-domain-model
+  - f-source-index
 implements:
   - src/foundations/f-territory-store/
 ---
 
 
-
-# Territory store (shared helpers)
+# Territory store (implements + role)
 
 ## Purpose
 
-Infra — load/persist territory MDX, scaffolds, frontmatter patches, open_next / discard_next / promote_next, and shared graph node summary helpers used by orient and steer handlers after they leave `f-mcp-runtime`.
+Infra — load/persist territory MDX, scaffolds, frontmatter patches, open_next / discard_next / promote_next. Persist server-owned `implements` and Foundation `role`. Stop scaffolding prescribed packages. Move `config.ts` ownership of source globs out to `f-source-index` (this store may re-export or stop owning config).
 
 ## Shared Substrate Spec
 
-Package: `src/foundations/f-territory-store/`
+Intended files: `src/foundations/f-territory-store/`
 
-- `store.ts` — existing territory I/O, graph load, scaffolds, patch/open/discard/promote APIs
-- Export `summarizeGraphNode(node)` — `{ id, type, state, title }` for blast-radius reachability and similar payloads (moved out of `f-mcp-runtime/server.ts`)
-- `config.ts` — `implementation_packages` project config (unchanged in this evolution)
-- MUST NOT own MCP tool handlers or CLI parsing
+- `store.ts` — frontmatter rebuild lists in `openNextSlot` / `promoteNextSlot` MUST include `implements` and `role` so they are not dropped
+- `create_node` path: do **not** write `src/<type>/<id>/.gitkeep`
+- Territory scaffold prose: replace "implement under `src/<type>/<id>/`" with declare files via `set_implementation_files`
+- Retired nodes may keep shrinking `implements` lists (enforced by steer/compiler; store must round-trip the field)
+- `summarizeGraphNode` stays here
+- Config for `sources`/`exclude` lives in `f-source-index`; remove or thin local `config.ts` accordingly
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- Orient and steer Interactions can import `summarizeGraphNode` from this package
-- All existing store/config APIs keep working for compiler, init, and check
-- No MCP registration or CLI argv parsing lives here
+- `open_next` copies `implements` and `role`; `ship` promotes them
+- New nodes do not get package scaffolds
+- Scaffold templates mention `set_implementation_files`, not prescribed folders
+- Existing load/patch APIs keep working
+- Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Move `summarizeGraphNode` from `f-mcp-runtime/server.ts` into `store.ts` and export it
-- [x] Update consumers (orient/steer) to import from this package
-- [x] Verify territory load/patch/open_next/promote still pass `npm test`
+- [x] Extend openNextSlot/promoteNextSlot fixed field lists with `implements` and `role`
+- [x] Stop scaffolding `src/<type>/<id>/.gitkeep` on create
+- [x] Update territory scaffold text away from prescribed packages
+- [x] Hand config ownership to `f-source-index` (move or delete local config)
+- [x] Verified via `npm test`
 
 ## Attachments
 

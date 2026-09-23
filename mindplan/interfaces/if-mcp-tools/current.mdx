@@ -1,15 +1,17 @@
 ---
 id: if-mcp-tools
 type: Interface
-title: "MCP tools"
-description: "MCP stdio Interface: registers orient, steer, and export tool handlers with schemas and the ok/guarded envelope."
+title: "MCP tools (set_implementation_files)"
+description: "Registers set_implementation_files; depends_on includes Foundations used for schemas."
 state: stable
-shipped_at: 2026-09-23T13:27:29.235Z
+shipped_at: 2026-09-23T14:05:49.388Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-09-23T13:54:16.376Z
+updated_at: 2026-09-23T14:08:09.275Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
+  - f-graph-search
+  - f-view-projection
 exposes:
   - i-orient-plan
   - i-steer-plan
@@ -19,46 +21,43 @@ implements:
 ---
 
 
-
-# MCP tools
+# MCP tools (set_implementation_files)
 
 ## Purpose
 
-MCP stdio Interface that registers orient, steer, and export tool handlers. Mounts Interaction handlers with schemas and the ok/guarded envelope; does not own domain logic.
+MCP stdio Interface that registers orient, steer, and export tools. Adds registration for `set_implementation_files`. Depends on Foundations used for Zod schemas.
 
 ## Kind
 
-MCP tool surface (stdio) — the single MCP Interface for MindPlan graph tools.
+MCP tool surface (stdio).
 
 ## Exposed Interactions
 
-- `i-orient-plan` — read/orient tools
-- `i-steer-plan` — mutate tools
+- `i-orient-plan` — read/orient tools (including file queries)
+- `i-steer-plan` — mutate tools including `set_implementation_files`
 - `i-export-map` — `export_mindplan_view`
 
 ## Spec
 
-Package: `src/interfaces/if-mcp-tools/`
+Intended files: `src/interfaces/if-mcp-tools/`
 
-- Registers every MCP tool by calling Interaction handlers: tool names, descriptions, Zod input schemas, and the `ok` / `guarded` envelope
-- Does **not** own domain logic, blast-radius math, territory I/O, or compiler rules — only mounts/wires
-- Invoked by `f-mcp-runtime` boot when starting MCP stdio
-- Uses `f-domain-model` enums for Zod schemas (node/edge types)
-
-Depends on: `f-mcp-runtime`, `f-domain-model`. Exposes: `i-orient-plan`, `i-steer-plan`, `i-export-map`.
+- Register `set_implementation_files` with Zod schema (`node_id`, `files`, optional `slot`)
+- Update schemas for `get_node_implementation` (`path` optional) and any role field on create
+- Mount only; no domain logic
+- Depends on `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection` for schemas/types already imported
 
 ## Acceptance Criteria
 
-- All tools listed by orient/steer/export ownership modules are registered and callable over stdio
-- Tool names, schemas, and error/`Blocked:` envelopes match pre-split behavior
-- No Interaction domain logic lives under this Interface package
-- `npm test` passes
+- New tool is registered and callable
+- Existing tools keep names/envelopes
+- No domain logic under this Interface
+- Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Add registration module that wires Interaction handlers onto `McpServer`
-- [x] Move Zod schemas + `ok` / `guarded` envelope here from `f-mcp-runtime/server.ts`
-- [x] Verify MCP smoke coverage for orient, steer, and export tools
+- [x] Register `set_implementation_files`
+- [x] Update create / get_node_implementation schemas for role and path
+- [x] Verified via MCP smoke
 
 ## Attachments
 

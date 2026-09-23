@@ -2,54 +2,55 @@
 id: f-compiler-rules
 type: Foundation
 role: infra
-title: "Compiler rules (lighter process)"
-description: "Infra — Completion Check at ship only; reject all-[x] while draft/ready/in-progress."
+title: "Compiler rules (file ownership)"
+description: "Infra — in-review/ship require non-empty existing implements; import matrix using role and depends_on closure that stops at assemblers."
 state: stable
-shipped_at: 2026-09-21T12:44:42.165Z
+shipped_at: 2026-09-23T14:05:27.206Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-09-23T13:54:16.344Z
+updated_at: 2026-09-23T14:08:09.265Z
 depends_on:
   - f-domain-model
   - f-territory-store
+  - f-source-index
 implements:
   - src/foundations/f-compiler-rules/
 ---
 
 
-
-# Compiler rules engine
+# Compiler rules (file ownership)
 
 ## Purpose
 
-Infra — the MindPlan compiler. Every graph mutation that can change state or edges is validated here; violations throw `Blocked: …` and must not be retried blindly. Includes Rule 10 force-unship recovery, pre-ship `cancelled` abandon gates, Interaction Independence, Interface exposure gates, Infrastructure First / Behavior First at ship, **Completion Check at ship/resolved only**, **Open Checklist While Building** (reject completing all checkboxes while draft/ready/in-progress or Bug open/triaged/fixing — agent must advance to in-review themselves; no auto-advance), Minimum Territory Shape, and reachability helpers.
+Infra — MindPlan compiler. Keeps existing graph gates. Adds file-ownership gates: entering `in-review` or `ship` requires a non-empty `implements` list on the active slot with every entry present on disk. Import matrix validation (used by check) uses Foundation `role` and a `depends_on` closure that **stops at assemblers**.
 
 ## Shared Substrate Spec
 
-Package: `src/foundations/f-compiler-rules/`
+Intended files: `src/foundations/f-compiler-rules/`
 
-- `rules.ts` — taxonomy validateLink; Ghost / Infrastructure First / Behavior First; status transitions
-- **Completion Check (Rule 5)** — Foundation/Interaction/Interface MUST NOT `ship` while unchecked boxes remain on the active slot; Bug MUST NOT `resolved` while unchecked remain. Does **not** gate `in-review` (agents enter review with open DoD items, then tick them in `in-review`)
-- **Open Checklist While Building** — when a territory body patch / checkbox toggle would leave ≥1 checkbox and 0 unchecked while the active slot is `draft`/`ready`/`in-progress` (or Bug `open`/`triaged`/`fixing`), reject with `Blocked:` telling the agent to `update_node_status` → `in-review` first (or leave ≥1 Atomic Op open). No auto-advance
-- Minimum Territory Shape, cancel gates, open_next/ship-promote, force_unship, reachability helpers unchanged in spirit from prior next
+- Keep Completion Check, Open Checklist While Building, Minimum Territory Shape, Independence, Infrastructure/Behavior First, cancel gates, force_unship, reachability
+- New: assert implements non-empty + all entries exist when transitioning to `in-review` or `ship` (Interactions, Interfaces, Foundations)
+- New helpers for reachable Foundations (transitive `depends_on`; do not continue past `role: assembler`; while next is open, live and next edges both count)
+- Import-matrix predicates consumed by `i-check-integrity` (Interaction / Interface / Foundation / assembler rules as in SPEC)
+- Uses `f-source-index` for claim expansion and path presence
 
-Depends on: `f-domain-model`, `f-territory-store`.
+Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- `in-progress` → `in-review` succeeds with unchecked Atomic Ops still present
-- `ship` / Bug `resolved` still Blocked when unchecked remain
-- Completing the last checkbox (or body replace that clears all `[ ]`) while draft/ready/in-progress (or Bug fixing/open/triaged) is `Blocked:` with guidance to advance state; state is not auto-changed
-- Completing all checkboxes while `in-review` succeeds
+- `in-progress` → `in-review` Blocked when implements empty or missing on disk
+- `ship` Blocked under the same implements gate
+- Assembler stops transitive Foundation reachability for import allowance
+- Existing checklist / ship Completion Check behavior unchanged in spirit
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Move Completion Check off `in-review`; keep on `ship` / Bug `resolved`
-- [x] Add `assertOpenChecklistWhileBuilding` (or equivalent) for proposed body text + active slot state
-- [x] Export helper and wire from `patch_node_territory` path in `f-mcp-runtime`
-- [x] Update smoke: in-review with unchecked allowed; last-box-while-building rejected; ship still requires complete
-- [x] Update SPEC §5.6 + appendix error examples
+- [x] Gate in-review and ship on non-empty existing implements
+- [x] Add reachable-Foundations closure that stops at assemblers
+- [x] Export import-matrix helpers for check
+- [x] Wire gates from status transitions
+- [x] Verified via `npm test`
 
 ## Attachments
 
-_Schemas and diagrams go in `next-attachments/`._
+_None._

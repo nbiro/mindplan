@@ -2,54 +2,50 @@
 id: f-domain-model
 type: Foundation
 role: infra
-title: "Domain model (interaction-centric)"
-description: "Interaction-centric domain model: Interaction + Interface node types; exposes + leads_to edges; no Workflow."
+title: "Domain model (implements + role)"
+description: "Infra — node record gains implements[] and Foundation role; open_next/promote carry both; scaffolding of prescribed packages removed."
 state: stable
-shipped_at: 2026-08-10T13:51:06.563Z
+shipped_at: 2026-09-23T14:05:13.982Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-09-23T13:54:16.350Z
+updated_at: 2026-09-23T14:08:09.261Z
 implements:
   - src/foundations/f-domain-model/
 ---
 
 
-# Domain model
+# Domain model (implements + role)
 
 ## Purpose
 
-Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, and the optional `next` evolution slot. Every other Foundation and Interaction/Interface imports these types; there is no I/O here.
-
-MindPlan models software as Journeys, Interactions, Interfaces, and Foundations so agents can query architecture without reconstructing it from source each turn.
+Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, and the optional `next` evolution slot. Adds server-owned `implements: string[]` on Interaction/Interface/Foundation (current and open next) and Foundation `role` (`assembler` | `infra` | `design-system` | `adapter`). Every other Foundation and Interaction/Interface imports these types; there is no I/O here.
 
 ## Shared Substrate Spec
 
-Package: `src/foundations/f-domain-model/`
+Intended files (via `set_implementation_files` after land): `src/foundations/f-domain-model/`
 
-- `types.ts` — `NODE_TYPES` = Journey | Interaction | Interface | Foundation | Bug (no Interaction)
-- Edge types: `belongs_to` (Interaction → Journey), `depends_on` (Interaction/Interface → Foundation; Foundation → Foundation), `exposes` (Interface → Interaction), `leads_to` (Interaction → Interaction, navigation only), `affects` (Bug → Interaction|Interface|Foundation)
-- Execution/production/Bug/Journey state machines and legal transitions (including terminal `cancelled`)
-- `MindPlanNode` / `MindPlanEdge` / `MindPlanGraph`; `NextSlot` carries optional `belongs_to`, `depends_on`, `exposes`, `leads_to`
-- `PRE_SHIP_STATES` (renamed from `PRE_SHIP_WORKFLOW_STATES`) applies to Interaction and Interface
-- `GRAPH_VERSION` stays `1` (breaking change accepted while unreleased)
-- Helpers: `isExecutionState`, `isOpenBugState`, `isProductionState`, `isNextPipelineState`, `initialStateForType`
+- `types.ts` — existing `NODE_TYPES`, edge types, state machines, `MindPlanNode` / `NextSlot`
+- Add `FoundationRole` union and optional `role` on Foundation records and next slots
+- Add `implements?: string[]` on Foundation, Interaction, and Interface records and next slots (repo-relative POSIX paths; directories end in `/`)
+- Helpers as needed for role/implements validation consumers (type-only; no FS)
+- `GRAPH_VERSION` stays `1`
+- Remove any types/docs that assume prescribed `src/<type>/<id>/` packages or `implementation_packages`
 
 Depends on: none.
 
 ## Acceptance Criteria
 
-- No `Interaction` symbol remains in the domain model
-- `exposes` and `leads_to` are first-class edge types and optional node/next arrays
-- Interaction and Interface share the Foundation build pipeline states
+- `implements` and `role` are first-class typed fields on the right node kinds and next slots
+- No prescribed-package types remain as the ownership authority
 - `GRAPH_VERSION` remains `1`
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Replace Interaction with Interaction; add Interface to `NODE_TYPES`
-- [x] Add `exposes` and `leads_to` to `EDGE_TYPES` and node/next fields
-- [x] Rename `PRE_SHIP_WORKFLOW_STATES` → `PRE_SHIP_STATES`; update comments
+- [x] Add `FoundationRole` and optional `role` on Foundation / next
+- [x] Add `implements?: string[]` on Foundation, Interaction, Interface / next
+- [x] Drop prescribed-package ownership types if any remain
 - [x] Verified via `npm test`
 
 ## Attachments
 
-_Schemas and diagrams go in `next-attachments/`._
+_None._

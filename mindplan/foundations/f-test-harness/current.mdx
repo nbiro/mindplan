@@ -2,12 +2,12 @@
 id: f-test-harness
 type: Foundation
 role: infra
-title: "Test harness (no --for-main)"
-description: "Infra — harness drops --for-main cases; unknown --for-main fails; default and --base coverage stays."
+title: "Test harness (file ownership)"
+description: "Infra — harness covers exclusivity, coverage, presence, leftovers, import matrix; drops --layout and package scaffold cases."
 state: stable
-shipped_at: 2026-09-23T12:06:37.225Z
+shipped_at: 2026-09-23T14:05:30.671Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-09-23T13:54:16.365Z
+updated_at: 2026-09-23T14:08:09.267Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -15,42 +15,38 @@ implements:
 ---
 
 
-
-# Test harness
+# Test harness (file ownership)
 
 ## Purpose
 
-Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init`. Covers Minimum Territory Shape (scaffold Blocked, fill helper, role-tagged Foundations), `force_unship`, cancel gates, layout-free config, init force overwrite, and integrity-check modes (default graph+packages; opt-in `--base` dirty-src). `--for-main` behavior tests are removed; the flag is an unknown option.
+Regression suite for MindPlan. Rewritten around declared file ownership: exclusivity, coverage, presence, leftovers, import matrix. Drops `--layout` and prescribed-package scaffold cases.
 
 ## Shared Substrate Spec
 
-Package: `src/foundations/f-test-harness/`
+Intended files: `src/foundations/f-test-harness/`
 
-- `view.test.mjs` / `search.test.mjs` / `check.test.mjs` / `smoke.mjs`
-- `fillMinimumTerritoryShape` helpers in smoke + check replace scaffold italic stubs before `ready` / `in-review`
-- Smoke asserts `Blocked: Minimum Territory Shape` on unfilled Interface/Interaction scaffolds after Ghost gates pass
-- Foundation creates use role-tagged descriptions (`Infra — …`)
-- `check.test.mjs` asserts default `check` ignores dirty working tree; dirty-src cases pass `--base`
-- `check.test.mjs` asserts `check --for-main` exits non-zero as an unknown option and does not run a mid-pipeline ban
+- Rewrite `check.test.mjs` and `smoke.mjs` for sources/implements/role
+- Cover: exclusivity conflicts, uncovered universe files, missing presence on in-review/ship, retired leftovers, illegal imports (Interaction→Interaction, non-assembler→Interface, etc.)
+- Cover assembler may import its dependents; closure stops at assemblers
+- Cover `set_implementation_files`, init migration from `implementation_packages`, and path lookup on `get_node_implementation`
+- Keep Minimum Territory Shape, force_unship, cancel, and MCP smoke coverage where still relevant
+- No `--layout` assertions; no `.gitkeep` scaffold exemption as the ownership model
 
 Depends on: `f-mcp-runtime`.
 
 ## Acceptance Criteria
 
-- `npm test` passes (build + view + search + check + smoke)
-- Smoke proves Minimum Territory Shape blocks scaffold and passes after fill
-- Default integrity check does not fail on dirty `src/` while ready; `--base` still does
-- No test expects `--for-main` to pass or to fail on `in-progress` / next `in-progress` / layout-free mid-pipeline
-- One assertion: `check --for-main` is an unknown option (`Blocked:`)
-- Existing cancel / force_unship / init / layout-free coverage remains green
+- `npm test` passes with rewritten check/smoke coverage
+- Package-scaffold and `--layout` cases are gone
+- File-ownership and import-matrix cases fail closed when violated
 
 ## Atomic Ops
 
-- [x] Remove `--for-main` pass/fail cases from `check.test.mjs` (after ship, cancel, next draft, next in-progress, layout-free)
-- [x] Assert `check --for-main` fails as an unknown option
-- [x] Keep dirty-src `--base`, cancel, and layout-free package-skip coverage
+- [x] Rewrite `check.test.mjs` for ownership matrix
+- [x] Rewrite `smoke.mjs` for implements/role/set_implementation_files/init migration
+- [x] Remove `--layout` / prescribed-package scaffold assertions
 - [x] Verified via `npm test`
 
 ## Attachments
 
-_Wireframes and notes go in `attachments/` / `next-attachments/`._
+_None._

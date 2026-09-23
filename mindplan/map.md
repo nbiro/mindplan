@@ -1,41 +1,41 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (42 nodes, 97 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (42 nodes, 105 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
   subgraph foundations["Foundations"]
-    f_compiler_rules["f-compiler-rules · Compiler rules (lighter process) · stable"]
+    f_compiler_rules["f-compiler-rules · Compiler rules (file ownership) · stable"]
     f_console_client["f-console-client · Console client · ready"]
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
-    f_domain_model["f-domain-model · Domain model (interaction-centric) · stable"]
-    f_framework_docs["f-framework-docs · Framework docs (no --for-main) · stable"]
-    f_github_actions["f-github-actions · GitHub Actions (no --for-main) · stable"]
+    f_domain_model["f-domain-model · Domain model (implements + role) · stable"]
+    f_framework_docs["f-framework-docs · Framework docs (file ownership) · stable"]
+    f_github_actions["f-github-actions · GitHub Actions (file ownership) · stable"]
     f_graph_search["f-graph-search · Graph search (interaction-centric) · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime (boot only) · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
     f_npm_registry["f-npm-registry · npm registry adapter · ready"]
-    f_source_index["f-source-index · Source index · in-review"]
-    f_territory_store["f-territory-store · Territory store (shared helpers) · stable"]
-    f_test_harness["f-test-harness · Test harness (no --for-main) · stable"]
+    f_source_index["f-source-index · Source index · stable"]
+    f_territory_store["f-territory-store · Territory store (implements + role) · stable"]
+    f_test_harness["f-test-harness · Test harness (file ownership) · stable"]
     f_view_projection["f-view-projection · View projection · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
   end
   subgraph interfaces["Interfaces"]
-    if_cli{{"if-cli · CLI commands · stable"}}
+    if_cli{{"if-cli · CLI (sources config) · stable"}}
     if_console_api{{"if-console-api · Console API · ready"}}
     if_console_graph{{"if-console-graph · Console graph page · ready"}}
     if_console_model{{"if-console-model · Console model page · ready"}}
     if_console_mutate{{"if-console-mutate · Console mutate page · ready"}}
     if_console_status{{"if-console-status · Console status page · ready"}}
     if_console_territory{{"if-console-territory · Console territory page · ready"}}
-    if_mcp_tools{{"if-mcp-tools · MCP tools · stable"}}
+    if_mcp_tools{{"if-mcp-tools · MCP tools (set_implementation_files) · stable"}}
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Release tag trigger · ready"}}
   end
-  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
-    i_init_project__in__j_agent_onboarding["i-init-project · Init project · stable"]
+  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
+    i_init_project__in__j_agent_onboarding["i-init-project · Init (sources migration) · stable"]
     i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · ready"]
   end
   subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · draft"]
@@ -49,13 +49,14 @@ flowchart TB
     i_mutate_plan__in__j_plan_console["i-mutate-plan · Steer the plan · ready"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
-    i_check_integrity__in__j_territory_sdlc["i-check-integrity · Integrity check CLI (no --for-main) · stable"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
+    i_check_integrity__in__j_territory_sdlc["i-check-integrity · Integrity check (file ownership) · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
-    i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient on the plan · stable"]
-    i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer the plan · stable"]
+    i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient (file queries) · stable"]
+    i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer (set_implementation_files) · stable"]
   end
   f_compiler_rules --> f_domain_model
+  f_compiler_rules --> f_source_index
   f_compiler_rules --> f_territory_store
   f_console_shell --> f_console_client
   f_console_shell --> f_design_system
@@ -66,6 +67,7 @@ flowchart TB
   f_mcp_runtime --> f_territory_store
   f_source_index --> f_domain_model
   f_territory_store --> f_domain_model
+  f_territory_store --> f_source_index
   f_test_harness --> f_mcp_runtime
   f_view_projection --> f_domain_model
   f_view_projection --> f_graph_search
@@ -76,6 +78,7 @@ flowchart TB
   i_browse_territory__in__j_plan_console --> f_design_system
   i_check_integrity__in__j_territory_sdlc --> f_compiler_rules
   i_check_integrity__in__j_territory_sdlc --> f_mcp_runtime
+  i_check_integrity__in__j_territory_sdlc --> f_source_index
   i_check_integrity__in__j_territory_sdlc --> f_territory_store
   i_explore_graph__in__j_plan_console --> f_console_client
   i_explore_graph__in__j_plan_console --> f_console_shell
@@ -84,6 +87,7 @@ flowchart TB
   i_export_map__in__j_territory_sdlc --> f_compiler_rules
   i_export_map__in__j_territory_sdlc --> f_territory_store
   i_export_map__in__j_territory_sdlc --> f_view_projection
+  i_init_project__in__j_agent_onboarding --> f_source_index
   i_init_project__in__j_agent_onboarding --> f_territory_store
   i_init_project__in__j_agent_onboarding -.->|leads_to| i_orient_plan__in__j_territory_sdlc
   i_model_plan__in__j_plan_console --> f_console_client
@@ -100,10 +104,12 @@ flowchart TB
   i_npm_tag_publish__in__j_npm_publish --> f_npm_registry
   i_orient_plan__in__j_territory_sdlc --> f_compiler_rules
   i_orient_plan__in__j_territory_sdlc --> f_graph_search
+  i_orient_plan__in__j_territory_sdlc --> f_source_index
   i_orient_plan__in__j_territory_sdlc --> f_territory_store
   i_orient_plan__in__j_territory_sdlc -.->|leads_to| i_steer_plan__in__j_territory_sdlc
   i_steer_plan__in__j_territory_sdlc --> f_compiler_rules
   i_steer_plan__in__j_territory_sdlc --> f_graph_search
+  i_steer_plan__in__j_territory_sdlc --> f_source_index
   i_steer_plan__in__j_territory_sdlc --> f_territory_store
   i_steer_plan__in__j_territory_sdlc --> f_view_projection
   i_steer_plan__in__j_territory_sdlc -.->|leads_to| i_export_map__in__j_territory_sdlc
@@ -133,7 +139,9 @@ flowchart TB
   if_console_territory --> f_design_system
   if_console_territory -->|exposes| i_browse_territory__in__j_plan_console
   if_mcp_tools --> f_domain_model
+  if_mcp_tools --> f_graph_search
   if_mcp_tools --> f_mcp_runtime
+  if_mcp_tools --> f_view_projection
   if_mcp_tools -->|exposes| i_export_map__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_orient_plan__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_steer_plan__in__j_territory_sdlc

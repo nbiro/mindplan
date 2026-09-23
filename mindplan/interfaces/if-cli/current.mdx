@@ -1,12 +1,12 @@
 ---
 id: if-cli
 type: Interface
-title: "CLI commands"
-description: "CLI Interface: argv parsing, help, output, and exit codes for init, check, and view/export."
+title: "CLI (sources config)"
+description: "CLI drops --layout; init reports sources migration."
 state: stable
-shipped_at: 2026-09-23T13:27:32.422Z
+shipped_at: 2026-09-23T14:05:51.925Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-09-23T13:54:16.375Z
+updated_at: 2026-09-23T14:08:09.275Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -18,46 +18,42 @@ implements:
 ---
 
 
-
-# CLI commands
+# CLI (sources config)
 
 ## Purpose
 
-CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help text, stdout/stderr, and exit codes; dispatches to init, check, and view/export Interactions.
+CLI Interface for `mindplan-mcp` subcommands. Drops `--layout`. Init reporting mentions sources migration. Owns argv parsing, help, output, exit codes only.
 
 ## Kind
 
-CLI command surface — `mindplan-mcp` argv subcommands.
+CLI command surface.
 
 ## Exposed Interactions
 
-- `i-init-project` — `init` (including `--layout`, `-f` / `--force`)
-- `i-check-integrity` — `check` (default graph+packages; `--base` opt-in dirty-src)
-- `i-export-map` — `view` / `export` diagram commands
+- `i-init-project` — `init` (`-f` / `--force`; no `--layout`)
+- `i-check-integrity` — `check` (default ownership; `--base` opt-in)
+- `i-export-map` — `view` / `export`
 
 ## Spec
 
-Package: `src/interfaces/if-cli/`
+Intended files: `src/interfaces/if-cli/`
 
-- Owns argument parsing, help text, stdout/stderr, and exit codes for `init`, `check`, `view` / `export`, and top-level `help`
-- Calls Interaction entrypoints (`runInit`, `runIntegrityCheck`, export helpers) — does not reimplement them
-- Invoked by `f-mcp-runtime` boot when `process.argv[2]` is a known command
-- Note: `view`/`export` uses `-f` as `--format`; `init` uses `-f` as `--force` — different commands
-
-Depends on: `f-mcp-runtime`. Exposes: `i-init-project`, `i-check-integrity`, `i-export-map`.
+- Remove `--layout` parsing and help
+- Print init migration report from `runInit` when applicable
+- Keep check/view dispatch unchanged aside from help text
 
 ## Acceptance Criteria
 
-- CLI help, exit codes, and output strings match pre-split behavior (no `--for-main`)
-- `init` / `check` / `view` / `export` dispatch to the correct Interaction
-- No domain installers or integrity math live under this Interface package
-- `npm test` / smoke CLI cases pass
+- `--layout` is an unknown option
+- Help documents sources-oriented init/check
+- No domain logic under this Interface
+- Verified via smoke
 
 ## Atomic Ops
 
-- [x] Move CLI parsers, help, and dispatch from `f-mcp-runtime/server.ts` into this package
-- [x] Wire to `i-init-project.runInit`, `i-check-integrity`, and `i-export-map` export
-- [x] Verify init/check/view smoke cases
+- [x] Remove `--layout` from argv/help
+- [x] Surface sources migration output from init
+- [x] Verified via smoke
 
 ## Attachments
 

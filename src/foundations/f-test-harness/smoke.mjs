@@ -760,6 +760,16 @@ const nextCtx = fs.readFileSync(nextPath, "utf-8");
 if (!nextCtx.includes("state: draft") || !nextCtx.includes("belongs_to:") || !nextCtx.includes("depends_on:")) {
   failures++; console.log("FAIL next.mdx missing draft state or inherited edges");
 } else console.log("ok   next.mdx inherits edges and starts draft");
+if (!nextCtx.includes("implements:") || !ixCheckoutLive.implements?.includes("src/interactions/i-checkout/")) {
+  failures++; console.log(`FAIL open_next should copy implements: ${JSON.stringify(ixCheckoutLive.implements)}`);
+} else console.log("ok   open_next copies implements to next");
+
+await expectOk("set implements i-checkout next", "set_implementation_files", {
+  node_id: "i-checkout",
+  files: ["src/interactions/i-checkout/", "src/interactions/i-checkout/extra.ts"],
+  slot: "next",
+});
+fs.writeFileSync(path.join(root, "src", "interactions", "i-checkout", "extra.ts"), "export {};\n");
 
 await expectBlocked("open_next twice", "open_next", {
   node_id: "i-checkout", title: "Checkout v3", description: "v3",
@@ -858,6 +868,14 @@ const afterPromote = graph.nodes.find((n) => n.id === "i-checkout");
 if (afterPromote.next) {
   failures++; console.log(`FAIL next should be gone after promote: ${JSON.stringify(afterPromote.next)}`);
 } else console.log("ok   no next slot after promote");
+if (
+  !afterPromote.implements?.includes("src/interactions/i-checkout/") ||
+  !afterPromote.implements?.includes("src/interactions/i-checkout/extra.ts") ||
+  !currentAfter.includes("implements:") ||
+  !currentAfter.includes("src/interactions/i-checkout/extra.ts")
+) {
+  failures++; console.log(`FAIL promote must keep implements: ${JSON.stringify(afterPromote.implements)}`);
+} else console.log("ok   promote keeps implements on current");
 const tipsLeadsAfterPromote = graph.edges.filter(
   (e) => e.source === "i-tips" && e.type === "leads_to" && e.target === "i-checkout"
 );
