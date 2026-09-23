@@ -1,12 +1,12 @@
 ---
 id: f-framework-docs
 type: Foundation
-title: "Framework docs (spawn before done)"
-description: "Assembler/docs — implementing agents MUST spawn the Reviewer before treating Plan Review or Implementation work as done; narrating “needs review” is not a substitute."
+title: "Framework docs (review ignores in-progress)"
+description: "Assembler/docs — Reviewers MUST NOT Reject because other graph nodes are in-progress or in-review; unfinished work stays mergeable."
 state: stable
-shipped_at: 2026-09-23T11:34:29.443Z
+shipped_at: 2026-09-23T11:48:58.159Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-09-23T11:34:29.443Z
+updated_at: 2026-09-23T11:48:58.159Z
 depends_on:
   - f-domain-model
 ---
@@ -17,7 +17,7 @@ depends_on:
 
 ## Purpose
 
-Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook stays a short systems dialect. It requires **`mindplan-mcp check` before any Reviewer handoff**, and requires the **parent to actually spawn the Reviewer** before treating Plan Review or Implementation work as done — narrating “needs review” / “wasn’t reviewed” is not a substitute.
+Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook stays a short systems dialect. It requires **`mindplan-mcp check` before any Reviewer handoff**, requires the **parent to spawn the Reviewer** before treating a Review gate as done, and requires **Reviewers to ignore other nodes that are still in progress**. Unfinished work elsewhere in the graph is mergeable — the same decision already made for CI (`check --for-main` is not a merge gate).
 
 ## Shared Substrate Spec
 
@@ -25,9 +25,9 @@ Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package
 
 Surfaces:
 
-- `SPEC.md` — normative taxonomy, compiler gates, Territory Completeness, package ownership; External Review gate text states spawn is mandatory before “done”
+- `SPEC.md` — normative taxonomy, compiler gates, Territory Completeness, package ownership; External Review gate states spawn is mandatory before “done”, and that other mid-pipeline nodes are not a Reject reason
 - `AGENTS.md` / `templates/agent/playbook.md` / `mindplan/agent/playbook.md` / `.cursor/rules/mindplan.mdc` — **systems dialect** always-on playbook (byte-identical mirrors)
-- `templates/agent/skills/review-work/` (+ mirrors) — subgraph Plan Review + revision-bound Implementation review; **Parent obligations** (spawn before done) + green `check` before spawn
+- `templates/agent/skills/review-work/` (+ mirrors) — subgraph Plan Review + revision-bound Implementation review; Parent obligations; Reviewer MUST NOT Reject on graph-wide `in-progress` / `in-review` / Bug `fixing`
 - `define-entities` / `plan-project` / `code-review` skills — on demand
 - `README.md` — product framing
 - `templates/agent/integrations/cursor.md` — Cursor spawn via Task / subagent + check-before-review
@@ -44,7 +44,7 @@ Implementing agents MUST run default `mindplan-mcp check` (graph load + packages
 
 Fix every `Blocked:` first. Optional `--base` / `--for-main` remain local hygiene — not substitutes for default check, and not CI merge gates.
 
-Reviewers SHOULD re-run default `check` and Reject if it fails.
+Reviewers SHOULD re-run **default** `check` and Reject if **that** fails. They MUST NOT run `check --for-main` as a review gate, and MUST NOT Reject because other nodes are `in-progress`, `in-review`, `draft`, `ready`, or Bug `fixing` / `in-review`. Scope the verdict to the frozen subgraph or revision.
 
 ### Spawn before done (parent obligation)
 
@@ -57,22 +57,24 @@ When the build or plan pipeline reaches a Review gate, the **implementing / plan
 
 **Done** means: Reviewer returned Approve and advanced status, **or** human escalation after exhausted Rejects. Not done: leaving nodes at `draft`/`in-review` while telling the user the work “wasn’t reviewed,” “needs a Reviewer,” or “handing off for review” without having spawned one.
 
+### In-progress elsewhere is not a Reject
+
+`check --for-main` fails when any Foundation/Interaction/Interface is `in-progress`/`in-review` (including `next`) or any Bug is `fixing`/`in-review`. That mode is optional local hygiene. CI does not require a clean mid-pipeline graph, and Reviewers follow the same rule: other nodes still being built do not block Approve of the frozen membership or revision.
+
 ## Acceptance Criteria
 
-- Playbook systems dialect states spawn-before-done as a hard parent obligation (alongside check-before-review)
-- Never-do forbids claiming the task done / handing to the human instead of spawning the Reviewer
-- `review-work` has an explicit Parent obligations section (spawn, freeze, retry loop, what “done” means)
-- Cursor integration tells parents how to spawn the Reviewer (Task / subagent) and that narration is not a substitute
-- SPEC External Review gate paragraph states the parent MUST spawn before considering the gate complete
+- Playbook states Reviewers must not Reject because other nodes are mid-pipeline; `--for-main` is not a review gate
+- `review-work` preconditions and anti-patterns say the same: default `check` only; unfinished work outside the frozen set is not a Finding
+- SPEC External Review / integrity text states Reviewers do not treat graph-wide in-progress as a Reject
+- Spawn-before-done parent obligation from the prior contract remains
 - Mirrors (`AGENTS.md`, `mindplan/agent/playbook.md`, `.cursor/rules/mindplan.mdc`, review-work skill copies) match templates
 - Verified by reading mirrors (docs Foundation has no runtime)
 
 ## Atomic Ops
 
-- [x] Update `templates/agent/playbook.md` spawn-before-done + Never-do; sync `AGENTS.md`, `mindplan/agent/playbook.md`, `.cursor/rules/mindplan.mdc`
-- [x] Add Parent obligations to `templates/agent/skills/review-work/SKILL.md` (+ mirrors under `mindplan/agent/skills/` and `.cursor/skills/`)
-- [x] Align `templates/agent/integrations/cursor.md` with spawn-via-Task and spawn-before-done
-- [x] Update SPEC External Review gate text for mandatory spawn before done
+- [x] Update `templates/agent/playbook.md` so Reviewers ignore other in-progress nodes; sync `AGENTS.md`, `mindplan/agent/playbook.md`, `.cursor/rules/mindplan.mdc`
+- [x] Update `templates/agent/skills/review-work/SKILL.md` preconditions + anti-patterns (+ mirrors)
+- [x] Update SPEC so External Review / check text matches: `--for-main` is not a Reviewer Reject
 - [x] Document this successor contract on this Foundation next slot
 
 ## Attachments
