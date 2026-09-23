@@ -2,50 +2,49 @@
 id: i-model-plan
 type: Interaction
 title: "Model the plan"
-description: "Model the plan — create and link Journeys, Foundations, Workflows, and Bugs through the compiler (human define-entities)."
+description: "Model the plan — create and link Journeys, Foundations, Interactions, Interfaces, and Bugs through the compiler (human define-entities)."
 state: ready
 created_at: 2026-07-20T21:15:24.437Z
-updated_at: 2026-07-20T21:17:15.025Z
+updated_at: 2026-09-23T13:33:49.936Z
 belongs_to:
   - j-plan-console
 depends_on:
-  - f-console-bridge
   - f-design-system
   - f-console-shell
+  - f-console-client
 ---
 
 # Model the plan
 
 ## Purpose
 
-Model the plan — human UI for define-entities / plan-project: create Journeys, Foundations, Interactions, and Bugs; set title/description; establish `belongs_to` / `depends_on` / `affects`. Journey-first: refuse Interaction creation when no matching Journey exists.
+Model the plan — create and link Journeys, Foundations, Interactions, Interfaces, and Bugs through the compiler (human define-entities).
+
+## Actor & Trigger
+
+- **Actor:** human via console
+- **Trigger:** model page create/link actions
 
 ## Execution Logic
 
-Package: `src/interactions/i-model-plan/`
+- Call create/link tools via `f-console-client` → `if-console-api` (steer)
+- Surface `Blocked:` from API JSON
+- UI chrome from shell + design system; no direct handler imports
 
-- Create forms call bridge `create_node` with type + id + title + description
-- Link helpers enforce legal edge shapes; Foundation role guidance in copy (Assembler / Infra / Design system / Adapter)
-- After create/link, refresh graph explore so the new structure is visible
-- Enrichment of territory body may deep-link to territory viewer; prose edits can remain host-file-tools in v1 if bridge patch is deferred — document the chosen path in implementation
-- Stays at modeling intent: does not own lifecycle “ship” review theatre (that is `i-mutate-plan`)
-
-Belongs to: `j-plan-console`. Depends on: `f-console-shell`, `i-explore-graph`, `f-console-bridge`, `f-design-system`.
+Belongs to: `j-plan-console`. Depends on: `f-design-system`, `f-console-shell`, `f-console-client`.
 
 ## Acceptance Criteria
 
-- User can create a Journey then a Interaction linked with `belongs_to`
-- Interaction create is blocked in the UI when no Journey exists (mirror playbook)
-- New nodes appear on the XYFlow graph after refresh
-- Compiler rejects illegal links with visible `Blocked:`
+- Create/link flows go through console client
+- Blocked errors visible to the human
+- Plan-only in this change-set (stops at ready)
 
 ## Atomic Ops
 
-- [ ] Create-node forms for Journey / Foundation / Interaction / Bug
-- [ ] Journey-first gate for Interaction creation
-- [ ] Link UI for belongs_to / depends_on / affects
-- [ ] Graph refresh after successful model mutations
+- [ ] Spec updated for f-console-client
+- [ ] Create/link UI contract against console API
+- [ ] Blocked: error surfacing
 
 ## Attachments
 
-_Wireframes go in `attachments/`._
+_None._

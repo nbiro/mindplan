@@ -1,0 +1,65 @@
+---
+id: i-orient-plan
+type: Interaction
+title: "Orient (file queries)"
+description: "get_node_implementation returns owned files (and path lookup); blast radius adds affected_files; record carries implements and role."
+state: in-review
+updated_at: 2026-09-23T14:00:07.298Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-graph-search
+  - f-territory-store
+  - f-compiler-rules
+  - f-source-index
+leads_to:
+  - i-steer-plan
+implements:
+  - src/interactions/i-orient-plan/
+---
+
+# Orient (file queries)
+
+## Purpose
+
+Read-path orientation. `get_node_implementation` returns owned files (and supports path→owner lookup). Blast radius adds `affected_files`. Records carry `implements` and `role`. Owns `getNodeImplementation` logic moved out of territory-store.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
+- **Trigger:** MCP/HTTP orient tools
+
+## Execution Logic
+
+Intended files: `src/interactions/i-orient-plan/`
+
+- Keep existing query tools
+- `get_node_implementation`:
+  - Interaction/Interface/Foundation → `{ node_id, files: [{ path, exists }], next_files? }`
+  - Journey → member Interaction files + exposing Interfaces, tagged with owner
+  - Bug → `affects` target files, tagged with owner
+  - Optional `path` arg → owning node
+  - Drop `root`, `implementation_packages`, `entries`
+- `get_blast_radius` adds `affected_files: [{ path, owner_id, owner_type, via }]` with `via` ∈ `focus|dependent|exposing|importer`
+- `orient_for_work` inherits `implements`/`role` on record and `affected_files` on blast radius
+- Uses `f-source-index` for expansion/universe
+
+Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
+
+## Acceptance Criteria
+
+- Implementation query returns files, not package roots
+- Path lookup returns the owner node
+- Blast radius includes importer via for composition roots
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Move getNodeImplementation into this Interaction; return files
+- [x] Add path lookup
+- [x] Add affected_files to blast radius (focus/dependent/exposing/importer)
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

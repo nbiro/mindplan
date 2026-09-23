@@ -9,14 +9,14 @@ Normative reference: `SPEC.md`. Skills (on demand): `define-entities`, `plan-pro
 1. **Orient** — `orient_for_work` before substantial work. Do not invent architecture from chat or `src/` greps.
 2. **Place work on the graph** — Journey / Interaction / Interface / Foundation / Bug. MCP writes structure (`state`, edges, timestamps); file tools write territory prose at `current_path` / `next_path`.
 3. **`Blocked:` is hard** — classify the stated cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix that cause before retrying. Do not retry blindly.
-4. **Implement in the owning package** when `implementation_packages` is `required` (`src/interactions|interfaces|foundations/<id>/`). Layout-free (`off`): same logical ownership in the existing app layout.
+4. **Implement in claimed files** — declare ownership with `set_implementation_files` (`implements` on current/next). Do not invent tickets or ad-hoc ownership outside the graph.
 5. **Shipped change** — `get_blast_radius`, then `open_next`; edit the `next` slot into a full successor contract (not a changelog).
 6. **Spawn the Reviewer before done** — when Plan Review or Implementation review is due, freeze membership / revision, then **spawn** an independent Reviewer (`review-work`). Do not `ready` / `ship` / `resolved` your own work. Narrating “needs review,” “wasn’t reviewed,” or “handing off to a Reviewer” without spawning one is **not** done.
 7. **Check before review handoff** — before Plan Review, before Implementation review (entering `in-review` / spawning the Reviewer), and before re-spawning after a Reject, run default `mindplan-mcp check` and get exit `0`. Fix every `Blocked:` first. Optional `--base` is local dirty-src hygiene only — not a substitute for this gate.
 
 After a successful graph mutation, trust the response `anchor` (record + 1-hop neighborhood) and `changed_files`. Re-call `find_related_nodes` / `get_node_context` only on `Blocked:`, a new user ask, or before review.
 
-Never hand-edit server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays). Never trust `mindplan/map.md` as graph authority.
+Never hand-edit server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays, `implements`, `role`). Never trust `mindplan/map.md` as graph authority.
 
 ## Taxonomy (agent-native architecture)
 
@@ -30,7 +30,7 @@ Never hand-edit server-owned frontmatter (`state`, `updated_at`, `shipped_at`, e
 
 **Edges:** `belongs_to` (Interaction→Journey), `depends_on` (substrate only — never Interaction→Interaction), `exposes` (Interface→Interaction), `leads_to` (navigation), `affects` (Bug→target).
 
-**Package ownership:** Interaction owns the body; Interface only mounts/wires. One Interface per actor surface, not per screen.
+**File ownership:** Interaction owns the body; Interface only mounts/wires. Declare files via `set_implementation_files`. One Interface per actor surface, not per screen.
 
 ## Agent SDLC (short)
 
@@ -39,7 +39,7 @@ orient → place on graph → draft/enrich territory → check → Plan Review �
 → in-progress → implement + check Atomic Ops → check → in-review → Implementation review → ship
 ```
 
-- **Validity (`mindplan-mcp check`):** mandatory before every Reviewer handoff (Plan Review and Implementation review) and before re-entering a Rejected gate. Default mode = graph load + packages when `required`. Do not hand off with failing `Blocked:` lines. Reviewers re-run **default** `check` only. Other nodes at `in-progress` / `in-review` / Bug `fixing` are mergeable — do **not** Reject the frozen set because of them.
+- **Validity (`mindplan-mcp check`):** mandatory before every Reviewer handoff (Plan Review and Implementation review) and before re-entering a Rejected gate. Default mode = graph load + file ownership (exclusivity, coverage, presence, leftovers, import matrix). Do not hand off with failing `Blocked:` lines. Reviewers re-run **default** `check` only. Other nodes at `in-progress` / `in-review` / Bug `fixing` are mergeable — do **not** Reject the frozen set because of them.
 - **Minimum Territory Shape** (compiler): leaving `draft`, `in-review`, and `ship` require real sections — not scaffold stubs. Semantic **Territory Completeness** stays a Reviewer judgment.
 - **Plan Review:** parent **spawns** one Reviewer over the frozen subgraph of new/changed nodes (not one spawn per Foundation then Interaction then Interface). See `review-work` Procedure A. Task is not done until that Reviewer returns a verdict (Approve → `ready`, or Reject → fix and re-spawn / escalate).
 - **Implementation review:** parent moves to `in-review`, freezes `{base_sha, head_sha, clean_tree, changed_files[], node_ids[]}`, then **spawns** one Reviewer. Review the whole set before any `ship`; then transition Foundations → Interactions → Interfaces with re-read after each. Reject or dirty tree after verdict → void; fresh Reviewer on the new revision. See `review-work` Procedure B. Task is not done until that spawn has run.

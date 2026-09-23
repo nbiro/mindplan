@@ -8,8 +8,11 @@ import * as fs from "fs";
 import {
   EDGE_TYPES,
   initialStateForType,
+  isFoundationRole,
   isNextPipelineState,
   isPipelineNodeType,
+  isProductionState,
+  type FoundationRole,
   type MindPlanGraph,
   type MindPlanNode,
   type NodeType,
@@ -24,9 +27,8 @@ import {
   edgeWriteSlot,
   ensureDirectories,
   entityRelativePath,
-  implementationPackagesRequired,
-  implementationRelativePath,
   loadGraph,
+  loadProjectConfig,
   nextAttachmentsDir,
   nodeExists,
   nodeToRecord,
@@ -39,8 +41,17 @@ import {
   scaffoldEntity,
   splitContext,
   toggleCheckboxesInBody,
+  writeImplementsFrontmatter,
   type TerritorySlot,
 } from "../../foundations/f-territory-store/store.js";
+import {
+  expandClaims,
+  normalizeClaimList,
+} from "../../foundations/f-source-index/claims.js";
+import {
+  buildOwnershipIndex,
+  exclusiveOwner,
+} from "../../foundations/f-source-index/ownership.js";
 import {
   assertAcyclicDependsOn,
   assertOpenChecklistWhileBuilding,
@@ -145,6 +156,8 @@ export function buildMutationAnchor(
             ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
             ...(node.next.exposes?.length ? { exposes: node.next.exposes } : {}),
             ...(node.next.leads_to?.length ? { leads_to: node.next.leads_to } : {}),
+            ...(node.next.implements?.length ? { implements: node.next.implements } : {}),
+            ...(node.next.role ? { role: node.next.role } : {}),
           }
         : null,
     },
@@ -156,31 +169,55 @@ export function createNode(args: {
   type: NodeType;
   title: string;
   description: string;
+  role?: FoundationRole;
 }): Record<string, unknown> {
   const { id, type, title, description } = args;
+  // Validate config before writing territory.
+  loadProjectConfig();
   if (nodeExists(id)) {
     throw blocked(`node "${id}" already exists.`);
+  }
+  let role: FoundationRole | undefined;
+  let desc = description;
+  if (type === "Foundation") {
+    if (!args.role || !isFoundationRole(args.role)) {
+      throw blocked(
+        `create_node Foundation requires role: assembler | infra | design-system | adapter.`
+      );
+    }
+    role = args.role;
+    const tag =
+      role === "assembler"
+        ? "Assembler"
+        : role === "design-system"
+          ? "Design system"
+          : role === "adapter"
+            ? "Adapter"
+            : "Infra";
+    if (!new RegExp(`^${tag}\\b`, "i").test(desc)) {
+      desc = `${tag} — ${desc}`;
+    }
+  } else if (args.role !== undefined) {
+    throw blocked(`role is only valid when creating a Foundation (got ${type}).`);
   }
   const now = new Date().toISOString();
   const node: MindPlanNode = {
     id,
     type,
     title,
-    description,
+    description: desc,
     state: initialStateForType(type),
     created_at: now,
     updated_at: now,
+    ...(role ? { role } : {}),
   };
   ensureDirectories();
-  scaffoldEntity(node, { title, description });
+  scaffoldEntity(node, { title, description: desc });
   const rel = entityRelativePath(node);
   const current = `${rel}/${CURRENT_FILENAME}`;
   const attachments = `${rel}/${ATTACHMENTS_DIR}`;
-  const packagesOn = implementationPackagesRequired();
-  const implementation = packagesOn ? implementationRelativePath(node) : null;
   refreshPersistedMap();
   const files = [current, `${attachments}/.gitkeep`];
-  if (implementation) files.push(`${implementation}/.gitkeep`);
   const graph = loadGraph();
   return {
     created: node,
@@ -188,10 +225,96 @@ export function createNode(args: {
     current,
     context: current,
     attachments,
-    ...(implementation ? { implementation } : {}),
-    ...(packagesOn ? {} : { implementation_packages: "off" as const }),
     changed_files: changedFiles(files, true),
     ...buildMutationAnchor(graph, id),
+  };
+}
+
+/**
+ * Replace the implements list for a pipeline node on the appropriate slot.
+ */
+export function setImplementationFiles(args: {
+  node_id: string;
+  files: string[];
+  slot?: TerritorySlot;
+}): Record<string, unknown> {
+  loadProjectConfig();
+  const graph = loadGraph();
+  const node = findNode(graph, args.node_id);
+  if (!isPipelineNodeType(node.type)) {
+    throw blocked(
+      `set_implementation_files only applies to Interaction, Interface, and Foundation; "${node.id}" is a ${node.type}.`
+    );
+  }
+
+  const normalized = normalizeClaimList(args.files);
+  const retired = node.state === "cancelled" || node.state === "deprecated";
+  let slot: TerritorySlot;
+
+  if (args.slot) {
+    slot = args.slot;
+    if (slot === "next" && !node.next) {
+      throw blocked(`cannot set implements on next: "${node.id}" has no next.mdx.`);
+    }
+    if (slot === "current" && isProductionState(node.state) && !retired) {
+      throw blocked(
+        `shipped "${node.id}" can only change implements on an open next slot. Call open_next first.`
+      );
+    }
+  } else if (retired) {
+    slot = "current";
+  } else if (isProductionState(node.state)) {
+    if (!node.next) {
+      throw blocked(
+        `shipped "${node.id}" has no open next.mdx. Call open_next before set_implementation_files.`
+      );
+    }
+    slot = "next";
+  } else {
+    slot = "current";
+  }
+
+  if (retired) {
+    if (slot !== "current") {
+      throw blocked(`retired "${node.id}" can only shrink implements on current.`);
+    }
+    const prevFiles = new Set(expandClaims(node.implements));
+    for (const f of expandClaims(normalized)) {
+      if (!prevFiles.has(f)) {
+        throw blocked(
+          `retired "${node.id}" may only shrink implements (cannot add "${f}").`
+        );
+      }
+    }
+    for (const e of normalized) {
+      const covered = (node.implements ?? []).some(
+        (p) => p === e || (p.endsWith("/") && (e === p || e.startsWith(p)))
+      );
+      if (!covered) {
+        throw blocked(
+          `retired "${node.id}" may only shrink implements (cannot add entry "${e}").`
+        );
+      }
+    }
+  }
+
+  const buckets = buildOwnershipIndex(graph);
+  for (const f of expandClaims(normalized)) {
+    const other = exclusiveOwner(buckets, f);
+    if (other && other !== node.id) {
+      throw blocked(`implements conflict: "${f}" is already claimed by "${other}".`);
+    }
+  }
+
+  writeImplementsFrontmatter(node, normalized, slot);
+  refreshPersistedMap();
+  const pathWritten = territoryPath(node, slot);
+  return {
+    node_id: node.id,
+    slot,
+    implements: normalized,
+    changed_files: changedFiles([pathWritten], true),
+    ...buildMutationAnchor(loadGraph(), node.id),
   };
 }
 
@@ -469,11 +592,12 @@ export function patchNodeTerritory(args: {
   node_id: string;
   title?: string;
   description?: string;
+  role?: FoundationRole;
   body?: string;
   toggle_checkboxes?: { contains: string; checked: boolean }[];
   slot?: TerritorySlot;
 }): Record<string, unknown> {
-  const { node_id, title, description, body, toggle_checkboxes, slot } = args;
+  const { node_id, title, description, role, body, toggle_checkboxes, slot } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   const resolvedSlot: TerritorySlot =
@@ -488,6 +612,12 @@ export function patchNodeTerritory(args: {
   }
   if (description !== undefined) {
     assertPipelineTerritoryScalarsEditable(node, "description", resolvedSlot);
+  }
+  if (role !== undefined) {
+    if (!isFoundationRole(role)) {
+      throw blocked(`invalid Foundation role "${role}".`);
+    }
+    assertPipelineTerritoryScalarsEditable(node, "role", resolvedSlot);
   }
   if (body !== undefined || (toggle_checkboxes?.length ?? 0) > 0) {
     const raw = readMarkdown(node, resolvedSlot);
@@ -504,6 +634,7 @@ export function patchNodeTerritory(args: {
   const result = patchNodeTerritoryStore(node, {
     title,
     description,
+    role,
     body,
     toggle_checkboxes,
     slot: resolvedSlot,

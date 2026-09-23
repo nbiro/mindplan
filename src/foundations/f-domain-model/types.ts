@@ -50,6 +50,10 @@ export type EdgeType = (typeof EDGE_TYPES)[number];
 export const BUG_SEVERITIES = ["low", "medium", "high", "critical"] as const;
 export type BugSeverity = (typeof BUG_SEVERITIES)[number];
 
+/** Foundation substrate role — gates the import matrix (assembler is the composition root). */
+export const FOUNDATION_ROLES = ["assembler", "infra", "design-system", "adapter"] as const;
+export type FoundationRole = (typeof FOUNDATION_ROLES)[number];
+
 /** Pre-ship build states allowed on next.mdx (evolution slot). */
 export const NEXT_PIPELINE_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
 export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
@@ -68,6 +72,10 @@ export interface NextSlot {
   exposes?: string[];
   /** Proposed Interaction → Interaction navigation; applied to current on ship. */
   leads_to?: string[];
+  /** Proposed owned files (repo-relative POSIX; directories end in `/`). */
+  implements?: string[];
+  /** Proposed Foundation role; applied to current on ship. */
+  role?: FoundationRole;
 }
 
 export interface MindPlanNode {
@@ -90,8 +98,19 @@ export interface MindPlanNode {
   leads_to?: string[];
   /** MCP-only. Bug → Interaction|Interface|Foundation ids. */
   affects?: string[];
+  /**
+   * MCP-only. Owned source paths (repo-relative POSIX).
+   * Files or directories ending in `/`. Authority for ownership — not prescribed folders.
+   */
+  implements?: string[];
+  /** MCP-only. Foundation role for import-matrix rules. */
+  role?: FoundationRole;
   /** Present when next.mdx exists (Foundation/Interaction/Interface evolution in progress). */
   next?: NextSlot;
+}
+
+export function isFoundationRole(value: string): value is FoundationRole {
+  return (FOUNDATION_ROLES as readonly string[]).includes(value);
 }
 
 export interface MindPlanEdge {

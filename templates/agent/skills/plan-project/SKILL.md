@@ -10,7 +10,7 @@ description: >-
 
 # Plan a MindPlan Project (no code)
 
-Use this skill when the session’s job is **only** to create or reshape MindPlan territory. Application code under `src/interactions/`, `src/interfaces/`, and `src/foundations/` (or the project’s existing layout when `implementation_packages` is `off`) is out of scope until a later execution session under `mindplan/agent/playbook.md`.
+Use this skill when the session’s job is **only** to create or reshape MindPlan territory. Application code (files claimed via `implements` / `set_implementation_files`) is out of scope until a later execution session under `mindplan/agent/playbook.md`.
 
 Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity create/link details: `mindplan/agent/skills/define-entities/SKILL.md`. Always-on execution process (build pipeline, bugs, shipping): `mindplan/agent/playbook.md`.
 
@@ -26,7 +26,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 ## Hard rules (plan-only)
 
-- **No application code** — do not create, edit, or delete files under `src/interactions/<id>/`, `src/interfaces/<id>/`, or `src/foundations/<id>/` (except ignoring empty `.gitkeep` scaffolds that `create_node` already made when packages are `required`). When packages are `off`, do not start implementing in the existing app layout either — plan-only means graph/territory only.
+- **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries for Plan Review — prefer leaving that to the build session unless the user asks).
 - **No implementation pipeline** — do not move Foundations/Interactions/Interfaces to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
 - **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, finish links, PRD, and unchecked Atomic Ops at `draft`, then run the **Plan Review loop** (spawn Reviewer via `review-work`) until `ready` or escalate. Do not self-advance to `ready`. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.

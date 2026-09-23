@@ -3,11 +3,7 @@
  * Dispatches to Interaction entrypoints; does not own installers or integrity math.
  */
 
-import {
-  resolvePackageRoot,
-  runInit,
-  type InitLayout,
-} from "../../interactions/i-init-project/init.js";
+import { resolvePackageRoot, runInit } from "../../interactions/i-init-project/init.js";
 import { runIntegrityCheck } from "../../interactions/i-check-integrity/check.js";
 import { runViewExport } from "../../interactions/i-export-map/handlers.js";
 
@@ -93,7 +89,7 @@ function runCheckCli(argv: string[]): void {
     const message = err instanceof Error ? err.message : String(err);
     if (message === "HELP") {
       console.log(`Usage:
-  mindplan-mcp check                  Graph load + packages (default; CI mode)
+  mindplan-mcp check                  Graph load + file ownership (default; CI mode)
   mindplan-mcp check --base <ref>     Also enforce dirty-src ownership vs base
 
 Options:
@@ -106,58 +102,29 @@ Options:
   }
 }
 
-function parseInitArgs(argv: string[]): {
-  layout: InitLayout;
-  forceLayout: boolean;
-  force: boolean;
-  error?: string;
-} {
-  let layout: InitLayout = "prescribed";
-  let forceLayout = false;
+function parseInitArgs(argv: string[]): { force: boolean; error?: string } {
   let force = false;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--layout") {
-      const value = argv[++i];
-      if (value !== "free" && value !== "prescribed") {
-        return {
-          layout: "prescribed",
-          forceLayout: false,
-          force: false,
-          error: `Blocked: --layout must be "free" or "prescribed" (got ${value ?? "(missing)"}).`,
-        };
-      }
-      layout = value;
-      forceLayout = true;
-    } else if (arg.startsWith("--layout=")) {
-      const value = arg.slice("--layout=".length);
-      if (value !== "free" && value !== "prescribed") {
-        return {
-          layout: "prescribed",
-          forceLayout: false,
-          force: false,
-          error: `Blocked: --layout must be "free" or "prescribed" (got ${value}).`,
-        };
-      }
-      layout = value;
-      forceLayout = true;
-    } else if (arg === "-f" || arg === "--force") {
+    if (arg === "-f" || arg === "--force") {
       force = true;
+    } else if (arg === "--layout" || arg.startsWith("--layout=")) {
+      return {
+        force: false,
+        error:
+          'Blocked: --layout is removed. Run `mindplan-mcp init` to migrate implementation_packages to { sources, exclude }.',
+      };
     } else {
       return {
-        layout: "prescribed",
-        forceLayout: false,
         force: false,
-        error: `Blocked: unknown init option "${arg}". Use --layout free|prescribed and/or -f|--force.`,
+        error: `Blocked: unknown init option "${arg}". Use -f|--force only.`,
       };
     }
   }
-  return { layout, forceLayout, force };
+  return { force };
 }
 
-function printInitReport(
-  report: ReturnType<typeof runInit>
-): void {
+function printInitReport(report: ReturnType<typeof runInit>): void {
   if (report.created) {
     console.log(`Initialized MindPlan at ${report.root}`);
   } else {
@@ -170,13 +137,24 @@ function printInitReport(
     );
   };
 
-  if (report.projectConfig.installed) {
+  const cfg = report.projectConfig;
+  const sources = JSON.stringify(cfg.config.sources);
+  if (cfg.migrated) {
     console.log(
-      `Installed project config at ${report.projectConfig.path} (implementation_packages: ${report.projectConfig.config.implementation_packages})`
+      `Migrated project config at ${cfg.path} → sources: ${sources}, exclude: ${JSON.stringify(cfg.config.exclude)}` +
+        (cfg.seeded_implements
+          ? ` (seeded implements on ${cfg.seeded_implements} node(s)`
+          : "") +
+        (cfg.seeded_roles ? `, roles on ${cfg.seeded_roles}` : "") +
+        (cfg.seeded_implements || cfg.seeded_roles ? ")" : "")
+    );
+  } else if (cfg.installed) {
+    console.log(
+      `Installed project config at ${cfg.path} (sources: ${sources})`
     );
   } else {
     console.log(
-      `Project config already present at ${report.projectConfig.path} (implementation_packages: ${report.projectConfig.config.implementation_packages})`
+      `Project config already present at ${cfg.path} (sources: ${sources})`
     );
   }
   printInstall("agent playbook", report.playbook);
@@ -204,12 +182,9 @@ function printInitReport(
     );
   }
 
-  if (report.projectConfig.config.implementation_packages === "off") {
-    console.log(
-      "Layout-free mode: create_node will not scaffold src/foundations|interactions|interfaces packages; check skips package/dirty-src ownership."
-    );
-  }
-
+  console.log(
+    "Declare owned files with set_implementation_files. Coverage is governed by mindplan/config.json sources/exclude."
+  );
   console.log("Next: register the MindPlan MCP server — see mindplan/agent/integrations/");
 }
 
@@ -219,16 +194,13 @@ function printHelp(): void {
   mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and .cursorignore
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
-  mindplan-mcp check        Offline integrity: graph + packages (default CI mode)
+  mindplan-mcp check        Offline integrity: graph + file ownership (default CI mode)
   mindplan-mcp help         Show this message
 
 Init options:
-  --layout free|prescribed  Write mindplan/config.json (free = off packages; prescribed = required).
-                            With --layout, always overwrites existing config. Without --layout,
-                            creates config only if missing (default prescribed / required).
   -f, --force               Overwrite existing agent assets (playbook, skills, Cursor copies,
                             AGENTS.md, .cursorignore, permissions, etc.) from package templates.
-                            Does not change layout config unless --layout is also passed.
+                            Also migrates legacy implementation_packages → { sources, exclude }.
 
 View options:
   --format, -f mermaid|dot  Diagram format (default: mermaid)
@@ -260,8 +232,6 @@ export function runCli(argv: string[] = process.argv): boolean {
       const packageRoot = resolvePackageRoot(import.meta.url);
       const report = runInit({
         force: parsed.force,
-        layout: parsed.layout,
-        forceLayout: parsed.forceLayout,
         packageRoot,
       });
       printInitReport(report);

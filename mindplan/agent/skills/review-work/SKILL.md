@@ -105,6 +105,7 @@ revision = { base_sha, head_sha, clean_tree: true, changed_files[], node_ids[] }
 ```
 
 - Reject undeclared changed files outside `node_ids` ownership / Atomic Ops.
+- **Owner mapping:** map each changed file to its `implements` owner (`get_node_implementation` path lookup). A file owned by a node **outside** the frozen `node_ids[]` is a finding that needs justifying. A new or changed `assembler` role is likewise a finding that needs justifying.
 - Reject dirty tree (`clean_tree: false`).
 - If HEAD or the working tree changes after your verdict, approval is void.
 

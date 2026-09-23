@@ -1,0 +1,49 @@
+---
+id: f-test-harness
+type: Foundation
+role: infra
+title: "Test harness (file ownership)"
+description: "Infra — harness covers exclusivity, coverage, presence, leftovers, import matrix; drops --layout and package scaffold cases."
+state: in-review
+updated_at: 2026-09-23T14:00:06.904Z
+depends_on:
+  - f-mcp-runtime
+implements:
+  - src/foundations/f-test-harness/
+---
+
+# Test harness (file ownership)
+
+## Purpose
+
+Regression suite for MindPlan. Rewritten around declared file ownership: exclusivity, coverage, presence, leftovers, import matrix. Drops `--layout` and prescribed-package scaffold cases.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-test-harness/`
+
+- Rewrite `check.test.mjs` and `smoke.mjs` for sources/implements/role
+- Cover: exclusivity conflicts, uncovered universe files, missing presence on in-review/ship, retired leftovers, illegal imports (Interaction→Interaction, non-assembler→Interface, etc.)
+- Cover assembler may import its dependents; closure stops at assemblers
+- Cover `set_implementation_files`, init migration from `implementation_packages`, and path lookup on `get_node_implementation`
+- Keep Minimum Territory Shape, force_unship, cancel, and MCP smoke coverage where still relevant
+- No `--layout` assertions; no `.gitkeep` scaffold exemption as the ownership model
+
+Depends on: `f-mcp-runtime`.
+
+## Acceptance Criteria
+
+- `npm test` passes with rewritten check/smoke coverage
+- Package-scaffold and `--layout` cases are gone
+- File-ownership and import-matrix cases fail closed when violated
+
+## Atomic Ops
+
+- [x] Rewrite `check.test.mjs` for ownership matrix
+- [x] Rewrite `smoke.mjs` for implements/role/set_implementation_files/init migration
+- [x] Remove `--layout` / prescribed-package scaffold assertions
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

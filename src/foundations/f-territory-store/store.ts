@@ -9,10 +9,8 @@
  *   /mindplan/interactions/<id>/current.mdx (+ optional next.mdx)
  *   /mindplan/interfaces/<id>/current.mdx (+ optional next.mdx)
  *   /mindplan/bugs/<id>/current.mdx
- *   /src/interactions/<id>/                — Interaction implementation package
- *   /src/interfaces/<id>/                  — Interface implementation package
- *   /src/foundations/<id>/                 — Foundation implementation package
  *
+ * Owned source files are declared via server-owned `implements` (not prescribed folders).
  * Live node records and outgoing edge arrays live in current.mdx YAML frontmatter.
  * While evolving a shipped Foundation/Interaction/Interface, next.mdx holds the draft pipeline + proposed edges.
  */
@@ -22,6 +20,7 @@ import * as path from "path";
 import type {
   BugSeverity,
   EdgeType,
+  FoundationRole,
   MindPlanEdge,
   MindPlanGraph,
   MindPlanNode,
@@ -32,28 +31,23 @@ import type {
 import {
   BUG_SEVERITIES,
   GRAPH_VERSION,
+  isFoundationRole,
   isNextPipelineState,
   isPipelineNodeType,
   NODE_TYPES,
 } from "../f-domain-model/types.js";
-import {
-  implementationPackagesRequired,
-  loadProjectConfig,
-  type ImplementationPackagesMode,
-} from "./config.js";
+import { normalizeClaimList } from "../f-source-index/claims.js";
+import { loadProjectConfig } from "../f-source-index/config.js";
 
 export {
   CONFIG_FILENAME,
-  implementationPackagesRequired,
   loadProjectConfig,
   projectConfigPath,
   projectConfigRelativePath,
   writeProjectConfig,
-  type ImplementationPackagesMode,
   type MindPlanProjectConfig,
   type WriteProjectConfigResult,
-} from "./config.js";
-
+} from "../f-source-index/config.js";
 const TYPE_DIRS: Record<NodeType, string> = {
   Journey: "journeys",
   Foundation: "foundations",
@@ -72,6 +66,10 @@ const DIR_TO_TYPE: Record<string, NodeType> = {
 
 const EDGE_FIELDS = ["belongs_to", "depends_on", "exposes", "leads_to", "affects"] as const;
 type EdgeField = (typeof EDGE_FIELDS)[number];
+
+/** Array fields parsed like edges (YAML list or inline). */
+const LIST_FIELDS = [...EDGE_FIELDS, "implements"] as const;
+type ListField = (typeof LIST_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
 export const AGENT_DIR = "agent";
@@ -108,8 +106,8 @@ export function entityRelativePath(node: Pick<MindPlanNode, "id" | "type">): str
 }
 
 /**
- * Project-relative implementation package root for Interaction/Interface/Foundation, or null for Journey/Bug.
- * e.g. src/interactions/i-orient-plan
+ * Historical package path hint (src/<kind>/<id>). Not ownership authority —
+ * use `implements` / set_implementation_files. Kept for init migration seeding.
  */
 export function implementationRelativePath(
   node: Pick<MindPlanNode, "id" | "type">
@@ -118,91 +116,11 @@ export function implementationRelativePath(
   return path.posix.join(SRC_DIR, TYPE_DIRS[node.type], node.id);
 }
 
-/** Absolute path to the implementation package directory, or null. */
+/** Absolute path to the historical package directory, or null. */
 export function implementationDir(node: Pick<MindPlanNode, "id" | "type">): string | null {
   const rel = implementationRelativePath(node);
   if (!rel) return null;
   return path.join(projectRoot(), ...rel.split("/"));
-}
-
-/** Scaffolds src/interactions|interfaces|foundations/<id> with .gitkeep. No-op for Journey/Bug or when packages are off. */
-export function scaffoldImplementationPackage(
-  node: Pick<MindPlanNode, "id" | "type">
-): string | null {
-  if (!implementationPackagesRequired()) return null;
-  const abs = implementationDir(node);
-  const rel = implementationRelativePath(node);
-  if (!abs || !rel) return null;
-  fs.mkdirSync(abs, { recursive: true });
-  const keep = path.join(abs, ".gitkeep");
-  if (!fs.existsSync(keep)) {
-    fs.writeFileSync(keep, "", "utf-8");
-  }
-  return rel;
-}
-
-export type NodeImplementationInfo = {
-  node_id: string;
-  /**
-   * Prescribed package root when implementation_packages is required.
-   * Always null when implementation_packages is off — do not treat as a missing package.
-   */
-  root: string | null;
-  /**
-   * Whether the prescribed package directory exists on disk.
-   * When implementation_packages is off, always false (packages are not applicable).
-   * Agents MUST check implementation_packages before interpreting exists/root.
-   */
-  exists: boolean;
-  implementation_packages: ImplementationPackagesMode;
-  entries?: string[];
-};
-
-/**
- * Returns prescribed implementation package info for an Interaction, Interface, or Foundation.
- * When implementation_packages is off, root is null and exists is false —
- * that means packages are not applicable, not that a package is missing.
- * Throws Blocked for Journey/Bug.
- */
-export function getNodeImplementation(node: MindPlanNode): NodeImplementationInfo {
-  if (!isPipelineNodeType(node.type)) {
-    throw new Error(
-      `Blocked: get_node_implementation only applies to Interaction, Interface, and Foundation nodes; "${node.id}" is a ${node.type}.`
-    );
-  }
-  const mode = loadProjectConfig().implementation_packages;
-  if (mode === "off") {
-    return {
-      node_id: node.id,
-      root: null,
-      exists: false,
-      implementation_packages: "off",
-      entries: [],
-    };
-  }
-  const root = implementationRelativePath(node)!;
-  const abs = implementationDir(node)!;
-  const exists = fs.existsSync(abs) && fs.statSync(abs).isDirectory();
-  if (!exists) {
-    return {
-      node_id: node.id,
-      root,
-      exists: false,
-      implementation_packages: "required",
-      entries: [],
-    };
-  }
-  const entries = fs
-    .readdirSync(abs)
-    .filter((name) => name !== "." && name !== "..")
-    .sort((a, b) => a.localeCompare(b));
-  return {
-    node_id: node.id,
-    root,
-    exists: true,
-    implementation_packages: "required",
-    entries,
-  };
 }
 
 export function markdownPath(
@@ -262,13 +180,18 @@ function ensureEntityDir(node: Pick<MindPlanNode, "id" | "type">): void {
 export type ParsedFrontmatter = {
   scalars: Record<string, string>;
   arrays: Record<EdgeField, string[]>;
+  implements: string[];
 };
 
 function isEdgeField(key: string): key is EdgeField {
   return (EDGE_FIELDS as readonly string[]).includes(key);
 }
 
-/** Parses YAML frontmatter scalars and MCP edge array fields. */
+function isListField(key: string): key is ListField {
+  return (LIST_FIELDS as readonly string[]).includes(key);
+}
+
+/** Parses YAML frontmatter scalars and MCP edge / implements array fields. */
 export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
@@ -281,6 +204,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     leads_to: [],
     affects: [],
   };
+  let implementsList: string[] = [];
 
   const lines = match[1].split(/\r?\n/);
   let i = 0;
@@ -288,7 +212,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     const line = lines[i];
 
     const keyOnly = line.match(/^([\w]+):\s*$/);
-    if (keyOnly && isEdgeField(keyOnly[1])) {
+    if (keyOnly && isListField(keyOnly[1])) {
       const field = keyOnly[1];
       const items: string[] = [];
       i++;
@@ -296,17 +220,20 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
         items.push(lines[i].replace(/^\s+-\s+/, "").trim());
         i++;
       }
-      arrays[field] = items;
+      if (field === "implements") implementsList = items;
+      else arrays[field] = items;
       continue;
     }
 
     const inlineArray = line.match(/^([\w]+):\s*\[(.*)\]\s*$/);
-    if (inlineArray && isEdgeField(inlineArray[1])) {
+    if (inlineArray && isListField(inlineArray[1])) {
       const field = inlineArray[1];
       const inner = inlineArray[2].trim();
-      arrays[field] = inner
-        ? inner.split(",").map((s) => s.trim()).filter(Boolean)
+      const items = inner
+        ? inner.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
         : [];
+      if (field === "implements") implementsList = items;
+      else arrays[field] = items;
       i++;
       continue;
     }
@@ -326,15 +253,15 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     i++;
   }
 
-  return { scalars, arrays };
+  return { scalars, arrays, implements: implementsList };
 }
 
-function stripEdgeFieldLines(inner: string): string {
+function stripListFieldLines(inner: string): string {
   const lines = inner.split(/\r?\n/);
   const result: string[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (/^(belongs_to|depends_on|exposes|leads_to|affects):/.test(lines[i])) {
+    if (/^(belongs_to|depends_on|exposes|leads_to|affects|implements):/.test(lines[i])) {
       i++;
       while (i < lines.length && /^\s+-\s+/.test(lines[i])) i++;
       continue;
@@ -354,6 +281,17 @@ function formatEdgeFieldLines(arrays: Partial<Record<EdgeField, string[]>>): str
     for (const id of ids) parts.push(`  - ${id}`);
   }
   return parts.join("\n");
+}
+
+function formatImplementsLines(entries: string[]): string {
+  if (entries.length === 0) return "";
+  const parts = ["implements:"];
+  for (const e of entries) parts.push(`  - ${e}`);
+  return parts.join("\n");
+}
+
+function stripEdgeFieldLines(inner: string): string {
+  return stripListFieldLines(inner);
 }
 
 function parseNodeFromFrontmatter(
@@ -407,6 +345,16 @@ function parseNodeFromFrontmatter(
   if (parsed.arrays.exposes.length > 0) node.exposes = [...parsed.arrays.exposes];
   if (parsed.arrays.leads_to.length > 0) node.leads_to = [...parsed.arrays.leads_to];
   if (parsed.arrays.affects.length > 0) node.affects = [...parsed.arrays.affects];
+  if (parsed.implements.length > 0) node.implements = [...parsed.implements];
+  if (fm.role) {
+    if (!isFoundationRole(fm.role)) {
+      throw new Error(
+        `Blocked: invalid Foundation role "${fm.role}" in ${contextFile}. ` +
+          `Allowed: assembler, infra, design-system, adapter.`
+      );
+    }
+    node.role = fm.role;
+  }
   return node;
 }
 
@@ -440,6 +388,16 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot {
   if (parsed.arrays.depends_on.length > 0) slot.depends_on = [...parsed.arrays.depends_on];
   if (parsed.arrays.exposes.length > 0) slot.exposes = [...parsed.arrays.exposes];
   if (parsed.arrays.leads_to.length > 0) slot.leads_to = [...parsed.arrays.leads_to];
+  if (parsed.implements.length > 0) slot.implements = [...parsed.implements];
+  if (fm.role) {
+    if (!isFoundationRole(fm.role)) {
+      throw new Error(
+        `Blocked: invalid Foundation role "${fm.role}" in next.mdx for "${folderId}". ` +
+          `Allowed: assembler, infra, design-system, adapter.`
+      );
+    }
+    slot.role = fm.role;
+  }
   return slot;
 }
 
@@ -634,7 +592,9 @@ export function patchFrontmatterEdges(
   inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${updated_at}`);
 
   const edgeLines = formatEdgeFieldLines(merged);
-  const rebuiltInner = edgeLines ? `${inner}\n${edgeLines}` : inner;
+  const implLines = formatImplementsLines(parsed.implements);
+  const extras = [edgeLines, implLines].filter(Boolean).join("\n");
+  const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
   fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
 }
@@ -708,11 +668,11 @@ export function removeEdgesFromFrontmatter(
 
 /** Scaffolds an entity folder: current.mdx + empty attachments/ directory. */
 export function scaffoldEntity(
-  node: Pick<MindPlanNode, "id" | "type" | "state" | "created_at" | "updated_at">,
+  node: Pick<MindPlanNode, "id" | "type" | "state" | "created_at" | "updated_at" | "role">,
   meta: Pick<MindPlanNode, "title" | "description">
 ): void {
   // Validate project config before any FS writes so invalid config cannot leave a partial node.
-  const packagesRequired = implementationPackagesRequired();
+  loadProjectConfig();
 
   ensureEntityDir(node);
   const attachmentsKeep = path.join(attachmentsDir(node), ".gitkeep");
@@ -720,7 +680,7 @@ export function scaffoldEntity(
     fs.writeFileSync(attachmentsKeep, "", "utf-8");
   }
 
-  const frontmatter = [
+  const frontmatterLines = [
     "---",
     `id: ${node.id}`,
     `type: ${node.type}`,
@@ -729,8 +689,12 @@ export function scaffoldEntity(
     `state: ${node.state}`,
     `created_at: ${node.created_at}`,
     `updated_at: ${node.updated_at}`,
-    "---",
-  ].join("\n");
+  ];
+  if (node.type === "Foundation" && node.role) {
+    frontmatterLines.push(`role: ${node.role}`);
+  }
+  frontmatterLines.push("---");
+  const frontmatter = frontmatterLines.join("\n");
 
   let body: string;
   switch (node.type) {
@@ -768,9 +732,7 @@ export function scaffoldEntity(
         "",
         "## Shared Substrate Spec",
         "",
-        packagesRequired
-          ? "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable Interaction behaviour — that belongs in Interactions. Implement code only under `src/foundations/<id>/`._"
-          : "_Role belongs in frontmatter `description` at create time (e.g. `Assembler — …`, `Infra — …`, `Design system — …`, `Adapter — …`). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable Interaction behaviour — that belongs in Interactions. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/foundations/<id>/`._",
+        "_Role belongs in frontmatter `role` / `description` at create time (assembler / infra / design-system / adapter). Document shared substrate here: schemas, adapters, design system, contracts. MUST NOT own stakeholder-recognizable Interaction behaviour — that belongs in Interactions. Declare owned files with `set_implementation_files` (not prescribed `src/foundations/<id>/`)._",
         "",
         "## Acceptance Criteria",
         "",
@@ -810,9 +772,7 @@ export function scaffoldEntity(
         "",
         "## PRD / Execution Logic",
         "",
-        packagesRequired
-          ? "_Describe the behavior step by step. Implement code only under `src/interactions/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._"
-          : "_Describe the behavior step by step. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/interactions/<id>/`. Before inventing shared UI, depend on a Foundation (e.g. design system)._",
+        "_Describe the behavior step by step. Declare owned files with `set_implementation_files` (not prescribed `src/interactions/<id>/`). Before inventing shared UI, depend on a Foundation (e.g. design system)._",
         "",
         "## Acceptance Criteria",
         "",
@@ -852,9 +812,7 @@ export function scaffoldEntity(
         "",
         "## Spec",
         "",
-        packagesRequired
-          ? "_Presentation/transport/exposure only. Implement under `src/interfaces/<id>/`. Connect to Foundations as needed via `depends_on`._"
-          : "_Presentation/transport/exposure only. This project is layout-free (`implementation_packages: off`) — implement in the existing app layout, not under `src/interfaces/<id>/`. Connect to Foundations as needed via `depends_on`._",
+        "_Presentation/transport/exposure only. Declare owned files with `set_implementation_files` (not prescribed `src/interfaces/<id>/`). Connect to Foundations as needed via `depends_on`._",
         "",
         "## Acceptance Criteria",
         "",
@@ -912,7 +870,6 @@ export function scaffoldEntity(
   }
 
   writeMarkdown(node, `${frontmatter}\n\n${body}`, "current");
-  scaffoldImplementationPackage(node);
 }
 
 /**
@@ -972,11 +929,13 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   };
   if (node.shipped_at) record.shipped_at = node.shipped_at;
   if (node.severity) record.severity = node.severity;
+  if (node.role) record.role = node.role;
   if (node.belongs_to?.length) record.belongs_to = [...node.belongs_to];
   if (node.depends_on?.length) record.depends_on = [...node.depends_on];
   if (node.exposes?.length) record.exposes = [...node.exposes];
   if (node.leads_to?.length) record.leads_to = [...node.leads_to];
   if (node.affects?.length) record.affects = [...node.affects];
+  if (node.implements?.length) record.implements = [...node.implements];
   if (node.next) {
     record.next = {
       state: node.next.state,
@@ -987,6 +946,8 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
       ...(node.next.depends_on?.length ? { depends_on: [...node.next.depends_on] } : {}),
       ...(node.next.exposes?.length ? { exposes: [...node.next.exposes] } : {}),
       ...(node.next.leads_to?.length ? { leads_to: [...node.next.leads_to] } : {}),
+      ...(node.next.implements?.length ? { implements: [...node.next.implements] } : {}),
+      ...(node.next.role ? { role: node.next.role } : {}),
     };
   }
   return record;
@@ -996,6 +957,8 @@ export type PatchNodeTerritoryInput = {
   title?: string;
   description?: string;
   body?: string;
+  /** Foundation role — same slot rules as title/description. */
+  role?: FoundationRole;
   toggle_checkboxes?: { contains: string; checked: boolean }[];
   /** Override default slot selection. */
   slot?: TerritorySlot;
@@ -1053,7 +1016,7 @@ export function toggleCheckboxesInBody(
 
 function patchTerritoryScalars(
   frontmatter: string,
-  scalars: { title?: string; description?: string },
+  scalars: { title?: string; description?: string; role?: FoundationRole },
   updated_at: string
 ): string {
   let patched = frontmatter;
@@ -1065,6 +1028,13 @@ function patchTerritoryScalars(
       /^description:.*$/m,
       `description: ${JSON.stringify(scalars.description)}`
     );
+  }
+  if (scalars.role !== undefined) {
+    if (/^role:/m.test(patched)) {
+      patched = patched.replace(/^role:.*$/m, `role: ${scalars.role}`);
+    } else {
+      patched = patched.replace(/^(type:.*)$/m, `$1\nrole: ${scalars.role}`);
+    }
   }
   return patched.replace(/^updated_at:.*$/m, `updated_at: ${updated_at}`);
 }
@@ -1096,6 +1066,12 @@ export function patchNodeTerritory(
     frontmatter = patchTerritoryScalars(frontmatter, { description: input.description }, now);
     patched_fields.push("description");
   }
+  if (input.role !== undefined) {
+    frontmatter = patchTerritoryScalars(frontmatter, { role: input.role }, now);
+    patched_fields.push("role");
+    if (slot === "next" && node.next) node.next.role = input.role;
+    else node.role = input.role;
+  }
   if (input.body !== undefined) {
     body = input.body;
     patched_fields.push("body");
@@ -1109,7 +1085,7 @@ export function patchNodeTerritory(
 
   if (patched_fields.length === 0) {
     throw new Error(
-      "Blocked: patch_node_territory requires at least one of title, description, body, or toggle_checkboxes."
+      "Blocked: patch_node_territory requires at least one of title, description, role, body, or toggle_checkboxes."
     );
   }
 
@@ -1162,6 +1138,13 @@ export function openNextSlot(
     frontmatterLines.push("leads_to:");
     for (const id of node.leads_to) frontmatterLines.push(`  - ${id}`);
   }
+  if (node.implements?.length) {
+    frontmatterLines.push("implements:");
+    for (const p of node.implements) frontmatterLines.push(`  - ${p}`);
+  }
+  if (node.role) {
+    frontmatterLines.push(`role: ${node.role}`);
+  }
   frontmatterLines.push("---");
 
   // New evolution starts with an open DoD — do not inherit completed checkboxes from current.
@@ -1181,6 +1164,8 @@ export function openNextSlot(
   if (node.depends_on?.length) slot.depends_on = [...node.depends_on];
   if (node.exposes?.length) slot.exposes = [...node.exposes];
   if (node.leads_to?.length) slot.leads_to = [...node.leads_to];
+  if (node.implements?.length) slot.implements = [...node.implements];
+  if (node.role) slot.role = node.role;
   return slot;
 }
 
@@ -1225,6 +1210,11 @@ export function promoteNextSlot(
   const depends_on = nextParsed.arrays.depends_on;
   const exposes = nextParsed.arrays.exposes;
   const leads_to = nextParsed.arrays.leads_to;
+  const implementsList = nextParsed.implements;
+  const role =
+    nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
+      ? (nextParsed.scalars.role as FoundationRole)
+      : node.next.role ?? node.role;
 
   const frontmatterLines = [
     "---",
@@ -1252,6 +1242,13 @@ export function promoteNextSlot(
   if (leads_to.length > 0) {
     frontmatterLines.push("leads_to:");
     for (const id of leads_to) frontmatterLines.push(`  - ${id}`);
+  }
+  if (implementsList.length > 0) {
+    frontmatterLines.push("implements:");
+    for (const p of implementsList) frontmatterLines.push(`  - ${p}`);
+  }
+  if (role) {
+    frontmatterLines.push(`role: ${role}`);
   }
   frontmatterLines.push("---");
 
@@ -1283,5 +1280,76 @@ export function promoteNextSlot(
   else delete node.exposes;
   if (leads_to.length > 0) node.leads_to = [...leads_to];
   else delete node.leads_to;
+  if (implementsList.length > 0) node.implements = [...implementsList];
+  else delete node.implements;
+  if (role) node.role = role;
+  else delete node.role;
   delete node.next;
+}
+
+/**
+ * Write (replace) the `implements` list on current or next frontmatter.
+ * Updates the in-memory node accordingly. Used by set_implementation_files and init migration.
+ */
+export function writeImplementsFrontmatter(
+  node: MindPlanNode,
+  files: string[],
+  slot: TerritorySlot = "current"
+): void {
+  const normalized = normalizeClaimList(files);
+  const { file, raw, fence, inner: rawInner } = requireMutableFrontmatter(node, slot);
+  const parsed = parseFrontmatter(raw);
+  if (!parsed) {
+    throw new Error(
+      `Blocked: ${slot} file for "${node.id}" has unreadable YAML frontmatter; cannot set implements.`
+    );
+  }
+  const now = new Date().toISOString();
+  let inner = stripListFieldLines(rawInner);
+  inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  const edgeLines = formatEdgeFieldLines(parsed.arrays);
+  const implLines = formatImplementsLines(normalized);
+  const extras = [edgeLines, implLines].filter(Boolean).join("\n");
+  const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
+  const rebuilt = `---\n${rebuiltInner}\n---`;
+  fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
+
+  if (slot === "next") {
+    if (!node.next) {
+      throw new Error(`Blocked: node "${node.id}" has no next.mdx.`);
+    }
+    node.next.implements = normalized.length > 0 ? normalized : undefined;
+    node.next.updated_at = now;
+  } else {
+    if (normalized.length > 0) node.implements = normalized;
+    else delete node.implements;
+    node.updated_at = now;
+  }
+}
+
+/**
+ * Write Foundation `role` on current or next frontmatter (migration / create helpers).
+ */
+export function writeRoleFrontmatter(
+  node: MindPlanNode,
+  role: FoundationRole,
+  slot: TerritorySlot = "current"
+): void {
+  const { file, raw, fence } = requireMutableFrontmatter(node, slot);
+  const now = new Date().toISOString();
+  let patched = fence;
+  if (/^role:/m.test(patched)) {
+    patched = patched.replace(/^role:.*$/m, `role: ${role}`);
+  } else {
+    patched = patched.replace(/^(type:.*)$/m, `$1\nrole: ${role}`);
+  }
+  patched = patched.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+  if (slot === "next" && node.next) {
+    node.next.role = role;
+    node.next.updated_at = now;
+  } else {
+    node.role = role;
+    node.updated_at = now;
+  }
 }

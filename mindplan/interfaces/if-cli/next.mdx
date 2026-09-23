@@ -1,0 +1,57 @@
+---
+id: if-cli
+type: Interface
+title: "CLI (sources config)"
+description: "CLI drops --layout; init reports sources migration."
+state: in-review
+updated_at: 2026-09-23T14:00:09.284Z
+depends_on:
+  - f-mcp-runtime
+exposes:
+  - i-init-project
+  - i-check-integrity
+  - i-export-map
+implements:
+  - src/interfaces/if-cli/
+---
+
+# CLI (sources config)
+
+## Purpose
+
+CLI Interface for `mindplan-mcp` subcommands. Drops `--layout`. Init reporting mentions sources migration. Owns argv parsing, help, output, exit codes only.
+
+## Kind
+
+CLI command surface.
+
+## Exposed Interactions
+
+- `i-init-project` — `init` (`-f` / `--force`; no `--layout`)
+- `i-check-integrity` — `check` (default ownership; `--base` opt-in)
+- `i-export-map` — `view` / `export`
+
+## Spec
+
+Intended files: `src/interfaces/if-cli/`
+
+- Remove `--layout` parsing and help
+- Print init migration report from `runInit` when applicable
+- Keep check/view dispatch unchanged aside from help text
+
+## Acceptance Criteria
+
+- `--layout` is an unknown option
+- Help documents sources-oriented init/check
+- No domain logic under this Interface
+- Verified via smoke
+
+## Atomic Ops
+
+- [x] Remove `--layout` from argv/help
+- [x] Surface sources migration output from init
+- [x] Verified via smoke
+
+## Attachments
+
+_None._

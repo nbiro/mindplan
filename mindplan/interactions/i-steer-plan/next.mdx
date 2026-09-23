@@ -1,0 +1,63 @@
+---
+id: i-steer-plan
+type: Interaction
+title: "Steer (set_implementation_files)"
+description: "Adds set_implementation_files; create_node requires Foundation role; no package scaffolds."
+state: in-review
+updated_at: 2026-09-23T14:00:07.742Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-compiler-rules
+  - f-graph-search
+  - f-view-projection
+  - f-territory-store
+  - f-source-index
+leads_to:
+  - i-export-map
+implements:
+  - src/interactions/i-steer-plan/
+---
+
+# Steer (set_implementation_files)
+
+## Purpose
+
+Mutate the graph through compiler-gated tools. Adds `set_implementation_files`. `create_node` requires Foundation `role`. No package scaffolds. Claim validation uses `f-source-index`.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
+- **Trigger:** MCP/HTTP mutate tools
+
+## Execution Logic
+
+Intended files: `src/interactions/i-steer-plan/`
+
+- Keep existing mutate tools + map refresh via `f-view-projection`
+- New tool `set_implementation_files(node_id, files, slot?)`:
+  - Pre-ship writes `current`; shipped writes only open `next` (else Blocked → open_next); retired may only shrink
+  - Reject bad paths (`..`, under `mindplan/`) and immediate ownership conflicts
+- `create_node` for Foundations requires `role`
+- Do not scaffold `src/<type>/<id>/.gitkeep`
+
+Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
+
+## Acceptance Criteria
+
+- `set_implementation_files` enforces slot rules and rejects conflicts
+- Foundation create without role is Blocked
+- No package scaffolds on create
+- Existing mutate behavior preserved
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Implement `set_implementation_files` with slot/retired/conflict rules
+- [x] Require Foundation role on create_node
+- [x] Stop scaffolding packages from create path
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

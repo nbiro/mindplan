@@ -24,10 +24,12 @@ import {
   linkNodes,
   openNext,
   patchNodeTerritory,
+  setImplementationFiles,
   unlinkNodes,
   updateNodeStatus,
 } from "../../interactions/i-steer-plan/handlers.js";
 import { exportMindPlanViewHandler } from "../../interactions/i-export-map/handlers.js";
+import { FOUNDATION_ROLES } from "../../foundations/f-domain-model/types.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -136,16 +138,21 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get node implementation",
       description:
-        "Returns implementation package info for an Interaction, Interface, or Foundation. " +
-        "When implementation_packages is required: root is src/interactions/<id>, src/interfaces/<id>, or src/foundations/<id>, plus exists/entries. " +
-        "When off (layout-free): root is null and exists is false — packages are not applicable; check implementation_packages before treating as missing.",
+        "Returns declared owned files for a node (`implements`), or looks up the owner of a path. " +
+        "Interaction/Interface/Foundation: { node_id, files: [{path,exists}], next_files? }. " +
+        "Journey/Bug: tagged files of members/affects targets. Pass path for path→owner lookup.",
       inputSchema: {
-        node_id: NODE_ID.describe(
-          "Interaction, Interface, or Foundation id whose implementation package to read."
+        node_id: NODE_ID.optional().describe(
+          "Node id whose implements list to read. Required unless path is set."
         ),
+        path: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Repo-relative path to look up owner for."),
       },
     },
-    guarded(({ node_id }) => getNodeImplementationHandler({ node_id }))
+    guarded(({ node_id, path }) => getNodeImplementationHandler({ node_id, path }))
   );
 
   server.registerTool(
@@ -197,8 +204,8 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Patch node territory",
       description:
-        "Patches territory-owned content: body (PRD, checklists), optional title/description " +
-        "(pre-ship Interaction/Interface or next slot), toggle_checkboxes. " +
+        "Patches territory-owned content: body (PRD, checklists), optional title/description/role " +
+        "(pre-ship or next slot), toggle_checkboxes. " +
         "When a shipped Foundation/Interaction/Interface has next.mdx, patches default to next. Optional slot: current|next.",
       inputSchema: {
         node_id: NODE_ID.describe("Node whose territory to patch."),
@@ -206,11 +213,15 @@ export function registerMindPlanTools(server: McpServer): void {
           .string()
           .min(1)
           .optional()
-          .describe("New title (pre-ship Interaction/Interface or next slot)."),
+          .describe("New title (pre-ship or next slot)."),
         description: z
           .string()
           .optional()
-          .describe("New description (pre-ship Interaction/Interface or next slot)."),
+          .describe("New description (pre-ship or next slot)."),
+        role: z
+          .enum(FOUNDATION_ROLES)
+          .optional()
+          .describe("Foundation role (pre-ship or next slot)."),
         body: z.string().optional().describe("Replace entire territory body below frontmatter."),
         toggle_checkboxes: z
           .array(
@@ -227,9 +238,33 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Territory slot to patch. Defaults to next when evolving a shipped node."),
       },
     },
-    guarded(({ node_id, title, description, body, toggle_checkboxes, slot }) =>
-      patchNodeTerritory({ node_id, title, description, body, toggle_checkboxes, slot })
+    guarded(({ node_id, title, description, role, body, toggle_checkboxes, slot }) =>
+      patchNodeTerritory({ node_id, title, description, role, body, toggle_checkboxes, slot })
     )
+  );
+
+  server.registerTool(
+    "set_implementation_files",
+    {
+      title: "Set implementation files",
+      description:
+        "Replaces the server-owned implements list for an Interaction, Interface, or Foundation. " +
+        "Pre-ship writes current; shipped writes only an open next (else Blocked → open_next); " +
+        "retired nodes may only shrink. Rejects bad paths and ownership conflicts.",
+      inputSchema: {
+        node_id: NODE_ID.describe("Pipeline node whose implements list to replace."),
+        files: z
+          .array(z.string())
+          .describe(
+            "Repo-relative POSIX paths (files, or directories ending in /). Replaces the slot list."
+          ),
+        slot: z
+          .enum(["current", "next"])
+          .optional()
+          .describe("Optional slot override. Defaults by lifecycle."),
+      },
+    },
+    guarded(({ node_id, files, slot }) => setImplementationFiles({ node_id, files, slot }))
   );
 
   server.registerTool(
@@ -238,17 +273,21 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Create node",
       description:
         "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + current.mdx frontmatter. " +
-        "When implementation_packages is required (default), Interaction/Interface/Foundation also scaffold " +
-        "src/interactions/<id>, src/interfaces/<id>, or src/foundations/<id>. " +
-        "When off (layout-free), only territory is created.",
+        "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold).",
       inputSchema: {
         id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
         type: z.enum(NODE_TYPES).describe("Journey | Interaction | Interface | Foundation | Bug"),
         title: z.string().min(1).describe("Human-readable title (written to current.mdx frontmatter)."),
         description: z.string().describe("Short description (written to current.mdx frontmatter)."),
+        role: z
+          .enum(FOUNDATION_ROLES)
+          .optional()
+          .describe("Required for Foundation: assembler | infra | design-system | adapter."),
       },
     },
-    guarded(({ id, type, title, description }) => createNode({ id, type, title, description }))
+    guarded(({ id, type, title, description, role }) =>
+      createNode({ id, type, title, description, role })
+    )
   );
 
   server.registerTool(
@@ -313,8 +352,8 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Get blast radius",
       description:
         "Returns all nodes that depend on the given node (transitive reverse depends_on closure), " +
-        "with hop distance and journeys_at_risk for affected Interactions. " +
-        "When the focus is an Interaction, also returns reachability: exposing Interfaces, containing Journeys, and leads_to downstream.",
+        "with hop distance, journeys_at_risk, and affected_files (via focus|dependent|exposing|importer). " +
+        "When the focus is an Interaction, also returns reachability.",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose dependents to analyze."),
       },

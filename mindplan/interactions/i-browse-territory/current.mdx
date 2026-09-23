@@ -5,13 +5,13 @@ title: "Read territory"
 description: "See the plan — browse PRD, acceptance criteria, and Atomic Ops with reserved MDX components."
 state: ready
 created_at: 2026-07-20T21:15:23.857Z
-updated_at: 2026-07-20T21:17:17.629Z
+updated_at: 2026-09-23T13:33:48.772Z
 belongs_to:
   - j-plan-console
 depends_on:
   - f-console-shell
-  - f-console-bridge
   - f-design-system
+  - f-console-client
 ---
 
 # Read territory
@@ -20,30 +20,34 @@ depends_on:
 
 See the plan — read a node’s PRD / shared substrate spec, acceptance criteria, Atomic Ops, and attachments. Implements SPEC §6.4 reserved MDX components for presentation; Markdown `- [ ]` / `- [x]` remain the Completion Check authority.
 
+## Actor & Trigger
+
+- **Actor:** human via console
+- **Trigger:** open territory page / select a node
+
 ## Execution Logic
 
-Package: `src/interactions/i-browse-territory/`
-
-- Load `get_node_context`-equivalent payload via `f-console-bridge` (record + body + optional `next`)
+- Load `get_node_context`-equivalent payload via `f-console-client` → `if-console-api` (orient)
 - Render body with reserved components: `StateBadge`, `AtomicOp`, `AcceptanceCriteria`, `Attachment`, edge refs, Bug helpers
 - Show live vs `next` slot when evolving
-- Read-only in this Interaction — edits belong to mutate / model (or host file tools outside the console)
+- Read-only — edits belong to mutate / model
 
-Belongs to: `j-plan-console`. Depends on: `f-console-shell`, `f-console-bridge`, `f-design-system`.
+Belongs to: `j-plan-console`. Depends on: `f-console-shell`, `f-console-client`, `f-design-system`.
 
 ## Acceptance Criteria
 
 - Selecting a node shows title, state, description, and full body
 - Reserved MDX components render; unknown project components degrade gracefully
 - Open `next` slot is visible when present
-- Checkbox display matches territory Markdown (no JSX `done` override of compiler gates)
+- Uses console client, not cancelled bridge
+- Plan-only in this change-set (stops at ready)
 
 ## Atomic Ops
 
-- [ ] Node context panel from bridge (current + next)
+- [ ] Spec updated for f-console-client
+- [ ] Node context panel contract (current + next)
 - [ ] Reserved MDX component renderers per SPEC §6.4
-- [ ] Attachment list / preview links
 
 ## Attachments
 
-_Wireframes go in `attachments/`._
+_None._

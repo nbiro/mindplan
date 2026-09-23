@@ -1,0 +1,51 @@
+---
+id: f-github-actions
+type: Foundation
+role: assembler
+title: "GitHub Actions (file ownership)"
+description: "Assembler — CI stays on default check (now graph + file ownership); claims .github/workflows/ci.yml."
+state: in-review
+updated_at: 2026-09-23T14:00:06.967Z
+depends_on:
+  - f-npm-registry
+implements:
+  - .github/workflows/ci.yml
+---
+
+# GitHub Actions (file ownership)
+
+## Purpose
+
+Assembler for CI substrate. Default `check` becomes graph + file ownership (exclusivity, coverage, presence, leftovers, import matrix). Still no dirty-src in CI. Claims `.github/workflows/ci.yml`.
+
+## Ownership split
+
+| Surface | Owner |
+|---------|--------|
+| `.github/workflows/ci.yml` | **This Foundation** |
+| OIDC / registry-url conventions for publish jobs | **This Foundation** |
+| `.github/workflows/publish.yml` | **`i-npm-tag-publish` only** |
+
+## Shared Substrate Spec
+
+- File: `.github/workflows/ci.yml` — push/PR to main; Node matrix; `npm ci` → build → test → `node dist/index.js check`
+- `check` is default integrity from `i-check-integrity` (graph + ownership). No `--base` in CI.
+- Publish job conventions unchanged (OIDC, registry-url) for `i-npm-tag-publish`
+
+Depends on: `f-npm-registry`.
+
+## Acceptance Criteria
+
+- CI invokes bare default `check` only
+- Territory documents ownership check, not package presence
+- Claims `ci.yml` via implements after land
+
+## Atomic Ops
+
+- [x] Update territory to describe ownership check instead of packages
+- [x] Confirm `.github/workflows/ci.yml` still invokes bare `check`
+- [x] Claim `ci.yml` with `set_implementation_files` after migration
+
+## Attachments
+
+_None._
