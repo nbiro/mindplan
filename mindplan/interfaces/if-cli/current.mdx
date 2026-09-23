@@ -2,17 +2,60 @@
 id: if-cli
 type: Interface
 title: "CLI commands"
-description: "CLI Interface exposing init and integrity-check Interactions."
-state: ready
+description: "CLI Interface: argv parsing, help, output, and exit codes for init, check, and view/export."
+state: in-review
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-08-10T13:44:20.510Z
+updated_at: 2026-09-23T13:20:03.938Z
 exposes:
   - i-init-project
   - i-check-integrity
+  - i-export-map
 depends_on:
   - f-mcp-runtime
 ---
 
+
+
 # CLI commands
 
-CLI Interface exposing init and integrity-check Interactions.
+## Purpose
+
+CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help text, stdout/stderr, and exit codes; dispatches to init, check, and view/export Interactions.
+
+## Kind
+
+CLI command surface — `mindplan-mcp` argv subcommands.
+
+## Exposed Interactions
+
+- `i-init-project` — `init` (including `--layout`, `-f` / `--force`)
+- `i-check-integrity` — `check` (default graph+packages; `--base` opt-in dirty-src)
+- `i-export-map` — `view` / `export` diagram commands
+
+## Spec
+
+Package: `src/interfaces/if-cli/`
+
+- Owns argument parsing, help text, stdout/stderr, and exit codes for `init`, `check`, `view` / `export`, and top-level `help`
+- Calls Interaction entrypoints (`runInit`, `runIntegrityCheck`, export helpers) — does not reimplement them
+- Invoked by `f-mcp-runtime` boot when `process.argv[2]` is a known command
+- Note: `view`/`export` uses `-f` as `--format`; `init` uses `-f` as `--force` — different commands
+
+Depends on: `f-mcp-runtime`. Exposes: `i-init-project`, `i-check-integrity`, `i-export-map`.
+
+## Acceptance Criteria
+
+- CLI help, exit codes, and output strings match pre-split behavior (no `--for-main`)
+- `init` / `check` / `view` / `export` dispatch to the correct Interaction
+- No domain installers or integrity math live under this Interface package
+- `npm test` / smoke CLI cases pass
+
+## Atomic Ops
+
+- [x] Move CLI parsers, help, and dispatch from `f-mcp-runtime/server.ts` into this package
+- [x] Wire to `i-init-project.runInit`, `i-check-integrity`, and `i-export-map` export
+- [x] Verify init/check/view smoke cases
+
+## Attachments
+
+_None._

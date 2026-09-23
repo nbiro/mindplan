@@ -1,0 +1,45 @@
+---
+id: f-mcp-runtime
+type: Foundation
+title: "MCP runtime (boot only)"
+description: "Assembler — thin process boot only: selects CLI or MCP mode and mounts if-cli / if-mcp-tools. Handlers and CLI parsing live in Interactions and Interfaces."
+state: in-review
+updated_at: 2026-09-23T13:19:57.415Z
+depends_on:
+  - f-territory-store
+---
+
+
+# MCP runtime (boot only)
+
+## Purpose
+
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. Does **not** own tool handlers, CLI argument parsing, or Interaction domain logic.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-mcp-runtime/`
+
+- `server.ts` — process boot only: mode select (no argv → MCP stdio; else CLI), `McpServer` + `StdioServerTransport` construction, call into `if-mcp-tools` registration and `if-cli` dispatch
+- Relies on `src/index.ts` (same Foundation ownership) as the package bin entry that imports this boot module
+- May call `ensureDirectories()` from `f-territory-store` at MCP start
+- MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
+
+Depends on: `f-territory-store`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
+
+## Acceptance Criteria
+
+- Process with no argv starts MCP stdio and registers tools via `if-mcp-tools`
+- Process with `init` / `view` / `export` / `check` / `help` dispatches via `if-cli`
+- `server.ts` imports only Interface packages (and `f-territory-store` for ensureDirectories) — not Interaction handlers
+- `npm test` passes with unchanged tool names, schemas, CLI output, and exit codes
+
+## Atomic Ops
+
+- [x] Slim `server.ts` to boot + mode select; remove tool registration and CLI parsers
+- [x] Wire boot to call `if-mcp-tools` register and `if-cli` dispatch
+- [x] Keep `src/index.ts` importing this boot module; verify `npm test`
+
+## Attachments
+
+_None._

@@ -949,6 +949,16 @@ export function splitContext(raw: string): { frontmatter: string; body: string }
   return { frontmatter: match[1], body: match[3] };
 }
 
+/** Compact node summary for blast-radius / reachability payloads. */
+export function summarizeGraphNode(n: MindPlanNode): {
+  id: string;
+  type: MindPlanNode["type"];
+  state: MindPlanNode["state"];
+  title: string;
+} {
+  return { id: n.id, type: n.type, state: n.state, title: n.title };
+}
+
 /** Authoritative graph slice for MCP read responses (excludes raw frontmatter duplication). */
 export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   const record: Record<string, unknown> = {

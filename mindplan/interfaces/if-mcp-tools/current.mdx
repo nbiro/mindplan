@@ -2,18 +2,61 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP tool Interface exposing orient, steer, and export Interactions."
-state: ready
+description: "MCP stdio Interface: registers orient, steer, and export tool handlers with schemas and the ok/guarded envelope."
+state: in-review
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-08-10T13:44:20.502Z
+updated_at: 2026-09-23T13:20:03.919Z
 exposes:
   - i-orient-plan
   - i-steer-plan
   - i-export-map
 depends_on:
   - f-mcp-runtime
+  - f-domain-model
 ---
+
+
 
 # MCP tools
 
-MCP tool Interface exposing orient, steer, and export Interactions.
+## Purpose
+
+MCP stdio Interface that registers orient, steer, and export tool handlers. Mounts Interaction handlers with schemas and the ok/guarded envelope; does not own domain logic.
+
+## Kind
+
+MCP tool surface (stdio) — the single MCP Interface for MindPlan graph tools.
+
+## Exposed Interactions
+
+- `i-orient-plan` — read/orient tools
+- `i-steer-plan` — mutate tools
+- `i-export-map` — `export_mindplan_view`
+
+## Spec
+
+Package: `src/interfaces/if-mcp-tools/`
+
+- Registers every MCP tool by calling Interaction handlers: tool names, descriptions, Zod input schemas, and the `ok` / `guarded` envelope
+- Does **not** own domain logic, blast-radius math, territory I/O, or compiler rules — only mounts/wires
+- Invoked by `f-mcp-runtime` boot when starting MCP stdio
+- Uses `f-domain-model` enums for Zod schemas (node/edge types)
+
+Depends on: `f-mcp-runtime`, `f-domain-model`. Exposes: `i-orient-plan`, `i-steer-plan`, `i-export-map`.
+
+## Acceptance Criteria
+
+- All tools listed by orient/steer/export ownership modules are registered and callable over stdio
+- Tool names, schemas, and error/`Blocked:` envelopes match pre-split behavior
+- No Interaction domain logic lives under this Interface package
+- `npm test` passes
+
+## Atomic Ops
+
+- [x] Add registration module that wires Interaction handlers onto `McpServer`
+- [x] Move Zod schemas + `ok` / `guarded` envelope here from `f-mcp-runtime/server.ts`
+- [x] Verify MCP smoke coverage for orient, steer, and export tools
+
+## Attachments
+
+_None._

@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (40 nodes, 91 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (40 nodes, 89 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
@@ -22,17 +22,17 @@ flowchart TB
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
   end
   subgraph interfaces["Interfaces"]
-    if_cli{{"if-cli · CLI commands · ready"}}
+    if_cli{{"if-cli · CLI commands · in-review"}}
     if_console_graph{{"if-console-graph · Console graph page · ready"}}
     if_console_model{{"if-console-model · Console model page · ready"}}
     if_console_mutate{{"if-console-mutate · Console mutate page · ready"}}
     if_console_status{{"if-console-status · Console status page · ready"}}
     if_console_territory{{"if-console-territory · Console territory page · ready"}}
-    if_mcp_tools{{"if-mcp-tools · MCP tools · ready"}}
+    if_mcp_tools{{"if-mcp-tools · MCP tools · in-review"}}
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Release tag trigger · ready"}}
   end
-  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
+  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
     i_init_project__in__j_agent_onboarding["i-init-project · Init a consumer project · stable"]
     i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · ready"]
   end
@@ -47,7 +47,7 @@ flowchart TB
     i_mutate_plan__in__j_plan_console["i-mutate-plan · Steer the plan · ready"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
     i_check_integrity__in__j_territory_sdlc["i-check-integrity · Integrity check CLI (no --for-main) · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient on the plan · stable"]
@@ -65,7 +65,6 @@ flowchart TB
   f_framework_docs --> f_domain_model
   f_github_actions --> f_npm_registry
   f_graph_search --> f_domain_model
-  f_mcp_runtime --> f_compiler_rules
   f_mcp_runtime --> f_territory_store
   f_territory_store --> f_domain_model
   f_test_harness --> f_mcp_runtime
@@ -81,7 +80,6 @@ flowchart TB
   i_explore_graph__in__j_plan_console --> f_console_shell
   i_explore_graph__in__j_plan_console --> f_design_system
   i_explore_graph__in__j_plan_console --> f_xyflow
-  i_export_map__in__j_territory_sdlc --> f_mcp_runtime
   i_export_map__in__j_territory_sdlc --> f_territory_store
   i_export_map__in__j_territory_sdlc --> f_view_projection
   i_init_project__in__j_agent_onboarding --> f_territory_store
@@ -99,16 +97,15 @@ flowchart TB
   i_npm_tag_publish__in__j_npm_publish --> f_github_actions
   i_npm_tag_publish__in__j_npm_publish --> f_npm_registry
   i_orient_plan__in__j_territory_sdlc --> f_graph_search
-  i_orient_plan__in__j_territory_sdlc --> f_mcp_runtime
   i_orient_plan__in__j_territory_sdlc -.->|leads_to| i_steer_plan__in__j_territory_sdlc
   i_steer_plan__in__j_territory_sdlc --> f_compiler_rules
-  i_steer_plan__in__j_territory_sdlc --> f_mcp_runtime
   i_steer_plan__in__j_territory_sdlc -.->|leads_to| i_export_map__in__j_territory_sdlc
   i_view_status__in__j_plan_console --> f_console_bridge
   i_view_status__in__j_plan_console --> f_console_shell
   i_view_status__in__j_plan_console --> f_design_system
   if_cli --> f_mcp_runtime
   if_cli -->|exposes| i_check_integrity__in__j_territory_sdlc
+  if_cli -->|exposes| i_export_map__in__j_territory_sdlc
   if_cli -->|exposes| i_init_project__in__j_agent_onboarding
   if_console_graph --> f_console_shell
   if_console_graph --> f_xyflow
@@ -125,6 +122,7 @@ flowchart TB
   if_console_territory --> f_console_shell
   if_console_territory --> f_design_system
   if_console_territory -->|exposes| i_browse_territory__in__j_plan_console
+  if_mcp_tools --> f_domain_model
   if_mcp_tools --> f_mcp_runtime
   if_mcp_tools -->|exposes| i_export_map__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_orient_plan__in__j_territory_sdlc

@@ -1,10 +1,11 @@
 /**
  * Consumer project init — scaffolds mindplan/ and installs agent assets.
- * Owned by Workflow i-init-project.
+ * Owned by Interaction i-init-project.
  */
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import {
   AGENT_DIR,
   MINDPLAN_DIR,
@@ -316,4 +317,88 @@ export function initProject(): InitResult {
   const existed = fs.existsSync(root);
   ensureDirectories();
   return { root, created: !existed };
+}
+
+/** Walk up from this module until templates/agent exists (works from nested dist/...). */
+export function resolvePackageRoot(moduleUrl: string): string {
+  let dir = path.dirname(fileURLToPath(moduleUrl));
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, "templates", "agent"))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    "Could not locate MindPlan package root (templates/agent missing). " +
+      "Run mindplan-mcp from an installed package that includes templates/."
+  );
+}
+
+export type RunInitOptions = {
+  force: boolean;
+  layout?: InitLayout;
+  forceLayout?: boolean;
+  packageRoot: string;
+};
+
+export type RunInitReport = {
+  root: string;
+  created: boolean;
+  projectConfig: InstallProjectConfigResult;
+  playbook: InstallAgentRuleResult;
+  skill: InstallSkillResult;
+  planSkill: InstallSkillResult;
+  reviewSkill: InstallSkillResult;
+  codeReviewSkill: InstallSkillResult;
+  mcpExample: InstallAgentRuleResult;
+  integrations: InstallSkillResult;
+  agentsMd: InstallAgentRuleResult;
+  cursorIgnore: InstallAgentRuleResult;
+  cursorSkills: InstallSkillResult[];
+  cursorRule: InstallAgentRuleResult;
+  cursorPermissions: InstallAgentRuleResult;
+};
+
+/**
+ * Runs all consumer installers and returns a structured report.
+ * CLI owns console output / exit codes — this package does not print or exit.
+ */
+export function runInit(opts: RunInitOptions): RunInitReport {
+  const layout = opts.layout ?? "prescribed";
+  const forceLayout = opts.forceLayout === true;
+  const installOpts = { force: opts.force };
+  const { root, created } = initProject();
+  const projectConfig = installProjectConfig(layout, { force: forceLayout });
+  const playbook = installAgentPlaybook(opts.packageRoot, installOpts);
+  const skill = installDefineEntitiesSkill(opts.packageRoot, installOpts);
+  const planSkill = installPlanProjectSkill(opts.packageRoot, installOpts);
+  const reviewSkill = installReviewWorkSkill(opts.packageRoot, installOpts);
+  const codeReviewSkill = installCodeReviewSkill(opts.packageRoot, installOpts);
+  const mcpExample = installMcpExample(opts.packageRoot, installOpts);
+  const integrations = installAgentIntegrations(opts.packageRoot, installOpts);
+  const agentsMd = installRootAgentsMd(opts.packageRoot, installOpts);
+  const cursorIgnore = installCursorIgnore(opts.packageRoot, installOpts);
+  const cursorSkills = installCursorSkills(opts.packageRoot, installOpts);
+  const cursorRule = installCursorRule(opts.packageRoot, installOpts);
+  const cursorPermissions = installCursorPermissions(opts.packageRoot, installOpts);
+
+  return {
+    root,
+    created,
+    projectConfig,
+    playbook,
+    skill,
+    planSkill,
+    reviewSkill,
+    codeReviewSkill,
+    mcpExample,
+    integrations,
+    agentsMd,
+    cursorIgnore,
+    cursorSkills,
+    cursorRule,
+    cursorPermissions,
+  };
 }

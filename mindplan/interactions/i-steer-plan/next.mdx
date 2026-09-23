@@ -1,0 +1,62 @@
+---
+id: i-steer-plan
+type: Interaction
+title: "Steer the plan"
+description: "Owns mutate MCP tool handlers plus mutation anchors, changed_files, and post-mutation mindplan/map.md refresh."
+state: in-review
+updated_at: 2026-09-23T13:20:01.085Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-compiler-rules
+  - f-graph-search
+  - f-view-projection
+  - f-territory-store
+leads_to:
+  - i-export-map
+---
+
+
+# Steer the plan
+
+## Purpose
+
+Mutate the MindPlan graph through compiler-gated tools: create/link/unlink, status transitions, open_next/discard_next, territory patches, and force_unship. Successful mutations return `changed_files` and an `anchor`, and refresh `mindplan/map.md`.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`)
+- **Trigger:** MCP mutate tool calls
+
+## Execution Logic
+
+Package: `src/interactions/i-steer-plan/`
+
+- Handler module(s) owning:
+  - `create_node`, `link_nodes`, `unlink_nodes`
+  - `update_node_status` (current or `next` slot; `ship` promotes `next`; accepts `cancelled`)
+  - `force_unship` (user-confirmed recovery)
+  - `patch_node_territory`
+  - `open_next`, `discard_next`
+- Helpers moved from `f-mcp-runtime/server.ts`: `buildMutationAnchor`, `changedFiles`, `territoryPath`, `nextSlotFsChangedFiles`, `refreshPersistedMap`, `syncNodes`
+- Post-mutation map refresh calls `persistMindPlanMap` from `f-view-projection` (this Interaction does **not** import `i-export-map`)
+- Uses compiler rules for link/status validation; `findRelatedNodes` for anchors
+
+Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`. Belongs to: `j-territory-sdlc`. Leads to: `i-export-map`.
+
+## Acceptance Criteria
+
+- All mutate tools keep the same schemas, `Blocked:` behavior, `changed_files`, and `anchor`
+- `mindplan/map.md` refreshes after successful graph mutations
+- Handlers live under this package; `if-mcp-tools` only registers them
+- `npm test` passes
+
+## Atomic Ops
+
+- [x] Move mutate handlers + mutation helpers into this package
+- [x] Wire map refresh through `f-view-projection` (not `i-export-map`)
+- [x] Export handlers for `if-mcp-tools`; verify mutate path via smoke/tests
+
+## Attachments
+
+_None._
