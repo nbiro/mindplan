@@ -1,0 +1,77 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs (spawn before done)"
+description: "Assembler/docs — implementing agents MUST spawn the Reviewer before treating Plan Review or Implementation work as done; narrating “needs review” is not a substitute."
+state: in-review
+updated_at: 2026-09-23T11:32:31.649Z
+depends_on:
+  - f-domain-model
+---
+
+
+# Framework documentation
+
+## Purpose
+
+Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook stays a short systems dialect. It requires **`mindplan-mcp check` before any Reviewer handoff**, and requires the **parent to actually spawn the Reviewer** before treating Plan Review or Implementation work as done — narrating “needs review” / “wasn’t reviewed” is not a substitute.
+
+## Shared Substrate Spec
+
+Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder `src/foundations/f-framework-docs/` is a pointer (no runtime TS).
+
+Surfaces:
+
+- `SPEC.md` — normative taxonomy, compiler gates, Territory Completeness, package ownership; External Review gate text states spawn is mandatory before “done”
+- `AGENTS.md` / `templates/agent/playbook.md` / `mindplan/agent/playbook.md` / `.cursor/rules/mindplan.mdc` — **systems dialect** always-on playbook (byte-identical mirrors)
+- `templates/agent/skills/review-work/` (+ mirrors) — subgraph Plan Review + revision-bound Implementation review; **Parent obligations** (spawn before done) + green `check` before spawn
+- `define-entities` / `plan-project` / `code-review` skills — on demand
+- `README.md` — product framing
+- `templates/agent/integrations/cursor.md` — Cursor spawn via Task / subagent + check-before-review
+
+Canonical edits: `templates/agent/`; mirrors stay in sync.
+
+### Validity before review
+
+Implementing agents MUST run default `mindplan-mcp check` (graph load + packages when `required`) and get exit `0` before:
+
+1. Spawning Plan Review (`draft` → `ready`)
+2. Moving to `in-review` / freezing a revision and spawning Implementation review
+3. Re-spawning a Reviewer after fixing a Reject
+
+Fix every `Blocked:` first. Optional `--base` / `--for-main` remain local hygiene — not substitutes for default check, and not CI merge gates.
+
+Reviewers SHOULD re-run default `check` and Reject if it fails.
+
+### Spawn before done (parent obligation)
+
+When the build or plan pipeline reaches a Review gate, the **implementing / planning parent** MUST:
+
+1. Enter the gate (`draft` ready for Plan Review, or `in-review` for Implementation review) with green default `check`
+2. Freeze membership / revision as required by `review-work`
+3. **Spawn** an independent Reviewer subagent (or separate session) that loads `review-work` — do not self-`ready` / self-`ship` / self-`resolved`
+4. Own the retry loop (fix Findings → re-enter gate → re-spawn fresh Reviewer, up to the playbook limit) or escalate to the human only after that loop is exhausted
+
+**Done** means: Reviewer returned Approve and advanced status, **or** human escalation after exhausted Rejects. Not done: leaving nodes at `draft`/`in-review` while telling the user the work “wasn’t reviewed,” “needs a Reviewer,” or “handing off for review” without having spawned one.
+
+## Acceptance Criteria
+
+- Playbook systems dialect states spawn-before-done as a hard parent obligation (alongside check-before-review)
+- Never-do forbids claiming the task done / handing to the human instead of spawning the Reviewer
+- `review-work` has an explicit Parent obligations section (spawn, freeze, retry loop, what “done” means)
+- Cursor integration tells parents how to spawn the Reviewer (Task / subagent) and that narration is not a substitute
+- SPEC External Review gate paragraph states the parent MUST spawn before considering the gate complete
+- Mirrors (`AGENTS.md`, `mindplan/agent/playbook.md`, `.cursor/rules/mindplan.mdc`, review-work skill copies) match templates
+- Verified by reading mirrors (docs Foundation has no runtime)
+
+## Atomic Ops
+
+- [x] Update `templates/agent/playbook.md` spawn-before-done + Never-do; sync `AGENTS.md`, `mindplan/agent/playbook.md`, `.cursor/rules/mindplan.mdc`
+- [x] Add Parent obligations to `templates/agent/skills/review-work/SKILL.md` (+ mirrors under `mindplan/agent/skills/` and `.cursor/skills/`)
+- [x] Align `templates/agent/integrations/cursor.md` with spawn-via-Task and spawn-before-done
+- [x] Update SPEC External Review gate text for mandatory spawn before done
+- [x] Document this successor contract on this Foundation next slot
+
+## Attachments
+
+_Schemas and diagrams go in `next-attachments/`._
