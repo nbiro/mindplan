@@ -87,10 +87,16 @@ await call("update_node_status", { node_id: "i-feature", new_status: "ready" });
 
 let failures = 0;
 
+let r = runCheck(["--for-main"]);
+if (r.status === 0 || !(r.stderr || r.stdout).includes("unknown check option")) {
+  failures++;
+  console.log(`FAIL --for-main should be an unknown option: ${r.stderr || r.stdout}`);
+} else console.log("ok   --for-main is an unknown option");
+
 // Orphan package
 fs.mkdirSync(path.join(root, "src", "interactions", "i-orphan"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "interactions", "i-orphan", "x.ts"), "export {};\n");
-let r = runCheck([]);
+r = runCheck([]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("orphan package")) {
   failures++;
   console.log(`FAIL expected orphan package: status=${r.status} out=${r.stderr || r.stdout}`);
@@ -189,12 +195,6 @@ if (r.status !== 0) {
   console.log(`FAIL committed dirty while stable should pass: ${r.stderr || r.stdout}`);
 } else console.log("ok   committed dirty while stable passes");
 
-r = runCheck(["--for-main"]);
-if (r.status !== 0) {
-  failures++;
-  console.log(`FAIL --for-main should pass after ship: ${r.stderr || r.stdout}`);
-} else console.log("ok   --for-main passes after ship");
-
 // Explicit bad --base must fail closed
 r = runCheck(["--base", "not-a-real-ref-zzzz"]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("git")) {
@@ -202,7 +202,7 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("git")) {
   console.log(`FAIL bad --base should fail: ${r.stderr || r.stdout}`);
 } else console.log("ok   bad --base fails closed");
 
-// Cancel path still works for --for-main on a fresh pre-ship node
+// Cancelled node: committed history is allowed; uncommitted edits are not
 await call("create_node", {
   id: "i-dead",
   type: "Interaction",
@@ -217,17 +217,7 @@ await call("update_node_status", { node_id: "i-dead", new_status: "in-progress" 
 // Commit scaffold while claimed so cancelled package is not untracked dirty later
 git("add", "src/interactions/i-dead");
 git("commit", "-m", "i-dead scaffold");
-r = runCheck(["--for-main"]);
-if (r.status === 0) {
-  failures++;
-  console.log("FAIL --for-main should fail with in-progress i-dead");
-} else console.log("ok   --for-main fails on in-progress");
 await call("update_node_status", { node_id: "i-dead", new_status: "cancelled" });
-r = runCheck(["--for-main"]);
-if (r.status !== 0) {
-  failures++;
-  console.log(`FAIL --for-main should pass after cancel: ${r.stderr || r.stdout}`);
-} else console.log("ok   --for-main passes after cancel");
 
 // Committed history under cancelled is allowed; uncommitted edits are not
 const cancelBase = git("rev-parse", "HEAD~1").stdout.trim(); // before i-dead scaffold commit
@@ -294,12 +284,6 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("i-evolve")) {
   console.log(`FAIL next draft + committed dirty should fail: ${r.stderr || r.stdout}`);
 } else console.log("ok   next draft + committed dirty fails");
 
-r = runCheck(["--for-main"]);
-if (r.status !== 0) {
-  failures++;
-  console.log(`FAIL --for-main should pass with next draft: ${r.stderr || r.stdout}`);
-} else console.log("ok   --for-main passes with next draft");
-
 await call("update_node_status", { node_id: "i-evolve", new_status: "ready" });
 r = runCheck(["--base", evolveBase]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("i-evolve")) {
@@ -313,12 +297,6 @@ if (r.status !== 0) {
   failures++;
   console.log(`FAIL next in-progress + committed dirty should pass: ${r.stderr || r.stdout}`);
 } else console.log("ok   next in-progress + committed dirty passes");
-
-r = runCheck(["--for-main"]);
-if (r.status === 0 || !(r.stderr || r.stdout).includes("i-evolve")) {
-  failures++;
-  console.log(`FAIL --for-main should fail with next in-progress: ${r.stderr || r.stdout}`);
-} else console.log("ok   --for-main fails on next in-progress");
 
 // --- layout-free (implementation_packages: off) ---
 fs.writeFileSync(
@@ -335,12 +313,6 @@ if (r.status !== 0) {
   failures++;
   console.log(`FAIL layout-free check should pass without packages: ${r.stderr || r.stdout}`);
 } else console.log("ok   layout-free check skips packages and dirty-src");
-
-r = runCheck(["--for-main"]);
-if (r.status === 0 || !(r.stderr || r.stdout).includes("i-evolve")) {
-  failures++;
-  console.log(`FAIL layout-free --for-main should still fail mid-pipeline: ${r.stderr || r.stdout}`);
-} else console.log("ok   layout-free --for-main still bans mid-pipeline");
 
 const freeCreate = await call("create_node", {
   id: "i-free-extra",

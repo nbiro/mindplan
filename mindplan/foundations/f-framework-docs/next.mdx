@@ -1,0 +1,48 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs (no --for-main)"
+description: "Assembler/docs — playbook, review-work, SPEC, and README no longer mention check --for-main."
+state: in-review
+updated_at: 2026-09-23T12:04:15.799Z
+depends_on:
+  - f-domain-model
+---
+
+
+# Framework documentation
+
+## Purpose
+
+Own MindPlan’s normative documentation so agents stay on the **system** (anti-drift) and run a light **agent development process** with independent review before code reaches the human. Always-on playbook stays a short systems dialect. It requires **default `mindplan-mcp check` before any Reviewer handoff**, requires the **parent to spawn the Reviewer** before treating a Review gate as done, and requires **Reviewers to ignore other nodes that are still in progress**. `check --for-main` is **removed** from the product: docs must not describe it as an optional mode.
+
+## Shared Substrate Spec
+
+Docs live at repo root and under `templates/agent/` / `mindplan/agent/`. Package folder `src/foundations/f-framework-docs/` is a pointer (no runtime TS).
+
+Surfaces:
+
+- `SPEC.md` — no `--for-main` mode in §1.2.1 or §9.6; External Review still says Reviewers do not Reject other mid-pipeline nodes, without pointing at a removed flag
+- `AGENTS.md` / `templates/agent/playbook.md` / `mindplan/agent/playbook.md` / `.cursor/rules/mindplan.mdc` — systems dialect; optional local hygiene is `--base` only
+- `templates/agent/skills/review-work/` (+ mirrors) — Reviewers must not Reject other in-progress nodes; no instruction to run or avoid `--for-main`
+- `templates/agent/integrations/cursor.md` — check-before-review mentions default `check` and optional `--base` only
+- `README.md` — CLI table lists `check` with `--base` only
+
+Canonical edits: `templates/agent/`; mirrors stay in sync. Spawn-before-done and “in-progress elsewhere is not a Reject” stay.
+
+## Acceptance Criteria
+
+- No live doc (`SPEC.md`, `README.md`, playbook mirrors, review-work mirrors, cursor integration) documents `check --for-main` as a supported flag
+- Playbook still says Reviewers must not Reject because other nodes are mid-pipeline
+- Optional hygiene mentioned in the playbook is `--base` only
+- Verified by searching those surfaces (docs Foundation has no runtime)
+
+## Atomic Ops
+
+- [x] Scrub `--for-main` from playbook + mirrors, review-work + mirrors, cursor integration, SPEC, and README
+- [x] Keep spawn-before-done and the rule that other in-progress nodes are not a Reviewer Reject
+- [x] Verified by reading the edited surfaces
+
+## Attachments
+
+_Schemas and diagrams go in `next-attachments/`._

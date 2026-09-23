@@ -37,8 +37,6 @@ const CLAIMED_OR_CONCLUDED = new Set([
 const PRE_CLAIM = new Set(["draft", "ready"]);
 
 export interface CheckOptions {
-  /** Ban mid-pipeline states (optional local hygiene). Skips dirty-src-vs-base. */
-  forMain?: boolean;
   /**
    * When set, also enforce dirty-src ownership vs this git base.
    * Default check skips dirty-src (graph + packages only).
@@ -351,34 +349,6 @@ function checkDirtySrc(
   }
 }
 
-function checkForMain(graph: MindPlanGraph, failures: string[]): void {
-  for (const node of graph.nodes) {
-    if (isPipelineNodeType(node.type)) {
-      if (MID_PIPELINE.has(node.state)) {
-        fail(
-          failures,
-          `main hygiene: ${node.type} "${node.id}" is "${node.state}". ` +
-            `Ship, cancel, or retreat to draft/ready before merging to main.`
-        );
-      }
-      if (node.next && MID_PIPELINE.has(node.next.state)) {
-        fail(
-          failures,
-          `main hygiene: ${node.type} "${node.id}" has next.mdx in "${node.next.state}". ` +
-            `Ship the evolution, discard_next, or retreat next to draft/ready before merging to main.`
-        );
-      }
-    }
-    if (node.type === "Bug" && BUG_MID_PIPELINE.has(node.state)) {
-      fail(
-        failures,
-        `main hygiene: Bug "${node.id}" is "${node.state}". ` +
-          `Resolve/retreat the Bug before merging to main.`
-      );
-    }
-  }
-}
-
 const BUILDING_CHECKLIST_STATES = new Set([
   "draft",
   "ready",
@@ -445,9 +415,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     if (packagesOn) {
       checkPackages(graph, root, failures);
     }
-    if (options.forMain) {
-      checkForMain(graph, failures);
-    } else if (packagesOn && options.base !== undefined) {
+    if (packagesOn && options.base !== undefined) {
       checkDirtySrc(graph, root, options.base, failures);
     }
   } catch (err) {

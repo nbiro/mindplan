@@ -1,0 +1,50 @@
+---
+id: f-test-harness
+type: Foundation
+title: "Test harness (no --for-main)"
+description: "Infra — harness drops --for-main cases; unknown --for-main fails; default and --base coverage stays."
+state: in-review
+updated_at: 2026-09-23T12:04:13.311Z
+depends_on:
+  - f-mcp-runtime
+---
+
+
+# Test harness
+
+## Purpose
+
+Regression suite for MindPlan: unit tests for view/search and an MCP stdio smoke path that also exercises `mindplan-mcp init`. Covers Minimum Territory Shape (scaffold Blocked, fill helper, role-tagged Foundations), `force_unship`, cancel gates, layout-free config, init force overwrite, and integrity-check modes (default graph+packages; opt-in `--base` dirty-src). `--for-main` behavior tests are removed; the flag is an unknown option.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-test-harness/`
+
+- `view.test.mjs` / `search.test.mjs` / `check.test.mjs` / `smoke.mjs`
+- `fillMinimumTerritoryShape` helpers in smoke + check replace scaffold italic stubs before `ready` / `in-review`
+- Smoke asserts `Blocked: Minimum Territory Shape` on unfilled Interface/Interaction scaffolds after Ghost gates pass
+- Foundation creates use role-tagged descriptions (`Infra — …`)
+- `check.test.mjs` asserts default `check` ignores dirty working tree; dirty-src cases pass `--base`
+- `check.test.mjs` asserts `check --for-main` exits non-zero as an unknown option and does not run a mid-pipeline ban
+
+Depends on: `f-mcp-runtime`.
+
+## Acceptance Criteria
+
+- `npm test` passes (build + view + search + check + smoke)
+- Smoke proves Minimum Territory Shape blocks scaffold and passes after fill
+- Default integrity check does not fail on dirty `src/` while ready; `--base` still does
+- No test expects `--for-main` to pass or to fail on `in-progress` / next `in-progress` / layout-free mid-pipeline
+- One assertion: `check --for-main` is an unknown option (`Blocked:`)
+- Existing cancel / force_unship / init / layout-free coverage remains green
+
+## Atomic Ops
+
+- [x] Remove `--for-main` pass/fail cases from `check.test.mjs` (after ship, cancel, next draft, next in-progress, layout-free)
+- [x] Assert `check --for-main` fails as an unknown option
+- [x] Keep dirty-src `--base`, cancel, and layout-free package-skip coverage
+- [x] Verified via `npm test`
+
+## Attachments
+
+_Wireframes and notes go in `attachments/` / `next-attachments/`._

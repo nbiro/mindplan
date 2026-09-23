@@ -1134,14 +1134,11 @@ function runViewCli(argv: string[]): void {
   }
 }
 
-function parseCheckArgs(argv: string[]): { forMain: boolean; base?: string } {
-  let forMain = false;
+function parseCheckArgs(argv: string[]): { base?: string } {
   let base: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--for-main") {
-      forMain = true;
-    } else if (arg === "--base") {
+    if (arg === "--base") {
       const value = argv[++i];
       if (!value) throw new Error("Blocked: --base requires a git ref.");
       base = value;
@@ -1151,19 +1148,15 @@ function parseCheckArgs(argv: string[]): { forMain: boolean; base?: string } {
       throw new Error(`Blocked: unknown check option "${arg}".`);
     }
   }
-  return { forMain, base };
+  return { base };
 }
 
 function runCheckCli(argv: string[]): void {
   try {
     const opts = parseCheckArgs(argv);
-    const result = runIntegrityCheck({ forMain: opts.forMain, base: opts.base });
+    const result = runIntegrityCheck({ base: opts.base });
     if (result.ok) {
-      console.log(
-        opts.forMain
-          ? "mindplan-mcp check --for-main: ok"
-          : "mindplan-mcp check: ok"
-      );
+      console.log("mindplan-mcp check: ok");
       return;
     }
     for (const line of result.failures) {
@@ -1176,11 +1169,9 @@ function runCheckCli(argv: string[]): void {
       console.log(`Usage:
   mindplan-mcp check                  Graph load + packages (default; CI mode)
   mindplan-mcp check --base <ref>     Also enforce dirty-src ownership vs base
-  mindplan-mcp check --for-main       Optional local hygiene: ban mid-pipeline states
 
 Options:
   --base <ref>   Opt-in dirty-src vs this git ref (not used by CI)
-  --for-main     Optional local hygiene: ban in-progress/in-review (and Bug fixing/in-review)
 `);
       return;
     }
@@ -1366,7 +1357,6 @@ View options:
 
 Check options:
   --base <ref>              Opt-in dirty-src ownership vs this git ref (not used by CI)
-  --for-main                Optional local hygiene: ban mid-pipeline states (not used by CI)
 
 Environment:
   MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);
