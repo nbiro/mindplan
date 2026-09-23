@@ -47,8 +47,13 @@ When a Review gate is due, the parent MUST:
 - Independent of the session that authored the plan (A) or implementation (B).
   If you wrote what you are about to review, Reject with that Finding.
 - **Parent MUST have a green default `mindplan-mcp check`** before spawning you
-  (Plan Review, Implementation review, or re-spawn after Reject). If check would
-  fail, Reject with that Finding and do not advance status.
+  (Plan Review, Implementation review, or re-spawn after Reject). If **default**
+  check would fail, Reject with that Finding and do not advance status.
+- **Do not Reject because other nodes are in progress.** Graph-wide
+  `in-progress` / `in-review` / `draft` / `ready`, or Bug `fixing` / `in-review`,
+  outside the frozen membership or revision is allowed and mergeable (same rule
+  as CI). Do **not** run `check --for-main` as a review gate, and do **not**
+  treat its failure as a Finding. Scope the verdict to the frozen set only.
 - Orient with `orient_for_work` / `get_node_context` / `get_blast_radius` before judging.
 - Mutation boundary: `update_node_status` only. Never `link_nodes` / `create_node`.
 - **Never** write `## Review Notes` into territory. Findings stay in the verdict message.
@@ -150,3 +155,4 @@ review, or diff hygiene.
 - Reviewing your own plan or implementation in the same session.
 - Treating “once per change-set” as “never re-review after fixes.”
 - **Parent:** claiming the task done, or asking the human to review, without spawning a Reviewer when a gate is due.
+- **Reviewer:** Rejecting because other nodes are `in-progress` / `in-review` / Bug `fixing`, or because `check --for-main` fails. Unfinished work elsewhere is mergeable.
