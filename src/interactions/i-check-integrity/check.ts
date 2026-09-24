@@ -19,6 +19,7 @@ import {
   buildOwnershipIndex,
   exclusiveOwner,
   ownerOfFile,
+  releasedClaimEntries,
   type OwnershipBuckets,
 } from "../../foundations/f-source-index/ownership.js";
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
@@ -233,11 +234,13 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
     const checkSlot = (
       entries: string[] | undefined,
       label: string,
-      require: boolean
+      require: boolean,
+      skip?: Set<string>
     ) => {
       if (!require) return;
       const list = entries ?? [];
       for (const entry of list) {
+        if (skip?.has(entry)) continue;
         const abs = path.join(root, ...entry.replace(/\/$/, "").split("/"));
         const exists = entry.endsWith("/")
           ? fs.existsSync(abs) && fs.statSync(abs).isDirectory()
@@ -253,7 +256,10 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
 
     const liveNeedsPresence =
       node.state === "in-review" || isProductionState(node.state);
-    checkSlot(node.implements, "live", liveNeedsPresence);
+    const released = liveNeedsPresence
+      ? releasedClaimEntries(node, root)
+      : undefined;
+    checkSlot(node.implements, "live", liveNeedsPresence, released);
 
     if (node.next && node.next.state === "in-review") {
       checkSlot(node.next.implements, "next", true);

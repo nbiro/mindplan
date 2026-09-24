@@ -385,6 +385,91 @@ if (!scaffoldBody.includes("set_implementation_files")) {
   console.log("FAIL scaffold should mention set_implementation_files");
 } else console.log("ok   scaffold mentions set_implementation_files");
 
+// --- Released live presence (open next relocates files) ---
+
+// Stable + open next relocates implements: deleted released live entry must not fail presence
+await call("open_next", { node_id: "f-core" });
+fs.mkdirSync(path.join(root, "src", "platform", "db"), { recursive: true });
+fs.writeFileSync(path.join(root, "src", "platform", "db", "index.ts"), "export const db = 1;\n");
+await call("set_implementation_files", {
+  node_id: "f-core",
+  files: ["src/platform/db/"],
+});
+fs.rmSync(path.join(root, "src", "foundations", "f-core"), { recursive: true, force: true });
+git("add", "-u", "src/foundations/f-core");
+r = runCheck([]);
+if (r.status !== 0) {
+  failures++;
+  console.log(`FAIL relocated released live should pass presence: ${r.stderr || r.stdout}`);
+} else console.log("ok   released live entry skipped for presence while next open");
+
+// Discard next: released entry becomes live again → missing path fails presence
+await call("discard_next", { node_id: "f-core" });
+r = runCheck([]);
+if (r.status === 0 || !(r.stderr || r.stdout).includes("presence")) {
+  failures++;
+  console.log(`FAIL after discard missing live should fail presence: ${r.stderr || r.stdout}`);
+} else console.log("ok   discard_next restores live presence requirement");
+fs.mkdirSync(path.join(root, "src", "foundations", "f-core"), { recursive: true });
+fs.writeFileSync(path.join(root, "src", "foundations", "f-core", "index.ts"), "export const core = 1;\n");
+fs.rmSync(path.join(root, "src", "platform"), { recursive: true, force: true });
+git("add", "-A", "src");
+r = runCheck([]);
+if (r.status !== 0) {
+  failures++;
+  console.log(`FAIL after restoring live files should pass: ${r.stderr || r.stdout}`);
+} else console.log("ok   restored live implements passes presence");
+
+// Kept live entry (still listed by next) missing on disk → presence fails
+await call("open_next", { node_id: "i-feature" });
+fs.rmSync(path.join(root, "src", "interactions", "i-feature"), { recursive: true, force: true });
+git("add", "-u", "src/interactions/i-feature");
+r = runCheck([]);
+if (r.status === 0 || !(r.stderr || r.stdout).includes("presence")) {
+  failures++;
+  console.log(`FAIL kept live entry missing should fail presence: ${r.stderr || r.stdout}`);
+} else console.log("ok   kept live entry still requires presence");
+fs.mkdirSync(path.join(root, "src", "interactions", "i-feature"), { recursive: true });
+fs.writeFileSync(
+  path.join(root, "src", "interactions", "i-feature", "feature.ts"),
+  'import { core } from "../../foundations/f-core/index.js";\nexport const x = core;\n'
+);
+fs.writeFileSync(
+  path.join(root, "src", "interactions", "i-feature", "code2.ts"),
+  "export const z = 2;\n"
+);
+git("add", "-A", "src/interactions/i-feature");
+
+// Next in-review with missing next entry → next presence fails
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "next.mdx"));
+let nextBody = fs.readFileSync(
+  path.join(root, "mindplan", "interactions", "i-feature", "next.mdx"),
+  "utf-8"
+);
+nextBody = nextBody.replace(/- \[ \]/g, "- [x]");
+fs.writeFileSync(path.join(root, "mindplan", "interactions", "i-feature", "next.mdx"), nextBody);
+await call("update_node_status", { node_id: "i-feature", new_status: "ready" });
+await call("update_node_status", { node_id: "i-feature", new_status: "in-progress" });
+await call("update_node_status", { node_id: "i-feature", new_status: "in-review" });
+fs.rmSync(path.join(root, "src", "interactions", "i-feature"), { recursive: true, force: true });
+git("add", "-u", "src/interactions/i-feature");
+r = runCheck([]);
+if (
+  r.status === 0 ||
+  !(r.stderr || r.stdout).includes("presence") ||
+  !(r.stderr || r.stdout).includes("next")
+) {
+  failures++;
+  console.log(`FAIL next in-review missing entry should fail next presence: ${r.stderr || r.stdout}`);
+} else console.log("ok   next in-review presence still required");
+fs.mkdirSync(path.join(root, "src", "interactions", "i-feature"), { recursive: true });
+fs.writeFileSync(
+  path.join(root, "src", "interactions", "i-feature", "feature.ts"),
+  'import { core } from "../../foundations/f-core/index.js";\nexport const x = core;\n'
+);
+git("add", "-A", "src/interactions/i-feature");
+await call("discard_next", { node_id: "i-feature" });
+
 await client.close();
 
 if (failures > 0) {

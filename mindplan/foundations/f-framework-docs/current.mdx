@@ -1,53 +1,48 @@
 ---
 id: f-framework-docs
 type: Foundation
-role: assembler
-title: "Framework docs (file ownership)"
-description: "Assembler/docs — SPEC, playbook, skills, README document declared file ownership instead of prescribed packages."
+title: "Framework docs (released presence)"
+description: "Assembler/docs — SPEC §9.6 documents live presence skipping entries released by open next."
 state: stable
-shipped_at: 2026-09-23T14:05:31.504Z
+shipped_at: 2026-09-24T07:44:56.766Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-09-23T14:08:09.269Z
+updated_at: 2026-09-24T07:44:56.766Z
 depends_on:
   - f-domain-model
 implements:
   - README.md
   - SPEC.md
   - templates/
+role: assembler
 ---
 
 
-# Framework documentation (file ownership)
+# Framework documentation (released presence)
 
 ## Purpose
 
-Own MindPlan’s normative documentation. Rewrite prescribed-package language to declared file ownership (`implements`, Foundation `role`, `sources`/`exclude`, import matrix). Keep systems dialect: check before Reviewer handoff, parent spawns Reviewer, ignore other mid-pipeline nodes.
+Own MindPlan’s normative documentation. Document that default `mindplan-mcp check` live presence skips implements entries an open next has released (SPEC §1.2 release rule), so a stable node can relocate files through next without keeping duplicate old paths until ship.
 
 ## Shared Substrate Spec
 
-Claims (via `set_implementation_files`): `SPEC.md`, `README.md`, `templates/`
+Claims: `SPEC.md`, `README.md`, `templates/`
 
-- Rewrite SPEC §1.2–§1.2.2; strike §1.4 file-mapping deferral; add `role` to §2.0.1; update §6.3 scaffolds/Atomic Ops; §8.1–§8.2 tools; §9.6 check
-- Templates under `templates/agent/` (playbook, skills, cursor integration)
-- Regenerated installed copies via `init -f` (do not hand-edit AGENTS.md / `.cursor/*` / `mindplan/agent/*`)
-- review-work Procedure B: Reviewer maps each changed file to its owner; file owned outside frozen `node_ids[]` and new/changed `assembler` role need justifying
+- SPEC §9.6: one clear sentence that live presence skips entries released by an open next; next-slot presence and the in-review/ship implements gate are unchanged.
+- Leave §1.2 release wording as the normative definition of released.
+- Templates / playbook / skills: no change required for this successor unless they contradict the presence rule.
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- No live normative doc still presents prescribed `src/<type>/<id>/` packages as the ownership authority
-- SPEC and templates describe `implements`, `role`, `set_implementation_files`, and the import matrix
-- review-work Procedure B includes owner mapping
-- Verified by reading edited surfaces
+- SPEC §9.6 states the live-presence skip for released entries
+- Next presence and ship gate documentation remain accurate
+- Verified by reading SPEC §9.6
 
 ## Atomic Ops
 
-- [x] Rewrite SPEC sections for declared ownership
-- [x] Update playbook, skills, cursor integration, README templates
-- [x] Add owner mapping to review-work Procedure B
-- [x] Regenerate installed copies with `init -f`
-- [x] Verified by reading surfaces
+- [x] Update SPEC §9.6 presence wording for released live entries
+- [x] Verified by reading SPEC §9.6
 
 ## Attachments
 

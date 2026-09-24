@@ -1,50 +1,57 @@
 ---
 id: f-source-index
 type: Foundation
-role: infra
-title: "Source index"
-description: "Infra — sources/exclude config, file universe, claim expansion, import lexer and resolver for ownership checks and queries."
+title: "Source index (released claim entries)"
+description: "Infra — sources/exclude, universe, claim expansion, ownership release helper, import lexer/resolver."
 state: stable
-shipped_at: 2026-09-23T14:05:17.982Z
+shipped_at: 2026-09-24T07:44:51.582Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-09-23T14:05:17.982Z
+updated_at: 2026-09-24T07:44:51.582Z
 depends_on:
   - f-domain-model
 implements:
   - src/foundations/f-source-index/
+role: infra
 ---
 
-# Source index
+
+# Source index (released claim entries)
 
 ## Purpose
 
-Infra — the file-ownership substrate. Owns `mindplan/config.json` shape `{ sources, exclude }`, the file universe, claim expansion from `implements` entries, and a static import lexer/resolver so check and queries can map files ↔ owners without prescribed folders.
+Infra — the file-ownership substrate. Owns `mindplan/config.json` shape `{ sources, exclude }`, the file universe, claim expansion from `implements` entries, ownership buckets (live / next / released / retired), a **claim-entry release helper** for presence, and a static import lexer/resolver so check and queries can map files ↔ owners without prescribed folders.
 
 ## Shared Substrate Spec
 
-Intended files: agent-chosen under this Foundation (e.g. `src/foundations/f-source-index/`)
+Intended files: `src/foundations/f-source-index/`
 
-- **Config** — load/write `{ sources: string[], exclude: string[] }`; missing config → `sources: ["src/**"]`; brownfield may start `[]`; config still containing `implementation_packages` → `Blocked:` pointing at `mindplan-mcp init`. Move former `f-territory-store/config.ts` here.
+- **Config** — load/write `{ sources: string[], exclude: string[] }`; missing config → `sources: ["src/**"]`; brownfield may start `[]`; config still containing `implementation_packages` → `Blocked:` pointing at `mindplan-mcp init`.
 - **File universe** — git-visible files (tracked + untracked not ignored) matching sources minus exclude; without git, directory walk. Ignore `.gitkeep`.
-- **Claim expansion** — expand directory claims ending in `/` to exact files; reject `..` and anything under `mindplan/`.
-- **Lexer** — in-house (no runtime `typescript` dep): `import`/`export … from`, side-effect `import "x"`, `import type`, literal `import()` / `require()`; skip non-literal dynamics.
-- **Resolver** — relative paths, NodeNext `.js` → `.ts`/`.tsx`, `index.*`, tsconfig `baseUrl`/`paths`; ignore bare packages and targets outside the universe.
+- **Claim expansion** — expand directory claims ending in `/` to exact files; reject `..` and anything under `mindplan/`. Missing paths omit from expansion (presence is checked separately).
+- **Ownership index** — `buildOwnershipIndex` maps expanded files into live / next / released / retired. Exclusivity uses live ∪ next; coverage uses all four.
+- **Released claim entries** — `releasedClaimEntries(node, root)` returns the subset of live `implements` **entries** (not expanded files) that an open next has released, so presence can skip them without a second release definition:
+  - Normalize with `validateClaimPath`.
+  - An entry next still lists exactly is **kept**.
+  - Otherwise expand that one entry and expand `next.implements`. The entry is **released** when every expanded file is absent from next’s expanded set.
+  - A missing/empty entry expands to nothing; it is released when next does not list that same claim (directory already moved off disk).
+  - No next → empty set (discard restores live presence by recomputation).
+- **Lexer / resolver** — in-house import lex and resolve as today.
 
-Depends on: `f-domain-model` only (no cycle with territory-store).
+Depends on: `f-domain-model` only.
 
 ## Acceptance Criteria
 
-- Config, universe, expand, lexer, and resolver are unit-testable and used by check/steer/orient/init
-- `getNodeImplementation` does **not** live here (moves to `i-orient-plan`)
+- `releasedClaimEntries` is the single release rule used by integrity presence
+- Kept live entries are not returned; missing released directories are returned
+- No next → empty; discard needs no extra state
+- Config, universe, expand, ownership, lexer, and resolver remain the substrate for check/steer/orient/init
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Move/adapt config API into this Foundation
-- [x] Implement file universe + claim expansion
-- [x] Implement import lexer and path resolver (aliases included)
-- [x] Export APIs for compiler, check, orient, steer, init
-- [x] Verified via `npm test`
+- [x] Add and export `releasedClaimEntries` from ownership.ts
+- [x] Document release semantics in Shared Substrate Spec (this slot)
+- [x] Verified via `npm test` (check harness covers presence skip)
 
 ## Attachments
 
