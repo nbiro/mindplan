@@ -4,7 +4,7 @@
 
 import type { MindPlanGraph, MindPlanNode } from "../f-domain-model/types.js";
 import { isPipelineNodeType } from "../f-domain-model/types.js";
-import { expandClaims } from "./claims.js";
+import { expandClaims, validateClaimPath } from "./claims.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 
@@ -62,6 +62,37 @@ export function buildOwnershipIndex(
   }
 
   return { live, next, released, retired };
+}
+
+/**
+ * Live implements claim entries released by an open next slot.
+ * Same release idea as buildOwnershipIndex (live expanded file omitted from
+ * next.implements), applied at claim-entry granularity so presence can skip
+ * directories already moved off disk (expandClaims omits missing paths).
+ */
+export function releasedClaimEntries(
+  node: MindPlanNode,
+  root?: string
+): Set<string> {
+  const out = new Set<string>();
+  if (!isPipelineNodeType(node.type)) return out;
+  if (!node.next) return out;
+
+  const nextEntries = new Set(
+    (node.next.implements ?? []).map((e) => validateClaimPath(e))
+  );
+  const nextFiles = new Set(expandClaims(node.next.implements, root));
+
+  for (const raw of node.implements ?? []) {
+    const entry = validateClaimPath(raw);
+    if (nextEntries.has(entry)) continue;
+    const expanded = expandClaims([entry], root);
+    if (expanded.every((f) => !nextFiles.has(f))) {
+      out.add(raw);
+      out.add(entry);
+    }
+  }
+  return out;
 }
 
 /** Exclusive owner (live or next; not released/retired). Prefer next. */

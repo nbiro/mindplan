@@ -33,5 +33,6 @@ export {
   exclusiveOwner,
   nodeOwnedFiles,
   ownerOfFile,
+  releasedClaimEntries,
   type OwnershipBuckets,
 } from "./ownership.js";
