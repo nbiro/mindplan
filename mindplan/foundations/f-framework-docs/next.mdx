@@ -1,0 +1,59 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs (review Approve vs ship)"
+description: "Assembler/docs — Implementation review Approve is quality; Infrastructure First still Blocks MindPlan ship until Foundation deps are stable; defer ship without Reject."
+state: in-review
+created_at: 2026-07-19T18:33:36.834Z
+updated_at: 2026-09-24T10:47:25.589Z
+depends_on:
+  - f-domain-model
+implements:
+  - README.md
+  - SPEC.md
+  - templates/
+role: assembler
+---
+
+
+# Framework documentation (review Approve vs ship)
+
+## Purpose
+
+Own MindPlan’s normative documentation. Keep live-presence skip for released implements entries (SPEC §9.6). Clarify that Implementation review **Approve** is a quality verdict on the frozen revision, while MindPlan `ship` remains a separate transition still gated by **Infrastructure First** (and Behavior First). Unfinished Foundation deps are not a Reject reason; ship may be deferred while Approve stands.
+
+## Shared Substrate Spec
+
+Claims: `SPEC.md`, `README.md`, `templates/`
+
+- SPEC §3.1: Reviewer Approve is not voided by Infrastructure First; production entry stays blocked until Foundation deps are `stable`; a later `ship` applies that Approve. Rule 3 (§5.4) unchanged as a hard ship gate.
+- SPEC §9.6: keep live-presence skip for released entries.
+- README: keep Infrastructure First `Blocked:` example; note Implementation review may Approve while ship waits.
+- `templates/agent/skills/review-work/SKILL.md`: Approve vs ship carve-out; Infrastructure First (and cascading Behavior First) defer ship without Reject; other `Blocked:` still fail closed.
+- `templates/agent/playbook.md`: parent done includes ship-deferred; do not treat Infrastructure First `Blocked:` as a failed review.
+- define-entities / plan-project: leave ship-gate facts; do not tell Plan Review to Reject for unfinished Foundations.
+- Sync this repo’s `AGENTS.md`, `.cursor/rules/mindplan.mdc`, and `.cursor/skills/mindplan-*` from the updated templates.
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- SPEC §3.1 states Approve is not voided by Infrastructure First; later `ship` applies Approve; Rule 3 still hard on ship
+- README keeps Infra First Blocked example and notes review may Approve while ship waits
+- review-work Procedure B defers ship on Infra First / cascading Behavior First without Reject; other Blocked stay hard
+- Playbook parent done includes ship-deferred
+- Local AGENTS.md / `.cursor` copies match the updated templates
+- Verified by reading SPEC §3.1, review-work, and playbook
+
+## Atomic Ops
+
+- [x] Update SPEC §3.1 for Approve vs ship (keep Rule 3)
+- [x] Update README: Approve while ship waits
+- [x] Update review-work Procedure B + anti-patterns for ship deferral
+- [x] Update playbook parent-done / Implementation review wording
+- [x] Sync AGENTS.md and `.cursor` rules/skills from templates
+- [x] Verified by reading SPEC §3.1, review-work, and playbook
+
+## Attachments
+
+_None._

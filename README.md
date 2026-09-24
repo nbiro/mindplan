@@ -28,6 +28,8 @@ Blocked: Infrastructure First. Interaction "i-checkout" cannot ship while
 linked Foundations are not stable: "f-payments" (in-progress).
 ```
 
+That gate still applies to MindPlan `ship`. Implementation review may **Approve** the Interaction while ship waits on Foundations — unfinished substrate is not a Reject reason; Approve stands until deps are `stable` and `ship` succeeds.
+
 No ghost Interactions without a Journey and Foundation, no Interface ship while exposed Interactions are unfinished (**Behavior First**), no Interaction→Interaction `depends_on` (**Interaction Independence**), no review while Atomic Ops are unchecked.
 
 ## Plans are made to be changed

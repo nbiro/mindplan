@@ -25,7 +25,9 @@ The **parent** owns the retry loop (fix → re-enter gate → re-spawn a **fresh
 Reviewer). You (Reviewer) review once per spawn, return a structured verdict, and stop.
 
 One approval gate per **immutable revision** — not one Reviewer invocation forever.
-Reject, blocked transition, or any change after the verdict voids approval.
+Reject, or any change of HEAD/tree after the verdict, voids approval.
+`Blocked: Infrastructure First` (or Behavior First that only cascades from an
+Approve-but-ship-deferred Interaction) does **not** void Approve — see Procedure B.
 
 ## Parent obligations (spawn before done)
 
@@ -36,9 +38,9 @@ When a Review gate is due, the parent MUST:
 3. Freeze membership (Procedure A) or revision `{base_sha, head_sha, clean_tree, changed_files[], node_ids[]}` (Procedure B).
 4. **Spawn** an independent Reviewer subagent / separate session that loads this skill — pass the frozen list, procedure, and that check is green. On Cursor: use the Task / subagent tool pointed at `.cursor/skills/mindplan-review-work/`.
 5. Wait for the structured verdict. On Reject: fix Findings, re-check, re-enter the gate, re-spawn a **fresh** Reviewer (do not resume the same Reviewer for a new verdict). After ~3 Rejects, escalate to the human.
-6. On Approve: trust the Reviewer’s status transitions (`ready` / `ship` / `resolved`); do not re-`ship` yourself.
+6. On Approve: trust the Reviewer’s status transitions (`ready` / `ship` / `resolved`) and any **ship-deferred** Results. Do not re-`ship` nodes the Reviewer already shipped. When Foundations later become `stable`, the parent (or a later session) MAY call `ship` on deferred nodes without a new Reviewer unless HEAD/tree changed (void rule).
 
-**Done** = Reviewer returned Approve and advanced status, **or** human escalation after exhausted Rejects.
+**Done** = Reviewer returned Approve and every approved node is either advanced (`ready` / `stable`/`unstable` / `resolved`) **or** explicitly ship-deferred with an Infrastructure First (or cascading Behavior First) reason — **or** human escalation after exhausted Rejects.
 
 **Not done** = ending the turn with “this wasn’t reviewed,” “needs a Reviewer,” or “please review this” without having spawned one while nodes sit at `draft` / `in-review`.
 
@@ -53,6 +55,9 @@ When a Review gate is due, the parent MUST:
   `in-progress` / `in-review` / `draft` / `ready`, or Bug `fixing` / `in-review`,
   outside the frozen membership or revision is allowed and mergeable.
   Scope the verdict to the frozen set only.
+- **Do not Reject because Foundation deps are unfinished.** Infrastructure First
+  blocks MindPlan `ship`, not the quality verdict. Unfinished Foundation deps are
+  not a Reject reason.
 - Orient with `orient_for_work` / `get_node_context` / `get_blast_radius` before judging.
 - Mutation boundary: `update_node_status` only. Never `link_nodes` / `create_node`.
 - **Never** write `## Review Notes` into territory. Findings stay in the verdict message.
@@ -127,17 +132,39 @@ revision = { base_sha, head_sha, clean_tree: true, changed_files[], node_ids[] }
 
 ### Then transition in order (non-atomic today)
 
-MCP `update_node_status` is single-node. Infrastructure First / Behavior First force:
+MCP `update_node_status` is single-node. Infrastructure First / Behavior First force
+this order for successful transitions:
 
 1. Foundations → `ship`
 2. Interactions → `ship`
 3. Interfaces → `ship`
 4. Bugs → `resolved` with their targets as applicable
 
-After each transition: re-read MCP state. If any transition fails or is `Blocked:`,
-**stop**. Do not claim the set approved. Report what shipped, what did not, and why.
+After each transition: re-read MCP state.
 
-Reject (before any ship) → retreat nodes to `in-progress` / `fixing` as needed.
+**Ship-deferral carve-out (Approve stands):**
+
+- If Interaction/Interface `ship` returns `Blocked: Infrastructure First`, record
+  **Approve + ship deferred**. Leave the node at `in-review`. Do **not** flip to
+  Reject. Do **not** retreat to `in-progress`.
+- If Interface `ship` returns `Blocked: Behavior First` **only** because an exposed
+  Interaction was Approve-but-ship-deferred (or is not yet `stable` for that same
+  dependency wait), defer that Interface the same way.
+- Report per-node Results: shipped vs ship-deferred (with the `Blocked:` text).
+  Set-level Verdict may still be **Approve** when every member is Approve and each
+  is either shipped/`resolved` or ship-deferred under this carve-out.
+
+**Other `Blocked:`** (Completion Check, implements gate, Minimum Territory Shape,
+Ghost rules, wrong state, Behavior First after a Rejected Interaction, etc.):
+**stop**. Do not soft-approve. Do not claim the set approved. Report what shipped,
+what failed, and why. Retreat Rejected members to `in-progress` / `fixing` as needed.
+
+Reject (before any ship, for quality Findings) → retreat nodes to `in-progress` /
+`fixing` as needed.
+
+Re-spawning a Reviewer solely because ship was Infrastructure-First-blocked is an
+anti-pattern. When deps become `stable`, the parent (or later session) calls `ship`
+on deferred nodes — no new Reviewer — unless HEAD/tree changed after the verdict.
 
 ### Fit is not enough
 
@@ -148,11 +175,15 @@ review, or diff hygiene.
 
 - Approving because Ghost / Minimum Territory Shape passed — that is structural, not quality.
 - Approving checked boxes without independent evidence.
-- Claiming set approval after a partial ship / failed later transition.
-- Soft-approving when `update_node_status` was Blocked.
+- Claiming set approval after a partial ship caused by a **non**-Infrastructure-First
+  (and non-cascading-Behavior-First) failure.
+- Soft-approving when `update_node_status` was Blocked for any reason other than
+  Infrastructure First or cascading Behavior First ship-deferral.
+- Rejecting, or re-spawning a Reviewer, because Foundation deps are not `stable`.
 - Skipping general code review when application code changed.
 - Writing Review Notes into territory.
 - Reviewing your own plan or implementation in the same session.
 - Treating “once per change-set” as “never re-review after fixes.”
 - **Parent:** claiming the task done, or asking the human to review, without spawning a Reviewer when a gate is due.
+- **Parent:** calling `ship` on own work **before** a Reviewer Approve (deferred `ship` **after** Approve is allowed).
 - **Reviewer:** Rejecting because other nodes are `in-progress` / `in-review` / Bug `fixing`. Unfinished work elsewhere is mergeable.
