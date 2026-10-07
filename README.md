@@ -39,7 +39,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 - **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`)
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
 - **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `next.mdx` → `ship` promotes over `current.mdx`
-- **Revise together** — one Reviewer for the blast radius. Sources get a full successor. Neighbors whose files changed but whose behavior did not get an impact note. Nodes in the radius whose files did not change stay out of the successor set. Status then moves Foundations, then Interactions, then Interfaces, in one call, and stops on the first `Blocked:`
+- **Revise together** — one Reviewer for the blast radius. Sources get a full successor. Neighbors whose files changed but whose behavior did not get an impact note. Nodes in the radius whose files did not change stay out of the successor set. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees

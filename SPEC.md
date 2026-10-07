@@ -14,7 +14,7 @@ MindPlan is a strictly deterministic Software Development Life Cycle (SDLC) fram
 
 The model is **Interaction-centric**. Agents query *what the system does* (Journeys → Interactions), *how actors enter those behaviors* (Interfaces), and *what shared substrate those behaviors stand on* (Foundations), composed by an Assembler — instead of reconstructing architecture from source on every task.
 
-MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). Consumer projects receive an always-on agent playbook at `mindplan/agent/playbook.md` (installed by `mindplan-mcp init` from `templates/agent/playbook.md`). Entity scaffolding lives in `define-entities`; plan-only modeling in `plan-project`; The parent may self-`ready` (`draft → ready`). Implementation review (`in-review → ship` / Bug `resolved`) lives in `review-work` as one independent Reviewer who judges the plan and the diff together (playbook gates; not server-enforced). Many agents also read root `AGENTS.md`, which `init` creates when missing.
+MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). Consumer projects receive an always-on agent playbook at `mindplan/agent/playbook.md` (installed by `mindplan-mcp init` from `templates/agent/playbook.md`). Entity scaffolding lives in `define-entities`; plan-only modeling in `plan-project`. The parent may self-`ready` (`draft → ready`). Implementation review (`in-review → ship` / Bug `resolved`) lives in `review-work` as one independent Reviewer who judges the plan and the diff together (playbook gates; not server-enforced). Many agents also read root `AGENTS.md`, which `init` creates when missing.
 
 `GRAPH_VERSION` remains `1`. This Interaction-centric taxonomy is a **breaking** change accepted while the package is unreleased — there is no consumer compatibility layer for the former Workflow-centric schema.
 
@@ -377,7 +377,7 @@ Agents MUST verify Territory Completeness for sources, and Impact-note completen
 
 A **revision** is one immutable change. One independent Reviewer and one spawn cover the whole revision. There is no new node type. The same classification applies to every Foundation, Interaction, Interface, and Bug.
 
-Nothing in the successor set may ship while a node the revision touches is broken. Independence, file ownership, Interaction Independence, and the ban on self-`ready` / self-`ship` / self-`resolved` are unchanged.
+Nothing in the successor set may ship while a node the revision touches is broken. Independence, file ownership, Interaction Independence, and the ban on self-`ship` / self-`resolved` are unchanged. The parent may self-`ready`.
 
 #### Pull-in
 

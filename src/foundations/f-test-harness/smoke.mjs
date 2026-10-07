@@ -1471,6 +1471,74 @@ if (ifOrd?.state !== "in-review") {
   console.log(`FAIL if-ord should stay in-review, got ${ifOrd?.state}`);
 } else console.log("ok   later interface was not attempted");
 
+await expectOk("open_next f-ord", "open_next", { node_id: "f-ord" });
+const fOrdNext = nextTerritoryPath("foundations", "f-ord");
+const inheritedLabels = [...fs.readFileSync(fOrdNext, "utf-8").matchAll(/^- \[[ xX]\] (.+)$/gm)].map(
+  (match) => match[1]
+);
+await expectOk("inherited complete next checklist", "patch_node_territory", {
+  node_id: "f-ord",
+  slot: "next",
+  toggle_checkboxes: inheritedLabels.map((contains) => ({ contains, checked: true })),
+});
+{
+  const relabeled = fs.readFileSync(fOrdNext, "utf-8").replace(inheritedLabels[0], `${inheritedLabels[0]} reopened`);
+  fs.writeFileSync(fOrdNext, relabeled);
+}
+await expectBlockedContaining(
+  "different labels still block a complete building checklist",
+  "patch_node_territory",
+  {
+    node_id: "f-ord",
+    slot: "next",
+    toggle_checkboxes: [{ contains: "reopened", checked: true }],
+  },
+  "Checklist Complete"
+);
+
+await expectOk("create f-cr", "create_node", {
+  id: "f-cr",
+  type: "Foundation",
+  title: "Carriage return shape",
+  description: "Infra — section split on lone CR",
+  role: "infra",
+});
+const fCrPath = territoryPath("foundations", "f-cr");
+fillMinimumTerritoryShape(fCrPath);
+{
+  const impl = path.join(root, "src", "foundations", "f-cr");
+  fs.mkdirSync(impl, { recursive: true });
+  fs.writeFileSync(path.join(impl, "index.ts"), "export const ok = true;\n");
+}
+await expectOk("set implements f-cr", "set_implementation_files", {
+  node_id: "f-cr",
+  files: ["src/foundations/f-cr/"],
+});
+{
+  const raw = fs.readFileSync(fCrPath, "utf-8").replace(/\r\n/g, "\n");
+  const close = raw.indexOf("\n---\n", 4);
+  const head = raw.slice(0, close + "\n---\n".length);
+  const body = raw.slice(close + "\n---\n".length).replace(/\n/g, "\r");
+  fs.writeFileSync(fCrPath, `${head}${body}\r## Impact\r\r_None._\r`);
+}
+await expectBlockedContaining(
+  "lone CR still exposes an empty impact section",
+  "update_node_status",
+  { node_id: "f-cr", new_status: "ready" },
+  'section "## Impact" is empty or a stub'
+);
+{
+  const fixed = fs.readFileSync(fCrPath, "utf-8").replace(
+    "_None._",
+    "Adapted the section split so a carriage return still reveals the shipped shape contract."
+  );
+  fs.writeFileSync(fCrPath, fixed);
+}
+await expectOk("lone CR with real impact can ready", "update_node_status", {
+  node_id: "f-cr",
+  new_status: "ready",
+});
+
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();
 process.exit(failures === 0 ? 0 : 1);
