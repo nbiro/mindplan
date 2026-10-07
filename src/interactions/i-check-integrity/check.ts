@@ -14,6 +14,7 @@ import {
 import {
   effectiveRole,
   importAllowed,
+  isInheritedCheckedChecklist,
 } from "../../foundations/f-compiler-rules/rules.js";
 import {
   buildOwnershipIndex,
@@ -445,6 +446,7 @@ function checkChecklistBuilding(graph: MindPlanGraph, failures: string[]): void 
       try {
         const raw = readMarkdown(node, slot);
         if (!isChecklistComplete(raw)) continue;
+        if (slot === "next" && isInheritedCheckedChecklist(node, raw)) continue;
       } catch {
         continue;
       }

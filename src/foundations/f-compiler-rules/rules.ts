@@ -35,6 +35,7 @@ import {
 } from "../f-source-index/claims.js";
 import {
   countUncheckedBoxes,
+  checkboxLabels,
   isChecklistComplete,
   readMarkdown,
   splitContext,
@@ -74,12 +75,18 @@ type ShapeSectionSpec =
 
 function extractSection(body: string, heading: string): string | null {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(
-    `^##\\s+${escaped}\\s*\\r?\\n([\\s\\S]*?)(?=^##\\s+|\\Z)`,
-    "im"
-  );
-  const match = body.match(re);
-  return match ? match[1] : null;
+  const lines = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const headingRe = new RegExp(`^##\\s+${escaped}\\s*$`, "i");
+  const start = lines.findIndex((line) => headingRe.test(line.replace(/\r$/, "")));
+  if (start < 0) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i].replace(/\r$/, ""))) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start + 1, end).join("\n");
 }
 
 function normalizeSectionText(section: string): string {
@@ -101,6 +108,17 @@ function sectionLooksLikeScaffold(section: string): boolean {
     .filter((line) => line.length > 0)
     .filter((line) => !/^_.*_$/.test(line));
   return substantive.length === 0;
+}
+
+function assertImpactSection(node: MindPlanNode, body: string, file: string): void {
+  const section = extractSection(body, "Impact");
+  if (section === null) return;
+  if (sectionLooksLikeScaffold(section)) {
+    throw blocked(
+      `Minimum Territory Shape. "${node.id}"/${file} section "## Impact" ` +
+        `is empty or a stub. Write what this node adapted so the already-shipped contract still holds.`
+    );
+  }
 }
 
 function sectionHasCheckbox(section: string): boolean {
@@ -167,6 +185,8 @@ export function assertMinimumTerritoryShape(
   const raw = readMarkdown(node, slot);
   const split = splitContext(raw);
   const body = split?.body ?? "";
+
+  assertImpactSection(node, body, file);
 
   if (node.type === "Foundation") {
     const description =
@@ -303,6 +323,28 @@ function runCompletionCheck(
   }
 }
 
+/**
+ * Next checklist is the already-shipped contract, not work finished during this evolution.
+ * Labels must match live current, and current must already be complete.
+ */
+export function isInheritedCheckedChecklist(
+  node: MindPlanNode,
+  nextMarkdown: string
+): boolean {
+  if (!node.shipped_at || !isChecklistComplete(nextMarkdown)) return false;
+  let currentRaw: string;
+  try {
+    currentRaw = readMarkdown(node, "current");
+  } catch {
+    return false;
+  }
+  if (!isChecklistComplete(currentRaw)) return false;
+  const live = checkboxLabels(currentRaw);
+  const next = checkboxLabels(nextMarkdown);
+  if (live.length === 0 || live.length !== next.length) return false;
+  return live.every((label, index) => label === next[index]);
+}
+
 /** States where completing every Atomic Op checkbox is illegal (work still “building”). */
 const BUILDING_CHECKLIST_STATES = new Set([
   "draft",
@@ -323,6 +365,7 @@ export function assertOpenChecklistWhileBuilding(
   slot: "current" | "next" = "current"
 ): void {
   if (!isChecklistComplete(proposedBodyOrFullMarkdown)) return;
+  if (slot === "next" && isInheritedCheckedChecklist(node, proposedBodyOrFullMarkdown)) return;
 
   const state =
     slot === "next" && node.next

@@ -4,9 +4,9 @@ type: Interaction
 title: "Integrity check (released live presence)"
 description: "Default check: exclusivity, coverage, presence (skip live entries released by open next), leftovers, import matrix; --base uses implements index."
 state: stable
-shipped_at: 2026-09-24T07:44:58.714Z
+shipped_at: 2026-10-07T21:14:35.096Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-09-24T07:44:58.714Z
+updated_at: 2026-10-07T21:14:35.096Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -17,6 +17,8 @@ depends_on:
 implements:
   - src/interactions/i-check-integrity/
 ---
+
+
 
 
 # Integrity check (released live presence)
@@ -53,10 +55,14 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - Exit 0/1 with `Blocked:` lines
 
 ## Atomic Ops
-
 - [x] Import `releasedClaimEntries` and skip those live entries in `checkPresence`
 - [x] Leave next-slot presence and compiler ship gate unchanged
 - [x] Verified via `npm test` / check harness
+
+
+## Impact
+
+The audit contract is unchanged: default check still covers graph load, exclusivity, coverage, presence (including the released-live skip), leftovers, and the import matrix. It now uses the compiler exception for an open next whose checkbox labels match the already-complete live checklist, so a neighbor can keep inherited Atomic Ops checked while still drafting. A next checklist with different labels that is fully checked while building still fails.
 
 ## Attachments
 

@@ -1340,6 +1340,205 @@ if (migrateInit.status !== 0) {
   }
 }
 
+// --- ordered revision status + real impact section ---
+await expectOk("create f-ord", "create_node", {
+  id: "f-ord",
+  type: "Foundation",
+  title: "Ordered substrate",
+  description: "Infra — batch status substrate",
+  role: "infra",
+});
+await expectOk("create i-ord", "create_node", {
+  id: "i-ord",
+  type: "Interaction",
+  title: "Ordered behavior",
+  description: "Depends on f-ord",
+});
+await expectOk("create if-ord", "create_node", {
+  id: "if-ord",
+  type: "Interface",
+  title: "Ordered surface",
+  description: "Mounts i-ord",
+});
+await expectOk("link i-ord journey", "link_nodes", {
+  source_id: "i-ord",
+  target_id: "j-ordering",
+  edge_type: "belongs_to",
+});
+await expectOk("link i-ord foundation", "link_nodes", {
+  source_id: "i-ord",
+  target_id: "f-ord",
+  edge_type: "depends_on",
+});
+await expectOk("link if-ord exposes", "link_nodes", {
+  source_id: "if-ord",
+  target_id: "i-ord",
+  edge_type: "exposes",
+});
+await expectOk("link if-ord depends", "link_nodes", {
+  source_id: "if-ord",
+  target_id: "f-ord",
+  edge_type: "depends_on",
+});
+for (const [kind, id] of [
+  ["foundations", "f-ord"],
+  ["interactions", "i-ord"],
+  ["interfaces", "if-ord"],
+]) {
+  fillMinimumTerritoryShape(territoryPath(kind, id));
+  const impl = path.join(root, "src", kind, id);
+  fs.mkdirSync(impl, { recursive: true });
+  fs.writeFileSync(path.join(impl, "index.ts"), "export const ok = true;\n");
+  await expectOk(`set implements ${id}`, "set_implementation_files", {
+    node_id: id,
+    files: [`src/${kind}/${id}/`],
+  });
+}
+const fOrdPath = territoryPath("foundations", "f-ord");
+fs.appendFileSync(fOrdPath, "\n## Impact\n\n_None._\n");
+await expectBlockedContaining(
+  "empty impact blocks ready",
+  "update_node_status",
+  { node_id: "f-ord", new_status: "ready" },
+  'section "## Impact" is empty or a stub'
+);
+fs.writeFileSync(
+  fOrdPath,
+  fs.readFileSync(fOrdPath, "utf-8").replace(
+    "## Impact\n\n_None._\n",
+    "## Impact\n\nAdapted the schema export so the shipped substrate contract still holds.\n"
+  )
+);
+for (const kind of ["foundations", "interfaces"]) {
+  const id = kind === "foundations" ? "f-ord" : "if-ord";
+  const p = territoryPath(kind, id);
+  fs.writeFileSync(p, fs.readFileSync(p, "utf-8").replaceAll("[ ]", "[x]"));
+}
+const batchReady = JSON.parse(
+  await expectOk("ordered ready", "update_node_status", {
+    revisions: [
+      { node_id: "if-ord", new_status: "ready" },
+      { node_id: "i-ord", new_status: "ready" },
+      { node_id: "f-ord", new_status: "ready" },
+    ],
+  })
+);
+const readyIds = (batchReady.applied ?? []).map((row) => row.node_id).join(",");
+if (readyIds !== "f-ord,i-ord,if-ord") {
+  failures++;
+  console.log(`FAIL ordered ready sequence: ${readyIds}`);
+} else console.log("ok   revisions apply foundations then interactions then interfaces");
+await expectOk("ordered in-progress", "update_node_status", {
+  revisions: [
+    { node_id: "if-ord", new_status: "in-progress" },
+    { node_id: "i-ord", new_status: "in-progress" },
+    { node_id: "f-ord", new_status: "in-progress" },
+  ],
+});
+await expectOk("ordered in-review", "update_node_status", {
+  revisions: [
+    { node_id: "i-ord", new_status: "in-review" },
+    { node_id: "if-ord", new_status: "in-review" },
+    { node_id: "f-ord", new_status: "in-review" },
+  ],
+});
+await expectBlockedContaining(
+  "ordered ship stops on completion and keeps foundation",
+  "update_node_status",
+  {
+    revisions: [
+      { node_id: "if-ord", new_status: "ship" },
+      { node_id: "i-ord", new_status: "ship" },
+      { node_id: "f-ord", new_status: "ship" },
+    ],
+  },
+  'Ordered status stopped on "i-ord" after applying: f-ord (stable)'
+);
+graph = JSON.parse(await expectOk("graph after ordered stop", "get_mindplan_graph", {}));
+const fOrd = graph.nodes.find((n) => n.id === "f-ord");
+const iOrd = graph.nodes.find((n) => n.id === "i-ord");
+const ifOrd = graph.nodes.find((n) => n.id === "if-ord");
+if (fOrd?.state !== "stable") {
+  failures++;
+  console.log(`FAIL f-ord should be stable, got ${fOrd?.state}`);
+} else console.log("ok   foundation stayed shipped after ordered stop");
+if (iOrd?.state !== "in-review") {
+  failures++;
+  console.log(`FAIL i-ord should stay in-review, got ${iOrd?.state}`);
+} else console.log("ok   blocked interaction was not shipped");
+if (ifOrd?.state !== "in-review") {
+  failures++;
+  console.log(`FAIL if-ord should stay in-review, got ${ifOrd?.state}`);
+} else console.log("ok   later interface was not attempted");
+
+await expectOk("open_next f-ord", "open_next", { node_id: "f-ord" });
+const fOrdNext = nextTerritoryPath("foundations", "f-ord");
+const inheritedLabels = [...fs.readFileSync(fOrdNext, "utf-8").matchAll(/^- \[[ xX]\] (.+)$/gm)].map(
+  (match) => match[1]
+);
+await expectOk("inherited complete next checklist", "patch_node_territory", {
+  node_id: "f-ord",
+  slot: "next",
+  toggle_checkboxes: inheritedLabels.map((contains) => ({ contains, checked: true })),
+});
+{
+  const relabeled = fs.readFileSync(fOrdNext, "utf-8").replace(inheritedLabels[0], `${inheritedLabels[0]} reopened`);
+  fs.writeFileSync(fOrdNext, relabeled);
+}
+await expectBlockedContaining(
+  "different labels still block a complete building checklist",
+  "patch_node_territory",
+  {
+    node_id: "f-ord",
+    slot: "next",
+    toggle_checkboxes: [{ contains: "reopened", checked: true }],
+  },
+  "Checklist Complete"
+);
+
+await expectOk("create f-cr", "create_node", {
+  id: "f-cr",
+  type: "Foundation",
+  title: "Carriage return shape",
+  description: "Infra — section split on lone CR",
+  role: "infra",
+});
+const fCrPath = territoryPath("foundations", "f-cr");
+fillMinimumTerritoryShape(fCrPath);
+{
+  const impl = path.join(root, "src", "foundations", "f-cr");
+  fs.mkdirSync(impl, { recursive: true });
+  fs.writeFileSync(path.join(impl, "index.ts"), "export const ok = true;\n");
+}
+await expectOk("set implements f-cr", "set_implementation_files", {
+  node_id: "f-cr",
+  files: ["src/foundations/f-cr/"],
+});
+{
+  const raw = fs.readFileSync(fCrPath, "utf-8").replace(/\r\n/g, "\n");
+  const close = raw.indexOf("\n---\n", 4);
+  const head = raw.slice(0, close + "\n---\n".length);
+  const body = raw.slice(close + "\n---\n".length).replace(/\n/g, "\r");
+  fs.writeFileSync(fCrPath, `${head}${body}\r## Impact\r\r_None._\r`);
+}
+await expectBlockedContaining(
+  "lone CR still exposes an empty impact section",
+  "update_node_status",
+  { node_id: "f-cr", new_status: "ready" },
+  'section "## Impact" is empty or a stub'
+);
+{
+  const fixed = fs.readFileSync(fCrPath, "utf-8").replace(
+    "_None._",
+    "Adapted the section split so a carriage return still reveals the shipped shape contract."
+  );
+  fs.writeFileSync(fCrPath, fixed);
+}
+await expectOk("lone CR with real impact can ready", "update_node_status", {
+  node_id: "f-cr",
+  new_status: "ready",
+});
+
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();
 process.exit(failures === 0 ? 0 : 1);

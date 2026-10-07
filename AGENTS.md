@@ -10,9 +10,9 @@ Normative reference: `SPEC.md`. Skills (on demand): `define-entities`, `plan-pro
 2. **Place work on the graph** — Journey / Interaction / Interface / Foundation / Bug. MCP writes structure (`state`, edges, timestamps); file tools write territory prose at `current_path` / `next_path`.
 3. **`Blocked:` is hard** — classify the stated cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix that cause before retrying. Do not retry blindly.
 4. **Implement in claimed files** — declare ownership with `set_implementation_files` (`implements` on current/next). Do not invent tickets or ad-hoc ownership outside the graph.
-5. **Shipped change** — `get_blast_radius`, then `open_next`; edit the `next` slot into a full successor contract (not a changelog).
-6. **Spawn the Reviewer before done** — when Plan Review or Implementation review is due, freeze membership / revision, then **spawn** an independent Reviewer (`review-work`). Do not `ready` / `ship` / `resolved` your own work. Narrating “needs review,” “wasn’t reviewed,” or “handing off to a Reviewer” without spawning one is **not** done.
-7. **Check before review handoff** — before Plan Review, before Implementation review (entering `in-review` / spawning the Reviewer), and before re-spawning after a Reject, run default `mindplan-mcp check` and get exit `0`. Fix every `Blocked:` first. Optional `--base` is local dirty-src hygiene only — not a substitute for this gate.
+5. **Shipped change** — `get_blast_radius`, then classify the revision. **Source** (contract changed): `open_next` and a full successor. **Neighbor** (depends on, exposes, or navigates to a source; files changed; behavior did not): `open_next`, keep the inherited contract, add a real `## Impact` note. **Unaffected** (in the radius, files unchanged): do not open `next`.
+6. **Spawn the Reviewer before ship** — self-`ready` is allowed (`draft` → `ready` in one ordered `revisions` call). Do not spawn a separate Plan Reviewer before implementation. One Reviewer, at Implementation review, judges the plan (source contracts and neighbor impact notes) and the diff together. Do not `ship` / `resolved` your own work. Narrating “needs review” without spawning that Reviewer is **not** done.
+7. **Check before review handoff** — before entering `in-review` / spawning the Reviewer, and before re-spawning after a Reject, run default `mindplan-mcp check` (ownership, import matrix) and the revision typecheck; both exit `0`. Fix every `Blocked:` first. Optional `--base` is local dirty-src hygiene only — not a substitute for this gate. Default check does not run the typechecker.
 
 After a successful graph mutation, trust the response `anchor` (record + 1-hop neighborhood) and `changed_files`. Re-call `find_related_nodes` / `get_node_context` only on `Blocked:`, a new user ask, or before review.
 
@@ -35,21 +35,22 @@ Never hand-edit server-owned frontmatter (`state`, `updated_at`, `shipped_at`, e
 ## Agent SDLC (short)
 
 ```
-orient → place on graph → draft/enrich territory → check → Plan Review → ready
-→ in-progress → implement + check Atomic Ops → check → in-review → Implementation review → ship
+orient → place on graph → draft/enrich territory → self-ready
+→ in-progress → implement + check Atomic Ops → check → in-review
+→ one Reviewer (plan + implementation) → ship
 ```
 
-- **Validity (`mindplan-mcp check`):** mandatory before every Reviewer handoff (Plan Review and Implementation review) and before re-entering a Rejected gate. Default mode = graph load + file ownership (exclusivity, coverage, presence, leftovers, import matrix). Do not hand off with failing `Blocked:` lines. Reviewers re-run **default** `check` only. Other nodes at `in-progress` / `in-review` / Bug `fixing` are mergeable — do **not** Reject the frozen set because of them.
-- **Minimum Territory Shape** (compiler): leaving `draft`, `in-review`, and `ship` require real sections — not scaffold stubs. Semantic **Territory Completeness** stays a Reviewer judgment.
-- **Plan Review:** parent **spawns** one Reviewer over the frozen subgraph of new/changed nodes (not one spawn per Foundation then Interaction then Interface). See `review-work` Procedure A. Task is not done until that Reviewer returns a verdict (Approve → `ready`, or Reject → fix and re-spawn / escalate).
-- **Implementation review:** parent moves to `in-review`, freezes `{base_sha, head_sha, clean_tree, changed_files[], node_ids[]}`, then **spawns** one Reviewer. Review the whole set before any `ship`; then transition Foundations → Interactions → Interfaces with re-read after each. `Blocked: Infrastructure First` (or Behavior First only because an exposed Interaction is Approve-but-ship-deferred) means **Approve + ship deferred** — leave at `in-review`; do not Reject for unfinished Foundations. Other `Blocked:` / quality Reject / dirty tree after verdict → void; fresh Reviewer on the new revision. See `review-work` Procedure B. Task is not done until that spawn has run. Parent done includes nodes that are `stable`/`unstable` **or** explicitly ship-deferred.
+- **Validity (`mindplan-mcp check`):** mandatory before Implementation review (entering `in-review` / spawning the Reviewer) and before re-entering a Rejected gate, together with a green typecheck of the revision. Default mode = graph load + file ownership (exclusivity, coverage, presence, leftovers, import matrix). Do not hand off with failing `Blocked:` lines. Reviewers re-run **default** `check` only. Other nodes at `in-progress` / `in-review` / Bug `fixing` are mergeable — do **not** Reject the frozen set because of them.
+- **Minimum Territory Shape** (compiler): leaving `draft`, `in-review`, and `ship` require real sections — not scaffold stubs. A present `## Impact` section must be real prose. Semantic **Territory Completeness** (sources) and impact-note truth (neighbors) stay Reviewer judgments, made in the same spawn as the diff review.
+- **Self-ready:** the parent moves the successor set `draft` → `ready` in one ordered `revisions` call. No separate Plan Reviewer. Plan-only sessions stop at `ready`.
+- **Implementation review:** parent implements at `in-progress`, then moves the successor set to `in-review` in one ordered call, freezes `{base_sha, head_sha, clean_tree, changed_files[], sources[], neighbors[], unaffected[]}`, then **spawns** one Reviewer. That Reviewer judges the plan (source contracts, neighbor impact notes, unaffected list) and reads the diff once, using the same split, then `ship` / `resolved` in one `revisions` call (Foundations, then Interactions, then Interfaces, then Bugs) and stops on the first `Blocked:`. `Blocked: Infrastructure First` (or Behavior First only because an exposed Interaction is Approve-but-ship-deferred) means **Approve + ship deferred** — leave at `in-review`; do not Reject for unfinished Foundations. Other `Blocked:` / quality Reject / dirty tree after verdict → void; fresh Reviewer on the new revision, still using the class split. See `review-work`. Task is not done until that spawn has run. Parent done includes nodes that are `stable`/`unstable` **or** explicitly ship-deferred.
 - **Git:** land via feature branch + PR; never push to `main`/`master`. Automate branch setup; keep a deterministic diff for review.
 
 ## Request routing
 
 | User wants… | Do |
 |-------------|-----|
-| Plan / model only | `plan-project` → `mindplan-mcp check` → subgraph Plan Review → stop at `ready` |
+| Plan / model only | `plan-project` → self-`ready` → stop at `ready` (no Reviewer until implementation) |
 | Implement / fix / ship code | Build pipeline on the owning node (`in-progress` first) |
 | Evolve shipped node | `open_next` → plan or build against `next` |
 | New entities | `define-entities` (Journey before Interaction) |
@@ -57,11 +58,11 @@ orient → place on graph → draft/enrich territory → check → Plan Review �
 ## Never do
 
 - Invent tickets outside the graph
-- Same-session self-`ready` / self-`ship` / self-`resolved`
+- Same-session self-`ship` / self-`resolved` (self-`ready` is allowed)
 - Treat the task as done (or hand the human “please review”) without having **spawned** the Reviewer when a Review gate is due
 - Interaction→Interaction `depends_on` or Interface-owned feature screen bodies
 - Check Atomic Ops without doing the work
 - Write `## Review Notes` into territory
 - Substantial code under `draft`/`ready` without moving to `in-progress` (or Bug `fixing`)
-- Hand off to Plan Review or Implementation review (or re-spawn a Reviewer) while `mindplan-mcp check` fails
+- Hand off to Implementation review (or re-spawn a Reviewer) while `mindplan-mcp check` fails
 - Write on `main`/`master`
