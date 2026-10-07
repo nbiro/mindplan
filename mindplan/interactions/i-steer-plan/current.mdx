@@ -1,12 +1,12 @@
 ---
 id: i-steer-plan
 type: Interaction
-title: "Steer (set_implementation_files)"
-description: "Adds set_implementation_files; create_node requires Foundation role; no package scaffolds."
+title: "Steer (ordered revision status)"
+description: "update_node_status accepts a revision list, applies Foundations then Interactions then Interfaces then Bugs, and stops on the first Blocked without rolling back earlier nodes."
 state: stable
-shipped_at: 2026-09-23T14:05:40.466Z
+shipped_at: 2026-10-07T21:14:37.753Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-09-23T14:08:09.273Z
+updated_at: 2026-10-07T21:14:37.753Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -22,27 +22,36 @@ implements:
 ---
 
 
-# Steer (set_implementation_files)
+
+
+# Steer (ordered revision status)
 
 ## Purpose
 
-Mutate the graph through compiler-gated tools. Adds `set_implementation_files`. `create_node` requires Foundation `role`. No package scaffolds. Claim validation uses `f-source-index`.
+Mutate the graph through compiler-gated tools. Keep `set_implementation_files`, Foundation `role` on `create_node`, and no package scaffolds. Claim validation uses `f-source-index`.
+
+`update_node_status` still transitions one node when called with `node_id` and `new_status`. It also accepts `revisions`: a list of `{ node_id, new_status }`, mutually exclusive with the single-node fields. The server orders Foundations, then Interactions, then Interfaces, then Bugs, preserves caller order within a tier, applies each transition against the graph as updated by the previous one, and stops on the first `Blocked:`. Earlier nodes stay transitioned. The error names the stopped node and the nodes already applied, and begins with `Blocked:`.
 
 ## Actor & Trigger
 
 - **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
-- **Trigger:** MCP/HTTP mutate tools
+- **Trigger:** MCP/HTTP mutate tools, including one status call for a revision
 
-## Execution Logic
+## PRD / Execution Logic
 
 Intended files: `src/interactions/i-steer-plan/`
 
 - Keep existing mutate tools + map refresh via `f-view-projection`
-- New tool `set_implementation_files(node_id, files, slot?)`:
+- Keep `set_implementation_files(node_id, files, slot?)`:
   - Pre-ship writes `current`; shipped writes only open `next` (else Blocked → open_next); retired may only shrink
   - Reject bad paths (`..`, under `mindplan/`) and immediate ownership conflicts
 - `create_node` for Foundations requires `role`
 - Do not scaffold `src/<type>/<id>/.gitkeep`
+- `update_node_status`:
+  - Single-node input and output stay as they are
+  - `revisions` rejects duplicates, empty lists, and being combined with `node_id` or `new_status`
+  - Journeys are rejected before any write
+  - On `Blocked:`, do not roll back nodes already applied in the call
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
@@ -51,14 +60,17 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - `set_implementation_files` enforces slot rules and rejects conflicts
 - Foundation create without role is Blocked
 - No package scaffolds on create
+- Single-node `update_node_status` behavior is unchanged
+- A `revisions` call applies Foundations before Interactions before Interfaces even when the caller lists them in another order
+- The first `Blocked:` stops the call; earlier nodes stay transitioned; later nodes are not written
 - Existing mutate behavior preserved
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Implement `set_implementation_files` with slot/retired/conflict rules
-- [x] Require Foundation role on create_node
-- [x] Stop scaffolding packages from create path
+- [x] Accept `revisions` and order Foundations, Interactions, Interfaces, then Bugs
+- [x] Stop on the first Blocked without rolling back earlier nodes
+- [x] Keep single-node status and `set_implementation_files`
 - [x] Verified via `npm test`
 
 ## Attachments

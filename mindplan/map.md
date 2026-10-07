@@ -5,12 +5,12 @@ _Auto-generated after each graph mutation (42 nodes, 105 edges). Do not edit by 
 ```mermaid
 flowchart TB
   subgraph foundations["Foundations"]
-    f_compiler_rules["f-compiler-rules · Compiler rules (file ownership) · stable"]
+    f_compiler_rules["f-compiler-rules · Compiler rules (impact section shape) · stable"]
     f_console_client["f-console-client · Console client · ready"]
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
     f_domain_model["f-domain-model · Domain model (implements + role) · stable"]
-    f_framework_docs["f-framework-docs · Framework docs (review Approve vs ship) · stable"]
+    f_framework_docs["f-framework-docs · Framework docs (revision by blast radius) · stable"]
     f_github_actions["f-github-actions · GitHub Actions (file ownership) · stable"]
     f_graph_search["f-graph-search · Graph search (interaction-centric) · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime (boot only) · stable"]
@@ -49,11 +49,11 @@ flowchart TB
     i_mutate_plan__in__j_plan_console["i-mutate-plan · Steer the plan · ready"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
     i_check_integrity__in__j_territory_sdlc["i-check-integrity · Integrity check (released live presence) · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient (file queries) · stable"]
-    i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer (set_implementation_files) · stable"]
+    i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer (ordered revision status) · stable"]
   end
   f_compiler_rules --> f_domain_model
   f_compiler_rules --> f_source_index
