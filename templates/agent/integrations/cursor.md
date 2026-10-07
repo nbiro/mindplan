@@ -27,7 +27,7 @@ Paste the playbook body below the frontmatter. This rule must apply to every ses
 3. **Skills** — `mindplan-mcp init` installs Cursor-native skill discovery paths when missing:
    - `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Interaction, Interface, Bug nodes)
    - `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
-   - `.cursor/skills/mindplan-review-work/` (Plan Review `draft → ready` and Implementation review `in-review → ship` / `resolved`)
+   - `.cursor/skills/mindplan-review-work/` (one Reviewer at `in-review` judges the plan and the diff; self-`ready` is allowed)
 
    Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories, or re-run `mindplan-mcp init -f` after a MindPlan upgrade / if the `.cursor/skills/` trees were removed.
 
@@ -49,8 +49,8 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
    - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
    - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
 
-8. **Validity + Git delivery** — always feature branch + PR. Never push to `main`/`master`. Before Plan Review or Implementation review handoff (and before re-spawning a Reviewer), run default `mindplan-mcp check` and get exit `0` (playbook **Check before review handoff**). Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate.
+8. **Validity + Git delivery** — always feature branch + PR. Never push to `main`/`master`. Before Implementation review handoff (and before re-spawning a Reviewer), run default `mindplan-mcp check` and get exit `0` (playbook **Check before review handoff**). Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate.
 
-9. **Spawn the Reviewer (required before done)** — when Plan Review or Implementation review is due, the parent MUST launch an independent Reviewer via the Task / subagent tool (load `.cursor/skills/mindplan-review-work/`, Procedure A or B, frozen subgraph or revision). Do not self-`ready` / self-`ship` / self-`resolved`. Do not end the turn saying the work “wasn’t reviewed” or “needs a Reviewer” instead of spawning. Own the Reject → fix → re-spawn loop; escalate to the human only after that loop is exhausted.
+9. **Spawn the Reviewer before ship** — self-`ready` is allowed. Do not spawn a separate Plan Reviewer. When Implementation review is due, the parent MUST launch one independent Reviewer via the Task / subagent tool (load `.cursor/skills/mindplan-review-work/`). That Reviewer judges the plan and the diff together. Do not self-`ship` / self-`resolved`. Do not end the turn saying the work “wasn’t reviewed” or “needs a Reviewer” instead of spawning. Own the Reject → fix → re-spawn loop; escalate to the human only after that loop is exhausted.
 
 10. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).

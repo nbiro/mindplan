@@ -1,0 +1,67 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs (revision by blast radius)"
+description: "Assembler/docs — one revision classified source / neighbor / unaffected; full successor only where the contract changed; neighbor impact notes; one reviewer; ordered status in one call."
+state: in-review
+updated_at: 2026-10-07T20:59:54.759Z
+depends_on:
+  - f-domain-model
+implements:
+  - README.md
+  - SPEC.md
+  - templates/
+role: assembler
+---
+
+
+
+
+# Framework documentation (revision by blast radius)
+
+## Purpose
+
+Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook and skills). Keep the shipped guarantees: live-presence skip for released implements entries (SPEC §9.6), and Implementation review **Approve** as a quality verdict that is not voided by **Infrastructure First** or cascading Behavior First. Ship stays a separate transition. Unfinished Foundation deps are not a Reject reason.
+
+Add the multi-node revision rule (SPEC §3.7). One revision, one Reviewer, one spawn, at Implementation review. The parent self-readies; there is no separate Plan Reviewer. That Reviewer judges source contracts and neighbor impact notes together with the diff. Classify by blast radius. Sources get a full successor. Neighbors get a real impact note. Unaffected nodes stay out of the successor set. Status advances Foundations, then Interactions, then Interfaces, then Bugs in one call and stops on the first `Blocked:`. Independence, file ownership, and the ban on self-ship stay in force.
+
+## Shared Substrate Spec
+
+Claims: `SPEC.md`, `README.md`, `templates/`
+
+- SPEC §3.1: Approve is not voided by Infrastructure First; one spawn covers the revision classified in §3.7; later `ship` applies Approve. Rule 3 (§5.4) stays a hard ship gate.
+- SPEC §3.6: sources remain full successors because ship promotes wholesale. Neighbors keep the inherited contract and add `## Impact`. `open_next` still resets checkboxes; neighbors restore inherited `[x]` items.
+- SPEC §3.7: source / neighbor / unaffected. Pull-in is reverse `depends_on`, `exposes`, or inbound `leads_to`. One `update_node_status` `revisions` call orders Foundations, Interactions, Interfaces, then Bugs and stops on the first `Blocked:`. Earlier nodes stay transitioned. Default check (ownership, import matrix) plus a green typecheck are required before review. The check command does not run the typechecker.
+- SPEC §5: a blocked transition writes nothing for itself; an ordered revision is a sequence of transitions.
+- SPEC §8.2: single-node `update_node_status` unchanged; `revisions` is the set form and is mutually exclusive with `node_id` / `new_status`.
+- SPEC §9.6: default check stays graph load, ownership, and the import matrix.
+- README: keep the Infrastructure First example and the Approve-while-ship-waits note. Describe one revision and the ordered status call.
+- `templates/agent/skills/review-work/SKILL.md`: one spawn; class split on plan review and on one reading of the diff; neighbor impact notes are real sections; inherited Atomic Ops are re-checked only when the diff touches them; one `revisions` call; ship-deferral carve-out stays.
+- `templates/agent/playbook.md`, define-entities, and plan-project: same split. Do not tell Plan Review to Reject for unfinished Foundations. Do not spawn one Reviewer per node.
+- Sync this repo’s `AGENTS.md`, `.cursor/rules/mindplan.mdc`, and `.cursor/skills/mindplan-*` from the updated templates.
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- SPEC §3.7 defines source, neighbor, and unaffected, and the ordered status call that stops on the first `Blocked:`
+- SPEC §3.1 and §3.6 keep Approve-vs-ship and full-successor promotion; neighbors are not changelog-only bodies
+- SPEC §8.2 documents single-node and `revisions` inputs, outputs, and the stop error
+- review-work reviews sources in full and neighbors by impact note, with one spawn and one status call
+- Playbook, define-entities, and plan-project match that split
+- README states the revision rule and the ordered `update_node_status` call
+- Local `AGENTS.md` and `.cursor` copies match the templates
+- Verified by reading SPEC §3.7, review-work, and the playbook
+
+## Atomic Ops
+
+- [x] Update SPEC §3.6, §3.7, §5, §8.2, and §9.6 for revision classes and ordered status
+- [x] Update README with the revision rule and the `revisions` tool row
+- [x] Update review-work for one spawn, class split, and one status call
+- [x] Update playbook, define-entities, and plan-project
+- [x] Sync AGENTS.md and `.cursor` rules/skills from templates
+- [x] Verified by reading SPEC §3.7, review-work, and the playbook
+
+## Attachments
+
+_None._

@@ -1,0 +1,58 @@
+---
+id: f-compiler-rules
+type: Foundation
+title: "Compiler rules (impact section shape)"
+description: "Infra — Minimum Territory Shape rejects an empty or scaffold ## Impact section. Existing ownership, checklist, and ship gates stay."
+state: in-review
+updated_at: 2026-10-07T20:59:54.688Z
+depends_on:
+  - f-domain-model
+  - f-territory-store
+  - f-source-index
+implements:
+  - src/foundations/f-compiler-rules/
+role: infra
+---
+
+
+
+# Compiler rules (impact section shape)
+
+## Purpose
+
+Infra — MindPlan compiler. Keep the shipped gates: Completion Check, Open Checklist While Building, Minimum Territory Shape, Interaction Independence, Infrastructure First, Behavior First, cancel gates, force_unship, reachability, non-empty existing `implements` on `in-review` and `ship`, and the import-matrix closure that stops at assemblers.
+
+Add one shape rule: when `## Impact` is present, it must be real prose. An empty or scaffold section fails Minimum Territory Shape on leaving `draft`, entering `in-review`, and `ship` / `resolved`. Absence of the heading is not a compiler error; Reviewers reject a neighbor that lacks it.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-compiler-rules/`
+
+- Keep Completion Check, Open Checklist While Building, Minimum Territory Shape, Independence, Infrastructure/Behavior First, cancel gates, force_unship, reachability
+- Keep: `in-review` and `ship` require a non-empty `implements` list on the active slot with every entry present on disk
+- Keep helpers for reachable Foundations (transitive `depends_on`; do not continue past `role: assembler`; while next is open, live and next edges both count)
+- Keep import-matrix predicates consumed by `i-check-integrity`
+- New: if the active body contains `## Impact`, reject an empty or scaffold section with `Blocked: Minimum Territory Shape. "<id>"/<file> section "## Impact" is empty or a stub. Write what this node adapted so the already-shipped contract still holds.`
+- Uses `f-source-index` for claim expansion and path presence
+
+Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
+
+## Acceptance Criteria
+
+- `in-progress` → `in-review` Blocked when implements empty or missing on disk
+- `ship` Blocked under the same implements gate
+- Assembler stops transitive Foundation reachability for import allowance
+- A present empty or scaffold `## Impact` section is Blocked on `ready`, `in-review`, and `ship`
+- A body with no `## Impact` heading still passes shape when the other required sections are real
+- Existing checklist / ship Completion Check behavior unchanged in spirit
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Gate a present `## Impact` section on real prose
+- [x] Keep implements, import-matrix, and checklist gates
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

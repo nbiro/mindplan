@@ -382,20 +382,37 @@ export function registerMindPlanTools(server: McpServer): void {
         "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
         "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
         "When next.mdx exists, build-pipeline transitions apply to the next slot; ship promotes next over current. " +
+        "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
         "Journey and production stable/unstable are computed automatically.",
       inputSchema: {
-        node_id: NODE_ID.describe("The id of the node to transition."),
+        node_id: NODE_ID.optional().describe(
+          "The id of the single node to transition. Mutually exclusive with revisions."
+        ),
         new_status: z
           .string()
+          .optional()
           .describe(
             "Foundation/Interaction/Interface: draft | ready | in-progress | in-review | ship | cancelled | deprecated. " +
               "Bug: open | triaged | fixing | in-review | resolved | wontfix. " +
               "From stable/unstable: deprecated only (or open_next then build/ship next). " +
-              "Pre-ship abandon: cancelled from draft|ready|in-progress|in-review."
+              "Pre-ship abandon: cancelled from draft|ready|in-progress|in-review. " +
+              "Required with node_id. Omit when using revisions."
+          ),
+        revisions: z
+          .array(
+            z.object({
+              node_id: NODE_ID.describe("Node to transition."),
+              new_status: z.string().describe("Target status for this node."),
+            })
+          )
+          .min(1)
+          .optional()
+          .describe(
+            "One revision. Server orders Foundations, Interactions, Interfaces, then Bugs, and stops on the first Blocked. Mutually exclusive with node_id and new_status."
           ),
       },
     },
-    guarded(({ node_id, new_status }) => updateNodeStatus({ node_id, new_status }))
+    guarded((args) => updateNodeStatus(args))
   );
 
   server.registerTool(

@@ -448,7 +448,115 @@ export function unlinkNodes(args: {
   };
 }
 
+const STATUS_TIER: Record<string, number> = {
+  Foundation: 0,
+  Interaction: 1,
+  Interface: 2,
+  Bug: 3,
+};
+
+type StatusRevision = { node_id: string; new_status: string };
+
+function normalizeStatusArgs(args: {
+  node_id?: string;
+  new_status?: string;
+  revisions?: StatusRevision[];
+}): { mode: "single" | "batch"; items: StatusRevision[] } {
+  const list = args.revisions;
+  const hasList = Array.isArray(list) && list.length > 0;
+  const hasSingle = args.node_id !== undefined || args.new_status !== undefined;
+  if (hasList && hasSingle) {
+    throw blocked(
+      "update_node_status accepts either node_id + new_status, or revisions, not both."
+    );
+  }
+  if (hasList) {
+    const ids = new Set<string>();
+    for (const item of list!) {
+      if (!item?.node_id || !item?.new_status) {
+        throw blocked("each revision needs node_id and new_status.");
+      }
+      if (ids.has(item.node_id)) {
+        throw blocked(`duplicate node_id "${item.node_id}" in revisions.`);
+      }
+      ids.add(item.node_id);
+    }
+    return { mode: "batch", items: list! };
+  }
+  if (!args.node_id || args.new_status === undefined || args.new_status === "") {
+    throw blocked(
+      "update_node_status requires node_id and new_status, or a non-empty revisions list."
+    );
+  }
+  return {
+    mode: "single",
+    items: [{ node_id: args.node_id, new_status: args.new_status }],
+  };
+}
+
+function orderStatusRevisions(items: StatusRevision[]): StatusRevision[] {
+  const graph = loadGraph();
+  return items
+    .map((item, index) => {
+      const node = findNode(graph, item.node_id);
+      if (node.type === "Journey") {
+        throw blocked(
+          "Journey states are computed automatically from their Interactions and cannot be set manually."
+        );
+      }
+      return { item, index, tier: STATUS_TIER[node.type] ?? 99 };
+    })
+    .sort((a, b) => a.tier - b.tier || a.index - b.index)
+    .map((row) => row.item);
+}
+
 export function updateNodeStatus(args: {
+  node_id?: string;
+  new_status?: string;
+  revisions?: StatusRevision[];
+}): Record<string, unknown> {
+  const normalized = normalizeStatusArgs(args);
+  if (normalized.mode === "single") {
+    return applyOneStatus(normalized.items[0]);
+  }
+  const ordered = orderStatusRevisions(normalized.items);
+  const applied: Record<string, unknown>[] = [];
+  for (const rev of ordered) {
+    try {
+      applied.push(applyOneStatus(rev));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const reason = message.replace(/^Blocked:\s*/, "");
+      const appliedSummary = applied
+        .map((row) => `${String(row.node_id)} (${String(row.new_state)})`)
+        .join(", ");
+      throw new Error(
+        `Blocked: ${reason} Ordered status stopped on "${rev.node_id}"` +
+          (appliedSummary
+            ? ` after applying: ${appliedSummary}. Earlier nodes stay transitioned.`
+            : " before any node in the revision was transitioned.")
+      );
+    }
+  }
+  const changed = new Set<string>();
+  for (const row of applied) {
+    const files = row.changed_files;
+    if (Array.isArray(files)) {
+      for (const file of files) changed.add(String(file));
+    }
+  }
+  const last = applied[applied.length - 1] ?? {};
+  return {
+    ordered: true,
+    applied,
+    stopped_on: null,
+    journeys_recomputed: last.journeys_recomputed ?? [],
+    stability_recomputed: last.stability_recomputed ?? [],
+    changed_files: [...changed],
+  };
+}
+
+function applyOneStatus(args: {
   node_id: string;
   new_status: string;
 }): Record<string, unknown> {

@@ -883,13 +883,19 @@ export function countUncheckedBoxes(
   return countCheckboxesInText(readMarkdown(node, slot)).unchecked;
 }
 
+/** Treat lone CR (open_next copies) and CRLF as line breaks. */
+function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 /** Counts markdown task-list checkboxes in a territory body or full MDX string. */
 export function countCheckboxesInText(text: string): {
   unchecked: number;
   checked: number;
 } {
-  const unchecked = text.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0;
-  const checked = text.match(/^\s*[-*+]\s+\[[xX]\]/gm)?.length ?? 0;
+  const normalized = normalizeNewlines(text);
+  const unchecked = normalized.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0;
+  const checked = normalized.match(/^\s*[-*+]\s+\[[xX]\]/gm)?.length ?? 0;
   return { unchecked, checked };
 }
 
@@ -897,6 +903,17 @@ export function countCheckboxesInText(text: string): {
 export function isChecklistComplete(text: string): boolean {
   const { unchecked, checked } = countCheckboxesInText(text);
   return checked > 0 && unchecked === 0;
+}
+
+/** Sorted task-list labels, ignoring checked state. */
+export function checkboxLabels(text: string): string[] {
+  const labels: string[] = [];
+  for (const line of normalizeNewlines(text).split("\n")) {
+    const match = line.match(/^\s*[-*+]\s+\[[ xX]\]\s+(.*)$/);
+    if (match) labels.push(match[1].trim());
+  }
+  labels.sort();
+  return labels;
 }
 
 /** Splits raw territory MDX into YAML frontmatter block and body. */
