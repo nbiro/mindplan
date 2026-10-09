@@ -26,7 +26,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 ## Hard rules (plan-only)
 
-- **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries for Plan Review — prefer leaving that to the build session unless the user asks).
+- **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries — prefer leaving that to the build session unless the user asks).
 - **No implementation pipeline** — do not move Foundations/Interactions/Interfaces to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
 - **Allowed states** — write contracts at `draft`. When the contracts are real, self-`ready` the revision in one ordered `revisions` call. Do not spawn a Plan Reviewer. `review-work` decides at ship time whether a Reviewer is due. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
@@ -96,7 +96,7 @@ When the graph matches the user’s product model and territory is a full contra
 2. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
 3. Show or offer `export_mindplan_view` so humans can review the map.
 
-## Shipping a plan (Plan Review loop → ready)
+## Shipping a plan (self-ready)
 
 When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means self-`ready` and stop. It is not the build-pipeline `ship` transition, and it does not spawn a Reviewer.
 

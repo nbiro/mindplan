@@ -509,7 +509,7 @@ A Foundation, Interaction, or Interface MUST NOT transition to `ship` while its 
 
 Atomic Ops are a **ship-time ledger**: the record confirmed before `ship` / `resolved`, not a plan and not progress narration. The server does not restrict when boxes may be checked, including checking every box while the node is still `draft`, `ready`, or `in-progress`. The Completion Check at ship is the only checklist gate.
 
-Rationale: all boxes checked means build is done — that posture belongs in `in-review` or later. Completing the checklist while still “building” is an invalid state (either DoD is incomplete, or the agent forgot to request review).
+Rationale: the ledger is only meaningful at the moment it is relied on. Blocking `ship` on an unchecked item keeps “done” honest without dictating when an agent ticks boxes while it works.
 
 ### 5.7 Rule 6 — No Ghost Bugs
 
