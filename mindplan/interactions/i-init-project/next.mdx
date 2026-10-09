@@ -4,7 +4,7 @@ type: Interaction
 title: "Init project"
 description: "Scaffold mindplan territory, agent playbook and skills, and the short AGENTS.md / Cursor stub."
 state: in-review
-updated_at: 2026-10-09T22:22:55.007Z
+updated_at: 2026-10-09T22:26:53.844Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -18,7 +18,7 @@ implements:
 
 
 
-# Init (playbook stub)
+# Init project
 
 ## Purpose
 
@@ -56,17 +56,15 @@ Depends on: `f-territory-store`, `f-source-index`.
 - No `--layout` flag remains
 - Verified via `npm test` / smoke
 
+
 ## Atomic Ops
 
-- [ ] Install the stub template into `AGENTS.md` and the Cursor rule; update the rule description
-- [ ] Keep playbook, skills, and migration installers unchanged
-- [ ] Verified via `npm test`
+- [x] Install the stub template into `AGENTS.md` and the Cursor rule; update the rule description
+- [x] Keep playbook, skills, and migration installers unchanged
+- [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract

@@ -4,7 +4,7 @@ type: Foundation
 title: "Graph search"
 description: "Infra — ranks and expands Interaction-centric graph neighborhoods."
 state: in-review
-updated_at: 2026-10-09T22:22:53.912Z
+updated_at: 2026-10-09T22:26:53.269Z
 depends_on:
   - f-domain-model
 implements:
@@ -40,17 +40,15 @@ Depends on: `f-domain-model`.
 - 1-hop neighborhoods include `exposes` and `leads_to` neighbors
 - Verified via `npm test` (`search.test.mjs`)
 
+
 ## Atomic Ops
 
-- [ ] Ensure ranking/neighborhood work for Interaction and Interface once types exist; add fixtures for `exposes`/`leads_to` neighbors
-- [ ] Remove any Interaction-only fixtures from search tests; keep retired-node and find-limit behavior
-- [ ] Verified via `npm test`
+- [x] Ensure ranking/neighborhood work for Interaction and Interface once types exist; add fixtures for `exposes`/`leads_to` neighbors
+- [x] Remove any Interaction-only fixtures from search tests; keep retired-node and find-limit behavior
+- [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _Schemas and diagrams go in `next-attachments/`._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract

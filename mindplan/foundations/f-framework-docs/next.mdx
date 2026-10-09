@@ -4,7 +4,7 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — normative SPEC, README, and agent templates (playbook, skills, integrations)."
 state: in-review
-updated_at: 2026-10-09T22:22:54.188Z
+updated_at: 2026-10-09T22:26:53.393Z
 depends_on:
   - f-domain-model
 implements:
@@ -17,7 +17,7 @@ role: infra
 
 
 
-# Framework documentation (plain-language taxonomy)
+# Framework docs
 
 ## Purpose
 
@@ -51,7 +51,7 @@ Links / states / rules get the same plain gloss in SPEC, README, and playbook.
 - **Interaction size test:** one actor goal; verb + object without "and"; shippable alone.
 - **Interface grain:** one Interface per actor + delivery mechanism (app or channel). Test: "Would a user call this a different app or channel?" Pages/tabs/commands inside it are mounts, not separate Interfaces. Console example: one console web Interface, not one per page.
 - **Naming:** title = stable name (action phrase for Interactions, noun otherwise); description = what it is/does now; revision notes only in `next.mdx` body.
-- **Role fallback:** Assembler only for runtimes that compose and run nodes. Docs, CI config, and other misfits → Infra. No hybrid tags like "Assembler/docs".
+- **Role:** Infra — docs and templates are shared substrate, not a deployable Assembler runtime.
 
 ### Talking to the user
 
@@ -59,7 +59,7 @@ Playbook section: use plain words with the user; keep type names and ids for too
 
 ### Out of scope for this evolution
 
-Cleaning up this repo's own graph (changelog titles, duplicate steer Interaction, per-page console Interfaces, re-roling this Foundation to Infra) is a separate follow-up.
+This evolution completes the graph cleanup: re-role this Foundation to Infra and use a stable title.
 
 Depends on: `f-domain-model`.
 
@@ -74,23 +74,22 @@ Depends on: `f-domain-model`.
 - Prior systems-dialect / ownership / proportional-review contracts still hold
 - Installed copies synced via `init -f`
 
+
 ## Atomic Ops
 
-- [ ] Add SPEC §2 glossary; sharpen Interface grain + naming + role fallback
-- [ ] Update playbook: taxonomy wording, Breaking down work, Talking to the user
-- [ ] Update define-entities skill (Step 0, sizing, grain, naming, role, Common mistakes)
-- [ ] Add reuse example to define-entities/examples.md
-- [ ] Update plan-project Classify scope for breakdown + plain-word confirmation
-- [ ] Add README In plain words + re-caption scrambled eggs
-- [ ] Sync installed agent copies via `init -f`
-- [ ] Verified by Reviewer against the contract
+- [x] Add SPEC §2 glossary; sharpen Interface grain + naming + role fallback
+- [x] Update playbook: taxonomy wording, Breaking down work, Talking to the user
+- [x] Update define-entities skill (Step 0, sizing, grain, naming, role, Common mistakes)
+- [x] Add reuse example to define-entities/examples.md
+- [x] Update plan-project Classify scope for breakdown + plain-word confirmation
+- [x] Add README In plain words + re-caption scrambled eggs
+- [x] Sync installed agent copies via `init -f`
+- [x] Verified by Reviewer against the contract
+- [x] Title Framework docs; description current-purpose
+- [x] Title Framework docs; H1 and description match current purpose
+- [x] Role reclassified to infra (docs are not an Assembler runtime)
+- [x] Verified by Reviewer against the role and naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Title Framework docs; description current-purpose
-- [x] Role reclassified to infra (docs are not an Assembler runtime)
-- [x] Verified by Reviewer against the role and naming contract

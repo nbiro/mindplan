@@ -4,7 +4,7 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — validation-at-transition rules: ghosts, Infrastructure/Behavior First, Completion Check, Interaction Independence, taxonomy."
 state: in-review
-updated_at: 2026-10-09T22:22:53.803Z
+updated_at: 2026-10-09T22:26:53.208Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -16,7 +16,7 @@ role: infra
 
 
 
-# Compiler rules (no open-checklist rule)
+# Compiler rules
 
 ## Purpose
 
@@ -51,17 +51,15 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - No export named `assertOpenChecklistWhileBuilding` or `isInheritedCheckedChecklist` remains
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
-- [ ] Remove the open-checklist-while-building rule and its inherited-checklist exception
-- [ ] Keep Completion Check, Impact shape, implements, and import-matrix gates
-- [ ] Verified via `npm test`
+- [x] Remove the open-checklist-while-building rule and its inherited-checklist exception
+- [x] Keep Completion Check, Impact shape, implements, and import-matrix gates
+- [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract

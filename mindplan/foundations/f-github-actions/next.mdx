@@ -4,7 +4,7 @@ type: Foundation
 title: "GitHub Actions"
 description: "Infra — CI workflow for default mindplan-mcp check."
 state: in-review
-updated_at: 2026-10-09T22:22:54.635Z
+updated_at: 2026-10-09T22:26:53.575Z
 depends_on:
   - f-npm-registry
 implements:
@@ -15,7 +15,7 @@ role: infra
 
 
 
-# GitHub Actions (file ownership)
+# GitHub Actions
 
 ## Purpose
 
@@ -43,18 +43,17 @@ Depends on: `f-npm-registry`.
 - Territory documents ownership check, not package presence
 - Claims `ci.yml` via implements after land
 
+
 ## Atomic Ops
 
-- [ ] Update territory to describe ownership check instead of packages
-- [ ] Confirm `.github/workflows/ci.yml` still invokes bare `check`
-- [ ] Claim `ci.yml` with `set_implementation_files` after migration
+- [x] Update territory to describe ownership check instead of packages
+- [x] Confirm `.github/workflows/ci.yml` still invokes bare `check`
+- [x] Claim `ci.yml` with `set_implementation_files` after migration
+- [x] Title GitHub Actions; description current-purpose
+- [x] Title GitHub Actions; H1 and description match current purpose
+- [x] Role reclassified to infra (CI config is not an Assembler runtime)
+- [x] Verified by Reviewer against the role and naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Title GitHub Actions; description current-purpose
-- [x] Role reclassified to infra (CI config is not an Assembler runtime)
-- [x] Verified by Reviewer against the role and naming contract

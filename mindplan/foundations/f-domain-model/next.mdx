@@ -4,7 +4,7 @@ type: Foundation
 title: "Domain model"
 description: "Infra — node types, edges, implements claims, and Foundation roles."
 state: in-review
-updated_at: 2026-10-09T22:22:53.600Z
+updated_at: 2026-10-09T22:26:53.045Z
 implements:
   - src/foundations/f-domain-model/
 role: infra
@@ -12,7 +12,7 @@ role: infra
 
 
 
-# Domain model (implements + role)
+# Domain model
 
 ## Purpose
 
@@ -38,18 +38,16 @@ Depends on: none.
 - `GRAPH_VERSION` remains `1`
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
-- [ ] Add `FoundationRole` and optional `role` on Foundation / next
-- [ ] Add `implements?: string[]` on Foundation, Interaction, Interface / next
-- [ ] Drop prescribed-package ownership types if any remain
-- [ ] Verified via `npm test`
+- [x] Add `FoundationRole` and optional `role` on Foundation / next
+- [x] Add `implements?: string[]` on Foundation, Interaction, Interface / next
+- [x] Drop prescribed-package ownership types if any remain
+- [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract

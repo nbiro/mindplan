@@ -4,7 +4,7 @@ type: Foundation
 title: "View projection"
 description: "Infra — Mermaid/DOT projection and the auto-generated mindplan/map.md snapshot."
 state: in-review
-updated_at: 2026-10-09T22:22:54.076Z
+updated_at: 2026-10-09T22:26:53.345Z
 depends_on:
   - f-domain-model
   - f-graph-search
@@ -16,7 +16,7 @@ role: infra
 
 
 
-# View projection (map legend)
+# View projection
 
 ## Purpose
 
@@ -42,17 +42,15 @@ Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 - Mermaid/DOT export APIs unchanged for callers
 - Smoke / view tests that assert on `map.md` still pass
 
+
 ## Atomic Ops
 
-- [ ] Add How to read this legend in `persistMindPlanMap`
-- [ ] Build and run tests (`npm test`) confirming map.md assertions still pass
-- [ ] Verified by Reviewer against the contract
+- [x] Add How to read this legend in `persistMindPlanMap`
+- [x] Build and run tests (`npm test`) confirming map.md assertions still pass
+- [x] Verified by Reviewer against the contract
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract

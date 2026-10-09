@@ -4,7 +4,7 @@ type: Foundation
 title: "Territory store"
 description: "Infra — load and persist mindplan territory, frontmatter, implements, and next slots."
 state: in-review
-updated_at: 2026-10-09T22:22:53.725Z
+updated_at: 2026-10-09T22:26:53.147Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -17,7 +17,7 @@ role: infra
 
 
 
-# Territory store (implements + role)
+# Territory store
 
 ## Purpose
 
@@ -44,23 +44,21 @@ Depends on: `f-domain-model`.
 - Existing load/patch APIs keep working
 - Verified via `npm test`
 
-## Atomic Ops
-- [ ] Extend openNextSlot/promoteNextSlot fixed field lists with `implements` and `role`
-- [ ] Stop scaffolding `src/<type>/<id>/.gitkeep` on create
-- [ ] Update territory scaffold text away from prescribed packages
-- [ ] Hand config ownership to `f-source-index` (move or delete local config)
-- [ ] Verified via `npm test`
-
 
 ## Impact
 
 Persistence, implements, role, and open_next/promote are unchanged. Checkbox counting now treats a lone carriage return as a line break, which is how open_next copies some checklists, so an inherited complete next checklist matches the live contract.
 
+## Atomic Ops
+
+- [x] Extend openNextSlot/promoteNextSlot fixed field lists with `implements` and `role`
+- [x] Stop scaffolding `src/<type>/<id>/.gitkeep` on create
+- [x] Update territory scaffold text away from prescribed packages
+- [x] Hand config ownership to `f-source-index` (move or delete local config)
+- [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
+
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract

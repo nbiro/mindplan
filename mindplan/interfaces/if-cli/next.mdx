@@ -4,7 +4,7 @@ type: Interface
 title: "CLI"
 description: "CLI entry for init, check, and view/export commands."
 state: in-review
-updated_at: 2026-10-09T22:22:55.103Z
+updated_at: 2026-10-09T22:26:53.903Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -17,7 +17,7 @@ implements:
 
 
 
-# CLI (sources config)
+# CLI
 
 ## Purpose
 
@@ -48,24 +48,22 @@ Intended files: `src/interfaces/if-cli/`
 - No domain logic under this Interface
 - Verified via smoke
 
-## Atomic Ops
-
-- [ ] Remove `--layout` from argv/help
-- [ ] Surface sources migration output from init
-- [ ] Verified via smoke
 
 ## Impact
 
 Commands, flags, and exit codes are unchanged. Init’s closing tips change to match the stub install: the tip shown when an existing `AGENTS.md` was kept now tells the maintainer to add the MindPlan stub (orient first, follow the MCP server instructions) rather than reference the full playbook. The tip claiming Plan Review (`draft → ready`) is mandatory is removed — it was already false after self-ready shipped. The `--base` help line describes the same opt-in dirty-src check.
 
+## Atomic Ops
+
+- [x] Remove `--layout` from argv/help
+- [x] Surface sources migration output from init
+- [x] Verified via smoke
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
+
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
 
 ## Impact
 

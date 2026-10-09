@@ -4,7 +4,7 @@ type: Interface
 title: "MCP tools"
 description: "MCP tool surface wiring orient, steer, export, and related graph tools."
 state: in-review
-updated_at: 2026-10-09T22:22:55.188Z
+updated_at: 2026-10-09T22:26:53.958Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -20,7 +20,7 @@ implements:
 
 
 
-# MCP tools (include_retired on blast radius)
+# MCP tools
 
 ## Purpose
 
@@ -53,20 +53,18 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - Existing tools keep names/envelopes; no domain logic under this Interface
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
-- [ ] Add `include_retired` to `get_blast_radius` schema and forward it
-- [ ] Update orient / context / blast-radius tool descriptions
-- [ ] Verified via MCP smoke
+- [x] Add `include_retired` to `get_blast_radius` schema and forward it
+- [x] Update orient / context / blast-radius tool descriptions
+- [x] Verified via MCP smoke
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
 
 ## Impact
 

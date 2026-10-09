@@ -4,7 +4,7 @@ type: Interaction
 title: "Steer the plan"
 description: "Compiler-gated mutate tools: status, link/unlink, open_next, territory patches, and ordered revisions. Exposed by MCP, console API, and the console web app."
 state: in-review
-updated_at: 2026-10-09T22:22:54.813Z
+updated_at: 2026-10-09T22:26:53.711Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -22,7 +22,7 @@ implements:
 
 
 
-# Steer (checklist edits unrestricted while building)
+# Steer the plan
 
 ## Purpose
 
@@ -70,18 +70,16 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - The first `Blocked:` stops the call; earlier nodes stay transitioned; later nodes are not written
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
-- [ ] Remove the open-checklist check from `patch_node_territory`
-- [ ] Keep shipped-scope freeze, `set_implementation_files`, and ordered `revisions`
-- [ ] Verified via `npm test`
+- [x] Remove the open-checklist check from `patch_node_territory`
+- [x] Keep shipped-scope freeze, `set_implementation_files`, and ordered `revisions`
+- [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose
+- [x] belongs_to j-plan-console in addition to j-territory-sdlc
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] belongs_to j-plan-console in addition to j-territory-sdlc
-- [x] Verified by Reviewer against the naming contract

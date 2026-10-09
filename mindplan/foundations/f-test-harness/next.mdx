@@ -4,7 +4,7 @@ type: Foundation
 title: "Test harness"
 description: "Infra — smoke, view, search, and check tests for the MindPlan server."
 state: in-review
-updated_at: 2026-10-09T22:22:54.534Z
+updated_at: 2026-10-09T22:26:53.500Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -14,7 +14,7 @@ role: infra
 
 
 
-# Test harness (released presence)
+# Test harness
 
 ## Purpose
 
@@ -38,20 +38,18 @@ Depends on: `f-mcp-runtime`.
 - New released-presence cases pass under `npm test`
 - Existing ownership and import-matrix cases still fail closed when violated
 
-## Atomic Ops
-
-- [ ] Add released-live presence cases to `check.test.mjs`
-- [ ] Verified via `npm test`
 
 ## Impact
 
 The harness contract is unchanged: it still covers exclusivity, coverage, presence (including the released-live skip), leftovers, the import matrix, dirty-src, and smoke. Its cases follow behaviors owned elsewhere in this revision. Smoke and `check.test.mjs` drop the “Checklist Complete” expectations (the compiler, steer, and check no longer reject a fully checked checklist while building) and instead assert that a fully checked `in-progress` node is accepted and that `ship` with an unchecked box is still Blocked. `check.test.mjs` adds `--base` cases: an uncommitted edit to a `stable` owner with no next passes, and one whose next is `ready` still fails. Smoke asserts that `init` writes the stub into `AGENTS.md` and the Cursor rule, and that the MCP `initialize` result carries the playbook as `instructions`.
 
+## Atomic Ops
+
+- [x] Add released-live presence cases to `check.test.mjs`
+- [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
+
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract

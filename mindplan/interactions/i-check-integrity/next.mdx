@@ -4,7 +4,7 @@ type: Interaction
 title: "Check integrity"
 description: "Offline graph load, ownership, coverage, leftovers, and import-matrix check; optional dirty-src vs base."
 state: in-review
-updated_at: 2026-10-09T22:22:54.899Z
+updated_at: 2026-10-09T22:26:53.775Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -18,7 +18,7 @@ implements:
 
 
 
-# Integrity check (ownership only)
+# Check integrity
 
 ## Purpose
 
@@ -57,17 +57,15 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - Coverage, exclusivity, leftovers, and import matrix unchanged
 - Exit 0/1 with `Blocked:` lines
 
+
 ## Atomic Ops
 
-- [ ] Remove the checklist scan from default check
-- [ ] Allow uncommitted edits to shipped owners under `--base`
-- [ ] Verified via `npm test` / check harness
+- [x] Remove the checklist scan from default check
+- [x] Allow uncommitted edits to shipped owners under `--base`
+- [x] Verified via `npm test` / check harness
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Atomic Ops
-
-- [x] Stable title and description (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
