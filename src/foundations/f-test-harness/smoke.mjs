@@ -1581,6 +1581,29 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
   new_status: "ready",
 });
 
+// --- open_next on a CRLF body keeps line terminators intact (bug-open-next-crlf-checklist) ---
+{
+  const fDbCurrent = territoryPath("foundations", "f-db");
+  const lf = fs.readFileSync(fDbCurrent, "utf-8").replace(/\r\n/g, "\n");
+  fs.writeFileSync(fDbCurrent, lf.replace(/\n/g, "\r\n"));
+  const checkedBefore = (lf.match(/^\s*[-*+]\s+\[[xX]\]/gm) ?? []).length;
+  await expectOk("open_next f-db (CRLF body)", "open_next", { node_id: "f-db" });
+  const nextRaw = fs.readFileSync(nextTerritoryPath("foundations", "f-db"), "utf-8");
+  const items = nextRaw.split("\r\n").filter((line) => /^\s*[-*+]\s+\[ \]/.test(line)).length;
+  if (checkedBefore === 0) {
+    failures++;
+    console.log("FAIL CRLF open_next fixture has no checked items to reset");
+  } else if (/\r(?!\n)/.test(nextRaw)) {
+    failures++;
+    console.log("FAIL open_next on CRLF body left a lone CR in next.mdx");
+  } else if (items !== checkedBefore) {
+    failures++;
+    console.log(`FAIL open_next on CRLF body: expected ${checkedBefore} reset items on their own lines, got ${items}`);
+  } else console.log("ok   open_next on CRLF body keeps CRLF and one reset item per line");
+  await expectOk("discard_next f-db (CRLF body)", "discard_next", { node_id: "f-db" });
+  fs.writeFileSync(fDbCurrent, lf);
+}
+
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();
 process.exit(failures === 0 ? 0 : 1);

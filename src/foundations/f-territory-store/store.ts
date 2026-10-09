@@ -1165,7 +1165,8 @@ export function openNextSlot(
   frontmatterLines.push("---");
 
   // New evolution starts with an open DoD — do not inherit completed checkboxes from current.
-  const nextBody = split.body.replace(/^\s*([-*+]\s+)\[[xX]\]/gm, "$1[ ]");
+  // Horizontal whitespace only: `^` in /m also matches after a lone `\r`, and `\s*` would swallow the `\n` of CRLF.
+  const nextBody = split.body.replace(/^([ \t]*[-*+][ \t]+)\[[xX]\]/gm, "$1[ ]");
   writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${nextBody}`, "next");
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");

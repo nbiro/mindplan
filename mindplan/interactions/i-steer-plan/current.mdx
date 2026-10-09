@@ -1,12 +1,12 @@
 ---
 id: i-steer-plan
 type: Interaction
-title: "Steer (ordered revision status)"
-description: "update_node_status accepts a revision list, applies Foundations then Interactions then Interfaces then Bugs, and stops on the first Blocked without rolling back earlier nodes."
+title: "Steer (checklist edits unrestricted while building)"
+description: "Compiler-gated mutate tools; patch_node_territory no longer rejects a fully checked checklist while building; ordered revisions status call unchanged."
 state: stable
-shipped_at: 2026-10-07T21:14:37.753Z
+shipped_at: 2026-10-09T20:31:14.873Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-07T21:14:37.753Z
+updated_at: 2026-10-09T20:31:14.873Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -22,15 +22,15 @@ implements:
 ---
 
 
-
-
-# Steer (ordered revision status)
+# Steer (checklist edits unrestricted while building)
 
 ## Purpose
 
-Mutate the graph through compiler-gated tools. Keep `set_implementation_files`, Foundation `role` on `create_node`, and no package scaffolds. Claim validation uses `f-source-index`.
+Mutate the graph through compiler-gated tools: `create_node`, `link_nodes`, `unlink_nodes`, `set_implementation_files`, `open_next`, `discard_next`, `patch_node_territory`, `update_node_status`, and `force_unship`. Keep Foundation `role` on `create_node`, no package scaffolds, and claim validation through `f-source-index`.
 
-`update_node_status` still transitions one node when called with `node_id` and `new_status`. It also accepts `revisions`: a list of `{ node_id, new_status }`, mutually exclusive with the single-node fields. The server orders Foundations, then Interactions, then Interfaces, then Bugs, preserves caller order within a tier, applies each transition against the graph as updated by the previous one, and stops on the first `Blocked:`. Earlier nodes stay transitioned. The error names the stopped node and the nodes already applied, and begins with `Blocked:`.
+`patch_node_territory` writes title, description, role, body, and checkbox toggles subject to the shipped-scope freeze. It no longer rejects a body or toggle that leaves every checkbox checked while the slot is still building — checkbox state is a ledger that Completion Check reads at `ship` / `resolved`, not a progress gate.
+
+`update_node_status` transitions one node when called with `node_id` and `new_status`. It also accepts `revisions`: a list of `{ node_id, new_status }`, mutually exclusive with the single-node fields. The server orders Foundations, then Interactions, then Interfaces, then Bugs, preserves caller order within a tier, applies each transition against the graph as updated by the previous one, and stops on the first `Blocked:`. Earlier nodes stay transitioned. The error names the stopped node and the nodes already applied, and begins with `Blocked:`.
 
 ## Actor & Trigger
 
@@ -42,6 +42,9 @@ Mutate the graph through compiler-gated tools. Keep `set_implementation_files`, 
 Intended files: `src/interactions/i-steer-plan/`
 
 - Keep existing mutate tools + map refresh via `f-view-projection`
+- `patch_node_territory`:
+  - Keep shipped-scope freeze on title/description/role and frontmatter split validation
+  - Drop the call to the compiler’s open-checklist rule; any checkbox state is accepted while building
 - Keep `set_implementation_files(node_id, files, slot?)`:
   - Pre-ship writes `current`; shipped writes only open `next` (else Blocked → open_next); retired may only shrink
   - Reject bad paths (`..`, under `mindplan/`) and immediate ownership conflicts
@@ -57,20 +60,20 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 
 ## Acceptance Criteria
 
+- `patch_node_territory` toggling the last unchecked box on an `in-progress` node succeeds and writes the file
+- `patch_node_territory` title/description edits on a shipped Interaction’s `current` slot are still Blocked
 - `set_implementation_files` enforces slot rules and rejects conflicts
 - Foundation create without role is Blocked
 - No package scaffolds on create
 - Single-node `update_node_status` behavior is unchanged
 - A `revisions` call applies Foundations before Interactions before Interfaces even when the caller lists them in another order
 - The first `Blocked:` stops the call; earlier nodes stay transitioned; later nodes are not written
-- Existing mutate behavior preserved
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Accept `revisions` and order Foundations, Interactions, Interfaces, then Bugs
-- [x] Stop on the first Blocked without rolling back earlier nodes
-- [x] Keep single-node status and `set_implementation_files`
+- [x] Remove the open-checklist check from `patch_node_territory`
+- [x] Keep shipped-scope freeze, `set_implementation_files`, and ordered `revisions`
 - [x] Verified via `npm test`
 
 ## Attachments

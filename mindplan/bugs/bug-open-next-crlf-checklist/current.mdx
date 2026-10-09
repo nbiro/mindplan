@@ -3,9 +3,9 @@ id: bug-open-next-crlf-checklist
 type: Bug
 title: "open_next leaves lone CR line breaks in reset checklists"
 description: "On CRLF territory, open_next's checkbox reset swallows the LF before each checklist item, so next.mdx mixes CRLF and lone CR and the checklist renders as one line."
-state: triaged
+state: resolved
 created_at: 2026-10-09T20:08:05.574Z
-updated_at: 2026-10-09T20:08:22.805Z
+updated_at: 2026-10-09T20:31:10.162Z
 affects:
   - f-territory-store
 ---
@@ -30,9 +30,9 @@ affects:
 
 ## Fix Checklist
 
-- [ ] Anchor the reset on horizontal whitespace only (`/^([ \t]*[-*+][ \t]+)\[[xX]\]/gm`) so line terminators are never consumed
-- [ ] Regression test: `open_next` on a CRLF body with checked items yields only CRLF terminators and one item per line
-- [ ] Verified via `npm test`
+- [x] Anchor the reset on horizontal whitespace only (`/^([ \t]*[-*+][ \t]+)\[[xX]\]/gm`) so line terminators are never consumed
+- [x] Regression test: `open_next` on a CRLF body with checked items yields only CRLF terminators and one item per line
+- [x] Verified via `npm test`
 
 ## Attachments
 
