@@ -1,14 +1,15 @@
 ---
 id: i-steer-plan
 type: Interaction
-title: "Steer (checklist edits unrestricted while building)"
-description: "Compiler-gated mutate tools; patch_node_territory no longer rejects a fully checked checklist while building; ordered revisions status call unchanged."
+title: "Steer the plan"
+description: "Compiler-gated mutate tools: status, link/unlink, open_next, territory patches, and ordered revisions. Exposed by MCP, console API, and the console web app."
 state: stable
-shipped_at: 2026-10-09T20:31:14.873Z
+shipped_at: 2026-10-09T22:27:39.580Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-09T20:31:14.873Z
+updated_at: 2026-10-09T22:27:39.580Z
 belongs_to:
   - j-territory-sdlc
+  - j-plan-console
 depends_on:
   - f-compiler-rules
   - f-graph-search
@@ -22,7 +23,9 @@ implements:
 ---
 
 
-# Steer (checklist edits unrestricted while building)
+
+
+# Steer the plan
 
 ## Purpose
 
@@ -70,11 +73,15 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - The first `Blocked:` stops the call; earlier nodes stay transitioned; later nodes are not written
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
 - [x] Remove the open-checklist check from `patch_node_territory`
 - [x] Keep shipped-scope freeze, `set_implementation_files`, and ordered `revisions`
 - [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose
+- [x] belongs_to j-plan-console in addition to j-territory-sdlc
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 

@@ -1,12 +1,12 @@
 ---
 id: f-source-index
 type: Foundation
-title: "Source index (released claim entries)"
-description: "Infra — sources/exclude, universe, claim expansion, ownership release helper, import lexer/resolver."
+title: "Source index"
+description: "Infra — sources/exclude universe, claim expansion, ownership release, and import resolution."
 state: stable
-shipped_at: 2026-09-24T07:44:51.582Z
+shipped_at: 2026-10-09T22:27:38.978Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-09-24T07:44:51.582Z
+updated_at: 2026-10-09T22:27:38.978Z
 depends_on:
   - f-domain-model
 implements:
@@ -15,7 +15,9 @@ role: infra
 ---
 
 
-# Source index (released claim entries)
+
+
+# Source index
 
 ## Purpose
 
@@ -47,11 +49,14 @@ Depends on: `f-domain-model` only.
 - Config, universe, expand, ownership, lexer, and resolver remain the substrate for check/steer/orient/init
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
 - [x] Add and export `releasedClaimEntries` from ownership.ts
 - [x] Document release semantics in Shared Substrate Spec (this slot)
 - [x] Verified via `npm test` (check harness covers presence skip)
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 

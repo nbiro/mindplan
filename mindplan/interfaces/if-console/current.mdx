@@ -1,0 +1,58 @@
+---
+id: if-console
+type: Interface
+title: "Console"
+description: "Page — human web console app exposing browse, status, graph, model, and steer actions."
+state: ready
+created_at: 2026-10-09T22:21:04.777Z
+updated_at: 2026-10-09T22:21:39.969Z
+depends_on:
+  - f-console-shell
+  - f-design-system
+  - f-xyflow
+  - f-nextjs
+exposes:
+  - i-browse-territory
+  - i-view-status
+  - i-explore-graph
+  - i-model-plan
+  - i-steer-plan
+---
+
+# Console
+
+## Purpose
+
+One web entry point for humans to see and steer a repo's MindPlan. Pages and tabs (territory, status, graph, model, mutate) are routes this Interface mounts — not separate Interfaces.
+
+## Kind
+
+Page
+
+## Exposed Interactions
+
+- `i-browse-territory` — territory / PRD browse
+- `i-view-status` — delivery status board
+- `i-explore-graph` — interactive architecture canvas
+- `i-model-plan` — create and link plan entities
+- `i-steer-plan` — compiler-gated mutate (shared with MCP and console API; no console-only duplicate)
+
+## Spec
+
+App Router mounts Interaction surfaces; Interface does not own core domain logic or screen bodies. Shell chrome and nav live with `f-console-shell` / `f-design-system`; graph chrome uses `f-xyflow`. Mutate flows call steer via `f-console-client` → `if-console-api` (HTTP channel stays a separate Interface).
+
+## Acceptance Criteria
+
+- One Interface for the console web app; no per-page Interfaces
+- Exposes the five console actions above, including reused `i-steer-plan`
+- Thin mounts only; no duplicated domain / screen bodies
+
+## Atomic Ops
+
+- [ ] Thin wiring for each `exposes` target (Page: screen file wires Shell + guards + nav only)
+- [ ] No duplicated domain logic / behavior UI that belongs in an exposed Interaction
+- [ ] Page/UI only: shell chrome only — not feature screen bodies
+
+## Attachments
+
+_None._
