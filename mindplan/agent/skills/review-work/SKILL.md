@@ -6,7 +6,7 @@ description: >-
   source and at most one source; otherwise it MUST spawn one independent Reviewer
   who judges source contracts and the diff together. Covers when the gate is due,
   check + typecheck before handoff, the revision snapshot, the Reviewer verdict,
-  ship-deferral, and Reject → fix → fresh Reviewer. Do not write Review Notes
+  ship-deferral, and Reject → fix → resume the same Reviewer. Do not write Review Notes
   into territory.
 ---
 
@@ -44,16 +44,18 @@ Other nodes at `in-progress` / `in-review` / Bug `fixing` are mergeable. They ne
 1. Move the successor set (sources only, since neighbors have no `next`) to `in-review` in one ordered `revisions` call.
 2. Freeze the revision snapshot:
    `{base_sha, head_sha, clean_tree, changed_files[], sources[], neighbors[], unaffected[]}`.
-3. **Spawn** one Reviewer for the whole revision (not per node). Pass the snapshot and that check and typecheck are green. On Cursor, use the Task tool and point the subagent at `.cursor/skills/mindplan-review-work/`.
+3. **Spawn** one Reviewer for the whole revision (not per node). Pass the snapshot and that check and typecheck are green. On Cursor, use the Task tool and point the subagent at `.cursor/skills/mindplan-review-work/`. Keep the Reviewer's agent id: you resume it after a Reject.
 4. Wait for the verdict.
    - **Approve:** the Reviewer ships. Do not re-ship what it already shipped.
    - **Ship-deferred:** leave the node at `in-review`. When its Foundation deps become `stable`, `ship` it without a new Reviewer, unless HEAD or the tree changed.
-   - **Reject:** fix the Findings, re-run check + typecheck, re-enter the gate, spawn a **fresh** Reviewer. After about three Rejects, escalate to the human.
+   - **Reject:** fix the Findings, re-run check + typecheck, re-freeze the snapshot, and **resume the same Reviewer** (Cursor Task `resume` with its agent id). Hand it the new snapshot and one line per Finding saying how it was addressed. A resumed Reviewer keeps what it already read and verified, so a Reject round costs the delta, not a second full review. Spawn a fresh Reviewer only when resume is unavailable (the host has no resume, or the session is gone). A fresh one gets the previous Findings in its prompt. After about three Rejects, escalate to the human.
 5. Done = Approve with every node shipped or explicitly ship-deferred, or human escalation. Ending the turn with "needs review" when a Reviewer is due and unspawned is not done.
 
 ## Reviewer (spawned subagent)
 
-Run once per spawn, return the verdict, stop.
+Run once per spawn or resume, return the verdict, stop.
+
+**If resumed after a Reject.** You are still independent: the author's fixes and the parent's summary are claims, not evidence. Re-bind to the new snapshot. Confirm each of your previous Findings is actually resolved in the code. Review everything changed since your last `head_sha` in full, including any file that changed since you read it. Reuse your earlier evidence only for files and Atomic Ops the diff since then did not touch. Reject anything new you find, even if it was in scope last round. The verdict format and the single status call are unchanged.
 
 **Preconditions**
 
@@ -99,6 +101,7 @@ Findings: <itemized; per-Atomic-Op evidence for sources on Approve; actionable g
 - Approving checked boxes without independent evidence.
 - Treating neighbors as brand-new contracts, or opening `next` on unaffected nodes.
 - Spawning one Reviewer per node, or per Foundation then Interaction then Interface.
+- Spawning a fresh Reviewer after a Reject when the previous one can be resumed.
 - Soft-approving after a `Blocked:` that is not Infrastructure First or cascading Behavior First.
 - Rejecting, or re-spawning a Reviewer, because Foundation deps are not `stable`.
 - Reviewing your own work in the same session; writing Review Notes into territory.
