@@ -419,7 +419,7 @@ After Approve, the Reviewer advances the successor set with one `update_node_sta
 
 #### Check before review
 
-Before shipping — whether a Reviewer is due (entering `in-review` and spawning, or re-spawning after a Reject) or the agent self-ships (§3.1) — default `mindplan-mcp check` MUST exit 0. Self-`ready` does not require it. Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). The revision’s project typecheck MUST also be green before that handoff. Default check does not invoke the typechecker.
+Before shipping — whether a Reviewer is due (entering `in-review` and spawning, or re-freezing and resuming the same Reviewer after a Reject) or the agent self-ships (§3.1) — default `mindplan-mcp check` MUST exit 0. Self-`ready` does not require it. Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). The revision’s project typecheck MUST also be green before that handoff. Default check does not invoke the typechecker.
 
 ---
 
