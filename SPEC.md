@@ -1213,7 +1213,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] Edges persist in source-node `current.mdx` frontmatter and assemble at runtime per §7; `next.mdx` proposed edges are not live graph edges.
 - [ ] The fifteen-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient.
 - [ ] Mutations are deterministic and atomic per §9.
-- [ ] Source-file/symbol mapping is absent (§1.4) — package roots only.
+- [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
 
 ---
 
