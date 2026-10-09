@@ -45,13 +45,21 @@ For empty or unknown graphs, also call `get_mindplan_graph` once. Prefer `export
 
 ### 2. Classify scope
 
-Decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
+Run the **breakdown recipe** from `define-entities` Step 0 before inventing nodes:
+
+1. Rewrite the ask as: *"<who> can <verb> <object> in <area>, from <entry point>, using <building blocks>."*
+2. Each distinct verb + object → one Interaction candidate (size test: one goal, no "and", shippable alone).
+3. **Reuse before create** — `find_related_nodes` / graph inspect for each area, action, entry point, and building block. Same action from a new entry point → new `exposes`, not a new Interaction. One Interface per actor + channel (not per page/tab).
+4. Confirm the placement with the user **in plain words** before creating anything. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
+5. Missing area → polite refuse: "This needs an area first; is it part of Billing or something new?" Do not silently mint a Journey.
+
+Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
 
 ### 3. Define and link entities
 
 Follow `mindplan/agent/skills/define-entities/`:
 
-1. Journeys first (refuse Interactions with no matching Journey)
+1. Journeys first (refuse Interactions with no matching Journey — plain-word refusal)
 2. Interactions at `draft` (behavior / PRD thinking; links not required yet)
 3. Interfaces that will `exposes` those Interactions
 4. Foundations derived from those drafts (role tags in `description`)
