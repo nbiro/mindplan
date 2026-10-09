@@ -4,9 +4,9 @@ type: Foundation
 title: "Framework docs (systems dialect first)"
 description: "Assembler/docs — the playbook is the short systems dialect (served as MCP server instructions); review is proportional and lives in review-work; neighbors edit in place; Atomic Ops are a ship-time ledger."
 state: stable
-shipped_at: 2026-10-09T20:25:23.643Z
+shipped_at: 2026-10-09T20:37:43.303Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-09T20:25:23.643Z
+updated_at: 2026-10-09T20:37:43.303Z
 depends_on:
   - f-domain-model
 implements:
@@ -15,6 +15,8 @@ implements:
   - templates/
 role: assembler
 ---
+
+
 
 
 # Framework documentation (systems dialect first)
@@ -52,8 +54,8 @@ New `templates/agent/agents-stub.md` is what `i-init-project` installs into root
 ### Review is proportional (SPEC §3.1, §3.7, review-work)
 
 - The agent MAY ship (or resolve) its own revision after default `mindplan-mcp check` and the project typecheck are green, when the revision has **no Foundation source** and **at most one source**.
-- The agent MUST spawn one independent Reviewer when any source is a Foundation, or the revision has two or more sources. One spawn covers the revision; the Reviewer judges source contracts and the diff together.
-- `templates/agent/skills/review-work/SKILL.md` owns everything about that gate: when it is due, check + typecheck before handoff, the revision snapshot handed to the Reviewer, the verdict the Reviewer returns, the ship-deferral carve-out, and Reject → fix → fresh Reviewer. The playbook and integration guides point at it and do not restate it.
+- The agent MUST spawn one independent Reviewer when any source is a Foundation, or the revision has two or more sources. One Reviewer covers the revision, spawned once and resumed after a Reject so a retry re-reviews the fixes, not the whole revision; it judges source contracts and the diff together.
+- `templates/agent/skills/review-work/SKILL.md` owns everything about that gate: when it is due, check + typecheck before handoff, the revision snapshot handed to the Reviewer, the verdict the Reviewer returns, the ship-deferral carve-out, and Reject → fix → resume the same Reviewer (a fresh one only when resume is unavailable). The playbook and integration guides point at it and do not restate it.
 - The verdict format is for the Reviewer only. The parent acts on the outcome: shipped, ship-deferred, or Reject with findings.
 
 ### Neighbors edit in place (SPEC §3.6, §3.7)
@@ -89,6 +91,7 @@ Depends on: `f-domain-model`.
 - SPEC §3.6 and §3.7 define neighbors as in-place edits with no `next` and no impact note
 - SPEC §5.6 and Appendix A no longer describe the open-checklist-while-building rule; Completion Check remains
 - review-work is the only document that describes the Reviewer gate in procedural detail
+- A Reject is followed by resuming the same Reviewer (fresh only when resume is unavailable); the resumed Reviewer re-reviews what changed since its last head and stays independent
 - README and integration guides match
 - Local `AGENTS.md` and `.cursor` copies match the templates
 
@@ -99,6 +102,7 @@ Depends on: `f-domain-model`.
 - [x] Update SPEC §0, §3.1, §3.3, §3.6, §3.7, §5.6, §9.6, §11, Appendix A, and Appendix B
 - [x] Update README, define-entities, plan-project, and integration guides
 - [x] Sync AGENTS.md and `.cursor` rules/skills from templates
+- [x] review-work, SPEC §3.1/§3.7 and this contract: Reject → resume the same Reviewer instead of spawning a fresh one
 
 ## Attachments
 

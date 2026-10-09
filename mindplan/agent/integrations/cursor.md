@@ -51,6 +51,6 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
 
 8. **Git delivery** — always feature branch + PR. Never push to `main`/`master`. Run default `mindplan-mcp check` (and your typecheck) before shipping. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate.
 
-9. **Review** — proportional, and fully described in `.cursor/skills/mindplan-review-work/`. In short: self-ship is allowed for a revision with no Foundation source and at most one source; otherwise spawn one independent Reviewer via the Task / subagent tool.
+9. **Review** — proportional, and fully described in `.cursor/skills/mindplan-review-work/`. In short: self-ship is allowed for a revision with no Foundation source and at most one source; otherwise spawn one independent Reviewer via the Task / subagent tool, and after a Reject resume that same Reviewer (Task `resume` with its agent id) rather than spawning a new one.
 
 10. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
