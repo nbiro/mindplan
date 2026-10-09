@@ -1,0 +1,67 @@
+---
+id: f-compiler-rules
+type: Foundation
+title: "Compiler rules"
+description: "Infra — validation-at-transition rules: ghosts, Infrastructure/Behavior First, Completion Check, Interaction Independence, taxonomy."
+state: in-review
+updated_at: 2026-10-09T22:22:53.803Z
+depends_on:
+  - f-domain-model
+  - f-territory-store
+  - f-source-index
+implements:
+  - src/foundations/f-compiler-rules/
+role: infra
+---
+
+
+
+# Compiler rules (no open-checklist rule)
+
+## Purpose
+
+Infra — MindPlan compiler. The gates that keep the graph architecturally valid: Completion Check at `ship` / `resolved`, Minimum Territory Shape, Interaction Independence, Infrastructure First, Behavior First, Ghost Interaction / Ghost Interface / Ghost Bug, cancel gates, force_unship, reachability, non-empty existing `implements` on `in-review` and `ship`, and the import-matrix closure that stops at assemblers.
+
+The compiler no longer polices checkbox state while work is building. An agent may check every Atomic Op before `in-review`; Completion Check at `ship` / `resolved` is the only checklist gate. This removes the “leave one Atomic Op open while building” rule and its inherited-checklist exception.
+
+When `## Impact` is present, it must be real prose: an empty or scaffold section fails Minimum Territory Shape on leaving `draft`, entering `in-review`, and `ship` / `resolved`. Absence of the heading is not an error. Section extraction treats `\r\n` and a lone `\r` as newlines before it splits on `##`.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-compiler-rules/`
+
+- Keep Completion Check (unchecked count in the active slot blocks `ship` / `resolved`), Minimum Territory Shape including the `## Impact` stub rule, Independence, Infrastructure/Behavior First, Ghost rules, cancel gates, force_unship, reachability
+- Keep: `in-review` and `ship` require a non-empty `implements` list on the active slot with every entry present on disk
+- Keep helpers for reachable Foundations (transitive `depends_on`; do not continue past `role: assembler`; while next is open, live and next edges both count)
+- Keep import-matrix predicates consumed by `i-check-integrity`
+- Keep `extractSection` newline normalization
+- Remove `assertOpenChecklistWhileBuilding`, `isInheritedCheckedChecklist`, and the building-states set they use; callers (`i-steer-plan`, `i-check-integrity`) drop their calls in the same revision
+- Uses `f-source-index` for claim expansion and path presence
+
+Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
+
+## Acceptance Criteria
+
+- A fully checked checklist on a node at `draft`, `ready`, or `in-progress` (Bug: `open`, `triaged`, `fixing`) is accepted
+- `ship` / `resolved` with any unchecked box is still Blocked by Completion Check with the open count
+- `in-progress` → `in-review` and `ship` are Blocked when implements is empty or missing on disk
+- Assembler stops transitive Foundation reachability for import allowance
+- A present empty or scaffold `## Impact` section is Blocked on `ready`, `in-review`, and `ship`; a body with no `## Impact` heading passes shape
+- A lone-`\r` body with an empty `## Impact` is Blocked for that stub
+- No export named `assertOpenChecklistWhileBuilding` or `isInheritedCheckedChecklist` remains
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Remove the open-checklist-while-building rule and its inherited-checklist exception
+- [ ] Keep Completion Check, Impact shape, implements, and import-matrix gates
+- [ ] Verified via `npm test`
+
+## Attachments
+
+_None._
+
+## Atomic Ops
+
+- [x] Stable title and description (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract

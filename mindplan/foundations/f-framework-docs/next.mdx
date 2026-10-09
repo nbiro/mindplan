@@ -1,0 +1,96 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs"
+description: "Infra — normative SPEC, README, and agent templates (playbook, skills, integrations)."
+state: in-review
+updated_at: 2026-10-09T22:22:54.188Z
+depends_on:
+  - f-domain-model
+implements:
+  - README.md
+  - SPEC.md
+  - templates/
+role: infra
+---
+
+
+
+
+# Framework documentation (plain-language taxonomy)
+
+## Purpose
+
+Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook, stub, skills, integration guides). MindPlan helps an agent think in systems. The always-on artifact is the systems dialect; review and scaffolding load on demand.
+
+This evolution keeps type names, edges, states, ids, and `Blocked:` messages unchanged. It adds (1) a plain-language glossary so vibecoders and agents share one wording, (2) a talk-plainly rule in the playbook, and (3) an agent breakdown recipe plus sizing, Interface grain, naming, and role-fallback rules so agents split requests correctly and reuse existing nodes.
+
+Prior guarantees still hold: territory-only `create_node`; `implements` ownership; slim orient payloads; proportional review with resume-after-Reject; neighbors in place; Atomic Ops as a ship-time ledger; Approve vs ship.
+
+## Shared Substrate Spec
+
+Claims: `SPEC.md`, `README.md`, `templates/`
+
+### Plain-language glossary (canonical in SPEC §2)
+
+One question per type (non-normative gloss; type names stay):
+
+| Type | Plain word | Question |
+|------|------------|----------|
+| Journey | area | What does the product do? |
+| Interaction | action | What can someone do? |
+| Interface | entry point | Where do they do it? |
+| Foundation | building block | What does it all run on? |
+| Bug | bug | What's broken? |
+
+Links / states / rules get the same plain gloss in SPEC, README, and playbook.
+
+### Agent breakdown and soft rules
+
+- **Breakdown recipe** in playbook + `define-entities` Step 0 + `plan-project` Classify scope: rewrite requests as *who can verb object in area, from entry point, using building blocks*; reuse before create; same action on a new entry point = new `exposes`, not a new Interaction.
+- **Interaction size test:** one actor goal; verb + object without "and"; shippable alone.
+- **Interface grain:** one Interface per actor + delivery mechanism (app or channel). Test: "Would a user call this a different app or channel?" Pages/tabs/commands inside it are mounts, not separate Interfaces. Console example: one console web Interface, not one per page.
+- **Naming:** title = stable name (action phrase for Interactions, noun otherwise); description = what it is/does now; revision notes only in `next.mdx` body.
+- **Role fallback:** Assembler only for runtimes that compose and run nodes. Docs, CI config, and other misfits → Infra. No hybrid tags like "Assembler/docs".
+
+### Talking to the user
+
+Playbook section: use plain words with the user; keep type names and ids for tool calls; translate every `Blocked:` into one plain sentence plus the next step.
+
+### Out of scope for this evolution
+
+Cleaning up this repo's own graph (changelog titles, duplicate steer Interaction, per-page console Interfaces, re-roling this Foundation to Infra) is a separate follow-up.
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- SPEC §2 has a non-normative plain-language glossary; Interface grain, naming rule (§2.1), and role fallback (§2.0.1) are documented
+- Playbook taxonomy uses one-question-per-type wording; includes Breaking down work and Talking to the user
+- `define-entities` has Step 0 breakdown, size/grain/naming/role rules, and new Common mistakes rows
+- `define-entities/examples.md` includes a change-request-on-existing-graph reuse example
+- `plan-project` Classify scope runs the breakdown recipe and confirms placement in plain words
+- README has an In plain words section; scrambled-eggs captions use the glossary
+- Prior systems-dialect / ownership / proportional-review contracts still hold
+- Installed copies synced via `init -f`
+
+## Atomic Ops
+
+- [ ] Add SPEC §2 glossary; sharpen Interface grain + naming + role fallback
+- [ ] Update playbook: taxonomy wording, Breaking down work, Talking to the user
+- [ ] Update define-entities skill (Step 0, sizing, grain, naming, role, Common mistakes)
+- [ ] Add reuse example to define-entities/examples.md
+- [ ] Update plan-project Classify scope for breakdown + plain-word confirmation
+- [ ] Add README In plain words + re-caption scrambled eggs
+- [ ] Sync installed agent copies via `init -f`
+- [ ] Verified by Reviewer against the contract
+
+## Attachments
+
+_None._
+
+## Atomic Ops
+
+- [x] Title Framework docs; description current-purpose
+- [x] Role reclassified to infra (docs are not an Assembler runtime)
+- [x] Verified by Reviewer against the role and naming contract

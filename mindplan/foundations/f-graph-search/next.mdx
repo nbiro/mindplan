@@ -1,0 +1,56 @@
+---
+id: f-graph-search
+type: Foundation
+title: "Graph search"
+description: "Infra — ranks and expands Interaction-centric graph neighborhoods."
+state: in-review
+updated_at: 2026-10-09T22:22:53.912Z
+depends_on:
+  - f-domain-model
+implements:
+  - src/foundations/f-graph-search/
+role: infra
+---
+
+
+
+# Graph search
+
+## Purpose
+
+Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`. Keeps retired nodes out of default ranking so agents focus on the live architecture.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-graph-search/`
+
+- `search.ts` — `tokenize` / `scoreNode` / `rankNodes`; `expandNeighborhood`; `findRelatedNodes` (focus + linked summaries); default/max find limits (`DEFAULT_FIND_LIMIT` / `MAX_FIND_LIMIT`); excludes `deprecated`/`cancelled` nodes and closed Bugs from ranking by default (aligned with map export policy)
+- Ranking covers all node types including Interaction and Interface (id/title/description scoring; no Interaction-specific branches — ranking is type-agnostic aside from retired filters)
+- `expandNeighborhood` walks all incident edge types including `exposes` and `leads_to`
+- Tests/fixtures must cover Interaction/Interface nodes and `exposes`/`leads_to` neighborhoods once the domain model ships those types
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- Query ranking returns a focus plus 1-hop neighborhood summaries
+- Retired nodes (`deprecated`, `cancelled`, closed Bugs) are excluded from default orientation ranking
+- Limits respect DEFAULT_FIND_LIMIT / MAX_FIND_LIMIT
+- Queries matching Interaction/Interface titles return them as focus candidates
+- 1-hop neighborhoods include `exposes` and `leads_to` neighbors
+- Verified via `npm test` (`search.test.mjs`)
+
+## Atomic Ops
+
+- [ ] Ensure ranking/neighborhood work for Interaction and Interface once types exist; add fixtures for `exposes`/`leads_to` neighbors
+- [ ] Remove any Interaction-only fixtures from search tests; keep retired-node and find-limit behavior
+- [ ] Verified via `npm test`
+
+## Attachments
+
+_Schemas and diagrams go in `next-attachments/`._
+
+## Atomic Ops
+
+- [x] Stable title and description (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
