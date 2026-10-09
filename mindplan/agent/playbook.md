@@ -1,67 +1,31 @@
-# MindPlan Agent Playbook
+# MindPlan — think in systems
 
-**Always apply.** MindPlan keeps you on the **system** (anti-drift) and runs an **agent development process** so code reaches the human only after independent review.
+MindPlan models this product as a graph. Plan and change code **through the graph**, not around it. Skills load on demand: `define-entities`, `plan-project`, `review-work`. Normative reference: `SPEC.md`.
 
-Normative reference: `SPEC.md`. Skills (on demand): `define-entities`, `plan-project`, `review-work`.
+## Dialect
 
-## Systems dialect (every turn)
+1. **Orient.** Call `orient_for_work` before substantial work. Do not invent architecture from chat or `src/` greps. After a mutation, trust the response `anchor` and `changed_files`.
+2. **Place work on the graph.** Every change belongs to a Journey, Interaction, Interface, Foundation, or Bug. MCP writes structure (`state`, edges, timestamps); file tools write territory prose at `current_path` / `next_path`. Never hand-edit server-owned frontmatter.
+3. **`Blocked:` is hard.** Name the cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix it before retrying.
+4. **Claim files before writing them** with `set_implementation_files`.
+5. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
+6. **Review is proportional.** Shipping your own work is fine when the revision has no Foundation source and at most one source. A Foundation contract change or several sources needs an independent Reviewer first. Follow `review-work`; don't improvise the gate.
 
-1. **Orient** — `orient_for_work` before substantial work. Do not invent architecture from chat or `src/` greps.
-2. **Place work on the graph** — Journey / Interaction / Interface / Foundation / Bug. MCP writes structure (`state`, edges, timestamps); file tools write territory prose at `current_path` / `next_path`.
-3. **`Blocked:` is hard** — classify the stated cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix that cause before retrying. Do not retry blindly.
-4. **Implement in claimed files** — declare ownership with `set_implementation_files` (`implements` on current/next). Do not invent tickets or ad-hoc ownership outside the graph.
-5. **Shipped change** — `get_blast_radius`, then `open_next`; edit the `next` slot into a full successor contract (not a changelog).
-6. **Spawn the Reviewer before done** — when Plan Review or Implementation review is due, freeze membership / revision, then **spawn** an independent Reviewer (`review-work`). Do not `ready` / `ship` / `resolved` your own work. Narrating “needs review,” “wasn’t reviewed,” or “handing off to a Reviewer” without spawning one is **not** done.
-7. **Check before review handoff** — before Plan Review, before Implementation review (entering `in-review` / spawning the Reviewer), and before re-spawning after a Reject, run default `mindplan-mcp check` and get exit `0`. Fix every `Blocked:` first. Optional `--base` is local dirty-src hygiene only — not a substitute for this gate.
-
-After a successful graph mutation, trust the response `anchor` (record + 1-hop neighborhood) and `changed_files`. Re-call `find_related_nodes` / `get_node_context` only on `Blocked:`, a new user ask, or before review.
-
-Never hand-edit server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays, `implements`, `role`). Never trust `mindplan/map.md` as graph authority.
-
-## Taxonomy (agent-native architecture)
+## Taxonomy
 
 | Type | Purpose |
-|------|---------|
-| **Journey** | Domain capability the product is about (computed state) |
+|---|---|
+| **Journey** | Domain capability the product is about |
 | **Foundation** | Shared substrate by role (Assembler / Infra / Design system / Adapter) |
-| **Interaction** | Self-contained behavior; owns domain + exportable surface (view or handler) |
-| **Interface** | Actor surface that `exposes` Interactions — mounts/wires only |
-| **Bug** | Defect via `affects` |
+| **Interaction** | Self-contained behavior; owns domain + exportable surface |
+| **Interface** | Actor surface that `exposes` Interactions — mounts and wires only |
+| **Bug** | Defect, via `affects` |
 
-**Edges:** `belongs_to` (Interaction→Journey), `depends_on` (substrate only — never Interaction→Interaction), `exposes` (Interface→Interaction), `leads_to` (navigation), `affects` (Bug→target).
+**Edges:** `belongs_to` (Interaction→Journey), `depends_on` (substrate only), `exposes` (Interface→Interaction), `leads_to` (navigation), `affects` (Bug→target). An Interaction owns its body; an Interface only mounts it. One Interface per actor surface, not per screen.
 
-**File ownership:** Interaction owns the body; Interface only mounts/wires. Declare files via `set_implementation_files`. One Interface per actor surface, not per screen.
-
-## Agent SDLC (short)
-
-```
-orient → place on graph → draft/enrich territory → check → Plan Review → ready
-→ in-progress → implement + check Atomic Ops → check → in-review → Implementation review → ship
-```
-
-- **Validity (`mindplan-mcp check`):** mandatory before every Reviewer handoff (Plan Review and Implementation review) and before re-entering a Rejected gate. Default mode = graph load + file ownership (exclusivity, coverage, presence, leftovers, import matrix). Do not hand off with failing `Blocked:` lines. Reviewers re-run **default** `check` only. Other nodes at `in-progress` / `in-review` / Bug `fixing` are mergeable — do **not** Reject the frozen set because of them.
-- **Minimum Territory Shape** (compiler): leaving `draft`, `in-review`, and `ship` require real sections — not scaffold stubs. Semantic **Territory Completeness** stays a Reviewer judgment.
-- **Plan Review:** parent **spawns** one Reviewer over the frozen subgraph of new/changed nodes (not one spawn per Foundation then Interaction then Interface). See `review-work` Procedure A. Task is not done until that Reviewer returns a verdict (Approve → `ready`, or Reject → fix and re-spawn / escalate).
-- **Implementation review:** parent moves to `in-review`, freezes `{base_sha, head_sha, clean_tree, changed_files[], node_ids[]}`, then **spawns** one Reviewer. Review the whole set before any `ship`; then transition Foundations → Interactions → Interfaces with re-read after each. `Blocked: Infrastructure First` (or Behavior First only because an exposed Interaction is Approve-but-ship-deferred) means **Approve + ship deferred** — leave at `in-review`; do not Reject for unfinished Foundations. Other `Blocked:` / quality Reject / dirty tree after verdict → void; fresh Reviewer on the new revision. See `review-work` Procedure B. Task is not done until that spawn has run. Parent done includes nodes that are `stable`/`unstable` **or** explicitly ship-deferred.
-- **Git:** land via feature branch + PR; never push to `main`/`master`. Automate branch setup; keep a deterministic diff for review.
-
-## Request routing
-
-| User wants… | Do |
-|-------------|-----|
-| Plan / model only | `plan-project` → `mindplan-mcp check` → subgraph Plan Review → stop at `ready` |
-| Implement / fix / ship code | Build pipeline on the owning node (`in-progress` first) |
-| Evolve shipped node | `open_next` → plan or build against `next` |
-| New entities | `define-entities` (Journey before Interaction) |
-
-## Never do
+## Never
 
 - Invent tickets outside the graph
-- Same-session self-`ready` / self-`ship` / self-`resolved`
-- Treat the task as done (or hand the human “please review”) without having **spawned** the Reviewer when a Review gate is due
-- Interaction→Interaction `depends_on` or Interface-owned feature screen bodies
-- Check Atomic Ops without doing the work
-- Write `## Review Notes` into territory
-- Substantial code under `draft`/`ready` without moving to `in-progress` (or Bug `fixing`)
-- Hand off to Plan Review or Implementation review (or re-spawn a Reviewer) while `mindplan-mcp check` fails
-- Write on `main`/`master`
+- Add `depends_on` between Interactions, or put feature screen bodies in an Interface
+- Write on `main` / `master`
+- Ship your own work when `review-work` says a Reviewer is due

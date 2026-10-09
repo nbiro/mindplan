@@ -28,7 +28,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 - **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries for Plan Review — prefer leaving that to the build session unless the user asks).
 - **No implementation pipeline** — do not move Foundations/Interactions/Interfaces to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
-- **Allowed states** — write contracts at `draft`. When the contracts are real, self-`ready` the revision in one ordered `revisions` call. Do not spawn a Plan Reviewer. A later implementation review judges those contracts together with the diff. See **Shipping a plan** below.
+- **Allowed states** — write contracts at `draft`. When the contracts are real, self-`ready` the revision in one ordered `revisions` call. Do not spawn a Plan Reviewer. `review-work` decides at ship time whether a Reviewer is due. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
 - Mutate graph state only through MindPlan MCP. Treat every `Blocked: <reason>` as a hard failure — fix the plan, do not retry blindly.
 - **Interaction Independence** — never model Interaction → Interaction `depends_on`; use Foundations for shared state and `leads_to` for navigation.
@@ -77,7 +77,7 @@ Apply **package ownership** (SPEC §1.2.2) while enriching:
 - One Interface per actor surface, not one Interface per screen/tab.
 - Keep Interaction/Interface Atomic Ops templates from `define-entities`.
 
-Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. **Neighbors** keep the inherited contract and add a real `## Impact` note. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, then `open_next` only for sources and neighbors. The parent self-readies when the contracts are written. The implementation Reviewer judges them with the diff.
+Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not plan `next` slots for them. The parent self-readies when the contracts are written. `review-work` says whether a Reviewer is due at ship.
 
 ### 5. Validate after every mutation
 

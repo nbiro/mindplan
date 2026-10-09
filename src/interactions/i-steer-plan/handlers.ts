@@ -40,7 +40,6 @@ import {
   removeEdgesFromFrontmatter,
   scaffoldEntity,
   splitContext,
-  toggleCheckboxesInBody,
   writeImplementsFrontmatter,
   type TerritorySlot,
 } from "../../foundations/f-territory-store/store.js";
@@ -54,7 +53,6 @@ import {
 } from "../../foundations/f-source-index/ownership.js";
 import {
   assertAcyclicDependsOn,
-  assertOpenChecklistWhileBuilding,
   assertPipelineTerritoryScalarsEditable,
   blocked,
   findNode,
@@ -729,15 +727,9 @@ export function patchNodeTerritory(args: {
   }
   if (body !== undefined || (toggle_checkboxes?.length ?? 0) > 0) {
     const raw = readMarkdown(node, resolvedSlot);
-    const split = splitContext(raw);
-    if (!split) {
+    if (!splitContext(raw)) {
       throw blocked(`${resolvedSlot} file for "${node_id}" has no YAML frontmatter.`);
     }
-    let nextBody = body !== undefined ? body : split.body;
-    if (toggle_checkboxes?.length) {
-      nextBody = toggleCheckboxesInBody(nextBody, toggle_checkboxes);
-    }
-    assertOpenChecklistWhileBuilding(node, nextBody, resolvedSlot);
   }
   const result = patchNodeTerritoryStore(node, {
     title,

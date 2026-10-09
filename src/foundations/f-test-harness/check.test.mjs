@@ -251,6 +251,24 @@ if (r.status !== 0) {
   console.log(`FAIL committed dirty while stable should pass: ${r.stderr || r.stdout}`);
 } else console.log("ok   committed dirty while stable passes");
 
+// Neighbors edit shipped files in place: uncommitted change, owner stable, no next.
+fs.appendFileSync(path.join(root, "src", "interactions", "i-feature", "code2.ts"), "export const edited = 1;\n");
+r = runCheck(["--base", baseSha]);
+if (r.status !== 0) {
+  failures++;
+  console.log(`FAIL uncommitted edit to stable owner without next should pass: ${r.stderr || r.stdout}`);
+} else console.log("ok   uncommitted edit to stable owner without next passes");
+
+// With an open next that is not in-progress, the next slot governs and the edit fails.
+await call("open_next", { node_id: "i-feature" });
+r = runCheck(["--base", baseSha]);
+if (r.status === 0 || !(r.stderr || r.stdout).includes("i-feature")) {
+  failures++;
+  console.log(`FAIL uncommitted edit to stable owner with draft next should fail: status=${r.status} out=${r.stderr || r.stdout}`);
+} else console.log("ok   uncommitted edit to stable owner with draft next fails");
+await call("discard_next", { node_id: "i-feature" });
+git("checkout", "--", "src/interactions/i-feature/code2.ts");
+
 r = runCheck(["--base", "not-a-real-ref-zzzz"]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("git")) {
   failures++;

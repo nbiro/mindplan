@@ -212,7 +212,7 @@ Replace scaffold placeholders with real content. Section guidance:
 - **Expected / Actual** — behaviour contrast
 - **Fix Checklist** — root cause, fix, regression test
 
-Use `- [ ]` syntax for gates — unchecked boxes block `in-review`, `ship`, and Bug `in-review`/`resolved`. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
+Use `- [ ]` syntax for gates — unchecked boxes block `ship` and Bug `resolved` (Completion Check). Treat Atomic Ops as the record you confirm before ship, not as progress narration. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
 
 ## Step 7 — Verify graph
 
@@ -221,7 +221,7 @@ get_mindplan_graph
 get_node_context({ node_id })
 ```
 
-Confirm edges, folder paths, and territory content. Leave Foundations/Interactions/Interfaces at `draft` until Plan Review. When a node is about to leave `draft`, run one Plan Review loop for **that** node (spawn Reviewer via `review-work`) — do not self-advance to `ready`, and do not batch-rubber-stamp multiple nodes in one Reviewer pass.
+Confirm edges, folder paths, and territory content. When the revision’s contracts are real, self-`ready` in one ordered call. Do not spawn a Plan Reviewer; `review-work` decides at ship time whether a Reviewer is due.
 
 ## Definition order (greenfield project)
 
@@ -238,9 +238,8 @@ Behavior-first: draft Interactions so Foundations and Interfaces are derived fro
 8. link_nodes Interface → Foundation (depends_on)     ← optional
 9. link_nodes Interaction → Interaction (leads_to)    ← navigation only, as needed
 10. Edit each node body (and title/description if needed) via file tools at `current_path` / `next_path`
-11. Stop at `draft` with links + territory complete; run Plan Review loop per
-    node (`mindplan/agent/skills/review-work/`) — Foundations first, then
-    Interactions, then Interfaces — Reviewer advances to `ready`
+11. Stop with links + territory complete; self-ready in one ordered call
+    (Foundations, then Interactions, then Interfaces)
 ```
 
 Gate facts:
@@ -250,7 +249,7 @@ Gate facts:
 - An Interface MAY sit at `draft` without links; ≥1 `exposes` is required to leave `draft` (No Ghost Interfaces).
 - Foundation `ready` before Interaction `ready` is sequencing preference; Infrastructure First at Interaction `ship` still requires Foundations `stable`. Behavior First at Interface `ship` requires exposed Interactions `stable`.
 
-Ship order: Foundations → `stable` before Interaction `ship`; Interactions → `stable` before Interface `ship`. Plan Review owns `draft → ready`.
+Ship order: Foundations → `stable` before Interaction `ship`; Interactions → `stable` before Interface `ship`. The parent owns `draft` → `ready`. The Reviewer owns `ship`.
 
 ## Evolving a shipped node
 
@@ -265,7 +264,7 @@ open_next({
 })
 ```
 
-`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Enrich the `next` slot to a full successor contract, then run the Plan Review loop (`mindplan/agent/skills/review-work/`) — do not self-advance `next` to `ready`. After Plan Review, an execution session runs `in-progress` → `in-review`; Implementation review loop then `ship`s, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
+`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Classify the revision first (`review-work`). A **source** edits `next` into a full successor contract. A **neighbor** (files change, behavior doesn't) is edited in place and gets no `next`; neither do unaffected blast-radius nodes. Then self-`ready`. Do not spawn a Plan Reviewer. An execution session runs `in-progress` → `in-review`; `review-work` decides whether a Reviewer is due, and `ship` runs in one ordered `revisions` call, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
 
 ## Common mistakes
 

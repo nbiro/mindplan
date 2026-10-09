@@ -212,7 +212,7 @@ Replace scaffold placeholders with real content. Section guidance:
 - **Expected / Actual** — behaviour contrast
 - **Fix Checklist** — root cause, fix, regression test
 
-Use `- [ ]` syntax for gates — unchecked boxes block `in-review`, `ship`, and Bug `in-review`/`resolved`. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
+Use `- [ ]` syntax for gates — unchecked boxes block `ship` and Bug `resolved` (Completion Check). Treat Atomic Ops as the record you confirm before ship, not as progress narration. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
 
 ## Step 7 — Verify graph
 
@@ -221,7 +221,7 @@ get_mindplan_graph
 get_node_context({ node_id })
 ```
 
-Confirm edges, folder paths, and territory content. When the revision’s contracts are real, self-`ready` in one ordered call. Do not spawn a Plan Reviewer. The implementation Reviewer judges source contracts and neighbor impact notes together with the diff.
+Confirm edges, folder paths, and territory content. When the revision’s contracts are real, self-`ready` in one ordered call. Do not spawn a Plan Reviewer; `review-work` decides at ship time whether a Reviewer is due.
 
 ## Definition order (greenfield project)
 
@@ -264,7 +264,7 @@ open_next({
 })
 ```
 
-`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Classify the revision first (`review-work`). A **source** edits `next` into a full successor contract. A **neighbor** restores inherited `[x]` Atomic Ops and adds a real `## Impact` section; it does not rewrite the contract. Unaffected blast-radius nodes do not get `open_next`. Then self-`ready`. Do not spawn a Plan Reviewer. An execution session runs `in-progress` → `in-review`; one Implementation review judges the plan and the diff, then `ship`s in one ordered `revisions` call, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
+`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Classify the revision first (`review-work`). A **source** edits `next` into a full successor contract. A **neighbor** (files change, behavior doesn't) is edited in place and gets no `next`; neither do unaffected blast-radius nodes. Then self-`ready`. Do not spawn a Plan Reviewer. An execution session runs `in-progress` → `in-review`; `review-work` decides whether a Reviewer is due, and `ship` runs in one ordered `revisions` call, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
 
 ## Common mistakes
 

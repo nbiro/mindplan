@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (42 nodes, 105 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (43 nodes, 106 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
@@ -17,7 +17,7 @@ flowchart TB
     f_nextjs["f-nextjs · Next.js assembler · ready"]
     f_npm_registry["f-npm-registry · npm registry adapter · ready"]
     f_source_index["f-source-index · Source index (released claim entries) · stable"]
-    f_territory_store["f-territory-store · Territory store (implements + role) · stable"]
+    f_territory_store["f-territory-store · Territory store (implements + role) · unstable"]
     f_test_harness["f-test-harness · Test harness (released presence) · stable"]
     f_view_projection["f-view-projection · View projection · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
@@ -34,7 +34,7 @@ flowchart TB
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Release tag trigger · ready"}}
   end
-  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
+  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
     i_init_project__in__j_agent_onboarding["i-init-project · Init (sources migration) · stable"]
     i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · ready"]
   end
@@ -49,12 +49,14 @@ flowchart TB
     i_mutate_plan__in__j_plan_console["i-mutate-plan · Steer the plan · ready"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
     i_check_integrity__in__j_territory_sdlc["i-check-integrity · Integrity check (released live presence) · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient (file queries) · stable"]
     i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer (ordered revision status) · stable"]
   end
+  bug_open_next_crlf_checklist["bug-open-next-crlf-checklist · open_next leaves lone CR line breaks in reset checklists · triaged"]
+  bug_open_next_crlf_checklist -.-> f_territory_store
   f_compiler_rules --> f_domain_model
   f_compiler_rules --> f_source_index
   f_compiler_rules --> f_territory_store

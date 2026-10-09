@@ -29,6 +29,29 @@ const client = new Client({ name: "smoke", version: "0.1.0" });
 await client.connect(transport);
 
 let failures = 0;
+
+// --- server instructions carry the systems dialect (initialize round-trip) ---
+{
+  const bundledPlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
+  const instructions = client.getInstructions();
+  if (instructions !== bundledPlaybook) {
+    failures++;
+    console.log(
+      `FAIL MCP initialize instructions must equal templates/agent/playbook.md (got ${instructions === undefined ? "undefined" : `${instructions.length} chars`})`
+    );
+  } else console.log("ok   MCP initialize instructions equal the bundled playbook");
+  const playbookLines = bundledPlaybook.split("\n").length;
+  if (playbookLines > 60) {
+    failures++;
+    console.log(`FAIL playbook should stay one screen (${playbookLines} lines)`);
+  } else console.log("ok   playbook is one screen");
+  for (const banned of ["base_sha", "Verdict:", "Atomic Op", "mindplan-mcp check", "Plan Reviewer"]) {
+    if (bundledPlaybook.includes(banned)) {
+      failures++;
+      console.log(`FAIL playbook must not contain review/checklist procedure text: "${banned}"`);
+    }
+  }
+}
 async function call(tool, args) {
   const res = await client.callTool({ name: tool, arguments: args });
   return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
@@ -377,15 +400,15 @@ const ixPath = path.join(root, "mindplan", "interactions", "i-checkout", "curren
   // leave "Tests passing" unchecked
   fs.writeFileSync(ixPath, ixRaw);
 }
-await expectBlockedContaining(
-  "last checkbox while in-progress",
-  "patch_node_territory",
-  {
-    node_id: "i-checkout",
-    toggle_checkboxes: [{ contains: "Tests passing", checked: true }],
-  },
-  "Checklist Complete"
-);
+// Atomic Ops are a ship-time ledger: completing every box while building is allowed.
+await expectOk("last checkbox while in-progress is allowed", "patch_node_territory", {
+  node_id: "i-checkout",
+  toggle_checkboxes: [{ contains: "Tests passing", checked: true }],
+});
+await expectOk("reopen last checkbox (restore ship-time ledger)", "patch_node_territory", {
+  node_id: "i-checkout",
+  toggle_checkboxes: [{ contains: "Tests passing", checked: false }],
+});
 await expectOk("interaction -> in-review with unchecked", "update_node_status", {
   node_id: "i-checkout",
   new_status: "in-review",
@@ -1209,11 +1232,24 @@ if (initResult.status !== 0) {
 } else if (
   (() => {
     const rule = fs.readFileSync(path.join(initRoot, ".cursor", "rules", "mindplan.mdc"), "utf-8");
-    return !rule.includes("alwaysApply: true") || !rule.includes("MindPlan Agent Playbook");
+    const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
+    return !rule.includes("alwaysApply: true") || !rule.endsWith(stub);
   })()
 ) {
   failures++;
-  console.log("FAIL .cursor/rules/mindplan.mdc must include alwaysApply frontmatter and playbook body");
+  console.log("FAIL .cursor/rules/mindplan.mdc must be alwaysApply frontmatter plus the stub body");
+} else if (
+  (() => {
+    const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
+    const playbook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
+    return (
+      fs.readFileSync(path.join(initRoot, "AGENTS.md"), "utf-8") !== stub ||
+      fs.readFileSync(path.join(initRoot, "mindplan", "agent", "playbook.md"), "utf-8") !== playbook
+    );
+  })()
+) {
+  failures++;
+  console.log("FAIL init: AGENTS.md must equal the stub and mindplan/agent/playbook.md must equal the playbook");
 } else if (
   (() => {
     const cfgPath = path.join(initRoot, "mindplan", "config.json");
@@ -1297,6 +1333,11 @@ if (migrateInit.status !== 0) {
       console.log("ok   bare init leaves mutated playbook");
     }
 
+    // An older install left the full playbook in AGENTS.md; -f must replace it with the stub.
+    const templatePlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
+    const templateStub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
+    fs.writeFileSync(path.join(forceRoot, "AGENTS.md"), "# MindPlan Agent Playbook (old full copy)\n", "utf-8");
+
     const forced = spawnSync(process.execPath, [serverEntry, "init", "-f"], {
       cwd: forceRoot,
       env: forceEnv,
@@ -1307,11 +1348,17 @@ if (migrateInit.status !== 0) {
       console.log(`FAIL init -f exit ${forced.status}: ${forced.stderr || forced.stdout}`);
     } else {
       const restored = fs.readFileSync(playbookPath, "utf-8");
-      if (restored === marker || !restored.includes("MindPlan Agent Playbook")) {
+      if (restored !== templatePlaybook) {
         failures++;
         console.log("FAIL init -f must restore playbook from package templates");
       } else {
         console.log("ok   init -f overwrites mutated playbook from templates");
+      }
+      if (fs.readFileSync(path.join(forceRoot, "AGENTS.md"), "utf-8") !== templateStub) {
+        failures++;
+        console.log("FAIL init -f must replace an old full-playbook AGENTS.md with the stub");
+      } else {
+        console.log("ok   init -f replaces old AGENTS.md with the stub");
       }
       const cfg = JSON.parse(fs.readFileSync(path.join(forceRoot, "mindplan", "config.json"), "utf-8"));
       if (cfg.sources?.[0] !== "app/**") {
@@ -1485,16 +1532,11 @@ await expectOk("inherited complete next checklist", "patch_node_territory", {
   const relabeled = fs.readFileSync(fOrdNext, "utf-8").replace(inheritedLabels[0], `${inheritedLabels[0]} reopened`);
   fs.writeFileSync(fOrdNext, relabeled);
 }
-await expectBlockedContaining(
-  "different labels still block a complete building checklist",
-  "patch_node_territory",
-  {
-    node_id: "f-ord",
-    slot: "next",
-    toggle_checkboxes: [{ contains: "reopened", checked: true }],
-  },
-  "Checklist Complete"
-);
+await expectOk("fully checked building checklist is allowed regardless of labels", "patch_node_territory", {
+  node_id: "f-ord",
+  slot: "next",
+  toggle_checkboxes: [{ contains: "reopened", checked: true }],
+});
 
 await expectOk("create f-cr", "create_node", {
   id: "f-cr",

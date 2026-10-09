@@ -1,0 +1,39 @@
+---
+id: bug-open-next-crlf-checklist
+type: Bug
+title: "open_next leaves lone CR line breaks in reset checklists"
+description: "On CRLF territory, open_next's checkbox reset swallows the LF before each checklist item, so next.mdx mixes CRLF and lone CR and the checklist renders as one line."
+state: triaged
+created_at: 2026-10-09T20:08:05.574Z
+updated_at: 2026-10-09T20:08:22.805Z
+affects:
+  - f-territory-store
+---
+
+# open_next leaves lone CR line breaks in reset checklists
+
+## Summary
+
+`openNextSlot` in `src/foundations/f-territory-store/store.ts` resets checkboxes with `/^\s*([-*+]\s+)\[[xX]\]/gm`. In JavaScript multiline mode `^` also matches right after a `\r`, so on a CRLF file the match starts between `\r` and `\n`, `\s*` consumes the `\n`, and the replacement drops it. Every checked item ends up preceded by a lone `\r`.
+
+## Repro Steps
+
+1. Have a shipped node whose `current.mdx` uses CRLF line endings and has checked Atomic Ops (e.g. `f-framework-docs` on Windows)
+2. Call `open_next` on it
+3. Inspect `next.mdx` (`file next.mdx` reports “CRLF, CR, LF line terminators”)
+
+## Expected / Actual
+
+**Expected:** `next.mdx` keeps the source line endings; each reset `- [ ]` item sits on its own line.
+
+**Actual:** the reset items are separated by lone `\r`, so editors and diffs show `## Atomic Ops- [ ] … - [ ] …` on one line. The compiler’s own newline normalization hides it from Completion Check, so nothing fails — humans and file tools see a corrupted checklist.
+
+## Fix Checklist
+
+- [ ] Anchor the reset on horizontal whitespace only (`/^([ \t]*[-*+][ \t]+)\[[xX]\]/gm`) so line terminators are never consumed
+- [ ] Regression test: `open_next` on a CRLF body with checked items yields only CRLF terminators and one item per line
+- [ ] Verified via `npm test`
+
+## Attachments
+
+_None._

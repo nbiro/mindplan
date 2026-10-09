@@ -14,7 +14,6 @@ import {
 import {
   effectiveRole,
   importAllowed,
-  isInheritedCheckedChecklist,
 } from "../../foundations/f-compiler-rules/rules.js";
 import {
   buildOwnershipIndex,
@@ -27,11 +26,9 @@ import { expandClaims } from "../../foundations/f-source-index/claims.js";
 import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
 import {
-  isChecklistComplete,
   loadGraph,
   loadProjectConfig,
   projectRoot,
-  readMarkdown,
 } from "../../foundations/f-territory-store/store.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -338,6 +335,8 @@ function ownerAllowsWorkingTree(graph: MindPlanGraph, node: MindPlanNode): boole
     return bugAllowsDirty(graph, node.id);
   }
   if (ACTIVE_BUILD.has(node.state)) return true;
+  // Neighbors edit shipped files in place: stable/unstable with no open next.
+  if (isProductionState(node.state)) return true;
   return bugAllowsDirty(graph, node.id);
 }
 
@@ -408,7 +407,7 @@ function checkDirtySrc(
     checkPath(
       rel,
       ownerAllowsWorkingTree,
-      "Uncommitted changes require in-progress (or next in-progress), or a Bug in fixing/in-review."
+      "Uncommitted changes require in-progress (or next in-progress), a shipped owner with no open next, or a Bug in fixing/in-review."
     );
   }
 
@@ -421,42 +420,6 @@ function checkDirtySrc(
       ownerAllowsCommitDiff,
       "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review."
     );
-  }
-}
-
-const BUILDING_CHECKLIST_STATES = new Set([
-  "draft",
-  "ready",
-  "in-progress",
-  "open",
-  "triaged",
-  "fixing",
-]);
-
-function checkChecklistBuilding(graph: MindPlanGraph, failures: string[]): void {
-  for (const node of graph.nodes) {
-    const slots: Array<{ slot: "current" | "next"; state: string }> = [
-      { slot: "current", state: node.state },
-    ];
-    if (node.next) {
-      slots.push({ slot: "next", state: node.next.state });
-    }
-    for (const { slot, state } of slots) {
-      if (!BUILDING_CHECKLIST_STATES.has(state)) continue;
-      try {
-        const raw = readMarkdown(node, slot);
-        if (!isChecklistComplete(raw)) continue;
-        if (slot === "next" && isInheritedCheckedChecklist(node, raw)) continue;
-      } catch {
-        continue;
-      }
-      fail(
-        failures,
-        `Checklist Complete. All checkboxes are checked while "${node.id}" ` +
-          `${slot === "next" ? "next " : ""}is "${state}". ` +
-          `Leave an Atomic Op open while building, or advance to in-review.`
-      );
-    }
   }
 }
 
@@ -487,7 +450,6 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   }
 
   try {
-    checkChecklistBuilding(graph, failures);
     const buckets = checkExclusivity(graph, root, failures);
     checkCoverage(buckets, root, failures);
     checkPresence(graph, root, failures);
