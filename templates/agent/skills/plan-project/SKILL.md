@@ -114,7 +114,7 @@ Then self-ready. Do not interpret “ship” here as `update_node_status` → `s
 
 ## Never do (this skill)
 
-- Write or “just scaffold” real implementation in `src/interactions/` / `src/interfaces/` / `src/foundations/`
+- Write or “just scaffold” real application implementation (claimed `implements` paths) in a plan-only session
 - Advance to `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`, in a plan-only session
 - Treat “ship the plan” as build-pipeline `ship` / `stable`, or as permission to check Atomic Ops
 - Check off Atomic Ops without implementation

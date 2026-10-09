@@ -130,19 +130,17 @@ node /absolute/path/to/mindplan/dist/index.js init
 ```
 <project-root>/
 ├── mindplan/
+│   ├── config.json                # { sources, exclude } — coverage universe
 │   ├── agent/                     # playbook + skills (installed by init)
 │   ├── journeys/<id>/
 │   ├── foundations/<id>/          # + optional next.mdx
 │   ├── interactions/<id>/         # + optional next.mdx
 │   ├── interfaces/<id>/           # + optional next.mdx
 │   └── bugs/<id>/
-└── src/
-    ├── interactions/<id>/
-    ├── interfaces/<id>/
-    └── foundations/<id>/
+└── …                              # app code wherever implements claims it
 ```
 
-Edge arrays in frontmatter: `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`. See SPEC.md §1–§2.
+Owned files are declared with `set_implementation_files` (exact paths or directories ending in `/`) under the `sources`/`exclude` universe — there is no prescribed `src/<type>/<id>/` tree. This repo dogfoods that shape; consumers need not. Edge arrays in frontmatter: `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`. See SPEC.md §1–§2.
 
 ## Taxonomy
 
@@ -185,9 +183,10 @@ No Dependency Closure / `link_dependent`.
 | `export_mindplan_view` | read | Mermaid or DOT |
 | `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files`; cancelled/deprecated omitted unless `include_retired` |
 | `get_node_context` | read | `record` + `body` (+ `next.record`/`next.body` when evolving) |
-| `get_node_implementation` | read | Package root for Interaction/Interface/Foundation |
+| `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
+| `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |
 | `patch_node_territory` | mutation | Optional prose fallback; prefer host file tools |
-| `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug |
+| `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold) |
 | `open_next` / `discard_next` | mutation | Evolve / abandon shipped node in place |
 | `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent` |
 | `update_node_status` | mutation | One node, or a `revisions` list ordered Foundation → Interaction → Interface → Bug; stops on the first `Blocked:` |
@@ -200,7 +199,7 @@ No Dependency Closure / `link_dependent`.
 | `mindplan-mcp` | Start MCP server (stdio) |
 | `mindplan-mcp init` | Scaffold territory + agent assets |
 | `mindplan-mcp view` | Print Mermaid/DOT (`export` alias) |
-| `mindplan-mcp check` | Offline integrity (graph + packages); `--base` opt-in dirty-src |
+| `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src |
 | `mindplan-mcp help` | Usage |
 
 Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`).
