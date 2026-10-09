@@ -438,6 +438,7 @@ export function persistMindPlanMap(graph: MindPlanGraph): string {
   const body =
     `# MindPlan map\n\n` +
     `_Auto-generated after each graph mutation (${node_count} nodes, ${edge_count} edges). Do not edit by hand._\n\n` +
+    `_How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.\n\n` +
     "```mermaid\n" +
     `${diagram.trimEnd()}\n` +
     "```\n";

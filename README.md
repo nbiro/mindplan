@@ -5,6 +5,22 @@ Agents cannot build correctly without knowing what the system *does*. MindPlan k
 
 Plan state lives next to the code. Every change to it is checked; illegal moves are rejected.
 
+## In plain words
+
+MindPlan names five kinds of thing. Type names stay for the graph and tools; plain words help humans and agents talk about them:
+
+| Type | Plain word | Question | Example |
+|------|------------|----------|---------|
+| **Journey** | area | What does the product do? | Billing |
+| **Interaction** | action | What can someone do? | Split the check |
+| **Interface** | entry point | Where do they do it? | Checkout page, CLI, MCP tools |
+| **Foundation** | building block | What does it all run on? | Database, design system, Stripe |
+| **Bug** | bug | What's broken? | Double charge on split |
+
+Links in plain words: `belongs_to` = is part of · `exposes` = shows · `depends_on` = needs · `leads_to` = then goes to · `affects` = breaks.
+
+Rules in plain words: **Infrastructure First** — build the building blocks before the action that needs them. **Behavior First** — an action has to work before you put it on a page. **Completion Check** — finish the checklist before going live. **No Ghosts** — every action lives in an area and stands on a building block.
+
 ## Think in systems
 
 MindPlan exists so an agent thinks in systems: orient on the graph, place each change on it, respect the edges, claim files, and classify a change to shipped work by its blast radius. That short *systems dialect* is what the agent carries every turn. The MCP server sends it as server `instructions` when the host connects, so nothing needs to be copied into your repo for it to apply. Heavier procedures (the review gate, entity scaffolding) load on demand as skills.
@@ -55,7 +71,7 @@ Today's map is an **architecture + state** projection. A richer status board is 
 
 ## Worked example: scrambled eggs
 
-Capability, shared stove, behaviors, and how you start them:
+An **area** (make breakfast), a **building block** (the stove), **actions** (crack, whisk, cook), and an **entry point** (the breakfast CLI):
 
 ```mermaid
 flowchart TB
@@ -76,15 +92,17 @@ flowchart TB
   ifCli -->|"exposes"| iCook
 ```
 
-- **Journey** `j-breakfast` — permanent capability
-- **Foundation** `f-stove` — shared substrate; cook cannot ship until the stove is `stable`
-- **Interactions** — self-contained behaviors; they share state via Foundations, never `depends_on` each other. `leads_to` is navigation only (cycles allowed, not a ship gate)
-- **Interface** `if-breakfast-cli` — how an actor starts cooking; ship needs exposed Interactions `stable` (**Behavior First**)
+- **Journey** `j-breakfast` — area: permanent capability (make breakfast)
+- **Foundation** `f-stove` — building block; cook cannot ship until the stove is `stable`
+- **Interactions** — actions (crack, whisk, cook); they share state via Foundations, never `depends_on` each other. `leads_to` is "then goes to" only (cycles allowed, not a ship gate)
+- **Interface** `if-breakfast-cli` — entry point: how an actor starts cooking; ship needs exposed Interactions `stable` (**Behavior First**)
 
 ```
 Blocked: Infrastructure First. Interaction "i-cook-scramble" cannot ship while
 linked Foundations are not stable: "f-stove" (ready).
 ```
+
+In plain words: you cannot go live with *cook scramble* while the *stove* building block is still only ready to build, not live.
 
 ## How it's built
 

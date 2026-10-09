@@ -6,11 +6,48 @@
 
 **Agent action:** `get_mindplan_graph` → no Journeys in graph (or none matching "ordering"/"checkout" capability).
 
-**Do not** call `create_node` for the Interaction. Respond:
+**Do not** call `create_node` for the Interaction. Respond in plain words:
 
-> I cannot define this Interaction yet — every Interaction must belong to a Journey, and no matching Journey exists in the graph. Please define the Journey first (the domain capability this behavior belongs to). Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
+> This needs an **area** first — every action belongs to one. Is it part of an existing area (e.g. Billing / Ordering), or something new? Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
 
 **Next step (after user agrees):** define Journey `j-ordering`, then proceed with the greenfield example below.
+
+---
+
+## Change request on an existing graph (reuse)
+
+**User request:** "Let managers split the check from the back-office app too."
+
+**Breakdown:**
+
+> Managers can **split the check** in the **Ordering** area, from the **back-office** entry point, using existing building blocks (`f-db-core`, …).
+
+**Reuse before create:**
+
+```
+find_related_nodes({ query: "split check checkout" })
+→ i-checkout-split already exists (action)
+find_related_nodes({ query: "back office manager console" })
+→ no back-office Interface yet
+```
+
+**Confirm with the user (plain words):** "I'll show the existing *split the check* action from a new *back-office* entry point — no second action."
+
+**Do not** create `i-checkout-split-backoffice` or a second Interaction. Link:
+
+```
+create_node({
+  id: "if-back-office",
+  type: "Interface",
+  title: "Back office",
+  description: "Page — manager back-office app exposing checkout and related actions"
+})
+link_nodes({ source_id: "if-back-office", target_id: "i-checkout-split", edge_type: "exposes" })
+# optional Foundation deps for the Assembler / shell the back-office runs on:
+link_nodes({ source_id: "if-back-office", target_id: "f-nextjs", edge_type: "depends_on" })
+```
+
+Same action, new entry point = new `exposes` (+ mount/wire), not a new Interaction. One Interface for the back-office **app**, not one Interface per back-office page.
 
 ---
 

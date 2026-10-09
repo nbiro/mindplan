@@ -13,15 +13,29 @@ MindPlan models this product as a graph. Plan and change code **through the grap
 
 ## Taxonomy
 
-| Type | Purpose |
-|---|---|
-| **Journey** | Domain capability the product is about |
-| **Foundation** | Shared substrate by role (Assembler / Infra / Design system / Adapter) |
-| **Interaction** | Self-contained behavior; owns domain + exportable surface |
-| **Interface** | Actor surface that `exposes` Interactions — mounts and wires only |
-| **Bug** | Defect, via `affects` |
+Each type answers one question (plain words from SPEC §2.0.0; type names stay for tools):
 
-**Edges:** `belongs_to` (Interaction→Journey), `depends_on` (substrate only), `exposes` (Interface→Interaction), `leads_to` (navigation), `affects` (Bug→target). An Interaction owns its body; an Interface only mounts it. One Interface per actor surface, not per screen.
+| Type | Plain word | Question |
+|---|---|---|
+| **Journey** | area | What does the product do? |
+| **Interaction** | action | What can someone do? |
+| **Interface** | entry point | Where do they do it? (one per app or channel, not per page) |
+| **Foundation** | building block | What does it all run on? (role: Assembler / Infra / Design system / Adapter) |
+| **Bug** | bug | What's broken? |
+
+**Edges:** `belongs_to` (is part of), `depends_on` (needs — substrate only), `exposes` (shows), `leads_to` (then goes to), `affects` (breaks). An Interaction owns its body; an Interface only mounts it. One Interface per actor surface, not per screen.
+
+## Breaking down work
+
+1. Rewrite the ask as: *"<who> can <verb> <object> in <area>, from <entry point>, using <building blocks>."*
+2. Each distinct verb + object is one Interaction candidate (size: one goal, no "and", shippable alone).
+3. **Reuse before create** — `find_related_nodes` for each piece. Same action from a new entry point → new `exposes`, not a new Interaction.
+4. Titles are stable names; descriptions say what the node does *now*; revision notes stay in `next.mdx` body.
+5. Then create what's missing via `define-entities` / `plan-project`.
+
+## Talking to the user
+
+Use the plain words (area, action, entry point, building block, bug) with the user. Keep type names and ids for tool calls and graph talk with other agents. Translate every `Blocked:` into one plain sentence plus the next step. Example: "I'll add *split the check* as a new action in the Billing area and show it on the checkout page."
 
 ## Never
 
