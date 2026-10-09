@@ -1,0 +1,63 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs (slim orient payloads)"
+description: "Assembler/docs — SPEC §8 and README document slim get_node_context / grouped affected_files / retired blast-radius filter; systems dialect and proportional review unchanged."
+state: in-review
+created_at: 2026-07-19T18:33:36.834Z
+updated_at: 2026-10-09T21:00:05.764Z
+depends_on:
+  - f-domain-model
+implements:
+  - README.md
+  - SPEC.md
+  - templates/
+role: assembler
+---
+
+# Framework documentation (slim orient payloads)
+
+## Purpose
+
+Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook, stub, skills, integration guides). MindPlan is a tool that helps an agent think in systems. The documentation puts that first. What an agent carries every turn is the **systems dialect**: orient on the graph, place work on it, respect the edges, claim files, and classify change by blast radius. Review, checklists, and revision bookkeeping are procedures that the agent loads only at the moment they apply.
+
+Keep the shipped guarantees: live-presence skip for released implements entries (SPEC §9.6); Implementation review **Approve** is a quality verdict that **Infrastructure First** or cascading Behavior First does not void; ship is a separate transition; unfinished Foundation deps are not a Reject reason; one `update_node_status` `revisions` call orders Foundations, Interactions, Interfaces, then Bugs and stops on the first `Blocked:`; proportional review with Reject → resume the same Reviewer.
+
+This evolution documents the slim orientation payloads owned by `i-orient-plan` / `if-mcp-tools`.
+
+## Shared Substrate Spec
+
+Claims: `SPEC.md`, `README.md`, `templates/`
+
+### Playbook, stub, review, neighbors, Atomic Ops
+
+Unchanged from the previous ship: systems dialect playbook via MCP server instructions; agents-stub trigger; proportional review in `review-work` with resume-after-Reject; neighbors edit in place; Atomic Ops are a ship-time ledger.
+
+### Slim orient / blast radius (SPEC §8, §3.7, README)
+
+- SPEC `get_node_context`: drop `raw_context`, `context_path`, top-level `title`/`description`, and `next.raw` from the documented payload. Prefer `record` + `body` (+ `next.record` / `next.body` when evolving).
+- SPEC `get_blast_radius`: document grouped `affected_files: [{ owner_id, owner_type, via[], files[] }]`; document optional `include_retired` (default false); state that cancelled/deprecated nodes are omitted from `affected`, `journeys_at_risk`, `affected_files`, and `reachability` by default while BFS still traverses through them.
+- SPEC `orient_for_work`: context matches the slim `get_node_context`; blast_radius matches the slim `get_blast_radius`.
+- SPEC §3.7: cancelled and deprecated nodes are not required to move, and `get_blast_radius` omits them by default (`include_retired` to see them).
+- README tool table: `get_blast_radius` and `get_node_context` / `orient_for_work` descriptions mention the slim shapes.
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- SPEC §8 `get_node_context` / `orient_for_work` examples have no `raw_context`, `context_path`, or top-level title/description
+- SPEC §8 `get_blast_radius` documents grouped `affected_files` and `include_retired`
+- SPEC §3.7 states that retired nodes are omitted from blast radius by default
+- README tool table matches
+- Prior systems-dialect / proportional-review / neighbors-in-place contracts still hold
+
+## Atomic Ops
+
+- [x] Update SPEC §8 tool contracts for slim context and grouped blast radius + include_retired
+- [x] Update SPEC §3.7 retired-node blast-radius sentence
+- [x] Update README tool table
+- [x] Verified by Reviewer against the code
+
+## Attachments
+
+_None._

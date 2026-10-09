@@ -161,7 +161,7 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Get node context",
       description:
         "Returns authoritative record (graph slice), editable body, attachment paths, and filenames. " +
-        "Includes next slot when an evolution is in progress. Prefer record+body over raw_context (deprecated).",
+        "Includes next slot when an evolution is in progress (`next.record` + `next.body`).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
       },
@@ -176,6 +176,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
         "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
+        "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
         "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream). " +
         "Prefer this to start a work session.",
       inputSchema: {
@@ -351,14 +352,23 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get blast radius",
       description:
-        "Returns all nodes that depend on the given node (transitive reverse depends_on closure), " +
-        "with hop distance, journeys_at_risk, and affected_files (via focus|dependent|exposing|importer). " +
+        "Returns nodes that depend on the given node (transitive reverse depends_on closure), " +
+        "with hop distance, journeys_at_risk, and affected_files grouped by owner " +
+        "({ owner_id, owner_type, via[], files[] }; via ∈ focus|dependent|exposing|importer). " +
+        "Cancelled and deprecated nodes are omitted by default; set include_retired to see them " +
+        "(BFS still traverses through retired nodes so live dependents keep true distances). " +
         "When the focus is an Interaction, also returns reachability.",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose dependents to analyze."),
+        include_retired: z
+          .boolean()
+          .optional()
+          .describe("Include cancelled/deprecated nodes (default false)."),
       },
     },
-    guarded(({ node_id }) => getBlastRadius({ node_id }))
+    guarded(({ node_id, include_retired }) =>
+      getBlastRadius({ node_id, include_retired })
+    )
   );
 
   server.registerTool(

@@ -179,12 +179,12 @@ No Dependency Closure / `link_dependent`.
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `orient_for_work` | read | find + context + blast radius (Interaction focus includes `reachability`) |
+| `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`) |
 | `find_related_nodes` | read | Rank by query; focus + 1-hop |
 | `get_mindplan_graph` | read | Assembled nodes/edges (`version: 1`) |
 | `export_mindplan_view` | read | Mermaid or DOT |
-| `get_blast_radius` | read | Reverse-`depends_on` affected + Interaction reachability |
-| `get_node_context` | read | `record` + `body` (+ `next` when evolving) |
+| `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files`; cancelled/deprecated omitted unless `include_retired` |
+| `get_node_context` | read | `record` + `body` (+ `next.record`/`next.body` when evolving) |
 | `get_node_implementation` | read | Package root for Interaction/Interface/Foundation |
 | `patch_node_territory` | mutation | Optional prose fallback; prefer host file tools |
 | `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug |
