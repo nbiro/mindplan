@@ -4,17 +4,15 @@ type: Foundation
 title: "Test harness (released presence)"
 description: "Infra — harness covers exclusivity, coverage, presence (including released live skip), leftovers, import matrix."
 state: stable
-shipped_at: 2026-10-07T21:14:33.556Z
+shipped_at: 2026-10-09T20:25:23.796Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-07T21:14:33.556Z
+updated_at: 2026-10-09T20:25:23.796Z
 depends_on:
   - f-mcp-runtime
 implements:
   - src/foundations/f-test-harness/
 role: infra
 ---
-
-
 
 
 # Test harness (released presence)
@@ -48,7 +46,7 @@ Depends on: `f-mcp-runtime`.
 
 ## Impact
 
-The harness contract is unchanged: it still covers exclusivity, coverage, presence (including the released-live skip), leftovers, the import matrix, and smoke. Smoke now also locks behaviors owned elsewhere: an empty `## Impact` section fails Minimum Territory Shape, including when a lone carriage return separates the heading; an inherited complete next checklist may stay checked while building, and a complete next checklist with different labels may not; one `update_node_status` `revisions` call applies Foundations, then Interactions, then Interfaces, and leaves the foundation shipped when a later node is Blocked.
+The harness contract is unchanged: it still covers exclusivity, coverage, presence (including the released-live skip), leftovers, the import matrix, dirty-src, and smoke. Its cases follow behaviors owned elsewhere in this revision. Smoke and `check.test.mjs` drop the “Checklist Complete” expectations (the compiler, steer, and check no longer reject a fully checked checklist while building) and instead assert that a fully checked `in-progress` node is accepted and that `ship` with an unchecked box is still Blocked. `check.test.mjs` adds `--base` cases: an uncommitted edit to a `stable` owner with no next passes, and one whose next is `ready` still fails. Smoke asserts that `init` writes the stub into `AGENTS.md` and the Cursor rule, and that the MCP `initialize` result carries the playbook as `instructions`.
 
 ## Attachments
 

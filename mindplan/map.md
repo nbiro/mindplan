@@ -1,19 +1,19 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (43 nodes, 106 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (43 nodes, 107 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
   subgraph foundations["Foundations"]
-    f_compiler_rules["f-compiler-rules · Compiler rules (impact section shape) · stable"]
+    f_compiler_rules["f-compiler-rules · Compiler rules (no open-checklist rule) · stable"]
     f_console_client["f-console-client · Console client · ready"]
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
     f_domain_model["f-domain-model · Domain model (implements + role) · stable"]
-    f_framework_docs["f-framework-docs · Framework docs (revision by blast radius) · stable"]
+    f_framework_docs["f-framework-docs · Framework docs (systems dialect first) · stable"]
     f_github_actions["f-github-actions · GitHub Actions (file ownership) · stable"]
     f_graph_search["f-graph-search · Graph search (interaction-centric) · stable"]
-    f_mcp_runtime["f-mcp-runtime · MCP runtime (boot only) · stable"]
+    f_mcp_runtime["f-mcp-runtime · MCP runtime (server instructions) · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
     f_npm_registry["f-npm-registry · npm registry adapter · ready"]
     f_source_index["f-source-index · Source index (released claim entries) · stable"]
@@ -66,6 +66,7 @@ flowchart TB
   f_framework_docs --> f_domain_model
   f_github_actions --> f_npm_registry
   f_graph_search --> f_domain_model
+  f_mcp_runtime --> f_framework_docs
   f_mcp_runtime --> f_territory_store
   f_source_index --> f_domain_model
   f_territory_store --> f_domain_model
