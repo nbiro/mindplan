@@ -216,7 +216,7 @@ export function installRootAgentsMd(
   packageRoot: string,
   options: InstallOptions = {}
 ): InstallAgentRuleResult {
-  const templatePath = path.join(agentTemplateRoot(packageRoot), "playbook.md");
+  const templatePath = path.join(agentTemplateRoot(packageRoot), "agents-stub.md");
   const destPath = path.join(projectRoot(), "AGENTS.md");
   return installTemplateFile(templatePath, destPath, "AGENTS.md", options);
 }
@@ -254,7 +254,7 @@ export function installCursorSkills(
 
 const CURSOR_RULE_FRONTMATTER =
   "---\n" +
-  "description: MindPlan SDLC execution process — always-on development workflow, MCP mutations, compiler rules\n" +
+  "description: MindPlan — orient on the product graph before planning or changing code\n" +
   "alwaysApply: true\n" +
   "---\n\n";
 
@@ -268,7 +268,7 @@ export function installCursorRule(
   if (fs.existsSync(destPath) && !force) {
     return { installed: false, path: projectRelativePath };
   }
-  const templatePath = path.join(agentTemplateRoot(packageRoot), "playbook.md");
+  const templatePath = path.join(agentTemplateRoot(packageRoot), "agents-stub.md");
   if (!fs.existsSync(templatePath)) {
     throw new Error(`Agent template not found at ${templatePath}`);
   }

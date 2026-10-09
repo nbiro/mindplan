@@ -1,12 +1,12 @@
 ---
 id: f-framework-docs
 type: Foundation
-title: "Framework docs (revision by blast radius)"
-description: "Assembler/docs — one revision classified source / neighbor / unaffected; full successor only where the contract changed; neighbor impact notes; one reviewer; ordered status in one call."
+title: "Framework docs (systems dialect first)"
+description: "Assembler/docs — the playbook is the short systems dialect (served as MCP server instructions); review is proportional and lives in review-work; neighbors edit in place; Atomic Ops are a ship-time ledger."
 state: stable
-shipped_at: 2026-10-07T21:14:28.761Z
+shipped_at: 2026-10-09T20:25:23.643Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-07T21:14:28.761Z
+updated_at: 2026-10-09T20:25:23.643Z
 depends_on:
   - f-domain-model
 implements:
@@ -17,53 +17,88 @@ role: assembler
 ---
 
 
-
-
-
-# Framework documentation (revision by blast radius)
+# Framework documentation (systems dialect first)
 
 ## Purpose
 
-Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook and skills). Keep the shipped guarantees: live-presence skip for released implements entries (SPEC §9.6), and Implementation review **Approve** as a quality verdict that is not voided by **Infrastructure First** or cascading Behavior First. Ship stays a separate transition. Unfinished Foundation deps are not a Reject reason.
+Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook, stub, skills, integration guides). MindPlan is a tool that helps an agent think in systems. The documentation puts that first. What an agent carries every turn is the **systems dialect**: orient on the graph, place work on it, respect the edges, claim files, and classify change by blast radius. Review, checklists, and revision bookkeeping are procedures that the agent loads only at the moment they apply.
 
-Add the multi-node revision rule (SPEC §3.7). One revision, one Reviewer, one spawn, at Implementation review. The parent self-readies; there is no separate Plan Reviewer. That Reviewer judges source contracts and neighbor impact notes together with the diff. Classify by blast radius. Sources get a full successor. Neighbors get a real impact note. Unaffected nodes stay out of the successor set. Status advances Foundations, then Interactions, then Interfaces, then Bugs in one call and stops on the first `Blocked:`. Independence, file ownership, and the ban on self-ship stay in force.
+Keep the shipped guarantees: live-presence skip for released implements entries (SPEC §9.6); Implementation review **Approve** is a quality verdict that **Infrastructure First** or cascading Behavior First does not void; ship is a separate transition; unfinished Foundation deps are not a Reject reason; one `update_node_status` `revisions` call orders Foundations, Interactions, Interfaces, then Bugs and stops on the first `Blocked:`.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-- SPEC §3.1: Approve is not voided by Infrastructure First; one spawn covers the revision classified in §3.7; later `ship` applies Approve. Rule 3 (§5.4) stays a hard ship gate.
-- SPEC §3.6: sources remain full successors because ship promotes wholesale. Neighbors keep the inherited contract and add `## Impact`. `open_next` still resets checkboxes; neighbors restore inherited `[x]` items.
-- SPEC §3.7: source / neighbor / unaffected. Pull-in is reverse `depends_on`, `exposes`, or inbound `leads_to`. One `update_node_status` `revisions` call orders Foundations, Interactions, Interfaces, then Bugs and stops on the first `Blocked:`. Earlier nodes stay transitioned. Default check (ownership, import matrix) plus a green typecheck are required before review. The check command does not run the typechecker.
-- SPEC §5: a blocked transition writes nothing for itself; an ordered revision is a sequence of transitions.
-- SPEC §8.2: single-node `update_node_status` unchanged; `revisions` is the set form and is mutually exclusive with `node_id` / `new_status`.
-- SPEC §9.6: default check stays graph load, ownership, and the import matrix.
-- README: keep the Infrastructure First example and the Approve-while-ship-waits note. Describe one revision and the ordered status call.
-- `templates/agent/skills/review-work/SKILL.md`: one spawn; class split on plan review and on one reading of the diff; neighbor impact notes are real sections; inherited Atomic Ops are re-checked only when the diff touches them; one `revisions` call; ship-deferral carve-out stays.
-- `templates/agent/playbook.md`, define-entities, and plan-project: same split. Do not tell Plan Review to Reject for unfinished Foundations. Do not spawn one Reviewer per node.
+### Playbook = systems dialect
+
+`templates/agent/playbook.md` is the canonical systems dialect. `f-mcp-runtime` serves it verbatim as the MCP server `instructions`, and `i-init-project` copies it to `mindplan/agent/playbook.md`. It contains only:
+
+- Orient with `orient_for_work` before substantial work; trust the mutation `anchor`; do not invent architecture from chat or greps
+- Taxonomy (Journey, Foundation, Interaction, Interface, Bug) and edges (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`), including Interaction Independence and “Interaction owns the body, Interface mounts”
+- MCP writes structure; file tools write territory prose; never hand-edit server-owned frontmatter
+- `Blocked:` is a hard failure: fix the stated cause
+- Claim files with `set_implementation_files` before writing them
+- A change to shipped work is a blast-radius classification: source, neighbor, unaffected
+- One line on shipping: do not ship your own work when review is due; follow `review-work`
+- Routing to `define-entities`, `plan-project`, and `review-work`
+- Architectural nevers only (no tickets outside the graph, no Interaction→Interaction `depends_on`, no Interface-owned screen bodies, no writes on `main`/`master`)
+
+It does **not** contain the review procedure, the revision freeze, verdict formats, check/typecheck handoff steps, or checklist rules.
+
+### Stub = trigger
+
+New `templates/agent/agents-stub.md` is what `i-init-project` installs into root `AGENTS.md` and `.cursor/rules/mindplan.mdc`. A few lines: MindPlan models this repository; before planning or changing code, call `orient_for_work` and place the work on the graph; follow the MindPlan MCP server instructions; if the host does not show server instructions, read `mindplan/agent/playbook.md`.
+
+### Review is proportional (SPEC §3.1, §3.7, review-work)
+
+- The agent MAY ship (or resolve) its own revision after default `mindplan-mcp check` and the project typecheck are green, when the revision has **no Foundation source** and **at most one source**.
+- The agent MUST spawn one independent Reviewer when any source is a Foundation, or the revision has two or more sources. One spawn covers the revision; the Reviewer judges source contracts and the diff together.
+- `templates/agent/skills/review-work/SKILL.md` owns everything about that gate: when it is due, check + typecheck before handoff, the revision snapshot handed to the Reviewer, the verdict the Reviewer returns, the ship-deferral carve-out, and Reject → fix → fresh Reviewer. The playbook and integration guides point at it and do not restate it.
+- The verdict format is for the Reviewer only. The parent acts on the outcome: shipped, ship-deferred, or Reject with findings.
+
+### Neighbors edit in place (SPEC §3.6, §3.7)
+
+- **Source** (own contract changed): `open_next` and a full successor contract — unchanged.
+- **Neighbor** (pulled in by reverse `depends_on`, `exposes`, or inbound `leads_to`; owned files change; behavior does not): edit the owned files in place. No `open_next`, no `## Impact` note. List neighbors on the revision so a Reviewer, when one is due, reads their files in the diff.
+- A neighbor whose `implements` must change is not a pure neighbor: `open_next` it like a source.
+- **Unaffected**: no change, not listed for edits.
+- `## Impact` is no longer part of any template. The compiler still rejects an empty one when the heading exists.
+
+### Atomic Ops are a ship-time ledger (SPEC §3.3, §5.6)
+
+- Atomic Ops remain Markdown checkboxes; Completion Check still blocks `ship` / `resolved` with unchecked items.
+- The “leave one Atomic Op open while building” rule is removed (`f-compiler-rules`, `i-steer-plan`, `i-check-integrity`). SPEC §5.6, Appendix A, and the Appendix B walkthrough drop it.
+- Skills describe Atomic Ops as the record checked before ship, not as the plan and not as progress narration.
+
+### Other documents
+
+- SPEC §0: the always-on artifact is the systems dialect, delivered as MCP server instructions plus a stub.
+- SPEC §9.6: default check is graph load + ownership + import matrix; `--base` allows uncommitted edits to shipped owners.
+- README: lead with the systems dialect; state the proportional review rule and neighbors-in-place in the “Plans are made to be changed” list; keep the Infrastructure First example.
+- `define-entities` and `plan-project`: drop SDLC restatements that duplicate review-work; Atomic Ops templates stay as scaffolds.
+- Integration guides (`cursor.md`, `generic.md`, and the rest): the always-on rule is the stub; server instructions carry the dialect; review lives in review-work. Drop the restated review loop.
 - Sync this repo’s `AGENTS.md`, `.cursor/rules/mindplan.mdc`, and `.cursor/skills/mindplan-*` from the updated templates.
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- SPEC §3.7 defines source, neighbor, and unaffected, and the ordered status call that stops on the first `Blocked:`
-- SPEC §3.1 and §3.6 keep Approve-vs-ship and full-successor promotion; neighbors are not changelog-only bodies
-- SPEC §8.2 documents single-node and `revisions` inputs, outputs, and the stop error
-- review-work reviews sources in full and neighbors by impact note, with one spawn and one status call
-- Playbook, define-entities, and plan-project match that split
-- README states the revision rule and the ordered `update_node_status` call
+- `templates/agent/playbook.md` fits on one screen and contains none of: Reviewer spawn procedure, revision freeze fields, verdict format, check/typecheck handoff, checklist rules
+- `templates/agent/agents-stub.md` exists and is under ten lines of instruction
+- SPEC §3.1 and §3.7 state the proportional review rule; self-ship is allowed exactly when the revision has no Foundation source and at most one source
+- SPEC §3.6 and §3.7 define neighbors as in-place edits with no `next` and no impact note
+- SPEC §5.6 and Appendix A no longer describe the open-checklist-while-building rule; Completion Check remains
+- review-work is the only document that describes the Reviewer gate in procedural detail
+- README and integration guides match
 - Local `AGENTS.md` and `.cursor` copies match the templates
-- Verified by reading SPEC §3.7, review-work, and the playbook
 
 ## Atomic Ops
 
-- [x] Update SPEC §3.6, §3.7, §5, §8.2, and §9.6 for revision classes and ordered status
-- [x] Update README with the revision rule and the `revisions` tool row
-- [x] Update review-work for one spawn, class split, and one status call
-- [x] Update playbook, define-entities, and plan-project
+- [x] Rewrite `templates/agent/playbook.md` as the systems dialect; add `templates/agent/agents-stub.md`
+- [x] Rewrite review-work for proportional review; keep the snapshot, verdict, and ship-deferral rules inside it
+- [x] Update SPEC §0, §3.1, §3.3, §3.6, §3.7, §5.6, §9.6, §11, Appendix A, and Appendix B
+- [x] Update README, define-entities, plan-project, and integration guides
 - [x] Sync AGENTS.md and `.cursor` rules/skills from templates
-- [x] Verified by reading SPEC §3.7, review-work, and the playbook
 
 ## Attachments
 

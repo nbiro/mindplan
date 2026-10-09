@@ -1,189 +1,106 @@
 ---
 name: mindplan-review-work
 description: >-
-  MindPlan Review gates: parent MUST spawn an independent Reviewer before
-  treating Plan Review (draft → ready) or Implementation review (in-review →
-  ship / resolved) as done — narration is not a substitute. Reviewer runs this
-  skill once per spawn and returns a structured verdict; do not write Review
-  Notes into territory. Also covers parent freeze / check / retry-loop duties.
+  MindPlan Review gate. Load when about to ship or resolve a revision. Review is
+  proportional: the agent may ship its own work when the revision has no Foundation
+  source and at most one source; otherwise it MUST spawn one independent Reviewer
+  who judges source contracts and the diff together. Covers when the gate is due,
+  check + typecheck before handoff, the revision snapshot, the Reviewer verdict,
+  ship-deferral, and Reject → fix → fresh Reviewer. Do not write Review Notes
+  into territory.
 ---
 
 # Review Work
 
-Two audiences:
+This skill is the only place the review gate is described in procedural detail. The always-on playbook just points here.
 
-- **Parent (implementing / planning agent)** — owns the Review loop: freeze, **spawn**, fix, re-spawn. Read **Parent obligations** below, then spawn a Reviewer; do not self-review.
-- **Reviewer (spawned subagent)** — follow Procedure A or B once per spawn, return a structured verdict, stop.
+## Is a Reviewer due?
 
-Two procedures:
+Classify the revision by blast radius (`get_blast_radius`):
 
-- Procedure A — Plan Review for a **frozen subgraph** of draft nodes → `ready`.
-- Procedure B — Implementation review for an **immutable revision** /
-  change-set → `ship` / `resolved`.
+- **Source** — own contract changed (`open_next`, full successor).
+- **Neighbor** — depends on / exposes / navigates to a source; owned files change, behavior does not. Edited **in place**: no `open_next`, no impact note. A neighbor whose `implements` must change is not a pure neighbor — treat it as a source.
+- **Unaffected** — in the radius, nothing changes.
 
-The **parent** owns the retry loop (fix → re-enter gate → re-spawn a **fresh**
-Reviewer). You (Reviewer) review once per spawn, return a structured verdict, and stop.
+| Revision | Gate |
+|---|---|
+| No Foundation source, **at most one** source | **Self-ship allowed.** Run check + typecheck (below), then `ship` / `resolved` yourself. |
+| Any Foundation source, **or** two or more sources | **Spawn one independent Reviewer** before `ship` / `resolved`. |
 
-One approval gate per **immutable revision** — not one Reviewer invocation forever.
-Reject, or any change of HEAD/tree after the verdict, voids approval.
-`Blocked: Infrastructure First` (or Behavior First that only cascades from an
-Approve-but-ship-deferred Interaction) does **not** void Approve — see Procedure B.
+Self-ship is a judgment, not a loophole: if the single source is risky (security, data loss, wide neighbor fan-out), spawn a Reviewer anyway.
 
-## Parent obligations (spawn before done)
+Self-`ready` (`draft` → `ready` in one ordered `revisions` call) never needs a Reviewer. Plan-only sessions stop at `ready`.
 
-When a Review gate is due, the parent MUST:
+## Before any ship (self or Reviewer)
 
-1. Run default `mindplan-mcp check` and get exit `0` (fix every `Blocked:` first).
-2. Enter the gate: leave nodes at `draft` for Plan Review, or `update_node_status` → `in-review` for Implementation review / Bug review.
-3. Freeze membership (Procedure A) or revision `{base_sha, head_sha, clean_tree, changed_files[], node_ids[]}` (Procedure B).
-4. **Spawn** an independent Reviewer subagent / separate session that loads this skill — pass the frozen list, procedure, and that check is green. On Cursor: use the Task / subagent tool pointed at `.cursor/skills/mindplan-review-work/`.
-5. Wait for the structured verdict. On Reject: fix Findings, re-check, re-enter the gate, re-spawn a **fresh** Reviewer (do not resume the same Reviewer for a new verdict). After ~3 Rejects, escalate to the human.
-6. On Approve: trust the Reviewer’s status transitions (`ready` / `ship` / `resolved`) and any **ship-deferred** Results. Do not re-`ship` nodes the Reviewer already shipped. When Foundations later become `stable`, the parent (or a later session) MAY call `ship` on deferred nodes without a new Reviewer unless HEAD/tree changed (void rule).
+1. Default `mindplan-mcp check` exits `0` (ownership, import matrix, graph load). Fix every `Blocked:` first.
+2. The project typecheck for the revision exits `0`. Check does not run it.
+3. Every Atomic Op you are about to check is actually done. Completion Check blocks `ship` / `resolved` while any `[ ]` remains. Atomic Ops are the record checked before ship, not the plan and not progress narration.
 
-**Done** = Reviewer returned Approve and every approved node is either advanced (`ready` / `stable`/`unstable` / `resolved`) **or** explicitly ship-deferred with an Infrastructure First (or cascading Behavior First) reason — **or** human escalation after exhausted Rejects.
+Other nodes at `in-progress` / `in-review` / Bug `fixing` are mergeable. They never block your revision.
 
-**Not done** = ending the turn with “this wasn’t reviewed,” “needs a Reviewer,” or “please review this” without having spawned one while nodes sit at `draft` / `in-review`.
+## Parent: when a Reviewer is due
 
-## Preconditions (both procedures) — Reviewer
+1. Move the successor set (sources only, since neighbors have no `next`) to `in-review` in one ordered `revisions` call.
+2. Freeze the revision snapshot:
+   `{base_sha, head_sha, clean_tree, changed_files[], sources[], neighbors[], unaffected[]}`.
+3. **Spawn** one Reviewer for the whole revision (not per node). Pass the snapshot and that check and typecheck are green. On Cursor, use the Task tool and point the subagent at `.cursor/skills/mindplan-review-work/`.
+4. Wait for the verdict.
+   - **Approve:** the Reviewer ships. Do not re-ship what it already shipped.
+   - **Ship-deferred:** leave the node at `in-review`. When its Foundation deps become `stable`, `ship` it without a new Reviewer, unless HEAD or the tree changed.
+   - **Reject:** fix the Findings, re-run check + typecheck, re-enter the gate, spawn a **fresh** Reviewer. After about three Rejects, escalate to the human.
+5. Done = Approve with every node shipped or explicitly ship-deferred, or human escalation. Ending the turn with "needs review" when a Reviewer is due and unspawned is not done.
 
-- Independent of the session that authored the plan (A) or implementation (B).
-  If you wrote what you are about to review, Reject with that Finding.
-- **Parent MUST have a green default `mindplan-mcp check`** before spawning you
-  (Plan Review, Implementation review, or re-spawn after Reject). If **default**
-  check would fail, Reject with that Finding and do not advance status.
-- **Do not Reject because other nodes are in progress.** Graph-wide
-  `in-progress` / `in-review` / `draft` / `ready`, or Bug `fixing` / `in-review`,
-  outside the frozen membership or revision is allowed and mergeable.
-  Scope the verdict to the frozen set only.
-- **Do not Reject because Foundation deps are unfinished.** Infrastructure First
-  blocks MindPlan `ship`, not the quality verdict. Unfinished Foundation deps are
-  not a Reject reason.
-- Orient with `orient_for_work` / `get_node_context` / `get_blast_radius` before judging.
-- Mutation boundary: `update_node_status` only. Never `link_nodes` / `create_node`.
-- **Never** write `## Review Notes` into territory. Findings stay in the verdict message.
-- If `Read` on `mindplan/agent/**` fails, load this skill via shell/`cat`.
+## Reviewer (spawned subagent)
 
-## Structured verdict message (required)
+Run once per spawn, return the verdict, stop.
+
+**Preconditions**
+
+- You are independent of the session that wrote the work. If you wrote it, Reject with that Finding.
+- Parent has green check and typecheck. If default `check` would fail, Reject and do not advance status.
+- Do not Reject because other nodes are in progress, or because Foundation dependencies are unfinished. Infrastructure First blocks `ship`, not the quality verdict.
+- Orient with `orient_for_work` / `get_node_context` / `get_blast_radius`. Your only mutation is `update_node_status`. Never `link_nodes` / `create_node`.
+- Never write `## Review Notes` into territory. Findings live in the verdict message.
+
+**Bind the revision.** Reject a dirty tree (`clean_tree: false`) and undeclared changed files outside successor ownership. Map every changed file to its `implements` owner. A file owned outside the successor set needs justification, as does any new or changed `assembler` role. If HEAD or the tree changes after your verdict, approval is void.
+
+**Review everything before any mutation. Read the diff once.**
+
+1. **Sources.** Pull PRD / Kind / Spec / AC / Atomic Ops / edges from the active body (`next` when evolving; it must be a full successor, not a changelog). Verify each checked Atomic Op independently (read the code, run tests). Check domain fit, dependency accuracy, Interaction Independence, Interface/Interaction fit (no Interface-owned screen bodies), decomposition, and territory prose against the diff. Mechanical stubs are the compiler's job (Minimum Territory Shape); you judge semantic Territory Completeness.
+2. **Neighbors.** Read their changed files in the diff. Confirm behavior did not change and the shipped contract still holds. Do not demand a rewritten contract or re-verify inherited Atomic Ops the diff does not touch.
+3. **Unaffected.** Confirm the diff does not require them to move. If it does, Reject: they were misclassified.
+4. **Hygiene.** No scratch, patch, temp, or unrelated files. Do a general code review once (host-native first, e.g. Cursor `/code-review`; else `mindplan/agent/skills/code-review/`). Blocking findings → Reject.
+
+**Then one status call.** `update_node_status` once with `revisions`: `ship` for Foundations, Interactions, and Interfaces; `resolved` for Bugs whose targets are in the revision. The server orders Foundations → Interactions → Interfaces → Bugs and stops on the first `Blocked:`.
+
+**Ship-deferral carve-out (Approve stands).** If `ship` returns `Blocked: Infrastructure First`, or Interface `ship` returns `Blocked: Behavior First` only because an exposed Interaction is Approve-but-ship-deferred, record **Approve + ship deferred**. Leave the node at `in-review`; defer later nodes waiting on the same dependency and say so. Do not flip to Reject.
+
+**Any other `Blocked:`** (Completion Check, implements gate, Minimum Territory Shape, Ghost rules, wrong state, Behavior First after a Rejected Interaction): **stop**. Report what shipped, what failed, and why. Retreat Rejected members to `in-progress` / `fixing`.
+
+Architecture fit does not replace AC verification, tests, security/regression review, or diff hygiene.
+
+**Verdict message (required, Reviewer only).**
 
 ```
 Verdict: Approve | Reject
-Procedure: PlanReview | ImplementationReview
-Revision: { base_sha, head_sha, clean_tree, changed_files[], node_ids[] }
-  # Plan Review may omit SHAs if no code; still freeze node_ids membership
+Revision: { base_sha, head_sha, clean_tree, changed_files[], sources[], neighbors[], unaffected[] }
 Nodes:
-  - id: <id> (slot: next?)  Verdict: Approve|Reject  StatusAttempted: ...  Result: ...
-Findings: <itemized; per-node evidence on Approve>
-StatusAttempted: summary
+  - id: <id> (class: source|neighbor)  Verdict: Approve|Reject  Result: shipped | ship-deferred (<Blocked text>) | retreated
+Unaffected:
+  - id: <id>  Confirmed: yes|no
+Findings: <itemized; per-Atomic-Op evidence for sources on Approve; actionable gaps only on Reject>
 ```
-
-Implementation Approve Findings must include Evidence lines per Atomic Op and Fit
-(domain / dependency / decomposition / Interaction Independence /
-Interface–Interaction fit) **plus** general code-review / tests / diff hygiene.
-Reject Findings must be actionable gaps only.
-
-## Procedure A: Plan Review (subgraph → ready)
-
-1. Parent freezes **membership** = nodes created/materially changed in this planning
-   revision. You review that list only; a later-added or materially changed member
-   invalidates the subgraph approval.
-2. For each member: pull PRD / Kind / Spec / AC / Atomic Ops / edges from the active
-   body (`next` when evolving).
-3. `get_blast_radius` on focus members.
-4. Checks (same substance as before): buildable AC; domain fit; dependency
-   completeness (Foundations only for Interactions — **Interaction Independence**);
-   Interface/Interaction fit (no Interface-owned screen bodies; Kind-gated
-   mount/view or handler); decomposition; scope (one behavior / one surface).
-5. Mechanical stub detection is **Minimum Territory Shape** (compiler) — you judge
-   semantic Territory Completeness and decomposition, not missing headings alone.
-6. Approve → `update_node_status → ready` **per approved member**. Reject → leave
-   remaining at `draft`. Report per-node Results.
-7. Return the structured verdict. Do not edit territory for feedback.
-
-## Procedure B: Implementation Review (revision / change-set → ship)
-
-### Bind the revision
-
-Require from parent (or compute yourself):
-
-```
-revision = { base_sha, head_sha, clean_tree: true, changed_files[], node_ids[] }
-```
-
-- Reject undeclared changed files outside `node_ids` ownership / Atomic Ops.
-- **Owner mapping:** map each changed file to its `implements` owner (`get_node_implementation` path lookup). A file owned by a node **outside** the frozen `node_ids[]` is a finding that needs justifying. A new or changed `assembler` role is likewise a finding that needs justifying.
-- Reject dirty tree (`clean_tree: false`).
-- If HEAD or the working tree changes after your verdict, approval is void.
-
-### Review everything before any mutation
-
-1. Orient + `get_blast_radius` on focus nodes.
-2. For **every** node in `node_ids` and the **entire** diff:
-   - Verify each checked Atomic Op independently (read code, run tests/CI vs AC).
-   - Domain fit, dependency accuracy, Interaction Independence, Interface/Interaction fit
-     (Kind-gated mount/view or handler).
-   - Decomposition drift; territory prose vs real diff.
-   - **Semantic Territory Completeness** — especially `next.mdx` is a full successor,
-     not a changelog (SPEC §3.6).
-   - Diff hygiene — no scratch/patch/temp/unrelated files.
-   - General code review (host-native first, e.g. Cursor `/code-review`; else community
-     skill; else `mindplan/agent/skills/code-review/`). Blocking findings → Reject.
-3. Produce **per-node** verdicts with evidence. Do **not** call `ship` until the whole
-   set is reviewed.
-
-### Then transition in order (non-atomic today)
-
-MCP `update_node_status` is single-node. Infrastructure First / Behavior First force
-this order for successful transitions:
-
-1. Foundations → `ship`
-2. Interactions → `ship`
-3. Interfaces → `ship`
-4. Bugs → `resolved` with their targets as applicable
-
-After each transition: re-read MCP state.
-
-**Ship-deferral carve-out (Approve stands):**
-
-- If Interaction/Interface `ship` returns `Blocked: Infrastructure First`, record
-  **Approve + ship deferred**. Leave the node at `in-review`. Do **not** flip to
-  Reject. Do **not** retreat to `in-progress`.
-- If Interface `ship` returns `Blocked: Behavior First` **only** because an exposed
-  Interaction was Approve-but-ship-deferred (or is not yet `stable` for that same
-  dependency wait), defer that Interface the same way.
-- Report per-node Results: shipped vs ship-deferred (with the `Blocked:` text).
-  Set-level Verdict may still be **Approve** when every member is Approve and each
-  is either shipped/`resolved` or ship-deferred under this carve-out.
-
-**Other `Blocked:`** (Completion Check, implements gate, Minimum Territory Shape,
-Ghost rules, wrong state, Behavior First after a Rejected Interaction, etc.):
-**stop**. Do not soft-approve. Do not claim the set approved. Report what shipped,
-what failed, and why. Retreat Rejected members to `in-progress` / `fixing` as needed.
-
-Reject (before any ship, for quality Findings) → retreat nodes to `in-progress` /
-`fixing` as needed.
-
-Re-spawning a Reviewer solely because ship was Infrastructure-First-blocked is an
-anti-pattern. When deps become `stable`, the parent (or later session) calls `ship`
-on deferred nodes — no new Reviewer — unless HEAD/tree changed after the verdict.
-
-### Fit is not enough
-
-Architecture Fit checks do **not** replace AC verification, tests, security/regression
-review, or diff hygiene.
 
 ## Anti-patterns
 
-- Approving because Ghost / Minimum Territory Shape passed — that is structural, not quality.
+- Spawning a Reviewer for a single non-Foundation source "just in case" with no risk, or self-shipping a Foundation or multi-source revision.
+- Approving because Ghost / Minimum Territory Shape passed. That is structural, not quality.
 - Approving checked boxes without independent evidence.
-- Claiming set approval after a partial ship caused by a **non**-Infrastructure-First
-  (and non-cascading-Behavior-First) failure.
-- Soft-approving when `update_node_status` was Blocked for any reason other than
-  Infrastructure First or cascading Behavior First ship-deferral.
+- Treating neighbors as brand-new contracts, or opening `next` on unaffected nodes.
+- Spawning one Reviewer per node, or per Foundation then Interaction then Interface.
+- Soft-approving after a `Blocked:` that is not Infrastructure First or cascading Behavior First.
 - Rejecting, or re-spawning a Reviewer, because Foundation deps are not `stable`.
-- Skipping general code review when application code changed.
-- Writing Review Notes into territory.
-- Reviewing your own plan or implementation in the same session.
-- Treating “once per change-set” as “never re-review after fixes.”
-- **Parent:** claiming the task done, or asking the human to review, without spawning a Reviewer when a gate is due.
-- **Parent:** calling `ship` on own work **before** a Reviewer Approve (deferred `ship` **after** Approve is allowed).
-- **Reviewer:** Rejecting because other nodes are `in-progress` / `in-review` / Bug `fixing`. Unfinished work elsewhere is mergeable.
+- Reviewing your own work in the same session; writing Review Notes into territory.
+- Parent: claiming done, or asking the human to review, without spawning when a Reviewer is due.
+- Reviewer: Rejecting because unrelated nodes are mid-pipeline.

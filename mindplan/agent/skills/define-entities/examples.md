@@ -171,16 +171,17 @@ Optional fallback (automation / weak file tools): `patch_node_territory({ node_i
 
 ### 6. Advance states (after links + content)
 
-Plan Review Foundations first, then the Interaction, then the Interface (spawn Reviewer via `review-work` — do not self-`ready`):
+Self-ready Foundations, then the Interaction, then the Interface (one `revisions` call):
 
 ```
-# After Plan Review Approve on each Foundation:
-# update_node_status({ node_id: "f-db-core", new_status: "ready" })  # Reviewer only
-# …same for f-design-system, f-nextjs…
-# After Plan Review Approve on the Interaction:
-# update_node_status({ node_id: "i-checkout-split", new_status: "ready" })  # Reviewer only
-# After Plan Review Approve on the Interface:
-# update_node_status({ node_id: "if-checkout-page", new_status: "ready" })  # Reviewer only
+# Parent self-ready, one call (server orders Foundations, then Interactions, then Interfaces):
+# update_node_status({ revisions: [
+#   { node_id: "f-db-core", new_status: "ready" },
+#   { node_id: "f-design-system", new_status: "ready" },
+#   { node_id: "f-nextjs", new_status: "ready" },
+#   { node_id: "i-checkout-split", new_status: "ready" },
+#   { node_id: "if-checkout-page", new_status: "ready" },
+# ] })
 # Later execution session:
 update_node_status({ node_id: "i-checkout-split", new_status: "in-progress" })
 ```

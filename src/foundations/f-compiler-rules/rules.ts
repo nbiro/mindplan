@@ -35,8 +35,6 @@ import {
 } from "../f-source-index/claims.js";
 import {
   countUncheckedBoxes,
-  checkboxLabels,
-  isChecklistComplete,
   readMarkdown,
   splitContext,
 } from "../f-territory-store/store.js";
@@ -321,65 +319,6 @@ function runCompletionCheck(
       `Completion Check. ${unchecked} unchecked checkbox(es) remain in ${node.id}/${file}. All [ ] items must be [x] before moving to "${targetLabel}".`
     );
   }
-}
-
-/**
- * Next checklist is the already-shipped contract, not work finished during this evolution.
- * Labels must match live current, and current must already be complete.
- */
-export function isInheritedCheckedChecklist(
-  node: MindPlanNode,
-  nextMarkdown: string
-): boolean {
-  if (!node.shipped_at || !isChecklistComplete(nextMarkdown)) return false;
-  let currentRaw: string;
-  try {
-    currentRaw = readMarkdown(node, "current");
-  } catch {
-    return false;
-  }
-  if (!isChecklistComplete(currentRaw)) return false;
-  const live = checkboxLabels(currentRaw);
-  const next = checkboxLabels(nextMarkdown);
-  if (live.length === 0 || live.length !== next.length) return false;
-  return live.every((label, index) => label === next[index]);
-}
-
-/** States where completing every Atomic Op checkbox is illegal (work still “building”). */
-const BUILDING_CHECKLIST_STATES = new Set([
-  "draft",
-  "ready",
-  "in-progress",
-  "open",
-  "triaged",
-  "fixing",
-]);
-
-/**
- * Reject completing all checkboxes while still building.
- * Agent must transition to in-review themselves — no auto-advance.
- */
-export function assertOpenChecklistWhileBuilding(
-  node: MindPlanNode,
-  proposedBodyOrFullMarkdown: string,
-  slot: "current" | "next" = "current"
-): void {
-  if (!isChecklistComplete(proposedBodyOrFullMarkdown)) return;
-  if (slot === "next" && isInheritedCheckedChecklist(node, proposedBodyOrFullMarkdown)) return;
-
-  const state =
-    slot === "next" && node.next
-      ? node.next.state
-      : node.state;
-  if (!BUILDING_CHECKLIST_STATES.has(state)) return;
-
-  const reviewTarget =
-    node.type === "Bug" ? "in-review" : "in-review";
-  throw blocked(
-    `Checklist Complete. All checkboxes are checked while "${node.id}" is "${state}". ` +
-      `Leave at least one Atomic Op open while building, or call update_node_status → "${reviewTarget}" first ` +
-      `(then complete the checklist; Completion Check applies at ship/resolved).`
-  );
 }
 
 /** Pre-ship Interaction/Interface/Foundation title/description/role edits; shipped scope changes use open_next. */

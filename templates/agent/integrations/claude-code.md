@@ -11,7 +11,7 @@ Or add to the project MCP config (see [Claude Code MCP docs](https://docs.anthro
 2. **Instructions** — add to `CLAUDE.md` at the project root:
 
 ```markdown
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when creating planning nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for Plan Review and Implementation review in a separate Reviewer session.
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when creating planning nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for the review gate (a separate Reviewer session when one is due).
 ```
 
 3. **Skills** (optional) — symlink or copy for Claude Code skill discovery:

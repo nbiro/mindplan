@@ -5,6 +5,10 @@ Agents cannot build correctly without knowing what the system *does*. MindPlan k
 
 Plan state lives next to the code. Every change to it is checked; illegal moves are rejected.
 
+## Think in systems
+
+MindPlan exists so an agent thinks in systems: orient on the graph, place each change on it, respect the edges, claim files, and classify a change to shipped work by its blast radius. That short *systems dialect* is what the agent carries every turn. The MCP server sends it as server `instructions` when the host connects, so nothing needs to be copied into your repo for it to apply. Heavier procedures (the review gate, entity scaffolding) load on demand as skills.
+
 ## The problem
 
 Without a durable model of the product — what behaviors exist, how actors enter them, what substrate is ready — agents improvise from chat history and stale tickets. They ship over unfinished Foundations, wire entry surfaces to unfinished behaviors, or mark work done while checklists are still open.
@@ -30,7 +34,7 @@ linked Foundations are not stable: "f-payments" (in-progress).
 
 That gate still applies to MindPlan `ship`. Implementation review may **Approve** the Interaction while ship waits on Foundations — unfinished substrate is not a Reject reason; Approve stands until deps are `stable` and `ship` succeeds.
 
-No ghost Interactions without a Journey and Foundation, no Interface ship while exposed Interactions are unfinished (**Behavior First**), no Interaction→Interaction `depends_on` (**Interaction Independence**), no review while Atomic Ops are unchecked.
+No ghost Interactions without a Journey and Foundation, no Interface ship while exposed Interactions are unfinished (**Behavior First**), no Interaction→Interaction `depends_on` (**Interaction Independence**), no ship while Atomic Ops are unchecked.
 
 ## Plans are made to be changed
 
@@ -39,7 +43,8 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 - **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`)
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
 - **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `next.mdx` → `ship` promotes over `current.mdx`
-- **Revise together** — one Reviewer for the blast radius. Sources get a full successor. Neighbors whose files changed but whose behavior did not get an impact note. Nodes in the radius whose files did not change stay out of the successor set. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
+- **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
+- **Review in proportion** — an agent may ship its own revision when it has no Foundation source and at most one source. A Foundation contract change, or a revision with several sources, needs one independent Reviewer first
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees
@@ -114,7 +119,7 @@ npm install && npm run build
 node /absolute/path/to/mindplan/dist/index.js init
 ```
 
-`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), and `AGENTS.md` when missing.
+`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), and a short MindPlan stub in `AGENTS.md` and `.cursor/rules/mindplan.mdc` when missing. The stub triggers orientation and defers to the MCP server instructions.
 
 3. Register the MCP server — see `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
@@ -162,7 +167,7 @@ Every violation starts with `Blocked: `.
 3. **No Ghost Bugs** — need `affects` before `triaged`/`fixing`
 4. **Infrastructure First** — Interaction `ship` needs all Foundation deps `stable`
 5. **Behavior First** — Interface `ship` needs all exposed Interactions (and Foundation deps) `stable`
-6. **Completion Check** — unchecked `[ ]` block `in-review`/`ship` (and Bug `resolved`)
+6. **Completion Check** — unchecked `[ ]` block `ship` (and Bug `resolved`)
 7. **Interaction Independence** — no Interaction → Interaction `depends_on` (share state via Foundations)
 8. **Computed Journeys / Stability** — never set manually
 9. **Taxonomy** — legal edge shapes; `depends_on` acyclic; `leads_to` cycles allowed

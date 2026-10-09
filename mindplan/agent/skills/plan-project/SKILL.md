@@ -26,9 +26,9 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 ## Hard rules (plan-only)
 
-- **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries for Plan Review — prefer leaving that to the build session unless the user asks).
+- **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries — prefer leaving that to the build session unless the user asks).
 - **No implementation pipeline** — do not move Foundations/Interactions/Interfaces to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
-- **Allowed states** — leave new or reshaped nodes in `draft`. When the user wants the plan “shipped” / build-ready, finish links, PRD, and unchecked Atomic Ops at `draft`, then run the **Plan Review loop** (spawn Reviewer via `review-work`) until `ready` or escalate. Do not self-advance to `ready`. See **Shipping a plan** below.
+- **Allowed states** — write contracts at `draft`. When the contracts are real, self-`ready` the revision in one ordered `revisions` call. Do not spawn a Plan Reviewer. `review-work` decides at ship time whether a Reviewer is due. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
 - Mutate graph state only through MindPlan MCP. Treat every `Blocked: <reason>` as a hard failure — fix the plan, do not retry blindly.
 - **Interaction Independence** — never model Interaction → Interaction `depends_on`; use Foundations for shared state and `leads_to` for navigation.
@@ -61,7 +61,7 @@ Follow `mindplan/agent/skills/define-entities/`:
 Greenfield order:
 
 ```
-Journey(s) → Interaction(s) at draft → Interface(s) → Foundation(s) derived from those drafts → link_nodes → enrich territory → Plan Review Foundations → Plan Review Interactions → Plan Review Interfaces → ready (then stop if plan-only)
+Journey(s) → Interaction(s) at draft → Interface(s) → Foundation(s) derived from those drafts → link_nodes → enrich territory → self-ready → stop if plan-only
 ```
 
 Gate facts: Journey before any Interaction create; draft Interactions may lack links until leaving `draft`; Interfaces need `exposes` before leaving `draft`; Foundation `ready` before Interaction `ready` is preference — Infrastructure First at Interaction `ship` still requires Foundations `stable`; Behavior First at Interface `ship` requires exposed Interactions `stable`.
@@ -77,7 +77,7 @@ Apply **package ownership** (SPEC §1.2.2) while enriching:
 - One Interface per actor surface, not one Interface per screen/tab.
 - Keep Interaction/Interface Atomic Ops templates from `define-entities`.
 
-Territory Completeness still applies: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius` then `open_next` before changing live scope; edit the `next` slot into a complete proposed successor — still without implementing code or advancing `next` past `draft` (Plan Review owns `draft` → `ready`).
+Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not plan `next` slots for them. The parent self-readies when the contracts are written. `review-work` says whether a Reviewer is due at ship.
 
 ### 5. Validate after every mutation
 
@@ -88,36 +88,35 @@ After each `create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_ne
 3. Confirm the visualization with `export_mindplan_view` or a fresh neighborhood read
 4. On `Blocked:` or mismatch — stop and fix; do not continue
 
-### 6. Plan Review loop, then stop
+### 6. Self-ready, then stop
 
 When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
-1. For each Foundation/Interaction/Interface that should leave `draft`, run the **Plan Review loop** (playbook): spawn a fresh Reviewer (`review-work` Procedure A); fix from Findings in the verdict message; re-spawn up to 3 rejects; escalate to the human if still blocked. Prefer Plan Review on Foundations **before** their dependent Interactions, and Interactions **before** Interfaces that expose them.
-2. Do **not** self-call `update_node_status → ready`.
-3. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → Implementation review loop. Do not start implementation unless the user explicitly switches modes.
-4. Show or offer `export_mindplan_view` so humans can review the map.
+1. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). Do not spawn a Reviewer for this step.
+2. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
+3. Show or offer `export_mindplan_view` so humans can review the map.
 
-## Shipping a plan (Plan Review loop → ready)
+## Shipping a plan (self-ready)
 
-When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means finish at `draft` and run the Plan Review loop until `ready` (or escalate), not self-advance to `ready`, and not the build-pipeline `ship` transition.
+When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means self-`ready` and stop. It is not the build-pipeline `ship` transition, and it does not spawn a Reviewer.
 
-Requirements before spawning Plan Review:
+Requirements before self-ready:
 
 - Links complete (Interactions: at least one `belongs_to` + one Foundation `depends_on`; Interfaces: at least one `exposes`; Bugs past `open`: `affects`)
 - Territory is a full contract with **unchecked** Atomic Ops
-- Nodes remain at `draft` until the Reviewer advances them — do not call `update_node_status` → `ready` yourself
+- Call `update_node_status` → `ready` yourself, one `revisions` call for the set
 - **No** application code under `src/`
 - **No** `in-progress` / `in-review` / `ship` / `stable`
 - **No** checking off checklist boxes
 - **No** Interaction→Interaction `depends_on`
 
-Then run the Plan Review loop. Do not interpret “ship” here as `update_node_status` → `ship`.
+Then self-ready. Do not interpret “ship” here as `update_node_status` → `ship`.
 
 ## Never do (this skill)
 
 - Write or “just scaffold” real implementation in `src/interactions/` / `src/interfaces/` / `src/foundations/`
-- Advance to `ready` / `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`
-- Treat “ship the plan” as build-pipeline `ship` / `stable`, as self-advance to `ready`, or as permission to check Atomic Ops
+- Advance to `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`, in a plan-only session
+- Treat “ship the plan” as build-pipeline `ship` / `stable`, or as permission to check Atomic Ops
 - Check off Atomic Ops without implementation
 - Create an Interaction with no matching Journey
 - Link Interaction → Interaction with `depends_on`

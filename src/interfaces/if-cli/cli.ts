@@ -173,12 +173,8 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
   printInstall(".cursor/permissions.json", report.cursorPermissions);
 
   if (!report.agentsMd.installed) {
-    console.log("Tip: add a reference to mindplan/agent/playbook.md in your existing AGENTS.md.");
-  }
-
-  if (report.reviewSkill.installed && !report.playbook.installed) {
     console.log(
-      "Tip: refresh mindplan/agent/playbook.md (and root AGENTS.md if you use it) from the package templates — Plan Review (`draft → ready`) is now mandatory; the on-disk playbook may still describe the old self-advance path."
+      "Tip: your existing AGENTS.md was kept. Add the MindPlan stub (see the Cursor rule or templates/agent/agents-stub.md): orient with orient_for_work first, and follow the MindPlan MCP server instructions."
     );
   }
 

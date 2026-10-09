@@ -171,7 +171,7 @@ Optional fallback (automation / weak file tools): `patch_node_territory({ node_i
 
 ### 6. Advance states (after links + content)
 
-Self-ready Foundations, then the Interaction, then the Interface (one `revisions` call — the implementation Reviewer judges the plan with the diff):
+Self-ready Foundations, then the Interaction, then the Interface (one `revisions` call):
 
 ```
 # Parent self-ready, one call (server orders Foundations, then Interactions, then Interfaces):
