@@ -1,12 +1,12 @@
 ---
 id: i-orient-plan
 type: Interaction
-title: "Orient (slim context + grouped blast radius)"
-description: "get_node_context drops raw_context/aliases; blast radius groups affected_files by owner and hides cancelled/deprecated by default."
+title: "Orient on the plan"
+description: "Find focus nodes, load territory context, and report blast radius grouped by owner."
 state: stable
-shipped_at: 2026-10-09T21:02:18.097Z
+shipped_at: 2026-10-09T22:27:39.517Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-09T21:02:18.097Z
+updated_at: 2026-10-09T22:27:39.517Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -21,7 +21,9 @@ implements:
 ---
 
 
-# Orient (slim context + grouped blast radius)
+
+
+# Orient on the plan
 
 ## Purpose
 
@@ -59,12 +61,15 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - A live node that depends on a retired intermediate still appears with its true distance
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
 - [x] Drop `raw_context`, `context_path`, top-level title/description, and `next.raw` from `buildNodeContextPayload`
 - [x] Group `affected_files` by owner with merged `via[]` and deduped files
 - [x] Filter cancelled/deprecated from blast-radius lists by default; honor `include_retired`
 - [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 

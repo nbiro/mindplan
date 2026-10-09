@@ -1,12 +1,12 @@
 ---
 id: i-check-integrity
 type: Interaction
-title: "Integrity check (ownership only)"
-description: "Default check: graph load, exclusivity, coverage, presence, leftovers, import matrix — no checklist scan. --base allows uncommitted edits to shipped owners (neighbors edit in place)."
+title: "Check integrity"
+description: "Offline graph load, ownership, coverage, leftovers, and import-matrix check; optional dirty-src vs base."
 state: stable
-shipped_at: 2026-10-09T20:31:14.964Z
+shipped_at: 2026-10-09T22:27:39.631Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-09T20:31:14.964Z
+updated_at: 2026-10-09T22:27:39.631Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -19,7 +19,9 @@ implements:
 ---
 
 
-# Integrity check (ownership only)
+
+
+# Check integrity
 
 ## Purpose
 
@@ -58,11 +60,14 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - Coverage, exclusivity, leftovers, and import matrix unchanged
 - Exit 0/1 with `Blocked:` lines
 
+
 ## Atomic Ops
 
 - [x] Remove the checklist scan from default check
 - [x] Allow uncommitted edits to shipped owners under `--base`
 - [x] Verified via `npm test` / check harness
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 

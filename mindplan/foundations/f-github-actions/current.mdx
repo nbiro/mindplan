@@ -1,21 +1,24 @@
 ---
 id: f-github-actions
 type: Foundation
-role: assembler
-title: "GitHub Actions (file ownership)"
-description: "Assembler — CI stays on default check (now graph + file ownership); claims .github/workflows/ci.yml."
+title: "GitHub Actions"
+description: "Infra — CI workflow for default mindplan-mcp check."
 state: stable
-shipped_at: 2026-09-23T14:05:32.302Z
+shipped_at: 2026-10-09T22:27:39.467Z
 created_at: 2026-07-19T20:19:02.547Z
-updated_at: 2026-09-23T14:08:09.271Z
+updated_at: 2026-10-09T22:27:39.467Z
 depends_on:
   - f-npm-registry
 implements:
   - .github/workflows/ci.yml
+role: infra
 ---
 
 
-# GitHub Actions (file ownership)
+
+
+
+# GitHub Actions
 
 ## Purpose
 
@@ -43,11 +46,16 @@ Depends on: `f-npm-registry`.
 - Territory documents ownership check, not package presence
 - Claims `ci.yml` via implements after land
 
+
 ## Atomic Ops
 
 - [x] Update territory to describe ownership check instead of packages
 - [x] Confirm `.github/workflows/ci.yml` still invokes bare `check`
 - [x] Claim `ci.yml` with `set_implementation_files` after migration
+- [x] Title GitHub Actions; description current-purpose
+- [x] Title GitHub Actions; H1 and description match current purpose
+- [x] Role reclassified to infra (CI config is not an Assembler runtime)
+- [x] Verified by Reviewer against the role and naming contract
 
 ## Attachments
 

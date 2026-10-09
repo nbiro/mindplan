@@ -1,12 +1,12 @@
 ---
 id: f-view-projection
 type: Foundation
-title: "View projection (map legend)"
-description: "Infra — Mermaid/DOT projection with a plain-language How to read this legend on the auto-generated mindplan/map.md."
+title: "View projection"
+description: "Infra — Mermaid/DOT projection and the auto-generated mindplan/map.md snapshot."
 state: stable
-shipped_at: 2026-10-09T22:16:07.216Z
+shipped_at: 2026-10-09T22:27:39.268Z
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-10-09T22:16:07.216Z
+updated_at: 2026-10-09T22:27:39.268Z
 depends_on:
   - f-domain-model
   - f-graph-search
@@ -17,7 +17,9 @@ role: infra
 ---
 
 
-# View projection (map legend)
+
+
+# View projection
 
 ## Purpose
 
@@ -43,11 +45,14 @@ Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 - Mermaid/DOT export APIs unchanged for callers
 - Smoke / view tests that assert on `map.md` still pass
 
+
 ## Atomic Ops
 
 - [x] Add How to read this legend in `persistMindPlanMap`
 - [x] Build and run tests (`npm test`) confirming map.md assertions still pass
 - [x] Verified by Reviewer against the contract
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 

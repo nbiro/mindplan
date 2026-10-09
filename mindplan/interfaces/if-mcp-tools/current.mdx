@@ -1,12 +1,12 @@
 ---
 id: if-mcp-tools
 type: Interface
-title: "MCP tools (include_retired on blast radius)"
-description: "Registers set_implementation_files; get_blast_radius accepts include_retired; tool descriptions match slim orient payloads."
+title: "MCP tools"
+description: "MCP tool surface wiring orient, steer, export, and related graph tools."
 state: stable
-shipped_at: 2026-10-09T21:02:18.195Z
+shipped_at: 2026-10-09T22:27:39.760Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-09T21:02:18.195Z
+updated_at: 2026-10-09T22:27:39.760Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -21,7 +21,9 @@ implements:
 ---
 
 
-# MCP tools (include_retired on blast radius)
+
+
+# MCP tools
 
 ## Purpose
 
@@ -54,12 +56,19 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - Existing tools keep names/envelopes; no domain logic under this Interface
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
 - [x] Add `include_retired` to `get_blast_radius` schema and forward it
 - [x] Update orient / context / blast-radius tool descriptions
 - [x] Verified via MCP smoke
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
+
+## Impact
+
+Title and description only; MCP tool registration and exposes unchanged.

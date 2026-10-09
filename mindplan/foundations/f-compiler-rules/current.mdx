@@ -1,12 +1,12 @@
 ---
 id: f-compiler-rules
 type: Foundation
-title: "Compiler rules (no open-checklist rule)"
-description: "Infra — Completion Check stays at ship/resolved; the rule forcing an Atomic Op to stay open while building is removed. Minimum Territory Shape, Independence, Infrastructure/Behavior First, and implements gates unchanged."
+title: "Compiler rules"
+description: "Infra — validation-at-transition rules: ghosts, Infrastructure/Behavior First, Completion Check, Interaction Independence, taxonomy."
 state: stable
-shipped_at: 2026-10-09T20:25:23.747Z
+shipped_at: 2026-10-09T22:27:39.116Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-09T20:25:23.747Z
+updated_at: 2026-10-09T22:27:39.116Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -17,7 +17,9 @@ role: infra
 ---
 
 
-# Compiler rules (no open-checklist rule)
+
+
+# Compiler rules
 
 ## Purpose
 
@@ -52,11 +54,14 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - No export named `assertOpenChecklistWhileBuilding` or `isInheritedCheckedChecklist` remains
 - Verified via `npm test`
 
+
 ## Atomic Ops
 
 - [x] Remove the open-checklist-while-building rule and its inherited-checklist exception
 - [x] Keep Completion Check, Impact shape, implements, and import-matrix gates
 - [x] Verified via `npm test`
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
