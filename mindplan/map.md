@@ -10,7 +10,7 @@ flowchart TB
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
     f_domain_model["f-domain-model · Domain model (implements + role) · stable"]
-    f_framework_docs["f-framework-docs · Framework docs (slim orient payloads) · stable"]
+    f_framework_docs["f-framework-docs · Framework docs (no prescribed src package layout) · stable"]
     f_github_actions["f-github-actions · GitHub Actions (file ownership) · stable"]
     f_graph_search["f-graph-search · Graph search (interaction-centric) · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime (server instructions) · stable"]
