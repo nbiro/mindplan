@@ -579,14 +579,22 @@ await expectBlocked("skip to ship", "update_node_status", { node_id: "i-tips", n
 await expectBlocked("bug affects journey", "link_nodes", { source_id: "bug-race", target_id: "j-ordering", edge_type: "affects" });
 
 const ctx = JSON.parse(await expectOk("get_node_context bug", "get_node_context", { node_id: "bug-race" }));
-if (ctx.context_path !== "mindplan/bugs/bug-race/current.mdx") { failures++; console.log("FAIL bug context path"); }
+if (ctx.current_path !== "mindplan/bugs/bug-race/current.mdx") { failures++; console.log("FAIL bug current_path"); }
 else console.log("ok   bug get_node_context");
-if (ctx.title !== "Race condition" || ctx.description !== "Double charge") {
-  failures++; console.log(`FAIL bug title/description from context: ${JSON.stringify({ title: ctx.title, description: ctx.description })}`);
-} else console.log("ok   bug title/description from frontmatter");
+if (ctx.record?.title !== "Race condition" || ctx.record?.description !== "Double charge") {
+  failures++; console.log(`FAIL bug title/description from record: ${JSON.stringify({ title: ctx.record?.title, description: ctx.record?.description })}`);
+} else console.log("ok   bug title/description from record");
 if (!ctx.record?.id || ctx.record.id !== "bug-race" || typeof ctx.body !== "string") {
   failures++; console.log(`FAIL get_node_context record+body: ${JSON.stringify({ record: ctx.record, bodyType: typeof ctx.body })}`);
 } else console.log("ok   get_node_context record+body");
+if (
+  "raw_context" in ctx ||
+  "context_path" in ctx ||
+  "title" in ctx ||
+  "description" in ctx
+) {
+  failures++; console.log(`FAIL get_node_context still has removed fields: ${JSON.stringify(Object.keys(ctx))}`);
+} else console.log("ok   get_node_context omits raw_context/context_path/title/description");
 
 // --- orient_for_work + reachability ---
 await expectBlocked("orient_for_work requires query or node_id", "orient_for_work", {});
@@ -607,6 +615,16 @@ if (
 ) {
   failures++; console.log(`FAIL orient reachability: ${JSON.stringify(orientReach)}`);
 } else console.log("ok   orient_for_work blast_radius includes reachability");
+if (
+  oriented.context &&
+  ("raw_context" in oriented.context ||
+    "context_path" in oriented.context ||
+    "title" in oriented.context ||
+    "description" in oriented.context ||
+    (oriented.context.next && "raw" in oriented.context.next))
+) {
+  failures++; console.log(`FAIL orient context still has removed fields: ${JSON.stringify(Object.keys(oriented.context))}`);
+} else console.log("ok   orient_for_work context omits raw_context/aliases");
 
 const blastIx = JSON.parse(
   await expectOk("get_blast_radius interaction reachability", "get_blast_radius", { node_id: "i-checkout" })
@@ -618,7 +636,21 @@ if (
 ) {
   failures++; console.log(`FAIL get_blast_radius reachability: ${JSON.stringify(blastIx.reachability)}`);
 } else console.log("ok   get_blast_radius includes Interaction reachability");
-
+{
+  const groups = blastIx.affected_files ?? [];
+  const focusGroup = groups.find((g) => g.owner_id === "i-checkout");
+  const bad = groups.some(
+    (g) =>
+      !Array.isArray(g.via) ||
+      !Array.isArray(g.files) ||
+      typeof g.owner_id !== "string" ||
+      typeof g.owner_type !== "string" ||
+      "path" in g
+  );
+  if (bad || !focusGroup?.via?.includes("focus") || !focusGroup.files?.length) {
+    failures++; console.log(`FAIL affected_files not grouped by owner: ${JSON.stringify(groups)}`);
+  } else console.log("ok   get_blast_radius affected_files grouped by owner");
+}
 // --- patch_node_territory ---
 await expectBlocked("patch_node_territory empty", "patch_node_territory", { node_id: "i-tips" });
 const patchDesc = JSON.parse(
@@ -841,6 +873,48 @@ if (!fB || fB.distance !== 1 || !fC || fC.distance !== 2 || !iOnA || iOnA.distan
 if (!radius.journeys_at_risk?.includes("j-ordering")) {
   failures++; console.log(`FAIL journeys_at_risk: ${JSON.stringify(radius.journeys_at_risk)}`);
 } else console.log("ok   get_blast_radius journeys_at_risk");
+
+// --- blast radius omits cancelled by default; include_retired restores; traverse through retired ---
+await expectOk("create f-retired-mid", "create_node", {
+  id: "f-retired-mid", type: "Foundation", title: "Retired mid", description: "Infra — cancelled mid hop", role: "infra",
+});
+await expectOk("link f-retired-mid depends_on f-a", "link_nodes", {
+  source_id: "f-retired-mid", target_id: "f-a", edge_type: "depends_on",
+});
+await expectOk("cancel f-retired-mid", "update_node_status", {
+  node_id: "f-retired-mid", new_status: "cancelled",
+});
+await expectOk("create f-live-beyond", "create_node", {
+  id: "f-live-beyond", type: "Foundation", title: "Live beyond", description: "Infra — lives past retired", role: "infra",
+});
+await expectOk("link f-live-beyond depends_on f-retired-mid", "link_nodes", {
+  source_id: "f-live-beyond", target_id: "f-retired-mid", edge_type: "depends_on",
+});
+const radiusDefault = JSON.parse(
+  await expectOk("get_blast_radius f-a default retired filter", "get_blast_radius", { node_id: "f-a" })
+);
+const retiredHidden = radiusDefault.affected?.find((a) => a.id === "f-retired-mid");
+const liveBeyond = radiusDefault.affected?.find((a) => a.id === "f-live-beyond");
+const retiredInFiles = (radiusDefault.affected_files ?? []).some((g) => g.owner_id === "f-retired-mid");
+if (retiredHidden || retiredInFiles) {
+  failures++; console.log(`FAIL cancelled should be omitted by default: ${JSON.stringify(radiusDefault.affected)}`);
+} else console.log("ok   get_blast_radius omits cancelled by default");
+if (!liveBeyond || liveBeyond.distance !== 2) {
+  failures++; console.log(`FAIL live beyond retired missing/wrong distance: ${JSON.stringify(radiusDefault.affected)}`);
+} else console.log("ok   get_blast_radius keeps live dependent behind retired at true distance");
+const radiusRetired = JSON.parse(
+  await expectOk("get_blast_radius f-a include_retired", "get_blast_radius", {
+    node_id: "f-a", include_retired: true,
+  })
+);
+const retiredShown = radiusRetired.affected?.find((a) => a.id === "f-retired-mid");
+const retiredFileGroup = (radiusRetired.affected_files ?? []).find((g) => g.owner_id === "f-retired-mid");
+if (!retiredShown || retiredShown.distance !== 1) {
+  failures++; console.log(`FAIL include_retired should show cancelled: ${JSON.stringify(radiusRetired.affected)}`);
+} else console.log("ok   get_blast_radius include_retired shows cancelled");
+if (!retiredFileGroup?.via?.includes("dependent")) {
+  failures++; console.log(`FAIL include_retired affected_files missing retired owner: ${JSON.stringify(radiusRetired.affected_files)}`);
+} else console.log("ok   get_blast_radius include_retired includes retired owner files");
 
 await expectOk("i-checkout next -> ready", "update_node_status", { node_id: "i-checkout", new_status: "ready" });
 await expectOk("i-checkout next -> in-progress", "update_node_status", { node_id: "i-checkout", new_status: "in-progress" });

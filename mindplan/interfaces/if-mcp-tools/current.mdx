@@ -1,12 +1,12 @@
 ---
 id: if-mcp-tools
 type: Interface
-title: "MCP tools (set_implementation_files)"
-description: "Registers set_implementation_files; depends_on includes Foundations used for schemas."
+title: "MCP tools (include_retired on blast radius)"
+description: "Registers set_implementation_files; get_blast_radius accepts include_retired; tool descriptions match slim orient payloads."
 state: stable
-shipped_at: 2026-10-07T21:14:48.881Z
+shipped_at: 2026-10-09T21:02:18.195Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-07T21:14:48.881Z
+updated_at: 2026-10-09T21:02:18.195Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -21,13 +21,11 @@ implements:
 ---
 
 
-
-
-# MCP tools (set_implementation_files)
+# MCP tools (include_retired on blast radius)
 
 ## Purpose
 
-MCP stdio Interface that registers orient, steer, and export tools. Adds registration for `set_implementation_files`. Depends on Foundations used for Zod schemas.
+MCP stdio Interface that registers orient, steer, and export tools. Mounts `set_implementation_files`. Passes `include_retired` through to `get_blast_radius`. Tool descriptions match the slim orient / blast-radius payloads owned by `i-orient-plan`.
 
 ## Kind
 
@@ -35,7 +33,7 @@ MCP tool surface (stdio).
 
 ## Exposed Interactions
 
-- `i-orient-plan` — read/orient tools (including file queries)
+- `i-orient-plan` — read/orient tools (including file queries and slim blast radius)
 - `i-steer-plan` — mutate tools including `set_implementation_files`
 - `i-export-map` — `export_mindplan_view`
 
@@ -44,26 +42,23 @@ MCP tool surface (stdio).
 Intended files: `src/interfaces/if-mcp-tools/`
 
 - Register `set_implementation_files` with Zod schema (`node_id`, `files`, optional `slot`)
-- Update schemas for `get_node_implementation` (`path` optional) and any role field on create
+- `get_blast_radius` input schema: `node_id` plus optional `include_retired: boolean` (default false); pass through to `i-orient-plan`
+- Update tool descriptions for `get_node_context`, `orient_for_work`, and `get_blast_radius` so they no longer mention `raw_context` / per-file `affected_files` rows, and document grouped files + retired filter
 - Mount only; no domain logic
 - Depends on `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection` for schemas/types already imported
 
 ## Acceptance Criteria
 
-- New tool is registered and callable
-- Existing tools keep names/envelopes
-- No domain logic under this Interface
+- `get_blast_radius` accepts optional `include_retired` and forwards it
+- Tool descriptions match the slim payloads
+- Existing tools keep names/envelopes; no domain logic under this Interface
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Register `set_implementation_files`
-- [x] Update create / get_node_implementation schemas for role and path
+- [x] Add `include_retired` to `get_blast_radius` schema and forward it
+- [x] Update orient / context / blast-radius tool descriptions
 - [x] Verified via MCP smoke
-
-## Impact
-
-The mount contract is unchanged: this Interface still only registers orient, steer, and export tools and still owns no domain logic. `update_node_status` now accepts an optional `revisions` array beside the single-node `node_id` / `new_status` form. The schema passes that array through to `i-steer-plan`. Tool names and the ok/guarded envelope stay the same.
 
 ## Attachments
 

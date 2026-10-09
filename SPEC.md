@@ -387,7 +387,7 @@ A node is in a source’s blast radius when it:
 - `exposes` that source, or
 - `leads_to` that source (it navigates to the source).
 
-`get_blast_radius` reports reverse `depends_on` and, for an Interaction, exposing Interfaces. Inbound `leads_to` is read from the graph. Outbound `leads_to` alone does not make a neighbor. Cancelled and deprecated nodes are not required to move.
+`get_blast_radius` reports reverse `depends_on` and, for an Interaction, exposing Interfaces. Inbound `leads_to` is read from the graph. Outbound `leads_to` alone does not make a neighbor. Cancelled and deprecated nodes are not required to move, and `get_blast_radius` omits them by default (`include_retired: true` to see them; BFS still traverses through retired nodes so live dependents keep true hop distances).
 
 #### Classes
 
@@ -908,7 +908,7 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 
 #### `get_blast_radius`
 
-- **Input:** `node_id` (slug).
+- **Input:** `node_id` (slug); optional `include_retired` (boolean, default `false`).
 - **Output:**
 
 ```jsonc
@@ -918,6 +918,14 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
     { "id": "if-checkout-page", "type": "Interface", "state": "ready", "distance": 1 }
   ],
   "journeys_at_risk": ["j-ordering"],
+  "affected_files": [
+    {
+      "owner_id": "if-checkout-page",
+      "owner_type": "Interface",
+      "via": ["exposing", "importer"],
+      "files": ["src/interfaces/if-checkout-page/page.tsx"]
+    }
+  ],
   // present when focus is an Interaction:
   "reachability": {
     "exposing_interfaces": [{ "id": "if-checkout-page", "type": "Interface", "state": "ready", "title": "...", "description": "..." }],
@@ -929,20 +937,22 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 
 Where:
 
-- `affected` is the transitive reverse-`depends_on` closure (BFS) from `node_id` (distance 0 seed omitted from results) — Interfaces and Foundations that depend on this node, etc.,
-- `journeys_at_risk` lists Journey ids linked via `belongs_to` from affected **Interactions** (and from the focus Interaction when applicable),
+- `affected` is the transitive reverse-`depends_on` closure (BFS) from `node_id` (distance 0 seed omitted from results) — Interfaces and Foundations that depend on this node, etc. Cancelled and deprecated nodes are omitted unless `include_retired` is true. BFS still traverses through retired nodes so a live dependent behind a retired one keeps its true hop distance.
+- `journeys_at_risk` lists Journey ids linked via `belongs_to` from **visible** affected **Interactions** (and from the focus Interaction when applicable),
 - `reachability` MUST be included when the focus node is an **Interaction**:
   - `exposing_interfaces` — Interfaces with an `exposes` edge to this Interaction,
   - `containing_journeys` — Journeys this Interaction `belongs_to`,
   - `leads_to_downstream` — transitive forward closure via `leads_to` (BFS; cycles truncated by visited set), each with `distance`.
-- `affected_files` lists `{ path, owner_id, owner_type, via }` where `via` is:
+  - Cancelled and deprecated nodes are omitted from these lists unless `include_retired` is true.
+- `affected_files` is grouped by owner: `{ owner_id, owner_type, via[], files[] }`, sorted by `owner_id`. Each `via` value is one of:
   - `focus` — the node's own files
   - `dependent` — files of reverse-`depends_on` dependents
   - `exposing` — files of Interfaces that expose a focus Interaction
   - `importer` — files owned by other nodes that import the focus node's files (composition-root reverse edge)
+  Files are deduplicated within an owner; multiple `via` reasons merge into one entry.
 
 - **Errors:** unknown `node_id`.
-- **Rationale:** calling this before substantial implementation or `open_next` surfaces both substrate dependents and Interaction-centric reachability (who exposes this behaviour, which Journeys contain it, where navigation flows next). The stable-id model means an evolution never changes what depends on the node.
+- **Rationale:** calling this before substantial implementation or `open_next` surfaces both substrate dependents and Interaction-centric reachability (who exposes this behaviour, which Journeys contain it, where navigation flows next). The stable-id model means an evolution never changes what depends on the node. Grouping and the retired filter keep the payload usable for agents.
 
 #### `get_node_context`
 
@@ -952,7 +962,6 @@ Where:
 ```jsonc
 {
   "folder": "mindplan/interactions/i-checkout-split",
-  "context_path": "mindplan/interactions/i-checkout-split/current.mdx", // deprecated alias; prefer current_path
   "current_path": "mindplan/interactions/i-checkout-split/current.mdx",
   "attachments_path": "mindplan/interactions/i-checkout-split/attachments",
   "attachments": ["checkout-wireframe.png"],
@@ -969,24 +978,22 @@ Where:
     "leads_to": ["i-tip-selection"]
   },
   "body": "# Split & pay checkout\n\n...",
-  "title": "Split & pay checkout",
-  "description": "Diner splits and pays the bill from their phone",
-  "raw_context": "---\nid: i-checkout-split\n...", // deprecated; prefer record + body
   "next": null
   // when next.mdx exists, the payload also carries:
   //   "next_path": ".../next.mdx", "next_attachments_path": ".../next-attachments",
-  //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, "body": "...", "raw": "..." }
+  //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, "body": "..." }
 }
 ```
 
 - **Errors:** unknown `node_id`; missing `current.mdx`.
+- The payload MUST NOT include `raw_context`, `context_path`, or top-level `title`/`description` (those live on `record`).
 
 #### `orient_for_work`
 
 Composite orientation for agents: `find_related_nodes` plus full territory for the focus node and `get_blast_radius` when the focus is a Foundation, Interaction, or Interface.
 
 - **Input:** same as `find_related_nodes` (`query`, `node_id`, `type`, `limit`).
-- **Output:** `{ query, matches, focus, nodes, edges, context, blast_radius }` where `context` matches `get_node_context` (without `raw_context`) when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
+- **Output:** `{ query, matches, focus, nodes, edges, context, blast_radius }` where `context` matches `get_node_context` when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
 - **Errors:** same as `find_related_nodes`.
 
 #### `get_node_implementation`

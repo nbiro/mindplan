@@ -1,12 +1,12 @@
 ---
 id: i-orient-plan
 type: Interaction
-title: "Orient (file queries)"
-description: "get_node_implementation returns owned files (and path lookup); blast radius adds affected_files; record carries implements and role."
+title: "Orient (slim context + grouped blast radius)"
+description: "get_node_context drops raw_context/aliases; blast radius groups affected_files by owner and hides cancelled/deprecated by default."
 state: stable
-shipped_at: 2026-09-23T14:05:37.831Z
+shipped_at: 2026-10-09T21:02:18.097Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-09-23T14:08:09.272Z
+updated_at: 2026-10-09T21:02:18.097Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -21,11 +21,11 @@ implements:
 ---
 
 
-# Orient (file queries)
+# Orient (slim context + grouped blast radius)
 
 ## Purpose
 
-Read-path orientation. `get_node_implementation` returns owned files (and supports path→owner lookup). Blast radius adds `affected_files`. Records carry `implements` and `role`. Owns `getNodeImplementation` logic moved out of territory-store.
+Read-path orientation. `get_node_implementation` returns owned files (and supports path→owner lookup). `get_node_context` / `orient_for_work` context is `record` + `body` only (no `raw_context`, `context_path`, top-level title/description, or `next.raw`). Blast radius groups `affected_files` by owner and omits cancelled/deprecated nodes by default (`include_retired` opt-in). Records carry `implements` and `role`.
 
 ## Actor & Trigger
 
@@ -36,31 +36,34 @@ Read-path orientation. `get_node_implementation` returns owned files (and suppor
 
 Intended files: `src/interactions/i-orient-plan/`
 
-- Keep existing query tools
-- `get_node_implementation`:
-  - Interaction/Interface/Foundation → `{ node_id, files: [{ path, exists }], next_files? }`
-  - Journey → member Interaction files + exposing Interfaces, tagged with owner
-  - Bug → `affects` target files, tagged with owner
-  - Optional `path` arg → owning node
-  - Drop `root`, `implementation_packages`, `entries`
-- `get_blast_radius` adds `affected_files: [{ path, owner_id, owner_type, via }]` with `via` ∈ `focus|dependent|exposing|importer`
-- `orient_for_work` inherits `implements`/`role` on record and `affected_files` on blast radius
-- Uses `f-source-index` for expansion/universe
+- Keep existing query tools (`find_related_nodes`, `get_mindplan_graph`, `get_node_context`, `get_blast_radius`, `orient_for_work`, `get_node_implementation`)
+- `get_node_context` / context inside `orient_for_work`:
+  - Return `folder`, `current_path`, `attachments_path`, `attachments`, `record`, `body`, and when evolving `next_path`, `next_attachments_path`, `next: { record, body }`
+  - Do **not** return `raw_context`, `context_path`, top-level `title`/`description`, or `next.raw`
+- `get_blast_radius` / blast_radius inside `orient_for_work`:
+  - `affected_files` is grouped: `[{ owner_id, owner_type, via: AffectedFileVia[], files: string[] }]`, sorted by `owner_id`; `via` values sorted; files deduped and sorted
+  - Cancelled and deprecated nodes are omitted from `affected`, `journeys_at_risk`, `affected_files`, and `reachability` lists by default
+  - BFS still traverses through retired nodes so a live dependent behind a retired one keeps its true hop distance
+  - Optional `include_retired: boolean` (default `false`) restores retired nodes in those lists
+  - Reuse `RETIRED_STATES` from `f-source-index`; do not change `blastRadiusDependents` in `f-compiler-rules`
+- `get_node_implementation` unchanged (files / path lookup / Journey / Bug tagging)
+- Uses `f-source-index` for expansion/universe and retired-state constants
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- Implementation query returns files, not package roots
-- Path lookup returns the owner node
-- Blast radius includes importer via for composition roots
+- `get_node_context` and `orient_for_work.context` have no `raw_context`, `context_path`, top-level `title`/`description`, or `next.raw`
+- `affected_files` is one entry per owner with `via` as an array and deduped `files`
+- Cancelled/deprecated dependents are absent from blast radius by default and present when `include_retired: true`
+- A live node that depends on a retired intermediate still appears with its true distance
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Move getNodeImplementation into this Interaction; return files
-- [x] Add path lookup
-- [x] Add affected_files to blast radius (focus/dependent/exposing/importer)
+- [x] Drop `raw_context`, `context_path`, top-level title/description, and `next.raw` from `buildNodeContextPayload`
+- [x] Group `affected_files` by owner with merged `via[]` and deduped files
+- [x] Filter cancelled/deprecated from blast-radius lists by default; honor `include_retired`
 - [x] Verified via `npm test`
 
 ## Attachments

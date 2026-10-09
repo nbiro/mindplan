@@ -29,6 +29,7 @@ import {
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
 import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
 import {
+  RETIRED_STATES,
   buildOwnershipIndex,
   exclusiveOwner,
   nodeOwnedFiles,
@@ -43,6 +44,12 @@ import {
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
 
 export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
+
+const VIA_ORDER: AffectedFileVia[] = ["focus", "dependent", "exposing", "importer"];
+
+function isRetired(node: MindPlanNode): boolean {
+  return RETIRED_STATES.has(node.state);
+}
 
 function fileExists(rel: string, root?: string): boolean {
   const cwd = root ?? projectRoot();
@@ -74,11 +81,17 @@ function taggedFiles(
 /** Reverse-depends_on blast radius; Interaction focus also includes reachability + affected_files. */
 export function buildBlastRadiusPayload(
   graph: MindPlanGraph,
-  node: MindPlanNode
+  node: MindPlanNode,
+  opts: { include_retired?: boolean } = {}
 ): Record<string, unknown> {
+  const includeRetired = opts.include_retired === true;
   const { affected: entries } = blastRadiusDependents(graph, node.id);
+  const visibleEntries = includeRetired
+    ? entries
+    : entries.filter(({ node: n }) => !isRetired(n));
+
   const journeysAtRisk = new Set<string>();
-  for (const { node: affected } of entries) {
+  for (const { node: affected } of visibleEntries) {
     if (affected.type !== "Interaction") continue;
     for (const edge of graph.edges) {
       if (edge.source === affected.id && edge.type === "belongs_to") {
@@ -88,37 +101,33 @@ export function buildBlastRadiusPayload(
   }
 
   const root = projectRoot();
-  const affected_files: {
-    path: string;
+  type Group = {
     owner_id: string;
     owner_type: string;
-    via: AffectedFileVia;
-  }[] = [];
-  const seen = new Set<string>();
+    via: Set<AffectedFileVia>;
+    files: Set<string>;
+  };
+  const groups = new Map<string, Group>();
 
   const pushFiles = (owner: MindPlanNode, via: AffectedFileVia) => {
-    for (const p of expandClaims(owner.implements, root)) {
-      const key = `${p}|${via}|${owner.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      affected_files.push({
-        path: p,
+    if (!includeRetired && isRetired(owner)) return;
+    let group = groups.get(owner.id);
+    if (!group) {
+      group = {
         owner_id: owner.id,
         owner_type: owner.type,
-        via,
-      });
+        via: new Set(),
+        files: new Set(),
+      };
+      groups.set(owner.id, group);
+    }
+    group.via.add(via);
+    for (const p of expandClaims(owner.implements, root)) {
+      group.files.add(p);
     }
     if (owner.next) {
       for (const p of expandClaims(owner.next.implements, root)) {
-        const key = `${p}|${via}|${owner.id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        affected_files.push({
-          path: p,
-          owner_id: owner.id,
-          owner_type: owner.type,
-          via,
-        });
+        group.files.add(p);
       }
     }
   };
@@ -126,6 +135,8 @@ export function buildBlastRadiusPayload(
   if (isPipelineNodeType(node.type)) {
     pushFiles(node, "focus");
   }
+  // Walk all BFS entries (including retired) so importers/dependents behind them stay visible;
+  // pushFiles skips retired owners unless include_retired.
   for (const { node: dep } of entries) {
     if (isPipelineNodeType(dep.type)) pushFiles(dep, "dependent");
   }
@@ -163,16 +174,18 @@ export function buildBlastRadiusPayload(
     }
   }
 
-  affected_files.sort(
-    (a, b) =>
-      a.path.localeCompare(b.path) ||
-      a.via.localeCompare(b.via) ||
-      a.owner_id.localeCompare(b.owner_id)
-  );
+  const affected_files = [...groups.values()]
+    .map((g) => ({
+      owner_id: g.owner_id,
+      owner_type: g.owner_type,
+      via: VIA_ORDER.filter((v) => g.via.has(v)),
+      files: [...g.files].sort((a, b) => a.localeCompare(b)),
+    }))
+    .sort((a, b) => a.owner_id.localeCompare(b.owner_id));
 
   const payload: Record<string, unknown> = {
     node_id: node.id,
-    affected: entries.map(({ node: n, distance }) => ({
+    affected: visibleEntries.map(({ node: n, distance }) => ({
       id: n.id,
       type: n.type,
       state: n.state,
@@ -183,13 +196,20 @@ export function buildBlastRadiusPayload(
   };
   if (node.type === "Interaction") {
     const reach = interactionReachability(graph, node.id);
+    const keep = (n: MindPlanNode) => includeRetired || !isRetired(n);
     payload.reachability = {
-      exposing_interfaces: reach.exposing_interfaces.map(summarizeGraphNode),
-      containing_journeys: reach.containing_journeys.map(summarizeGraphNode),
-      leads_to_downstream: reach.leads_to_downstream.map(({ node: n, distance }) => ({
-        ...summarizeGraphNode(n),
-        distance,
-      })),
+      exposing_interfaces: reach.exposing_interfaces
+        .filter(keep)
+        .map(summarizeGraphNode),
+      containing_journeys: reach.containing_journeys
+        .filter(keep)
+        .map(summarizeGraphNode),
+      leads_to_downstream: reach.leads_to_downstream
+        .filter(({ node: n }) => keep(n))
+        .map(({ node: n, distance }) => ({
+          ...summarizeGraphNode(n),
+          distance,
+        })),
     };
   }
   return payload;
@@ -201,15 +221,11 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
   const currentSplit = splitContext(currentRaw);
   const payload: Record<string, unknown> = {
     folder: rel,
-    context_path: `${rel}/${CURRENT_FILENAME}`,
     current_path: `${rel}/${CURRENT_FILENAME}`,
     attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
     attachments: listAttachments(node),
     record: nodeToRecord(node),
     body: currentSplit?.body ?? "",
-    title: node.title,
-    description: node.description,
-    raw_context: currentRaw,
     next: null,
   };
   if (node.next) {
@@ -231,7 +247,6 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
         ...(node.next.role ? { role: node.next.role } : {}),
       },
       body: nextSplit?.body ?? "",
-      raw: nextRaw,
     };
   }
   return payload;
@@ -263,10 +278,15 @@ export function findRelatedNodesHandler(args: {
   });
 }
 
-export function getBlastRadius(args: { node_id: string }): Record<string, unknown> {
+export function getBlastRadius(args: {
+  node_id: string;
+  include_retired?: boolean;
+}): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  return buildBlastRadiusPayload(graph, node);
+  return buildBlastRadiusPayload(graph, node, {
+    include_retired: args.include_retired,
+  });
 }
 
 export function getNodeContext(args: { node_id: string }): Record<string, unknown> {

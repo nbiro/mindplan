@@ -10,7 +10,7 @@ flowchart TB
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
     f_domain_model["f-domain-model · Domain model (implements + role) · stable"]
-    f_framework_docs["f-framework-docs · Framework docs (systems dialect first) · stable"]
+    f_framework_docs["f-framework-docs · Framework docs (slim orient payloads) · stable"]
     f_github_actions["f-github-actions · GitHub Actions (file ownership) · stable"]
     f_graph_search["f-graph-search · Graph search (interaction-centric) · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime (server instructions) · stable"]
@@ -30,7 +30,7 @@ flowchart TB
     if_console_mutate{{"if-console-mutate · Console mutate page · ready"}}
     if_console_status{{"if-console-status · Console status page · ready"}}
     if_console_territory{{"if-console-territory · Console territory page · ready"}}
-    if_mcp_tools{{"if-mcp-tools · MCP tools (set_implementation_files) · stable"}}
+    if_mcp_tools{{"if-mcp-tools · MCP tools (include_retired on blast radius) · stable"}}
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Release tag trigger · ready"}}
   end
@@ -52,7 +52,7 @@ flowchart TB
   subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
     i_check_integrity__in__j_territory_sdlc["i-check-integrity · Integrity check (ownership only) · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
-    i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient (file queries) · stable"]
+    i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient (slim context + grouped blast radius) · stable"]
     i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer (checklist edits unrestricted while building) · stable"]
   end
   f_compiler_rules --> f_domain_model
