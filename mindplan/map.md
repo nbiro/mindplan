@@ -12,7 +12,7 @@ flowchart TB
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
     f_domain_model["f-domain-model · Domain model (implements + role) · stable"]
-    f_framework_docs["f-framework-docs · Framework docs (no prescribed src package layout) · stable"]
+    f_framework_docs["f-framework-docs · Framework docs (plain-language taxonomy) · stable"]
     f_github_actions["f-github-actions · GitHub Actions (file ownership) · stable"]
     f_graph_search["f-graph-search · Graph search (interaction-centric) · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime (server instructions) · stable"]
@@ -21,7 +21,7 @@ flowchart TB
     f_source_index["f-source-index · Source index (released claim entries) · stable"]
     f_territory_store["f-territory-store · Territory store (implements + role) · stable"]
     f_test_harness["f-test-harness · Test harness (released presence) · stable"]
-    f_view_projection["f-view-projection · View projection · stable"]
+    f_view_projection["f-view-projection · View projection (map legend) · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
   end
   subgraph interfaces["Interfaces"]

@@ -1,12 +1,12 @@
 ---
 id: f-framework-docs
 type: Foundation
-title: "Framework docs (no prescribed src package layout)"
-description: "Assembler/docs — ownership is implements + sources/exclude only; drop leftover prose that prescribed src/<type>/<id>/ packages."
+title: "Framework docs (plain-language taxonomy)"
+description: "Assembler — plain-language glossary, talk-plainly dialect, and agent breakdown recipe so vibecoders and agents share one wording for Journeys, Interactions, Interfaces, Foundations, and Bugs."
 state: stable
-shipped_at: 2026-10-09T21:16:47.964Z
+shipped_at: 2026-10-09T22:16:07.141Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-09T21:16:47.964Z
+updated_at: 2026-10-09T22:16:07.141Z
 depends_on:
   - f-domain-model
 implements:
@@ -17,47 +17,73 @@ role: assembler
 ---
 
 
-# Framework documentation (no prescribed src package layout)
+# Framework documentation (plain-language taxonomy)
 
 ## Purpose
 
 Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook, stub, skills, integration guides). MindPlan helps an agent think in systems. The always-on artifact is the systems dialect; review and scaffolding load on demand.
 
-This evolution removes leftover prose that still prescribed `src/<type>/<id>/` implementation packages. The shipped contract is: `create_node` scaffolds territory only; owned code is whatever `implements` claims under `sources`/`exclude`.
+This evolution keeps type names, edges, states, ids, and `Blocked:` messages unchanged. It adds (1) a plain-language glossary so vibecoders and agents share one wording, (2) a talk-plainly rule in the playbook, and (3) an agent breakdown recipe plus sizing, Interface grain, naming, and role-fallback rules so agents split requests correctly and reuse existing nodes.
 
-Keep prior guarantees: slim orient payloads; proportional review with resume-after-Reject; neighbors in place; Atomic Ops as a ship-time ledger; Approve vs ship.
+Prior guarantees still hold: territory-only `create_node`; `implements` ownership; slim orient payloads; proportional review with resume-after-Reject; neighbors in place; Atomic Ops as a ship-time ledger; Approve vs ship.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-### No prescribed src package tree
+### Plain-language glossary (canonical in SPEC §2)
 
-- SPEC §1.1: prescribe only the `mindplan/` territory tree. Implementation is not a dual tree under `src/<type>/<id>/`. Default `sources: ["src/**"]` is coverage config, not a package layout.
-- SPEC §6.3: territory-only scaffolds; delete “Also scaffolds `src/...`” from Foundation / Interaction / Interface bullets.
-- SPEC §6.3.1: rewrite around `set_implementation_files` / `get_node_implementation` (expanded files; folder claims ending in `/` allowed). No “MUST place code under its package” / “architecture is package roots.”
-- README layout section and tool table: match the above; fix `get_node_implementation`, `check`, and add `set_implementation_files`.
-- `define-entities`: drop packages on/off and “code under `src/.../<id>/` only”; claim paths with `set_implementation_files`. Keep architectural anti-patterns (fat Interface screens) with illustrative paths only.
-- Sync installed skill copies via `init -f`.
+One question per type (non-normative gloss; type names stay):
 
-Leave alone: this repo’s dogfood `src/interactions/...` tree; illustrative example paths; playbook process rules; integration “follow playbook for all software work” unless a line requires `src/<type>/<id>/`.
+| Type | Plain word | Question |
+|------|------------|----------|
+| Journey | area | What does the product do? |
+| Interaction | action | What can someone do? |
+| Interface | entry point | Where do they do it? |
+| Foundation | building block | What does it all run on? |
+| Bug | bug | What's broken? |
+
+Links / states / rules get the same plain gloss in SPEC, README, and playbook.
+
+### Agent breakdown and soft rules
+
+- **Breakdown recipe** in playbook + `define-entities` Step 0 + `plan-project` Classify scope: rewrite requests as *who can verb object in area, from entry point, using building blocks*; reuse before create; same action on a new entry point = new `exposes`, not a new Interaction.
+- **Interaction size test:** one actor goal; verb + object without "and"; shippable alone.
+- **Interface grain:** one Interface per actor + delivery mechanism (app or channel). Test: "Would a user call this a different app or channel?" Pages/tabs/commands inside it are mounts, not separate Interfaces. Console example: one console web Interface, not one per page.
+- **Naming:** title = stable name (action phrase for Interactions, noun otherwise); description = what it is/does now; revision notes only in `next.mdx` body.
+- **Role fallback:** Assembler only for runtimes that compose and run nodes. Docs, CI config, and other misfits → Infra. No hybrid tags like "Assembler/docs".
+
+### Talking to the user
+
+Playbook section: use plain words with the user; keep type names and ids for tool calls; translate every `Blocked:` into one plain sentence plus the next step.
+
+### Out of scope for this evolution
+
+Cleaning up this repo's own graph (changelog titles, duplicate steer Interaction, per-page console Interfaces, re-roling this Foundation to Infra) is a separate follow-up.
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- SPEC §1.1 does not prescribe `src/interactions|foundations|interfaces/<id>/`
-- SPEC §6.3 / §6.3.1 match territory-only create + implements ownership
-- README layout and MCP/CLI tool rows match
-- define-entities does not require packages on/off or prescribed src package paths
-- Prior systems-dialect / slim-orient / proportional-review contracts still hold
+- SPEC §2 has a non-normative plain-language glossary; Interface grain, naming rule (§2.1), and role fallback (§2.0.1) are documented
+- Playbook taxonomy uses one-question-per-type wording; includes Breaking down work and Talking to the user
+- `define-entities` has Step 0 breakdown, size/grain/naming/role rules, and new Common mistakes rows
+- `define-entities/examples.md` includes a change-request-on-existing-graph reuse example
+- `plan-project` Classify scope runs the breakdown recipe and confirms placement in plain words
+- README has an In plain words section; scrambled-eggs captions use the glossary
+- Prior systems-dialect / ownership / proportional-review contracts still hold
+- Installed copies synced via `init -f`
 
 ## Atomic Ops
 
-- [x] Rewrite SPEC §1.1, §6.3, §6.3.1 for implements-only ownership
-- [x] Update README layout + tool table (incl. get_node_implementation, check, set_implementation_files)
-- [x] Rewrite define-entities package-layout prose; sync via init -f
-- [x] Verified by Reviewer against the code contract
+- [x] Add SPEC §2 glossary; sharpen Interface grain + naming + role fallback
+- [x] Update playbook: taxonomy wording, Breaking down work, Talking to the user
+- [x] Update define-entities skill (Step 0, sizing, grain, naming, role, Common mistakes)
+- [x] Add reuse example to define-entities/examples.md
+- [x] Update plan-project Classify scope for breakdown + plain-word confirmation
+- [x] Add README In plain words + re-caption scrambled eggs
+- [x] Sync installed agent copies via `init -f`
+- [x] Verified by Reviewer against the contract
 
 ## Attachments
 
