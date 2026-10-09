@@ -1,0 +1,62 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs (no prescribed src package layout)"
+description: "Assembler/docs — ownership is implements + sources/exclude only; drop leftover prose that prescribed src/<type>/<id>/ packages."
+state: in-progress
+created_at: 2026-07-19T18:33:36.834Z
+updated_at: 2026-10-09T21:13:50.884Z
+depends_on:
+  - f-domain-model
+implements:
+  - README.md
+  - SPEC.md
+  - templates/
+role: assembler
+---
+
+# Framework documentation (no prescribed src package layout)
+
+## Purpose
+
+Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook, stub, skills, integration guides). MindPlan helps an agent think in systems. The always-on artifact is the systems dialect; review and scaffolding load on demand.
+
+This evolution removes leftover prose that still prescribed `src/<type>/<id>/` implementation packages. The shipped contract is: `create_node` scaffolds territory only; owned code is whatever `implements` claims under `sources`/`exclude`.
+
+Keep prior guarantees: slim orient payloads; proportional review with resume-after-Reject; neighbors in place; Atomic Ops as a ship-time ledger; Approve vs ship.
+
+## Shared Substrate Spec
+
+Claims: `SPEC.md`, `README.md`, `templates/`
+
+### No prescribed src package tree
+
+- SPEC §1.1: prescribe only the `mindplan/` territory tree. Implementation is not a dual tree under `src/<type>/<id>/`. Default `sources: ["src/**"]` is coverage config, not a package layout.
+- SPEC §6.3: territory-only scaffolds; delete “Also scaffolds `src/...`” from Foundation / Interaction / Interface bullets.
+- SPEC §6.3.1: rewrite around `set_implementation_files` / `get_node_implementation` (expanded files; folder claims ending in `/` allowed). No “MUST place code under its package” / “architecture is package roots.”
+- README layout section and tool table: match the above; fix `get_node_implementation`, `check`, and add `set_implementation_files`.
+- `define-entities`: drop packages on/off and “code under `src/.../<id>/` only”; claim paths with `set_implementation_files`. Keep architectural anti-patterns (fat Interface screens) with illustrative paths only.
+- Sync installed skill copies via `init -f`.
+
+Leave alone: this repo’s dogfood `src/interactions/...` tree; illustrative example paths; playbook process rules; integration “follow playbook for all software work” unless a line requires `src/<type>/<id>/`.
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- SPEC §1.1 does not prescribe `src/interactions|foundations|interfaces/<id>/`
+- SPEC §6.3 / §6.3.1 match territory-only create + implements ownership
+- README layout and MCP/CLI tool rows match
+- define-entities does not require packages on/off or prescribed src package paths
+- Prior systems-dialect / slim-orient / proportional-review contracts still hold
+
+## Atomic Ops
+
+- [x] Rewrite SPEC §1.1, §6.3, §6.3.1 for implements-only ownership
+- [x] Update README layout + tool table (incl. get_node_implementation, check, set_implementation_files)
+- [x] Rewrite define-entities package-layout prose; sync via init -f
+- [x] Verified by Reviewer against the code contract
+
+## Attachments
+
+_None._

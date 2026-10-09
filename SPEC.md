@@ -32,15 +32,16 @@ The territory MUST live in the repository alongside the source code and MUST be 
 
 ### 1.1 Directory layout
 
-MindPlan prescribes a **dual tree**: planning under `mindplan/`, and **implementation packages** under `src/` for Interactions, Interfaces, and Foundations. Journeys and Bugs have no code package — Journeys are graph containers (Interactions may belong to many Journeys), and Bugs are a defect layer whose fixes land in the affected node's package.
+MindPlan prescribes the **planning tree** under `mindplan/`. Implementation code is **not** a second prescribed tree: Interactions, Interfaces, and Foundations declare owned paths via `implements` (§1.2) anywhere under the project's `sources`/`exclude` universe (default `sources: ["src/**"]`). Journeys have no code ownership. Bugs are a defect layer whose fixes land in the affected node's claimed files.
 
 ```
 <project-root>/
 ├── mindplan/
+│   ├── config.json                    # { sources, exclude } — coverage universe (§1.2)
 │   ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
 │   ├── journeys/
 │   │   └── <node-id>/
-│   │       ├── current.mdx           # Plan only — no src/ package
+│   │       ├── current.mdx
 │   │       └── attachments/
 │   ├── foundations/
 │   │   └── <node-id>/
@@ -64,21 +65,19 @@ MindPlan prescribes a **dual tree**: planning under `mindplan/`, and **implement
 │       └── <node-id>/
 │           ├── current.mdx
 │           └── attachments/
-└── src/
-    ├── interactions/<interaction-id>/   # Behavior implementation package (§1.2)
-    ├── interfaces/<interface-id>/       # Entry-surface implementation package (§1.2)
-    └── foundations/<foundation-id>/     # Shared-substrate implementation package (§1.2)
+└── …                                  # Application code wherever implements claims it
 ```
 
 Rules:
 
-- The planning root is `<MINDPLAN_ROOT>/mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used. Implementation packages are rooted at `<MINDPLAN_ROOT>/src`.
+- The planning root is `<MINDPLAN_ROOT>/mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used.
 - Each entity folder name under `mindplan/` MUST equal the node `id`.
 - The subdirectory per type is fixed: `journeys/`, `foundations/`, `interactions/`, `interfaces/`, `bugs/`.
 - `next.mdx` and `next-attachments/` MUST NOT exist for Journeys or Bugs; they are legal only under `foundations/<id>/`, `interactions/<id>/`, and `interfaces/<id>/`, and only while an evolution is open (§3.6).
 - `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `current.mdx` with relative links (e.g. `![flow](attachments/flow.png)`); `next-attachments/` is referenced the same way from `next.mdx` and is merged into `attachments/` when the evolution ships (§3.6).
 - `components/` MAY contain project-specific MDX components (§6.4.3). It is created by the server but never read by it.
 - The server MUST create missing directories on demand; a fresh project requires no manual scaffolding.
+- `create_node` does **not** scaffold application code paths. Declare ownership with `set_implementation_files`.
 
 ### 1.2 Declared file ownership
 
@@ -210,7 +209,7 @@ Foundations remain a single NodeType. Agents SHOULD classify each Foundation int
 - Different Journeys MAY use different assemblers (UI → Next.js; jobs → Vercel Cron / Supabase Functions).
 - A Journey's assembler(s) are **derived** from member Interactions' (and their Interfaces') `depends_on` Foundations that play the Assembler role — Journeys still MUST NOT have outgoing edges.
 - Interactions and Interfaces that run on a given backbone SHOULD `depends_on` that Assembler Foundation; this is guidance, not a compiler gate (Ghost Interactions still only require any Foundation `depends_on`).
-- Assembler territory + thin `src/foundations/<id>/` document entrypoints, mount conventions, and env/deploy constraints — not product behaviour.
+- Assembler territory documents entrypoints, mount conventions, and env/deploy constraints — not product behaviour. Claim those files with `implements` like any other Foundation.
 
 **Role litmus** (after classifying as Foundation):
 
@@ -677,19 +676,19 @@ Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the fi
 
 `create_node` MUST scaffold the entity folder with a type-appropriate `current.mdx` and an empty `attachments/` directory (with `.gitkeep` so the folder is versionable). `next.mdx` and `next-attachments/` are never scaffolded by `create_node` — they are created only by `open_next` on an already-shipped Foundation/Interaction/Interface (§3.6, §8.2):
 
-- **Journey** — Overview section (domain capability + behaviors it owns), Linked Interactions note, Attachments note. No checklist (Journeys have no completion gate). No implementation package.
-- **Foundation** — Shared Substrate Spec section (role tag belongs in frontmatter `description` at create time — Assembler | Infra | Design system | Adapter), Checklist (3 default Atomic Ops), Attachments note. Also scaffolds `src/foundations/<id>/` (§1.2).
-- **Interaction** — Purpose / Actor & Trigger / Inputs & Outputs / PRD, Checklist. Default Atomic Ops (Kind-aware): Domain API against Foundations; exportable behavior surface (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module); surface does not import Interface packages. Also scaffolds `src/interactions/<id>/` (§1.2).
-- **Interface** — Kind / Exposed Interactions / Spec (boilerplate: App Router or CLI/MCP mounts Interaction packages; Interface does not own core domain or screen bodies), Checklist. Default Atomic Ops (Kind-aware): thin wiring for each `exposes` target; no duplicated domain/behavior UI; Page/UI only — shell chrome under `ui/`. Also scaffolds `src/interfaces/<id>/` (§1.2).
-- **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4). No implementation package.
+- **Journey** — Overview section (domain capability + behaviors it owns), Linked Interactions note, Attachments note. No checklist (Journeys have no completion gate). No `implements`.
+- **Foundation** — Shared Substrate Spec section (role tag belongs in frontmatter `description` at create time — Assembler | Infra | Design system | Adapter), Checklist (3 default Atomic Ops), Attachments note. No application-code scaffold.
+- **Interaction** — Purpose / Actor & Trigger / Inputs & Outputs / PRD, Checklist. Default Atomic Ops (Kind-aware): Domain API against Foundations; exportable behavior surface (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module); surface does not import Interface-owned files. No application-code scaffold.
+- **Interface** — Kind / Exposed Interactions / Spec (boilerplate: App Router or CLI/MCP mounts Interaction surfaces; Interface does not own core domain or screen bodies), Checklist. Default Atomic Ops (Kind-aware): thin wiring for each `exposes` target; no duplicated domain/behavior UI; Page/UI only — shell chrome under `ui/`. No application-code scaffold.
+- **Bug** — Summary, Repro Steps, Expected/Actual, Fix Checklist (3 default Atomic Ops), Attachments note. Created in state `open` (§3.4). No `implements`.
 
-Default checklist items are Kind-aware package-ownership placeholders (§1.2.2); teams SHOULD replace them with real PR-sized Atomic Ops during `draft` or triage, but MUST keep the Interaction-owns-surface / Interface-mounts split.
+Default checklist items are Kind-aware ownership placeholders (§1.2.2); teams SHOULD replace them with real PR-sized Atomic Ops during `draft` or triage, but MUST keep the Interaction-owns-surface / Interface-mounts split.
 
-#### 6.3.1 Implementation packages
+#### 6.3.1 Declared file ownership
 
-`create_node` scaffolds territory only. Owned files are declared with `set_implementation_files` (`implements` in frontmatter). Foundations require `role`.
+`create_node` scaffolds territory only. Owned files are declared afterward with `set_implementation_files` (`implements` in frontmatter). Entries are exact files or directories ending in `/` (§1.2). Foundations require `role`. Journeys and Bugs have no code ownership.
 
-Agents MUST place all implementation for that node under its package. Agents query the package via `get_node_implementation` (§8.1). There is no per-file affected-files list in territory — architecture is the graph plus package roots (§1.4).
+Agents MUST implement only in paths claimed by the node's active `implements` list. Query expanded files via `get_node_implementation` (§8.1). Architecture authority is the graph plus `implements` claims — not a prescribed `src/<type>/<id>/` tree.
 
 Scaffolded bodies include an MDX comment noting which standard components are available. `create_node` MUST also ensure `mindplan/components/` exists at the planning root.
 

@@ -93,7 +93,7 @@ Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth i
 - Next.js / cron runtime as a Journey — wrong; that is Foundation (Assembler)
 - A checkout **page** as an Interaction — wrong; that is Interface (`if-…`); the pay/split **behavior** (including the screen body) is the Interaction
 - One Interface per POS tab/screen — wrong; one surface `exposes` many Interactions and mounts each package
-- Fat UI screens inside `src/interfaces/<id>/screens/` with Interactions as thin store wrappers — inverted; move the body to the Interaction
+- Fat UI screens owned by an Interface (e.g. under that Interface's claimed paths) with Interactions as thin store wrappers — inverted; move the body to the Interaction
 - Character editor / user-picker **behavior** as a Foundation — wrong; that is Interaction
 - Interaction → Interaction `depends_on` — illegal; share via Foundation or navigate via `leads_to`
 - Business behavior living only in a Foundation — move it to an Interaction
@@ -120,9 +120,9 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps; Foundations also `role`). Does **not** scaffold `src/` packages — declare files later with `set_implementation_files`. Journeys and Bugs have no code ownership. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
+Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps; Foundations also `role`). Does **not** scaffold application code — declare owned paths later with `set_implementation_files` (exact files or directories ending in `/`). Journeys and Bugs have no code ownership. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
 
-Query the package with `get_node_implementation({ node_id })` (`root` is null when packages are off). When packages are `required`, implement **only** inside that package; reuse across behaviors via Foundation packages. When packages are `off`, implement in the project's existing layout.
+After create, call `set_implementation_files` for pipeline nodes. Implement **only** in claimed paths; query expanded files with `get_node_implementation({ node_id })` (or path → owner lookup). Reuse across behaviors via Foundation claims, not Interaction→Interaction `depends_on`. There is no prescribed `src/<type>/<id>/` tree.
 
 ## Step 5 — Link edges (before advancing state)
 
@@ -176,7 +176,7 @@ Replace scaffold placeholders with real content. Section guidance:
 ### Foundation
 
 - **Shared Substrate Spec** — schemas, adapters, design system, contracts (not behavior). Put the role tag in frontmatter `description` at create time, not here.
-- **Implementation** — code under `src/foundations/<id>/` only
+- **Implementation** — code in paths declared via `set_implementation_files`
 - **Checklist** — PR-sized Atomic Ops (`- [ ]` / `- [x]`):
   - Spec written
   - Implementation complete
@@ -191,19 +191,19 @@ Replace scaffold placeholders with real content. Section guidance:
 - **Implementation** — code in files declared via `set_implementation_files` (domain + view/handler). MUST NOT import Interface-owned files.
 - **Checklist** — Atomic Ops MUST include (Kind-gated):
   - Domain API against Foundations (no Interaction→Interaction `depends_on`)
-  - Exportable behavior surface in this package (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module)
-  - Behavior surface does not import Interface packages (UI: view accepts shell/nav as props/callbacks)
+  - Exportable behavior surface in claimed paths (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module)
+  - Behavior surface does not import Interface-owned files (UI: view accepts shell/nav as props/callbacks)
 
 ### Interface
 
 - **Kind** — Page | CLI | MCP | Webhook | Cron | Script | …
 - **Exposed Interactions** — which Interactions this surface `exposes` and how (one surface, many Interactions — not one Interface per screen)
-- **Spec** — routing, commands, tool names, schedules, auth boundaries of the surface. Boilerplate: **App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies.**
-- **Implementation** — code under `src/interfaces/<id>/` only. Thin mounts/wiring + shell chrome under `ui/` (Page). No duplicated domain/behavior UI.
+- **Spec** — routing, commands, tool names, schedules, auth boundaries of the surface. Boilerplate: **App Router (or CLI/MCP) mounts Interaction surfaces; Interface does not own core domain logic or screen bodies.**
+- **Implementation** — code in paths declared via `set_implementation_files`. Thin mounts/wiring + shell chrome (Page). No duplicated domain/behavior UI.
 - **Checklist** — Atomic Ops MUST include:
   - Thin wiring for each `exposes` target (Page: screen file wires Shell + guards + nav only; CLI/MCP/Webhook/Cron: command/tool/job calls the Interaction export only)
   - No duplicated domain logic / behavior UI that belongs in an exposed Interaction
-  - Page/UI only: shell chrome under `ui/` only — not feature screen bodies
+  - Page/UI only: shell chrome only — not feature screen bodies
 
 ### Bug
 
@@ -276,8 +276,8 @@ open_next({
 | Interaction → Interaction `depends_on` | `Blocked: Interaction Independence` — use Foundation or `leads_to` |
 | Bug → `triaged` without `affects` | `Blocked: Ghost Bug` |
 | Modeling a Page as an Interaction | Wrong taxonomy — Interface exposes Interaction(s); Interaction still owns the screen body |
-| One Interface per screen/tab | Wrong — one surface exposes many Interactions; each route mounts the matching package |
-| Fat screens in `src/interfaces/<id>/` | Inverted packages — move domain + view to the Interaction; Interface only mounts |
+| One Interface per screen/tab | Wrong — one surface exposes many Interactions; each route mounts the matching Interaction surface |
+| Fat screens owned by an Interface | Inverted ownership — move domain + view to the Interaction; Interface only mounts |
 | Foundation described as user behavior | Scope creep — split into Foundation (substrate) + Interaction (behavior) |
 | Business behavior in a Foundation node | Wrong taxonomy — move logic to Interaction |
 | Inventing a new primary button inside an Interaction | Reuse — depend on `f-design-system` (or create that Foundation first) |
