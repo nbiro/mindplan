@@ -10,6 +10,7 @@ MindPlan models this product as a graph. Plan and change code **through the grap
 4. **Claim files before writing them** with `set_implementation_files`.
 5. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
 6. **Review is proportional.** Shipping your own work is fine when the revision has no Foundation source and at most one source. A Foundation contract change or several sources needs an independent Reviewer first. Follow `review-work`; don't improvise the gate.
+7. **Check at every handoff.** Default check MUST exit 0 before self-`ready`, `in-review` / spawning a Reviewer, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Do not wait until `ship`. The host typecheck is not a MindPlan gate.
 
 ## Taxonomy
 
@@ -28,7 +29,7 @@ Each type answers one question (plain words from SPEC §2.0.0; type names stay f
 ## Breaking down work
 
 1. Rewrite the ask as: *"<who> can <verb> <object> in <area>, from <entry point>, using <building blocks>."*
-2. Each distinct verb + object is one Interaction candidate (size: one goal, no "and", shippable alone).
+2. Each distinct verb + object is one Interaction candidate (size: one behavior).
 3. **Reuse before create** — `find_related_nodes` for each piece. Same action from a new entry point → new `exposes`, not a new Interaction.
 4. Titles are stable names; descriptions say what the node does *now*; revision notes stay in `next.mdx` body.
 5. Then create what's missing via `define-entities` / `plan-project`.
@@ -41,5 +42,5 @@ Use the plain words (area, action, entry point, building block, bug) with the us
 
 - Invent tickets outside the graph
 - Add `depends_on` between Interactions, or put feature screen bodies in an Interface
-- Write on `main` / `master`
+- Hand off work (ready, in-review, ship, or "done") while default check fails
 - Ship your own work when `review-work` says a Reviewer is due

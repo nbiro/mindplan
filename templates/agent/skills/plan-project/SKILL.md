@@ -48,9 +48,9 @@ For empty or unknown graphs, also call `get_mindplan_graph` once. Prefer `export
 Run the **breakdown recipe** from `define-entities` Step 0 before inventing nodes:
 
 1. Rewrite the ask as: *"<who> can <verb> <object> in <area>, from <entry point>, using <building blocks>."*
-2. Each distinct verb + object → one Interaction candidate (size test: one goal, no "and", shippable alone).
+2. Each distinct verb + object → one Interaction candidate (size: one behavior).
 3. **Reuse before create** — `find_related_nodes` / graph inspect for each area, action, entry point, and building block. Same action from a new entry point → new `exposes`, not a new Interaction. One Interface per actor + channel (not per page/tab).
-4. Confirm the placement with the user **in plain words** before creating anything. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
+4. State which nodes you will add, **in plain words**. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
 5. Missing area → polite refuse: "This needs an area first; is it part of Billing or something new?" Do not silently mint a Journey.
 
 Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
@@ -87,22 +87,17 @@ Apply **package ownership** (SPEC §1.2.2) while enriching:
 
 Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not plan `next` slots for them. The parent self-readies when the contracts are written. `review-work` says whether a Reviewer is due at ship.
 
-### 5. Validate after every mutation
+### 5. On `Blocked:`
 
-After each `create_node`, `link_nodes`, `unlink_nodes`, `open_next`, `discard_next`, or `update_node_status` (and after material prose edits):
-
-1. Re-read focus via `find_related_nodes` / `get_node_context` (full `get_mindplan_graph` after multi-node restructuring)
-2. Confirm ids, states (including `next.state`), and edges match intent; surface `changed_files` from graph tools when narrating MCP writes
-3. Confirm the visualization with `export_mindplan_view` or a fresh neighborhood read
-4. On `Blocked:` or mismatch — stop and fix; do not continue
+On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. The server already writes `mindplan/map.md`. Do not require `export_mindplan_view` after every write.
 
 ### 6. Self-ready, then stop
 
 When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
-1. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). Do not spawn a Reviewer for this step.
-2. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
-3. Show or offer `export_mindplan_view` so humans can review the map.
+1. Default `mindplan-mcp check` exits `0`. Fix every `Blocked:` first.
+2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). Do not spawn a Reviewer for this step.
+3. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
 
 ## Shipping a plan (self-ready)
 
@@ -110,6 +105,7 @@ When the user says **“ship the plan”**, **“ship it”** (in a plan-only se
 
 Requirements before self-ready:
 
+- Default `mindplan-mcp check` exits `0`
 - Links complete (Interactions: at least one `belongs_to` + one Foundation `depends_on`; Interfaces: at least one `exposes`; Bugs past `open`: `affects`)
 - Territory is a full contract with **unchecked** Atomic Ops
 - Call `update_node_status` → `ready` yourself, one `revisions` call for the set
@@ -133,4 +129,4 @@ Then self-ready. Do not interpret “ship” here as `update_node_status` → `s
 - Hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)
 - Set Journey, `stable`, or `unstable` manually
 - Treat `mindplan/map.md` as graph authority
-- Skip post-mutation validation
+- Self-`ready` or claim done while default `mindplan-mcp check` fails

@@ -49,8 +49,8 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
    - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
    - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
 
-8. **Git delivery** — always feature branch + PR. Never push to `main`/`master`. Run default `mindplan-mcp check` (and your typecheck) before shipping. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate.
+8. **Check at every handoff** — default `mindplan-mcp check` before self-`ready`, `in-review` / spawning a Reviewer, `ship` / `resolved`, or claiming the session is done. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate. Host typecheck is not a MindPlan gate.
 
-9. **Review** — proportional, and fully described in `.cursor/skills/mindplan-review-work/`. In short: self-ship is allowed for a revision with no Foundation source and at most one source; otherwise spawn one independent Reviewer via the Task / subagent tool, and after a Reject resume that same Reviewer (Task `resume` with its agent id) rather than spawning a new one.
+9. **Review** — proportional, and fully described in `.cursor/skills/mindplan-review-work/`. In short: self-ship is allowed for a revision with no Foundation source and at most one source; otherwise spawn one independent Reviewer who judges the contract against the diff and ships.
 
 10. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
