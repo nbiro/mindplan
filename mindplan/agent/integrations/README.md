@@ -18,7 +18,6 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 - `mindplan/agent/playbook.md` — the systems dialect (also sent by the MCP server as server `instructions`)
 - `mindplan/agent/skills/define-entities/` — entity creation guide (scaffolding)
 - `mindplan/agent/skills/plan-project/` — plan-only product modeling (no application code)
-- `mindplan/agent/skills/review-work/` — the review gate (proportional: a Reviewer only for Foundation or multi-source revisions)
 - `mindplan/agent/mcp.json.example` — MCP server snippet (adjust the path)
 
 If your agent reads root **`AGENTS.md`**, `init` creates a short stub when missing. Otherwise, add the stub (`templates/agent/agents-stub.md`) yourself, or point the agent at `mindplan/agent/playbook.md`.

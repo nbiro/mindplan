@@ -161,34 +161,6 @@ export function installPlanProjectSkill(
   );
 }
 
-export function installReviewWorkSkill(
-  packageRoot: string,
-  options: InstallOptions = {}
-): InstallSkillResult {
-  const root = agentTemplateRoot(packageRoot);
-  const destDir = path.join(agentRoot(), "skills", "review-work");
-  return installTemplateDir(
-    path.join(root, "skills", "review-work"),
-    destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "review-work"),
-    options
-  );
-}
-
-export function installCodeReviewSkill(
-  packageRoot: string,
-  options: InstallOptions = {}
-): InstallSkillResult {
-  const root = agentTemplateRoot(packageRoot);
-  const destDir = path.join(agentRoot(), "skills", "code-review");
-  return installTemplateDir(
-    path.join(root, "skills", "code-review"),
-    destDir,
-    path.posix.join(MINDPLAN_DIR, AGENT_DIR, "skills", "code-review"),
-    options
-  );
-}
-
 export function installMcpExample(
   packageRoot: string,
   options: InstallOptions = {}
@@ -238,8 +210,6 @@ export function installCursorIgnore(
 const CURSOR_SKILL_COPIES = [
   { template: "define-entities", dest: "mindplan-define-entities" },
   { template: "plan-project", dest: "mindplan-plan-project" },
-  { template: "review-work", dest: "mindplan-review-work" },
-  { template: "code-review", dest: "mindplan-code-review" },
 ] as const;
 
 export function installCursorSkills(
@@ -508,8 +478,6 @@ export type RunInitReport = {
   playbook: InstallAgentRuleResult;
   skill: InstallSkillResult;
   planSkill: InstallSkillResult;
-  reviewSkill: InstallSkillResult;
-  codeReviewSkill: InstallSkillResult;
   mcpExample: InstallAgentRuleResult;
   integrations: InstallSkillResult;
   agentsMd: InstallAgentRuleResult;
@@ -531,8 +499,6 @@ export function runInit(opts: RunInitOptions): RunInitReport {
   const playbook = installAgentPlaybook(opts.packageRoot, installOpts);
   const skill = installDefineEntitiesSkill(opts.packageRoot, installOpts);
   const planSkill = installPlanProjectSkill(opts.packageRoot, installOpts);
-  const reviewSkill = installReviewWorkSkill(opts.packageRoot, installOpts);
-  const codeReviewSkill = installCodeReviewSkill(opts.packageRoot, installOpts);
   const mcpExample = installMcpExample(opts.packageRoot, installOpts);
   const integrations = installAgentIntegrations(opts.packageRoot, installOpts);
   const agentsMd = installRootAgentsMd(opts.packageRoot, installOpts);
@@ -549,8 +515,6 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     playbook,
     skill,
     planSkill,
-    reviewSkill,
-    codeReviewSkill,
     mcpExample,
     integrations,
     agentsMd,

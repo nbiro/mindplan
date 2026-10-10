@@ -1332,20 +1332,24 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "plan-project", "SKILL.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install plan-project skill");
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "review-work", "SKILL.md"))) {
+} else if (
+  fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "review-work", "SKILL.md")) ||
+  fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "code-review", "SKILL.md"))
+) {
   failures++;
-  console.log("FAIL mindplan-mcp init did not install review-work skill");
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "code-review", "SKILL.md"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install code-review skill");
+  console.log("FAIL mindplan-mcp init must not install review-work or code-review skills");
 } else if (
   !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-define-entities", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-plan-project", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-code-review", "SKILL.md"))
+  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-plan-project", "SKILL.md"))
 ) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install Cursor skills under .cursor/skills/");
+} else if (
+  fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md")) ||
+  fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-code-review", "SKILL.md"))
+) {
+  failures++;
+  console.log("FAIL mindplan-mcp init must not install Cursor review-work or code-review skills");
 } else if (!fs.existsSync(path.join(initRoot, ".cursor", "rules", "mindplan.mdc"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install .cursor/rules/mindplan.mdc");

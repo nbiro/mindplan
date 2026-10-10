@@ -23,7 +23,7 @@ Rules in plain words: **Infrastructure First** — build the building blocks bef
 
 ## Think in systems
 
-MindPlan exists so an agent thinks in systems: orient on the graph, place each change on it, respect the edges, claim files, and classify a change to shipped work by its blast radius. That short *systems dialect* plus this product's description and rules load through `get_project`. MCP server `instructions` are only a short pointer that requires that call before answering or writing code — not a paste of the playbook. Heavier procedures (the review gate, entity scaffolding) load on demand as skills.
+MindPlan exists so an agent thinks in systems: orient on the graph, place each change on it, respect the edges, claim files, and classify a change to shipped work by its blast radius. That short *systems dialect* plus this product's description and rules load through `get_project`. MCP server `instructions` are only a short pointer that requires that call before answering or writing code — not a paste of the playbook. Heavier procedures (entity scaffolding, plan-only modeling) load on demand as skills. Code review is outside the dialect — customize via host process or `mindplan/project.md` rules.
 
 ## The problem
 
@@ -48,7 +48,7 @@ Blocked: Infrastructure First. Interaction "i-checkout" cannot ship while
 linked Foundations are not stable: "f-payments" (in-progress).
 ```
 
-That gate still applies to MindPlan `ship`. Implementation review may **Approve** the Interaction while ship waits on Foundations — unfinished substrate is not a Reject reason; Approve stands until deps are `stable` and `ship` succeeds.
+That gate still applies to MindPlan `ship`. Unfinished Foundation deps block production entry until they are `stable` — that is a compiler gate, not a quality-review ritual.
 
 No ghost Interactions without a Journey and Foundation, no Interface ship while exposed Interactions are unfinished (**Behavior First**), no Interaction→Interaction `depends_on` (**Interaction Independence**), no ship while Atomic Ops are unchecked.
 
@@ -60,7 +60,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
 - **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `next.mdx` → `ship` promotes over `current.mdx`
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
-- **Review in proportion** — an agent may ship its own revision when it has no Foundation source and at most one source. A Foundation contract change, or a revision with several sources, needs one independent Reviewer first
+- **Ship after green check** — the implementer may `ship` / resolve when default `mindplan-mcp check` is green and legal transitions allow; MindPlan does not require an independent Reviewer
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees

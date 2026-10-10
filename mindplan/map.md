@@ -2,6 +2,8 @@
 
 _Auto-generated after each graph mutation (37 nodes, 97 edges). Do not edit by hand._
 
+_How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
+
 ```mermaid
 flowchart TB
   subgraph foundations["Foundations"]

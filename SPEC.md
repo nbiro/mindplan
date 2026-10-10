@@ -14,7 +14,7 @@ MindPlan is a strictly deterministic Software Development Life Cycle (SDLC) fram
 
 The model is **Interaction-centric**. Agents query *what the system does* (Journeys → Interactions), *how actors enter those behaviors* (Interfaces), and *what shared substrate those behaviors stand on* (Foundations), composed by an Assembler — instead of reconstructing architecture from source on every task.
 
-MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). The always-on agent artifact is the **systems dialect**: a one-screen playbook (`templates/agent/playbook.md`) covering orientation, the taxonomy and edges, file claims, `Blocked:` handling, and blast-radius classification. On connect, MCP server `instructions` are a **short pointer** that requires the agent to call `get_project` before answering or writing code; that tool returns the playbook plus the **project brief** (`mindplan/project.md` — description and standing rules) (§1.1.1). `mindplan-mcp init` also installs the playbook at `mindplan/agent/playbook.md` as an offline fallback, and installs a short stub (`templates/agent/agents-stub.md`) into root `AGENTS.md` and `.cursor/rules/mindplan.mdc` that requires `get_project` (and file fallbacks when tools are hidden). Procedures load on demand: entity scaffolding in `define-entities`, plan-only modeling in `plan-project`, and the review gate in `review-work`. The parent may self-`ready` (`draft → ready`). Review is proportional (§3.1): a revision with no Foundation source and at most one source may be shipped by the agent that built it; anything larger needs one independent Reviewer. These gates are playbook-level, not server-enforced.
+MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). The always-on agent artifact is the **systems dialect**: a one-screen playbook (`templates/agent/playbook.md`) covering orientation, the taxonomy and edges, file claims, `Blocked:` handling, and blast-radius classification. On connect, MCP server `instructions` are a **short pointer** that requires the agent to call `get_project` before answering or writing code; that tool returns the playbook plus the **project brief** (`mindplan/project.md` — description and standing rules) (§1.1.1). `mindplan-mcp init` also installs the playbook at `mindplan/agent/playbook.md` as an offline fallback, and installs a short stub (`templates/agent/agents-stub.md`) into root `AGENTS.md` and `.cursor/rules/mindplan.mdc` that requires `get_project` (and file fallbacks when tools are hidden). Procedures load on demand: entity scaffolding in `define-entities` and plan-only modeling in `plan-project`. The parent may self-`ready` (`draft → ready`) and self-`ship` / self-`resolved` when default check is green and Rules 1–6 allow (§3.1). Code review and similar process gates are outside the dialect. Handoff check is playbook-level, not server-enforced.
 
 `GRAPH_VERSION` remains `1`. This Interaction-centric taxonomy is a **breaking** change accepted while the package is unreleased — there is no consumer compatibility layer for the former Workflow-centric schema.
 
@@ -152,7 +152,7 @@ Rules:
 
 **Build order (per exposed Interaction):** Interaction `in-progress` → implement + declare files → only then Interface thin mount/wire.
 
-Default Atomic Ops templates (§6.3) and playbook/review-work gates encode this split.
+Default Atomic Ops templates (§6.3) and the playbook encode this split.
 
 ### 1.3 Screaming architecture
 
@@ -194,7 +194,7 @@ Type names, edges, states, ids, and `Blocked:` codes are unchanged. This glossar
 
 **Links (plain):** `belongs_to` = is part of; `exposes` = shows; `depends_on` = needs; `leads_to` = then goes to; `affects` = breaks.
 
-**States (plain):** draft = idea; ready = ready to build; in-progress = building; in-review = being checked; stable = live; unstable = live with problems.
+**States (plain):** draft = idea; ready = ready to build; in-progress = building; in-review = awaiting ship; stable = live; unstable = live with problems.
 
 **Rules (plain):** Infrastructure First = build the building blocks before the action that needs them; Behavior First = an action has to work before you put it on a page; Completion Check = finish the checklist before going live; No Ghosts = every action lives in an area and stands on a building block.
 
@@ -317,12 +317,12 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 | 1 | `draft` | Ideation; scope written in `current.mdx` (or `next.mdx` while evolving, §3.6) |
 | 2 | `ready` | Pre-flight passed (Interaction: Journey + Foundation linked; Interface: at least one `exposes`) |
 | 3 | `in-progress` | Active execution; Atomic Ops checked off |
-| 4 | `in-review` | Frozen pending external review (human or another agent), PR approval, or CI gate |
+| 4 | `in-review` | Neutral pipeline checkpoint: build finished; eligible for `ship` when Rules 1–6 and Completion Check allow. MindPlan does **not** require human review, an agent Reviewer, PR approval, or CI |
 | 5 | `stable` / `unstable` | Computed production posture; entered via `ship`, never set manually (§3.5) |
 | 6 | `cancelled` | Pre-ship abandon (from `draft`/`ready`/`in-progress`/`in-review` only); terminal |
 | 7 | `deprecated` | Retired (from `stable`/`unstable` only) |
 
-**Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. **Proportional review.** The review gate is sized to the revision, classified per §3.7 (source, neighbor, unaffected). The implementing agent MAY `ship` (or Bug `resolved`) its own revision when default `mindplan-mcp check` is green and the revision has **no Foundation source and at most one source**. The agent MUST instead **spawn** one independent Reviewer (subagent or separate session) via `review-work` when any source is a Foundation, or the revision has two or more sources; it MUST NOT self-`ship` / self-`resolved` those. Narrating that review is still needed, without spawning, does not satisfy a due gate. One Reviewer covers the whole revision and judges source contracts and the diff together. The parent MAY self-`ready` (`draft` → `ready`) without a Reviewer, in one ordered `update_node_status` call. There is no separate Plan Review spawn. After Approve, status advances in one ordered `update_node_status` call. The Reviewer MUST NOT Reject because other nodes in the graph are `in-progress`, `in-review`, `draft`, `ready`, or Bug `fixing` / `in-review`; unfinished work outside the revision is mergeable. **Approve vs ship:** a Reviewer Approve is a quality verdict on the files, owners, and blast-radius class of the revision; it is not voided when `ship` returns `Blocked: Infrastructure First` (Rule 3, §5.4) or when Behavior First blocks only because an exposed Interaction was Approve-but-ship-deferred. Production entry stays blocked until Foundation deps are `stable`; a later `ship` (parent or later session, no new Reviewer unless those files changed) applies that Approve. Unfinished Foundation deps are not a Reject reason. Findings travel in the Reviewer’s structured message to the parent; playbooks MUST NOT require writing review feedback into territory files. The server does not enforce reviewer identity.
+**Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. The implementing agent MAY `ship` (or Bug `resolved`) its own revision when default `mindplan-mcp check` is green and legal transitions / Rules 1–6 allow. Classify the revision per §3.7 (source, neighbor, unaffected) for `open_next` vs edit-in-place — not for a Reviewer gate. MindPlan does **not** require spawning an independent Reviewer, Approve/Reject protocol, or any code-quality judgment before `ship`. Code review and similar process gates are **outside the dialect**; projects MAY add them via host tooling or `mindplan/project.md` standing rules. The parent MAY self-`ready` (`draft` → `ready`) in one ordered `update_node_status` call. Status advances for a multi-node revision in one ordered `update_node_status` call (§3.7). `Blocked: Infrastructure First` (Rule 3, §5.4) or Behavior First defers production entry until deps are ready; that is a compiler gate, not a quality Reject.
 
 **Cancel transition:** `update_node_status(..., "cancelled")` abandons a Foundation, Interaction, or Interface that never shipped. It is blocked while `next.mdx` is open, or while any **active** (non-`cancelled`/`deprecated`/`resolved`/`wontfix`) node still `depends_on` this node (or, for Interactions, while an active Interface still `exposes` it — implementations SHOULD reject cancel when active dependents of either edge kind exist). Packages and territory folders are left on disk. There is no uncancel in v1 — cancelled is terminal like `deprecated`.
 
@@ -345,7 +345,7 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 | `open` | Reported; repro in `current.mdx` |
 | `triaged` | Validated; linked via `affects`; severity optional |
 | `fixing` | Fix in progress |
-| `in-review` | Fix PR open |
+| `in-review` | Fix awaiting resolve (neutral checkpoint; no required PR/Reviewer) |
 | `resolved` | Fix verified and shipped — terminal |
 | `wontfix` | Closed without fix — terminal |
 
@@ -421,13 +421,13 @@ A **neighbor** (§3.7) has no `next`: its owned files are edited in place and it
 
 Atomic Operations / checklist items on `next.mdx` MAY be scoped to the current evolution (reset or replaced when opening `next`). `open_next` resets checkboxes to `[ ]`. On a source, spec sections (Purpose, PRD, Execution Logic, Shared Substrate Spec, Acceptance Criteria, and equivalents) MUST remain a full successor document, not an evolution-only diff.
 
-Agents MUST verify Territory Completeness for sources before transitioning `next` to `in-review` (playbook review check). Semantic completeness is a Reviewer judgment when a Reviewer is due (§3.1).
+Agents MUST verify Territory Completeness for sources before transitioning `next` to `in-review` (playbook check-at-handoff). Semantic completeness is the implementer’s responsibility before `ship`; MindPlan does not prescribe an independent Reviewer.
 
 ### 3.7 Multi-node revisions
 
-A **revision** is one immutable change. When a Reviewer is due (§3.1), one independent Reviewer covers the whole revision. There is no new node type. The same classification applies to every Foundation, Interaction, Interface, and Bug.
+A **revision** is one immutable change. There is no new node type. The same classification applies to every Foundation, Interaction, Interface, and Bug.
 
-Nothing in the successor set may ship while a node the revision touches is broken. Independence, file ownership, and Interaction Independence are unchanged. The ban on self-`ship` / self-`resolved` applies when a Reviewer is due (§3.1). The parent may self-`ready`.
+Nothing in the successor set may ship while a node the revision touches is broken. Independence, file ownership, and Interaction Independence are unchanged. The parent may self-`ready` and self-`ship` / self-`resolved` when default check is green and Rules 1–6 allow (§3.1).
 
 #### Pull-in
 
@@ -441,15 +441,15 @@ A node is in a source’s blast radius when it:
 
 #### Classes
 
-| Class | When | Successor set | What is reviewed |
-|---|---|---|---|
-| **Source** | The node’s own contract changed | Yes. `open_next`, full successor contract | Full contract, every Atomic Op, and the diff |
-| **Neighbor** | Blast radius pulls the node in, its owned files changed, and its own behavior did not | No. Edit the owned files in place; no `open_next` | Its changed files, read in the diff when a Reviewer is due |
-| **Unaffected** | Blast radius pulls the node in, and its owned files did not change | No. Do not open `next` | Shown to the Reviewer, who confirms the change does not require the node to move |
+| Class | When | Successor set |
+|---|---|---|
+| **Source** | The node’s own contract changed | Yes. `open_next`, full successor contract |
+| **Neighbor** | Blast radius pulls the node in, its owned files changed, and its own behavior did not | No. Edit the owned files in place; no `open_next` |
+| **Unaffected** | Blast radius pulls the node in, and its owned files did not change | No. Do not open `next` |
 
 **Source.** The active body is the post-ship contract.
 
-**Neighbor.** A neighbor’s contract does not change, so it has no successor and no impact note. List neighbors on the revision so a Reviewer, when one is due, reads their files in the diff. A node whose `implements` must change is not a pure neighbor; `open_next` it like a source. The `## Impact` heading is no longer scaffolded by any template, but when a territory body contains one, leaving `draft` (`ready`), entering `in-review`, and `ship` / `resolved` MUST still reject an empty or scaffold section:
+**Neighbor.** A neighbor’s contract does not change, so it has no successor and no impact note. A node whose `implements` must change is not a pure neighbor; `open_next` it like a source. The `## Impact` heading is no longer scaffolded by any template, but when a territory body contains one, leaving `draft` (`ready`), entering `in-review`, and `ship` / `resolved` MUST still reject an empty or scaffold section:
 
 ```
 Blocked: Minimum Territory Shape. "<id>"/<file> section "## Impact" is empty or a stub. Write what this node adapted so the already-shipped contract still holds.
@@ -457,19 +457,17 @@ Blocked: Minimum Territory Shape. "<id>"/<file> section "## Impact" is empty or 
 
 **Unaffected.** List them on the revision. They are not members of `node_ids`.
 
-**Reject scope.** A Reject means the files still fail the contract. The next Reviewer uses the same split. It confirms prior Findings are resolved, reviews everything that changed, and does not treat neighbors as brand-new contracts or re-verify inherited Atomic Ops the diff does not touch. The author's fixes are claims until verified in the code. Review binds files, owners, and class — not git SHAs.
-
-**Examples.** A visual-system change is a Foundation source; pages whose files adapt are Interface neighbors, edited in place. An enquiry behavior change is an Interaction source; the Interface that mounts it is the neighbor. A Bug that crosses several nodes uses the same split on the nodes it `affects`: full review where the contract changed, plain in-place edits everywhere else. The Bug’s own fix checklist is reviewed in full.
+**Examples.** A visual-system change is a Foundation source; pages whose files adapt are Interface neighbors, edited in place. An enquiry behavior change is an Interaction source; the Interface that mounts it is the neighbor. A Bug that crosses several nodes uses the same split on the nodes it `affects`: full successor where the contract changed, plain in-place edits everywhere else.
 
 #### One status call
 
-After Approve, the Reviewer advances the successor set with one `update_node_status` call (§8.2 `revisions`). The server orders **Foundations, then Interactions, then Interfaces, then Bugs**, keeps caller order within a tier, and stops on the first `Blocked:`. Earlier nodes in that call stay transitioned. The blocked node and every later node are not written.
+The implementer advances the successor set with one `update_node_status` call (§8.2 `revisions`). The server orders **Foundations, then Interactions, then Interfaces, then Bugs**, keeps caller order within a tier, and stops on the first `Blocked:`. Earlier nodes in that call stay transitioned. The blocked node and every later node are not written.
 
-`Blocked: Infrastructure First`, or Behavior First only because an exposed Interaction is Approve-but-ship-deferred, still means **Approve + ship deferred** (§3.1). It is not a quality Reject. Any other `Blocked:` stops the call; do not soft-approve the rest.
+`Blocked: Infrastructure First`, or Behavior First because an exposed Interaction is not yet shippable, defers production entry until deps allow — that is a compiler gate, not a quality judgment. Any other `Blocked:` stops the call.
 
 #### Check before handoff
 
-Default `mindplan-mcp check` MUST exit 0 before the agent stops owning the work: self-`ready`, entering `in-review` / spawning a Reviewer, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). It does not invoke a host typechecker; host typecheck is not a MindPlan gate. The server does not run `check` as a status-transition hook.
+Default `mindplan-mcp check` MUST exit 0 before the agent stops owning the work: self-`ready`, entering `in-review`, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). It does not invoke a host typechecker; host typecheck is not a MindPlan gate. The server does not run `check` as a status-transition hook.
 
 ---
 
@@ -1224,7 +1222,7 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
 
-Review and plan handoff (§3.7) require this default check before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done. The check command does not run a host typechecker.
+Plan and ship handoff (§3.7) require this default check before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done. The check command does not run a host typechecker.
 
 ---
 

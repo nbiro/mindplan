@@ -28,7 +28,7 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 
 - **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries — prefer leaving that to the build session unless the user asks).
 - **No implementation pipeline** — do not move Foundations/Interactions/Interfaces to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
-- **Allowed states** — write contracts at `draft`. When the contracts are real, self-`ready` the revision in one ordered `revisions` call. Do not spawn a Plan Reviewer. `review-work` decides at ship time whether a Reviewer is due. See **Shipping a plan** below.
+- **Allowed states** — write contracts at `draft`. When the contracts are real, self-`ready` the revision in one ordered `revisions` call. See **Shipping a plan** below.
 - **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
 - Mutate graph state only through MindPlan MCP. Treat every `Blocked: <reason>` as a hard failure — fix the plan, do not retry blindly.
 - **Interaction Independence** — never model Interaction → Interaction `depends_on`; use Foundations for shared state and `leads_to` for navigation.
@@ -86,7 +86,7 @@ Apply **package ownership** (SPEC §1.2.2) while enriching:
 - One Interface per actor surface, not one Interface per screen/tab.
 - Keep Interaction/Interface Atomic Ops templates from `define-entities`.
 
-Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not plan `next` slots for them. The parent self-readies when the contracts are written. `review-work` says whether a Reviewer is due at ship.
+Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not plan `next` slots for them. The parent self-readies when the contracts are written.
 
 ### 5. On `Blocked:`
 
@@ -97,12 +97,12 @@ On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. 
 When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
 1. Default `mindplan-mcp check` exits `0`. Fix every `Blocked:` first.
-2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). Do not spawn a Reviewer for this step.
+2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces).
 3. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
 
 ## Shipping a plan (self-ready)
 
-When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means self-`ready` and stop. It is not the build-pipeline `ship` transition, and it does not spawn a Reviewer.
+When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means self-`ready` and stop. It is not the build-pipeline `ship` transition.
 
 Requirements before self-ready:
 

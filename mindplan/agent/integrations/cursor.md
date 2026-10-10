@@ -27,7 +27,6 @@ Paste the contents of `templates/agent/agents-stub.md` below the frontmatter. Ro
 3. **Skills** — `mindplan-mcp init` installs Cursor-native skill discovery paths when missing:
    - `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Interaction, Interface, Bug nodes)
    - `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
-   - `.cursor/skills/mindplan-review-work/` (the review gate: when a Reviewer is due, how to spawn one, and the verdict)
 
    Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories, or re-run `mindplan-mcp init -f` after a MindPlan upgrade / if the `.cursor/skills/` trees were removed.
 
@@ -44,13 +43,11 @@ If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `m
 
 6. **File ownership** — `mindplan-mcp init` writes `mindplan/config.json` as `{ sources, exclude }` (default `sources: ["src/**"]`). Declare owned files with `set_implementation_files`. Legacy `implementation_packages` configs migrate on init. See SPEC §1.2.
 
-7. **Authority split & review**
-   - **MCP** — create/link/status/`open_next`/`discard_next`. Graph tool results include `changed_files` (paths MCP wrote). Those writes do **not** appear in Cursor’s agent “changed files” strip — review via Source Control or by opening the cited path.
+7. **Authority split**
+   - **MCP** — create/link/status/`open_next`/`discard_next`. Graph tool results include `changed_files` (paths MCP wrote). Those writes do **not** appear in Cursor’s agent “changed files” strip — inspect via Source Control or by opening the cited path.
    - **File tools** — `title` / `description` / body / checkboxes at `current_path` / `next_path` from orientation. These **do** show in the agent edit UI.
    - Never hand-edit server-owned frontmatter (`state`, edges, timestamps).
 
-8. **Check at every handoff** — default `mindplan-mcp check` before self-`ready`, `in-review` / spawning a Reviewer, `ship` / `resolved`, or claiming the session is done. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate. Host typecheck is not a MindPlan gate.
+8. **Check at every handoff** — default `mindplan-mcp check` before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate. Host typecheck is not a MindPlan gate. Code review is outside the MindPlan dialect — use host process or `mindplan/project.md` rules if desired.
 
-9. **Review** — proportional, and fully described in `.cursor/skills/mindplan-review-work/`. In short: self-ship is allowed for a revision with no Foundation source and at most one source; otherwise spawn one independent Reviewer who judges the contract against the diff and ships.
-
-10. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
+9. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).

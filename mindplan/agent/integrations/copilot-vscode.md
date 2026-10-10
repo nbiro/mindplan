@@ -19,7 +19,7 @@ Exact schema varies by VS Code / Copilot version — see [VS Code MCP documentat
 2. **Instructions** — ensure root `AGENTS.md` references MindPlan (created by `init` when missing), or add:
 
 ```markdown
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for the review gate.
+Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code).
 ```
 
 3. Restart VS Code or reload MCP servers after config changes.
