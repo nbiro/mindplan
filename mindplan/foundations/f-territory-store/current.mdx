@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — load and persist mindplan territory, frontmatter, implements, and next slots."
+description: "Infra — load and persist mindplan territory, frontmatter, implements, next slots, and the project brief."
 state: stable
-shipped_at: 2026-10-09T22:27:39.030Z
+shipped_at: 2026-10-10T14:10:21.788Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-09T22:27:39.030Z
+updated_at: 2026-10-10T14:10:21.788Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -16,51 +16,34 @@ role: infra
 ---
 
 
-
-
-
-
 # Territory store
 
 ## Purpose
 
-Infra — load/persist territory MDX, scaffolds, frontmatter patches, open_next / discard_next / promote_next. Persist server-owned `implements` and Foundation `role`. Stop scaffolding prescribed packages. Move `config.ts` ownership of source globs out to `f-source-index` (this store may re-export or stop owning config).
+Infra — load/persist territory MDX, scaffolds, frontmatter patches, open_next / discard_next / promote_next. Own the project-brief loader (`loadProjectBrief`) that reads `mindplan/project.md` today — the storage seam for description and standing rules. Does **not** own MCP instructions or the playbook body.
 
 ## Shared Substrate Spec
 
 Intended files: `src/foundations/f-territory-store/`
 
-- `store.ts` — frontmatter rebuild lists in `openNextSlot` / `promoteNextSlot` MUST include `implements` and `role` so they are not dropped
-- `create_node` path: do **not** write `src/<type>/<id>/.gitkeep`
-- Territory scaffold prose: replace "implement under `src/<type>/<id>/`" with declare files via `set_implementation_files`
-- Retired nodes may keep shrinking `implements` lists (enforced by steer/compiler; store must round-trip the field)
-- `summarizeGraphNode` stays here
-- Config for `sources`/`exclude` lives in `f-source-index`; remove or thin local `config.ts` accordingly
+- Keep existing store behavior for MDX, edges, implements, role, next slots
+- `project.ts` — `loadProjectBrief()`, empty template, `PROJECT_RELATIVE_PATH`
+  - Parses `## Description` and `## Rules`
+  - Missing or unreadable → empty strings + empty template markdown; never throws
+- Callers compose with the playbook elsewhere (`get_project`); this package does not append to instructions
 
-Depends on: `f-domain-model`.
+Depends on: `f-domain-model`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- `open_next` copies `implements` and `role`; `ship` promotes them
-- New nodes do not get package scaffolds
-- Scaffold templates mention `set_implementation_files`, not prescribed folders
-- Existing load/patch APIs keep working
-- Verified via `npm test`
-
-
-## Impact
-
-Persistence, implements, role, and open_next/promote are unchanged. Checkbox counting now treats a lone carriage return as a line break, which is how open_next copies some checklists, so an inherited complete next checklist matches the live contract.
+- `loadProjectBrief` never throws; missing file yields empty description/rules
+- Existing territory load/persist behavior unchanged
 
 ## Atomic Ops
 
-- [x] Extend openNextSlot/promoteNextSlot fixed field lists with `implements` and `role`
-- [x] Stop scaffolding `src/<type>/<id>/.gitkeep` on create
-- [x] Update territory scaffold text away from prescribed packages
-- [x] Hand config ownership to `f-source-index` (move or delete local config)
-- [x] Verified via `npm test`
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
+- [x] Add `project.ts` with `loadProjectBrief` and empty template
+- [x] Build and run tests (`npm test`)
+- [x] Verified by Reviewer against the contract
 
 ## Attachments
 

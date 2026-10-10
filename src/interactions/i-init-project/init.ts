@@ -16,6 +16,11 @@ import {
   type MindPlanProjectConfig,
 } from "../../foundations/f-source-index/config.js";
 import {
+  EMPTY_PROJECT_BRIEF_MARKDOWN,
+  PROJECT_FILENAME,
+  PROJECT_RELATIVE_PATH,
+} from "../../foundations/f-territory-store/project.js";
+import {
   AGENT_DIR,
   MINDPLAN_DIR,
   agentRoot,
@@ -459,6 +464,20 @@ export function initProject(): InitResult {
   return { root, created: !existed };
 }
 
+/**
+ * Writes mindplan/project.md when missing.
+ * Never overwrites — force does not apply (product text is owned by the repo).
+ */
+export function installProjectBrief(): InstallAgentRuleResult {
+  const destPath = path.join(mindplanRoot(), PROJECT_FILENAME);
+  if (fs.existsSync(destPath)) {
+    return { installed: false, path: PROJECT_RELATIVE_PATH };
+  }
+  fs.mkdirSync(mindplanRoot(), { recursive: true });
+  fs.writeFileSync(destPath, EMPTY_PROJECT_BRIEF_MARKDOWN, "utf-8");
+  return { installed: true, path: PROJECT_RELATIVE_PATH };
+}
+
 /** Walk up from this module until templates/agent exists (works from nested dist/...). */
 export function resolvePackageRoot(moduleUrl: string): string {
   let dir = path.dirname(fileURLToPath(moduleUrl));
@@ -485,6 +504,7 @@ export type RunInitReport = {
   root: string;
   created: boolean;
   projectConfig: InstallProjectConfigResult;
+  projectBrief: InstallAgentRuleResult;
   playbook: InstallAgentRuleResult;
   skill: InstallSkillResult;
   planSkill: InstallSkillResult;
@@ -507,6 +527,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
   const installOpts = { force: opts.force };
   const { root, created } = initProject();
   const projectConfig = installProjectConfig();
+  const projectBrief = installProjectBrief();
   const playbook = installAgentPlaybook(opts.packageRoot, installOpts);
   const skill = installDefineEntitiesSkill(opts.packageRoot, installOpts);
   const planSkill = installPlanProjectSkill(opts.packageRoot, installOpts);
@@ -524,6 +545,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     root,
     created,
     projectConfig,
+    projectBrief,
     playbook,
     skill,
     planSkill,

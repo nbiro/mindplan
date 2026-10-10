@@ -36,7 +36,8 @@ Rules:
 1. Each distinct *verb + object* is one Interaction candidate.
 2. **Reuse before create.** Run `find_related_nodes` (or inspect `get_mindplan_graph`) for each area, action, entry point, and building block. Same action on a new entry point → new `exposes` (and mount/wire), **not** a new Interaction.
 3. State which nodes you will add, in plain words. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
-4. Then create what's missing, in the definition order below.
+4. A **product summary** or **standing rule** for the whole repo is an edit to `mindplan/project.md` — not a new Journey. Call `get_project` to re-read (includes the playbook).
+5. Then create what's missing, in the definition order below.
 
 ## Step 1 — Orient
 

@@ -5,12 +5,14 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import {
   isPipelineNodeType,
   type MindPlanGraph,
   type MindPlanNode,
   type NodeType,
 } from "../../foundations/f-domain-model/types.js";
+import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import {
   ATTACHMENTS_DIR,
   CURRENT_FILENAME,
@@ -419,4 +421,45 @@ export function getNodeImplementationHandler(args: {
     result.next_files = filesPayload(owned.next_files, root);
   }
   return result;
+}
+
+/**
+ * Resolve the bundled systems dialect at templates/agent/playbook.md.
+ * Walks up from this module to the package root (same layout as the npm package).
+ */
+function loadBundledPlaybook(): string {
+  try {
+    let dir = path.dirname(fileURLToPath(import.meta.url));
+    for (let i = 0; i < 8; i++) {
+      const candidate = path.join(dir, "templates", "agent", "playbook.md");
+      if (fs.existsSync(candidate)) {
+        return fs.readFileSync(candidate, "utf-8");
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw blocked(
+      `get_project could not read the bundled playbook (${message}). Reinstall mindplan-mcp so templates/agent/playbook.md is present.`
+    );
+  }
+  throw blocked(
+    "get_project could not find templates/agent/playbook.md. Reinstall mindplan-mcp so the systems dialect ships with the package."
+  );
+}
+
+/**
+ * Project brief (description + rules) plus the bundled systems dialect (playbook).
+ * MCP instructions only point here — call this before answering or writing code.
+ */
+export function getProject(): Record<string, unknown> {
+  const brief = loadProjectBrief();
+  return {
+    path: brief.path,
+    description: brief.description,
+    rules: brief.rules,
+    playbook: loadBundledPlaybook(),
+  };
 }

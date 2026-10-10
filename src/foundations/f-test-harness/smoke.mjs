@@ -30,16 +30,24 @@ await client.connect(transport);
 
 let failures = 0;
 
-// --- server instructions carry the systems dialect (initialize round-trip) ---
+// --- server instructions are a short MUST-call get_project pointer (initialize) ---
 {
-  const bundledPlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
+  const expectedInstructions =
+    "Before answering any questions or writing any code for this project, call get_project and read the response. " +
+    "Follow the playbook (systems dialect) and the project description and rules it returns. " +
+    "Then call orient_for_work before substantial work.";
   const instructions = client.getInstructions();
-  if (instructions !== bundledPlaybook) {
+  if (instructions !== expectedInstructions) {
     failures++;
     console.log(
-      `FAIL MCP initialize instructions must equal templates/agent/playbook.md (got ${instructions === undefined ? "undefined" : `${instructions.length} chars`})`
+      `FAIL MCP initialize instructions must be the short get_project pointer (got ${instructions === undefined ? "undefined" : `${instructions.length} chars`})`
     );
-  } else console.log("ok   MCP initialize instructions equal the bundled playbook");
+  } else console.log("ok   MCP initialize instructions are the short get_project pointer");
+  const bundledPlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
+  if (!bundledPlaybook.includes("get_project.playbook") || !bundledPlaybook.includes("get_project")) {
+    failures++;
+    console.log("FAIL playbook must mention get_project.playbook");
+  } else console.log("ok   playbook mentions get_project.playbook");
   const playbookLines = bundledPlaybook.split("\n").length;
   if (playbookLines > 60) {
     failures++;
@@ -120,6 +128,33 @@ function territoryPath(...parts) {
 
 function nextTerritoryPath(...parts) {
   return path.join(root, "mindplan", ...parts, "next.mdx");
+}
+
+// --- get_project (empty brief + bundled playbook in sandbox) ---
+{
+  const bundledPlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
+  const gp = await call("get_project", {});
+  if (gp.error) {
+    failures++;
+    console.log(`FAIL get_project: ${gp.text}`);
+  } else {
+    let payload;
+    try {
+      payload = JSON.parse(gp.text);
+    } catch {
+      payload = null;
+    }
+    if (
+      !payload ||
+      payload.path !== "mindplan/project.md" ||
+      payload.description !== "" ||
+      payload.rules !== "" ||
+      payload.playbook !== bundledPlaybook
+    ) {
+      failures++;
+      console.log(`FAIL get_project shape (empty brief + playbook): ${gp.text.slice(0, 200)}`);
+    } else console.log("ok   get_project returns empty brief + bundled playbook");
+  }
 }
 
 // --- create nodes ---
@@ -1258,6 +1293,17 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "AGENTS.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install AGENTS.md");
+} else if (!fs.existsSync(path.join(initRoot, "mindplan", "project.md"))) {
+  failures++;
+  console.log("FAIL mindplan-mcp init did not install mindplan/project.md");
+} else if (
+  (() => {
+    const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
+    return !stub.includes("get_project") || !stub.includes("mindplan/project.md");
+  })()
+) {
+  failures++;
+  console.log("FAIL agents-stub must mention get_project and mindplan/project.md");
 } else if (!fs.existsSync(path.join(initRoot, ".cursorignore"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install .cursorignore");
@@ -1411,6 +1457,9 @@ if (migrateInit.status !== 0) {
     const templatePlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
     const templateStub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
     fs.writeFileSync(path.join(forceRoot, "AGENTS.md"), "# MindPlan Agent Playbook (old full copy)\n", "utf-8");
+    const customBrief = "# Project\n\n## Description\n\nCustom product.\n\n## Rules\n\n- Keep me\n";
+    const briefPath = path.join(forceRoot, "mindplan", "project.md");
+    fs.writeFileSync(briefPath, customBrief, "utf-8");
 
     const forced = spawnSync(process.execPath, [serverEntry, "init", "-f"], {
       cwd: forceRoot,
@@ -1433,6 +1482,12 @@ if (migrateInit.status !== 0) {
         console.log("FAIL init -f must replace an old full-playbook AGENTS.md with the stub");
       } else {
         console.log("ok   init -f replaces old AGENTS.md with the stub");
+      }
+      if (fs.readFileSync(briefPath, "utf-8") !== customBrief) {
+        failures++;
+        console.log("FAIL init -f must not overwrite mindplan/project.md");
+      } else {
+        console.log("ok   init -f leaves project brief untouched");
       }
       const cfg = JSON.parse(fs.readFileSync(path.join(forceRoot, "mindplan", "config.json"), "utf-8"));
       if (cfg.sources?.[0] !== "app/**") {

@@ -14,7 +14,7 @@ MindPlan is a strictly deterministic Software Development Life Cycle (SDLC) fram
 
 The model is **Interaction-centric**. Agents query *what the system does* (Journeys → Interactions), *how actors enter those behaviors* (Interfaces), and *what shared substrate those behaviors stand on* (Foundations), composed by an Assembler — instead of reconstructing architecture from source on every task.
 
-MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). The always-on agent artifact is the **systems dialect**: a one-screen playbook (`templates/agent/playbook.md`) covering orientation, the taxonomy and edges, file claims, `Blocked:` handling, and blast-radius classification. The MCP server sends it as the server `instructions` on connect, so any MCP host receives it every session. `mindplan-mcp init` also installs it at `mindplan/agent/playbook.md` as a fallback, and installs a short stub (`templates/agent/agents-stub.md`) into root `AGENTS.md` and `.cursor/rules/mindplan.mdc` that triggers orientation and defers to the server instructions. Procedures load on demand: entity scaffolding in `define-entities`, plan-only modeling in `plan-project`, and the review gate in `review-work`. The parent may self-`ready` (`draft → ready`). Review is proportional (§3.1): a revision with no Foundation source and at most one source may be shipped by the agent that built it; anything larger needs one independent Reviewer. These gates are playbook-level, not server-enforced.
+MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). The always-on agent artifact is the **systems dialect**: a one-screen playbook (`templates/agent/playbook.md`) covering orientation, the taxonomy and edges, file claims, `Blocked:` handling, and blast-radius classification. On connect, MCP server `instructions` are a **short pointer** that requires the agent to call `get_project` before answering or writing code; that tool returns the playbook plus the **project brief** (`mindplan/project.md` — description and standing rules) (§1.1.1). `mindplan-mcp init` also installs the playbook at `mindplan/agent/playbook.md` as an offline fallback, and installs a short stub (`templates/agent/agents-stub.md`) into root `AGENTS.md` and `.cursor/rules/mindplan.mdc` that requires `get_project` (and file fallbacks when tools are hidden). Procedures load on demand: entity scaffolding in `define-entities`, plan-only modeling in `plan-project`, and the review gate in `review-work`. The parent may self-`ready` (`draft → ready`). Review is proportional (§3.1): a revision with no Foundation source and at most one source may be shipped by the agent that built it; anything larger needs one independent Reviewer. These gates are playbook-level, not server-enforced.
 
 `GRAPH_VERSION` remains `1`. This Interaction-centric taxonomy is a **breaking** change accepted while the package is unreleased — there is no consumer compatibility layer for the former Workflow-centric schema.
 
@@ -38,6 +38,7 @@ MindPlan prescribes the **planning tree** under `mindplan/`. Implementation code
 <project-root>/
 ├── mindplan/
 │   ├── config.json                    # { sources, exclude } — coverage universe (§1.2)
+│   ├── project.md                     # Project brief — description + rules (§1.1.1)
 │   ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
 │   ├── journeys/
 │   │   └── <node-id>/
@@ -78,6 +79,33 @@ Rules:
 - `components/` MAY contain project-specific MDX components (§6.4.3). It is created by the server but never read by it.
 - The server MUST create missing directories on demand; a fresh project requires no manual scaffolding.
 - `create_node` does **not** scaffold application code paths. Declare ownership with `set_implementation_files`.
+
+#### 1.1.1 Project brief (`mindplan/project.md`)
+
+Each consumer repo MAY hold a **project brief** — what this product is, and standing rules for every change — at `mindplan/project.md`. It is not a graph node, not frontmatter, and not a compiler rule. Humans and agents edit it with ordinary file tools while territory is local.
+
+```md
+# Project
+
+## Description
+
+What this product is, in a few sentences.
+
+## Rules
+
+- Standing constraints for every change in this repository.
+```
+
+Rules:
+
+- Missing `project.md` is valid. `mindplan-mcp check` MUST NOT require it. Boot MUST NOT fail when it is absent or unreadable.
+- `mindplan-mcp init` MUST write the empty template when the file is absent. `init -f` MUST NOT overwrite an existing brief (product text is owned by the repo).
+- Brief rules guide agents. They MUST NOT override a compiler `Blocked:`.
+- Do **not** paste the systems dialect into `project.md`. The playbook stays in the package (`templates/agent/playbook.md`); `get_project` composes it with the brief at read time.
+- **Primary channel:** on every MCP connect, server `instructions` MUST be a short pointer that requires the agent to call `get_project` before answering or writing code. Instructions MUST NOT embed the playbook body or the project brief body.
+- **Live read:** MCP tool `get_project` (§8.1) returns `{ path, description, rules, playbook }`. `description` / `rules` come from `loadProjectBrief()`; `playbook` is always the bundled dialect. Missing playbook → `Blocked:`. Call again after editing the brief.
+- **Redundancy:** the `AGENTS.md` / Cursor stub tells agents to call `get_project` first; when tools are hidden, read `mindplan/agent/playbook.md` and `mindplan/project.md`.
+- **Storage seam:** the brief loads through `loadProjectBrief` (today `mindplan/project.md`). A later remote store MAY replace that read; `get_project` keeps the same contract. This specification does not define a cloud backend.
 
 ### 1.2 Declared file ownership
 
@@ -866,7 +894,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes exactly fifteen tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes exactly seventeen tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -1017,6 +1045,26 @@ Composite orientation for agents: `find_related_nodes` plus full territory for t
 - **Input:** same as `find_related_nodes` (`query`, `node_id`, `type`, `limit`).
 - **Output:** `{ query, matches, focus, nodes, edges, context, blast_radius }` where `context` matches `get_node_context` when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
 - **Errors:** same as `find_related_nodes`.
+
+#### `get_project`
+
+Live read of the systems dialect and the project brief (§1.1.1). MCP server `instructions` only point here; agents MUST call this before answering or writing code, and MAY call again after editing `mindplan/project.md`.
+
+- **Input:** none.
+- **Output:**
+
+```jsonc
+{
+  "path": "mindplan/project.md",  // local path today; MAY be null when storage is remote
+  "description": "What this product is…",
+  "rules": "- Standing constraint…",
+  "playbook": "# MindPlan — think in systems\n…"  // always the bundled systems dialect
+}
+```
+
+When the brief is missing or unreadable, `description` and `rules` are empty strings and `path` remains the local relative path while territory is file-backed. `playbook` is always loaded from the package’s `templates/agent/playbook.md`.
+
+- **Errors:** missing or unreadable bundled playbook → `Blocked:` (agents MUST NOT invent the dialect). Brief I/O failures surface as empty `description` / `rules` (`loadProjectBrief` MUST NOT throw).
 
 #### `get_node_implementation`
 
@@ -1234,7 +1282,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `current.mdx`/`next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node `current.mdx` frontmatter and assemble at runtime per §7; `next.mdx` proposed edges are not live graph edges.
-- [ ] The fifteen-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient.
+- [ ] The seventeen-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient and `get_project`.
 - [ ] Mutations are deterministic and atomic per §9.
 - [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
 
