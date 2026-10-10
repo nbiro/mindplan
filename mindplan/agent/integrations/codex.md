@@ -27,11 +27,7 @@ After npm publish you can use `npx` instead of a local `node` path:
 codex mcp add mindplan --env MINDPLAN_ROOT="$(pwd)" -- npx -y mindplan-mcp
 ```
 
-2. **Instructions** — Codex auto-reads root `AGENTS.md`. `mindplan-mcp init` creates one when missing (it points at the playbook). Ensure it includes:
-
-```markdown
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for the review gate.
-```
+2. **Instructions** — Codex auto-reads root `AGENTS.md`. `mindplan-mcp init` writes the stub there when missing. MCP already requires `get_project` (dialect + project brief). The playbook file is a fallback if tools are hidden.
 
 3. **Verify** — start Codex and run `/mcp`, or:
 

@@ -10,10 +10,6 @@
 
 Or merge the JSON from `mindplan/agent/mcp.json.example` into Cline's MCP settings file.
 
-2. **Instructions** — add to `.clinerules` or root `AGENTS.md`:
-
-```
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). All graph mutations via MindPlan MCP tools only. Use mindplan/agent/skills/define-entities/ when scaffolding nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for the review gate.
-```
+2. **Instructions** — MCP already requires `get_project` (dialect + project brief). `init` writes that stub to `AGENTS.md` when missing. Add it to `.clinerules` if this host does not read `AGENTS.md`. All graph mutations go through MindPlan MCP tools.
 
 3. Enable the server in Cline and verify `get_mindplan_graph` is available.

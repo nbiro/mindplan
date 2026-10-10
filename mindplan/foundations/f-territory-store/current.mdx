@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — load and persist mindplan territory, frontmatter, implements, next slots, and the project brief."
+description: "Infra — project brief loader returns ## Rules through EOF (JS regex cannot use \\z)."
 state: stable
-shipped_at: 2026-10-10T14:10:21.788Z
+shipped_at: 2026-10-10T18:47:45.880Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-10T14:10:21.788Z
+updated_at: 2026-10-10T18:47:45.880Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -14,6 +14,7 @@ implements:
   - src/foundations/f-territory-store/
 role: infra
 ---
+
 
 
 # Territory store
@@ -29,6 +30,7 @@ Intended files: `src/foundations/f-territory-store/`
 - Keep existing store behavior for MDX, edges, implements, role, next slots
 - `project.ts` — `loadProjectBrief()`, empty template, `PROJECT_RELATIVE_PATH`
   - Parses `## Description` and `## Rules`
+  - `## Rules` is the last section: match through end of file (`$`), not PCRE `\z` (invalid in JavaScript — it was dropping the rules body)
   - Missing or unreadable → empty strings + empty template markdown; never throws
 - Callers compose with the playbook elsewhere (`get_project`); this package does not append to instructions
 
@@ -37,13 +39,14 @@ Depends on: `f-domain-model`, `f-source-index`.
 ## Acceptance Criteria
 
 - `loadProjectBrief` never throws; missing file yields empty description/rules
+- When `## Rules` is present, `rules` is the section body (including a last-section file)
 - Existing territory load/persist behavior unchanged
 
 ## Atomic Ops
 
-- [x] Add `project.ts` with `loadProjectBrief` and empty template
-- [x] Build and run tests (`npm test`)
-- [x] Verified by Reviewer against the contract
+- [x] Fix Rules section parse to end-of-file
+- [x] Assert `get_project` returns a written Rules body
+- [x] Green `mindplan-mcp check` and `npm test`
 
 ## Attachments
 

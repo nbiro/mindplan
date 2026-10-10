@@ -1,7 +1,7 @@
 ---
 name: mindplan-define-entities
 description: >-
-  Defines MindPlan SDLC entities (Journey, Foundation, Interaction, Interface,
+  Defines MindPlan graph entities (Journey, Foundation, Interaction, Interface,
   Bug) via MCP — taxonomy selection, Foundation roles (Assembler/Infra/Design
   system/Adapter), ID naming, edge linking (belongs_to, depends_on, exposes,
   leads_to, affects), and current.mdx territory. Journey MUST exist before
@@ -249,7 +249,7 @@ get_mindplan_graph
 get_node_context({ node_id })
 ```
 
-Confirm edges, folder paths, and territory content. When the revision’s contracts are real, run default `mindplan-mcp check`, then self-`ready` in one ordered call. Do not spawn a Plan Reviewer; `review-work` decides at ship time whether a Reviewer is due.
+Confirm edges, folder paths, and territory content. When the revision’s contracts are real, run default `mindplan-mcp check`, then self-`ready` in one ordered call.
 
 ## Definition order (greenfield project)
 
@@ -277,7 +277,7 @@ Gate facts:
 - An Interface MAY sit at `draft` without links; ≥1 `exposes` is required to leave `draft` (No Ghost Interfaces).
 - Foundation `ready` before Interaction `ready` is sequencing preference; Infrastructure First at Interaction `ship` still requires Foundations `stable`. Behavior First at Interface `ship` requires exposed Interactions `stable`.
 
-Ship order: Foundations → `stable` before Interaction `ship`; Interactions → `stable` before Interface `ship`. The parent owns `draft` → `ready` after a green `mindplan-mcp check`. When a Reviewer is due, that Reviewer owns `ship`; otherwise the implementer ships after check.
+Ship order: Foundations → `stable` before Interaction `ship`; Interactions → `stable` before Interface `ship`. The parent owns `draft` → `ready` after a green `mindplan-mcp check`, and the implementer ships after check when Rules 1–6 allow.
 
 ## Evolving a shipped node
 
@@ -292,7 +292,7 @@ open_next({
 })
 ```
 
-`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Classify the revision first (`review-work`). A **source** edits `next` into a full successor contract. A **neighbor** (files change, behavior doesn't) is edited in place and gets no `next`; neither do unaffected blast-radius nodes. Then default `mindplan-mcp check`, then self-`ready`. Do not spawn a Plan Reviewer. An execution session runs `in-progress` → `in-review`; `review-work` decides whether a Reviewer is due, and `ship` runs in one ordered `revisions` call, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
+`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Classify the revision first (blast radius): a **source** edits `next` into a full successor contract; a **neighbor** (files change, behavior doesn't) is edited in place and gets no `next`; neither do unaffected blast-radius nodes. Then default `mindplan-mcp check`, then self-`ready`. An execution session runs `in-progress` → `in-review`; the implementer `ship`s in one ordered `revisions` call after green check, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
 
 ## Common mistakes
 

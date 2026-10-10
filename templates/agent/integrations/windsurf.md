@@ -15,10 +15,6 @@
 
 Use `mindplan/agent/mcp.json.example` as the starting point.
 
-2. **Instructions** — in Windsurf rules or your project's `AGENTS.md` / `.windsurfrules`, always apply:
-
-```
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code); use mindplan/agent/skills/review-work/ for the review gate.
-```
+2. **Instructions** — MCP already requires `get_project` (dialect + project brief). `init` writes that stub to `AGENTS.md` when missing. Add the stub to `.windsurfrules` if this host does not read `AGENTS.md`.
 
 3. Reload Cascade after MCP config changes.

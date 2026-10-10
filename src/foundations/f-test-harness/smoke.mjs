@@ -157,6 +157,30 @@ function nextTerritoryPath(...parts) {
   }
 }
 
+{
+  fs.writeFileSync(
+    path.join(root, "mindplan", "project.md"),
+    "# Project\n\n## Description\n\nA product.\n\n## Rules\n\n- Branch from latest main\n- Keep tests green\n"
+  );
+  const gp = await call("get_project", {});
+  let payload;
+  try {
+    payload = JSON.parse(gp.text);
+  } catch {
+    payload = null;
+  }
+  if (
+    gp.error ||
+    !payload ||
+    payload.description !== "A product." ||
+    payload.rules !== "- Branch from latest main\n- Keep tests green"
+  ) {
+    failures++;
+    console.log(`FAIL get_project must return last-section Rules body: ${gp.text.slice(0, 240)}`);
+  } else console.log("ok   get_project returns written description and rules");
+  fs.unlinkSync(path.join(root, "mindplan", "project.md"));
+}
+
 // --- create nodes ---
 const createdJourney = JSON.parse(
   await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
@@ -1332,20 +1356,24 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "plan-project", "SKILL.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install plan-project skill");
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "review-work", "SKILL.md"))) {
+} else if (
+  fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "review-work", "SKILL.md")) ||
+  fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "code-review", "SKILL.md"))
+) {
   failures++;
-  console.log("FAIL mindplan-mcp init did not install review-work skill");
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "code-review", "SKILL.md"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install code-review skill");
+  console.log("FAIL mindplan-mcp init must not install review-work or code-review skills");
 } else if (
   !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-define-entities", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-plan-project", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-code-review", "SKILL.md"))
+  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-plan-project", "SKILL.md"))
 ) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install Cursor skills under .cursor/skills/");
+} else if (
+  fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md")) ||
+  fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-code-review", "SKILL.md"))
+) {
+  failures++;
+  console.log("FAIL mindplan-mcp init must not install Cursor review-work or code-review skills");
 } else if (!fs.existsSync(path.join(initRoot, ".cursor", "rules", "mindplan.mdc"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install .cursor/rules/mindplan.mdc");

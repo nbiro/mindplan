@@ -161,8 +161,6 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
   printInstall("agent playbook", report.playbook);
   printInstall("define-entities skill", report.skill);
   printInstall("plan-project skill", report.planSkill);
-  printInstall("review-work skill", report.reviewSkill);
-  printInstall("code-review skill", report.codeReviewSkill);
   printInstall("MCP example", report.mcpExample);
   printInstall("agent integrations", report.integrations);
   printInstall("AGENTS.md", report.agentsMd);

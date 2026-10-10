@@ -1,9 +1,8 @@
 # MindPlan
 
-**MindPlan is the persistent architectural model AI agents work from.**  
-Agents cannot build correctly without knowing what the system *does*. MindPlan keeps that knowledge in the repo — Journeys, Interactions, Interfaces, Foundations, dependencies, and what is allowed to ship — so agents query a living model instead of guessing from tickets and chat.
+**Everything works great until it doesn’t. MindPlan draws the boundaries your agent won’t.**
 
-Plan state lives next to the code. Every change to it is checked; illegal moves are rejected.
+Without them you get a 5,000-line app file; MindPlan keeps your product’s structure in git and rejects any agent move that crosses it.
 
 ## In plain words
 
@@ -23,34 +22,14 @@ Rules in plain words: **Infrastructure First** — build the building blocks bef
 
 ## Think in systems
 
-MindPlan exists so an agent thinks in systems: orient on the graph, place each change on it, respect the edges, claim files, and classify a change to shipped work by its blast radius. That short *systems dialect* plus this product's description and rules load through `get_project`. MCP server `instructions` are only a short pointer that requires that call before answering or writing code — not a paste of the playbook. Heavier procedures (the review gate, entity scaffolding) load on demand as skills.
+Orient on the graph. Place each change on it. Respect the edges. Claim files. Classify shipped work by blast radius. That dialect plus this project's brief load through `get_project`.
 
-## The problem
-
-Without a durable model of the product — what behaviors exist, how actors enter them, what substrate is ready — agents improvise from chat history and stale tickets. They ship over unfinished Foundations, wire entry surfaces to unfinished behaviors, or mark work done while checklists are still open.
-
-External trackers list intent; they do not give agents a machine-queryable architecture, and nothing refuses an illegal move when the ticket says "ship."
-
-## A plan that can refuse
-
-MindPlan answers:
-
-- What **is** this project — which capabilities, behaviors, and entry surfaces exist?
-- What **can** be worked on next?
-- Is this change **architecturally valid**?
-- What will this **break** (dependents + Interaction reachability)?
-- Is this feature even **allowed to ship**?
-
-Every mutation is validated like a compile step:
+Without those boundaries, agents improvise from chat and tickets. The compiler refuses the illegal move:
 
 ```
 Blocked: Infrastructure First. Interaction "i-checkout" cannot ship while
 linked Foundations are not stable: "f-payments" (in-progress).
 ```
-
-That gate still applies to MindPlan `ship`. Implementation review may **Approve** the Interaction while ship waits on Foundations — unfinished substrate is not a Reject reason; Approve stands until deps are `stable` and `ship` succeeds.
-
-No ghost Interactions without a Journey and Foundation, no Interface ship while exposed Interactions are unfinished (**Behavior First**), no Interaction→Interaction `depends_on` (**Interaction Independence**), no ship while Atomic Ops are unchecked.
 
 ## Plans are made to be changed
 
@@ -60,7 +39,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
 - **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `next.mdx` → `ship` promotes over `current.mdx`
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
-- **Review in proportion** — an agent may ship its own revision when it has no Foundation source and at most one source. A Foundation contract change, or a revision with several sources, needs one independent Reviewer first
+- **Ship after green check** — the implementer `ship`s when default `mindplan-mcp check` is green and legal transitions allow
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees
@@ -108,7 +87,7 @@ In plain words: you cannot go live with *cook scramble* while the *stove* buildi
 
 Territory under `mindplan/` (Journeys, Foundations, Interactions, Interfaces, Bugs) plus optional `next.mdx` while a shipped node evolves. Nodes declare owned source files via `implements` / `set_implementation_files` (`mindplan/config.json` `sources`/`exclude` define the coverage universe). An MCP server is the single write path for server-owned frontmatter.
 
-- **[SPEC.md](SPEC.md)** — full framework specification
+- **[SPEC.md](SPEC.md)** — graph, compiler rules, and tools
 - **`src/`** — TypeScript MCP server (stdio)
 
 ## This repo's live plan

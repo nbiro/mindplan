@@ -22,14 +22,9 @@ npx mindplan-mcp
 
 ## Agent instructions
 
-Point your agent at these files (installed by `mindplan-mcp init`):
+MCP `instructions` already require `get_project` before answering or writing code. That call returns the dialect plus the project brief. `mindplan/agent/playbook.md` is the fallback if tools are hidden.
 
-- **`mindplan/agent/playbook.md`** — the systems dialect. The MCP server also sends it as server `instructions` on connect; read this file if your client does not show them.
-- **`mindplan/agent/skills/define-entities/`** — step-by-step entity creation (scaffolding)
-- **`mindplan/agent/skills/plan-project/`** — plan-only product modeling (no application code)
-- **`mindplan/agent/skills/review-work/`** — the review gate (proportional; Reviewer only for Foundation or multi-source revisions)
-
-Many agents auto-read root **`AGENTS.md`** — `init` creates a short MindPlan stub there when missing.
+Many agents auto-read root **`AGENTS.md`** — `init` creates the stub there when missing. Skills (`define-entities`, `plan-project`) load on demand.
 
 ## Verify connection
 

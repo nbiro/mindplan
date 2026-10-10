@@ -44,9 +44,11 @@ function parseSections(raw: string): { description: string; rules: string } {
 }
 
 function sectionBody(markdown: string, heading: string): string {
-  const re = new RegExp(`^## ${heading}\\s*\\n([\\s\\S]*?)(?=^## |\\z)`, "m");
-  const match = markdown.match(re);
-  return (match?.[1] ?? "").trim();
+  const start = markdown.match(new RegExp(`^## ${heading}\\s*$`, "m"));
+  if (!start || start.index === undefined) return "";
+  const afterHeading = markdown.slice(start.index + start[0].length).replace(/^\n/, "");
+  const next = afterHeading.search(/^## /m);
+  return (next === -1 ? afterHeading : afterHeading.slice(0, next)).trim();
 }
 
 /**

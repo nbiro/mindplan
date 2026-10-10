@@ -1,6 +1,6 @@
 # MindPlan — think in systems
 
-MindPlan models this product as a graph. Plan and change code **through the graph**, not around it. Skills load on demand: `define-entities`, `plan-project`, `review-work`. Normative reference: `SPEC.md`.
+MindPlan draws the boundaries your agent won’t. Plan and change code **through the graph**, not around it. Skills load on demand: `define-entities`, `plan-project`. Normative reference: `SPEC.md`.
 
 ## Dialect
 
@@ -9,9 +9,8 @@ MindPlan models this product as a graph. Plan and change code **through the grap
 3. **`Blocked:` is hard.** Name the cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix it before retrying.
 4. **Claim files before writing them** with `set_implementation_files`.
 5. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
-6. **Review is proportional.** Shipping your own work is fine when the revision has no Foundation source and at most one source. A Foundation contract change or several sources needs an independent Reviewer first. Follow `review-work`; don't improvise the gate.
-7. **Check at every handoff.** Default check MUST exit 0 before self-`ready`, `in-review` / spawning a Reviewer, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Do not wait until `ship`. The host typecheck is not a MindPlan gate.
-8. **Project brief.** Agents receive this dialect as `get_project.playbook`. Follow `description` and `rules` from the same response. Edit `mindplan/project.md`; call `get_project` again to re-read.
+6. **Check at every handoff.** Default check MUST exit 0 before self-`ready`, `in-review`, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Do not wait until `ship`. The host typecheck is not a MindPlan gate. Code review is outside this dialect — customize via host process or `mindplan/project.md` rules if desired.
+7. **Project brief.** Agents receive this dialect as `get_project.playbook`. Follow `description` and `rules` from the same response. Edit `mindplan/project.md`; call `get_project` again to re-read.
 
 ## Taxonomy
 
@@ -44,4 +43,3 @@ Use the plain words (area, action, entry point, building block, bug) with the us
 - Invent tickets outside the graph
 - Add `depends_on` between Interactions, or put feature screen bodies in an Interface
 - Hand off work (ready, in-review, ship, or "done") while default check fails
-- Ship your own work when `review-work` says a Reviewer is due
