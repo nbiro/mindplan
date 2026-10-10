@@ -294,7 +294,7 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 | 6 | `cancelled` | Pre-ship abandon (from `draft`/`ready`/`in-progress`/`in-review` only); terminal |
 | 7 | `deprecated` | Retired (from `stable`/`unstable` only) |
 
-**Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. **Proportional review.** The review gate is sized to the revision, classified per §3.7 (source, neighbor, unaffected). The implementing agent MAY `ship` (or Bug `resolved`) its own revision when default `mindplan-mcp check` and the project typecheck are green and the revision has **no Foundation source and at most one source**. The agent MUST instead **spawn** one independent Reviewer (subagent or separate session) via `review-work` when any source is a Foundation, or the revision has two or more sources; it MUST NOT self-`ship` / self-`resolved` those. Narrating that review is still needed, without spawning, does not satisfy a due gate. One Reviewer covers the whole revision and judges source contracts and the diff together; after a Reject it is resumed, not replaced, so only the fixes are re-reviewed. The parent MAY self-`ready` (`draft` → `ready`) without a Reviewer, in one ordered `update_node_status` call. There is no separate Plan Review spawn. After Approve, status advances in one ordered `update_node_status` call. The Reviewer MUST NOT Reject because other nodes in the graph are `in-progress`, `in-review`, `draft`, `ready`, or Bug `fixing` / `in-review`; unfinished work outside the frozen subgraph or revision is mergeable. **Approve vs ship:** a Reviewer Approve is a quality verdict on the frozen revision; it is not voided when `ship` returns `Blocked: Infrastructure First` (Rule 3, §5.4) or when Behavior First blocks only because an exposed Interaction was Approve-but-ship-deferred. Production entry stays blocked until Foundation deps are `stable`; a later `ship` (parent or later session, no new Reviewer unless HEAD/tree changed) applies that Approve. Unfinished Foundation deps are not a Reject reason. Findings travel in the Reviewer’s structured message to the parent; playbooks MUST NOT require writing review feedback into territory files. The server does not enforce reviewer identity.
+**Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. **Proportional review.** The review gate is sized to the revision, classified per §3.7 (source, neighbor, unaffected). The implementing agent MAY `ship` (or Bug `resolved`) its own revision when default `mindplan-mcp check` is green and the revision has **no Foundation source and at most one source**. The agent MUST instead **spawn** one independent Reviewer (subagent or separate session) via `review-work` when any source is a Foundation, or the revision has two or more sources; it MUST NOT self-`ship` / self-`resolved` those. Narrating that review is still needed, without spawning, does not satisfy a due gate. One Reviewer covers the whole revision and judges source contracts and the diff together. The parent MAY self-`ready` (`draft` → `ready`) without a Reviewer, in one ordered `update_node_status` call. There is no separate Plan Review spawn. After Approve, status advances in one ordered `update_node_status` call. The Reviewer MUST NOT Reject because other nodes in the graph are `in-progress`, `in-review`, `draft`, `ready`, or Bug `fixing` / `in-review`; unfinished work outside the revision is mergeable. **Approve vs ship:** a Reviewer Approve is a quality verdict on the files, owners, and blast-radius class of the revision; it is not voided when `ship` returns `Blocked: Infrastructure First` (Rule 3, §5.4) or when Behavior First blocks only because an exposed Interaction was Approve-but-ship-deferred. Production entry stays blocked until Foundation deps are `stable`; a later `ship` (parent or later session, no new Reviewer unless those files changed) applies that Approve. Unfinished Foundation deps are not a Reject reason. Findings travel in the Reviewer’s structured message to the parent; playbooks MUST NOT require writing review feedback into territory files. The server does not enforce reviewer identity.
 
 **Cancel transition:** `update_node_status(..., "cancelled")` abandons a Foundation, Interaction, or Interface that never shipped. It is blocked while `next.mdx` is open, or while any **active** (non-`cancelled`/`deprecated`/`resolved`/`wontfix`) node still `depends_on` this node (or, for Interactions, while an active Interface still `exposes` it — implementations SHOULD reject cancel when active dependents of either edge kind exist). Packages and territory folders are left on disk. There is no uncancel in v1 — cancelled is terminal like `deprecated`.
 
@@ -397,7 +397,7 @@ Agents MUST verify Territory Completeness for sources before transitioning `next
 
 ### 3.7 Multi-node revisions
 
-A **revision** is one immutable change. When a Reviewer is due (§3.1), one independent Reviewer covers the whole revision. It is spawned once and resumed after a Reject; a fresh Reviewer is spawned only when resume is unavailable. There is no new node type. The same classification applies to every Foundation, Interaction, Interface, and Bug.
+A **revision** is one immutable change. When a Reviewer is due (§3.1), one independent Reviewer covers the whole revision. There is no new node type. The same classification applies to every Foundation, Interaction, Interface, and Bug.
 
 Nothing in the successor set may ship while a node the revision touches is broken. Independence, file ownership, and Interaction Independence are unchanged. The ban on self-`ship` / self-`resolved` applies when a Reviewer is due (§3.1). The parent may self-`ready`.
 
@@ -427,9 +427,9 @@ A node is in a source’s blast radius when it:
 Blocked: Minimum Territory Shape. "<id>"/<file> section "## Impact" is empty or a stub. Write what this node adapted so the already-shipped contract still holds.
 ```
 
-**Unaffected.** List them on the frozen revision. They are not members of `node_ids`.
+**Unaffected.** List them on the revision. They are not members of `node_ids`.
 
-**Reject scope.** A Reject voids the frozen snapshot; the fixes produce a new one. The same Reviewer is resumed and uses the same split. It confirms its prior Findings are resolved, reviews everything changed since its last `head_sha`, and does not treat neighbors as brand-new contracts or re-verify inherited Atomic Ops the diff does not touch. Resuming does not weaken independence: the Reviewer still treats the author's fixes as claims and verifies them in the code.
+**Reject scope.** A Reject means the files still fail the contract. The next Reviewer uses the same split. It confirms prior Findings are resolved, reviews everything that changed, and does not treat neighbors as brand-new contracts or re-verify inherited Atomic Ops the diff does not touch. The author's fixes are claims until verified in the code. Review binds files, owners, and class — not git SHAs.
 
 **Examples.** A visual-system change is a Foundation source; pages whose files adapt are Interface neighbors, edited in place. An enquiry behavior change is an Interaction source; the Interface that mounts it is the neighbor. A Bug that crosses several nodes uses the same split on the nodes it `affects`: full review where the contract changed, plain in-place edits everywhere else. The Bug’s own fix checklist is reviewed in full.
 
@@ -439,9 +439,9 @@ After Approve, the Reviewer advances the successor set with one `update_node_sta
 
 `Blocked: Infrastructure First`, or Behavior First only because an exposed Interaction is Approve-but-ship-deferred, still means **Approve + ship deferred** (§3.1). It is not a quality Reject. Any other `Blocked:` stops the call; do not soft-approve the rest.
 
-#### Check before review
+#### Check before handoff
 
-Before shipping — whether a Reviewer is due (entering `in-review` and spawning, or re-freezing and resuming the same Reviewer after a Reject) or the agent self-ships (§3.1) — default `mindplan-mcp check` MUST exit 0. Self-`ready` does not require it. Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). The revision’s project typecheck MUST also be green before that handoff. Default check does not invoke the typechecker.
+Default `mindplan-mcp check` MUST exit 0 before the agent stops owning the work: self-`ready`, entering `in-review` / spawning a Reviewer, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). It does not invoke a host typechecker; host typecheck is not a MindPlan gate. The server does not run `check` as a status-transition hook.
 
 ---
 
@@ -1176,7 +1176,7 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
 
-Review handoff for a revision (§3.7) requires this default check **and** a green project typecheck of the set. The check command does not run the typechecker.
+Review and plan handoff (§3.7) require this default check before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done. The check command does not run a host typechecker.
 
 ---
 
