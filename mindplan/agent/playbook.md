@@ -11,6 +11,7 @@ MindPlan models this product as a graph. Plan and change code **through the grap
 5. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
 6. **Review is proportional.** Shipping your own work is fine when the revision has no Foundation source and at most one source. A Foundation contract change or several sources needs an independent Reviewer first. Follow `review-work`; don't improvise the gate.
 7. **Check at every handoff.** Default check MUST exit 0 before self-`ready`, `in-review` / spawning a Reviewer, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Do not wait until `ship`. The host typecheck is not a MindPlan gate.
+8. **Project brief.** Agents receive this dialect as `get_project.playbook`. Follow `description` and `rules` from the same response. Edit `mindplan/project.md`; call `get_project` again to re-read.
 
 ## Taxonomy
 

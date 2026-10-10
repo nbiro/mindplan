@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — normative SPEC, README, and agent templates. Review binds files, owners, and blast-radius class — not git SHAs."
+description: "Infra — normative SPEC, README, and agent templates; tool-first get_project channel for dialect + brief."
 state: stable
-shipped_at: 2026-10-10T11:16:23.599Z
+shipped_at: 2026-10-10T14:10:21.885Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-10T11:16:23.599Z
+updated_at: 2026-10-10T14:10:21.885Z
 depends_on:
   - f-domain-model
 implements:
@@ -17,70 +17,35 @@ role: infra
 ---
 
 
-
-
-
 # Framework docs
 
 ## Purpose
 
-Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/` (playbook, stub, skills, integration guides). MindPlan helps an agent think in systems and keep the graph true with every change. The always-on artifact is the systems dialect; review and scaffolding load on demand.
-
-The dialect keeps every rule that updates nodes, edges, claims, or contracts. It drops delivery habits that do not: branch policy, host typecheck as a MindPlan gate, reviewer staffing scripts, confirm-before-create, required map export, and git-SHA review snapshots. Default `mindplan-mcp check` is a playbook MUST at every handoff (self-`ready`, `in-review` / spawn a Reviewer, `ship` / `resolved`, claiming the session is done). The server does not run a typechecker.
-
-Type names, edges, states, ids, and `Blocked:` messages stay unchanged.
-
-Prior guarantees still hold: territory-only `create_node`; `implements` ownership; slim orient payloads; proportional review; neighbors in place; Atomic Ops as a ship-time ledger; Approve vs ship.
+Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/`. Document the tool-first channel: short MCP instructions require `get_project`; that tool returns playbook + project description/rules. Seventeen tools.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-### Plain-language glossary (canonical in SPEC §2)
-
-One question per type (non-normative gloss; type names stay):
-
-| Type | Plain word | Question |
-|------|------------|----------|
-| Journey | area | What does the product do? |
-| Interaction | action | What can someone do? |
-| Interface | entry point | Where do they do it? |
-| Foundation | building block | What does it all run on? |
-| Bug | bug | What's broken? |
-
-Links / states / rules get the same plain gloss in SPEC, README, and playbook.
-
-### Agent breakdown and graph-maintenance rules
-
-- **Breakdown recipe** in playbook + `define-entities` Step 0 + `plan-project` Classify scope: rewrite requests as *who can verb object in area, from entry point, using building blocks*; reuse before create; same action on a new entry point = new `exposes`, not a new Interaction. State which nodes will be added, in plain words. Do not require a permission round-trip before create. Journey-before-Interaction stays a hard stop.
-- **Interaction size test:** one behavior.
-- **Interface grain:** one Interface per actor + delivery mechanism (app or channel). Test: "Would a user call this a different app or channel?" Pages/tabs/commands inside it are mounts, not separate Interfaces. Console example: one console web Interface, not one per page.
-- **Naming:** title = stable name (action phrase for Interactions, noun otherwise); description = what it is/does now; revision notes only in `next.mdx` body.
-- **Check at handoff:** default `mindplan-mcp check` MUST exit 0 before self-`ready`, `in-review` / spawning a Reviewer, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Not after every mutation. Not a server status-transition hook. Host typecheck is not a MindPlan gate.
-- **Proportional review:** no Foundation source and at most one source → implementer may `ship` after check; Foundation source or two or more sources → one independent Reviewer judges the active contract against the diff, then `ship` / `resolved`. Bind the verdict to `{changed_files[], sources[], neighbors[], unaffected[]}` and `implements` owners. Do not bind to git SHAs. Do not Reject because the tree is dirty. If files change after they were read, re-read them before `ship`. No resume-the-same-subagent, verdict-template, or host `/code-review` ritual.
-- **Role:** Infra — docs and templates are shared substrate, not a deployable Assembler runtime.
-
-### Talking to the user
-
-Playbook section: use plain words with the user; keep type names and ids for tool calls; translate every `Blocked:` into one plain sentence plus the next step.
+- SPEC §1.1.1 and abstract: short instructions; `get_project` returns `{ path, description, rules, playbook }`
+- SPEC §8: seventeen tools; `get_project` contract includes playbook
+- README: systems-dialect and init blurbs match tool-first (not inject-full-text)
+- Playbook: agents receive dialect via `get_project.playbook`
+- Agents stub: call `get_project` first; file fallbacks when tools are hidden
+- Skills: product summary / standing rule → edit `mindplan/project.md`
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- Playbook dialect requires `mindplan-mcp check` at every handoff; has no branch-policy Never line; Interaction size is one behavior
-- `review-work` has no typecheck gate, no reviewer staffing script, no dirty-tree Reject, and no SHA snapshot; binds files, owners, and blast-radius class; check before `in-review` / `ship`
-- `plan-project` and `define-entities` state placement in plain words (no confirm-before-create); size test is one behavior; `plan-project` does not require `export_mindplan_view` after mutations
-- SPEC §3.1 / §3.7 / §9.6 drop typecheck as a MUST and SHA / frozen-snapshot bind; check is required at the handoffs above; resume-after-Reject staffing is gone
-- Cursor integration keeps `check` at handoff; no feature-branch / typecheck delivery rule
-- Installed copies synced via `init -f`
+- SPEC, README, playbook, stub, and skills describe the single-tool channel
+- Tool count is seventeen everywhere
+- Playbook stays one screen and does not paste product text
 
 ## Atomic Ops
 
-- [x] review-work: bind files, owners, and class; drop base_sha / head_sha / void-if-HEAD-moves
-- [x] SPEC §3.1 / §3.7: same bind; no frozen SHA snapshot
-- [x] Successor contract and AC match
-- [x] Sync installed agent copies via `init -f`
+- [x] Document tool-first channel in SPEC, README, playbook, stub, skills
+- [x] Fix seventeen-tool count prose
 - [x] Verified by Reviewer against the contract
 
 ## Attachments

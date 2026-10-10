@@ -2,11 +2,11 @@
 id: f-test-harness
 type: Foundation
 title: "Test harness"
-description: "Infra — smoke, view, search, and check tests for the MindPlan server."
+description: "Infra — smoke, view, search, and check tests including short instructions and get_project playbook."
 state: stable
-shipped_at: 2026-10-09T22:27:39.423Z
+shipped_at: 2026-10-10T14:10:22.049Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-09T22:27:39.423Z
+updated_at: 2026-10-10T14:10:22.049Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -15,43 +15,34 @@ role: infra
 ---
 
 
-
-
 # Test harness
 
 ## Purpose
 
-Regression suite for MindPlan file ownership. Extends `check.test.mjs` so a stable node can relocate files through an open next without duplicating the old path until ship.
+Regression suite for MindPlan. Assert MCP `initialize` instructions are the short `get_project` pointer, and that `get_project` returns the bundled playbook with the project brief.
 
 ## Shared Substrate Spec
 
 Intended files: `src/foundations/f-test-harness/`
 
-- Keep existing exclusivity, coverage, presence, leftovers, import matrix, dirty-src, and smoke coverage.
-- Add presence cases for released live entries:
-  1. Stable node, open next pointed at a new directory, old directory deleted → default check passes.
-  2. A live entry next still lists, then deleted → `presence:` fails.
-  3. Next in-review with a missing next entry → `presence:` fails on the next slot.
-  4. Same stable node with no next (or after `discard_next`) and a missing live entry → `presence:` fails again.
+- Keep existing ownership / smoke coverage
+- Smoke: instructions === short MUST-call constant
+- Smoke: `get_project` returns empty description/rules in sandbox and `playbook` equal to `templates/agent/playbook.md`
+- Smoke: init installs `mindplan/project.md`; stub mentions `get_project`
 
 Depends on: `f-mcp-runtime`.
 
 ## Acceptance Criteria
 
-- New released-presence cases pass under `npm test`
-- Existing ownership and import-matrix cases still fail closed when violated
-
-
-## Impact
-
-The harness contract is unchanged: it still covers exclusivity, coverage, presence (including the released-live skip), leftovers, the import matrix, dirty-src, and smoke. Its cases follow behaviors owned elsewhere in this revision. Smoke and `check.test.mjs` drop the “Checklist Complete” expectations (the compiler, steer, and check no longer reject a fully checked checklist while building) and instead assert that a fully checked `in-progress` node is accepted and that `ship` with an unchecked box is still Blocked. `check.test.mjs` adds `--base` cases: an uncommitted edit to a `stable` owner with no next passes, and one whose next is `ready` still fails. Smoke asserts that `init` writes the stub into `AGENTS.md` and the Cursor rule, and that the MCP `initialize` result carries the playbook as `instructions`.
+- Smoke passes with short instructions and get_project playbook payload
+- Init / force brief cases still pass
+- Existing ownership cases still fail closed when violated
 
 ## Atomic Ops
 
-- [x] Add released-live presence cases to `check.test.mjs`
+- [x] Update smoke for short instructions and get_project.playbook
 - [x] Verified via `npm test`
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
+- [x] Verified by Reviewer against the contract
 
 ## Attachments
 

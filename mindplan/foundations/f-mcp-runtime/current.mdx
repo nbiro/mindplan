@@ -2,11 +2,11 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime"
-description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves the playbook as server instructions."
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves a short get_project pointer as server instructions."
 state: stable
-shipped_at: 2026-10-09T22:27:39.373Z
+shipped_at: 2026-10-10T14:10:21.973Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-09T22:27:39.373Z
+updated_at: 2026-10-10T14:10:21.973Z
 depends_on:
   - f-territory-store
   - f-framework-docs
@@ -17,44 +17,35 @@ role: assembler
 ---
 
 
-
-
 # MCP runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server also announces the MindPlan systems dialect as its `instructions`, so any connected host receives it every session without copied files. Does **not** own tool handlers, CLI argument parsing, Interaction domain logic, or the dialect text itself (owned by `f-framework-docs`).
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer that requires `get_project` before answering or writing code. It does **not** embed the playbook or project brief bodies.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
-- `server.ts` — process boot only: mode select (no argv → MCP stdio; else CLI), `McpServer` + `StdioServerTransport` construction, call into `if-mcp-tools` registration and `if-cli` dispatch
-- At MCP start, read `templates/agent/playbook.md` from the package root (resolved relative to the compiled module, the same `templates/` that ships in the npm package) and pass its text as the server `instructions` option
-- If that file is missing or unreadable, start without `instructions` and write one warning line to stderr; never fail boot over it
-- Relies on `src/index.ts` (same Foundation ownership) as the package bin entry that imports this boot module
-- May call `ensureDirectories()` from `f-territory-store` at MCP start
+- `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
+- Export `SERVER_INSTRUCTIONS` — fixed short string requiring `get_project`, then `orient_for_work`
+- Always pass `{ instructions: SERVER_INSTRUCTIONS }` (never omit for a missing playbook file)
 - MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
+- MUST NOT load or append `mindplan/project.md` or the playbook body into instructions
 
-Depends on: `f-territory-store`, `f-framework-docs` (reads the playbook template it owns). Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
+Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
 
 ## Acceptance Criteria
 
-- Process with no argv starts MCP stdio and registers tools via `if-mcp-tools`
-- The MCP `initialize` result carries `instructions` equal to the bundled `templates/agent/playbook.md`
-- With the template absent, the server still starts, registers tools, and omits `instructions`
-- Process with `init` / `view` / `export` / `check` / `help` dispatches via `if-cli`
-- `server.ts` imports only Interface packages (and `f-territory-store` for ensureDirectories) — not Interaction handlers
-- `npm test` passes with unchanged tool names, schemas, CLI output, and exit codes
-
+- MCP `initialize` instructions equal the short `get_project` pointer constant
+- Instructions contain neither the playbook body nor `mindplan/project.md` content
+- Boot never fails over a missing brief or playbook file
 
 ## Atomic Ops
 
-- [x] Resolve the bundled playbook path and pass it as server `instructions`, with the missing-file fallback
-- [x] Confirm the installed `@modelcontextprotocol/sdk` version accepts `instructions` in server options
-- [x] Verified via `npm test` and an `initialize` round-trip
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
+- [x] Replace instructions with the short MUST-call `get_project` pointer
+- [x] Build and run tests (`npm test`)
+- [x] Verified by Reviewer against the contract
 
 ## Attachments
 

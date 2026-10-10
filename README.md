@@ -23,7 +23,7 @@ Rules in plain words: **Infrastructure First** — build the building blocks bef
 
 ## Think in systems
 
-MindPlan exists so an agent thinks in systems: orient on the graph, place each change on it, respect the edges, claim files, and classify a change to shipped work by its blast radius. That short *systems dialect* is what the agent carries every turn. The MCP server sends it as server `instructions` when the host connects, so nothing needs to be copied into your repo for it to apply. Heavier procedures (the review gate, entity scaffolding) load on demand as skills.
+MindPlan exists so an agent thinks in systems: orient on the graph, place each change on it, respect the edges, claim files, and classify a change to shipped work by its blast radius. That short *systems dialect* plus this product's description and rules load through `get_project`. MCP server `instructions` are only a short pointer that requires that call before answering or writing code — not a paste of the playbook. Heavier procedures (the review gate, entity scaffolding) load on demand as skills.
 
 ## The problem
 
@@ -137,7 +137,7 @@ npm install && npm run build
 node /absolute/path/to/mindplan/dist/index.js init
 ```
 
-`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), and a short MindPlan stub in `AGENTS.md` and `.cursor/rules/mindplan.mdc` when missing. The stub triggers orientation and defers to the MCP server instructions.
+`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), `mindplan/project.md` (description + rules only — not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` and `.cursor/rules/mindplan.mdc` when missing. The stub requires `get_project` before planning or code (dialect + brief in the tool response); when tools are hidden, read `mindplan/agent/playbook.md` and `mindplan/project.md`.
 
 3. Register the MCP server — see `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
@@ -149,6 +149,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 <project-root>/
 ├── mindplan/
 │   ├── config.json                # { sources, exclude } — coverage universe
+│   ├── project.md                 # description + rules only (playbook via get_project)
 │   ├── agent/                     # playbook + skills (installed by init)
 │   ├── journeys/<id>/
 │   ├── foundations/<id>/          # + optional next.mdx

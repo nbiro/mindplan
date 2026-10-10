@@ -15,6 +15,7 @@ import {
   getMindPlanGraph,
   getNodeContext,
   getNodeImplementationHandler,
+  getProject,
   orientForWork,
 } from "../../interactions/i-orient-plan/handlers.js";
 import {
@@ -198,6 +199,20 @@ export function registerMindPlanTools(server: McpServer): void {
     guarded(({ query, node_id, type, limit }) =>
       orientForWork({ query, node_id, type, limit })
     )
+  );
+
+  server.registerTool(
+    "get_project",
+    {
+      title: "Get project brief",
+      description:
+        "Returns the systems dialect and this product's description and standing rules " +
+        "({ path, description, rules, playbook }). Call before answering or writing code. " +
+        "playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
+        "Re-call after editing the project brief.",
+      inputSchema: {},
+    },
+    guarded(() => getProject())
   );
 
   server.registerTool(

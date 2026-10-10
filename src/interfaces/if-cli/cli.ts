@@ -157,6 +157,7 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
       `Project config already present at ${cfg.path} (sources: ${sources})`
     );
   }
+  printInstall("project brief", report.projectBrief);
   printInstall("agent playbook", report.playbook);
   printInstall("define-entities skill", report.skill);
   printInstall("plan-project skill", report.planSkill);
