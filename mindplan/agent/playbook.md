@@ -1,6 +1,6 @@
 # MindPlan — think in systems
 
-MindPlan models this product as a graph. Plan and change code **through the graph**, not around it. Skills load on demand: `define-entities`, `plan-project`. Normative reference: `SPEC.md`.
+MindPlan draws the boundaries your agent won’t. Plan and change code **through the graph**, not around it. Skills load on demand: `define-entities`, `plan-project`. Normative reference: `SPEC.md`.
 
 ## Dialect
 

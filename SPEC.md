@@ -1,4 +1,4 @@
-# MindPlan Framework Specification
+# MindPlan Specification
 
 **Version:** 0.1.0
 **Status:** Unreleased
@@ -10,7 +10,7 @@ The key words MUST, MUST NOT, SHALL, SHOULD, and MAY in this document are to be 
 
 ## 0. Abstract
 
-MindPlan is a strictly deterministic Software Development Life Cycle (SDLC) framework designed **AI-first**: autonomous agents (and human teams) work from a **persistent, machine-queryable architectural model** of the product — not from chat history or an external ticket list. Planning state lives inside the repository as tickets-as-code. Every mutation is validated like a compile step; illegal moves are rejected with a machine-parsable `Blocked: …` error. Architecture and requirements stay synchronized with the code they describe.
+Everything works great until it doesn’t. MindPlan draws the boundaries your agent won’t. Without them you get a 5,000-line app file; MindPlan keeps the product’s structure as a **persistent, machine-queryable graph** in git and rejects any agent move that crosses it with a machine-parsable `Blocked: …` error.
 
 The model is **Interaction-centric**. Agents query *what the system does* (Journeys → Interactions), *how actors enter those behaviors* (Interfaces), and *what shared substrate those behaviors stand on* (Foundations), composed by an Assembler — instead of reconstructing architecture from source on every task.
 
@@ -22,7 +22,7 @@ MindPlan is exposed exclusively through a Model Context Protocol (MCP) server �
 
 ## 1. Core Architecture: Territory
 
-MindPlan persists all planning state as **tickets-as-code** under `mindplan/`. Each node owns a folder containing a `current.mdx` file and an `attachments/` directory. The `current.mdx` YAML frontmatter is the **node record** — identity, state, timestamps, and outgoing edge arrays; it is the live, stable id for the node's entire lifetime (§3.6). The body contains Purpose / PRD / Execution Logic / Shared Substrate Spec, Acceptance Criteria, and Atomic Operations.
+MindPlan persists the product graph under `mindplan/`. Each node owns a folder containing a `current.mdx` file and an `attachments/` directory. The `current.mdx` YAML frontmatter is the **node record** — identity, state, timestamps, and outgoing edge arrays; it is the live, stable id for the node's entire lifetime (§3.6). The body contains Purpose / PRD / Execution Logic / Shared Substrate Spec, Acceptance Criteria, and Atomic Operations.
 
 A shipped Foundation, Interaction, or Interface (`stable`/`unstable`) MAY additionally hold a `next.mdx` — an in-flight evolution of that same node, built in place under the same id while `current.mdx` keeps serving. `next.mdx` and its sibling `next-attachments/` directory exist only for Foundations, Interactions, and Interfaces (§3.6) and are never present on Journeys or Bugs.
 

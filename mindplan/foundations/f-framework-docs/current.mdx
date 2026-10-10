@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — normative SPEC, README, and agent templates; no Reviewer/code-review gate in the dialect; quality review is host/project-customizable."
+description: "Infra — agent templates. Integration guides point at get_project, not the playbook file."
 state: stable
-shipped_at: 2026-10-10T18:18:25.476Z
+shipped_at: 2026-10-10T18:42:53.251Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-10T18:18:25.476Z
+updated_at: 2026-10-10T18:42:53.251Z
 depends_on:
   - f-domain-model
 implements:
@@ -22,35 +22,31 @@ role: infra
 
 ## Purpose
 
-Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/`. Document the tool-first channel: short MCP instructions require `get_project`; that tool returns playbook + project description/rules. Seventeen tools. The dialect does **not** prescribe agent code review or a Reviewer gate — quality review is host/project-customizable.
+Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/`. Lead: **Everything works great until it doesn’t. MindPlan draws the boundaries your agent won’t.** Integration guides tell hosts to call `get_project` (MCP pointer). `mindplan/agent/playbook.md` is the offline fallback only. Seventeen tools. No Reviewer/code-review gate.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-- SPEC §1.1.1 and abstract: short instructions; `get_project` returns `{ path, description, rules, playbook }`
-- SPEC §3.1: `in-review` is a neutral pipeline checkpoint; ship after green check + legal transitions; no Reviewer spawn
-- SPEC §8: seventeen tools; `get_project` contract includes playbook
-- README: systems-dialect and init blurbs match tool-first; no proportional-review gate
-- Playbook: agents receive dialect via `get_project.playbook`; skills on demand are `define-entities` and `plan-project` only
-- Agents stub: call `get_project` first; file fallbacks when tools are hidden
-- No `review-work` or `code-review` skills under `templates/agent/skills/`
+- MCP `instructions` are a short `get_project` pointer; dialect comes back on that call
+- Integration host-instruction snippets match `templates/agent/agents-stub.md`
+- Guides do not say “always follow playbook.md” or that the server embeds the playbook
+- Playbook stays one screen; skills are `define-entities` and `plan-project` only
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- SPEC, README, playbook, stub, and define/plan skills describe the single-tool channel
+- Host instruction blocks require `get_project` first; file fallback only if tools are hidden
+- Integrations README / generic.md do not claim the playbook is server `instructions`
 - Tool count is seventeen everywhere
-- Playbook stays one screen, does not paste product text, and does not require a Reviewer
-- `in-review` is documented as a neutral checkpoint, not an external-review requirement
+- Playbook stays one screen
 
 ## Atomic Ops
 
-- [x] Rewrite SPEC ship / in-review / §3.7 without Reviewer gate
-- [x] Update playbook, stub, integrations, README; delete review-work and code-review skills
-- [x] Update define-entities and plan-project cross-refs
-- [x] Build and run tests (`npm test`)
+- [x] Rewrite integration instruction snippets to `get_project`
+- [x] Fix integrations README and generic.md channel wording
+- [x] Green `mindplan-mcp check`
 
 ## Attachments
 

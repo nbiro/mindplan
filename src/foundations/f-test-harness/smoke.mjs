@@ -157,6 +157,30 @@ function nextTerritoryPath(...parts) {
   }
 }
 
+{
+  fs.writeFileSync(
+    path.join(root, "mindplan", "project.md"),
+    "# Project\n\n## Description\n\nA product.\n\n## Rules\n\n- Branch from latest main\n- Keep tests green\n"
+  );
+  const gp = await call("get_project", {});
+  let payload;
+  try {
+    payload = JSON.parse(gp.text);
+  } catch {
+    payload = null;
+  }
+  if (
+    gp.error ||
+    !payload ||
+    payload.description !== "A product." ||
+    payload.rules !== "- Branch from latest main\n- Keep tests green"
+  ) {
+    failures++;
+    console.log(`FAIL get_project must return last-section Rules body: ${gp.text.slice(0, 240)}`);
+  } else console.log("ok   get_project returns written description and rules");
+  fs.unlinkSync(path.join(root, "mindplan", "project.md"));
+}
+
 // --- create nodes ---
 const createdJourney = JSON.parse(
   await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })

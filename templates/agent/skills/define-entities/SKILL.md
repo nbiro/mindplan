@@ -1,7 +1,7 @@
 ---
 name: mindplan-define-entities
 description: >-
-  Defines MindPlan SDLC entities (Journey, Foundation, Interaction, Interface,
+  Defines MindPlan graph entities (Journey, Foundation, Interaction, Interface,
   Bug) via MCP — taxonomy selection, Foundation roles (Assembler/Infra/Design
   system/Adapter), ID naming, edge linking (belongs_to, depends_on, exposes,
   leads_to, affects), and current.mdx territory. Journey MUST exist before

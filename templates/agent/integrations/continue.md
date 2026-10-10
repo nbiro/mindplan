@@ -12,10 +12,6 @@ mcpServers:
 
 See [Continue MCP docs](https://docs.continue.dev/customization/mcp) for the current schema.
 
-2. **Instructions** — reference in Continue rules or root `AGENTS.md`:
-
-```
-Always follow mindplan/agent/playbook.md for MindPlan SDLC execution (all software work). Use mindplan/agent/skills/define-entities/ when scaffolding MindPlan nodes; use mindplan/agent/skills/plan-project/ for plan-only product modeling (no application code).
-```
+2. **Instructions** — MCP already requires `get_project` (dialect + project brief). `init` writes that stub to `AGENTS.md` when missing. Point Continue rules at the stub if this host does not read `AGENTS.md`.
 
 3. Restart Continue or reload config.

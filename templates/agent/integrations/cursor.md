@@ -13,7 +13,7 @@
 }
 ```
 
-2. **Always-on stub** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + a short stub) when missing. The stub tells the agent to orient on the graph and follow the MindPlan MCP server instructions; the server delivers the systems dialect itself every session. `mindplan/agent/playbook.md` holds the same dialect as a fallback if your host does not show server instructions. After upgrading MindPlan, re-run `mindplan-mcp init -f` (or `--force`) to refresh the stub, playbook, skills, and Cursor copies. If the rule was deleted, recreate it with:
+2. **Always-on stub** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + a short stub) when missing. The stub requires `get_project` (dialect + project brief). MCP `instructions` are the same pointer. `mindplan/agent/playbook.md` is the fallback if tools are hidden. After upgrading MindPlan, re-run `mindplan-mcp init -f` (or `--force`) to refresh the stub, playbook, skills, and Cursor copies. If the rule was deleted, recreate it with:
 
 ```yaml
 ---
