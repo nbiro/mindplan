@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP tool surface wiring orient, steer, export, get_project, and related graph tools."
+description: "Include removed legacy territory paths on tool results so callers can commit the deletion."
 state: stable
-shipped_at: 2026-10-10T14:10:22.298Z
+shipped_at: 2026-10-11T12:28:28.980Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-10T14:10:22.298Z
+updated_at: 2026-10-11T12:28:28.980Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -19,6 +19,8 @@ exposes:
 implements:
   - src/interfaces/if-mcp-tools/
 ---
+
+
 
 
 # MCP tools
@@ -44,6 +46,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - Register `get_project` with empty input; description says playbook + brief, call before answering or writing code
 - Do not register `get_playbook`
 - No domain logic in this package
+- After each tool call, attach deleted legacy paths as `removed_legacy_files` and append them to `changed_files` when that array is present. On a tool error, append `Removed <legacy> (kept <id-named>)` lines.
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
@@ -51,11 +54,13 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 
 - `get_project` is registered and callable over MCP
 - Seventeen-tool surface matches SPEC §8
+- A tool result that deleted a legacy territory file lists that path in `removed_legacy_files` and in `changed_files` when the result has `changed_files`
 - Verified via `npm test`
 
 ## Atomic Ops
 
 - [x] Register `get_project` with playbook + brief description
+- [x] Report removed legacy paths on tool results
 - [x] Build and run tests (`npm test`)
 - [x] Verified by Reviewer against the contract
 

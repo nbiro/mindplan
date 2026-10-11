@@ -3,7 +3,12 @@
  * Dispatches to Interaction entrypoints; does not own installers or integrity math.
  */
 
-import { resolvePackageRoot, runInit } from "../../interactions/i-init-project/init.js";
+import {
+  LegacyTerritoryMigrationError,
+  resolvePackageRoot,
+  runInit,
+  type LegacyTerritoryRename,
+} from "../../interactions/i-init-project/init.js";
 import { runIntegrityCheck } from "../../interactions/i-check-integrity/check.js";
 import { runViewExport } from "../../interactions/i-export-map/handlers.js";
 
@@ -54,6 +59,7 @@ function runViewCli(argv: string[]): void {
   } else {
     process.stdout.write(result.diagram);
   }
+  printRemovedLegacyFiles(result.removed_legacy_files);
 }
 
 function parseCheckArgs(argv: string[]): { base?: string } {
@@ -77,6 +83,7 @@ function runCheckCli(argv: string[]): void {
   try {
     const opts = parseCheckArgs(argv);
     const result = runIntegrityCheck({ base: opts.base });
+    printRemovedLegacyFiles(result.removedLegacyFiles);
     if (result.ok) {
       console.log("mindplan-mcp check: ok");
       return;
@@ -124,12 +131,30 @@ function parseInitArgs(argv: string[]): { force: boolean; error?: string } {
   return { force };
 }
 
+function printRemovedLegacyFiles(removed: { from: string; to: string }[]): void {
+  for (const entry of removed) {
+    console.error(`Removed ${entry.from} (kept ${entry.to})`);
+  }
+}
+
+function printTerritoryFilenames(renames: LegacyTerritoryRename[]): void {
+  for (const renamed of renames) {
+    if (renamed.action === "removed") {
+      console.log(`Removed ${renamed.from} (kept ${renamed.to})`);
+    } else {
+      console.log(`Renamed ${renamed.from} → ${renamed.to}`);
+    }
+  }
+}
+
 function printInitReport(report: ReturnType<typeof runInit>): void {
   if (report.created) {
     console.log(`Initialized MindPlan at ${report.root}`);
   } else {
     console.log(`MindPlan already initialized at ${report.root}`);
   }
+
+  printTerritoryFilenames(report.territoryFilenames);
 
   const printInstall = (label: string, result: { installed: boolean; path: string }) => {
     console.log(
@@ -186,7 +211,8 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
 function printHelp(): void {
   console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
-  mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and .cursorignore
+  mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and .cursorignore.
+                            Also renames legacy current.mdx / next.mdx to <id>.mdx / <id>.next.mdx.
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
   mindplan-mcp check        Offline integrity: graph + file ownership (default CI mode)
@@ -230,7 +256,11 @@ export function runCli(argv: string[] = process.argv): boolean {
         packageRoot,
       });
       printInitReport(report);
+      printRemovedLegacyFiles(report.removedLegacyFiles);
     } catch (err) {
+      if (err instanceof LegacyTerritoryMigrationError) {
+        printTerritoryFilenames(err.applied);
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.error(message.startsWith("Blocked:") ? message : `Error: ${message}`);
       process.exit(1);

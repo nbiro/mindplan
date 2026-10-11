@@ -3,7 +3,11 @@
  */
 
 import * as fs from "fs";
-import { loadGraph } from "../../foundations/f-territory-store/store.js";
+import {
+  drainRemovedLegacyFiles,
+  loadGraph,
+  type RemovedLegacyFile,
+} from "../../foundations/f-territory-store/store.js";
 import { findNode } from "../../foundations/f-compiler-rules/rules.js";
 import {
   exportMindPlanView,
@@ -38,6 +42,8 @@ export type RunViewExportOptions = {
 export type RunViewExportResult = ExportMindPlanViewResult & {
   /** Absolute or relative path written when `output` was set. */
   written_to?: string;
+  /** Legacy territory files deleted while loading the graph for this export. */
+  removed_legacy_files: RemovedLegacyFile[];
 };
 
 /**
@@ -45,14 +51,23 @@ export type RunViewExportResult = ExportMindPlanViewResult & {
  * writes a file or returns the diagram string for the CLI to print.
  */
 export function runViewExport(opts: RunViewExportOptions): RunViewExportResult {
-  const result = exportMindPlanViewHandler({
-    format: opts.format,
-    focus: opts.focus,
-    include_retired: opts.include_retired,
-  });
-  if (opts.output) {
-    fs.writeFileSync(opts.output, result.diagram, "utf-8");
-    return { ...result, written_to: opts.output };
+  try {
+    const result = exportMindPlanViewHandler({
+      format: opts.format,
+      focus: opts.focus,
+      include_retired: opts.include_retired,
+    });
+    const removed_legacy_files = drainRemovedLegacyFiles();
+    if (opts.output) {
+      fs.writeFileSync(opts.output, result.diagram, "utf-8");
+      return { ...result, written_to: opts.output, removed_legacy_files };
+    }
+    return { ...result, removed_legacy_files };
+  } catch (err) {
+    const removed = drainRemovedLegacyFiles();
+    if (removed.length === 0) throw err;
+    const note = removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n");
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`${message}\n${note}`);
   }
-  return result;
 }

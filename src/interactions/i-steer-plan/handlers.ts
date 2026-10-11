@@ -19,15 +19,14 @@ import {
 } from "../../foundations/f-domain-model/types.js";
 import {
   ATTACHMENTS_DIR,
-  CURRENT_FILENAME,
   NEXT_ATTACHMENTS_DIR,
-  NEXT_FILENAME,
   addEdgeToFrontmatter,
   discardNextSlot,
   edgeWriteSlot,
   ensureDirectories,
   entityRelativePath,
   loadGraph,
+  markdownRelativePath,
   loadProjectConfig,
   nextAttachmentsDir,
   nodeExists,
@@ -73,13 +72,12 @@ export function syncNodes(nodes: MindPlanNode[]): void {
 /** Project-relative path of the auto-persisted Mermaid snapshot. */
 export const MAP_REL = "mindplan/map.md";
 
-/** Repo-relative path of a node's current or next territory MDX. */
+/** Repo-relative path of a node's live or evolution territory MDX. */
 export function territoryPath(
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot = "current"
 ): string {
-  const rel = entityRelativePath(node);
-  return `${rel}/${slot === "next" ? NEXT_FILENAME : CURRENT_FILENAME}`;
+  return markdownRelativePath(node, slot);
 }
 
 /** Deduplicate changed paths, optionally appending the map snapshot. */
@@ -101,7 +99,7 @@ export function nextSlotFsChangedFiles(
   const rel = entityRelativePath(node);
   const nextAttRel = `${rel}/${NEXT_ATTACHMENTS_DIR}`;
   const attRel = `${rel}/${ATTACHMENTS_DIR}`;
-  const files = [`${rel}/${NEXT_FILENAME}`, nextAttRel];
+  const files = [markdownRelativePath(node, "next"), nextAttRel];
   const abs = nextAttachmentsDir(node);
   if (fs.existsSync(abs)) {
     for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
@@ -212,7 +210,7 @@ export function createNode(args: {
   ensureDirectories();
   scaffoldEntity(node, { title, description: desc });
   const rel = entityRelativePath(node);
-  const current = `${rel}/${CURRENT_FILENAME}`;
+  const current = territoryPath(node, "current");
   const attachments = `${rel}/${ATTACHMENTS_DIR}`;
   refreshPersistedMap();
   const files = [current, `${attachments}/.gitkeep`];
@@ -252,7 +250,7 @@ export function setImplementationFiles(args: {
   if (args.slot) {
     slot = args.slot;
     if (slot === "next" && !node.next) {
-      throw blocked(`cannot set implements on next: "${node.id}" has no next.mdx.`);
+      throw blocked(`cannot set implements on next: "${node.id}" has no ${node.id}.next.mdx.`);
     }
     if (slot === "current" && isProductionState(node.state) && !retired) {
       throw blocked(
@@ -264,7 +262,7 @@ export function setImplementationFiles(args: {
   } else if (isProductionState(node.state)) {
     if (!node.next) {
       throw blocked(
-        `shipped "${node.id}" has no open next.mdx. Call open_next before set_implementation_files.`
+        `shipped "${node.id}" has no open ${node.id}.next.mdx. Call open_next before set_implementation_files.`
       );
     }
     slot = "next";
@@ -761,8 +759,8 @@ export function openNext(args: {
   const next = openNextSlot(node, { title, description });
   node.next = next;
   const rel = entityRelativePath(node);
-  const current = `${rel}/${CURRENT_FILENAME}`;
-  const next_path = `${rel}/${NEXT_FILENAME}`;
+  const current = territoryPath(node, "current");
+  const next_path = territoryPath(node, "next");
   refreshPersistedMap();
   return {
     node_id,
@@ -781,7 +779,7 @@ export function discardNext(args: { node_id: string }): Record<string, unknown> 
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   if (!node.next) {
-    throw blocked(`node "${node_id}" has no next.mdx to discard.`);
+    throw blocked(`node "${node_id}" has no ${node_id}.next.mdx to discard.`);
   }
   const next_path = territoryPath(node, "next");
   const slotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: false });

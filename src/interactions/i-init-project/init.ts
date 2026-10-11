@@ -1,6 +1,7 @@
 /**
  * Consumer project init — scaffolds mindplan/ and installs agent assets.
  * Migrates legacy implementation_packages → { sources, exclude } and seeds implements/role.
+ * Renames legacy current.mdx / next.mdx to <id>.mdx / <id>.next.mdx before graph load.
  * Owned by Interaction i-init-project.
  */
 
@@ -27,9 +28,13 @@ import {
   ensureDirectories,
   implementationDir,
   implementationRelativePath,
+  drainRemovedLegacyFiles,
+  liveMdxFilename,
   loadGraph,
   mindplanRoot,
+  nextMdxFilename,
   projectRoot,
+  removeLegacyIfIdNamedExists,
   writeImplementsFrontmatter,
   writeRoleFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
@@ -465,6 +470,174 @@ export function resolvePackageRoot(moduleUrl: string): string {
   );
 }
 
+const LEGACY_LIVE_FILENAME = "current.mdx";
+const LEGACY_NEXT_FILENAME = "next.mdx";
+
+/** Type folders that may hold an evolution file. Journeys and Bugs must not. */
+const EVOLUTION_TYPE_DIRS = new Set(["foundations", "interactions", "interfaces"]);
+
+const TERRITORY_TYPE_DIRS = [
+  "journeys",
+  "foundations",
+  "interactions",
+  "interfaces",
+  "bugs",
+] as const;
+
+export type LegacyTerritoryRename = {
+  from: string;
+  to: string;
+  action: "renamed" | "removed";
+};
+
+/** Init stopped after zero or more territory renames. `applied` already happened on disk. */
+export class LegacyTerritoryMigrationError extends Error {
+  readonly applied: LegacyTerritoryRename[];
+  constructor(message: string, applied: LegacyTerritoryRename[]) {
+    super(message);
+    this.name = "LegacyTerritoryMigrationError";
+    this.applied = applied;
+  }
+}
+
+function territoryFileRel(dirName: string, id: string, filename: string): string {
+  return path.posix.join(MINDPLAN_DIR, dirName, id, filename);
+}
+
+function manualRenameFailure(fromRel: string, toRel: string, err: unknown): Error {
+  const detail = err instanceof Error ? err.message : String(err);
+  return new Error(
+    `Blocked: could not rename ${fromRel} to ${toRel} (${detail}). Fix ${fromRel} by hand, then run mindplan-mcp init again.`
+  );
+}
+
+function renameLegacyTerritoryFile(
+  folder: string,
+  dirName: string,
+  id: string,
+  fromName: string,
+  toName: string,
+  slot: "current" | "next"
+): LegacyTerritoryRename | null {
+  const fromAbs = path.join(folder, fromName);
+  const toAbs = path.join(folder, toName);
+  const fromRel = territoryFileRel(dirName, id, fromName);
+  const toRel = territoryFileRel(dirName, id, toName);
+  if (fromName === toName) return null;
+  const folderRel = path.posix.join(MINDPLAN_DIR, dirName, id);
+  if (removeLegacyIfIdNamedExists(folder, id, slot, folderRel)) {
+    return { from: fromRel, to: toRel, action: "removed" };
+  }
+  if (!fs.existsSync(fromAbs)) return null;
+  if (fs.existsSync(toAbs)) {
+    try {
+      if (fs.realpathSync.native(fromAbs) === fs.realpathSync.native(toAbs)) return null;
+    } catch {
+      // Distinct paths that cannot be resolved still go through rename and surface a manual fix.
+    }
+  }
+  try {
+    fs.renameSync(fromAbs, toAbs);
+  } catch (err) {
+    throw manualRenameFailure(fromRel, toRel, err);
+  }
+  return { from: fromRel, to: toRel, action: "renamed" };
+}
+
+function directoryEntries(typePath: string): fs.Dirent[] {
+  return fs
+    .readdirSync(typePath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Evolution filenames under journeys/bugs. The live file is skipped when its name
+ * collides with `next.mdx` (id `next`).
+ */
+function illegalEvolutionRels(folder: string, dirName: string, id: string): string[] {
+  if (EVOLUTION_TYPE_DIRS.has(dirName)) return [];
+  const live = liveMdxFilename(id).toLowerCase();
+  const next = nextMdxFilename(id).toLowerCase();
+  const rels: string[] = [];
+  for (const name of fs.readdirSync(folder)) {
+    const lower = name.toLowerCase();
+    if (lower === live) continue;
+    if (lower !== LEGACY_NEXT_FILENAME && lower !== next) continue;
+    const abs = path.join(folder, name);
+    if (!fs.statSync(abs).isFile()) continue;
+    rels.push(territoryFileRel(dirName, id, name));
+  }
+  return rels;
+}
+
+/**
+ * Renames legacy `current.mdx` / `next.mdx` to `<id>.mdx` / `<id>.next.mdx`.
+ * Idempotent when files are already id-named. Runs before graph load.
+ * Illegal evolution files are refused before any rename. A later filesystem failure
+ * throws LegacyTerritoryMigrationError carrying the renames already applied.
+ */
+export function migrateLegacyTerritoryFilenames(): LegacyTerritoryRename[] {
+  const root = mindplanRoot();
+  if (!fs.existsSync(root)) return [];
+  const renamed: LegacyTerritoryRename[] = [];
+  try {
+    const illegal: string[] = [];
+    for (const dirName of TERRITORY_TYPE_DIRS) {
+      const typePath = path.join(root, dirName);
+      if (!fs.existsSync(typePath)) continue;
+      for (const entry of directoryEntries(typePath)) {
+        illegal.push(...illegalEvolutionRels(path.join(typePath, entry.name), dirName, entry.name));
+      }
+    }
+    if (illegal.length > 0) {
+      const listed = [...illegal].sort().join(", ");
+      const fix = illegal.length === 1 ? illegal[0] : "these files";
+      throw new LegacyTerritoryMigrationError(
+        `Blocked: cannot rename ${listed}. Evolution files are not allowed under journeys or bugs. Fix ${fix} by hand, then run mindplan-mcp init again.`,
+        []
+      );
+    }
+
+    for (const dirName of TERRITORY_TYPE_DIRS) {
+      const typePath = path.join(root, dirName);
+      if (!fs.existsSync(typePath)) continue;
+      for (const entry of directoryEntries(typePath)) {
+        const id = entry.name;
+        const folder = path.join(typePath, id);
+        try {
+          const live = renameLegacyTerritoryFile(
+            folder,
+            dirName,
+            id,
+            LEGACY_LIVE_FILENAME,
+            liveMdxFilename(id),
+            "current"
+          );
+          if (live) renamed.push(live);
+          if (!EVOLUTION_TYPE_DIRS.has(dirName)) continue;
+          const next = renameLegacyTerritoryFile(
+            folder,
+            dirName,
+            id,
+            LEGACY_NEXT_FILENAME,
+            nextMdxFilename(id),
+            "next"
+          );
+          if (next) renamed.push(next);
+        } catch (err) {
+          if (err instanceof LegacyTerritoryMigrationError) throw err;
+          const message = err instanceof Error ? err.message : String(err);
+          throw new LegacyTerritoryMigrationError(message, [...renamed]);
+        }
+      }
+    }
+    return renamed;
+  } finally {
+    drainRemovedLegacyFiles();
+  }
+}
+
 export type RunInitOptions = {
   force: boolean;
   packageRoot: string;
@@ -473,6 +646,7 @@ export type RunInitOptions = {
 export type RunInitReport = {
   root: string;
   created: boolean;
+  territoryFilenames: LegacyTerritoryRename[];
   projectConfig: InstallProjectConfigResult;
   projectBrief: InstallAgentRuleResult;
   playbook: InstallAgentRuleResult;
@@ -485,6 +659,8 @@ export type RunInitReport = {
   cursorSkills: InstallSkillResult[];
   cursorRule: InstallAgentRuleResult;
   cursorPermissions: InstallAgentRuleResult;
+  /** Legacy files deleted by a graph load after the rename walk (the walk itself is in territoryFilenames). */
+  removedLegacyFiles: { from: string; to: string }[];
 };
 
 /**
@@ -493,6 +669,8 @@ export type RunInitReport = {
  */
 export function runInit(opts: RunInitOptions): RunInitReport {
   const installOpts = { force: opts.force };
+  try {
+  const territoryFilenames = migrateLegacyTerritoryFilenames();
   const { root, created } = initProject();
   const projectConfig = installProjectConfig();
   const projectBrief = installProjectBrief();
@@ -510,6 +688,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
   return {
     root,
     created,
+    territoryFilenames,
     projectConfig,
     projectBrief,
     playbook,
@@ -522,5 +701,13 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     cursorSkills,
     cursorRule,
     cursorPermissions,
+    removedLegacyFiles: drainRemovedLegacyFiles(),
   };
+  } catch (err) {
+    const removed = drainRemovedLegacyFiles();
+    if (removed.length === 0 || err instanceof LegacyTerritoryMigrationError) throw err;
+    const note = removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n");
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`${message}\n${note}`);
+  }
 }

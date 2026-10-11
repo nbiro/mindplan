@@ -67,7 +67,7 @@ Interaction may sit at `draft` with no links yet while you sketch the behavior.
 
 ### 2. Enrich Interaction territory (derive substrate and surfaces)
 
-Edit `mindplan/interactions/i-checkout-split/current.mdx` via file tools:
+Edit `mindplan/interactions/i-checkout-split/i-checkout-split.mdx` via file tools:
 
 ```
 ## Purpose
@@ -128,7 +128,7 @@ Do **not** add Interaction → Interaction `depends_on`. Navigation to a follow-
 
 Prefer host file tools on `current_path` from `get_node_context` (body below `---`, plus title/description scalars). Example bodies:
 
-**`mindplan/foundations/f-db-core/current.mdx` body:**
+**`mindplan/foundations/f-db-core/f-db-core.mdx` body:**
 
 ```
 ## Shared Substrate Spec
@@ -143,7 +143,7 @@ Prefer host file tools on `current_path` from `get_node_context` (body below `--
 - [ ] Verified in staging
 ```
 
-**`mindplan/interfaces/if-checkout-page/current.mdx` body:**
+**`mindplan/interfaces/if-checkout-page/if-checkout-page.mdx` body:**
 
 ```
 ## Kind
@@ -188,7 +188,7 @@ export default function CheckoutScreen({ orderId }: { orderId: string }) {
 }
 ```
 
-**`mindplan/foundations/f-nextjs/current.mdx` body:**
+**`mindplan/foundations/f-nextjs/f-nextjs.mdx` body:**
 
 ```
 ## Shared Substrate Spec
@@ -380,22 +380,22 @@ open_next({
   node_id: "i-checkout-split",
   description: "Revised split calculation"
 })
-→ live node stays stable, still serving under current.mdx
-→ next.mdx created: { state: "draft", title, description, belongs_to, depends_on, leads_to } inherited from current
+→ live node stays stable, still serving under <id>.mdx
+→ <id>.next.mdx created: { state: "draft", title, description, belongs_to, depends_on, leads_to } inherited from current
 
 update_node_status({ node_id: "i-checkout-split", new_status: "ready" })
 update_node_status({ node_id: "i-checkout-split", new_status: "in-progress" })
 # Prefer file tools on next_path to toggle checkboxes / edit body; optional:
 # patch_node_territory({ node_id: "i-checkout-split", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
-→ status transitions apply to next.mdx automatically while it exists (record.next.state advances; live record.state is unchanged)
+→ status transitions apply to <id>.next.mdx automatically while it exists (record.next.state advances; live record.state is unchanged)
 
 update_node_status({ node_id: "i-checkout-split", new_status: "in-review" })
 
 // After external review approves:
 update_node_status({ node_id: "i-checkout-split", new_status: "ship" })
 → ship is only legal from next in-review; re-checks Infrastructure First against next's depends_on
-→ promotes next.mdx over current.mdx (title/description/body/edges); next.mdx is deleted
+→ promotes <id>.next.mdx over <id>.mdx (title/description/body/edges); <id>.next.mdx is deleted
 → response: { promoted_next: true, new_state: "stable" | "unstable", next_state: null }
 ```
 
-`discard_next({ node_id: "i-checkout-split" })` abandons the evolution at any point — deletes `next.mdx` and `next-attachments/`; `current.mdx` is untouched.
+`discard_next({ node_id: "i-checkout-split" })` abandons the evolution at any point — deletes `<id>.next.mdx` and `next-attachments/`; `<id>.mdx` is untouched.

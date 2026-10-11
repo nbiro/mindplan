@@ -37,7 +37,7 @@ mindplan/map.md
 mindplan/agent/**
 ```
 
-If you already have a `.cursorignore` that lists `mindplan/**/current.mdx` or `mindplan/**/next.mdx`, remove those lines so agents can edit prose with normal file tools (host “changed files” UI). Keep ignoring `mindplan/map.md` — it is not graph authority.
+If you already have a `.cursorignore` that lists `mindplan/**/current.mdx`, `mindplan/**/next.mdx`, `mindplan/**/<id>.mdx`, or `mindplan/**/<id>.next.mdx`, remove those lines so agents can edit prose with normal file tools (host “changed files” UI). Keep ignoring `mindplan/map.md` — it is not graph authority.
 
 5. **`.cursor/permissions.json`** — `mindplan-mcp init` installs this when missing. It allowlists MindPlan MCP tools (`mindplan:*`, plus the Cursor UI server id `project-0-mindplan-mindplan:*` / `*mindplan*:*`) so Auto-review does **not** prompt on playbook-required graph mutations (`update_node_status`, `create_node`, `link_nodes`, etc.). Requires Run Mode **Auto-review** or **Allowlist** (Settings → Agents → Approvals & Execution). Defining `mcpAllowlist` in this file replaces the in-app MCP allowlist for that key type — if you already allowlisted other MCP servers in Settings, add those patterns to the same file (or `~/.cursor/permissions.json`).
 

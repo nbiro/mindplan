@@ -15,10 +15,9 @@ import {
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import {
   ATTACHMENTS_DIR,
-  CURRENT_FILENAME,
   NEXT_ATTACHMENTS_DIR,
-  NEXT_FILENAME,
   entityRelativePath,
+  markdownRelativePath,
   listAttachments,
   loadGraph,
   loadProjectConfig,
@@ -223,7 +222,7 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
   const currentSplit = splitContext(currentRaw);
   const payload: Record<string, unknown> = {
     folder: rel,
-    current_path: `${rel}/${CURRENT_FILENAME}`,
+    current_path: markdownRelativePath(node, "current"),
     attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
     attachments: listAttachments(node),
     record: nodeToRecord(node),
@@ -233,7 +232,7 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
   if (node.next) {
     const nextRaw = readMarkdown(node, "next");
     const nextSplit = splitContext(nextRaw);
-    payload.next_path = `${rel}/${NEXT_FILENAME}`;
+    payload.next_path = markdownRelativePath(node, "next");
     payload.next_attachments_path = `${rel}/${NEXT_ATTACHMENTS_DIR}`;
     payload.next = {
       record: {

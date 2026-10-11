@@ -26,9 +26,11 @@ import { expandClaims } from "../../foundations/f-source-index/claims.js";
 import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
 import {
+  drainRemovedLegacyFiles,
   loadGraph,
   loadProjectConfig,
   projectRoot,
+  type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -59,6 +61,8 @@ export interface CheckOptions {
 export interface CheckResult {
   ok: boolean;
   failures: string[];
+  /** Legacy territory files deleted while loading the graph. */
+  removedLegacyFiles: RemovedLegacyFile[];
 }
 
 export interface DirtySrcPaths {
@@ -446,7 +450,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
       if (prev === undefined) delete process.env.MINDPLAN_ROOT;
       else process.env.MINDPLAN_ROOT = prev;
     }
-    return { ok: false, failures };
+    return { ok: false, failures, removedLegacyFiles: drainRemovedLegacyFiles() };
   }
 
   try {
@@ -468,5 +472,5 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     }
   }
 
-  return { ok: failures.length === 0, failures };
+  return { ok: failures.length === 0, failures, removedLegacyFiles: drainRemovedLegacyFiles() };
 }

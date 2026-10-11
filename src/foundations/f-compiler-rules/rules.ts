@@ -37,6 +37,7 @@ import {
   countUncheckedBoxes,
   readMarkdown,
   splitContext,
+  territorySlotFilename,
 } from "../f-territory-store/store.js";
 
 export function blocked(message: string): Error {
@@ -179,7 +180,7 @@ export function assertMinimumTerritoryShape(
 ): void {
   if (node.type === "Journey") return;
 
-  const file = slot === "next" ? "next.mdx" : "current.mdx";
+  const file = territorySlotFilename(node, slot);
   const raw = readMarkdown(node, slot);
   const split = splitContext(raw);
   const body = split?.body ?? "";
@@ -313,7 +314,7 @@ function runCompletionCheck(
   slot: "current" | "next" = "current"
 ): void {
   const unchecked = countUncheckedBoxes(node, slot);
-  const file = slot === "next" ? "next.mdx" : "current.mdx";
+  const file = territorySlotFilename(node, slot);
   if (unchecked > 0) {
     throw blocked(
       `Completion Check. ${unchecked} unchecked checkbox(es) remain in ${node.id}/${file}. All [ ] items must be [x] before moving to "${targetLabel}".`
@@ -336,7 +337,7 @@ export function assertPipelineTerritoryScalarsEditable(
   }
   if (slot === "next") {
     if (!node.next) {
-      throw blocked(`cannot edit ${field} on next: "${node.id}" has no next.mdx.`);
+      throw blocked(`cannot edit ${field} on next: "${node.id}" has no ${node.id}.next.mdx.`);
     }
     return;
   }
@@ -723,7 +724,7 @@ export function validateOpenNext(node: MindPlanNode): void {
   }
   if (node.next) {
     throw blocked(
-      `"${node.id}" already has a next.mdx evolution in state "${node.next.state}". Ship or discard_next before opening another.`
+      `"${node.id}" already has a ${node.id}.next.mdx evolution in state "${node.next.state}". Ship or discard_next before opening another.`
     );
   }
 }
@@ -877,7 +878,7 @@ export type StatusChangeResult = {
   state: NodeState;
   /** When true, caller must set shipped_at before persisting (first ship or promote next). */
   ship: boolean;
-  /** When true, ship promotes next.mdx over current.mdx. */
+  /** When true, ship promotes `<id>.next.mdx` over `<id>.mdx`. */
   promote_next: boolean;
 };
 
@@ -1089,9 +1090,9 @@ const RETIRED_OR_CLOSED = new Set([
 ]);
 
 /**
- * Pre-ship abandon: cancel is blocked while next.mdx is open or any active
+ * Pre-ship abandon: cancel is blocked while `<id>.next.mdx` is open or any active
  * (non-retired) node still depends_on this node — including proposed
- * depends_on on another node's open next.mdx.
+ * depends_on on another node's open `<id>.next.mdx`.
  */
 function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): void {
   if (!isPipelineNodeType(node.type)) {
@@ -1101,7 +1102,7 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
   }
   if (node.next) {
     throw blocked(
-      `cannot cancel "${node.id}" while next.mdx exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot cancel "${node.id}" while ${node.id}.next.mdx exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
   const byId = new Map<string, MindPlanNode>();
@@ -1139,7 +1140,7 @@ function resolveNextStatusChange(
   const next = node.next!;
   if (newStatus === "deprecated" || newStatus === "cancelled") {
     throw blocked(
-      `cannot set "${newStatus}" on "${node.id}" while next.mdx exists. Call discard_next first, or ship the evolution.`
+      `cannot set "${newStatus}" on "${node.id}" while ${node.id}.next.mdx exists. Call discard_next first, or ship the evolution.`
     );
   }
 
@@ -1320,7 +1321,7 @@ export function resolveForceUnship(
 
   if (node.next) {
     throw blocked(
-      `cannot force_unship "${node.id}" while next.mdx exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot force_unship "${node.id}" while ${node.id}.next.mdx exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
 

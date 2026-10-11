@@ -37,7 +37,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 
 - **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`)
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
-- **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `next.mdx` → `ship` promotes over `current.mdx`
+- **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `<id>.next.mdx` → `ship` promotes over `<id>.mdx`
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
 - **Ship after green check** — the implementer `ship`s when default `mindplan-mcp check` is green and legal transitions allow
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
@@ -85,7 +85,7 @@ In plain words: you cannot go live with *cook scramble* while the *stove* buildi
 
 ## How it's built
 
-Territory under `mindplan/` (Journeys, Foundations, Interactions, Interfaces, Bugs) plus optional `next.mdx` while a shipped node evolves. Nodes declare owned source files via `implements` / `set_implementation_files` (`mindplan/config.json` `sources`/`exclude` define the coverage universe). An MCP server is the single write path for server-owned frontmatter.
+Territory under `mindplan/` (Journeys, Foundations, Interactions, Interfaces, Bugs) plus optional `<id>.next.mdx` while a shipped node evolves. Nodes declare owned source files via `implements` / `set_implementation_files` (`mindplan/config.json` `sources`/`exclude` define the coverage universe). An MCP server is the single write path for server-owned frontmatter.
 
 - **[SPEC.md](SPEC.md)** — graph, compiler rules, and tools
 - **`src/`** — TypeScript MCP server (stdio)
@@ -116,7 +116,7 @@ npm install && npm run build
 node /absolute/path/to/mindplan/dist/index.js init
 ```
 
-`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), `mindplan/project.md` (description + rules only — not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` and `.cursor/rules/mindplan.mdc` when missing. The stub requires `get_project` before planning or code (dialect + brief in the tool response); when tools are hidden, read `mindplan/agent/playbook.md` and `mindplan/project.md`.
+`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), `mindplan/project.md` (description + rules only — not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` and `.cursor/rules/mindplan.mdc` when missing. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`. The stub requires `get_project` before planning or code (dialect + brief in the tool response); when tools are hidden, read `mindplan/agent/playbook.md` and `mindplan/project.md`.
 
 3. Register the MCP server — see `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
@@ -130,11 +130,11 @@ node /absolute/path/to/mindplan/dist/index.js init
 │   ├── config.json                # { sources, exclude } — coverage universe
 │   ├── project.md                 # description + rules only (playbook via get_project)
 │   ├── agent/                     # playbook + skills (installed by init)
-│   ├── journeys/<id>/
-│   ├── foundations/<id>/          # + optional next.mdx
-│   ├── interactions/<id>/         # + optional next.mdx
-│   ├── interfaces/<id>/           # + optional next.mdx
-│   └── bugs/<id>/
+│   ├── journeys/<id>/<id>.mdx
+│   ├── foundations/<id>/<id>.mdx  # + optional <id>.next.mdx
+│   ├── interactions/<id>/<id>.mdx # + optional <id>.next.mdx
+│   ├── interfaces/<id>/<id>.mdx   # + optional <id>.next.mdx
+│   └── bugs/<id>/<id>.mdx
 └── …                              # app code wherever implements claims it
 ```
 

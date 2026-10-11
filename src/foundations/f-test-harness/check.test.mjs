@@ -87,8 +87,8 @@ await call("link_nodes", {
   target_id: "f-core",
   edge_type: "depends_on",
 });
-fillMinimumTerritoryShape(path.join(root, "mindplan", "foundations", "f-core", "current.mdx"));
-fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "current.mdx"));
+fillMinimumTerritoryShape(path.join(root, "mindplan", "foundations", "f-core", "f-core.mdx"));
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "i-feature.mdx"));
 
 // Create owned files and claim them
 fs.mkdirSync(path.join(root, "src", "foundations", "f-core"), { recursive: true });
@@ -214,7 +214,7 @@ if (r.status !== 0) {
 } else console.log("ok   dirty src while in-progress passes");
 
 // Complete checklist for in-review — needs implements present (already set)
-const ixPath = path.join(root, "mindplan", "interactions", "i-feature", "current.mdx");
+const ixPath = path.join(root, "mindplan", "interactions", "i-feature", "i-feature.mdx");
 let ixBody = fs.readFileSync(ixPath, "utf-8");
 ixBody = ixBody.replace(/- \[ \]/g, "- [x]");
 fs.writeFileSync(ixPath, ixBody);
@@ -237,7 +237,7 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("Uncommitted")) {
 } else console.log("ok   uncommitted dirty while in-review fails");
 fs.rmSync(path.join(root, "src", "interactions", "i-feature", "wip-extra.ts"), { force: true });
 
-const fPath = path.join(root, "mindplan", "foundations", "f-core", "current.mdx");
+const fPath = path.join(root, "mindplan", "foundations", "f-core", "f-core.mdx");
 let fBody = fs.readFileSync(fPath, "utf-8");
 fBody = fBody.replace(/- \[ \]/g, "- [x]");
 fs.writeFileSync(fPath, fBody);
@@ -284,7 +284,7 @@ await call("create_node", {
 });
 await call("link_nodes", { source_id: "i-dead", target_id: "j-app", edge_type: "belongs_to" });
 await call("link_nodes", { source_id: "i-dead", target_id: "f-core", edge_type: "depends_on" });
-fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-dead", "current.mdx"));
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-dead", "i-dead.mdx"));
 fs.mkdirSync(path.join(root, "src", "interactions", "i-dead"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "interactions", "i-dead", "dead.ts"), "export {};\n");
 await call("set_implementation_files", {
@@ -395,7 +395,7 @@ if (
 } else console.log("ok   create_node skips package scaffold");
 
 const scaffoldBody = fs.readFileSync(
-  path.join(root, "mindplan", "interactions", "i-noscaffold", "current.mdx"),
+  path.join(root, "mindplan", "interactions", "i-noscaffold", "i-noscaffold.mdx"),
   "utf-8"
 );
 if (!scaffoldBody.includes("set_implementation_files")) {
@@ -459,13 +459,13 @@ fs.writeFileSync(
 git("add", "-A", "src/interactions/i-feature");
 
 // Next in-review with missing next entry → next presence fails
-fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "next.mdx"));
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"));
 let nextBody = fs.readFileSync(
-  path.join(root, "mindplan", "interactions", "i-feature", "next.mdx"),
+  path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"),
   "utf-8"
 );
 nextBody = nextBody.replace(/- \[ \]/g, "- [x]");
-fs.writeFileSync(path.join(root, "mindplan", "interactions", "i-feature", "next.mdx"), nextBody);
+fs.writeFileSync(path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"), nextBody);
 await call("update_node_status", { node_id: "i-feature", new_status: "ready" });
 await call("update_node_status", { node_id: "i-feature", new_status: "in-progress" });
 await call("update_node_status", { node_id: "i-feature", new_status: "in-review" });

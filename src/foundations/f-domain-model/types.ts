@@ -1,6 +1,6 @@
 /**
- * MindPlan data model — node records and edges persisted in current.mdx frontmatter.
- * Optional next.mdx holds an in-flight evolution of a shipped Foundation/Interaction/Interface.
+ * MindPlan data model — node records and edges persisted in `<id>.mdx` frontmatter.
+ * Optional `<id>.next.mdx` holds an in-flight evolution of a shipped Foundation/Interaction/Interface.
  */
 
 /** Schema generation reported by get_mindplan_graph (no file on disk). */
@@ -54,11 +54,11 @@ export type BugSeverity = (typeof BUG_SEVERITIES)[number];
 export const FOUNDATION_ROLES = ["assembler", "infra", "design-system", "adapter"] as const;
 export type FoundationRole = (typeof FOUNDATION_ROLES)[number];
 
-/** Pre-ship build states allowed on next.mdx (evolution slot). */
+/** Pre-ship build states allowed on `<id>.next.mdx` (evolution slot). */
 export const NEXT_PIPELINE_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
 export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
 
-/** In-flight evolution of a shipped Foundation/Interaction/Interface (from next.mdx). */
+/** In-flight evolution of a shipped Foundation/Interaction/Interface (from `<id>.next.mdx`). */
 export interface NextSlot {
   state: NextPipelineState;
   title: string;
@@ -105,7 +105,7 @@ export interface MindPlanNode {
   implements?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
-  /** Present when next.mdx exists (Foundation/Interaction/Interface evolution in progress). */
+  /** Present when `<id>.next.mdx` exists (Foundation/Interaction/Interface evolution in progress). */
   next?: NextSlot;
 }
 

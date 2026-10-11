@@ -123,11 +123,13 @@ function fillMinimumTerritoryShape(filePath) {
 }
 
 function territoryPath(...parts) {
-  return path.join(root, "mindplan", ...parts, "current.mdx");
+  const id = parts[parts.length - 1];
+  return path.join(root, "mindplan", ...parts, `${id}.mdx`);
 }
 
 function nextTerritoryPath(...parts) {
-  return path.join(root, "mindplan", ...parts, "next.mdx");
+  const id = parts[parts.length - 1];
+  return path.join(root, "mindplan", ...parts, `${id}.next.mdx`);
 }
 
 // --- get_project (empty brief + bundled playbook in sandbox) ---
@@ -185,7 +187,7 @@ function nextTerritoryPath(...parts) {
 const createdJourney = JSON.parse(
   await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
 );
-if (!createdJourney.changed_files?.includes("mindplan/journeys/j-ordering/current.mdx") || !createdJourney.changed_files?.includes("mindplan/map.md")) {
+if (!createdJourney.changed_files?.includes("mindplan/journeys/j-ordering/j-ordering.mdx") || !createdJourney.changed_files?.includes("mindplan/map.md")) {
   failures++; console.log(`FAIL create_node changed_files journey: ${JSON.stringify(createdJourney.changed_files)}`);
 } else console.log("ok   create_node changed_files (journey)");
 await expectOk("create foundation", "create_node", {
@@ -199,14 +201,14 @@ const createdIx = JSON.parse(
   await expectOk("create interaction", "create_node", { id: "i-checkout", type: "Interaction", title: "Checkout", description: "Split & pay" })
 );
 if (
-  !createdIx.changed_files?.includes("mindplan/interactions/i-checkout/current.mdx") ||
+  !createdIx.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
   createdIx.changed_files?.some((f) => String(f).includes("src/interactions/")) ||
   !createdIx.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL create_node changed_files interaction: ${JSON.stringify(createdIx.changed_files)}`);
 } else console.log("ok   create_node changed_files (interaction)");
 const ixFolder = path.join(root, "mindplan", "interactions", "i-checkout");
-if (!fs.existsSync(path.join(ixFolder, "current.mdx"))) {
+if (!fs.existsSync(path.join(ixFolder, "i-checkout.mdx"))) {
   failures++; console.log("FAIL entity folder scaffold");
 } else console.log("ok   entity folder scaffold");
 const mapPath = path.join(root, "mindplan", "map.md");
@@ -237,7 +239,7 @@ const linkedDepends = JSON.parse(
   await expectOk("link depends_on", "link_nodes", { source_id: "i-checkout", target_id: "f-db", edge_type: "depends_on" })
 );
 if (
-  !linkedDepends.changed_files?.includes("mindplan/interactions/i-checkout/current.mdx") ||
+  !linkedDepends.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
   !linkedDepends.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL link_nodes changed_files: ${JSON.stringify(linkedDepends.changed_files)}`);
@@ -248,7 +250,7 @@ if (!mapAfterLink.includes("i_checkout") && !mapAfterLink.includes("i-checkout")
 } else if (!mapAfterLink.includes("f-db") && !mapAfterLink.includes("f_db")) {
   failures++; console.log(`FAIL mindplan/map.md missing foundation after link: ${mapAfterLink.slice(0, 300)}`);
 } else console.log("ok   mindplan/map.md refreshed after link_nodes");
-const ixCtx = fs.readFileSync(path.join(ixFolder, "current.mdx"), "utf-8");
+const ixCtx = fs.readFileSync(path.join(ixFolder, "i-checkout.mdx"), "utf-8");
 if (!ixCtx.includes("belongs_to:") || !ixCtx.includes("j-ordering") || !ixCtx.includes("depends_on:") || !ixCtx.includes("f-db")) {
   failures++; console.log("FAIL edges not persisted in i-checkout frontmatter");
 } else console.log("ok   edges in frontmatter");
@@ -292,7 +294,7 @@ const createdIface = JSON.parse(
   })
 );
 if (
-  !createdIface.changed_files?.includes("mindplan/interfaces/if-web/current.mdx") ||
+  !createdIface.changed_files?.includes("mindplan/interfaces/if-web/if-web.mdx") ||
   createdIface.changed_files?.some((f) => String(f).includes("src/interfaces/"))
 ) {
   failures++; console.log(`FAIL create_node changed_files interface: ${JSON.stringify(createdIface.changed_files)}`);
@@ -411,7 +413,7 @@ const ixReady = JSON.parse(
   await expectOk("interaction -> ready", "update_node_status", { node_id: "i-checkout", new_status: "ready" })
 );
 if (
-  !ixReady.changed_files?.includes("mindplan/interactions/i-checkout/current.mdx") ||
+  !ixReady.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
   !ixReady.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL update_node_status changed_files: ${JSON.stringify(ixReady.changed_files)}`);
@@ -450,7 +452,7 @@ else console.log("ok   journey computed as incubation");
 await expectBlocked("manual journey state", "update_node_status", { node_id: "j-ordering", new_status: "stable" });
 
 // --- open checklist while building + Completion Check at ship ---
-const ixPath = path.join(root, "mindplan", "interactions", "i-checkout", "current.mdx");
+const ixPath = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx");
 {
   let ixRaw = fs.readFileSync(ixPath, "utf-8");
   ixRaw = ixRaw
@@ -494,7 +496,7 @@ await expectBlockedContaining(
   { node_id: "i-checkout", new_status: "ship" },
   "Infrastructure First"
 );
-const fPath = path.join(root, "mindplan", "foundations", "f-db", "current.mdx");
+const fPath = path.join(root, "mindplan", "foundations", "f-db", "f-db.mdx");
 fillMinimumTerritoryShape(fPath);
 fs.writeFileSync(fPath, fs.readFileSync(fPath, "utf-8").replaceAll("[ ]", "[x]"));
 for (const s of ["ready", "in-progress", "in-review"]) {
@@ -548,7 +550,7 @@ await expectOk("set implements if-pending", "set_implementation_files", {
 
 await expectOk("if-pending -> ready", "update_node_status", { node_id: "if-pending", new_status: "ready" });
 await expectOk("if-pending -> in-progress", "update_node_status", { node_id: "if-pending", new_status: "in-progress" });
-const ifPendingPath = path.join(root, "mindplan", "interfaces", "if-pending", "current.mdx");
+const ifPendingPath = path.join(root, "mindplan", "interfaces", "if-pending", "if-pending.mdx");
 fs.writeFileSync(ifPendingPath, fs.readFileSync(ifPendingPath, "utf-8").replaceAll("[ ]", "[x]"));
 await expectOk("if-pending -> in-review", "update_node_status", { node_id: "if-pending", new_status: "in-review" });
 await expectBlockedContaining(
@@ -566,7 +568,7 @@ await expectOk("cancel i-pending", "update_node_status", {
 
 // Ship if-web after exposed i-checkout is stable (and foundation stable)
 await expectOk("if-web -> in-progress", "update_node_status", { node_id: "if-web", new_status: "in-progress" });
-const ifWebPath = path.join(root, "mindplan", "interfaces", "if-web", "current.mdx");
+const ifWebPath = path.join(root, "mindplan", "interfaces", "if-web", "if-web.mdx");
 fs.writeFileSync(ifWebPath, fs.readFileSync(ifWebPath, "utf-8").replaceAll("[ ]", "[x]"));
 await expectOk("if-web -> in-review", "update_node_status", { node_id: "if-web", new_status: "in-review" });
 await expectOk("if-web -> ship", "update_node_status", { node_id: "if-web", new_status: "ship" });
@@ -592,7 +594,7 @@ else console.log("ok   journey unchanged by bug activity");
 await expectOk("bug -> triaged", "update_node_status", { node_id: "bug-race", new_status: "triaged" });
 await expectOk("bug -> fixing", "update_node_status", { node_id: "bug-race", new_status: "fixing" });
 
-const bugPath = path.join(root, "mindplan", "bugs", "bug-race", "current.mdx");
+const bugPath = path.join(root, "mindplan", "bugs", "bug-race", "bug-race.mdx");
 fillMinimumTerritoryShape(bugPath);
 await expectOk("bug -> in-review with unchecked", "update_node_status", {
   node_id: "bug-race",
@@ -638,7 +640,7 @@ await expectBlocked("skip to ship", "update_node_status", { node_id: "i-tips", n
 await expectBlocked("bug affects journey", "link_nodes", { source_id: "bug-race", target_id: "j-ordering", edge_type: "affects" });
 
 const ctx = JSON.parse(await expectOk("get_node_context bug", "get_node_context", { node_id: "bug-race" }));
-if (ctx.current_path !== "mindplan/bugs/bug-race/current.mdx") { failures++; console.log("FAIL bug current_path"); }
+if (ctx.current_path !== "mindplan/bugs/bug-race/bug-race.mdx") { failures++; console.log("FAIL bug current_path"); }
 else console.log("ok   bug get_node_context");
 if (ctx.record?.title !== "Race condition" || ctx.record?.description !== "Double charge") {
   failures++; console.log(`FAIL bug title/description from record: ${JSON.stringify({ title: ctx.record?.title, description: ctx.record?.description })}`);
@@ -735,7 +737,7 @@ await expectBlocked("patch shipped interaction description", "patch_node_territo
   node_id: "i-checkout",
   description: "should not apply",
 });
-const tipsCtxPath = path.join(root, "mindplan", "interactions", "i-tips", "current.mdx");
+const tipsCtxPath = path.join(root, "mindplan", "interactions", "i-tips", "i-tips.mdx");
 const patchCheck = JSON.parse(
   await expectOk("patch toggle checkbox", "patch_node_territory", {
     node_id: "i-tips",
@@ -839,7 +841,7 @@ if (openNextRes.next?.state !== "draft") {
   failures++; console.log(`FAIL open_next should create draft next: ${JSON.stringify(openNextRes.next)}`);
 } else console.log("ok   open_next creates draft next slot");
 if (
-  !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/next.mdx") ||
+  !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
   !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments/.gitkeep") ||
   !openNextRes.changed_files?.includes("mindplan/map.md")
 ) {
@@ -869,7 +871,7 @@ if (ixCheckoutLive.state !== "stable" || ixCheckoutLive.next?.state !== "draft")
   failures++; console.log(`FAIL live should stay stable with draft next: ${JSON.stringify(ixCheckoutLive)}`);
 } else console.log("ok   live stays stable after open_next");
 
-const nextPath = path.join(root, "mindplan", "interactions", "i-checkout", "next.mdx");
+const nextPath = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.next.mdx");
 const nextCtx = fs.readFileSync(nextPath, "utf-8");
 if (!nextCtx.includes("state: draft") || !nextCtx.includes("belongs_to:") || !nextCtx.includes("depends_on:")) {
   failures++; console.log("FAIL next.mdx missing draft state or inherited edges");
@@ -890,7 +892,7 @@ await expectBlocked("open_next twice", "open_next", {
 });
 
 // Sibling interaction can still ship against live foundations while next is draft.
-const tipsPath = path.join(root, "mindplan", "interactions", "i-tips", "current.mdx");
+const tipsPath = path.join(root, "mindplan", "interactions", "i-tips", "i-tips.mdx");
 fs.writeFileSync(tipsPath, fs.readFileSync(tipsPath, "utf-8").replaceAll("[ ]", "[x]"));
 fs.mkdirSync(path.join(root, "src", "interactions", "i-tips"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "interactions", "i-tips", "tips.ts"), "export {};\n");
@@ -996,8 +998,8 @@ if (shipNext.new_state !== "stable") {
   failures++; console.log(`FAIL after promote state: ${shipNext.new_state}`);
 } else console.log("ok   promoted node is stable");
 if (
-  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/current.mdx") ||
-  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/next.mdx") ||
+  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
+  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
   !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments") ||
   !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments/note.txt") ||
   !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/attachments/note.txt") ||
@@ -1014,7 +1016,7 @@ if (fs.existsSync(nextPath)) {
   failures++; console.log("FAIL next.mdx should be deleted after promote");
 } else console.log("ok   next.mdx removed after promote");
 
-const currentAfter = fs.readFileSync(path.join(root, "mindplan", "interactions", "i-checkout", "current.mdx"), "utf-8");
+const currentAfter = fs.readFileSync(path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx"), "utf-8");
 if (!currentAfter.includes("Checkout v2") || !currentAfter.includes("Revised checkout")) {
   failures++; console.log("FAIL current.mdx should carry promoted title/description");
 } else console.log("ok   current.mdx updated from next on promote");
@@ -1046,7 +1048,7 @@ if (fs.existsSync(nextPath)) {
   failures++; console.log("FAIL next.mdx should be gone after discard");
 } else console.log("ok   discard_next removes next.mdx");
 if (
-  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/next.mdx") ||
+  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
   !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments") ||
   !discardRes.changed_files?.includes("mindplan/map.md")
 ) {
@@ -1087,7 +1089,7 @@ if (unshipRes.new_state !== "ready" || unshipRes.shipped_at !== null) {
   failures++;
   console.log(`FAIL force_unship result: ${JSON.stringify(unshipRes)}`);
 } else console.log("ok   force_unship returns ready and cleared shipped_at");
-if (!unshipRes.changed_files?.includes("mindplan/interactions/i-tips/current.mdx")) {
+if (!unshipRes.changed_files?.includes("mindplan/interactions/i-tips/i-tips.mdx")) {
   failures++;
   console.log(`FAIL force_unship changed_files: ${JSON.stringify(unshipRes.changed_files)}`);
 } else console.log("ok   force_unship changed_files");
@@ -1224,7 +1226,7 @@ async function shipFoundation(id, title) {
     node_id: id,
     new_status: "in-progress",
   });
-  const p = path.join(root, "mindplan", "foundations", id, "current.mdx");
+  const p = path.join(root, "mindplan", "foundations", id, `${id}.mdx`);
   fs.writeFileSync(p, fs.readFileSync(p, "utf-8").replaceAll("[ ]", "[x]"));
   await expectOk(`${id} -> in-review`, "update_node_status", {
     node_id: id,
@@ -1249,7 +1251,7 @@ await expectBlocked("next depends_on cycle", "link_nodes", {
 await expectOk("discard_next f-cyc-a", "discard_next", { node_id: "f-cyc-a" });
 await expectOk("discard_next f-cyc-b", "discard_next", { node_id: "f-cyc-b" });
 
-const corruptPath = path.join(root, "mindplan", "interactions", "i-tips", "current.mdx");
+const corruptPath = path.join(root, "mindplan", "interactions", "i-tips", "i-tips.mdx");
 const corruptRaw = fs.readFileSync(corruptPath, "utf-8");
 fs.writeFileSync(corruptPath, corruptRaw.replace(/^---\r?\n[\s\S]*?\r?\n---/, "# no frontmatter\n"));
 await expectBlocked("corrupt frontmatter status", "update_node_status", {
@@ -1442,6 +1444,224 @@ if (migrateInit.status !== 0) {
     failures++;
     console.log(`FAIL migration sources: ${JSON.stringify(cfg)}`);
   } else console.log("ok   init migrates implementation_packages → sources");
+}
+
+// Rename legacy current.mdx / next.mdx to <id>.mdx / <id>.next.mdx
+{
+  const renameRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-rename-"));
+  const ixDir = path.join(renameRoot, "mindplan", "interactions", "i-old");
+  const journeyDir = path.join(renameRoot, "mindplan", "journeys", "j-old");
+  fs.mkdirSync(ixDir, { recursive: true });
+  fs.mkdirSync(journeyDir, { recursive: true });
+  fs.writeFileSync(path.join(ixDir, "current.mdx"), "---\nid: i-old\n---\n\n# Old\n", "utf-8");
+  fs.writeFileSync(path.join(ixDir, "next.mdx"), "---\nid: i-old\n---\n\n# Next\n", "utf-8");
+  fs.writeFileSync(path.join(journeyDir, "current.mdx"), "---\nid: j-old\n---\n\n# Journey\n", "utf-8");
+  const renameInit = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: renameRoot,
+    env: { ...process.env, MINDPLAN_ROOT: renameRoot },
+    encoding: "utf-8",
+  });
+  const live = path.join(ixDir, "i-old.mdx");
+  const evolved = path.join(ixDir, "i-old.next.mdx");
+  const journey = path.join(journeyDir, "j-old.mdx");
+  if (renameInit.status !== 0) {
+    failures++;
+    console.log(`FAIL init rename exit ${renameInit.status}: ${renameInit.stderr || renameInit.stdout}`);
+  } else if (
+    !fs.existsSync(live) ||
+    !fs.existsSync(evolved) ||
+    !fs.existsSync(journey) ||
+    fs.existsSync(path.join(ixDir, "current.mdx")) ||
+    fs.existsSync(path.join(ixDir, "next.mdx")) ||
+    !renameInit.stdout.includes("Renamed mindplan/interactions/i-old/current.mdx → mindplan/interactions/i-old/i-old.mdx") ||
+    !renameInit.stdout.includes("Renamed mindplan/interactions/i-old/next.mdx → mindplan/interactions/i-old/i-old.next.mdx")
+  ) {
+    failures++;
+    console.log(`FAIL init did not rename legacy territory files:\n${renameInit.stdout}`);
+  } else if (fs.readFileSync(live, "utf-8") !== "---\nid: i-old\n---\n\n# Old\n") {
+    failures++;
+    console.log("FAIL renamed live file body changed");
+  } else {
+    const again = spawnSync(process.execPath, [serverEntry, "init"], {
+      cwd: renameRoot,
+      env: { ...process.env, MINDPLAN_ROOT: renameRoot },
+      encoding: "utf-8",
+    });
+    if (again.status !== 0 || again.stdout.includes("Renamed ")) {
+      failures++;
+      console.log(`FAIL second init should rename nothing: ${again.stdout}`);
+    } else console.log("ok   init renames legacy current.mdx and next.mdx");
+  }
+
+  const clashRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-rename-clash-"));
+  const clashDir = path.join(clashRoot, "mindplan", "foundations", "f-old");
+  fs.mkdirSync(clashDir, { recursive: true });
+  fs.writeFileSync(path.join(clashDir, "current.mdx"), "legacy\n", "utf-8");
+  fs.writeFileSync(path.join(clashDir, "f-old.mdx"), "named\n", "utf-8");
+  const clash = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: clashRoot,
+    env: { ...process.env, MINDPLAN_ROOT: clashRoot },
+    encoding: "utf-8",
+  });
+  if (clash.status !== 0) {
+    failures++;
+    console.log(`FAIL init clash exit ${clash.status}: ${clash.stderr || clash.stdout}`);
+  } else if (
+    fs.existsSync(path.join(clashDir, "current.mdx")) ||
+    fs.readFileSync(path.join(clashDir, "f-old.mdx"), "utf-8") !== "named\n" ||
+    !clash.stdout.includes("Removed mindplan/foundations/f-old/current.mdx (kept mindplan/foundations/f-old/f-old.mdx)")
+  ) {
+    failures++;
+    console.log(`FAIL init should drop legacy file and keep the id-named file:\n${clash.stdout}`);
+  } else console.log("ok   init drops legacy file when the id-named file exists");
+
+  const bugNextRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-rename-bug-"));
+  const bugDir = path.join(bugNextRoot, "mindplan", "bugs", "bug-old");
+  fs.mkdirSync(bugDir, { recursive: true });
+  fs.writeFileSync(path.join(bugDir, "next.mdx"), "nope\n", "utf-8");
+  const bugNext = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: bugNextRoot,
+    env: { ...process.env, MINDPLAN_ROOT: bugNextRoot },
+    encoding: "utf-8",
+  });
+  if (
+    bugNext.status === 0 ||
+    !(bugNext.stderr || "").includes("mindplan/bugs/bug-old/next.mdx") ||
+    !(bugNext.stderr || "").includes("by hand")
+  ) {
+    failures++;
+    console.log(`FAIL init should ask to fix next.mdx on a bug by hand: ${bugNext.stderr || bugNext.stdout}`);
+  } else if (!fs.existsSync(path.join(bugDir, "next.mdx"))) {
+    failures++;
+    console.log("FAIL failed init must leave the unrenamed next.mdx in place");
+  } else console.log("ok   init asks to fix next.mdx under bugs by hand");
+
+  const preflightRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-preflight-"));
+  const keepDir = path.join(preflightRoot, "mindplan", "foundations", "f-keep");
+  const namedBugDir = path.join(preflightRoot, "mindplan", "bugs", "bug-named");
+  fs.mkdirSync(keepDir, { recursive: true });
+  fs.mkdirSync(namedBugDir, { recursive: true });
+  fs.writeFileSync(path.join(keepDir, "current.mdx"), "keep\n", "utf-8");
+  fs.writeFileSync(path.join(namedBugDir, "bug-named.next.mdx"), "evolve\n", "utf-8");
+  const preflight = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: preflightRoot,
+    env: { ...process.env, MINDPLAN_ROOT: preflightRoot },
+    encoding: "utf-8",
+  });
+  if (
+    preflight.status === 0 ||
+    !(preflight.stderr || "").includes("mindplan/bugs/bug-named/bug-named.next.mdx") ||
+    !(preflight.stderr || "").includes("by hand") ||
+    !fs.existsSync(path.join(keepDir, "current.mdx")) ||
+    fs.existsSync(path.join(keepDir, "f-keep.mdx")) ||
+    !fs.existsSync(path.join(namedBugDir, "bug-named.next.mdx")) ||
+    (preflight.stdout || "").includes("Renamed ")
+  ) {
+    failures++;
+    console.log(`FAIL init should stop before renaming when a bug has an id-named evolution file:\n${preflight.stdout}\n${preflight.stderr}`);
+  } else console.log("ok   init stops before renaming when a journey or bug has an id-named evolution file");
+
+  const partialRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-partial-"));
+  const okDir = path.join(partialRoot, "mindplan", "foundations", "a-ok");
+  const badDir = path.join(partialRoot, "mindplan", "foundations", "b-bad");
+  fs.mkdirSync(okDir, { recursive: true });
+  fs.mkdirSync(badDir, { recursive: true });
+  fs.writeFileSync(path.join(okDir, "current.mdx"), "ok\n", "utf-8");
+  fs.writeFileSync(path.join(badDir, "current.mdx"), "bad\n", "utf-8");
+  fs.mkdirSync(path.join(badDir, "b-bad.mdx"));
+  const partial = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: partialRoot,
+    env: { ...process.env, MINDPLAN_ROOT: partialRoot },
+    encoding: "utf-8",
+  });
+  if (
+    partial.status === 0 ||
+    !(partial.stdout || "").includes("Renamed mindplan/foundations/a-ok/current.mdx → mindplan/foundations/a-ok/a-ok.mdx") ||
+    !(partial.stderr || "").includes("mindplan/foundations/b-bad/current.mdx") ||
+    !(partial.stderr || "").includes("by hand") ||
+    !fs.existsSync(path.join(okDir, "a-ok.mdx")) ||
+    !fs.existsSync(path.join(badDir, "current.mdx"))
+  ) {
+    failures++;
+    console.log(`FAIL init should print renames already applied when a later rename fails:\n${partial.stdout}\n${partial.stderr}`);
+  } else console.log("ok   init prints renames already applied when a later rename fails");
+
+  const currentIdRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-current-id-"));
+  const currentIdDir = path.join(currentIdRoot, "mindplan", "foundations", "current");
+  fs.mkdirSync(currentIdDir, { recursive: true });
+  fs.writeFileSync(path.join(currentIdDir, "current.mdx"), "same file\n", "utf-8");
+  const currentId = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: currentIdRoot,
+    env: { ...process.env, MINDPLAN_ROOT: currentIdRoot },
+    encoding: "utf-8",
+  });
+  if (
+    currentId.status !== 0 ||
+    !fs.existsSync(path.join(currentIdDir, "current.mdx")) ||
+    fs.readFileSync(path.join(currentIdDir, "current.mdx"), "utf-8") !== "same file\n" ||
+    (currentId.stdout || "").includes("Renamed mindplan/foundations/current/")
+  ) {
+    failures++;
+    console.log(`FAIL init should leave current.mdx in place when the id is current:\n${currentId.stdout}\n${currentId.stderr}`);
+  } else console.log("ok   init leaves current.mdx in place when the id is current");
+
+  const caseRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-current-case-"));
+  const caseDir = path.join(caseRoot, "mindplan", "foundations", "Current");
+  fs.mkdirSync(caseDir, { recursive: true });
+  fs.writeFileSync(path.join(caseDir, "current.mdx"), "case file\n", "utf-8");
+  const caseInit = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: caseRoot,
+    env: { ...process.env, MINDPLAN_ROOT: caseRoot },
+    encoding: "utf-8",
+  });
+  const caseBody = fs.existsSync(path.join(caseDir, "current.mdx"))
+    ? fs.readFileSync(path.join(caseDir, "current.mdx"), "utf-8")
+    : fs.existsSync(path.join(caseDir, "Current.mdx"))
+      ? fs.readFileSync(path.join(caseDir, "Current.mdx"), "utf-8")
+      : "";
+  if (caseInit.status !== 0 || caseBody !== "case file\n" || (caseInit.stderr || "").includes("Removed ")) {
+    failures++;
+    console.log(`FAIL case-only current id should keep the file:\n${caseInit.stdout}\n${caseInit.stderr}`);
+  } else console.log("ok   init does not delete the file when the id differs only by case");
+
+  const nextClashRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-next-clash-"));
+  const nextClashDir = path.join(nextClashRoot, "mindplan", "foundations", "f-next");
+  fs.mkdirSync(nextClashDir, { recursive: true });
+  fs.writeFileSync(path.join(nextClashDir, "f-next.mdx"), "live\n", "utf-8");
+  fs.writeFileSync(path.join(nextClashDir, "next.mdx"), "legacy-next\n", "utf-8");
+  fs.writeFileSync(path.join(nextClashDir, "f-next.next.mdx"), "named-next\n", "utf-8");
+  const nextClash = spawnSync(process.execPath, [serverEntry, "init"], {
+    cwd: nextClashRoot,
+    env: { ...process.env, MINDPLAN_ROOT: nextClashRoot },
+    encoding: "utf-8",
+  });
+  if (
+    nextClash.status !== 0 ||
+    fs.existsSync(path.join(nextClashDir, "next.mdx")) ||
+    fs.readFileSync(path.join(nextClashDir, "f-next.next.mdx"), "utf-8") !== "named-next\n" ||
+    !(nextClash.stdout || "").includes("Removed mindplan/foundations/f-next/next.mdx (kept mindplan/foundations/f-next/f-next.next.mdx)")
+  ) {
+    failures++;
+    console.log(`FAIL init should drop legacy next.mdx when the id-named evolution exists:\n${nextClash.stdout}\n${nextClash.stderr}`);
+  } else console.log("ok   init drops legacy next.mdx when the id-named evolution exists");
+
+  const checkRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-check-legacy-"));
+  const checkDir = path.join(checkRoot, "mindplan", "bugs", "bug-both");
+  fs.mkdirSync(checkDir, { recursive: true });
+  fs.writeFileSync(path.join(checkDir, "bug-both.mdx"), "---\nid: bug-both\ntype: Bug\ntitle: \"B\"\ndescription: \"kept\"\nstate: open\ncreated_at: 2026-01-01T00:00:00.000Z\nupdated_at: 2026-01-01T00:00:00.000Z\n---\n\n# B\n", "utf-8");
+  fs.writeFileSync(path.join(checkDir, "current.mdx"), "---\nid: bug-both\ntype: Bug\ntitle: \"B\"\ndescription: \"drop\"\nstate: open\ncreated_at: 2026-01-01T00:00:00.000Z\nupdated_at: 2026-01-01T00:00:00.000Z\n---\n\n# B\n", "utf-8");
+  const checkClash = spawnSync(process.execPath, [serverEntry, "check"], {
+    cwd: checkRoot,
+    env: { ...process.env, MINDPLAN_ROOT: checkRoot },
+    encoding: "utf-8",
+  });
+  if (
+    fs.existsSync(path.join(checkDir, "current.mdx")) ||
+    !(checkClash.stderr || "").includes("Removed mindplan/bugs/bug-both/current.mdx (kept mindplan/bugs/bug-both/bug-both.mdx)")
+  ) {
+    failures++;
+    console.log(`FAIL check should print the legacy file it removed:\n${checkClash.stdout}\n${checkClash.stderr}`);
+  } else console.log("ok   check prints a legacy file removed while loading the graph");
 }
 
 // init -f / --force: overwrite mutated agent assets; preserve sources config
@@ -1759,6 +1979,221 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
   } else console.log("ok   open_next on CRLF body keeps CRLF and one reset item per line");
   await expectOk("discard_next f-db (CRLF body)", "discard_next", { node_id: "f-db" });
   fs.writeFileSync(fDbCurrent, lf);
+}
+
+{
+  const legacyDir = path.join(root, "mindplan", "interactions", "i-legacy");
+  const legacyFoundation = path.join(root, "mindplan", "foundations", "f-legacy");
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.mkdirSync(legacyFoundation, { recursive: true });
+  const legacyIx = `---
+id: i-legacy
+type: Interaction
+title: "Legacy"
+description: "Kept on current.mdx"
+state: draft
+created_at: 2026-01-01T00:00:00.000Z
+updated_at: 2026-01-01T00:00:00.000Z
+---
+
+# Legacy
+
+## Purpose
+
+Legacy interaction body.
+`;
+  fs.writeFileSync(path.join(legacyDir, "current.mdx"), legacyIx, "utf-8");
+  fs.writeFileSync(
+    path.join(legacyFoundation, "current.mdx"),
+    `---
+id: f-legacy
+type: Foundation
+title: "Legacy foundation"
+description: "Infra — legacy file"
+state: stable
+role: infra
+shipped_at: 2026-01-01T00:00:00.000Z
+created_at: 2026-01-01T00:00:00.000Z
+updated_at: 2026-01-01T00:00:00.000Z
+---
+
+# Legacy foundation
+
+## Purpose
+
+Infra — legacy foundation kept on current.mdx.
+
+## Shared Substrate Spec
+
+Legacy substrate.
+
+## Acceptance Criteria
+
+- Still loads
+
+## Atomic Ops
+
+- [x] Loaded
+`,
+    "utf-8"
+  );
+  const graph = JSON.parse(await expectOk("read graph with legacy files", "get_mindplan_graph", {}));
+  const legacyNode = graph.nodes.find((n) => n.id === "i-legacy");
+  const legacyFound = graph.nodes.find((n) => n.id === "f-legacy");
+  if (!legacyNode || legacyNode.description !== "Kept on current.mdx" || !legacyFound) {
+    failures++;
+    console.log("FAIL legacy current.mdx was not loaded");
+  } else {
+    const ctx = JSON.parse(await expectOk("context for legacy interaction", "get_node_context", { node_id: "i-legacy" }));
+    if (ctx.current_path !== "mindplan/interactions/i-legacy/current.mdx") {
+      failures++;
+      console.log(`FAIL legacy current_path: ${ctx.current_path}`);
+    } else {
+      await expectOk("patch legacy interaction", "patch_node_territory", {
+        node_id: "i-legacy",
+        description: "Still current.mdx",
+      });
+      const patched = fs.readFileSync(path.join(legacyDir, "current.mdx"), "utf-8");
+      if (!patched.includes("Still current.mdx") || fs.existsSync(path.join(legacyDir, "i-legacy.mdx"))) {
+        failures++;
+        console.log("FAIL patch wrote a new id-named file instead of current.mdx");
+      } else {
+        await expectOk("open_next on legacy foundation", "open_next", { node_id: "f-legacy" });
+        if (
+          !fs.existsSync(path.join(legacyFoundation, "next.mdx")) ||
+          fs.existsSync(path.join(legacyFoundation, "f-legacy.next.mdx"))
+        ) {
+          failures++;
+          console.log("FAIL open_next on current.mdx should create next.mdx");
+        } else {
+          console.log("ok   legacy current.mdx and next.mdx still load and write");
+          const nextPath = path.join(legacyFoundation, "next.mdx");
+          const nextRaw = fs.readFileSync(nextPath, "utf-8").replace(/\[[ ]\]/g, "[x]") + "\nPROMOTED_LEGACY\n";
+          fs.writeFileSync(nextPath, nextRaw, "utf-8");
+          const legacySrc = path.join(root, "src", "foundations", "f-legacy");
+          fs.mkdirSync(legacySrc, { recursive: true });
+          fs.writeFileSync(path.join(legacySrc, "store.ts"), "export {}\n", "utf-8");
+          await expectOk("set implements f-legacy next", "set_implementation_files", {
+            node_id: "f-legacy",
+            files: ["src/foundations/f-legacy/"],
+          });
+          await expectOk("legacy next ready", "update_node_status", { node_id: "f-legacy", new_status: "ready" });
+          await expectOk("legacy next in-progress", "update_node_status", { node_id: "f-legacy", new_status: "in-progress" });
+          await expectOk("legacy next in-review", "update_node_status", { node_id: "f-legacy", new_status: "in-review" });
+          await expectOk("legacy next ship", "update_node_status", { node_id: "f-legacy", new_status: "ship" });
+          const promoted = fs.readFileSync(path.join(legacyFoundation, "current.mdx"), "utf-8");
+          if (fs.existsSync(nextPath) || !promoted.includes("PROMOTED_LEGACY")) {
+            failures++;
+            console.log("FAIL promote should write current.mdx and delete next.mdx");
+          } else console.log("ok   promote and discard use legacy next.mdx");
+          await expectOk("open_next again on legacy foundation", "open_next", { node_id: "f-legacy" });
+          await expectOk("discard legacy next.mdx", "discard_next", { node_id: "f-legacy" });
+          if (fs.existsSync(nextPath) || !fs.existsSync(path.join(legacyFoundation, "current.mdx"))) {
+            failures++;
+            console.log("FAIL discard_next should remove legacy next.mdx and keep current.mdx");
+          }
+        }
+      }
+    }
+  }
+
+  const clashDir = path.join(root, "mindplan", "bugs", "bug-clash");
+  fs.mkdirSync(clashDir, { recursive: true });
+  const clashBody = `---
+id: bug-clash
+type: Bug
+title: "Clash"
+description: "Both names"
+state: open
+created_at: 2026-01-01T00:00:00.000Z
+updated_at: 2026-01-01T00:00:00.000Z
+---
+
+# Clash
+`;
+  const kept = clashBody.replace('description: "Both names"', 'description: "Kept id-named file"');
+  const dropped = clashBody.replace('description: "Both names"', 'description: "Dropped legacy file"');
+  fs.writeFileSync(path.join(clashDir, "current.mdx"), dropped, "utf-8");
+  fs.writeFileSync(path.join(clashDir, "bug-clash.mdx"), kept, "utf-8");
+  const clash = await call("get_mindplan_graph", {});
+  const clashGraph = clash.error ? null : JSON.parse(clash.text);
+  const clashNode = clashGraph?.nodes.find((n) => n.id === "bug-clash");
+  if (
+    clash.error ||
+    !clashNode ||
+    clashNode.description !== "Kept id-named file" ||
+    !clashGraph.removed_legacy_files?.includes("mindplan/bugs/bug-clash/current.mdx") ||
+    fs.existsSync(path.join(clashDir, "current.mdx")) ||
+    !fs.existsSync(path.join(clashDir, "bug-clash.mdx"))
+  ) {
+    failures++;
+    console.log(`FAIL both names should keep the id-named file and delete current.mdx: ${clash.text}`);
+  } else console.log("ok   both names keep the id-named file and delete the legacy file");
+  fs.rmSync(clashDir, { recursive: true, force: true });
+
+  const patchDir = path.join(root, "mindplan", "bugs", "bug-patch");
+  fs.mkdirSync(patchDir, { recursive: true });
+  fs.writeFileSync(path.join(patchDir, "bug-patch.mdx"), kept.replaceAll("bug-clash", "bug-patch").replace('description: "Kept id-named file"', 'description: "patch me"'), "utf-8");
+  fs.writeFileSync(path.join(patchDir, "current.mdx"), dropped.replaceAll("bug-clash", "bug-patch"), "utf-8");
+  const patchClash = await call("patch_node_territory", { node_id: "bug-patch", description: "patched via id file" });
+  const patchBody = patchClash.error ? null : JSON.parse(patchClash.text);
+  if (
+    patchClash.error ||
+    !patchBody.changed_files?.includes("mindplan/bugs/bug-patch/current.mdx") ||
+    !patchBody.removed_legacy_files?.includes("mindplan/bugs/bug-patch/current.mdx") ||
+    fs.existsSync(path.join(patchDir, "current.mdx")) ||
+    !fs.readFileSync(path.join(patchDir, "bug-patch.mdx"), "utf-8").includes("patched via id file")
+  ) {
+    failures++;
+    console.log(`FAIL patch should report the deleted legacy file: ${patchClash.text}`);
+  } else console.log("ok   changed_files includes a legacy file deleted during the mutation");
+  fs.rmSync(patchDir, { recursive: true, force: true });
+
+  const nextClashDir = path.join(root, "mindplan", "foundations", "f-nextclash");
+  fs.mkdirSync(nextClashDir, { recursive: true });
+  const nextLive = `---
+id: f-nextclash
+type: Foundation
+title: "Next clash"
+description: "Infra — live"
+state: stable
+role: infra
+shipped_at: 2026-01-01T00:00:00.000Z
+created_at: 2026-01-01T00:00:00.000Z
+updated_at: 2026-01-01T00:00:00.000Z
+---
+
+# Next clash
+`;
+  const nextNamed = `---
+id: f-nextclash
+type: Foundation
+title: "Next clash"
+description: "Kept next file"
+state: draft
+updated_at: 2026-01-01T00:00:00.000Z
+role: infra
+---
+
+# Next
+`;
+  const nextLegacy = nextNamed.replace('description: "Kept next file"', 'description: "Dropped next file"');
+  fs.writeFileSync(path.join(nextClashDir, "f-nextclash.mdx"), nextLive, "utf-8");
+  fs.writeFileSync(path.join(nextClashDir, "f-nextclash.next.mdx"), nextNamed, "utf-8");
+  fs.writeFileSync(path.join(nextClashDir, "next.mdx"), nextLegacy, "utf-8");
+  const nextClashGraphCall = await call("get_mindplan_graph", {});
+  const nextClashGraph = nextClashGraphCall.error ? null : JSON.parse(nextClashGraphCall.text);
+  const nextClashNode = nextClashGraph?.nodes.find((n) => n.id === "f-nextclash");
+  if (
+    nextClashGraphCall.error ||
+    nextClashNode?.next?.description !== "Kept next file" ||
+    fs.existsSync(path.join(nextClashDir, "next.mdx")) ||
+    !nextClashGraph.removed_legacy_files?.includes("mindplan/foundations/f-nextclash/next.mdx")
+  ) {
+    failures++;
+    console.log(`FAIL both evolution names should keep the id-named file: ${nextClashGraphCall.text}`);
+  } else console.log("ok   both evolution names keep the id-named file and delete next.mdx");
+  fs.rmSync(nextClashDir, { recursive: true, force: true });
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);

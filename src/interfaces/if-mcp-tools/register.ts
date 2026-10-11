@@ -31,6 +31,7 @@ import {
 } from "../../interactions/i-steer-plan/handlers.js";
 import { exportMindPlanViewHandler } from "../../interactions/i-export-map/handlers.js";
 import { FOUNDATION_ROLES } from "../../foundations/f-domain-model/types.js";
+import { drainRemovedLegacyFiles } from "../../foundations/f-territory-store/store.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -42,13 +43,33 @@ function ok(payload: unknown): ToolResult {
   return { content: [{ type: "text", text }] };
 }
 
+function withRemovedLegacyFiles(payload: unknown): unknown {
+  const removed = drainRemovedLegacyFiles();
+  if (removed.length === 0) return payload;
+  const froms = removed.map((entry) => entry.from);
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const obj = { ...(payload as Record<string, unknown>) };
+    if (Array.isArray(obj.changed_files)) {
+      obj.changed_files = [...new Set([...(obj.changed_files as string[]), ...froms])];
+    }
+    obj.removed_legacy_files = froms;
+    return obj;
+  }
+  return { result: payload, removed_legacy_files: froms };
+}
+
 function guarded<A>(handler: (args: A) => unknown): (args: A) => ToolResult {
   return (args: A) => {
     try {
-      return ok(handler(args));
+      return ok(withRemovedLegacyFiles(handler(args)));
     } catch (err) {
+      const removed = drainRemovedLegacyFiles();
       const message = err instanceof Error ? err.message : String(err);
-      return { content: [{ type: "text", text: message }], isError: true };
+      const note =
+        removed.length === 0
+          ? ""
+          : `\n${removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n")}`;
+      return { content: [{ type: "text", text: `${message}${note}` }], isError: true };
     }
   };
 }
@@ -64,7 +85,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get MindPlan graph",
       description:
-        "Returns the full MindPlan graph — nodes and edges assembled from current.mdx frontmatter.",
+        "Returns the full MindPlan graph — nodes and edges assembled from <id>.mdx frontmatter.",
       inputSchema: {},
     },
     guarded(() => getMindPlanGraph())
@@ -222,7 +243,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Patches territory-owned content: body (PRD, checklists), optional title/description/role " +
         "(pre-ship or next slot), toggle_checkboxes. " +
-        "When a shipped Foundation/Interaction/Interface has next.mdx, patches default to next. Optional slot: current|next.",
+        "When a shipped Foundation/Interaction/Interface has <id>.next.mdx, patches default to next. Optional slot: current|next.",
       inputSchema: {
         node_id: NODE_ID.describe("Node whose territory to patch."),
         title: z
@@ -288,13 +309,13 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Create node",
       description:
-        "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + current.mdx frontmatter. " +
+        "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
         "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold).",
       inputSchema: {
         id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
         type: z.enum(NODE_TYPES).describe("Journey | Interaction | Interface | Foundation | Bug"),
-        title: z.string().min(1).describe("Human-readable title (written to current.mdx frontmatter)."),
-        description: z.string().describe("Short description (written to current.mdx frontmatter)."),
+        title: z.string().min(1).describe("Human-readable title (written to <id>.mdx frontmatter)."),
+        description: z.string().describe("Short description (written to <id>.mdx frontmatter)."),
         role: z
           .enum(FOUNDATION_ROLES)
           .optional()
@@ -315,7 +336,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
         "Interface -exposes-> Interaction, Interaction -leads_to-> Interaction, " +
         "Bug -affects-> Interaction|Interface|Foundation. " +
-        "While a node has next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship).",
+        "While a node has <id>.next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship).",
       inputSchema: {
         source_id: NODE_ID.describe("The id of the edge source node."),
         target_id: NODE_ID.describe("The id of the edge target node."),
@@ -334,7 +355,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Open next evolution",
       description:
-        "Opens next.mdx for a shipped Foundation, Interaction, or Interface (stable/unstable). Copies current body and " +
+        "Opens <id>.next.mdx for a shipped Foundation, Interaction, or Interface (stable/unstable). Copies current body and " +
         "outgoing belongs_to/depends_on/exposes/leads_to into a draft next slot. The live node keeps serving under the same id. " +
         "Ship from next in-review to promote next over current; discard_next to abandon.",
       inputSchema: {
@@ -353,8 +374,8 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Discard next evolution",
       description:
-        "Deletes next.mdx (and next-attachments/) for a Foundation, Interaction, or Interface, abandoning an in-flight evolution. " +
-        "The live current.mdx is unchanged.",
+        "Deletes <id>.next.mdx (and next-attachments/) for a Foundation, Interaction, or Interface, abandoning an in-flight evolution. " +
+        "The live <id>.mdx is unchanged.",
       inputSchema: {
         node_id: NODE_ID.describe("Id of the node whose next slot to discard."),
       },
@@ -406,7 +427,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
         "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
-        "When next.mdx exists, build-pipeline transitions apply to the next slot; ship promotes next over current. " +
+        "When <id>.next.mdx exists, build-pipeline transitions apply to the next slot; ship promotes next over current. " +
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
         "Journey and production stable/unstable are computed automatically.",
       inputSchema: {
@@ -447,7 +468,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "DANGEROUS recovery only. Ask the user first and wait for an explicit yes — never invent confirmation. " +
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
-        'Requires confirm exactly equal to "unship:<node_id>". Blocked while next.mdx is open or shipped dependents exist.',
+        'Requires confirm exactly equal to "unship:<node_id>". Blocked while <id>.next.mdx is open or shipped dependents exist.',
       inputSchema: {
         node_id: NODE_ID.describe(
           "Stable/unstable Foundation, Interaction, or Interface to unship."
