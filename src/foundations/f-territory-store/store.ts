@@ -4,15 +4,18 @@
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
  *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation)
  *   /mindplan/components/                  — project-specific MDX components (opaque to the compiler)
- *   /mindplan/journeys/<id>/current.mdx
- *   /mindplan/foundations/<id>/current.mdx (+ optional next.mdx)
- *   /mindplan/interactions/<id>/current.mdx (+ optional next.mdx)
- *   /mindplan/interfaces/<id>/current.mdx (+ optional next.mdx)
- *   /mindplan/bugs/<id>/current.mdx
+ *   /mindplan/journeys/<id>/<id>.mdx          (legacy: current.mdx)
+ *   /mindplan/foundations/<id>/<id>.mdx       (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
+ *   /mindplan/interactions/<id>/<id>.mdx      (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
+ *   /mindplan/interfaces/<id>/<id>.mdx        (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
+ *   /mindplan/bugs/<id>/<id>.mdx              (legacy: current.mdx)
  *
  * Owned source files are declared via server-owned `implements` (not prescribed folders).
- * Live node records and outgoing edge arrays live in current.mdx YAML frontmatter.
- * While evolving a shipped Foundation/Interaction/Interface, next.mdx holds the draft pipeline + proposed edges.
+ * Live node records and outgoing edge arrays live in the live MDX YAML frontmatter.
+ * While evolving a shipped Foundation/Interaction/Interface, the evolution file holds the draft pipeline + proposed edges.
+ * New files use the id names. An existing current.mdx / next.mdx stays in use.
+ * When both names exist for one slot, the id-named file is kept and the legacy file is deleted.
+ * Callers report those deletions via drainRemovedLegacyFiles().
  */
 
 import * as fs from "fs";
@@ -74,10 +77,18 @@ type ListField = (typeof LIST_FIELDS)[number];
 export const MINDPLAN_DIR = "mindplan";
 export const AGENT_DIR = "agent";
 export const SRC_DIR = "src";
-export const CURRENT_FILENAME = "current.mdx";
-export const NEXT_FILENAME = "next.mdx";
-/** @deprecated Use CURRENT_FILENAME */
-export const CONTEXT_FILENAME = CURRENT_FILENAME;
+/** Live territory record for new nodes. Named by node id so review diffs show which node changed. */
+export function liveMdxFilename(id: string): string {
+  return `${id}.mdx`;
+}
+/** In-flight evolution file for new nodes. */
+export function nextMdxFilename(id: string): string {
+  return `${id}.next.mdx`;
+}
+/** Previous live filename. Still read and written when that file is the one on disk. */
+export const LEGACY_LIVE_FILENAME = "current.mdx";
+/** Previous evolution filename. Still read and written when that file is the one on disk. */
+export const LEGACY_NEXT_FILENAME = "next.mdx";
 export const ATTACHMENTS_DIR = "attachments";
 export const NEXT_ATTACHMENTS_DIR = "next-attachments";
 export const COMPONENTS_DIR = "components";
@@ -127,7 +138,135 @@ export function markdownPath(
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot = "current"
 ): string {
-  return path.join(entityDir(node), slot === "next" ? NEXT_FILENAME : CURRENT_FILENAME);
+  return path.join(entityDir(node), territorySlotFilename(node, slot));
+}
+
+/** Project-relative path of the live or evolution MDX file actually on disk (or the name a new file will use). */
+export function markdownRelativePath(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot = "current"
+): string {
+  return `${entityRelativePath(node)}/${territorySlotFilename(node, slot)}`;
+}
+
+function preferredSlotFilename(id: string, slot: TerritorySlot): string {
+  return slot === "next" ? nextMdxFilename(id) : liveMdxFilename(id);
+}
+
+function legacySlotFilename(slot: TerritorySlot): string {
+  return slot === "next" ? LEGACY_NEXT_FILENAME : LEGACY_LIVE_FILENAME;
+}
+
+export type RemovedLegacyFile = { from: string; to: string };
+
+const removedLegacyFiles: RemovedLegacyFile[] = [];
+
+/** Paths deleted because the id-named file was kept. Clears the list. */
+export function drainRemovedLegacyFiles(): RemovedLegacyFile[] {
+  return removedLegacyFiles.splice(0, removedLegacyFiles.length);
+}
+
+function isRegularFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** True when both paths are the same directory entry (including a case-only difference on Windows). */
+function sameFilesystemEntry(preferredPath: string, legacyPath: string): boolean {
+  if (path.basename(preferredPath).toLowerCase() === path.basename(legacyPath).toLowerCase()) {
+    return true;
+  }
+  try {
+    return fs.realpathSync.native(preferredPath) === fs.realpathSync.native(legacyPath);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * When both the id-named file and the legacy file exist, the id-named file wins.
+ * Returns true when the legacy file was deleted. A same-file pair (id `current`, or a
+ * case-only alias) is left in place. A non-file at the id name is not treated as the winner.
+ */
+export function removeLegacyIfIdNamedExists(
+  folder: string,
+  id: string,
+  slot: TerritorySlot,
+  folderRel: string
+): boolean {
+  const preferred = preferredSlotFilename(id, slot);
+  const legacy = legacySlotFilename(slot);
+  if (preferred.toLowerCase() === legacy.toLowerCase()) return false;
+  const preferredPath = path.join(folder, preferred);
+  const legacyPath = path.join(folder, legacy);
+  if (!isRegularFile(preferredPath) || !isRegularFile(legacyPath)) return false;
+  if (sameFilesystemEntry(preferredPath, legacyPath)) return false;
+  const legacyRel = `${folderRel}/${legacy}`;
+  const preferredRel = `${folderRel}/${preferred}`;
+  try {
+    fs.unlinkSync(legacyPath);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Blocked: could not remove ${legacyRel} while keeping ${preferredRel} (${detail}). Fix ${legacyRel} by hand.`
+    );
+  }
+  removedLegacyFiles.push({ from: legacyRel, to: preferredRel });
+  return true;
+}
+
+/**
+ * Filename for this slot. An existing legacy file wins over creating an id-named one.
+ * New files use the id name, except a new evolution follows a legacy live file.
+ * When both names exist, the legacy file is deleted and the id name is used.
+ */
+export function territorySlotFilename(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot = "current"
+): string {
+  const preferred = preferredSlotFilename(node.id, slot);
+  const legacy = legacySlotFilename(slot);
+  if (preferred === legacy) return preferred;
+  const folder = entityDir(node);
+  removeLegacyIfIdNamedExists(folder, node.id, slot, entityRelativePath(node));
+  const preferredExists = fs.existsSync(path.join(folder, preferred));
+  const legacyExists = fs.existsSync(path.join(folder, legacy));
+  if (preferredExists) return preferred;
+  if (legacyExists) return legacy;
+  if (slot === "next" && liveFileIsLegacy(folder, node.id)) return legacy;
+  return preferred;
+}
+
+function liveFileIsLegacy(folder: string, id: string): boolean {
+  const preferred = liveMdxFilename(id);
+  if (preferred === LEGACY_LIVE_FILENAME) return false;
+  return (
+    fs.existsSync(path.join(folder, LEGACY_LIVE_FILENAME)) &&
+    !fs.existsSync(path.join(folder, preferred))
+  );
+}
+
+/** Absolute path of the live or evolution file when one name exists. Null when neither does. */
+function existingSlotFile(
+  folder: string,
+  id: string,
+  slot: TerritorySlot,
+  folderRel: string
+): string | null {
+  const preferred = preferredSlotFilename(id, slot);
+  const legacy = legacySlotFilename(slot);
+  const preferredPath = path.join(folder, preferred);
+  const legacyPath = path.join(folder, legacy);
+  if (preferred === legacy) return fs.existsSync(preferredPath) ? preferredPath : null;
+  removeLegacyIfIdNamedExists(folder, id, slot, folderRel);
+  const preferredExists = fs.existsSync(preferredPath);
+  const legacyExists = fs.existsSync(legacyPath);
+  if (preferredExists) return preferredPath;
+  if (legacyExists) return legacyPath;
+  return null;
 }
 
 export function attachmentsDir(node: Pick<MindPlanNode, "id" | "type">): string {
@@ -374,7 +513,7 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot {
   }
   if (!isNextPipelineState(fm.state)) {
     throw new Error(
-      `Blocked: next.mdx for "${folderId}" has invalid pipeline state "${fm.state}". ` +
+      `Blocked: ${path.basename(nextFile)} for "${folderId}" has invalid pipeline state "${fm.state}". ` +
         `Allowed: draft, ready, in-progress, in-review.`
     );
   }
@@ -392,7 +531,7 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot {
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
       throw new Error(
-        `Blocked: invalid Foundation role "${fm.role}" in next.mdx for "${folderId}". ` +
+        `Blocked: invalid Foundation role "${fm.role}" in ${path.basename(nextFile)} for "${folderId}". ` +
           `Allowed: assembler, infra, design-system, adapter.`
       );
     }
@@ -401,7 +540,7 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot {
   return slot;
 }
 
-/** Scans territory folders and assembles nodes from current.mdx (+ optional next.mdx). */
+/** Scans territory folders and assembles nodes from <id>.mdx (+ optional <id>.next.mdx). */
 export function discoverNodes(): MindPlanNode[] {
   const nodes: MindPlanNode[] = [];
   const root = mindplanRoot();
@@ -412,14 +551,16 @@ export function discoverNodes(): MindPlanNode[] {
     if (!fs.existsSync(typePath)) continue;
     for (const entry of fs.readdirSync(typePath, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const currentFile = path.join(typePath, entry.name, CURRENT_FILENAME);
-      if (!fs.existsSync(currentFile)) continue;
+      const folder = path.join(typePath, entry.name);
+      const folderRel = path.posix.join(MINDPLAN_DIR, dirName, entry.name);
+      const currentFile = existingSlotFile(folder, entry.name, "current", folderRel);
+      if (!currentFile) continue;
       const node = parseNodeFromFrontmatter(entry.name, nodeType, currentFile);
-      const nextFile = path.join(typePath, entry.name, NEXT_FILENAME);
-      if (fs.existsSync(nextFile)) {
+      const nextFile = existingSlotFile(folder, entry.name, "next", folderRel);
+      if (nextFile) {
         if (!isPipelineNodeType(nodeType)) {
           throw new Error(
-            `Blocked: next.mdx is only allowed for Foundations, Interactions, and Interfaces (found on ${nodeType} "${entry.name}").`
+            `Blocked: ${path.basename(nextFile)} is only allowed for Foundations, Interactions, and Interfaces (found on ${nodeType} "${entry.name}").`
           );
         }
         node.next = parseNextSlot(entry.name, nextFile);
@@ -475,8 +616,14 @@ export function loadGraph(): MindPlanGraph {
 /** Returns { id, type } if a territory folder exists for this id. */
 export function findNodeRef(id: string): Pick<MindPlanNode, "id" | "type"> {
   for (const [dirName, nodeType] of Object.entries(DIR_TO_TYPE)) {
-    const currentFile = path.join(mindplanRoot(), dirName, id, CURRENT_FILENAME);
-    if (fs.existsSync(currentFile)) {
+    const folder = path.join(mindplanRoot(), dirName, id);
+    const currentFile = existingSlotFile(
+      folder,
+      id,
+      "current",
+      path.posix.join(MINDPLAN_DIR, dirName, id)
+    );
+    if (currentFile) {
       return { id, type: nodeType };
     }
   }
@@ -485,7 +632,10 @@ export function findNodeRef(id: string): Pick<MindPlanNode, "id" | "type"> {
 
 export function nodeExists(id: string): boolean {
   for (const dirName of Object.values(TYPE_DIRS)) {
-    if (fs.existsSync(path.join(mindplanRoot(), dirName, id, CURRENT_FILENAME))) {
+    const folder = path.join(mindplanRoot(), dirName, id);
+    if (
+      existingSlotFile(folder, id, "current", path.posix.join(MINDPLAN_DIR, dirName, id))
+    ) {
       return true;
     }
   }
@@ -535,7 +685,7 @@ function requireMutableFrontmatter(
   return { file, raw, fence: match[0], inner: match[1] };
 }
 
-/** Patches server-owned state fields in current.mdx or next.mdx frontmatter. */
+/** Patches server-owned state fields in `<id>.mdx` or `<id>.next.mdx` frontmatter. */
 export function patchFrontmatter(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">,
   slot: TerritorySlot = "current",
@@ -564,7 +714,7 @@ export function patchFrontmatter(
   }
 }
 
-/** Patches MCP-owned outgoing edge arrays in current.mdx or next.mdx frontmatter. */
+/** Patches MCP-owned outgoing edge arrays in `<id>.mdx` or `<id>.next.mdx` frontmatter. */
 export function patchFrontmatterEdges(
   node: Pick<MindPlanNode, "id" | "type">,
   edges: Partial<Record<EdgeField, string[]>>,
@@ -666,7 +816,7 @@ export function removeEdgesFromFrontmatter(
   }
 }
 
-/** Scaffolds an entity folder: current.mdx + empty attachments/ directory. */
+/** Scaffolds an entity folder: `<id>.mdx` + empty attachments/ directory. */
 export function scaffoldEntity(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "created_at" | "updated_at" | "role">,
   meta: Pick<MindPlanNode, "title" | "description">
@@ -874,7 +1024,7 @@ export function scaffoldEntity(
 
 /**
  * Completion Check helper: returns the number of unchecked `[ ]` checkboxes
- * in current.mdx or next.mdx. Markdown checkboxes are `- [ ]` / `- [x]` list items.
+ * in `<id>.mdx` or `<id>.next.mdx`. Markdown checkboxes are `- [ ]` / `- [x]` list items.
  */
 export function countUncheckedBoxes(
   node: Pick<MindPlanNode, "id" | "type">,
@@ -982,7 +1132,7 @@ export type PatchNodeTerritoryInput = {
 };
 
 /**
- * Default patch target: when a shipped Foundation/Interaction/Interface has next.mdx, patches go to next.
+ * Default patch target: when a shipped Foundation/Interaction/Interface has `<id>.next.mdx`, patches go to next.
  * Otherwise current. Explicit `slot` overrides.
  */
 export function resolveTerritorySlot(
@@ -991,7 +1141,7 @@ export function resolveTerritorySlot(
 ): TerritorySlot {
   if (explicit) {
     if (explicit === "next" && !node.next) {
-      throw new Error(`Blocked: node "${node.id}" has no next.mdx evolution slot.`);
+      throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} evolution slot.`);
     }
     return explicit;
   }
@@ -1111,14 +1261,14 @@ export function patchNodeTerritory(
 }
 
 /**
- * Opens next.mdx for a shipped Foundation/Interaction/Interface by copying current territory into a draft slot.
+ * Opens `<id>.next.mdx` for a shipped Foundation/Interaction/Interface by copying live territory into a draft slot.
  */
 export function openNextSlot(
   node: MindPlanNode,
   meta?: { title?: string; description?: string }
 ): NextSlot {
   if (nextExists(node)) {
-    throw new Error(`Blocked: "${node.id}" already has a next.mdx evolution slot.`);
+    throw new Error(`Blocked: "${node.id}" already has a ${territorySlotFilename(node, "next")} evolution slot.`);
   }
   const now = new Date().toISOString();
   const currentRaw = readMarkdown(node, "current");
@@ -1187,11 +1337,11 @@ export function openNextSlot(
   return slot;
 }
 
-/** Deletes next.mdx and next-attachments/, abandoning an in-flight evolution. */
+/** Deletes `<id>.next.mdx` and next-attachments/, abandoning an in-flight evolution. */
 export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): void {
   const nextFile = markdownPath(node, "next");
   if (!fs.existsSync(nextFile)) {
-    throw new Error(`Blocked: node "${node.id}" has no next.mdx to discard.`);
+    throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to discard.`);
   }
   fs.unlinkSync(nextFile);
   const nextAtt = nextAttachmentsDir(node);
@@ -1201,7 +1351,7 @@ export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): void {
 }
 
 /**
- * Promotes next.mdx over current.mdx: copies next body/scalars/edges into current with
+ * Promotes `<id>.next.mdx` over `<id>.mdx`: copies next body/scalars/edges into the live file with
  * production state, then deletes the next slot.
  */
 export function promoteNextSlot(
@@ -1210,7 +1360,7 @@ export function promoteNextSlot(
   shippedAt: string
 ): void {
   if (!node.next) {
-    throw new Error(`Blocked: node "${node.id}" has no next.mdx to promote.`);
+    throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to promote.`);
   }
   const nextRaw = readMarkdown(node, "next");
   const nextSplit = splitContext(nextRaw);
@@ -1334,7 +1484,7 @@ export function writeImplementsFrontmatter(
 
   if (slot === "next") {
     if (!node.next) {
-      throw new Error(`Blocked: node "${node.id}" has no next.mdx.`);
+      throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")}.`);
     }
     node.next.implements = normalized.length > 0 ? normalized : undefined;
     node.next.updated_at = now;

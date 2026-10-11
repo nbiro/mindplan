@@ -22,9 +22,9 @@ MindPlan is exposed exclusively through a Model Context Protocol (MCP) server �
 
 ## 1. Core Architecture: Territory
 
-MindPlan persists the product graph under `mindplan/`. Each node owns a folder containing a `current.mdx` file and an `attachments/` directory. The `current.mdx` YAML frontmatter is the **node record** — identity, state, timestamps, and outgoing edge arrays; it is the live, stable id for the node's entire lifetime (§3.6). The body contains Purpose / PRD / Execution Logic / Shared Substrate Spec, Acceptance Criteria, and Atomic Operations.
+MindPlan persists the product graph under `mindplan/`. Each node owns a folder containing a `<id>.mdx` file and an `attachments/` directory. The `<id>.mdx` YAML frontmatter is the **node record** — identity, state, timestamps, and outgoing edge arrays; it is the live, stable id for the node's entire lifetime (§3.6). The body contains Purpose / PRD / Execution Logic / Shared Substrate Spec, Acceptance Criteria, and Atomic Operations.
 
-A shipped Foundation, Interaction, or Interface (`stable`/`unstable`) MAY additionally hold a `next.mdx` — an in-flight evolution of that same node, built in place under the same id while `current.mdx` keeps serving. `next.mdx` and its sibling `next-attachments/` directory exist only for Foundations, Interactions, and Interfaces (§3.6) and are never present on Journeys or Bugs.
+A shipped Foundation, Interaction, or Interface (`stable`/`unstable`) MAY additionally hold a `<id>.next.mdx` — an in-flight evolution of that same node, built in place under the same id while `<id>.mdx` keeps serving. `<id>.next.mdx` and its sibling `next-attachments/` directory exist only for Foundations, Interactions, and Interfaces (§3.6) and are never present on Journeys or Bugs.
 
 Context files are MDX: standard Markdown plus optional JSX components (§6.4). Markdown remains the load-bearing syntax — every compiler rule operates on Markdown constructs only, and a context file containing no JSX at all is fully compliant.
 
@@ -41,30 +41,30 @@ MindPlan prescribes the **planning tree** under `mindplan/`. Implementation code
 │   ├── project.md                     # Project brief — description + rules (§1.1.1)
 │   ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
 │   ├── journeys/
-│   │   └── <node-id>/
-│   │       ├── current.mdx
+│   │   └── <id>/
+│   │       ├── <id>.mdx
 │   │       └── attachments/
 │   ├── foundations/
-│   │   └── <node-id>/
-│   │       ├── current.mdx
-│   │       ├── next.mdx              # Optional — in-flight evolution (§3.6)
+│   │   └── <id>/
+│   │       ├── <id>.mdx
+│   │       ├── <id>.next.mdx              # Optional — in-flight evolution (§3.6)
 │   │       ├── attachments/
 │   │       └── next-attachments/
 │   ├── interactions/
-│   │   └── <node-id>/
-│   │       ├── current.mdx
-│   │       ├── next.mdx
+│   │   └── <id>/
+│   │       ├── <id>.mdx
+│   │       ├── <id>.next.mdx
 │   │       ├── attachments/
 │   │       └── next-attachments/
 │   ├── interfaces/
-│   │   └── <node-id>/
-│   │       ├── current.mdx
-│   │       ├── next.mdx
+│   │   └── <id>/
+│   │       ├── <id>.mdx
+│   │       ├── <id>.next.mdx
 │   │       ├── attachments/
 │   │       └── next-attachments/
 │   └── bugs/
-│       └── <node-id>/
-│           ├── current.mdx
+│       └── <id>/
+│           ├── <id>.mdx
 │           └── attachments/
 └── …                                  # Application code wherever implements claims it
 ```
@@ -73,9 +73,11 @@ Rules:
 
 - The planning root is `<MINDPLAN_ROOT>/mindplan`, where `MINDPLAN_ROOT` is an environment variable resolving to the target project root. If unset, the server's working directory is used.
 - Each entity folder name under `mindplan/` MUST equal the node `id`.
+- The live record of a new node MUST be named `<id>.mdx` (the same id as the folder) so a review diff shows which node changed. An open evolution of a new node MUST be named `<id>.next.mdx`. Legacy `current.mdx` and `next.mdx` remain valid: the server MUST read and write the file that already exists, and a new evolution MUST follow the live file's naming. When both the legacy name and the id name exist for one slot and both are regular files, the server MUST delete the legacy file and keep the id-named file. The id name MUST NOT win when it is the same directory entry as the legacy file, including a case-only difference. A deletion MUST be reported: MCP tool results include the deleted path in `removed_legacy_files` and, when present, `changed_files`; `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr.
+- `mindplan-mcp init` MUST rename a legacy `current.mdx` to `<id>.mdx`, and a legacy `next.mdx` to `<id>.next.mdx`, inside that node's folder, before any graph load. When both names are already present it MUST delete the legacy file and keep the id-named file. Any evolution file under `journeys/` or `bugs/` (`next.mdx` or `<id>.next.mdx`) MUST stop init before any rename and name the file to fix by hand. A rename the filesystem rejects MUST stop init, name the file to fix by hand, and print every rename or removal already applied in that run. A second init on id-named files MUST rename nothing. When the legacy name and the id name are the same file (`id` is `current`, including case-only folder names), init MUST leave that file in place.
 - The subdirectory per type is fixed: `journeys/`, `foundations/`, `interactions/`, `interfaces/`, `bugs/`.
-- `next.mdx` and `next-attachments/` MUST NOT exist for Journeys or Bugs; they are legal only under `foundations/<id>/`, `interactions/<id>/`, and `interfaces/<id>/`, and only while an evolution is open (§3.6).
-- `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `current.mdx` with relative links (e.g. `![flow](attachments/flow.png)`); `next-attachments/` is referenced the same way from `next.mdx` and is merged into `attachments/` when the evolution ships (§3.6).
+- `<id>.next.mdx`, `next.mdx`, and `next-attachments/` MUST NOT exist for Journeys or Bugs; they are legal only under `foundations/<id>/`, `interactions/<id>/`, and `interfaces/<id>/`, and only while an evolution is open (§3.6). A live file whose name is `next.mdx` because the id is `next` is not an evolution file.
+- `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `<id>.mdx` with relative links (e.g. `![flow](attachments/flow.png)`); `next-attachments/` is referenced the same way from `<id>.next.mdx` and is merged into `attachments/` when the evolution ships (§3.6).
 - `components/` MAY contain project-specific MDX components (§6.4.3). It is created by the server but never read by it.
 - The server MUST create missing directories on demand; a fresh project requires no manual scaffolding.
 - `create_node` does **not** scaffold application code paths. Declare ownership with `set_implementation_files`.
@@ -271,11 +273,11 @@ Foundations remain a single NodeType. Agents SHOULD classify each Foundation int
 
 Node ids MUST match the pattern `^[a-z0-9][a-z0-9-_]*$` (lowercase slug style). Ids are globally unique across all types. Recommended convention: prefix by type (`j-`, `f-`, `i-`, `if-`, `bug-`), e.g. `j-ordering`, `f-db-core`, `i-checkout-split`, `if-mcp-tools`, `bug-race`.
 
-**Naming (guidance):** the `title` is the stable name of the thing — an action phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The `description` says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `next.mdx` body (or Atomic Ops), never in `title` or `description`.
+**Naming (guidance):** the `title` is the stable name of the thing — an action phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The `description` says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `<id>.next.mdx` body (or Atomic Ops), never in `title` or `description`.
 
 ### 2.2 Edge taxonomy
 
-Exactly five edge types exist. An edge is a directed triple `(source, target, type)`. There is no version-lineage edge type: a Foundation, Interaction, or Interface evolves in place under its **stable id** via the `next.mdx` slot (§3.6), so there is nothing for a graph edge to link.
+Exactly five edge types exist. An edge is a directed triple `(source, target, type)`. There is no version-lineage edge type: a Foundation, Interaction, or Interface evolves in place under its **stable id** via the `<id>.next.mdx` slot (§3.6), so there is nothing for a graph edge to link.
 
 | Edge type | Legal shape | Meaning |
 |---|---|---|
@@ -300,7 +302,7 @@ All other shapes MUST be rejected, specifically including:
 
 The `depends_on` subgraph MUST remain acyclic. Implementations MUST reject `depends_on` cycles at link time (Foundation→Foundation only, given Interaction Independence). The `leads_to` subgraph MAY contain cycles; cycle detection MUST NOT apply to `leads_to`.
 
-While a Foundation, Interaction, or Interface has an open `next.mdx`, edge writes from that node (`belongs_to` / `depends_on` / `exposes` / `leads_to` as applicable) MUST target the `next` slot's proposed edges rather than the live `current.mdx` edge arrays (§6.2, §8.2 `link_nodes`) — the live node keeps serving its existing edges until the evolution ships and promotes.
+While a Foundation, Interaction, or Interface has an open `<id>.next.mdx`, edge writes from that node (`belongs_to` / `depends_on` / `exposes` / `leads_to` as applicable) MUST target the `next` slot's proposed edges rather than the live `<id>.mdx` edge arrays (§6.2, §8.2 `link_nodes`) — the live node keeps serving its existing edges until the evolution ships and promotes.
 
 There is **no Dependency Closure** rule and **no** `link_dependent` flag. Linking an Interaction into a Journey does not auto-link other Interactions; Navigation (`leads_to`) and membership are independent decisions.
 
@@ -314,7 +316,7 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 
 | # | State | Meaning |
 |---|---|---|
-| 1 | `draft` | Ideation; scope written in `current.mdx` (or `next.mdx` while evolving, §3.6) |
+| 1 | `draft` | Ideation; scope written in `<id>.mdx` (or `<id>.next.mdx` while evolving, §3.6) |
 | 2 | `ready` | Pre-flight passed (Interaction: Journey + Foundation linked; Interface: at least one `exposes`) |
 | 3 | `in-progress` | Active execution; Atomic Ops checked off |
 | 4 | `in-review` | Neutral pipeline checkpoint: build finished; eligible for `ship` when Rules 1–6 and Completion Check allow. MindPlan does **not** require human review, an agent Reviewer, PR approval, or CI |
@@ -324,7 +326,7 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 
 **Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. The implementing agent MAY `ship` (or Bug `resolved`) its own revision when default `mindplan-mcp check` is green and legal transitions / Rules 1–6 allow. Classify the revision per §3.7 (source, neighbor, unaffected) for `open_next` vs edit-in-place — not for a Reviewer gate. MindPlan does **not** require spawning an independent Reviewer, Approve/Reject protocol, or any code-quality judgment before `ship`. Code review and similar process gates are **outside the dialect**; projects MAY add them via host tooling or `mindplan/project.md` standing rules. The parent MAY self-`ready` (`draft` → `ready`) in one ordered `update_node_status` call. Status advances for a multi-node revision in one ordered `update_node_status` call (§3.7). `Blocked: Infrastructure First` (Rule 3, §5.4) or Behavior First defers production entry until deps are ready; that is a compiler gate, not a quality Reject.
 
-**Cancel transition:** `update_node_status(..., "cancelled")` abandons a Foundation, Interaction, or Interface that never shipped. It is blocked while `next.mdx` is open, or while any **active** (non-`cancelled`/`deprecated`/`resolved`/`wontfix`) node still `depends_on` this node (or, for Interactions, while an active Interface still `exposes` it — implementations SHOULD reject cancel when active dependents of either edge kind exist). Packages and territory folders are left on disk. There is no uncancel in v1 — cancelled is terminal like `deprecated`.
+**Cancel transition:** `update_node_status(..., "cancelled")` abandons a Foundation, Interaction, or Interface that never shipped. It is blocked while `<id>.next.mdx` is open, or while any **active** (non-`cancelled`/`deprecated`/`resolved`/`wontfix`) node still `depends_on` this node (or, for Interactions, while an active Interface still `exposes` it — implementations SHOULD reject cancel when active dependents of either edge kind exist). Packages and territory folders are left on disk. There is no uncancel in v1 — cancelled is terminal like `deprecated`.
 
 | From \ To | draft | ready | in-progress | in-review | stable/unstable | cancelled | deprecated |
 |---|---|---|---|---|---|---|---|
@@ -342,7 +344,7 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 
 | State | Meaning |
 |---|---|
-| `open` | Reported; repro in `current.mdx` |
+| `open` | Reported; repro in `<id>.mdx` |
 | `triaged` | Validated; linked via `affects`; severity optional |
 | `fixing` | Fix in progress |
 | `in-review` | Fix awaiting resolve (neutral checkpoint; no required PR/Reviewer) |
@@ -359,14 +361,14 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 
 ### 3.3 Atomic Operations
 
-An Atomic Operation is a PR-sized unit of work expressed as a Markdown task-list item in `current.mdx` (or `next.mdx` while a Foundation/Interaction/Interface evolution is open, §3.6):
+An Atomic Operation is a PR-sized unit of work expressed as a Markdown task-list item in `<id>.mdx` (or `<id>.next.mdx` while a Foundation/Interaction/Interface evolution is open, §3.6):
 
 ```markdown
 - [ ] Implement POST /orders endpoint
 - [x] Write migration for orders table
 ```
 
-Recognized syntax: a list item beginning with `-`, `*`, or `+`, followed by `[ ]` (open) or `[x]` (complete). Checkbox state is parsed from the relevant file (`current.mdx`, or `next.mdx` when evolving) at validation time — the file on disk is the source of truth for completion, not the graph.
+Recognized syntax: a list item beginning with `-`, `*`, or `+`, followed by `[ ]` (open) or `[x]` (complete). Checkbox state is parsed from the relevant file (`<id>.mdx`, or `<id>.next.mdx` when evolving) at validation time — the file on disk is the source of truth for completion, not the graph.
 
 JSX in the file is invisible to this check (§6.4.4): only Markdown task-list syntax gates completion.
 
@@ -389,37 +391,37 @@ Recomputed after: Bug status changes, `affects` link/unlink, and `ship`. Never s
 
 ### 3.6 Versioning
 
-MindPlan uses a **stable-id evolution model**: a Foundation, Interaction, or Interface's `id` never changes across its lifetime, and there is no successor node, no `supersedes` edge, and no dependent relinking. A node's history — including every past evolution — lives in the git history of its `current.mdx`, which **is** the version lineage; there is nothing else to consult.
+MindPlan uses a **stable-id evolution model**: a Foundation, Interaction, or Interface's `id` never changes across its lifetime, and there is no successor node, no `supersedes` edge, and no dependent relinking. A node's history — including every past evolution — lives in the git history of its `<id>.mdx`, which **is** the version lineage; there is nothing else to consult.
 
 Shipped Foundations, Interactions, and Interfaces (`stable`/`unstable`) are never reset to `draft` in place, and they are never replaced by a new node. To evolve one, call `open_next`, which:
 
-1. verifies the node is `stable` or `unstable` and has no existing `next.mdx` (§5.11),
-2. copies `current.mdx`'s body (and, for `attachments/`, nothing automatically — new assets go in a fresh `next-attachments/`) into a new `next.mdx` in pipeline state `draft`,
+1. verifies the node is `stable` or `unstable` and has no existing `<id>.next.mdx` (§5.11),
+2. copies `<id>.mdx`'s body (and, for `attachments/`, nothing automatically — new assets go in a fresh `next-attachments/`) into a new `<id>.next.mdx` in pipeline state `draft`,
 3. proposes the node's current outgoing edges (`belongs_to` / `depends_on` / `exposes` / `leads_to` as applicable) as the next slot's starting edges (mutable independently of `current`'s edges from this point on, §2.2).
 
-The **live `current.mdx` keeps serving** (`stable`/`unstable`, same id, same edges) for the entire duration of the build on `next`. Dependents' edges continue to resolve to the same id throughout — there is nothing to relink, because the id never moves.
+The **live `<id>.mdx` keeps serving** (`stable`/`unstable`, same id, same edges) for the entire duration of the build on `next`. Dependents' edges continue to resolve to the same id throughout — there is nothing to relink, because the id never moves.
 
-`next.mdx` runs through the same manual build pipeline as a first build (`draft → ready → in-progress → in-review`, §3.1), scoped to the `next` slot: Ghost Interaction / Ghost Interface and Completion Check are evaluated against `next.mdx`'s proposed edges and checkboxes, not `current.mdx`'s.
+`<id>.next.mdx` runs through the same manual build pipeline as a first build (`draft → ready → in-progress → in-review`, §3.1), scoped to the `next` slot: Ghost Interaction / Ghost Interface and Completion Check are evaluated against `<id>.next.mdx`'s proposed edges and checkboxes, not `<id>.mdx`'s.
 
 When `next` is `in-review` and the caller calls `update_node_status(..., "ship")`:
 
 1. Infrastructure First / Behavior First (as applicable) are evaluated against **`next`'s** proposed edges,
-2. Completion Check is evaluated against **`next.mdx`**,
-3. on success, the server **promotes `next` over `current`**: it copies `next.mdx`'s body, title, description, and proposed edges onto `current.mdx` (same `id`, same `type`, fresh `updated_at`/`shipped_at`), merges `next-attachments/` into `attachments/`, computes `stable`/`unstable` from open Bugs (§3.5), and deletes `next.mdx` and `next-attachments/`.
+2. Completion Check is evaluated against **`<id>.next.mdx`**,
+3. on success, the server **promotes `next` over `current`**: it copies `<id>.next.mdx`'s body, title, description, and proposed edges onto `<id>.mdx` (same `id`, same `type`, fresh `updated_at`/`shipped_at`), merges `next-attachments/` into `attachments/`, computes `stable`/`unstable` from open Bugs (§3.5), and deletes `<id>.next.mdx` and `next-attachments/`.
 
-The node's `id` and production posture continue uninterrupted — dependents never see a different id and never need relinking. To abandon an in-flight evolution without shipping it, call `discard_next`: it deletes `next.mdx`/`next-attachments/` and leaves `current.mdx` completely untouched.
+The node's `id` and production posture continue uninterrupted — dependents never see a different id and never need relinking. To abandon an in-flight evolution without shipping it, call `discard_next`: it deletes `<id>.next.mdx`/`next-attachments/` and leaves `<id>.mdx` completely untouched.
 
-A node MUST NOT have more than one open `next.mdx` at a time (§5.11). `get_blast_radius` on a node with an open evolution reports the **live** `current.mdx`'s dependents and (for Interactions) live reachability — the same set regardless of whether `next` exists, since the id never changes.
+A node MUST NOT have more than one open `<id>.next.mdx` at a time (§5.11). `get_blast_radius` on a node with an open evolution reports the **live** `<id>.mdx`'s dependents and (for Interactions) live reachability — the same set regardless of whether `next` exists, since the id never changes.
 
 #### Territory Completeness
 
-`current.mdx` MUST describe the **complete** contract of what the node *is* in the repository now — purpose, living spec (PRD / Execution Logic / Shared Substrate Spec), and durable acceptance criteria that match shipped (or in-flight pre-ship) reality. It MUST NOT be reduced to a changelog, a “what changed last” narrative, or a stub that only points at a package path.
+`<id>.mdx` MUST describe the **complete** contract of what the node *is* in the repository now — purpose, living spec (PRD / Execution Logic / Shared Substrate Spec), and durable acceptance criteria that match shipped (or in-flight pre-ship) reality. It MUST NOT be reduced to a changelog, a “what changed last” narrative, or a stub that only points at a package path.
 
-When `open_next` seeds `next.mdx` from `current.mdx`, a **source** (§3.7) MUST be edited into a **complete proposed successor** of that same contract: add, change, or remove sections in place until the body describes the desired post-ship state. Because `ship` promotes `next` over `current` wholesale, a delta-only or changelog-only `next` body is illegal — it would leave `current.mdx` describing only the latest change instead of the repository’s full state for that node.
+When `open_next` seeds `<id>.next.mdx` from `<id>.mdx`, a **source** (§3.7) MUST be edited into a **complete proposed successor** of that same contract: add, change, or remove sections in place until the body describes the desired post-ship state. Because `ship` promotes `next` over `current` wholesale, a delta-only or changelog-only `next` body is illegal — it would leave `<id>.mdx` describing only the latest change instead of the repository’s full state for that node.
 
 A **neighbor** (§3.7) has no `next`: its owned files are edited in place and its contract stays as shipped.
 
-Atomic Operations / checklist items on `next.mdx` MAY be scoped to the current evolution (reset or replaced when opening `next`). `open_next` resets checkboxes to `[ ]`. On a source, spec sections (Purpose, PRD, Execution Logic, Shared Substrate Spec, Acceptance Criteria, and equivalents) MUST remain a full successor document, not an evolution-only diff.
+Atomic Operations / checklist items on `<id>.next.mdx` MAY be scoped to the current evolution (reset or replaced when opening `next`). `open_next` resets checkboxes to `[ ]`. On a source, spec sections (Purpose, PRD, Execution Logic, Shared Substrate Spec, Acceptance Criteria, and equivalents) MUST remain a full successor document, not an evolution-only diff.
 
 Agents MUST verify Territory Completeness for sources before transitioning `next` to `in-review` (playbook check-at-handoff). Semantic completeness is the implementer’s responsibility before `ship`; MindPlan does not prescribe an independent Reviewer.
 
@@ -479,8 +481,8 @@ For a given Journey, let:
 
 - `S` = count of member Interactions with `shipped_at` set (state `stable` or `unstable`)
 - `P` = count of member Interactions that are **actively building**, where an Interaction counts toward `P` if either:
-  - it has no `shipped_at` and its `current.mdx` state is `in-progress` or `in-review`, **or**
-  - it is shipped (`stable`/`unstable`) and has an open `next.mdx` whose pipeline state is `in-progress` or `in-review` (§3.6)
+  - it has no `shipped_at` and its `<id>.mdx` state is `in-progress` or `in-review`, **or**
+  - it is shipped (`stable`/`unstable`) and has an open `<id>.next.mdx` whose pipeline state is `in-progress` or `in-review` (§3.6)
 
 | State | Condition | Reading |
 |---|---|---|
@@ -493,11 +495,11 @@ Notes:
 
 - **Bugs do not affect Journey states.** An Interaction flipping `stable` → `unstable` does not change its Journey.
 - Interfaces do not contribute to Journey computation — only member Interactions do.
-- `in-review` counts toward `P`, whether on `current.mdx` (unshipped Interaction) or `next.mdx` (evolution of a shipped Interaction).
-- A shipped Interaction with no open `next.mdx`, or whose `next.mdx` is still `draft`/`ready`, contributes to `S` but not `P`.
+- `in-review` counts toward `P`, whether on `<id>.mdx` (unshipped Interaction) or `<id>.next.mdx` (evolution of a shipped Interaction).
+- A shipped Interaction with no open `<id>.next.mdx`, or whose `<id>.next.mdx` is still `draft`/`ready`, contributes to `S` but not `P`.
 - Interactions in `draft`, `ready`, `cancelled`, or `deprecated` (and not evolving) contribute to neither count.
 - Any attempt to set a Journey's state through the status-update tool MUST be rejected.
-- When a recomputation changes a Journey's state, the server MUST persist the new state to the Journey's `current.mdx` frontmatter, and SHOULD report the change in the tool response (`journeys_recomputed`).
+- When a recomputation changes a Journey's state, the server MUST persist the new state to the Journey's `<id>.mdx` frontmatter, and SHOULD report the change in the tool response (`journeys_recomputed`).
 
 ---
 
@@ -551,7 +553,7 @@ Rationale: an entry surface must not go live while the behaviours it exposes (or
 
 ### 5.6 Rule 5 — The Completion Check
 
-A Foundation, Interaction, or Interface MUST NOT transition to `ship` while its active territory file (`current.mdx`, or `next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
+A Foundation, Interaction, or Interface MUST NOT transition to `ship` while its active territory file (`<id>.mdx`, or `<id>.next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
 
 `in-review` MUST NOT require a complete checklist. Agents enter `in-review` with open DoD items, then tick them while in review.
 
@@ -579,7 +581,7 @@ Edge creation MUST validate:
 - the edge shape is legal per §2.2,
 - the edge is not a self-link and not a duplicate,
 - **Interaction Independence:** `depends_on` from an Interaction MUST NOT target another Interaction — share state through Foundations instead,
-- `depends_on` edges do not create a cycle (§2.2). Cycle detection MUST use the **effective** `depends_on` set for each node: `next.depends_on` while that node has an open `next.mdx`, otherwise live `depends_on`. Ship from next `in-review` MUST re-assert effective acyclicity before promoting.
+- `depends_on` edges do not create a cycle (§2.2). Cycle detection MUST use the **effective** `depends_on` set for each node: `next.depends_on` while that node has an open `<id>.next.mdx`, otherwise live `depends_on`. Ship from next `in-review` MUST re-assert effective acyclicity before promoting.
 - `leads_to` MUST NOT be subjected to cycle rejection.
 
 There is **no Dependency Closure** rule. Implementations MUST NOT accept or document a `link_dependent` parameter on `link_nodes`.
@@ -590,22 +592,22 @@ There is **no Dependency Closure** rule. Implementations MUST NOT accept or docu
 
 - the node exists and is type `Foundation`, `Interaction`, or `Interface`,
 - the node is in state `stable` or `unstable` (shipped) — Journeys, Bugs, and unshipped pipeline nodes MUST be rejected,
-- the node has no existing `next.mdx` — at most one open evolution per node at a time; the rejection message MUST name the `next` slot's current pipeline state and point to `ship` (from `next` in-review) or `discard_next` as the way to clear it.
+- the node has no existing `<id>.next.mdx` — at most one open evolution per node at a time; the rejection message MUST name the `next` slot's current pipeline state and point to `ship` (from `next` in-review) or `discard_next` as the way to clear it.
 
 `discard_next` MUST validate:
 
-- the node has an existing `next.mdx` to delete.
+- the node has an existing `<id>.next.mdx` to delete.
 
-While `next.mdx` is open, the manual build pipeline transitions (`draft → ready → in-progress → in-review`) and Ghost / Completion rules apply to the `next` slot's own state, checkboxes, and proposed edges — not to `current.mdx`, which is untouched and keeps serving. A node with an open `next.mdx` MUST NOT be transitioned to `deprecated`; `discard_next` (or shipping the evolution) MUST run first.
+While `<id>.next.mdx` is open, the manual build pipeline transitions (`draft → ready → in-progress → in-review`) and Ghost / Completion rules apply to the `next` slot's own state, checkboxes, and proposed edges — not to `<id>.mdx`, which is untouched and keeps serving. A node with an open `<id>.next.mdx` MUST NOT be transitioned to `deprecated`; `discard_next` (or shipping the evolution) MUST run first.
 
-On successful `update_node_status(..., "ship")` for a node whose `next.mdx` is `in-review`, the server MUST:
+On successful `update_node_status(..., "ship")` for a node whose `<id>.next.mdx` is `in-review`, the server MUST:
 
 1. re-validate Infrastructure First / Behavior First and Completion Check against `next`'s proposed edges and checkboxes,
-2. **promote**: copy `next.mdx`'s body, title, description, and proposed edges onto `current.mdx` under the unchanged `id`, merge `next-attachments/` into `attachments/`, compute the new `stable`/`unstable` from open Bugs (§3.5), and delete `next.mdx`/`next-attachments/`.
+2. **promote**: copy `<id>.next.mdx`'s body, title, description, and proposed edges onto `<id>.mdx` under the unchanged `id`, merge `next-attachments/` into `attachments/`, compute the new `stable`/`unstable` from open Bugs (§3.5), and delete `<id>.next.mdx`/`next-attachments/`.
 
 There is no successor id, no relinking step, and no predecessor to auto-deprecate: the `id` never changes, so every existing edge that already targets this node continues to resolve correctly through and after the promotion.
 
-Rationale: versioning models replacement without downtime during the build, without ever forcing dependents to discover and re-point at a new id. Git history of `current.mdx` — not a graph edge — is the audit trail for what a node's evolution changed at each ship.
+Rationale: versioning models replacement without downtime during the build, without ever forcing dependents to discover and re-point at a new id. Git history of `<id>.mdx` — not a graph edge — is the audit trail for what a node's evolution changed at each ship.
 
 ### 5.12 Rule 11 — Force Unship (mistaken ship recovery)
 
@@ -613,11 +615,11 @@ Rationale: versioning models replacement without downtime during the build, with
 
 1. require `confirm` exactly equal to `unship:<node_id>` — any other value MUST be rejected with a message that tells the agent to ask the user and not invent confirmation,
 2. accept only Foundation/Interaction/Interface nodes currently in `stable` or `unstable`,
-3. reject while `next.mdx` is open (`discard_next` first),
+3. reject while `<id>.next.mdx` is open (`discard_next` first),
 4. reject while any **direct** `depends_on` dependent is itself `stable` or `unstable` (enumerate them; force-unship or deprecate dependents first so Infrastructure First remains coherent),
 5. accept `new_status` only in `draft | ready | in-progress | in-review` (default `ready` when omitted),
 6. apply Ghost Interaction / Ghost Interface / Completion Check gates appropriate to the target state (same as a normal transition into that state),
-7. clear `shipped_at` on `current.mdx`, set `state` to the target, recompute Journey states, and refresh `mindplan/map.md`.
+7. clear `shipped_at` on `<id>.mdx`, set `state` to the target, recompute Journey states, and refresh `mindplan/map.md`.
 
 Agents MUST obtain an explicit human yes in the conversation before calling `force_unship`. Agents MUST NOT invent or “helpfully” supply `confirm`. Journeys and Bugs MUST be rejected. Manual `stable`/`unstable` remains forbidden (§5.9).
 
@@ -625,7 +627,7 @@ Agents MUST obtain an explicit human yes in the conversation before calling `for
 
 For a status mutation the compiler MUST evaluate, in order:
 
-1. node exists → 2. node is not a Journey → 3. resolve the active slot (`next.mdx` if open, else `current.mdx`) → 4. target state is valid for that slot → 5. transition is legal per §3 (or §3.6 next-pipeline transitions) → 6. Rules 1–6 (type-specific, evaluated against the active slot) → **write** → 7. on `ship` from `next` in-review, promote `next` over `current` per Rule 10 (§5.11) → 8. recompute stability (§3.5) → 9. recompute Journey states (§4) → 10. synchronize frontmatter.
+1. node exists → 2. node is not a Journey → 3. resolve the active slot (`<id>.next.mdx` if open, else `<id>.mdx`) → 4. target state is valid for that slot → 5. transition is legal per §3 (or §3.6 next-pipeline transitions) → 6. Rules 1–6 (type-specific, evaluated against the active slot) → **write** → 7. on `ship` from `next` in-review, promote `next` over `current` per Rule 10 (§5.11) → 8. recompute stability (§3.5) → 9. recompute Journey states (§4) → 10. synchronize frontmatter.
 
 For `force_unship`: validate Rule 11 (§5.12), clear `shipped_at`, write pre-ship `state`, recompute Journey states, synchronize frontmatter.
 
@@ -633,17 +635,17 @@ For `link_nodes` / `unlink_nodes` involving `affects`: validate §5.10, write ed
 
 For `link_nodes` involving `belongs_to`, `depends_on`, `exposes`, or `leads_to`: validate §5.10 (including Interaction Independence and `depends_on` cycle check where applicable), write edge to the active slot (`next` if open, else `current`), recompute Journey states when membership changes, mirror frontmatter.
 
-For `open_next`: validate Rule 10 (§5.11), copy `current.mdx` body and outgoing edges into a new `next.mdx` in `draft`; `current.mdx` and its edges are unchanged.
+For `open_next`: validate Rule 10 (§5.11), copy `<id>.mdx` body and outgoing edges into a new `<id>.next.mdx` in `draft`; `<id>.mdx` and its edges are unchanged.
 
-For `discard_next`: validate Rule 10 (§5.11), delete `next.mdx`/`next-attachments/`; `current.mdx` is unchanged.
+For `discard_next`: validate Rule 10 (§5.11), delete `<id>.next.mdx`/`next-attachments/`; `<id>.mdx` is unchanged.
 
 ---
 
 ## 6. Territory File Format
 
-### 6.1 `current.mdx` structure
+### 6.1 `<id>.mdx` structure
 
-Every entity's `current.mdx` MUST begin with YAML frontmatter followed by an MDX body (Markdown plus optional JSX per §6.4). An open `next.mdx` (Foundation/Interaction/Interface only, §3.6) uses the same frontmatter+body shape, scoped to the fields in the table below marked "also on `next.mdx`":
+Every entity's `<id>.mdx` MUST begin with YAML frontmatter followed by an MDX body (Markdown plus optional JSX per §6.4). An open `<id>.next.mdx` (Foundation/Interaction/Interface only, §3.6) uses the same frontmatter+body shape, scoped to the fields in the table below marked "also on `<id>.next.mdx`":
 
 ```mdx
 ---
@@ -688,22 +690,22 @@ Frontmatter fields:
 
 | Field | Type | Written by | Notes |
 |---|---|---|---|
-| `id` | string | server, at creation | Immutable for the node's lifetime, including every evolution. MUST equal folder name. Also on `next.mdx`. |
-| `type` | `Journey \| Foundation \| Interaction \| Interface \| Bug` | server, at creation | Immutable. Also on `next.mdx`. |
-| `title` | string (JSON-quoted) | territory | Human-readable. Stored only in frontmatter. Also on `next.mdx` (proposed title, promoted on ship). |
-| `description` | string (JSON-quoted) | territory | Short summary. Stored only in frontmatter. Also on `next.mdx` (proposed description, promoted on ship). |
-| `state` | string | **server only** | On `current.mdx`: build pipeline, computed production, or Bug lifecycle. On `next.mdx`: the pipeline sub-state of the evolution (`draft \| ready \| in-progress \| in-review`, §3.6) — never `stable`/`unstable`/`deprecated`. Patched by MCP on accepted transitions. |
-| `created_at` | ISO-8601 | server, at creation | Immutable; present only on `current.mdx` and never rewritten by an evolution. |
-| `updated_at` | ISO-8601 | **server only** | Touched on every accepted state or edge mutation to that slot. Also on `next.mdx`. |
-| `shipped_at` | ISO-8601 | **server only** | `current.mdx` only. Optional; set on `ship` (first build or promotion of `next`, §3.6). |
+| `id` | string | server, at creation | Immutable for the node's lifetime, including every evolution. MUST equal folder name. Also on `<id>.next.mdx`. |
+| `type` | `Journey \| Foundation \| Interaction \| Interface \| Bug` | server, at creation | Immutable. Also on `<id>.next.mdx`. |
+| `title` | string (JSON-quoted) | territory | Human-readable. Stored only in frontmatter. Also on `<id>.next.mdx` (proposed title, promoted on ship). |
+| `description` | string (JSON-quoted) | territory | Short summary. Stored only in frontmatter. Also on `<id>.next.mdx` (proposed description, promoted on ship). |
+| `state` | string | **server only** | On `<id>.mdx`: build pipeline, computed production, or Bug lifecycle. On `<id>.next.mdx`: the pipeline sub-state of the evolution (`draft \| ready \| in-progress \| in-review`, §3.6) — never `stable`/`unstable`/`deprecated`. Patched by MCP on accepted transitions. |
+| `created_at` | ISO-8601 | server, at creation | Immutable; present only on `<id>.mdx` and never rewritten by an evolution. |
+| `updated_at` | ISO-8601 | **server only** | Touched on every accepted state or edge mutation to that slot. Also on `<id>.next.mdx`. |
+| `shipped_at` | ISO-8601 | **server only** | `<id>.mdx` only. Optional; set on `ship` (first build or promotion of `next`, §3.6). |
 | `severity` | `low \| medium \| high \| critical` | optional | Bug nodes only; informational in v1. |
-| `belongs_to` | string[] | **server only** | Interaction only. Target Journey ids. Omitted when empty. On `next.mdx`: proposed edges, applied to `current.mdx` on ship. |
-| `depends_on` | string[] | **server only** | Interaction, Interface, or Foundation. Target Foundation ids only (never Interaction). Omitted when empty. On `next.mdx`: proposed edges. |
-| `exposes` | string[] | **server only** | Interface only. Target Interaction ids. Omitted when empty. On `next.mdx`: proposed edges. |
-| `leads_to` | string[] | **server only** | Interaction only. Target Interaction ids (navigation). Omitted when empty. On `next.mdx`: proposed edges. |
+| `belongs_to` | string[] | **server only** | Interaction only. Target Journey ids. Omitted when empty. On `<id>.next.mdx`: proposed edges, applied to `<id>.mdx` on ship. |
+| `depends_on` | string[] | **server only** | Interaction, Interface, or Foundation. Target Foundation ids only (never Interaction). Omitted when empty. On `<id>.next.mdx`: proposed edges. |
+| `exposes` | string[] | **server only** | Interface only. Target Interaction ids. Omitted when empty. On `<id>.next.mdx`: proposed edges. |
+| `leads_to` | string[] | **server only** | Interaction only. Target Interaction ids (navigation). Omitted when empty. On `<id>.next.mdx`: proposed edges. |
 | `affects` | string[] | **server only** | Bug only. Target Interaction, Interface, or Foundation ids. Omitted when empty. |
 
-The body is free-form and owned by humans and agents. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `current.mdx` pre-ship, or on `next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) MUST be written only via MCP tools.
+The body is free-form and owned by humans and agents. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `<id>.mdx` pre-ship, or on `<id>.next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) MUST be written only via MCP tools.
 
 **Shipped scope freeze:** hand-editing or `patch_node_territory` of `title`/`description` on the `current` slot of a shipped Interaction or Interface MUST be rejected — call `open_next` first. (Same freeze applies to shipped Foundations for material scope changes via playbook; Interaction/Interface freeze is the hard gate.)
 
@@ -713,17 +715,17 @@ Frontmatter delimiters (`---`) MUST appear before any JSX. MDX comments use `{/*
 
 After any accepted mutation, the server MUST rewrite server-owned fields in each affected node's territory frontmatter:
 
-- **Status mutations:** `state:` and `updated_at:` on the transitioned node's active slot (`current.mdx`, or `next.mdx` while an evolution is open) plus every Journey whose computed state changed; `shipped_at:` on `current.mdx` when a first build or a `next` promotion ships.
+- **Status mutations:** `state:` and `updated_at:` on the transitioned node's active slot (`<id>.mdx`, or `<id>.next.mdx` while an evolution is open) plus every Journey whose computed state changed; `shipped_at:` on `<id>.mdx` when a first build or a `next` promotion ships.
 - **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, `exposes`, `leads_to`, or `affects`) on the source node's active slot, plus `updated_at:`.
-- **Opening an evolution (`open_next`):** creates `next.mdx` with `state: draft`, copied/overridden `title:`/`description:`, and proposed edge arrays from `current.mdx` at open time.
-- **Discarding an evolution (`discard_next`):** deletes `next.mdx` and `next-attachments/`; `current.mdx` is untouched.
-- **Ship / promotion (`update_node_status(..., "ship")`):** on a first build, writes `state:`, `updated_at:`, and `shipped_at:` on `current.mdx`. When promoting an open `next.mdx`, copies `next.mdx`'s `title:`, `description:`, and proposed edge arrays onto `current.mdx`, sets `state:` to the computed `stable`/`unstable`, refreshes `updated_at:`/`shipped_at:`, and deletes `next.mdx`/`next-attachments/`. There is no other node's frontmatter to update — the `id` never changes.
+- **Opening an evolution (`open_next`):** creates `<id>.next.mdx` with `state: draft`, copied/overridden `title:`/`description:`, and proposed edge arrays from `<id>.mdx` at open time.
+- **Discarding an evolution (`discard_next`):** deletes `<id>.next.mdx` and `next-attachments/`; `<id>.mdx` is untouched.
+- **Ship / promotion (`update_node_status(..., "ship")`):** on a first build, writes `state:`, `updated_at:`, and `shipped_at:` on `<id>.mdx`. When promoting an open `<id>.next.mdx`, copies `<id>.next.mdx`'s `title:`, `description:`, and proposed edge arrays onto `<id>.mdx`, sets `state:` to the computed `stable`/`unstable`, refreshes `updated_at:`/`shipped_at:`, and deletes `<id>.next.mdx`/`next-attachments/`. There is no other node's frontmatter to update — the `id` never changes.
 
 Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the file. If the file is missing or has no frontmatter, mirroring is skipped silently.
 
 ### 6.3 Scaffolding templates
 
-`create_node` MUST scaffold the entity folder with a type-appropriate `current.mdx` and an empty `attachments/` directory (with `.gitkeep` so the folder is versionable). `next.mdx` and `next-attachments/` are never scaffolded by `create_node` — they are created only by `open_next` on an already-shipped Foundation/Interaction/Interface (§3.6, §8.2):
+`create_node` MUST scaffold the entity folder with a type-appropriate `<id>.mdx` and an empty `attachments/` directory (with `.gitkeep` so the folder is versionable). `<id>.next.mdx` and `next-attachments/` are never scaffolded by `create_node` — they are created only by `open_next` on an already-shipped Foundation/Interaction/Interface (§3.6, §8.2):
 
 - **Journey** — Overview section (domain capability + behaviors it owns), Linked Interactions note, Attachments note. No checklist (Journeys have no completion gate). No `implements`.
 - **Foundation** — Shared Substrate Spec section (role tag belongs in frontmatter `description` at create time — Assembler | Infra | Design system | Adapter), Checklist (3 default Atomic Ops), Attachments note. No application-code scaffold.
@@ -778,7 +780,7 @@ Future spec versions MAY extend this set; they MUST NOT change the semantics of 
 #### 6.4.3 Project components
 
 - Live in `mindplan/components/` at the planning root (any file layout inside is the project's business; `.tsx`/`.jsx` recommended).
-- MAY be referenced from any `current.mdx`/`next.mdx` in that project.
+- MAY be referenced from any `<id>.mdx`/`<id>.next.mdx` in that project.
 - MUST NOT use reserved names from §6.4.2.
 - Are ignored entirely by the MCP server and the compiler rules. A missing or broken project component MUST NOT block any state transition.
 
@@ -803,7 +805,7 @@ Rendering MDX is out of scope for the MCP server. Viewers (docs sites, dashboard
 
 ## 7. Graph Assembly
 
-There is no central graph file. At runtime the server scans `mindplan/<type>s/<id>/current.mdx` frontmatter to assemble nodes and expands outgoing edge arrays into flat edge triples. When a Foundation/Interaction/Interface folder also has a `next.mdx`, the server additionally parses it into that node's `next` slot (§3.6); `next.mdx`'s proposed edges are **not** expanded into graph edges — only `current.mdx`'s edges are live.
+There is no central graph file. At runtime the server scans `mindplan/<type>s/<id>/<id>.mdx` frontmatter to assemble nodes and expands outgoing edge arrays into flat edge triples. When a Foundation/Interaction/Interface folder also has a `<id>.next.mdx`, the server additionally parses it into that node's `next` slot (§3.6); `<id>.next.mdx`'s proposed edges are **not** expanded into graph edges — only `<id>.mdx`'s edges are live.
 
 ### 7.1 Runtime graph shape
 
@@ -837,14 +839,14 @@ Outgoing edges are stored **only on the source node** in frontmatter:
 | `leads_to` | Interaction | `leads_to: [interaction-id, …]` |
 | `affects` | Bug | `affects: [interaction-or-interface-or-foundation-id, …]` |
 
-Journeys have no outgoing edges. Incoming relationships are derived at scan time (e.g. a Journey discovers member Interactions by scanning all Interaction `belongs_to` arrays). A `next.mdx`'s edge arrays are proposed edges scoped to that node's evolution (§3.6) — they live in the same frontmatter shape but are not part of the assembled graph's edge triples until promoted onto `current.mdx` at ship time.
+Journeys have no outgoing edges. Incoming relationships are derived at scan time (e.g. a Journey discovers member Interactions by scanning all Interaction `belongs_to` arrays). A `<id>.next.mdx`'s edge arrays are proposed edges scoped to that node's evolution (§3.6) — they live in the same frontmatter shape but are not part of the assembled graph's edge triples until promoted onto `<id>.mdx` at ship time.
 
 ### 7.3 Invariants
 
-- Every edge endpoint MUST reference an existing territory node (folder + `current.mdx`).
+- Every edge endpoint MUST reference an existing territory node (folder + `<id>.mdx`).
 - Edge triples are unique per `(source, target, type)`.
 - Edge arrays MUST only appear on node types permitted by §7.2.
-- `next.mdx` MUST only exist alongside a `current.mdx` for the same Foundation/Interaction/Interface id and MUST NOT introduce a new `id`.
+- `<id>.next.mdx` MUST only exist alongside a `<id>.mdx` for the same Foundation/Interaction/Interface id and MUST NOT introduce a new `id`.
 
 ---
 
@@ -871,7 +873,7 @@ Reference formats: Mermaid (`flowchart`) and Graphviz DOT.
 | `belongs_to` | Encoded by clustering — omitted as an edge in diagrams |
 | Node label | `id · title · state` |
 
-A node with an open `next.mdx` renders once, at its `current.mdx` state and id — `next` is an in-flight territory slot, not a second node, and has no dedicated diagram representation in v1.
+A node with an open `<id>.next.mdx` renders once, at its `<id>.mdx` state and id — `next` is an in-flight territory slot, not a second node, and has no dedicated diagram representation in v1.
 
 Interactions with no `belongs_to` into a Journey present in the view appear under an **Unassigned interactions** band.
 
@@ -927,7 +929,7 @@ Exports a deterministic typed-graph projection (§7.4) as Mermaid or DOT. Prefer
 
 #### `find_related_nodes`
 
-Scoped orientation for agents: rank nodes by a text query and return the focus node plus its 1-hop linked neighborhood. Does not load full `current.mdx`/`next.mdx` bodies. Does not include transitive blast radius (use `get_blast_radius`).
+Scoped orientation for agents: rank nodes by a text query and return the focus node plus its 1-hop linked neighborhood. Does not load full `<id>.mdx`/`<id>.next.mdx` bodies. Does not include transitive blast radius (use `get_blast_radius`).
 
 - **Input:**
   - `query` (string, optional) — free text; tokenized for ranking.
@@ -1005,12 +1007,12 @@ Where:
 #### `get_node_context`
 
 - **Input:** `node_id` (slug).
-- **Output:** always includes the live `current.mdx` slice; when the node has an open `next.mdx` (Foundation/Interaction/Interface only), also includes a `next` object with that slot's record, body, and paths:
+- **Output:** always includes the live `<id>.mdx` slice; when the node has an open `<id>.next.mdx` (Foundation/Interaction/Interface only), also includes a `next` object with that slot's record, body, and paths:
 
 ```jsonc
 {
   "folder": "mindplan/interactions/i-checkout-split",
-  "current_path": "mindplan/interactions/i-checkout-split/current.mdx",
+  "current_path": "mindplan/interactions/i-checkout-split/i-checkout-split.mdx",
   "attachments_path": "mindplan/interactions/i-checkout-split/attachments",
   "attachments": ["checkout-wireframe.png"],
   "record": {
@@ -1027,13 +1029,13 @@ Where:
   },
   "body": "# Split & pay checkout\n\n...",
   "next": null
-  // when next.mdx exists, the payload also carries:
-  //   "next_path": ".../next.mdx", "next_attachments_path": ".../next-attachments",
+  // when <id>.next.mdx exists, the payload also carries:
+  //   "next_path": ".../<id>.next.mdx", "next_attachments_path": ".../next-attachments",
   //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, "body": "..." }
 }
 ```
 
-- **Errors:** unknown `node_id`; missing `current.mdx`.
+- **Errors:** unknown `node_id`; missing `<id>.mdx`.
 - The payload MUST NOT include `raw_context`, `context_path`, or top-level `title`/`description` (those live on `record`).
 
 #### `orient_for_work`
@@ -1089,7 +1091,7 @@ Returns declared file ownership (§1.2) for a node, or the owner of a path.
 
 #### `patch_node_territory`
 
-Patches territory-owned content on `current.mdx` or `next.mdx`. Server-owned frontmatter (`state`, edge arrays, `shipped_at`) is never modified.
+Patches territory-owned content on `<id>.mdx` or `<id>.next.mdx`. Server-owned frontmatter (`state`, edge arrays, `shipped_at`) is never modified.
 
 - **Input:**
   - `node_id` (slug, required)
@@ -1097,12 +1099,12 @@ Patches territory-owned content on `current.mdx` or `next.mdx`. Server-owned fro
   - `description` (string, optional) — pre-ship Interaction/Interface (`current`) or an open `next` slot only
   - `body` (string, optional) — replaces entire body below frontmatter
   - `toggle_checkboxes` (array of `{ contains, checked }`, optional) — match checkbox lines by substring
-  - `slot` (`current` \| `next`, optional) — explicitly select the territory file to patch; errors if `next` is requested but no `next.mdx` exists
+  - `slot` (`current` \| `next`, optional) — explicitly select the territory file to patch; errors if `next` is requested but no `<id>.next.mdx` exists
   - At least one patch field is required.
-- **Slot resolution:** when `slot` is omitted, the server patches `next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Interaction/Interface with an open evolution, otherwise `current.mdx`.
+- **Slot resolution:** when `slot` is omitted, the server patches `<id>.next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Interaction/Interface with an open evolution, otherwise `<id>.mdx`.
 - **Effect:** writes territory body and/or `title`/`description` scalars on the resolved slot; touches `updated_at` in that slot's frontmatter.
 - **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next", path, changed_files: string[] }` — `path` is the repo-relative MDX written; `changed_files` lists that path. Interactive agents SHOULD prefer host file tools for prose; this tool is an optional fallback.
-- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; explicit `slot: "next"` with no `next.mdx`; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`).
+- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; explicit `slot: "next"` with no `<id>.next.mdx`; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`).
 
 ### 8.2 Mutation tools
 
@@ -1122,7 +1124,7 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 #### `create_node`
 
 - **Input:** `id` (slug), `type` (`Journey|Foundation|Interaction|Interface|Bug`), `title` (non-empty), `description`, `role` (required when `type` is Foundation: `assembler|infra|design-system|adapter`).
-- **Effect:** scaffolds the entity folder with a full-frontmatter `current.mdx` (§6.3). Does **not** scaffold `src/<type>/<id>/`. Declare owned files afterward with `set_implementation_files`. Does not write edge fields — those are added by `link_nodes`. Never creates a `next.mdx`.
+- **Effect:** scaffolds the entity folder with a full-frontmatter `<id>.mdx` (§6.3). Does **not** scaffold `src/<type>/<id>/`. Declare owned files afterward with `set_implementation_files`. Does not write edge fields — those are added by `link_nodes`. Never creates a `<id>.next.mdx`.
 - **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, changed_files }` (project-relative paths; `context` is a deprecated alias for `current`).
 - **Errors:** duplicate `id`; Foundation missing/invalid `role`.
 
@@ -1136,21 +1138,21 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 #### `open_next`
 
 - **Input:** `node_id` (shipped Foundation, Interaction, or Interface), `title` (optional), `description` (optional).
-- **Effect:** validates Rule 10 (§5.11), copies `current.mdx`'s body and outgoing edges into a new `next.mdx` in pipeline state `draft` (overriding `title`/`description` when provided) and creates an empty `next-attachments/`. `current.mdx`, its state, and its edges are completely unchanged — the live node keeps serving.
+- **Effect:** validates Rule 10 (§5.11), copies `<id>.mdx`'s body and outgoing edges into a new `<id>.next.mdx` in pipeline state `draft` (overriding `title`/`description` when provided) and creates an empty `next-attachments/`. `<id>.mdx`, its state, and its edges are completely unchanged — the live node keeps serving.
 - **Output:** `{ node_id, live_state, next: { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, folder, current, next_path, changed_files }`.
-- **Errors:** unknown `node_id`; wrong type (not Foundation/Interaction/Interface); node not shipped (`stable`/`unstable`); node already has an open `next.mdx`.
+- **Errors:** unknown `node_id`; wrong type (not Foundation/Interaction/Interface); node not shipped (`stable`/`unstable`); node already has an open `<id>.next.mdx`.
 
 #### `discard_next`
 
-- **Input:** `node_id` (Foundation, Interaction, or Interface with an open `next.mdx`).
-- **Effect:** deletes `next.mdx` and `next-attachments/`, abandoning the in-flight evolution. `current.mdx` is untouched.
+- **Input:** `node_id` (Foundation, Interaction, or Interface with an open `<id>.next.mdx`).
+- **Effect:** deletes `<id>.next.mdx` and `next-attachments/`, abandoning the in-flight evolution. `<id>.mdx` is untouched.
 - **Output:** `{ node_id, discarded: true, live_state, changed_files }`.
-- **Errors:** unknown `node_id`; node has no `next.mdx` to discard.
+- **Errors:** unknown `node_id`; node has no `<id>.next.mdx` to discard.
 
 #### `link_nodes`
 
 - **Input:** `source_id`, `target_id`, `edge_type` (`depends_on|belongs_to|exposes|leads_to|affects`).
-- **Effect:** validates §5.10, then appends the target id to the source node's outgoing edge array — on `current.mdx`, or on the proposed edges of an open `next.mdx` when the source is a Foundation/Interaction/Interface currently evolving (§2.2). Recomputes stability (§3.5) and Journey states (§4) from the live graph (`next`-slot edges never affect these computations until promoted), patches affected frontmatter fields.
+- **Effect:** validates §5.10, then appends the target id to the source node's outgoing edge array — on `<id>.mdx`, or on the proposed edges of an open `<id>.next.mdx` when the source is a Foundation/Interaction/Interface currently evolving (§2.2). Recomputes stability (§3.5) and Journey states (§4) from the live graph (`next`-slot edges never affect these computations until promoted), patches affected frontmatter fields.
 - **Output:** `{ linked: {source, target, type}, slot: "current" | "next", journeys_recomputed: [...], stability_recomputed: [{id, state}], changed_files }`.
 - **Errors:** unknown ids; illegal shape; Interaction Independence violation; self-link; duplicate edge (on the resolved slot); `depends_on` dependency cycle.
 - **Note:** there is no `link_dependent` parameter and no Dependency Closure cascade.
@@ -1158,7 +1160,7 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 #### `unlink_nodes`
 
 - **Input:** `source_id`, `target_id`.
-- **Effect:** removes **all** edges from `source_id` to `target_id` (any type) from the source node's `current.mdx` frontmatter and, when present, from an open `next.mdx`'s proposed edges; recomputes stability and Journey states; mirrors frontmatter.
+- **Effect:** removes **all** edges from `source_id` to `target_id` (any type) from the source node's `<id>.mdx` frontmatter and, when present, from an open `<id>.next.mdx`'s proposed edges; recomputes stability and Journey states; mirrors frontmatter.
 - **Output:** `{ removed: <count>, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`.
 - **Errors:** unknown ids; no edge exists between the pair (on either slot).
 - **Note:** unlinking does not retroactively demote a node already past a gate; guardrails are evaluated at transition time only (§9.2).
@@ -1167,18 +1169,18 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 
 - **Input (one node):** `node_id`, `new_status` (string; build/Bug state name, or `ship` for Foundation/Interaction/Interface production entry).
 - **Input (one revision):** `revisions` — a non-empty array of `{ node_id, new_status }`. Mutually exclusive with `node_id` / `new_status`. Duplicate `node_id` values are rejected.
-- **Effect (one node):** runs the full §5.13 pipeline. When the node has no open `next.mdx`, mutations apply to `current.mdx` exactly as in a first build. When `next.mdx` is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies `next.mdx`'s body/title/description/proposed edges onto `current.mdx`, merges non-`.gitkeep` files from `next-attachments/` into `attachments/`, computes `stable`/`unstable` from open Bugs, sets `shipped_at`, and deletes `next.mdx`/`next-attachments/` (§3.6, §5.11). Recomputes stability and Journey states, persists, mirrors frontmatter.
+- **Effect (one node):** runs the full §5.13 pipeline. When the node has no open `<id>.next.mdx`, mutations apply to `<id>.mdx` exactly as in a first build. When `<id>.next.mdx` is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies `<id>.next.mdx`'s body/title/description/proposed edges onto `<id>.mdx`, merges non-`.gitkeep` files from `next-attachments/` into `attachments/`, computes `stable`/`unstable` from open Bugs, sets `shipped_at`, and deletes `<id>.next.mdx`/`next-attachments/` (§3.6, §5.11). Recomputes stability and Journey states, persists, mirrors frontmatter.
 - **Effect (revision):** orders the list **Foundations, then Interactions, then Interfaces, then Bugs** (caller order within a tier) and applies the one-node effect to each, reloading the graph between nodes so later gates see earlier writes (§3.7). Stops on the first `Blocked:`. Earlier nodes stay transitioned.
-- **Output (one node):** `{ node_id, previous_state, new_state, next_state, shipped_at, promoted_next: boolean, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`. On promote, `changed_files` includes `current.mdx`, deleted `next.mdx` / `next-attachments/` paths, and any `attachments/<file>` copies from the next slot.
+- **Output (one node):** `{ node_id, previous_state, new_state, next_state, shipped_at, promoted_next: boolean, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`. On promote, `changed_files` includes `<id>.mdx`, deleted `<id>.next.mdx` / `next-attachments/` paths, and any `attachments/<file>` copies from the next slot.
 - **Output (revision):** `{ ordered: true, applied: [one-node outputs...], stopped_on: null, changed_files }`. `changed_files` is the union of every applied transition, including `mindplan/map.md`.
-- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–6 violations; manual `stable`/`unstable` attempt; `ship` attempted while `next.mdx` is not in-review; `deprecated` attempted while `next.mdx` is open; both input forms at once; empty or duplicate `revisions`. Illegal production retreats SHOULD mention `force_unship` and the `unship:<node_id>` confirm shape. A revision that stops names the blocked node and the nodes already applied, and still begins with `Blocked: `.
+- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–6 violations; manual `stable`/`unstable` attempt; `ship` attempted while `<id>.next.mdx` is not in-review; `deprecated` attempted while `<id>.next.mdx` is open; both input forms at once; empty or duplicate `revisions`. Illegal production retreats SHOULD mention `force_unship` and the `unship:<node_id>` confirm shape. A revision that stops names the blocked node and the nodes already applied, and still begins with `Blocked: `.
 
 #### `force_unship`
 
 - **Input:** `node_id`, `confirm` (exact string `unship:<node_id>`), optional `new_status` (`draft|ready|in-progress|in-review`, default `ready`).
-- **Effect:** runs Rule 11 (§5.12): clears `shipped_at`, sets pre-ship `state` on `current.mdx`, recomputes Journey states, refreshes `mindplan/map.md`.
+- **Effect:** runs Rule 11 (§5.12): clears `shipped_at`, sets pre-ship `state` on `<id>.mdx`, recomputes Journey states, refreshes `mindplan/map.md`.
 - **Output:** `{ node_id, previous_state, new_state, shipped_at: null, force_unship: true, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`.
-- **Errors:** wrong/missing confirm; not Foundation/Interaction/Interface; not `stable`/`unstable`; open `next.mdx`; shipped direct dependents; invalid target; Ghost Interaction / Ghost Interface / Completion Check failures for the target state.
+- **Errors:** wrong/missing confirm; not Foundation/Interaction/Interface; not `stable`/`unstable`; open `<id>.next.mdx`; shipped direct dependents; invalid target; Ghost Interaction / Ghost Interface / Completion Check failures for the target state.
 - **Playbook:** agents MUST ask the human and wait for an explicit yes before calling; MUST NOT invent `confirm`.
 
 ### 8.3 Attachments
@@ -1199,8 +1201,8 @@ Guardrails are evaluated at the moment of transition, against the graph and Terr
 
 ### 9.3 Out-of-band edits
 
-- `current.mdx`/`next.mdx` **body** and frontmatter **`title:`** / **`description:`** edits are a first-class part of the process.
-- `current.mdx`/`next.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`, `implements`, `role`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees. Manually creating, editing, or deleting `next.mdx` outside `open_next`/`update_node_status`/`discard_next` is likewise out of contract.
+- `<id>.mdx`/`<id>.next.mdx` **body** and frontmatter **`title:`** / **`description:`** edits are a first-class part of the process.
+- `<id>.mdx`/`<id>.next.mdx` server-owned frontmatter (`state`, `updated_at`, `shipped_at`, `belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`, `implements`, `role`) MUST be written only via MCP tools. Hand-editing voids the framework's guarantees. Manually creating, editing, or deleting `<id>.next.mdx` outside `open_next`/`update_node_status`/`discard_next` is likewise out of contract.
 
 ### 9.4 Concurrency
 
@@ -1217,7 +1219,7 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 | Mode | Command | Checks |
 |------|---------|--------|
 | Default | `mindplan-mcp check` | Graph load; **exclusivity** (each universe file ≤1 owner); **coverage** (every universe file owned); **presence** (in-review/shipped live entries exist on disk, except live entries an open `next` has **released** per §1.2; `next` in-review entries exist); **leftovers** (retired-node claims until deleted/reassigned); **import matrix** (§1.2). Does **not** run dirty-src. Does **not** fail because nodes are mid-pipeline. |
-| Dirty-src (opt-in) | `mindplan-mcp check --base <ref>` | Default checks plus dirty universe ownership vs `<ref>` using the implements index: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`), or a shipped (`stable`/`unstable`) owner with no open `next` (neighbors edit in place, §3.7); **committed** paths vs `base...HEAD` allow review/shipped/cancelled/deprecated, but when `next.mdx` is open only `next` in `in-progress`/`in-review` counts. Changed file with no owner fails. Explicit `--base` fails closed on git errors. |
+| Dirty-src (opt-in) | `mindplan-mcp check --base <ref>` | Default checks plus dirty universe ownership vs `<ref>` using the implements index: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`), or a shipped (`stable`/`unstable`) owner with no open `next` (neighbors edit in place, §3.7); **committed** paths vs `base...HEAD` allow review/shipped/cancelled/deprecated, but when `<id>.next.mdx` is open only `next` in `in-progress`/`in-review` counts. Changed file with no owner fails. Explicit `--base` fails closed on git errors. |
 | Invalid config | any check mode | Fail immediately if `mindplan/config.json` exists but is invalid (bad JSON / shape / lingering `implementation_packages`) |
 
 Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
@@ -1241,7 +1243,7 @@ On every merge to the main branch (or on a schedule), a CI step runs a lightweig
 
 1. scans territory frontmatter for node states and outgoing edge arrays;
 2. expands edge arrays into flat edge triples;
-3. reads each node's `current.mdx` checklist (and, informationally, an open `next.mdx` checklist) to compute completion percentages;
+3. reads each node's `<id>.mdx` checklist (and, informationally, an open `<id>.next.mdx` checklist) to compute completion percentages;
 4. fires idempotent API payloads to the external tracker: create missing tickets (keyed by node `id`), move tickets to the column mapped from the node state, update checklist progress as a comment or custom field.
 
 Suggested state→column mapping:
@@ -1273,13 +1275,13 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] All state lives under `mindplan/` per §1.1; no external database.
 - [ ] Build taxonomy (Journey, Interaction, Interface, Foundation) + defect layer and all five edge types are enforced per §2.
 - [ ] Build pipeline, Bug lifecycle, and computed `stable`/`unstable` are enforced per §3.
-- [ ] The stable-id evolution model (`open_next` / `next.mdx` / promote-on-ship / `discard_next`) is enforced per §3.6, with no version-lineage edge and no dependent relinking.
+- [ ] The stable-id evolution model (`open_next` / `<id>.next.mdx` / promote-on-ship / `discard_next`) is enforced per §3.6, with no version-lineage edge and no dependent relinking.
 - [ ] Journey states are computed from member Interactions, never settable, per §4 (including `next`-slot activity); Bugs and Interfaces do not affect Journeys.
 - [ ] Rules 1–11 are enforced pre-write, fail-fast, per §5 (including Interaction Independence, Behavior First, no Dependency Closure; Rule 10 as `open_next`/`ship`-promotes/`discard_next`; Rule 11 as `force_unship`).
 - [ ] Every rejection message starts with `Blocked: ` per §5.1.
-- [ ] `current.mdx`/`next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
+- [ ] `<id>.mdx`/`<id>.next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
-- [ ] Edges persist in source-node `current.mdx` frontmatter and assemble at runtime per §7; `next.mdx` proposed edges are not live graph edges.
+- [ ] Edges persist in source-node `<id>.mdx` frontmatter and assemble at runtime per §7; `<id>.next.mdx` proposed edges are not live graph edges.
 - [ ] The seventeen-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient and `get_project`.
 - [ ] Mutations are deterministic and atomic per §9.
 - [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
@@ -1307,12 +1309,12 @@ An implementation is MindPlan-compliant if and only if:
 | Interaction Independence | `Blocked: Interaction Independence. Interactions must not depend_on each other. Share state through a Foundation instead. Got Interaction "i-a" -> Interaction "i-b".` |
 | Dependency cycle | `Blocked: depends_on edge f-a -> f-b would create a dependency cycle.` |
 | open_next: not shipped | `Blocked: only shipped Foundations/Interactions/Interfaces (stable or unstable) can open next. "i-checkout" is currently "in-progress".` |
-| open_next: already open | `Blocked: "i-checkout" already has a next.mdx evolution in state "in-progress". Ship or discard_next before opening another.` |
+| open_next: already open | `Blocked: "i-checkout" already has a <id>.next.mdx evolution in state "in-progress". Ship or discard_next before opening another.` |
 | ship: next not in-review | `Blocked: ship is only allowed from next in-review. "i-checkout" next is currently "in-progress".` |
-| discard_next: nothing to discard | `Blocked: node "i-checkout" has no next.mdx to discard.` |
-| deprecate while evolving | `Blocked: cannot deprecate "i-checkout" while next.mdx exists. Call discard_next first, or ship the evolution.` |
-| Rule 5 (Completion) | `Blocked: Completion Check. 3 unchecked checkbox(es) remain in i-checkout/current.mdx. All [ ] items must be [x] before moving to "ship".` |
-| Impact section | `Blocked: Minimum Territory Shape. "if-checkout-page"/next.mdx section "## Impact" is empty or a stub. Write what this node adapted so the already-shipped contract still holds.` |
+| discard_next: nothing to discard | `Blocked: node "i-checkout" has no <id>.next.mdx to discard.` |
+| deprecate while evolving | `Blocked: cannot deprecate "i-checkout" while <id>.next.mdx exists. Call discard_next first, or ship the evolution.` |
+| Rule 5 (Completion) | `Blocked: Completion Check. 3 unchecked checkbox(es) remain in i-checkout/<id>.mdx. All [ ] items must be [x] before moving to "ship".` |
+| Impact section | `Blocked: Minimum Territory Shape. "if-checkout-page"/<id>.next.mdx section "## Impact" is empty or a stub. Write what this node adapted so the already-shipped contract still holds.` |
 | Ordered status stop | `Blocked: Infrastructure First. Interaction "i-checkout" cannot ship while linked Foundations are not stable: "f-db" (in-review). Ordered status stopped on "i-checkout" after applying: f-other (stable). Earlier nodes stay transitioned.` |
 | Rule 6 (Ghost Bug) | `Blocked: Ghost Bug. "bug-race" has no affects edge. Link it to an Interaction, Interface, or Foundation before moving it to "triaged".` |
 | Stability flip | (informational) `stability_recomputed: [{ "id": "i-checkout", "state": "unstable" }]` in tool response |
@@ -1354,11 +1356,11 @@ link_nodes(i-a, i-b, depends_on)              → Blocked: Interaction Independe
 link_nodes(i-checkout, i-tip, leads_to)       → ok (navigation; not a gate)
 
 … months later, checkout gains split-payment support (same id, no new node) …
-open_next(i-checkout)                          → i-checkout: still stable (current.mdx untouched); next.mdx created in draft
-update_node_status(i-checkout, ready)          → applies to next slot: next.mdx → ready
-update_node_status(i-checkout, in-progress)    → next.mdx → in-progress; j-ordering → evolving
-… agent implements, checks off Atomic Ops in next.mdx …
-update_node_status(i-checkout, in-review)      → ok (all [x] in next.mdx)
-update_node_status(i-checkout, ship)           → ok; next promoted over current.mdx (same id "i-checkout"); next.mdx deleted;
+open_next(i-checkout)                          → i-checkout: still stable (<id>.mdx untouched); <id>.next.mdx created in draft
+update_node_status(i-checkout, ready)          → applies to next slot: <id>.next.mdx → ready
+update_node_status(i-checkout, in-progress)    → <id>.next.mdx → in-progress; j-ordering → evolving
+… agent implements, checks off Atomic Ops in <id>.next.mdx …
+update_node_status(i-checkout, in-review)      → ok (all [x] in <id>.next.mdx)
+update_node_status(i-checkout, ship)           → ok; next promoted over <id>.mdx (same id "i-checkout"); <id>.next.mdx deleted;
                                                   i-checkout: stable; j-ordering → stable
 ```

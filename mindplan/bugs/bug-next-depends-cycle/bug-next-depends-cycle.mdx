@@ -15,7 +15,7 @@ affects:
 
 ## Summary
 
-While a Foundation/Interaction has an open `next.mdx`, `link_nodes(depends_on)` writes proposed edges onto the next slot, but acyclicity and Dependency Closure only inspect live `current` edges — so two evolving nodes can form a cycle that survives ship.
+While a Foundation/Interaction has an open `<id>.next.mdx`, `link_nodes(depends_on)` writes proposed edges onto the next slot, but acyclicity and Dependency Closure only inspect live edges — so two evolving nodes can form a cycle that survives ship.
 
 ## Repro Steps
 

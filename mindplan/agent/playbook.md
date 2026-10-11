@@ -31,7 +31,7 @@ Each type answers one question (plain words from SPEC §2.0.0; type names stay f
 1. Rewrite the ask as: *"<who> can <verb> <object> in <area>, from <entry point>, using <building blocks>."*
 2. Each distinct verb + object is one Interaction candidate (size: one behavior).
 3. **Reuse before create** — `find_related_nodes` for each piece. Same action from a new entry point → new `exposes`, not a new Interaction.
-4. Titles are stable names; descriptions say what the node does *now*; revision notes stay in `next.mdx` body.
+4. Titles are stable names; descriptions say what the node does *now*; revision notes stay in `<id>.next.mdx` body.
 5. Then create what's missing via `define-entities` / `plan-project`.
 
 ## Talking to the user

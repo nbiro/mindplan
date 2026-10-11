@@ -4,7 +4,7 @@ description: >-
   Defines MindPlan graph entities (Journey, Foundation, Interaction, Interface,
   Bug) via MCP — taxonomy selection, Foundation roles (Assembler/Infra/Design
   system/Adapter), ID naming, edge linking (belongs_to, depends_on, exposes,
-  leads_to, affects), and current.mdx territory. Journey MUST exist before
+  leads_to, affects), and <id>.mdx territory. Journey MUST exist before
   Interaction; refuses Interaction creation when no matching Journey is in the
   graph. Use when creating planning nodes, scaffolding behavior and surfaces,
   mapping domain capabilities, adding shared substrate, filing bugs, or
@@ -138,7 +138,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Interface | `if-` | `if-waiter-pos`, `if-mcp-tools`, `if-cli` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Naming rule:** the **title** is the stable name of the thing — an action phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `next.mdx` body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Both title and description are written to `current.mdx` frontmatter at creation. Change them afterward with host file tools on `current_path` / `next_path` (preferred) or `patch_node_territory({ node_id, title?, description? })` as a fallback. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then edit the `next` slot.
+**Naming rule:** the **title** is the stable name of the thing — an action phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `<id>.next.mdx` body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Both title and description are written to `<id>.mdx` frontmatter at creation. Change them afterward with host file tools on `current_path` / `next_path` (preferred) or `patch_node_territory({ node_id, title?, description? })` as a fallback. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then edit the `next` slot.
 
 ## Step 4 — Create via MCP
 
@@ -148,7 +148,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<type>s/<id>/current.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps; Foundations also `role`). Does **not** scaffold application code — declare owned paths later with `set_implementation_files` (exact files or directories ending in `/`). Journeys and Bugs have no code ownership. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`next.mdx` (see "Evolving a shipped node" below).
+Server scaffolds `mindplan/<type>s/<id>/<id>.mdx` with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps; Foundations also `role`). Does **not** scaffold application code — declare owned paths later with `set_implementation_files` (exact files or directories ending in `/`). Journeys and Bugs have no code ownership. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`<id>.next.mdx` (see "Evolving a shipped node" below).
 
 After create, call `set_implementation_files` for pipeline nodes. Implement **only** in claimed paths; query expanded files with `get_node_implementation({ node_id })` (or path → owner lookup). Reuse across behaviors via Foundation claims, not Interaction→Interaction `depends_on`. There is no prescribed `src/<type>/<id>/` tree.
 
@@ -292,7 +292,7 @@ open_next({
 })
 ```
 
-`open_next` writes `next.mdx` next to `current.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `current.mdx` — dependents still see the live record. Classify the revision first (blast radius): a **source** edits `next` into a full successor contract; a **neighbor** (files change, behavior doesn't) is edited in place and gets no `next`; neither do unaffected blast-radius nodes. Then default `mindplan-mcp check`, then self-`ready`. An execution session runs `in-progress` → `in-review`; the implementer `ship`s in one ordered `revisions` call after green check, which promotes `next.mdx` over `current.mdx` (title, description, body, edges), deletes `next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `current.mdx`. Only one `next.mdx` may be open at a time.
+`open_next` writes `<id>.next.mdx` next to `<id>.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `<id>.mdx` — dependents still see the live record. Classify the revision first (blast radius): a **source** edits `next` into a full successor contract; a **neighbor** (files change, behavior doesn't) is edited in place and gets no `next`; neither do unaffected blast-radius nodes. Then default `mindplan-mcp check`, then self-`ready`. An execution session runs `in-progress` → `in-review`; the implementer `ship`s in one ordered `revisions` call after green check, which promotes `<id>.next.mdx` over `<id>.mdx` (title, description, body, edges), deletes `<id>.next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `<id>.mdx`. Only one `<id>.next.mdx` may be open at a time.
 
 ## Common mistakes
 
@@ -306,7 +306,7 @@ open_next({
 | Modeling a Page as an Interaction | Wrong taxonomy — Interface exposes Interaction(s); Interaction still owns the screen body |
 | One Interface per screen/tab/page | Wrong — one Interface per actor + channel; each route mounts the matching Interaction surface |
 | Duplicate Interaction per entry point (e.g. MCP steer + console steer) | Wrong — reuse the Interaction; add `exposes` from the new Interface |
-| Changelog titles / descriptions (e.g. "Orient (slim context…)") | Wrong — title is the stable name; revision notes go in `next.mdx` body |
+| Changelog titles / descriptions (e.g. "Orient (slim context…)") | Wrong — title is the stable name; revision notes go in `<id>.next.mdx` body |
 | Hybrid or forced role tags (`"Assembler/docs"`) | Wrong — Assembler only for runtimes; misfits → Infra |
 | Fat screens owned by an Interface | Inverted ownership — move domain + view to the Interaction; Interface only mounts |
 | Foundation described as user behavior | Scope creep — split into Foundation (substrate) + Interaction (behavior) |
@@ -316,7 +316,7 @@ open_next({
 | Manual Journey / `stable` / `unstable` status | Rejected — computed only |
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
 | `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |
-| `open_next` while a `next.mdx` is already open | `Blocked` — `discard_next` or ship it first |
+| `open_next` while a `<id>.next.mdx` is already open | `Blocked` — `discard_next` or ship it first |
 | Expecting `link_dependent` / Dependency Closure | Removed — Interactions do not depend on each other |
 
 ## Examples

@@ -2,11 +2,11 @@
 id: if-cli
 type: Interface
 title: "CLI"
-description: "CLI entry for init, check, and view/export commands."
+description: "Print legacy renames that already succeeded when init stops, and print legacy files removed during check or view."
 state: stable
-shipped_at: 2026-10-09T22:27:39.724Z
+shipped_at: 2026-10-11T12:28:28.907Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-09T22:27:39.724Z
+updated_at: 2026-10-11T12:28:28.907Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -16,6 +16,8 @@ exposes:
 implements:
   - src/interfaces/if-cli/
 ---
+
+
 
 
 
@@ -42,7 +44,8 @@ Intended files: `src/interfaces/if-cli/`
 
 - Remove `--layout` parsing and help
 - Print init migration report from `runInit` when applicable
-- Keep check/view dispatch unchanged aside from help text
+- When init stops after applying some renames, print those lines before the error
+- `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
 
 ## Acceptance Criteria
 
@@ -60,6 +63,8 @@ Commands, flags, and exit codes are unchanged. Init’s closing tips change to m
 
 - [x] Remove `--layout` from argv/help
 - [x] Surface sources migration output from init
+- [x] Print renames already applied when init stops
+- [x] Print legacy deletions from check and view on stderr
 - [x] Verified via smoke
 - [x] Stable title and H1; description is current purpose (no changelog parentheticals)
 - [x] Verified by Reviewer against the naming contract
