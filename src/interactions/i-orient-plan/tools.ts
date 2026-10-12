@@ -10,4 +10,5 @@ export const QUERY_TOOLS = [
   "orient_for_work",
   "get_node_implementation",
   "get_project",
+  "get_rules",
 ] as const;

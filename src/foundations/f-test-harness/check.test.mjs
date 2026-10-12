@@ -193,6 +193,32 @@ if (r.status !== 0) {
   console.log(`FAIL default check should ignore dirty src: ${r.stderr || r.stdout}`);
 } else console.log("ok   default check ignores dirty working tree");
 
+{
+  const payload = await call("get_project", {});
+  const driftPaths = payload?.drift?.paths?.map((p) => p.path) ?? [];
+  if (!payload?.drift || !driftPaths.some((p) => p.endsWith("wip.ts"))) {
+    failures++;
+    console.log(
+      `FAIL MCP success should attach drift for dirty owned src: ${JSON.stringify(payload?.drift).slice(0, 300)}`
+    );
+  } else console.log("ok   MCP success attaches drift for dirty owned src");
+}
+
+{
+  const featurePath = path.join(root, "src", "interactions", "i-feature", "feature.ts");
+  const featureBody = fs.readFileSync(featurePath, "utf-8");
+  fs.rmSync(featurePath);
+  const payload = await call("get_project", {});
+  const hit = payload?.drift?.paths?.find((p) => p.path.endsWith("feature.ts"));
+  if (!hit || hit.owner_id !== "i-feature") {
+    failures++;
+    console.log(
+      `FAIL drift should keep a deleted claimed file: ${JSON.stringify(payload?.drift).slice(0, 300)}`
+    );
+  } else console.log("ok   drift reports a deleted claimed source file");
+  fs.writeFileSync(featurePath, featureBody);
+}
+
 r = runCheck(["--base", baseSha]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("i-feature")) {
   failures++;
@@ -268,6 +294,62 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("i-feature")) {
 } else console.log("ok   uncommitted edit to stable owner with draft next fails");
 await call("discard_next", { node_id: "i-feature" });
 git("checkout", "--", "src/interactions/i-feature/code2.ts");
+
+{
+  const lonelyDir = path.join(root, "src", "lonely");
+  const gonePath = path.join(lonelyDir, "gone.ts");
+  fs.mkdirSync(lonelyDir, { recursive: true });
+  fs.writeFileSync(gonePath, "export const gone = 1;\n");
+  await call("create_node", {
+    id: "i-exact",
+    type: "Interaction",
+    title: "Exact",
+    description: "Owns one file",
+  });
+  await call("link_nodes", { source_id: "i-exact", target_id: "j-app", edge_type: "belongs_to" });
+  await call("link_nodes", { source_id: "i-exact", target_id: "f-core", edge_type: "depends_on" });
+  fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-exact", "i-exact.mdx"));
+  await call("set_implementation_files", {
+    node_id: "i-exact",
+    files: ["src/lonely/gone.ts"],
+  });
+  git("add", "src/lonely/gone.ts");
+  git("commit", "-m", "track gone.ts");
+  fs.rmSync(gonePath);
+  await call("create_node", {
+    id: "f-wide",
+    type: "Foundation",
+    title: "Wide",
+    description: "Infra — broader directory claim",
+    role: "infra",
+  });
+  const wideMdx = path.join(root, "mindplan", "foundations", "f-wide", "f-wide.mdx");
+  fillMinimumTerritoryShape(wideMdx);
+  let wideBody = fs.readFileSync(wideMdx, "utf-8");
+  wideBody = wideBody.replace(/- \[ \]/g, "- [x]");
+  fs.writeFileSync(wideMdx, wideBody);
+  fs.mkdirSync(path.join(root, "src", "wide"), { recursive: true });
+  fs.writeFileSync(path.join(root, "src", "wide", "keep.ts"), "export const keep = 1;\n");
+  await call("set_implementation_files", { node_id: "f-wide", files: ["src/wide/"] });
+  for (const status of ["ready", "in-progress", "in-review", "ship"]) {
+    await call("update_node_status", { node_id: "f-wide", new_status: status });
+  }
+  await call("open_next", { node_id: "f-wide" });
+  await call("set_implementation_files", {
+    node_id: "f-wide",
+    files: ["src/wide/", "src/lonely/"],
+  });
+  const payload = await call("get_project", {});
+  const hit = payload?.drift?.paths?.find((p) => p.path.endsWith("lonely/gone.ts"));
+  if (!hit || hit.owner_id !== "i-exact") {
+    failures++;
+    console.log(
+      `FAIL deleted file should keep the longer live claim: ${JSON.stringify(hit)}`
+    );
+  } else console.log("ok   deleted file keeps the longer live claim over a broader next claim");
+  await call("discard_next", { node_id: "f-wide" });
+  fs.writeFileSync(gonePath, "export const gone = 1;\n");
+}
 
 r = runCheck(["--base", "not-a-real-ref-zzzz"]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("git")) {

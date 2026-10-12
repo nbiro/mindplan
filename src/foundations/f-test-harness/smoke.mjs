@@ -30,28 +30,30 @@ await client.connect(transport);
 
 let failures = 0;
 
-// --- server instructions are a short MUST-call get_project pointer (initialize) ---
+// --- server instructions are a short reanchor pointer (initialize) ---
 {
   const expectedInstructions =
     "Before answering any questions or writing any code for this project, call get_project and read the response. " +
     "Follow the playbook (systems dialect) and the project description and rules it returns. " +
-    "Then call orient_for_work before substantial work.";
+    "Project rules are mandatory: before each action, call get_rules then orient_for_work. " +
+    "Before any new-feature code change, update or create the matching nodes using the plan-project skill.";
   const instructions = client.getInstructions();
   if (instructions !== expectedInstructions) {
     failures++;
     console.log(
-      `FAIL MCP initialize instructions must be the short get_project pointer (got ${instructions === undefined ? "undefined" : `${instructions.length} chars`})`
+      `FAIL MCP initialize instructions must be the short reanchor pointer (got ${instructions === undefined ? "undefined" : `${instructions.length} chars`})`
     );
-  } else console.log("ok   MCP initialize instructions are the short get_project pointer");
+  } else console.log("ok   MCP initialize instructions are the short reanchor pointer");
   const bundledPlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
   if (
     !bundledPlaybook.includes("get_project.playbook") ||
-    !bundledPlaybook.includes("get_project") ||
+    !bundledPlaybook.includes("get_rules") ||
+    !bundledPlaybook.includes("plan-project") ||
     !bundledPlaybook.includes("When the implementation is done and a merge is requested, `ship` the node")
   ) {
     failures++;
-    console.log("FAIL playbook must mention get_project.playbook and ship-on-merge handoff");
-  } else console.log("ok   playbook mentions get_project.playbook");
+    console.log("FAIL playbook must mention get_rules, plan-project, and ship-on-merge handoff");
+  } else console.log("ok   playbook mentions get_rules and plan-project");
   const playbookLines = bundledPlaybook.split("\n").length;
   if (playbookLines > 60) {
     failures++;
@@ -161,6 +163,46 @@ function nextTerritoryPath(...parts) {
       console.log(`FAIL get_project shape (empty brief + playbook): ${gp.text.slice(0, 200)}`);
     } else console.log("ok   get_project returns empty brief + bundled playbook");
   }
+}
+
+// --- get_rules (mandatory rules only) ---
+{
+  const gr = await call("get_rules", {});
+  if (gr.error) {
+    failures++;
+    console.log(`FAIL get_rules: ${gr.text}`);
+  } else {
+    let payload;
+    try {
+      payload = JSON.parse(gr.text);
+    } catch {
+      payload = null;
+    }
+    if (
+      !payload ||
+      payload.path !== "mindplan/project.md" ||
+      typeof payload.rules !== "string" ||
+      "playbook" in payload ||
+      "description" in payload
+    ) {
+      failures++;
+      console.log(`FAIL get_rules shape: ${gr.text.slice(0, 200)}`);
+    } else console.log("ok   get_rules returns path and rules only");
+  }
+}
+
+{
+  const listed = await client.listTools();
+  const names = new Set((listed.tools ?? []).map((t) => t.name));
+  if (names.size !== 23 || !names.has("get_rules")) {
+    failures++;
+    console.log(`FAIL expected 23 tools including get_rules (got ${names.size})`);
+  } else console.log("ok   twenty-three tools registered including get_rules");
+  const orient = (listed.tools ?? []).find((t) => t.name === "orient_for_work");
+  if (!orient?.description?.startsWith("Call before each action")) {
+    failures++;
+    console.log("FAIL orient_for_work description must lead with when to call it");
+  } else console.log("ok   orient_for_work description has when-hint");
 }
 
 {
@@ -1574,6 +1616,8 @@ if (initResult.status !== 0) {
     const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
     return (
       !stub.includes("get_project") ||
+      !stub.includes("get_rules") ||
+      !stub.includes("plan-project") ||
       !stub.includes(".cursor/") ||
       !stub.includes("mindplan/**") ||
       stub.includes("read `mindplan/agent/playbook.md`")

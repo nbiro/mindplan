@@ -13,13 +13,14 @@ import { registerMindPlanTools } from "../../interfaces/if-mcp-tools/register.js
 import { runCli } from "../../interfaces/if-cli/cli.js";
 
 /**
- * Short pointer only — dialect and project brief load via get_project.
+ * Short pointer only — dialect and project brief load via get_project / get_rules.
  * Always present; never embeds playbook or mindplan/project.md bodies.
  */
 export const SERVER_INSTRUCTIONS =
   "Before answering any questions or writing any code for this project, call get_project and read the response. " +
   "Follow the playbook (systems dialect) and the project description and rules it returns. " +
-  "Then call orient_for_work before substantial work.";
+  "Project rules are mandatory: before each action, call get_rules then orient_for_work. " +
+  "Before any new-feature code change, update or create the matching nodes using the plan-project skill.";
 
 async function runMcpServer(): Promise<void> {
   ensureDirectories();
