@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers orient, steer, and export tools, including project/config and attachment writes."
+description: "MCP stdio Interface that registers orient, steer, and export tools, including project description, project rules, config, and attachment writes."
 state: stable
-shipped_at: 2026-10-11T13:15:39.307Z
+shipped_at: 2026-10-12T07:42:07.631Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-11T13:15:39.307Z
+updated_at: 2026-10-12T07:42:07.631Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -21,11 +21,12 @@ implements:
 ---
 
 
+
 # MCP tools
 
 ## Purpose
 
-MCP stdio Interface that registers orient, steer, and export tools, including project/config and attachment writes. Twenty-one-tool surface.
+MCP stdio Interface that registers orient, steer, and export tools, including separate project description and rules writes, config, and attachments. Twenty-two-tool surface.
 
 ## Kind
 
@@ -34,14 +35,14 @@ MCP tool surface (stdio).
 ## Exposed Interactions
 
 - `i-orient-plan` — read/orient tools including `get_project`
-- `i-steer-plan` — mutate tools including territory, project, config, attachments
+- `i-steer-plan` — mutate tools including territory, project description, project rules, config, attachments
 - `i-export-map` — `export_mindplan_view`
 
 ## Spec
 
 Intended files: `src/interfaces/if-mcp-tools/`
 
-- Register `patch_project`, `patch_config`, `put_attachment`, `remove_attachment`
+- Register `patch_project_description`, `patch_project_rules`, `patch_config`, `put_attachment`, `remove_attachment`
 - Update `open_next` / `discard_next` / `patch_node_territory` descriptions for the twin model
 - Report removed legacy paths on tool results
 
@@ -49,7 +50,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 
 ## Acceptance Criteria
 
-- Twenty-one tools registered
+- Twenty-two tools registered
+- `patch_project` is not registered
 - Descriptions match MCP-only + twin lifecycle
 - Verified via `npm test`
 
@@ -58,6 +60,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Register four new tools
 - [x] Update evolution tool descriptions
 - [x] Verified via `npm test`
+- [x] Register patch_project_description and patch_project_rules in place of patch_project
+- [x] Verified the twenty-two-tool surface via `npm test`
 
 ## Attachments
 
