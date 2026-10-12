@@ -4,9 +4,9 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, and skills: MCP is the only writer of mindplan/; shipped next files stay as twins."
 state: mirror
-shipped_at: 2026-10-12T06:31:01.539Z
+shipped_at: 2026-10-12T07:48:48.691Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-12T06:52:40.145Z
+updated_at: 2026-10-12T07:48:48.691Z
 depends_on:
   - f-domain-model
 implements:
@@ -17,12 +17,11 @@ role: infra
 ---
 
 
-
 # Framework docs
 
 ## Purpose
 
-Infra — SPEC, playbook, and skills: MCP is the only writer of `mindplan/`; shipped next files stay as `mirror` twins. Twenty-two MCP tools.
+Infra — SPEC, playbook, and skills: MCP is the only writer of `mindplan/`; shipped next files stay as `mirror` twins. Twenty-two MCP tools. Interaction Purpose names the constraint a later session would otherwise simplify away, so a plan cannot be only a tool list.
 
 ## Shared Substrate Spec
 
@@ -30,7 +29,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 
 - SPEC §3.6 standing twin; §8.2 MCP-only write table; twenty-two tools
 - Playbook dialect: MCP writes the plan; `patch_project_description` and `patch_project_rules` for the brief
-- define-entities / plan-project / Cursor integration: no host file tools on `mindplan/`
+- define-entities / plan-project: no host file tools on `mindplan/`. Interaction Purpose is what the action does, plus the constraint a later session would otherwise simplify away. If there is no such constraint, the outcome sentence is enough.
+- Cursor integration: no host file tools on `mindplan/`
 - `.cursorignore` template ignores `mindplan/**`
 
 Depends on: `f-domain-model`.
@@ -39,6 +39,7 @@ Depends on: `f-domain-model`.
 
 - Normative docs match the twin + MCP-only model
 - Agent templates stop preferring host file tools for territory
+- define-entities and plan-project tell the planner to put that constraint in Interaction Purpose
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -55,6 +56,7 @@ Depends on: `f-domain-model`.
 - [x] Verified via `npm test`
 - [x] Name patch_project_description and patch_project_rules in SPEC, playbook, and skills
 - [x] Verified the split via `npm test`
+- [x] Interaction Purpose in define-entities and plan-project names the constraint a later session would otherwise simplify away
 
 ## Attachments
 

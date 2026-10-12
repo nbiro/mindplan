@@ -212,7 +212,7 @@ Replace scaffold placeholders with real content. Section guidance:
 
 ### Interaction
 
-- **Purpose** — one-sentence behavior outcome
+- **Purpose** — one sentence: what the action does, and the constraint a later session would otherwise simplify away. If there is no such constraint, the outcome sentence is enough.
 - **Actor & Trigger** — who/what starts it (human, system, agent, schedule)
 - **Inputs & Outputs** — data in/out (not UI layout)
 - **PRD / Execution Logic** — step-by-step behavior. When a Page/UI Interface will `exposes` this Interaction, name the **mountable view**. When Kind is CLI/MCP/Webhook/Cron, name the **exportable handler/module** (not a `*-view.tsx`).
