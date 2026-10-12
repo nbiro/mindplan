@@ -44,9 +44,13 @@ let failures = 0;
     );
   } else console.log("ok   MCP initialize instructions are the short get_project pointer");
   const bundledPlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
-  if (!bundledPlaybook.includes("get_project.playbook") || !bundledPlaybook.includes("get_project")) {
+  if (
+    !bundledPlaybook.includes("get_project.playbook") ||
+    !bundledPlaybook.includes("get_project") ||
+    !bundledPlaybook.includes("When the implementation is done and a merge is requested, `ship` the node")
+  ) {
     failures++;
-    console.log("FAIL playbook must mention get_project.playbook");
+    console.log("FAIL playbook must mention get_project.playbook and ship-on-merge handoff");
   } else console.log("ok   playbook mentions get_project.playbook");
   const playbookLines = bundledPlaybook.split("\n").length;
   if (playbookLines > 60) {
