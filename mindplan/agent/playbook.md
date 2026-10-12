@@ -9,7 +9,7 @@ MindPlan draws the boundaries your agent won’t. Plan and change code **through
 3. **`Blocked:` is hard.** Name the cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix it before retrying.
 4. **Claim files before writing them** with `set_implementation_files`.
 5. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
-6. **Check at every handoff.** Default check MUST exit 0 before self-`ready`, `in-review`, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Do not wait until `ship`. The host typecheck is not a MindPlan gate. Code review is outside this dialect — customize via host process or `mindplan/project.md` rules if desired.
+6. **Handoff matches the graph.** Before self-`ready`, `in-review`, `ship` / Bug `resolved`, or telling the user the work is done, update the graph so it matches the implementation and make the default check exit 0. Fix every `Blocked:` first. Do not wait until `ship`. When the implementation is done and a merge is requested, `ship` the node (Bug: `resolved`). The host typecheck is not a MindPlan gate. Code review is outside this dialect — customize via host process or `mindplan/project.md` rules if desired.
 7. **Project brief.** Agents receive this dialect as `get_project.playbook`. Follow `description` and `rules` from the same response. Edit the description with `patch_project_description` and the rules with `patch_project_rules`; call `get_project` again to re-read.
 
 ## Taxonomy
@@ -43,3 +43,5 @@ Use the plain words (area, action, entry point, building block, bug) with the us
 - Invent tickets outside the graph
 - Add `depends_on` between Interactions, or put feature screen bodies in an Interface
 - Hand off work (ready, in-review, ship, or "done") while default check fails
+- Hand off while the graph still describes the previous behavior
+- Merge finished work without shipping the node

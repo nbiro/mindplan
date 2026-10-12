@@ -42,6 +42,6 @@ mindplan/**
 
 7. **Authority** — MCP is the only writer of `mindplan/` (nodes, attachments, `project.md`, `config.json`). Tool results include `changed_files` — inspect via Source Control (hosts often omit subprocess writes from the agent edit strip). Never hand-edit territory MDX or frontmatter.
 
-8. **Check at every handoff** — default `mindplan-mcp check` before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate. Host typecheck is not a MindPlan gate. Code review is outside the MindPlan dialect — use host process or `mindplan/project.md` rules if desired.
+8. **Handoff matches the graph** — before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done, update the graph so it matches the implementation, then run default `mindplan-mcp check`. When the implementation is done and a merge is requested, `ship` the node. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate. Host typecheck is not a MindPlan gate. Code review is outside the MindPlan dialect — use host process or `mindplan/project.md` rules if desired.
 
 9. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
