@@ -79,6 +79,8 @@ Gate facts: Journey before any Interaction create; draft Interactions may lack l
 
 Use `patch_node_territory` for body / title / description (MCP is the only writer of `mindplan/`). Replace scaffold stubs with real Purpose, Actor & Trigger / Kind / PRD / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
 
+Interaction Purpose is one sentence: what the action does, and the constraint a later session would otherwise simplify away. If there is no such constraint, the outcome sentence is enough.
+
 Apply **package ownership** (SPEC §1.2.2) while enriching:
 
 - Interaction PRDs: when a Page/UI Interface will `exposes` this behavior, include a mount/view surface. When Kind is CLI/MCP/Webhook/Cron, name the exportable handler/module — not a `*-view.tsx`.

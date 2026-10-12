@@ -72,7 +72,7 @@ Edit `mindplan/interactions/i-checkout-split/i-checkout-split.mdx` via file tool
 ```
 ## Purpose
 
-Let diners split a bill and complete payment for their share.
+Let diners split a bill (even, by item, or custom) and pay their own share, without collapsing those modes into a single even split.
 
 ## Actor & Trigger
 
