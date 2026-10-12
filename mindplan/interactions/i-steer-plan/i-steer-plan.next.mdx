@@ -1,0 +1,72 @@
+---
+id: i-steer-plan
+type: Interaction
+title: "Steer the plan"
+description: "Compiler-gated mutate tools: status, links, open_next, required territory patches, project/config writes, and attachments."
+state: mirror
+shipped_at: 2026-10-12T06:22:33.044Z
+created_at: 2026-07-15T18:51:48.233Z
+updated_at: 2026-10-12T06:22:33.044Z
+belongs_to:
+  - j-territory-sdlc
+  - j-plan-console
+depends_on:
+  - f-compiler-rules
+  - f-graph-search
+  - f-view-projection
+  - f-territory-store
+  - f-source-index
+leads_to:
+  - i-export-map
+implements:
+  - src/interactions/i-steer-plan/
+---
+
+
+
+
+
+
+
+
+# Steer the plan
+
+## Purpose
+
+Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_project`, `patch_config`, attachment put/remove, and ordered revisions.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP
+- **Trigger:** MCP mutate tools
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-steer-plan/`
+
+- `open_next` / `discard_next` / ship follow the standing twin lifecycle
+- `patch_node_territory` is the required prose path
+- `patch_project`, `patch_config`, `put_attachment`, `remove_attachment`
+- First ship and promote restore/create the mirror twin; retire/unship delete it
+
+Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
+
+## Acceptance Criteria
+
+- New mutate tools write project/config/attachments
+- Twin lifecycle wired through status / open_next / discard
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Retire changed_files lists deleted mirror twin paths
+- [x] Attachment base64 allows empty and unpadded payloads
+- [x] Strict base64 validation for put_attachment
+- [x] Attachment basename hardening (reject `.` / `..`)
+- [x] Twin lifecycle in handlers
+- [x] patch_project / patch_config / attachments
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

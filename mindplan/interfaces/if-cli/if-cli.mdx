@@ -4,9 +4,9 @@ type: Interface
 title: "CLI"
 description: "Print legacy renames that already succeeded when init stops, and print legacy files removed during check or view."
 state: stable
-shipped_at: 2026-10-11T12:28:28.907Z
+shipped_at: 2026-10-12T06:31:01.992Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-11T12:28:28.907Z
+updated_at: 2026-10-12T06:31:01.992Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -16,6 +16,10 @@ exposes:
 implements:
   - src/interfaces/if-cli/
 ---
+
+
+
+
 
 
 
@@ -61,6 +65,8 @@ Commands, flags, and exit codes are unchanged. Init’s closing tips change to m
 
 ## Atomic Ops
 
+- [x] Skipped mirror twin lines printed on init
+- [x] CLI prints skipped mirror twin lines
 - [x] Remove `--layout` from argv/help
 - [x] Surface sources migration output from init
 - [x] Print renames already applied when init stops

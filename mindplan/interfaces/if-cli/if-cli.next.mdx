@@ -1,0 +1,84 @@
+---
+id: if-cli
+type: Interface
+title: "CLI"
+description: "Print legacy renames that already succeeded when init stops, and print legacy files removed during check or view."
+state: mirror
+shipped_at: 2026-10-12T06:31:01.992Z
+created_at: 2026-08-10T13:44:20.510Z
+updated_at: 2026-10-12T06:31:01.992Z
+depends_on:
+  - f-mcp-runtime
+exposes:
+  - i-init-project
+  - i-check-integrity
+  - i-export-map
+implements:
+  - src/interfaces/if-cli/
+---
+
+
+
+
+
+
+
+
+
+
+# CLI
+
+## Purpose
+
+CLI Interface for `mindplan-mcp` subcommands. Drops `--layout`. Init reporting mentions sources migration. Owns argv parsing, help, output, exit codes only.
+
+## Kind
+
+CLI command surface.
+
+## Exposed Interactions
+
+- `i-init-project` — `init` (`-f` / `--force`; no `--layout`)
+- `i-check-integrity` — `check` (default ownership; `--base` opt-in)
+- `i-export-map` — `view` / `export`
+
+## Spec
+
+Intended files: `src/interfaces/if-cli/`
+
+- Remove `--layout` parsing and help
+- Print init migration report from `runInit` when applicable
+- When init stops after applying some renames, print those lines before the error
+- `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
+
+## Acceptance Criteria
+
+- `--layout` is an unknown option
+- Help documents sources-oriented init/check
+- No domain logic under this Interface
+- Verified via smoke
+
+
+## Impact
+
+Commands, flags, and exit codes are unchanged. Init’s closing tips change to match the stub install: the tip shown when an existing `AGENTS.md` was kept now tells the maintainer to add the MindPlan stub (orient first, follow the MCP server instructions) rather than reference the full playbook. The tip claiming Plan Review (`draft → ready`) is mandatory is removed — it was already false after self-ready shipped. The `--base` help line describes the same opt-in dirty-src check.
+
+## Atomic Ops
+
+- [x] Skipped mirror twin lines printed on init
+- [x] CLI prints skipped mirror twin lines
+- [x] Remove `--layout` from argv/help
+- [x] Surface sources migration output from init
+- [x] Print renames already applied when init stops
+- [x] Print legacy deletions from check and view on stderr
+- [x] Verified via smoke
+- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
+- [x] Verified by Reviewer against the naming contract
+
+## Attachments
+
+_None._
+
+## Impact
+
+Title and description only; CLI wiring and exposed Interactions unchanged.

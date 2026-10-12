@@ -98,7 +98,7 @@ Mountable view: `src/interactions/i-checkout-split/checkout-split-view.tsx` (acc
 - [ ] View accepts shell/nav as props/callbacks — does not import Interface packages
 ```
 
-Optional fallback: `patch_node_territory({ node_id: "i-checkout-split", body: "…" })`.
+`patch_node_territory({ node_id: "i-checkout-split", body: "…" })`.
 
 From that PRD, shared needs are: order/payment tables, UI primitives, an app shell Assembler, and a **Page** Interface that exposes the Interaction.
 
@@ -126,7 +126,7 @@ Do **not** add Interaction → Interaction `depends_on`. Navigation to a follow-
 
 ### 5. Enrich Foundation and Interface territory
 
-Prefer host file tools on `current_path` from `get_node_context` (body below `---`, plus title/description scalars). Example bodies:
+Use `patch_node_territory` for body / title / description (MCP is the only writer of `mindplan/`). Example bodies:
 
 **`mindplan/foundations/f-db-core/f-db-core.mdx` body:**
 
@@ -204,7 +204,7 @@ export default function CheckoutScreen({ orderId }: { orderId: string }) {
 - [ ] Documented for consumers
 ```
 
-Optional fallback (automation / weak file tools): `patch_node_territory({ node_id, body: "…" })`.
+`patch_node_territory({ node_id, body: "…" })`.
 
 ### 6. Advance states (after links + content)
 

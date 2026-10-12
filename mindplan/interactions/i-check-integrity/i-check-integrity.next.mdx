@@ -1,0 +1,58 @@
+---
+id: i-check-integrity
+type: Interaction
+title: "Check integrity"
+description: "Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin."
+state: mirror
+shipped_at: 2026-10-12T06:03:48.847Z
+created_at: 2026-07-20T18:53:01.570Z
+updated_at: 2026-10-12T06:03:48.847Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-territory-store
+  - f-compiler-rules
+  - f-mcp-runtime
+  - f-source-index
+implements:
+  - src/interactions/i-check-integrity/
+---
+
+
+
+
+# Check integrity
+
+## Purpose
+
+Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`). Open evolutions skip the mirror check.
+
+## Actor & Trigger
+
+- **Actor:** human or CI via `mindplan-mcp check`
+- **Trigger:** CLI check
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-check-integrity/`
+
+- `checkMirrorTwins` after presence checks
+- Uses `mirrorDriftReason` from the territory store
+
+Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
+
+## Acceptance Criteria
+
+- Missing or drifted mirror Blocks
+- Open evolution does not fail the mirror check
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Drift message points at init heal / live MCP write
+- [x] Add mirror twin integrity check
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

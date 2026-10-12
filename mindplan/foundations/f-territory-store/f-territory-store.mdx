@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Report legacy-file deletions, and do not delete a file that is the same as the id-named file."
+description: "Infra — persist territory through the store only; keep a shipped next file as a state-only twin."
 state: stable
-shipped_at: 2026-10-11T12:28:28.760Z
+shipped_at: 2026-10-12T06:31:01.685Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-11T12:28:28.760Z
+updated_at: 2026-10-12T06:31:01.685Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -22,49 +22,41 @@ role: infra
 
 
 
-
-
-
 # Territory store
 
 ## Purpose
 
-Infra — load and persist territory MDX, scaffolds, frontmatter patches, and the evolution slot (`open_next` / `discard_next` / promote). Own the project-brief loader (`loadProjectBrief`) that reads `mindplan/project.md` — the storage seam for description and standing rules. Does **not** own MCP instructions or the playbook body.
+Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md`.
 
 ## Shared Substrate Spec
 
 Intended files: `src/foundations/f-territory-store/`
 
-Each node folder is `mindplan/<type>/<id>/`. New nodes use `<id>.mdx` for the live record and `<id>.next.mdx` for an open evolution, so review diffs show the node id. Existing `current.mdx` and `next.mdx` stay valid: discover, read, patch, open, discard, and promote keep using the file that is already there. A new evolution follows the live file (`next.mdx` beside `current.mdx`, `<id>.next.mdx` beside `<id>.mdx`). When both names exist for one slot and both are regular files, the id-named file is kept and the legacy file is deleted. The same directory entry is left in place when the names differ only by case, or when the id is `current`. Each deletion is recorded for the caller (`drainRemovedLegacyFiles`). `attachments/` and `next-attachments/` stay directory names.
-
-- `liveMdxFilename(id)` → `<id>.mdx`; `nextMdxFilename(id)` → `<id>.next.mdx`
-- `territorySlotFilename` picks the existing file, or the id name when creating one
-- `project.ts` — `loadProjectBrief()`, empty template, `PROJECT_RELATIVE_PATH`
-  - Parses `## Description` and `## Rules`
-  - `## Rules` is the last section: match through end of file (`$`), not PCRE `\z`
-  - Missing or unreadable → empty strings + empty template markdown; never throws
-- Callers compose with the playbook elsewhere (`get_project`); this package does not append to instructions
+- Discover: `mirror` does not set `node.next`; pipeline states do
+- `writeMirrorTwin` / `syncMirrorAfterLiveWrite` / `deleteNextSlotFiles` / `mirrorDriftReason`
+- `openNextSlot` flips mirror→draft (creates twin from live when missing); does not reset checkboxes
+- `discardNextSlot` / `promoteNextSlot` restore the mirror twin (do not delete the next file)
+- Reject writes aimed at a mirror file
+- `writeProjectBrief` for MCP `patch_project`
 
 Depends on: `f-domain-model`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- New nodes are stored as `<id>.mdx` and `<id>.next.mdx`
-- A node that still has `current.mdx` / `next.mdx` loads, patches, and evolves in those files
-- When both the id name and the legacy name exist for one slot, the legacy file is deleted and the id-named file is kept
-- A case-only alias of the same file is not deleted
-- Promote and discard still remove a legacy `next.mdx`
-- `loadProjectBrief` never throws; missing file yields empty description/rules
-- When `## Rules` is present, `rules` is the section body (including a last-section file)
-- Graph load, scaffold, edge patches, and promote still round-trip frontmatter and body
+- Standing twin after first ship; open_next is a state flip
+- Live MCP writes keep the twin true when no evolution is open
+- Ship/discard restore mirror; retire/unship delete it
+- Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Read and write legacy `current.mdx` and `next.mdx`
-- [x] Delete the legacy file when the id-named file is already there
-- [x] Leave a same-file pair in place, including a case-only name
-- [x] Promote and discard a legacy `next.mdx`
-- [x] Green `mindplan-mcp check` and `npm test`
+- [x] Non-file next paths skipped in discover; writeMirrorTwin rejects non-files
+- [x] open_next Blocks on drifted mirror (heal via init / live write)
+- [x] open_next seeds from live only when twin is missing
+- [x] Mirror twin helpers and discover skip
+- [x] open_next / discard / promote twin lifecycle
+- [x] Sync after live writes; writeProjectBrief
+- [x] Verified via `npm test`
 
 ## Attachments
 

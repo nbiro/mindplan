@@ -10,9 +10,9 @@ description: >-
 
 # Plan a MindPlan Project (no code)
 
-Use this skill when the session’s job is **only** to create or reshape MindPlan territory. Application code (files claimed via `implements` / `set_implementation_files`) is out of scope until a later execution session under `mindplan/agent/playbook.md`.
+Use this skill when the session’s job is **only** to create or reshape MindPlan territory. Application code (files claimed via `implements` / `set_implementation_files`) is out of scope until a later execution session under `get_project.playbook`.
 
-Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity create/link details: `mindplan/agent/skills/define-entities/SKILL.md`. Always-on execution process (build pipeline, bugs, shipping): `mindplan/agent/playbook.md`.
+Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity create/link details: the `define-entities` skill. Always-on execution process (build pipeline, bugs, shipping): `get_project.playbook`.
 
 ## When to use
 
@@ -52,13 +52,13 @@ Run the **breakdown recipe** from `define-entities` Step 0 before inventing node
 3. **Reuse before create** — `find_related_nodes` / graph inspect for each area, action, entry point, and building block. Same action from a new entry point → new `exposes`, not a new Interaction. One Interface per actor + channel (not per page/tab).
 4. State which nodes you will add, **in plain words**. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
 5. Missing area → polite refuse: "This needs an area first; is it part of Billing or something new?" Do not silently mint a Journey.
-6. A **product summary** or **standing rule** for the whole repo is an edit to `mindplan/project.md` — not a new Journey. Call `get_project` to re-read the brief.
+6. A **product summary** or **standing rule** for the whole repo is a `patch_project` call — not a new Journey. Call `get_project` again to re-read the brief.
 
-Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
+Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
 
 ### 3. Define and link entities
 
-Follow `mindplan/agent/skills/define-entities/`:
+Follow the `define-entities` skill:
 
 1. Journeys first (refuse Interactions with no matching Journey — plain-word refusal)
 2. Interactions at `draft` (behavior / PRD thinking; links not required yet)
@@ -77,7 +77,7 @@ Gate facts: Journey before any Interaction create; draft Interactions may lack l
 
 ### 4. Enrich territory (full contracts)
 
-Prefer host file tools on `current_path` / `next_path` for body / title / description (so humans see native diffs). `patch_node_territory` is an optional fallback. Replace scaffold stubs with real Purpose, Actor & Trigger / Kind / PRD / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
+Use `patch_node_territory` for body / title / description (MCP is the only writer of `mindplan/`). Replace scaffold stubs with real Purpose, Actor & Trigger / Kind / PRD / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
 
 Apply **package ownership** (SPEC §1.2.2) while enriching:
 

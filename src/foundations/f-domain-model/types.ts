@@ -58,6 +58,10 @@ export type FoundationRole = (typeof FOUNDATION_ROLES)[number];
 export const NEXT_PIPELINE_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
 export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
 
+/** Standing twin of a shipped live file. Not an evolution — discover must not set `node.next`. */
+export const MIRROR_STATE = "mirror" as const;
+export type MirrorState = typeof MIRROR_STATE;
+
 /** In-flight evolution of a shipped Foundation/Interaction/Interface (from `<id>.next.mdx`). */
 export interface NextSlot {
   state: NextPipelineState;
@@ -105,7 +109,7 @@ export interface MindPlanNode {
   implements?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
-  /** Present when `<id>.next.mdx` exists (Foundation/Interaction/Interface evolution in progress). */
+  /** Present when `<id>.next.mdx` is an open evolution (not a `mirror` twin). */
   next?: NextSlot;
 }
 
@@ -173,6 +177,10 @@ export function isOpenBugState(state: string): state is OpenBugState {
 
 export function isNextPipelineState(state: string): state is NextPipelineState {
   return (NEXT_PIPELINE_STATES as readonly string[]).includes(state);
+}
+
+export function isMirrorState(state: string): state is MirrorState {
+  return state === MIRROR_STATE;
 }
 
 /** Types that use the Foundation/Interaction/Interface build pipeline and may open next. */

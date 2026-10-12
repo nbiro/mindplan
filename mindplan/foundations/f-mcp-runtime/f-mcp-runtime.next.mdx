@@ -1,0 +1,52 @@
+---
+id: f-mcp-runtime
+type: Foundation
+title: "MCP runtime"
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves a short get_project pointer as server instructions."
+state: mirror
+shipped_at: 2026-10-10T14:10:21.973Z
+created_at: 2026-07-15T18:51:31.349Z
+updated_at: 2026-10-10T14:10:21.973Z
+depends_on:
+  - f-territory-store
+  - f-framework-docs
+implements:
+  - src/foundations/f-mcp-runtime/
+  - src/index.ts
+role: assembler
+---
+
+
+# MCP runtime
+
+## Purpose
+
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer that requires `get_project` before answering or writing code. It does **not** embed the playbook or project brief bodies.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-mcp-runtime/`
+
+- `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
+- Export `SERVER_INSTRUCTIONS` — fixed short string requiring `get_project`, then `orient_for_work`
+- Always pass `{ instructions: SERVER_INSTRUCTIONS }` (never omit for a missing playbook file)
+- MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
+- MUST NOT load or append `mindplan/project.md` or the playbook body into instructions
+
+Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
+
+## Acceptance Criteria
+
+- MCP `initialize` instructions equal the short `get_project` pointer constant
+- Instructions contain neither the playbook body nor `mindplan/project.md` content
+- Boot never fails over a missing brief or playbook file
+
+## Atomic Ops
+
+- [x] Replace instructions with the short MUST-call `get_project` pointer
+- [x] Build and run tests (`npm test`)
+- [x] Verified by Reviewer against the contract
+
+## Attachments
+
+_None._

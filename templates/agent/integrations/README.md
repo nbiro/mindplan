@@ -16,13 +16,12 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 **Shared assets** (installed by `init`):
 
 - MCP `instructions` — short pointer: call `get_project` before answering or writing code
-- `mindplan/agent/playbook.md` — bundled dialect, also returned as `get_project.playbook`; file fallback if tools are hidden
-- `mindplan/agent/skills/define-entities/` — entity creation guide (scaffolding)
-- `mindplan/agent/skills/plan-project/` — plan-only product modeling (no application code)
+- `get_project.playbook` — bundled dialect (also installed under `mindplan/agent/` for packaging; host offline copies live under `.cursor/`)
+- Host skill copies — `define-entities`, `plan-project` (Cursor: `.cursor/skills/…`)
 - `mindplan/agent/mcp.json.example` — MCP server snippet (adjust the path)
 
 If your agent reads root **`AGENTS.md`**, `init` creates the stub when missing. Otherwise add `templates/agent/agents-stub.md` yourself.
 
-**Territory transparency:** MCP owns graph mutations (`create_node`, links, status, `open_next` / `discard_next`) and returns `changed_files` for paths it wrote. Interactive agents SHOULD edit territory prose (`title` / `description` / body / checkboxes) with host file tools so native “changed files” UIs show the diff. Review MCP side-effects via those paths, Source Control, or the tool result — many hosts do not list subprocess FS writes in their edit strip.
+**Territory transparency:** MCP is the only writer of `mindplan/` (graph fields, territory prose, attachments, `project.md`, `config.json`). Mutate tools return `changed_files` for paths they wrote. Review those paths in Source Control or the tool result — many hosts do not list subprocess FS writes in their edit strip. Do not edit `mindplan/` with host file tools.
 
 Set `MINDPLAN_ROOT` to your project root if the MCP server is not started from that directory.

@@ -195,6 +195,12 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
   }
   printInstall("Cursor rule", report.cursorRule);
   printInstall(".cursor/permissions.json", report.cursorPermissions);
+  for (const twin of report.mirrorTwins) {
+    console.log(`Wrote mirror twin ${twin.path} (${twin.node_id})`);
+  }
+  for (const skip of report.mirrorTwinSkips) {
+    console.log(`Skipped mirror twin for ${skip.node_id}: ${skip.reason}`);
+  }
 
   if (!report.agentsMd.installed) {
     console.log(

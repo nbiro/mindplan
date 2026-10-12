@@ -22,7 +22,7 @@ npx mindplan-mcp
 
 ## Agent instructions
 
-MCP `instructions` already require `get_project` before answering or writing code. That call returns the dialect plus the project brief. `mindplan/agent/playbook.md` is the fallback if tools are hidden.
+MCP `instructions` already require `get_project` before answering or writing code. That call returns the dialect plus the project brief. If tools are hidden, use root `AGENTS.md` and host-installed skill copies — do not read or edit `mindplan/**` with host file tools.
 
 Many agents auto-read root **`AGENTS.md`** — `init` creates the stub there when missing. Skills (`define-entities`, `plan-project`) load on demand.
 

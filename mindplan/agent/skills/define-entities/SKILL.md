@@ -15,7 +15,7 @@ description: >-
 
 Use this skill when adding or restructuring nodes in `mindplan/`. All graph mutations go through the **MindPlan MCP server** — never edit server-owned frontmatter fields directly.
 
-Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. Normative reference: `SPEC.md` (plain-language glossary §2.0.0). For executing work through the build pipeline and Bug lifecycle (always-on process), follow `mindplan/agent/playbook.md`. For plan-only sessions that must not write application code, follow `mindplan/agent/skills/plan-project/SKILL.md` (it calls this skill for create/link steps).
+Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. Normative reference: `SPEC.md` (plain-language glossary §2.0.0). For executing work through the build pipeline and Bug lifecycle (always-on process), follow `get_project.playbook`. For plan-only sessions that must not write application code, follow the `plan-project` skill (it calls this skill for create/link steps).
 
 ## Step 0 — Break the request down
 
@@ -36,7 +36,7 @@ Rules:
 1. Each distinct *verb + object* is one Interaction candidate.
 2. **Reuse before create.** Run `find_related_nodes` (or inspect `get_mindplan_graph`) for each area, action, entry point, and building block. Same action on a new entry point → new `exposes` (and mount/wire), **not** a new Interaction.
 3. State which nodes you will add, in plain words. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
-4. A **product summary** or **standing rule** for the whole repo is an edit to `mindplan/project.md` — not a new Journey. Call `get_project` to re-read (includes the playbook).
+4. A **product summary** or **standing rule** for the whole repo is a `patch_project` call — not a new Journey. Call `get_project` again to re-read (includes the playbook).
 5. Then create what's missing, in the definition order below.
 
 ## Step 1 — Orient
@@ -138,7 +138,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Interface | `if-` | `if-waiter-pos`, `if-mcp-tools`, `if-cli` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Naming rule:** the **title** is the stable name of the thing — an action phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `<id>.next.mdx` body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Both title and description are written to `<id>.mdx` frontmatter at creation. Change them afterward with host file tools on `current_path` / `next_path` (preferred) or `patch_node_territory({ node_id, title?, description? })` as a fallback. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then edit the `next` slot.
+**Naming rule:** the **title** is the stable name of the thing — an action phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `<id>.next.mdx` body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Both title and description are written to `<id>.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then patch the `next` slot.
 
 ## Step 4 — Create via MCP
 
@@ -180,11 +180,11 @@ There is **no** `link_dependent` parameter and **no** Dependency Closure rule.
 link_nodes({ source_id, target_id, edge_type })
 ```
 
-Illegal shapes are rejected — see `mindplan/agent/playbook.md` for the full edge taxonomy.
+Illegal shapes are rejected — see `get_project.playbook` for the full edge taxonomy.
 
 ## Step 6 — Enrich territory (file tools preferred)
 
-Prefer **host file tools** for body, title, and description at `current_path` / `next_path` from orientation (so the host “changed files” UI shows the edit). Use `patch_node_territory` only as a fallback (automation / weak file tools). Never edit frontmatter `state:`, timestamps, or edge arrays by hand.
+Use **`patch_node_territory`** for body, title, and description (MCP is the only writer of `mindplan/`). Never hand-edit territory MDX or server-owned frontmatter (`state:`, timestamps, edge arrays).
 
 ```
 # Preferred: edit MDX body below --- and title/description scalars via Write/StrReplace
@@ -292,7 +292,7 @@ open_next({
 })
 ```
 
-`open_next` writes `<id>.next.mdx` next to `<id>.mdx` on the **same** node: `draft` state, seeded with the current body and inherited outgoing `belongs_to`/`depends_on`/`exposes`/`leads_to`, and resets checkboxes to `[ ]`. The live node keeps serving unchanged under `<id>.mdx` — dependents still see the live record. Classify the revision first (blast radius): a **source** edits `next` into a full successor contract; a **neighbor** (files change, behavior doesn't) is edited in place and gets no `next`; neither do unaffected blast-radius nodes. Then default `mindplan-mcp check`, then self-`ready`. An execution session runs `in-progress` → `in-review`; the implementer `ship`s in one ordered `revisions` call after green check, which promotes `<id>.next.mdx` over `<id>.mdx` (title, description, body, edges), deletes `<id>.next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` abandons the evolution at any point without touching `<id>.mdx`. Only one `<id>.next.mdx` may be open at a time.
+After first ship, `<id>.next.mdx` stays as a standing twin (`state: mirror`) of the live file. `open_next` flips that twin to `draft` (optional title/description; checkboxes unchanged). The live node keeps serving under `<id>.mdx`. Classify the revision first (blast radius): a **source** edits `next` into a full successor contract; a **neighbor** (files change, behavior doesn't) is edited in place and gets no open evolution; neither do unaffected blast-radius nodes. Then default `mindplan-mcp check`, then self-`ready`. An execution session runs `in-progress` → `in-review`; the implementer `ship`s in one ordered `revisions` call after green check, which promotes next over live, restores the `mirror` twin, and recomputes `stable`/`unstable` — same id throughout. `discard_next` restores the mirror without touching `<id>.mdx`. Only one open evolution (`<id>.next.mdx` may be open at a time.
 
 ## Common mistakes
 

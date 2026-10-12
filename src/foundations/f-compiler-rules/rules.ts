@@ -724,9 +724,10 @@ export function validateOpenNext(node: MindPlanNode): void {
   }
   if (node.next) {
     throw blocked(
-      `"${node.id}" already has a ${node.id}.next.mdx evolution in state "${node.next.state}". Ship or discard_next before opening another.`
+      `"${node.id}" already has an open evolution in state "${node.next.state}". Ship or discard_next before opening another.`
     );
   }
+  // A standing `mirror` twin does not set node.next — open_next flips it to draft.
 }
 
 export type DependentEntry = { node: MindPlanNode; distance: number };
@@ -1102,7 +1103,7 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
   }
   if (node.next) {
     throw blocked(
-      `cannot cancel "${node.id}" while ${node.id}.next.mdx exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot cancel "${node.id}" while an open evolution exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
   const byId = new Map<string, MindPlanNode>();
@@ -1140,7 +1141,7 @@ function resolveNextStatusChange(
   const next = node.next!;
   if (newStatus === "deprecated" || newStatus === "cancelled") {
     throw blocked(
-      `cannot set "${newStatus}" on "${node.id}" while ${node.id}.next.mdx exists. Call discard_next first, or ship the evolution.`
+      `cannot set "${newStatus}" on "${node.id}" while an open evolution exists. Call discard_next first, or ship the evolution.`
     );
   }
 
@@ -1321,7 +1322,7 @@ export function resolveForceUnship(
 
   if (node.next) {
     throw blocked(
-      `cannot force_unship "${node.id}" while ${node.id}.next.mdx exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot force_unship "${node.id}" while an open evolution exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
 

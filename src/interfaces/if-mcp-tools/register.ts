@@ -24,7 +24,11 @@ import {
   forceUnship,
   linkNodes,
   openNext,
+  patchConfig,
   patchNodeTerritory,
+  patchProject,
+  putAttachment,
+  removeAttachment,
   setImplementationFiles,
   unlinkNodes,
   updateNodeStatus,
@@ -241,9 +245,9 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Patch node territory",
       description:
-        "Patches territory-owned content: body (PRD, checklists), optional title/description/role " +
-        "(pre-ship or next slot), toggle_checkboxes. " +
-        "When a shipped Foundation/Interaction/Interface has <id>.next.mdx, patches default to next. Optional slot: current|next.",
+        "Required writer for territory prose: body (PRD, checklists), optional title/description/role " +
+        "(pre-ship or open evolution), toggle_checkboxes. Do not edit mindplan/ MDX with host file tools. " +
+        "When a shipped node has an open evolution (not a mirror twin), patches default to next. Optional slot: current|next.",
       inputSchema: {
         node_id: NODE_ID.describe("Node whose territory to patch."),
         title: z
@@ -272,12 +276,83 @@ export function registerMindPlanTools(server: McpServer): void {
         slot: z
           .enum(["current", "next"])
           .optional()
-          .describe("Territory slot to patch. Defaults to next when evolving a shipped node."),
+          .describe("Territory slot to patch. Defaults to next when an open evolution exists."),
       },
     },
     guarded(({ node_id, title, description, role, body, toggle_checkboxes, slot }) =>
       patchNodeTerritory({ node_id, title, description, role, body, toggle_checkboxes, slot })
     )
+  );
+
+  server.registerTool(
+    "patch_project",
+    {
+      title: "Patch project brief",
+      description:
+        "Writes mindplan/project.md description and/or rules via the territory store. " +
+        "Re-call get_project after editing. Do not hand-edit project.md.",
+      inputSchema: {
+        description: z.string().optional().describe("Replace the ## Description section body."),
+        rules: z.string().optional().describe("Replace the ## Rules section body."),
+      },
+    },
+    guarded(({ description, rules }) => patchProject({ description, rules }))
+  );
+
+  server.registerTool(
+    "patch_config",
+    {
+      title: "Patch project config",
+      description:
+        "Writes mindplan/config.json sources and/or exclude via the territory store. " +
+        "Do not hand-edit config.json.",
+      inputSchema: {
+        sources: z
+          .array(z.string())
+          .optional()
+          .describe("Glob list for the ownership universe (replaces sources when set)."),
+        exclude: z
+          .array(z.string())
+          .optional()
+          .describe("Glob list excluded from the universe (replaces exclude when set)."),
+      },
+    },
+    guarded(({ sources, exclude }) => patchConfig({ sources, exclude }))
+  );
+
+  server.registerTool(
+    "put_attachment",
+    {
+      title: "Put node attachment",
+      description:
+        "Writes a file under attachments/ (or next-attachments/ while evolving) as base64. " +
+        "Slot defaults to next when an open evolution exists.",
+      inputSchema: {
+        node_id: NODE_ID.describe("Node that owns the attachment."),
+        filename: z.string().min(1).describe("Basename only (no path separators)."),
+        content_base64: z.string().describe("File bytes encoded as base64."),
+        slot: z.enum(["current", "next"]).optional().describe("Attachment slot override."),
+      },
+    },
+    guarded(({ node_id, filename, content_base64, slot }) =>
+      putAttachment({ node_id, filename, content_base64, slot })
+    )
+  );
+
+  server.registerTool(
+    "remove_attachment",
+    {
+      title: "Remove node attachment",
+      description:
+        "Deletes a file under attachments/ (or next-attachments/ while evolving). " +
+        "Slot defaults to next when an open evolution exists.",
+      inputSchema: {
+        node_id: NODE_ID.describe("Node that owns the attachment."),
+        filename: z.string().min(1).describe("Basename only (no path separators)."),
+        slot: z.enum(["current", "next"]).optional().describe("Attachment slot override."),
+      },
+    },
+    guarded(({ node_id, filename, slot }) => removeAttachment({ node_id, filename, slot }))
   );
 
   server.registerTool(
@@ -355,9 +430,9 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Open next evolution",
       description:
-        "Opens <id>.next.mdx for a shipped Foundation, Interaction, or Interface (stable/unstable). Copies current body and " +
-        "outgoing belongs_to/depends_on/exposes/leads_to into a draft next slot. The live node keeps serving under the same id. " +
-        "Ship from next in-review to promote next over current; discard_next to abandon.",
+        "Flips a shipped node's standing <id>.next.mdx twin from state mirror to draft (creates the twin from live if missing). " +
+        "Optional title/description overrides. Does not reset checkboxes. The live node keeps serving. " +
+        "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror.",
       inputSchema: {
         node_id: NODE_ID.describe(
           "Id of the shipped Foundation, Interaction, or Interface to evolve."
@@ -374,10 +449,10 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Discard next evolution",
       description:
-        "Deletes <id>.next.mdx (and next-attachments/) for a Foundation, Interaction, or Interface, abandoning an in-flight evolution. " +
-        "The live <id>.mdx is unchanged.",
+        "Abandons an in-flight evolution and restores <id>.next.mdx as a state: mirror twin of the live file. " +
+        "Clears next-attachments/. The live <id>.mdx is unchanged.",
       inputSchema: {
-        node_id: NODE_ID.describe("Id of the node whose next slot to discard."),
+        node_id: NODE_ID.describe("Id of the node whose open evolution to discard."),
       },
     },
     guarded(({ node_id }) => discardNext({ node_id }))
@@ -427,7 +502,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
         "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
-        "When <id>.next.mdx exists, build-pipeline transitions apply to the next slot; ship promotes next over current. " +
+        "When an open evolution exists (not a mirror twin), build-pipeline transitions apply to the next slot; " +
+        "ship promotes next over current and restores the mirror twin. " +
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
         "Journey and production stable/unstable are computed automatically.",
       inputSchema: {
@@ -468,7 +544,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "DANGEROUS recovery only. Ask the user first and wait for an explicit yes — never invent confirmation. " +
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
-        'Requires confirm exactly equal to "unship:<node_id>". Blocked while <id>.next.mdx is open or shipped dependents exist.',
+        'Requires confirm exactly equal to "unship:<node_id>". Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin.',
       inputSchema: {
         node_id: NODE_ID.describe(
           "Stable/unstable Foundation, Interaction, or Interface to unship."

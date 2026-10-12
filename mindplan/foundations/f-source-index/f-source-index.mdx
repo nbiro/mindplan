@@ -2,11 +2,11 @@
 id: f-source-index
 type: Foundation
 title: "Source index"
-description: "Infra — sources/exclude universe, claim expansion, ownership release, and import resolution."
+description: "Infra — ownership universe and MCP write of mindplan/config.json."
 state: stable
-shipped_at: 2026-10-09T22:27:38.978Z
+shipped_at: 2026-10-11T13:15:38.747Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-10-09T22:27:38.978Z
+updated_at: 2026-10-11T13:15:38.747Z
 depends_on:
   - f-domain-model
 implements:
@@ -15,48 +15,31 @@ role: infra
 ---
 
 
-
-
 # Source index
 
 ## Purpose
 
-Infra — the file-ownership substrate. Owns `mindplan/config.json` shape `{ sources, exclude }`, the file universe, claim expansion from `implements` entries, ownership buckets (live / next / released / retired), a **claim-entry release helper** for presence, and a static import lexer/resolver so check and queries can map files ↔ owners without prescribed folders.
+Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`).
 
 ## Shared Substrate Spec
 
 Intended files: `src/foundations/f-source-index/`
 
-- **Config** — load/write `{ sources: string[], exclude: string[] }`; missing config → `sources: ["src/**"]`; brownfield may start `[]`; config still containing `implementation_packages` → `Blocked:` pointing at `mindplan-mcp init`.
-- **File universe** — git-visible files (tracked + untracked not ignored) matching sources minus exclude; without git, directory walk. Ignore `.gitkeep`.
-- **Claim expansion** — expand directory claims ending in `/` to exact files; reject `..` and anything under `mindplan/`. Missing paths omit from expansion (presence is checked separately).
-- **Ownership index** — `buildOwnershipIndex` maps expanded files into live / next / released / retired. Exclusivity uses live ∪ next; coverage uses all four.
-- **Released claim entries** — `releasedClaimEntries(node, root)` returns the subset of live `implements` **entries** (not expanded files) that an open next has released, so presence can skip them without a second release definition:
-  - Normalize with `validateClaimPath`.
-  - An entry next still lists exactly is **kept**.
-  - Otherwise expand that one entry and expand `next.implements`. The entry is **released** when every expanded file is absent from next’s expanded set.
-  - A missing/empty entry expands to nothing; it is released when next does not list that same claim (directory already moved off disk).
-  - No next → empty set (discard restores live presence by recomputation).
-- **Lexer / resolver** — in-house import lex and resolve as today.
+- `writeProjectConfig` remains the store write for config
+- Steer exposes `patch_config` that calls it with `force: true`
+- Claim expansion / ownership unchanged
 
-Depends on: `f-domain-model` only.
+Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- `releasedClaimEntries` is the single release rule used by integrity presence
-- Kept live entries are not returned; missing released directories are returned
-- No next → empty; discard needs no extra state
-- Config, universe, expand, ownership, lexer, and resolver remain the substrate for check/steer/orient/init
+- Config writes go through the store API used by MCP
 - Verified via `npm test`
-
 
 ## Atomic Ops
 
-- [x] Add and export `releasedClaimEntries` from ownership.ts
-- [x] Document release semantics in Shared Substrate Spec (this slot)
-- [x] Verified via `npm test` (check harness covers presence skip)
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
+- [x] Expose config write for steer `patch_config`
+- [x] Verified via `npm test`
 
 ## Attachments
 
