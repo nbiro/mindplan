@@ -84,24 +84,14 @@ Rules:
 
 #### 1.1.1 Project brief (`mindplan/project.md`)
 
-Each consumer repo MAY hold a **project brief** — what this product is, and standing rules for every change — at `mindplan/project.md`. It is not a graph node, not frontmatter, and not a compiler rule. Agents MUST edit it through `patch_project` (MCP / territory store); do not hand-edit `mindplan/project.md`.
+Each consumer repo MAY hold a **project brief** — what this product is, and standing rules for every change — at `mindplan/project.md`. It is not a graph node, not frontmatter, and not a compiler rule. Agents MUST edit the description through `patch_project_description` and the rules through `patch_project_rules` (MCP / territory store); do not hand-edit `mindplan/project.md`.
 
-```md
-# Project
-
-## Description
-
-What this product is, in a few sentences.
-
-## Rules
-
-- Standing constraints for every change in this repository.
-```
+The brief template is the package file `templates/agent/project.md` (`## Description` and `## Rules`). `init` copies that file when `mindplan/project.md` is absent. Description starts empty. Rules start with the default requirement to list every `mindplan/` path in an MCP write's `changed_files`.
 
 Rules:
 
 - Missing `project.md` is valid. `mindplan-mcp check` MUST NOT require it. Boot MUST NOT fail when it is absent or unreadable.
-- `mindplan-mcp init` MUST write the empty template when the file is absent. `init -f` MUST NOT overwrite an existing brief (product text is owned by the repo).
+- `mindplan-mcp init` MUST copy `templates/agent/project.md` when `mindplan/project.md` is absent. That markdown file is the brief template; do not hardcode its body in TypeScript. `init -f` MUST NOT overwrite an existing brief (product text is owned by the repo).
 - Brief rules guide agents. They MUST NOT override a compiler `Blocked:`.
 - Do **not** paste the systems dialect into `project.md`. The playbook stays in the package (`templates/agent/playbook.md`); `get_project` composes it with the brief at read time.
 - **Primary channel:** on every MCP connect, server `instructions` MUST be a short pointer that requires the agent to call `get_project` before answering or writing code. Instructions MUST NOT embed the playbook body or the project brief body.
@@ -898,7 +888,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes twenty-one tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes twenty-two tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
 
 ### 8.1 Read tools
 
@@ -1052,7 +1042,7 @@ Composite orientation for agents: `find_related_nodes` plus full territory for t
 
 #### `get_project`
 
-Live read of the systems dialect and the project brief (§1.1.1). MCP server `instructions` only point here; agents MUST call this before answering or writing code, and MUST call again after `patch_project`.
+Live read of the systems dialect and the project brief (§1.1.1). MCP server `instructions` only point here; agents MUST call this before answering or writing code, and MUST call again after `patch_project_description` or `patch_project_rules`.
 
 - **Input:** none.
 - **Output:**
@@ -1121,7 +1111,7 @@ Any change under `mindplan/` goes through the territory store. Agents reach the 
 | Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` / `force_unship`, `implements`, Foundation `role` | **MCP only** |
 | `title`, `description`, body (PRD / Atomic Ops), checkbox toggles | **MCP only** (`patch_node_territory`) |
 | Attachments | **MCP only** (`put_attachment` / `remove_attachment`) |
-| `mindplan/project.md` | **MCP only** (`patch_project`) |
+| `mindplan/project.md` | **MCP only** (`patch_project_description`, `patch_project_rules`) |
 | `mindplan/config.json` | **MCP only** (`patch_config`) |
 | Server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays, `implements`, `role`) | **MCP only** |
 | `mindplan/map.md` | Server after graph mutations — derived snapshot, not graph authority |
@@ -1159,11 +1149,19 @@ Successful graph mutations MUST include `changed_files: string[]` — repo-relat
 - **Output:** `{ node_id, discarded: true, restored_mirror: true, live_state, changed_files }`.
 - **Errors:** unknown `node_id`; no open evolution (standing mirrors are not discarded).
 
-#### `patch_project`
+#### `patch_project_description`
 
-- **Input:** `description?`, `rules?` (at least one required).
-- **Effect:** writes `mindplan/project.md` sections via the store.
+- **Input:** `description` (string, required; empty string clears the section).
+- **Effect:** writes the `## Description` section of `mindplan/project.md` via the store. The `## Rules` section is unchanged. Creates the file when missing.
 - **Output:** `{ path, description, rules, changed_files }`.
+- **Errors:** missing `description`.
+
+#### `patch_project_rules`
+
+- **Input:** `rules` (string, required; empty string clears the section).
+- **Effect:** writes the `## Rules` section of `mindplan/project.md` via the store. The `## Description` section is unchanged. Creates the file when missing.
+- **Output:** `{ path, description, rules, changed_files }`.
+- **Errors:** missing `rules`.
 
 #### `patch_config`
 
@@ -1310,7 +1308,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `<id>.mdx`/`<id>.next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node `<id>.mdx` frontmatter and assemble at runtime per §7; `<id>.next.mdx` proposed edges are not live graph edges.
-- [ ] The twenty-one-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient and `get_project`.
+- [ ] The twenty-two-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient and `get_project`.
 - [ ] Mutations are deterministic and atomic per §9.
 - [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
 

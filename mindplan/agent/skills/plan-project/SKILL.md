@@ -52,9 +52,9 @@ Run the **breakdown recipe** from `define-entities` Step 0 before inventing node
 3. **Reuse before create** — `find_related_nodes` / graph inspect for each area, action, entry point, and building block. Same action from a new entry point → new `exposes`, not a new Interaction. One Interface per actor + channel (not per page/tab).
 4. State which nodes you will add, **in plain words**. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
 5. Missing area → polite refuse: "This needs an area first; is it part of Billing or something new?" Do not silently mint a Journey.
-6. A **product summary** or **standing rule** for the whole repo is a `patch_project` call — not a new Journey. Call `get_project` again to re-read the brief.
+6. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call. Neither is a new Journey. Call `get_project` again to re-read the brief.
 
-Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
+Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project_description` and `patch_project_rules`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
 
 ### 3. Define and link entities
 

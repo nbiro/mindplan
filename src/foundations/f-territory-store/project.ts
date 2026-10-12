@@ -5,6 +5,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 
 const MINDPLAN_DIR = "mindplan";
 export const PROJECT_FILENAME = "project.md";
@@ -12,8 +13,11 @@ export const PROJECT_FILENAME = "project.md";
 /** Repo-relative POSIX path used while territory is local. */
 export const PROJECT_RELATIVE_PATH = path.posix.join(MINDPLAN_DIR, PROJECT_FILENAME);
 
-/** Empty brief injected when storage is missing or unreadable. Always present in MCP instructions. */
-export const EMPTY_PROJECT_BRIEF_MARKDOWN = `# Project
+/** Package path of the brief init copies when mindplan/project.md is missing. */
+export const PROJECT_BRIEF_TEMPLATE = path.join("templates", "agent", "project.md");
+
+/** Headings only, used when the package template file cannot be read. */
+const PROJECT_BRIEF_SHELL = `# Project
 
 ## Description
 
@@ -33,6 +37,25 @@ export type ProjectBrief = {
 
 function mindplanRoot(): string {
   return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR);
+}
+
+/** Reads templates/agent/project.md by walking up from this module to the package root. */
+export function loadProjectBriefTemplate(): string {
+  try {
+    let dir = path.dirname(fileURLToPath(import.meta.url));
+    for (let i = 0; i < 8; i++) {
+      const candidate = path.join(dir, PROJECT_BRIEF_TEMPLATE);
+      if (fs.existsSync(candidate)) {
+        return fs.readFileSync(candidate, "utf-8");
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch {
+    return PROJECT_BRIEF_SHELL;
+  }
+  return PROJECT_BRIEF_SHELL;
 }
 
 function parseSections(raw: string): { description: string; rules: string } {
@@ -64,7 +87,7 @@ export function loadProjectBrief(): ProjectBrief {
         path: PROJECT_RELATIVE_PATH,
         description: "",
         rules: "",
-        markdown: EMPTY_PROJECT_BRIEF_MARKDOWN,
+        markdown: loadProjectBriefTemplate(),
       };
     }
     const raw = fs.readFileSync(abs, "utf-8");
@@ -74,14 +97,14 @@ export function loadProjectBrief(): ProjectBrief {
       path: PROJECT_RELATIVE_PATH,
       description,
       rules,
-      markdown: trimmed.length > 1 ? trimmed : EMPTY_PROJECT_BRIEF_MARKDOWN,
+      markdown: trimmed.length > 1 ? trimmed : loadProjectBriefTemplate(),
     };
   } catch {
     return {
       path: PROJECT_RELATIVE_PATH,
       description: "",
       rules: "",
-      markdown: EMPTY_PROJECT_BRIEF_MARKDOWN,
+      markdown: loadProjectBriefTemplate(),
     };
   }
 }

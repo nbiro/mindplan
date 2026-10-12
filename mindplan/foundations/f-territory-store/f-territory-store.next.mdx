@@ -6,7 +6,7 @@ description: "Infra — persist territory through the store only; keep a shipped
 state: mirror
 shipped_at: 2026-10-12T06:31:01.685Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-12T06:31:01.685Z
+updated_at: 2026-10-12T06:50:36.372Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -14,12 +14,6 @@ implements:
   - src/foundations/f-territory-store/
 role: infra
 ---
-
-
-
-
-
-
 
 
 # Territory store
@@ -37,7 +31,7 @@ Intended files: `src/foundations/f-territory-store/`
 - `openNextSlot` flips mirror→draft (creates twin from live when missing); does not reset checkboxes
 - `discardNextSlot` / `promoteNextSlot` restore the mirror twin (do not delete the next file)
 - Reject writes aimed at a mirror file
-- `writeProjectBrief` for MCP `patch_project`
+- `writeProjectBrief` for MCP `patch_project_description` and `patch_project_rules`
 
 Depends on: `f-domain-model`, `f-source-index`.
 

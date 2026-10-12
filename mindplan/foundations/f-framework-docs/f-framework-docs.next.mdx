@@ -6,7 +6,7 @@ description: "Infra — SPEC, playbook, and skills: MCP is the only writer of mi
 state: mirror
 shipped_at: 2026-10-12T06:31:01.539Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-12T06:31:01.539Z
+updated_at: 2026-10-12T06:52:40.145Z
 depends_on:
   - f-domain-model
 implements:
@@ -18,25 +18,18 @@ role: infra
 
 
 
-
-
-
-
-
-
-
 # Framework docs
 
 ## Purpose
 
-Infra — SPEC, playbook, and skills: MCP is the only writer of `mindplan/`; shipped next files stay as `mirror` twins. Twenty-one MCP tools.
+Infra — SPEC, playbook, and skills: MCP is the only writer of `mindplan/`; shipped next files stay as `mirror` twins. Twenty-two MCP tools.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-- SPEC §3.6 standing twin; §8.2 MCP-only write table; twenty-one tools
-- Playbook dialect: MCP writes the plan; `patch_project` for the brief
+- SPEC §3.6 standing twin; §8.2 MCP-only write table; twenty-two tools
+- Playbook dialect: MCP writes the plan; `patch_project_description` and `patch_project_rules` for the brief
 - define-entities / plan-project / Cursor integration: no host file tools on `mindplan/`
 - `.cursorignore` template ignores `mindplan/**`
 
@@ -60,6 +53,8 @@ Depends on: `f-domain-model`.
 - [x] Update SPEC §3.6 and §8.2
 - [x] Update playbook, skills, integrations, README
 - [x] Verified via `npm test`
+- [x] Name patch_project_description and patch_project_rules in SPEC, playbook, and skills
+- [x] Verified the split via `npm test`
 
 ## Attachments
 
