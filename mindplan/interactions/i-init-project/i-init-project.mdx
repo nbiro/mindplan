@@ -2,11 +2,11 @@
 id: i-init-project
 type: Interaction
 title: "Init project"
-description: "Stop before renaming when a journey or bug has an evolution file, and print renames that already happened if a later rename fails."
+description: "Init ignores the mindplan/ tree in the host and writes a missing mirror for each already-shipped pipeline node."
 state: stable
-shipped_at: 2026-10-11T12:28:28.821Z
+shipped_at: 2026-10-12T06:31:01.830Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-11T12:28:28.821Z
+updated_at: 2026-10-12T06:31:01.830Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -25,57 +25,41 @@ implements:
 
 
 
-
 # Init project
 
 ## Purpose
 
-Scaffold consumer repos and migrate brownfield territory. Install agent assets and `mindplan/project.md` (description + rules only) when missing. Install playbook plus `define-entities` and `plan-project` skills only — not `review-work` or `code-review`. The AGENTS.md / Cursor stub requires `get_project` before answering or writing code.
+Init ignores the `mindplan/` tree in the host (`.cursorignore` → `mindplan/**`) and writes a missing mirror for each already-shipped pipeline node.
 
 ## Actor & Trigger
 
-- **Actor:** maintainer or agent via CLI (`if-cli`)
-- **Trigger:** `mindplan-mcp init` (`-f` / `--force` only; no `--layout`)
+- **Actor:** human via CLI
+- **Trigger:** `mindplan-mcp init`
 
-## Execution Logic
+## PRD / Execution Logic
 
 Intended files: `src/interactions/i-init-project/`
 
-- Before config seeding or graph load, rename legacy territory files in place:
-  - `<id>/current.mdx` → `<id>/<id>.mdx`
-  - `<id>/next.mdx` → `<id>/<id>.next.mdx` for Foundations, Interactions, and Interfaces
-- When both the legacy name and the id name exist, delete the legacy file and keep the id-named file
-- Journeys and Bugs have no evolution file. `next.mdx` or `<id>.next.mdx` there stops init before any rename and asks for a manual fix
-- A rename that the filesystem rejects stops init, names the file to fix by hand, and the CLI prints renames already applied in that run
-- A second init with only id-named files renames nothing
-- Install playbook, define-entities, plan-project, stub, migrations, project brief
-- Do **not** install `review-work` or `code-review` (under `mindplan/agent/skills` or `.cursor/skills`)
-- `installProjectBrief` — write empty `mindplan/project.md` when absent; **never** overwrite
-- `runInit` report includes renamed paths, `projectBrief`, and the remaining skill install results
-- Stub (owned by `f-framework-docs`) requires `get_project`; file fallbacks when tools are hidden
+- `backfillMirrorTwins` after installers
+- Cursor ignore template covers `mindplan/**`
+- Graph-load failures during backfill are skipped (incomplete migration fixtures)
 
 Depends on: `f-territory-store`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- `init` renames `current.mdx` to `<id>.mdx` and `next.mdx` to `<id>.next.mdx`
-- When both names exist, `init` deletes the legacy file and keeps the id-named file
-- A journey or bug evolution file stops init before any rename and names the file to fix by hand
-- A rename init cannot perform stops the command, names the file to fix by hand, and prints renames already applied
-- Fresh `init` writes `mindplan/project.md` when missing
-- `init -f` leaves an existing project brief untouched
-- Init installs define-entities and plan-project only (no review-work / code-review)
-- Stub mentions `get_project` and the file fallbacks
+- Init backfills missing mirrors
+- Host ignore covers the whole mindplan tree
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Rename legacy territory filenames at the start of `init`
-- [x] Drop the legacy file when the id-named file is already there
-- [x] Stop before renaming when a journey or bug has `next.mdx` or `<id>.next.mdx`
-- [x] Stop with a manual-fix message when a rename cannot be done, and print renames already applied
-- [x] Leave `current.mdx` in place when the id is `current`
-- [x] Green `mindplan-mcp check` and `npm test`
+- [x] Smoke covers mirrorTwinSkips CLI reporting
+- [x] Init reports mirrorTwinSkips when twin write fails
+- [x] Init rewrites missing and drifted mirror twins
+- [x] backfillMirrorTwins + report
+- [x] cursorignore mindplan/**
+- [x] Verified via `npm test`
 
 ## Attachments
 

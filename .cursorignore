@@ -1,4 +1,8 @@
+# MindPlan territory — MCP is the only writer (do not edit with host file tools)
+mindplan/**
+
 # Derived graph snapshot — never use as graph authority (SPEC §7.4)
+# (covered by mindplan/**; listed for clarity in older installs)
 mindplan/map.md
 
 # Agent instructions are copied to .cursor/rules and .cursor/skills by init

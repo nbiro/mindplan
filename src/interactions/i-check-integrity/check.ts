@@ -29,6 +29,7 @@ import {
   drainRemovedLegacyFiles,
   loadGraph,
   loadProjectConfig,
+  mirrorDriftReason,
   projectRoot,
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
@@ -269,6 +270,26 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
   }
 }
 
+/**
+ * Shipped pipeline nodes must keep a standing `<id>.next.mdx` twin (`state: mirror`)
+ * that matches the live file except for that state line. Open evolutions skip this check.
+ */
+function checkMirrorTwins(graph: MindPlanGraph, failures: string[]): void {
+  for (const node of graph.nodes) {
+    if (!isPipelineNodeType(node.type)) continue;
+    if (!isProductionState(node.state)) continue;
+    if (node.next) continue;
+    const reason = mirrorDriftReason(node);
+    if (reason) {
+      fail(
+        failures,
+        `mirror: "${node.id}" ${reason}. ` +
+          `Run mindplan-mcp init to backfill or heal drift, or restore the twin via a live MCP write.`
+      );
+    }
+  }
+}
+
 function checkLeftovers(
   graph: MindPlanGraph,
   buckets: OwnershipBuckets,
@@ -457,6 +478,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     const buckets = checkExclusivity(graph, root, failures);
     checkCoverage(buckets, root, failures);
     checkPresence(graph, root, failures);
+    checkMirrorTwins(graph, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, failures);
     if (options.base !== undefined) {

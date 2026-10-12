@@ -11,7 +11,7 @@ Or add to the project MCP config (see [Claude Code MCP docs](https://docs.anthro
 2. **Instructions** — MCP already requires `get_project` (dialect + project brief). Add the stub to `CLAUDE.md` if this host does not read root `AGENTS.md`:
 
 ```markdown
-Before answering any questions or writing any code, call get_project and follow the playbook plus the project description and rules it returns. If tools are unavailable, read mindplan/agent/playbook.md and mindplan/project.md.
+Before answering any questions or writing any code, call get_project and follow the playbook plus the project description and rules it returns. If tools are unavailable, use AGENTS.md / host skill copies — do not read or edit mindplan/** with host file tools.
 Before planning or changing code, call orient_for_work and place the work on the graph.
 Skills load on demand: define-entities, plan-project.
 ```

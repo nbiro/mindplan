@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "Include removed legacy territory paths on tool results so callers can commit the deletion."
+description: "MCP stdio Interface that registers orient, steer, and export tools, including project/config and attachment writes."
 state: stable
-shipped_at: 2026-10-11T12:28:28.980Z
+shipped_at: 2026-10-11T13:15:39.307Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-11T12:28:28.980Z
+updated_at: 2026-10-11T13:15:39.307Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -21,13 +21,11 @@ implements:
 ---
 
 
-
-
 # MCP tools
 
 ## Purpose
 
-MCP stdio Interface that registers orient, steer, and export tools. Mounts `get_project` from `i-orient-plan` (playbook + brief). Thin wiring only. Seventeen-tool surface.
+MCP stdio Interface that registers orient, steer, and export tools, including project/config and attachment writes. Twenty-one-tool surface.
 
 ## Kind
 
@@ -36,33 +34,30 @@ MCP tool surface (stdio).
 ## Exposed Interactions
 
 - `i-orient-plan` — read/orient tools including `get_project`
-- `i-steer-plan` — mutate tools including `set_implementation_files`
+- `i-steer-plan` — mutate tools including territory, project, config, attachments
 - `i-export-map` — `export_mindplan_view`
 
 ## Spec
 
 Intended files: `src/interfaces/if-mcp-tools/`
 
-- Register `get_project` with empty input; description says playbook + brief, call before answering or writing code
-- Do not register `get_playbook`
-- No domain logic in this package
-- After each tool call, attach deleted legacy paths as `removed_legacy_files` and append them to `changed_files` when that array is present. On a tool error, append `Removed <legacy> (kept <id-named>)` lines.
+- Register `patch_project`, `patch_config`, `put_attachment`, `remove_attachment`
+- Update `open_next` / `discard_next` / `patch_node_territory` descriptions for the twin model
+- Report removed legacy paths on tool results
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
 ## Acceptance Criteria
 
-- `get_project` is registered and callable over MCP
-- Seventeen-tool surface matches SPEC §8
-- A tool result that deleted a legacy territory file lists that path in `removed_legacy_files` and in `changed_files` when the result has `changed_files`
+- Twenty-one tools registered
+- Descriptions match MCP-only + twin lifecycle
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Register `get_project` with playbook + brief description
-- [x] Report removed legacy paths on tool results
-- [x] Build and run tests (`npm test`)
-- [x] Verified by Reviewer against the contract
+- [x] Register four new tools
+- [x] Update evolution tool descriptions
+- [x] Verified via `npm test`
 
 ## Attachments
 

@@ -2,54 +2,46 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types, edges, implements claims, and Foundation roles."
+description: "Infra — node types, edges, implements claims, Foundation roles, and the next-file mirror state."
 state: stable
-shipped_at: 2026-10-09T22:27:38.926Z
+shipped_at: 2026-10-11T13:15:38.671Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-09T22:27:38.926Z
+updated_at: 2026-10-11T13:15:38.671Z
 implements:
   - src/foundations/f-domain-model/
 role: infra
 ---
 
 
-
-
 # Domain model
 
 ## Purpose
 
-Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, and the optional `next` evolution slot. Adds server-owned `implements: string[]` on Interaction/Interface/Foundation (current and open next) and Foundation `role` (`assembler` | `infra` | `design-system` | `adapter`). Every other Foundation and Interaction/Interface imports these types; there is no I/O here.
+Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, and open evolutions. Adds `MIRROR_STATE` / `isMirrorState`. Discover must not set `node.next` for a mirror twin. `GRAPH_VERSION` stays `1`.
 
 ## Shared Substrate Spec
 
-Intended files (via `set_implementation_files` after land): `src/foundations/f-domain-model/`
+Intended files: `src/foundations/f-domain-model/`
 
-- `types.ts` — existing `NODE_TYPES`, edge types, state machines, `MindPlanNode` / `NextSlot`
-- Add `FoundationRole` union and optional `role` on Foundation records and next slots
-- Add `implements?: string[]` on Foundation, Interaction, and Interface records and next slots (repo-relative POSIX paths; directories end in `/`)
-- Helpers as needed for role/implements validation consumers (type-only; no FS)
-- `GRAPH_VERSION` stays `1`
-- Remove any types/docs that assume prescribed `src/<type>/<id>/` packages or `implementation_packages`
+- `types.ts` — `NODE_TYPES`, edges, state machines, `MindPlanNode` / `NextSlot`
+- `MIRROR_STATE` (`mirror`) and `isMirrorState` — next-file twin state, not a pipeline state
+- `NextSlot` remains draft|ready|in-progress|in-review only
+- `node.next` means an open evolution; a standing twin does not populate it
 
 Depends on: none.
 
 ## Acceptance Criteria
 
-- `implements` and `role` are first-class typed fields on the right node kinds and next slots
-- No prescribed-package types remain as the ownership authority
+- `mirror` is a typed next-file state distinct from pipeline states
+- Open-evolution types unchanged
 - `GRAPH_VERSION` remains `1`
 - Verified via `npm test`
 
-
 ## Atomic Ops
 
-- [x] Add `FoundationRole` and optional `role` on Foundation / next
-- [x] Add `implements?: string[]` on Foundation, Interaction, Interface / next
-- [x] Drop prescribed-package ownership types if any remain
+- [x] Add `MIRROR_STATE` and `isMirrorState`
+- [x] Document that `node.next` is open evolution only
 - [x] Verified via `npm test`
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 

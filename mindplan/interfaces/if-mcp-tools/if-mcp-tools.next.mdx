@@ -1,0 +1,64 @@
+---
+id: if-mcp-tools
+type: Interface
+title: "MCP tools"
+description: "MCP stdio Interface that registers orient, steer, and export tools, including project/config and attachment writes."
+state: mirror
+shipped_at: 2026-10-11T13:15:39.307Z
+created_at: 2026-08-10T13:44:20.502Z
+updated_at: 2026-10-11T13:15:39.307Z
+depends_on:
+  - f-mcp-runtime
+  - f-domain-model
+  - f-graph-search
+  - f-view-projection
+exposes:
+  - i-orient-plan
+  - i-steer-plan
+  - i-export-map
+implements:
+  - src/interfaces/if-mcp-tools/
+---
+
+
+# MCP tools
+
+## Purpose
+
+MCP stdio Interface that registers orient, steer, and export tools, including project/config and attachment writes. Twenty-one-tool surface.
+
+## Kind
+
+MCP tool surface (stdio).
+
+## Exposed Interactions
+
+- `i-orient-plan` — read/orient tools including `get_project`
+- `i-steer-plan` — mutate tools including territory, project, config, attachments
+- `i-export-map` — `export_mindplan_view`
+
+## Spec
+
+Intended files: `src/interfaces/if-mcp-tools/`
+
+- Register `patch_project`, `patch_config`, `put_attachment`, `remove_attachment`
+- Update `open_next` / `discard_next` / `patch_node_territory` descriptions for the twin model
+- Report removed legacy paths on tool results
+
+Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
+
+## Acceptance Criteria
+
+- Twenty-one tools registered
+- Descriptions match MCP-only + twin lifecycle
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Register four new tools
+- [x] Update evolution tool descriptions
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

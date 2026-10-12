@@ -1,0 +1,63 @@
+---
+id: i-orient-plan
+type: Interaction
+title: "Orient on the plan"
+description: "Find focus nodes, load territory context, report blast radius, and expose get_project (playbook + project brief)."
+state: mirror
+shipped_at: 2026-10-10T14:10:22.121Z
+created_at: 2026-07-19T18:33:36.789Z
+updated_at: 2026-10-10T14:10:22.121Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-graph-search
+  - f-territory-store
+  - f-compiler-rules
+  - f-source-index
+leads_to:
+  - i-steer-plan
+implements:
+  - src/interactions/i-orient-plan/
+---
+
+
+# Orient on the plan
+
+## Purpose
+
+Read-path orientation. Existing query tools unchanged. `get_project` returns the bundled systems dialect plus the repo project brief so agents load both in one call (MCP instructions only point here).
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
+- **Trigger:** MCP/HTTP orient tools; `get_project` with no arguments
+
+## Execution Logic
+
+Intended files: `src/interactions/i-orient-plan/`
+
+- Keep existing query tools
+- `get_project` — `{ path, description, rules, playbook }`
+  - description/rules from `loadProjectBrief()`
+  - playbook from package `templates/agent/playbook.md` (walk up from this module); missing → `Blocked:`
+- `orient_for_work` does **not** carry the brief
+- No separate `get_playbook` tool
+
+Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
+
+## Acceptance Criteria
+
+- `get_project` returns playbook equal to the bundled template and empty description/rules when the brief is missing
+- Missing playbook Blocks
+- Existing orient payloads unchanged
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Extend `getProject` to return `playbook` with the brief
+- [x] Build and run tests (`npm test`)
+- [x] Verified by Reviewer against the contract
+
+## Attachments
+
+_None._

@@ -1,0 +1,48 @@
+---
+id: f-domain-model
+type: Foundation
+title: "Domain model"
+description: "Infra — node types, edges, implements claims, Foundation roles, and the next-file mirror state."
+state: mirror
+shipped_at: 2026-10-11T13:15:38.671Z
+created_at: 2026-07-15T18:51:11.938Z
+updated_at: 2026-10-11T13:15:38.671Z
+implements:
+  - src/foundations/f-domain-model/
+role: infra
+---
+
+
+# Domain model
+
+## Purpose
+
+Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, and open evolutions. Adds `MIRROR_STATE` / `isMirrorState`. Discover must not set `node.next` for a mirror twin. `GRAPH_VERSION` stays `1`.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-domain-model/`
+
+- `types.ts` — `NODE_TYPES`, edges, state machines, `MindPlanNode` / `NextSlot`
+- `MIRROR_STATE` (`mirror`) and `isMirrorState` — next-file twin state, not a pipeline state
+- `NextSlot` remains draft|ready|in-progress|in-review only
+- `node.next` means an open evolution; a standing twin does not populate it
+
+Depends on: none.
+
+## Acceptance Criteria
+
+- `mirror` is a typed next-file state distinct from pipeline states
+- Open-evolution types unchanged
+- `GRAPH_VERSION` remains `1`
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Add `MIRROR_STATE` and `isMirrorState`
+- [x] Document that `node.next` is open evolution only
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

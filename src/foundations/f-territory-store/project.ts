@@ -85,3 +85,33 @@ export function loadProjectBrief(): ProjectBrief {
     };
   }
 }
+
+function renderBrief(description: string, rules: string): string {
+  const d = description.trim();
+  const r = rules.trim();
+  return `# Project\n\n## Description\n\n${d ? `${d}\n` : ""}\n## Rules\n\n${r ? `${r}\n` : ""}`;
+}
+
+/**
+ * Write mindplan/project.md description and/or rules sections.
+ * Omitted fields keep their current values. Creates the file when missing.
+ */
+export function writeProjectBrief(input: {
+  description?: string;
+  rules?: string;
+}): ProjectBrief {
+  const current = loadProjectBrief();
+  const description =
+    input.description !== undefined ? input.description : current.description;
+  const rules = input.rules !== undefined ? input.rules : current.rules;
+  const markdown = renderBrief(description, rules);
+  const abs = path.join(mindplanRoot(), PROJECT_FILENAME);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, markdown, "utf-8");
+  return {
+    path: PROJECT_RELATIVE_PATH,
+    description: description.trim(),
+    rules: rules.trim(),
+    markdown,
+  };
+}

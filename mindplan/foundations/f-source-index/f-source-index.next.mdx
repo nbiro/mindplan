@@ -1,0 +1,46 @@
+---
+id: f-source-index
+type: Foundation
+title: "Source index"
+description: "Infra — ownership universe and MCP write of mindplan/config.json."
+state: mirror
+shipped_at: 2026-10-11T13:15:38.747Z
+created_at: 2026-09-23T13:28:44.288Z
+updated_at: 2026-10-11T13:15:38.747Z
+depends_on:
+  - f-domain-model
+implements:
+  - src/foundations/f-source-index/
+role: infra
+---
+
+
+# Source index
+
+## Purpose
+
+Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`).
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-source-index/`
+
+- `writeProjectConfig` remains the store write for config
+- Steer exposes `patch_config` that calls it with `force: true`
+- Claim expansion / ownership unchanged
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- Config writes go through the store API used by MCP
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Expose config write for steer `patch_config`
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

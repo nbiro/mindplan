@@ -13,6 +13,7 @@
  * Owned source files are declared via server-owned `implements` (not prescribed folders).
  * Live node records and outgoing edge arrays live in the live MDX YAML frontmatter.
  * While evolving a shipped Foundation/Interaction/Interface, the evolution file holds the draft pipeline + proposed edges.
+ * After first ship, `<id>.next.mdx` stays as a standing twin with `state: mirror` (not an open evolution).
  * New files use the id names. An existing current.mdx / next.mdx stays in use.
  * When both names exist for one slot, the id-named file is kept and the legacy file is deleted.
  * Callers report those deletions via drainRemovedLegacyFiles().
@@ -35,8 +36,11 @@ import {
   BUG_SEVERITIES,
   GRAPH_VERSION,
   isFoundationRole,
+  isMirrorState,
   isNextPipelineState,
   isPipelineNodeType,
+  isProductionState,
+  MIRROR_STATE,
   NODE_TYPES,
 } from "../f-domain-model/types.js";
 import { normalizeClaimList } from "../f-source-index/claims.js";
@@ -277,8 +281,124 @@ export function nextAttachmentsDir(node: Pick<MindPlanNode, "id" | "type">): str
   return path.join(entityDir(node), NEXT_ATTACHMENTS_DIR);
 }
 
-export function nextExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
+/** True when the next-slot path exists on disk (mirror twin or open evolution). */
+export function nextFileExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
   return fs.existsSync(markdownPath(node, "next"));
+}
+
+/**
+ * @deprecated Prefer `nextFileExists` (path on disk) or `node.next` (open evolution).
+ * Kept for callers that only need "path present"; does not mean an evolution is open.
+ */
+export function nextExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
+  return nextFileExists(node);
+}
+
+/** Read `state:` from a next-slot file without requiring a pipeline state. */
+export function readNextFileState(node: Pick<MindPlanNode, "id" | "type">): string | null {
+  const file = markdownPath(node, "next");
+  try {
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return null;
+    const raw = fs.readFileSync(file, "utf-8");
+    const parsed = parseFrontmatter(raw);
+    return parsed?.scalars.state ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the next file exists and is a standing twin (`state: mirror`). */
+export function isMirrorTwin(node: Pick<MindPlanNode, "id" | "type">): boolean {
+  const state = readNextFileState(node);
+  return state !== null && isMirrorState(state);
+}
+
+/**
+ * Copy live territory bytes into `<id>.next.mdx` with only `state: mirror` changed.
+ * Used after first ship, after ship of an evolution, after discard, and after live writes.
+ */
+export function writeMirrorTwin(node: Pick<MindPlanNode, "id" | "type">): string {
+  const livePath = markdownPath(node, "current");
+  if (!fs.existsSync(livePath)) {
+    throw new Error(
+      `Blocked: cannot write mirror twin for "${node.id}" — live file missing at ${livePath}.`
+    );
+  }
+  const liveRaw = fs.readFileSync(livePath, "utf-8");
+  const match = liveRaw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!match) {
+    throw new Error(
+      `Blocked: live file for "${node.id}" has no YAML frontmatter; cannot write mirror twin.`
+    );
+  }
+  const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+  let inner = match[2];
+  if (/^state:\s*/m.test(inner)) {
+    inner = inner.replace(/^state:\s*.*$/m, `state: ${MIRROR_STATE}`);
+  } else {
+    inner = `state: ${MIRROR_STATE}${nl}${inner}`;
+  }
+  const twin = `${match[1]}${inner}${match[3]}${liveRaw.slice(match[0].length)}`;
+  ensureEntityDir(node);
+  const nextPath = markdownPath(node, "next");
+  if (fs.existsSync(nextPath) && !fs.statSync(nextPath).isFile()) {
+    throw new Error(
+      `Blocked: cannot write mirror twin for "${node.id}" — ${path.basename(nextPath)} exists and is not a file.`
+    );
+  }
+  fs.writeFileSync(nextPath, twin, "utf-8");
+  return markdownRelativePath(node, "next");
+}
+
+/** Delete the standing twin / next file and next-attachments/ (retire, force_unship). */
+export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): string[] {
+  const removed: string[] = [];
+  const nextFile = markdownPath(node, "next");
+  if (fs.existsSync(nextFile)) {
+    fs.unlinkSync(nextFile);
+    removed.push(markdownRelativePath(node, "next"));
+  }
+  const nextAtt = nextAttachmentsDir(node);
+  if (fs.existsSync(nextAtt)) {
+    fs.rmSync(nextAtt, { recursive: true, force: true });
+    removed.push(`${entityRelativePath(node)}/${NEXT_ATTACHMENTS_DIR}`);
+  }
+  return removed;
+}
+
+/**
+ * After a live-slot write on a shipped node with no open evolution, refresh the mirror twin.
+ * No-op when the node is not shipped, has an open evolution, or is not a pipeline type.
+ */
+export function syncMirrorAfterLiveWrite(node: MindPlanNode): string | null {
+  if (!isPipelineNodeType(node.type)) return null;
+  if (!isProductionState(node.state)) return null;
+  if (node.next) return null;
+  return writeMirrorTwin(node);
+}
+
+/**
+ * Compare live vs next file ignoring only the `state:` line.
+ * Returns null when they match as a state-only twin; otherwise a short reason.
+ */
+export function mirrorDriftReason(node: Pick<MindPlanNode, "id" | "type">): string | null {
+  const livePath = markdownPath(node, "current");
+  const nextPath = markdownPath(node, "next");
+  if (!fs.existsSync(nextPath)) {
+    return `missing ${path.basename(nextPath)} mirror twin`;
+  }
+  const nextState = readNextFileState(node);
+  if (!nextState || !isMirrorState(nextState)) {
+    return `${path.basename(nextPath)} is not state: ${MIRROR_STATE} (got "${nextState ?? ""}")`;
+  }
+  const liveRaw = fs.readFileSync(livePath, "utf-8");
+  const nextRaw = fs.readFileSync(nextPath, "utf-8");
+  const stripState = (raw: string) =>
+    raw.replace(/^state:\s*.*$/m, "state: <ignored>");
+  if (stripState(liveRaw) !== stripState(nextRaw)) {
+    return `${path.basename(nextPath)} drifted from live (expected state-only twin)`;
+  }
+  return null;
 }
 
 /** Lists filenames in the entity's attachments/ folder (non-recursive). */
@@ -497,7 +617,11 @@ function parseNodeFromFrontmatter(
   return node;
 }
 
-function parseNextSlot(folderId: string, nextFile: string): NextSlot {
+/**
+ * Parse an open-evolution next slot. Returns null when the file is a standing `mirror` twin
+ * (not an evolution). Throws on missing required fields or illegal states.
+ */
+function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
   const raw = fs.readFileSync(nextFile, "utf-8");
   const parsed = parseFrontmatter(raw);
   if (!parsed) {
@@ -511,10 +635,13 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot {
       `Blocked: next frontmatter for "${folderId}" must include state and updated_at.`
     );
   }
+  if (isMirrorState(fm.state)) {
+    return null;
+  }
   if (!isNextPipelineState(fm.state)) {
     throw new Error(
-      `Blocked: ${path.basename(nextFile)} for "${folderId}" has invalid pipeline state "${fm.state}". ` +
-        `Allowed: draft, ready, in-progress, in-review.`
+      `Blocked: ${path.basename(nextFile)} for "${folderId}" has invalid next state "${fm.state}". ` +
+        `Allowed: ${MIRROR_STATE}, draft, ready, in-progress, in-review.`
     );
   }
   const slot: NextSlot = {
@@ -558,12 +685,17 @@ export function discoverNodes(): MindPlanNode[] {
       const node = parseNodeFromFrontmatter(entry.name, nodeType, currentFile);
       const nextFile = existingSlotFile(folder, entry.name, "next", folderRel);
       if (nextFile) {
-        if (!isPipelineNodeType(nodeType)) {
-          throw new Error(
-            `Blocked: ${path.basename(nextFile)} is only allowed for Foundations, Interactions, and Interfaces (found on ${nodeType} "${entry.name}").`
-          );
+        // Non-file next paths (e.g. a directory occupying the twin name) are not evolutions;
+        // leave node.next unset so init can report a skip when healing fails.
+        if (fs.statSync(nextFile).isFile()) {
+          if (!isPipelineNodeType(nodeType)) {
+            throw new Error(
+              `Blocked: ${path.basename(nextFile)} is only allowed for Foundations, Interactions, and Interfaces (found on ${nodeType} "${entry.name}").`
+            );
+          }
+          const evolution = parseNextSlot(entry.name, nextFile);
+          if (evolution) node.next = evolution;
         }
-        node.next = parseNextSlot(entry.name, nextFile);
       }
       nodes.push(node);
     }
@@ -661,7 +793,17 @@ export function writeMarkdown(
   slot: TerritorySlot = "current"
 ): void {
   ensureEntityDir(node);
-  fs.writeFileSync(markdownPath(node, slot), content, "utf-8");
+  const file = markdownPath(node, slot);
+  if (slot === "next" && fs.existsSync(file)) {
+    const state = readNextFileState(node);
+    if (state && isMirrorState(state)) {
+      throw new Error(
+        `Blocked: cannot write "${node.id}" next while it is a ${MIRROR_STATE} twin. ` +
+          `Change the live file via MCP, or call open_next first.`
+      );
+    }
+  }
+  fs.writeFileSync(file, content, "utf-8");
 }
 
 /** Requires a territory MDX file with parseable YAML frontmatter for mutations. */
@@ -711,6 +853,12 @@ export function patchFrontmatter(
 
   if (patched !== fence) {
     fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+  }
+  if (slot === "current" && "state" in node && isProductionState(String(node.state))) {
+    const full = node as MindPlanNode;
+    if (isPipelineNodeType(full.type) && !full.next) {
+      writeMirrorTwin(node);
+    }
   }
 }
 
@@ -784,16 +932,18 @@ export function addEdgeToFrontmatter(
   if (!current.includes(targetId)) current.push(targetId);
   const now = new Date().toISOString();
   patchFrontmatterEdges(node, { [field]: current }, now, slot);
+  if (slot === "current") syncMirrorAfterLiveWrite(node);
 }
 
-/** Removes target_id from all outgoing edge arrays on the source node (current and next). */
+/** Removes target_id from all outgoing edge arrays on the source node (current and open evolution). */
 export function removeEdgesFromFrontmatter(
   node: MindPlanNode,
   targetId: string
 ): void {
   const now = new Date().toISOString();
   for (const slot of ["current", "next"] as const) {
-    if (slot === "next" && !nextExists(node)) continue;
+    // Mirror twins are not evolutions — only patch next when node.next is set.
+    if (slot === "next" && !node.next) continue;
     const raw = readMarkdown(node, slot);
     const parsed = parseFrontmatter(raw);
     if (!parsed) {
@@ -813,6 +963,7 @@ export function removeEdgesFromFrontmatter(
       now,
       slot
     );
+    if (slot === "current") syncMirrorAfterLiveWrite(node);
   }
 }
 
@@ -1141,7 +1292,9 @@ export function resolveTerritorySlot(
 ): TerritorySlot {
   if (explicit) {
     if (explicit === "next" && !node.next) {
-      throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} evolution slot.`);
+      throw new Error(
+        `Blocked: node "${node.id}" has no open evolution (standing mirror twins are not writable; call open_next first).`
+      );
     }
     return explicit;
   }
@@ -1257,102 +1410,128 @@ export function patchNodeTerritory(
   }
 
   writeMarkdown(node, `${frontmatter}\n\n${body}`, slot);
+  if (slot === "current") syncMirrorAfterLiveWrite(node);
   return { patched_fields, slot };
 }
 
 /**
- * Opens `<id>.next.mdx` for a shipped Foundation/Interaction/Interface by copying live territory into a draft slot.
+ * Opens an evolution: flips a standing `mirror` twin to `draft` (or seeds from live when missing).
+ * Does not reset checkboxes — the standing diff is `state` only until the agent edits the successor.
  */
 export function openNextSlot(
   node: MindPlanNode,
   meta?: { title?: string; description?: string }
 ): NextSlot {
-  if (nextExists(node)) {
-    throw new Error(`Blocked: "${node.id}" already has a ${territorySlotFilename(node, "next")} evolution slot.`);
+  if (node.next) {
+    throw new Error(
+      `Blocked: "${node.id}" already has a ${territorySlotFilename(node, "next")} evolution in state "${node.next.state}".`
+    );
   }
+  const nextPath = markdownPath(node, "next");
+  const existingState = readNextFileState(node);
+  if (existingState && !isMirrorState(existingState)) {
+    throw new Error(
+      `Blocked: "${node.id}" next file has unexpected state "${existingState}". ` +
+        `Expected ${MIRROR_STATE} or a missing file.`
+    );
+  }
+  // Seed from live only when the twin is missing (old consumer repos). An existing
+  // mirror is flipped in place — do not rewrite body/checkboxes from live again.
+  if (!fs.existsSync(nextPath)) {
+    writeMirrorTwin(node);
+  } else {
+    const drift = mirrorDriftReason(node);
+    if (drift) {
+      throw new Error(
+        `Blocked: "${node.id}" ${drift}. ` +
+          `Heal with mindplan-mcp init or a live MCP write before open_next.`
+      );
+    }
+  }
+
   const now = new Date().toISOString();
-  const currentRaw = readMarkdown(node, "current");
-  const split = splitContext(currentRaw);
-  if (!split) {
-    throw new Error(`Blocked: current file for "${node.id}" has no YAML frontmatter.`);
+  const raw = fs.readFileSync(nextPath, "utf-8");
+  const match = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
+  if (!match) {
+    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
   }
+  let inner = match[2].replace(/^state:\s*.*$/m, "state: draft");
+  if (/^updated_at:/m.test(inner)) {
+    inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  } else {
+    const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+    inner = `${inner}${nl}updated_at: ${now}`;
+  }
+  const title = meta?.title;
+  const description = meta?.description;
+  if (title !== undefined) {
+    if (/^title:/m.test(inner)) {
+      inner = inner.replace(/^title:.*$/m, `title: ${JSON.stringify(title)}`);
+    } else {
+      const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+      inner = `${inner}${nl}title: ${JSON.stringify(title)}`;
+    }
+  }
+  if (description !== undefined) {
+    if (/^description:/m.test(inner)) {
+      inner = inner.replace(/^description:.*$/m, `description: ${JSON.stringify(description)}`);
+    } else {
+      const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+      inner = `${inner}${nl}description: ${JSON.stringify(description)}`;
+    }
+  }
+  // Bypass writeMarkdown mirror guard — we are intentionally leaving mirror for draft.
+  fs.writeFileSync(nextPath, `${match[1]}${inner}${match[3]}${raw.slice(match[0].length)}`, "utf-8");
 
-  const title = meta?.title ?? node.title;
-  const description = meta?.description ?? node.description;
-
-  const frontmatterLines = [
-    "---",
-    `id: ${node.id}`,
-    `type: ${node.type}`,
-    `title: ${JSON.stringify(title)}`,
-    `description: ${JSON.stringify(description)}`,
-    "state: draft",
-    `updated_at: ${now}`,
-  ];
-  if (node.belongs_to?.length) {
-    frontmatterLines.push("belongs_to:");
-    for (const id of node.belongs_to) frontmatterLines.push(`  - ${id}`);
-  }
-  if (node.depends_on?.length) {
-    frontmatterLines.push("depends_on:");
-    for (const id of node.depends_on) frontmatterLines.push(`  - ${id}`);
-  }
-  if (node.exposes?.length) {
-    frontmatterLines.push("exposes:");
-    for (const id of node.exposes) frontmatterLines.push(`  - ${id}`);
-  }
-  if (node.leads_to?.length) {
-    frontmatterLines.push("leads_to:");
-    for (const id of node.leads_to) frontmatterLines.push(`  - ${id}`);
-  }
-  if (node.implements?.length) {
-    frontmatterLines.push("implements:");
-    for (const p of node.implements) frontmatterLines.push(`  - ${p}`);
-  }
-  if (node.role) {
-    frontmatterLines.push(`role: ${node.role}`);
-  }
-  frontmatterLines.push("---");
-
-  // New evolution starts with an open DoD — do not inherit completed checkboxes from current.
-  // Horizontal whitespace only: `^` in /m also matches after a lone `\r`, and `\s*` would swallow the `\n` of CRLF.
-  const nextBody = split.body.replace(/^([ \t]*[-*+][ \t]+)\[[xX]\]/gm, "$1[ ]");
-  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${nextBody}`, "next");
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
   if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf-8");
 
+  const parsed = parseFrontmatter(fs.readFileSync(nextPath, "utf-8"));
+  if (!parsed) {
+    throw new Error(`Blocked: next file for "${node.id}" unreadable after open_next.`);
+  }
   const slot: NextSlot = {
     state: "draft",
-    title,
-    description,
+    title: parsed.scalars.title ?? node.title,
+    description: parsed.scalars.description ?? node.description,
     updated_at: now,
   };
-  if (node.belongs_to?.length) slot.belongs_to = [...node.belongs_to];
-  if (node.depends_on?.length) slot.depends_on = [...node.depends_on];
-  if (node.exposes?.length) slot.exposes = [...node.exposes];
-  if (node.leads_to?.length) slot.leads_to = [...node.leads_to];
-  if (node.implements?.length) slot.implements = [...node.implements];
-  if (node.role) slot.role = node.role;
+  if (parsed.arrays.belongs_to.length) slot.belongs_to = [...parsed.arrays.belongs_to];
+  if (parsed.arrays.depends_on.length) slot.depends_on = [...parsed.arrays.depends_on];
+  if (parsed.arrays.exposes.length) slot.exposes = [...parsed.arrays.exposes];
+  if (parsed.arrays.leads_to.length) slot.leads_to = [...parsed.arrays.leads_to];
+  if (parsed.implements.length) slot.implements = [...parsed.implements];
+  if (parsed.scalars.role && isFoundationRole(parsed.scalars.role)) {
+    slot.role = parsed.scalars.role;
+  } else if (node.role) {
+    slot.role = node.role;
+  }
   return slot;
 }
 
-/** Deletes `<id>.next.mdx` and next-attachments/, abandoning an in-flight evolution. */
+/**
+ * Abandons an in-flight evolution by restoring the standing mirror twin from live.
+ * Does not delete `<id>.next.mdx`.
+ */
 export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): void {
   const nextFile = markdownPath(node, "next");
   if (!fs.existsSync(nextFile)) {
     throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to discard.`);
   }
-  fs.unlinkSync(nextFile);
   const nextAtt = nextAttachmentsDir(node);
   if (fs.existsSync(nextAtt)) {
     fs.rmSync(nextAtt, { recursive: true, force: true });
   }
+  writeMirrorTwin(node);
+  fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
+  const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
+  if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf-8");
 }
 
 /**
  * Promotes `<id>.next.mdx` over `<id>.mdx`: copies next body/scalars/edges into the live file with
- * production state, then deletes the next slot.
+ * production state, then restores the next file as a `mirror` twin.
  */
 export function promoteNextSlot(
   node: MindPlanNode,
@@ -1492,6 +1671,7 @@ export function writeImplementsFrontmatter(
     if (normalized.length > 0) node.implements = normalized;
     else delete node.implements;
     node.updated_at = now;
+    syncMirrorAfterLiveWrite(node);
   }
 }
 

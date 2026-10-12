@@ -5,12 +5,12 @@ MindPlan draws the boundaries your agent won’t. Plan and change code **through
 ## Dialect
 
 1. **Orient.** Call `orient_for_work` before substantial work. Do not invent architecture from chat or `src/` greps. After a mutation, trust the response `anchor` and `changed_files`.
-2. **Place work on the graph.** Every change belongs to a Journey, Interaction, Interface, Foundation, or Bug. MCP writes structure (`state`, edges, timestamps); file tools write territory prose at `current_path` / `next_path`. Never hand-edit server-owned frontmatter.
+2. **Place work on the graph.** Every change belongs to a Journey, Interaction, Interface, Foundation, or Bug. MCP is the only writer of `mindplan/` (nodes, attachments, `project.md`, `config.json`). Use `patch_node_territory`, `patch_project`, `patch_config`, and attachment tools — never host file tools on that tree.
 3. **`Blocked:` is hard.** Name the cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix it before retrying.
 4. **Claim files before writing them** with `set_implementation_files`.
 5. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
 6. **Check at every handoff.** Default check MUST exit 0 before self-`ready`, `in-review`, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. Do not wait until `ship`. The host typecheck is not a MindPlan gate. Code review is outside this dialect — customize via host process or `mindplan/project.md` rules if desired.
-7. **Project brief.** Agents receive this dialect as `get_project.playbook`. Follow `description` and `rules` from the same response. Edit `mindplan/project.md`; call `get_project` again to re-read.
+7. **Project brief.** Agents receive this dialect as `get_project.playbook`. Follow `description` and `rules` from the same response. Edit the brief with `patch_project`; call `get_project` again to re-read.
 
 ## Taxonomy
 

@@ -1,0 +1,63 @@
+---
+id: f-territory-store
+type: Foundation
+title: "Territory store"
+description: "Infra — persist territory through the store only; keep a shipped next file as a state-only twin."
+state: mirror
+shipped_at: 2026-10-12T06:31:01.685Z
+created_at: 2026-07-15T18:51:15.019Z
+updated_at: 2026-10-12T06:31:01.685Z
+depends_on:
+  - f-domain-model
+  - f-source-index
+implements:
+  - src/foundations/f-territory-store/
+role: infra
+---
+
+
+
+
+
+
+
+
+# Territory store
+
+## Purpose
+
+Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md`.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-territory-store/`
+
+- Discover: `mirror` does not set `node.next`; pipeline states do
+- `writeMirrorTwin` / `syncMirrorAfterLiveWrite` / `deleteNextSlotFiles` / `mirrorDriftReason`
+- `openNextSlot` flips mirror→draft (creates twin from live when missing); does not reset checkboxes
+- `discardNextSlot` / `promoteNextSlot` restore the mirror twin (do not delete the next file)
+- Reject writes aimed at a mirror file
+- `writeProjectBrief` for MCP `patch_project`
+
+Depends on: `f-domain-model`, `f-source-index`.
+
+## Acceptance Criteria
+
+- Standing twin after first ship; open_next is a state flip
+- Live MCP writes keep the twin true when no evolution is open
+- Ship/discard restore mirror; retire/unship delete it
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Non-file next paths skipped in discover; writeMirrorTwin rejects non-files
+- [x] open_next Blocks on drifted mirror (heal via init / live write)
+- [x] open_next seeds from live only when twin is missing
+- [x] Mirror twin helpers and discover skip
+- [x] open_next / discard / promote twin lifecycle
+- [x] Sync after live writes; writeProjectBrief
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

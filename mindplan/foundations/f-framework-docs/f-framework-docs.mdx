@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — agent templates. Integration guides point at get_project, not the playbook file."
+description: "Infra — SPEC, playbook, and skills: MCP is the only writer of mindplan/; shipped next files stay as twins."
 state: stable
-shipped_at: 2026-10-10T18:42:53.251Z
+shipped_at: 2026-10-12T06:31:01.539Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-10T18:42:53.251Z
+updated_at: 2026-10-12T06:31:01.539Z
 depends_on:
   - f-domain-model
 implements:
@@ -18,35 +18,48 @@ role: infra
 
 
 
+
+
+
+
+
+
+
 # Framework docs
 
 ## Purpose
 
-Own MindPlan’s normative documentation: `SPEC.md`, `README.md`, and `templates/`. Lead: **Everything works great until it doesn’t. MindPlan draws the boundaries your agent won’t.** Integration guides tell hosts to call `get_project` (MCP pointer). `mindplan/agent/playbook.md` is the offline fallback only. Seventeen tools. No Reviewer/code-review gate.
+Infra — SPEC, playbook, and skills: MCP is the only writer of `mindplan/`; shipped next files stay as `mirror` twins. Twenty-one MCP tools.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-- MCP `instructions` are a short `get_project` pointer; dialect comes back on that call
-- Integration host-instruction snippets match `templates/agent/agents-stub.md`
-- Guides do not say “always follow playbook.md” or that the server embeds the playbook
-- Playbook stays one screen; skills are `define-entities` and `plan-project` only
+- SPEC §3.6 standing twin; §8.2 MCP-only write table; twenty-one tools
+- Playbook dialect: MCP writes the plan; `patch_project` for the brief
+- define-entities / plan-project / Cursor integration: no host file tools on `mindplan/`
+- `.cursorignore` template ignores `mindplan/**`
 
 Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- Host instruction blocks require `get_project` first; file fallback only if tools are hidden
-- Integrations README / generic.md do not claim the playbook is server `instructions`
-- Tool count is seventeen everywhere
-- Playbook stays one screen
+- Normative docs match the twin + MCP-only model
+- Agent templates stop preferring host file tools for territory
+- Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Rewrite integration instruction snippets to `get_project`
-- [x] Fix integrations README and generic.md channel wording
-- [x] Green `mindplan-mcp check`
+- [x] Appendix error strings use open evolution wording
+- [x] Agent stub/skills offline fallback is .cursor / patch_project (not mindplan/** reads)
+- [x] Offline fallback points at .cursor copies; scope freeze is MCP-only
+- [x] §9.6 documents mirror twin audit
+- [x] §8.3 / §9.3 MCP-only attachments and territory prose
+- [x] Project brief is MCP-only (`patch_project`)
+- [x] Align §1.1 / §5.11 / §5.13 / §8 with standing twin (not file-exists)
+- [x] Update SPEC §3.6 and §8.2
+- [x] Update playbook, skills, integrations, README
+- [x] Verified via `npm test`
 
 ## Attachments
 

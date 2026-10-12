@@ -1,0 +1,66 @@
+---
+id: f-framework-docs
+type: Foundation
+title: "Framework docs"
+description: "Infra — SPEC, playbook, and skills: MCP is the only writer of mindplan/; shipped next files stay as twins."
+state: mirror
+shipped_at: 2026-10-12T06:31:01.539Z
+created_at: 2026-07-19T18:33:36.834Z
+updated_at: 2026-10-12T06:31:01.539Z
+depends_on:
+  - f-domain-model
+implements:
+  - README.md
+  - SPEC.md
+  - templates/
+role: infra
+---
+
+
+
+
+
+
+
+
+
+
+# Framework docs
+
+## Purpose
+
+Infra — SPEC, playbook, and skills: MCP is the only writer of `mindplan/`; shipped next files stay as `mirror` twins. Twenty-one MCP tools.
+
+## Shared Substrate Spec
+
+Claims: `SPEC.md`, `README.md`, `templates/`
+
+- SPEC §3.6 standing twin; §8.2 MCP-only write table; twenty-one tools
+- Playbook dialect: MCP writes the plan; `patch_project` for the brief
+- define-entities / plan-project / Cursor integration: no host file tools on `mindplan/`
+- `.cursorignore` template ignores `mindplan/**`
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- Normative docs match the twin + MCP-only model
+- Agent templates stop preferring host file tools for territory
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [x] Appendix error strings use open evolution wording
+- [x] Agent stub/skills offline fallback is .cursor / patch_project (not mindplan/** reads)
+- [x] Offline fallback points at .cursor copies; scope freeze is MCP-only
+- [x] §9.6 documents mirror twin audit
+- [x] §8.3 / §9.3 MCP-only attachments and territory prose
+- [x] Project brief is MCP-only (`patch_project`)
+- [x] Align §1.1 / §5.11 / §5.13 / §8 with standing twin (not file-exists)
+- [x] Update SPEC §3.6 and §8.2
+- [x] Update playbook, skills, integrations, README
+- [x] Verified via `npm test`
+
+## Attachments
+
+_None._

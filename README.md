@@ -37,7 +37,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 
 - **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`)
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
-- **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` → build on `<id>.next.mdx` → `ship` promotes over `<id>.mdx`
+- **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id and a standing `<id>.next.mdx` twin (`state: mirror`); `open_next` flips it to `draft` → build → `ship` promotes over `<id>.mdx` and restores the twin
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
 - **Ship after green check** — the implementer `ship`s when default `mindplan-mcp check` is green and legal transitions allow
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
@@ -183,9 +183,12 @@ No Dependency Closure / `link_dependent`.
 | `get_node_context` | read | `record` + `body` (+ `next.record`/`next.body` when evolving) |
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |
-| `patch_node_territory` | mutation | Optional prose fallback; prefer host file tools |
+| `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |
+| `patch_project` | mutation | Write `mindplan/project.md` description/rules |
+| `patch_config` | mutation | Write `mindplan/config.json` sources/exclude |
+| `put_attachment` / `remove_attachment` | mutation | Node attachment files |
 | `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold) |
-| `open_next` / `discard_next` | mutation | Evolve / abandon shipped node in place |
+| `open_next` / `discard_next` | mutation | Flip mirror→draft / restore mirror twin |
 | `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent` |
 | `update_node_status` | mutation | One node, or a `revisions` list ordered Foundation → Interaction → Interface → Bug; stops on the first `Blocked:` |
 | `force_unship` | mutation | Mistaken-ship recovery (`confirm: "unship:<id>"`) |

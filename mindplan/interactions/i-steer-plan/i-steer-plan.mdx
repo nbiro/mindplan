@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status, link/unlink, open_next, territory patches, and ordered revisions. Exposed by MCP, console API, and the console web app."
+description: "Compiler-gated mutate tools: status, links, open_next, required territory patches, project/config writes, and attachments."
 state: stable
-shipped_at: 2026-10-09T22:27:39.580Z
+shipped_at: 2026-10-12T06:22:33.044Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-09T22:27:39.580Z
+updated_at: 2026-10-12T06:22:33.044Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -25,63 +25,47 @@ implements:
 
 
 
+
+
+
+
 # Steer the plan
 
 ## Purpose
 
-Mutate the graph through compiler-gated tools: `create_node`, `link_nodes`, `unlink_nodes`, `set_implementation_files`, `open_next`, `discard_next`, `patch_node_territory`, `update_node_status`, and `force_unship`. Keep Foundation `role` on `create_node`, no package scaffolds, and claim validation through `f-source-index`.
-
-`patch_node_territory` writes title, description, role, body, and checkbox toggles subject to the shipped-scope freeze. It no longer rejects a body or toggle that leaves every checkbox checked while the slot is still building — checkbox state is a ledger that Completion Check reads at `ship` / `resolved`, not a progress gate.
-
-`update_node_status` transitions one node when called with `node_id` and `new_status`. It also accepts `revisions`: a list of `{ node_id, new_status }`, mutually exclusive with the single-node fields. The server orders Foundations, then Interactions, then Interfaces, then Bugs, preserves caller order within a tier, applies each transition against the graph as updated by the previous one, and stops on the first `Blocked:`. Earlier nodes stay transitioned. The error names the stopped node and the nodes already applied, and begins with `Blocked:`.
+Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_project`, `patch_config`, attachment put/remove, and ordered revisions.
 
 ## Actor & Trigger
 
-- **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
-- **Trigger:** MCP/HTTP mutate tools, including one status call for a revision
+- **Actor:** coding agent or human via MCP
+- **Trigger:** MCP mutate tools
 
 ## PRD / Execution Logic
 
 Intended files: `src/interactions/i-steer-plan/`
 
-- Keep existing mutate tools + map refresh via `f-view-projection`
-- `patch_node_territory`:
-  - Keep shipped-scope freeze on title/description/role and frontmatter split validation
-  - Drop the call to the compiler’s open-checklist rule; any checkbox state is accepted while building
-- Keep `set_implementation_files(node_id, files, slot?)`:
-  - Pre-ship writes `current`; shipped writes only open `next` (else Blocked → open_next); retired may only shrink
-  - Reject bad paths (`..`, under `mindplan/`) and immediate ownership conflicts
-- `create_node` for Foundations requires `role`
-- Do not scaffold `src/<type>/<id>/.gitkeep`
-- `update_node_status`:
-  - Single-node input and output stay as they are
-  - `revisions` rejects duplicates, empty lists, and being combined with `node_id` or `new_status`
-  - Journeys are rejected before any write
-  - On `Blocked:`, do not roll back nodes already applied in the call
+- `open_next` / `discard_next` / ship follow the standing twin lifecycle
+- `patch_node_territory` is the required prose path
+- `patch_project`, `patch_config`, `put_attachment`, `remove_attachment`
+- First ship and promote restore/create the mirror twin; retire/unship delete it
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- `patch_node_territory` toggling the last unchecked box on an `in-progress` node succeeds and writes the file
-- `patch_node_territory` title/description edits on a shipped Interaction’s `current` slot are still Blocked
-- `set_implementation_files` enforces slot rules and rejects conflicts
-- Foundation create without role is Blocked
-- No package scaffolds on create
-- Single-node `update_node_status` behavior is unchanged
-- A `revisions` call applies Foundations before Interactions before Interfaces even when the caller lists them in another order
-- The first `Blocked:` stops the call; earlier nodes stay transitioned; later nodes are not written
+- New mutate tools write project/config/attachments
+- Twin lifecycle wired through status / open_next / discard
 - Verified via `npm test`
-
 
 ## Atomic Ops
 
-- [x] Remove the open-checklist check from `patch_node_territory`
-- [x] Keep shipped-scope freeze, `set_implementation_files`, and ordered `revisions`
+- [x] Retire changed_files lists deleted mirror twin paths
+- [x] Attachment base64 allows empty and unpadded payloads
+- [x] Strict base64 validation for put_attachment
+- [x] Attachment basename hardening (reject `.` / `..`)
+- [x] Twin lifecycle in handlers
+- [x] patch_project / patch_config / attachments
 - [x] Verified via `npm test`
-- [x] Stable title and H1; description is current purpose
-- [x] belongs_to j-plan-console in addition to j-territory-sdlc
-- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 

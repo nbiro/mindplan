@@ -1,0 +1,49 @@
+---
+id: f-test-harness
+type: Foundation
+title: "Test harness"
+description: "Infra — smoke, view, search, and check tests including short instructions and get_project playbook."
+state: mirror
+shipped_at: 2026-10-10T14:10:22.049Z
+created_at: 2026-07-15T18:51:38.385Z
+updated_at: 2026-10-10T14:10:22.049Z
+depends_on:
+  - f-mcp-runtime
+implements:
+  - src/foundations/f-test-harness/
+role: infra
+---
+
+
+# Test harness
+
+## Purpose
+
+Regression suite for MindPlan. Assert MCP `initialize` instructions are the short `get_project` pointer, and that `get_project` returns the bundled playbook with the project brief.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-test-harness/`
+
+- Keep existing ownership / smoke coverage
+- Smoke: instructions === short MUST-call constant
+- Smoke: `get_project` returns empty description/rules in sandbox and `playbook` equal to `templates/agent/playbook.md`
+- Smoke: init installs `mindplan/project.md`; stub mentions `get_project`
+
+Depends on: `f-mcp-runtime`.
+
+## Acceptance Criteria
+
+- Smoke passes with short instructions and get_project playbook payload
+- Init / force brief cases still pass
+- Existing ownership cases still fail closed when violated
+
+## Atomic Ops
+
+- [x] Update smoke for short instructions and get_project.playbook
+- [x] Verified via `npm test`
+- [x] Verified by Reviewer against the contract
+
+## Attachments
+
+_None._

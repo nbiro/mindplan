@@ -10,6 +10,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import {
   isPipelineNodeType,
+  isProductionState,
   type FoundationRole,
 } from "../../foundations/f-domain-model/types.js";
 import {
@@ -29,13 +30,17 @@ import {
   implementationDir,
   implementationRelativePath,
   drainRemovedLegacyFiles,
+  isMirrorTwin,
   liveMdxFilename,
   loadGraph,
   mindplanRoot,
+  mirrorDriftReason,
+  nextFileExists,
   nextMdxFilename,
   projectRoot,
   removeLegacyIfIdNamedExists,
   writeImplementsFrontmatter,
+  writeMirrorTwin,
   writeRoleFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
 
@@ -643,6 +648,21 @@ export type RunInitOptions = {
   packageRoot: string;
 };
 
+export type MirrorBackfill = {
+  node_id: string;
+  path: string;
+};
+
+export type MirrorBackfillSkip = {
+  node_id: string;
+  reason: string;
+};
+
+export type MirrorBackfillResult = {
+  written: MirrorBackfill[];
+  skipped: MirrorBackfillSkip[];
+};
+
 export type RunInitReport = {
   root: string;
   created: boolean;
@@ -659,9 +679,46 @@ export type RunInitReport = {
   cursorSkills: InstallSkillResult[];
   cursorRule: InstallAgentRuleResult;
   cursorPermissions: InstallAgentRuleResult;
+  /** Standing next twins written for shipped pipeline nodes that lacked a mirror or had drifted. */
+  mirrorTwins: MirrorBackfill[];
+  /** Shipped nodes whose twin could not be written (live unreadable, etc.). */
+  mirrorTwinSkips: MirrorBackfillSkip[];
   /** Legacy files deleted by a graph load after the rename walk (the walk itself is in territoryFilenames). */
   removedLegacyFiles: { from: string; to: string }[];
 };
+
+/**
+ * For each shipped Foundation/Interaction/Interface with no open evolution, write
+ * `<id>.next.mdx` as a state-only copy of the live file when the twin is missing
+ * or drifted (including a next file that is not `state: mirror`).
+ * Returns empty written/skipped when the graph cannot load (e.g. mid-migration incomplete fixtures).
+ */
+export function backfillMirrorTwins(): MirrorBackfillResult {
+  let graph;
+  try {
+    graph = loadGraph();
+  } catch {
+    return { written: [], skipped: [] };
+  }
+  const written: MirrorBackfill[] = [];
+  const skipped: MirrorBackfillSkip[] = [];
+  for (const node of graph.nodes) {
+    if (!isPipelineNodeType(node.type)) continue;
+    if (!isProductionState(node.state)) continue;
+    if (node.next) continue;
+    const inSync =
+      nextFileExists(node) && isMirrorTwin(node) && mirrorDriftReason(node) === null;
+    if (inSync) continue;
+    try {
+      const rel = writeMirrorTwin(node);
+      written.push({ node_id: node.id, path: rel });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      skipped.push({ node_id: node.id, reason });
+    }
+  }
+  return { written, skipped };
+}
 
 /**
  * Runs all consumer installers and returns a structured report.
@@ -684,6 +741,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
   const cursorSkills = installCursorSkills(opts.packageRoot, installOpts);
   const cursorRule = installCursorRule(opts.packageRoot, installOpts);
   const cursorPermissions = installCursorPermissions(opts.packageRoot, installOpts);
+  const mirrorBackfill = backfillMirrorTwins();
 
   return {
     root,
@@ -701,6 +759,8 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     cursorSkills,
     cursorRule,
     cursorPermissions,
+    mirrorTwins: mirrorBackfill.written,
+    mirrorTwinSkips: mirrorBackfill.skipped,
     removedLegacyFiles: drainRemovedLegacyFiles(),
   };
   } catch (err) {

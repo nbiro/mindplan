@@ -5,6 +5,7 @@
  */
 
 import * as fs from "fs";
+import * as path from "path";
 import {
   EDGE_TYPES,
   initialStateForType,
@@ -21,6 +22,8 @@ import {
   ATTACHMENTS_DIR,
   NEXT_ATTACHMENTS_DIR,
   addEdgeToFrontmatter,
+  attachmentsDir,
+  deleteNextSlotFiles,
   discardNextSlot,
   edgeWriteSlot,
   ensureDirectories,
@@ -40,8 +43,14 @@ import {
   scaffoldEntity,
   splitContext,
   writeImplementsFrontmatter,
+  writeMirrorTwin,
+  writeProjectConfig,
   type TerritorySlot,
 } from "../../foundations/f-territory-store/store.js";
+import {
+  PROJECT_RELATIVE_PATH,
+  writeProjectBrief,
+} from "../../foundations/f-territory-store/project.js";
 import {
   expandClaims,
   normalizeClaimList,
@@ -67,6 +76,30 @@ import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js"
 
 export function syncNodes(nodes: MindPlanNode[]): void {
   for (const n of nodes) patchFrontmatter(n);
+}
+
+/**
+ * Accept empty payloads (empty files) and standard or unpadded base64.
+ * Node's Buffer.from does not throw on invalid input, so charset/shape are checked here.
+ */
+function isBase64Payload(value: string): boolean {
+  if (value.length === 0) return true;
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(
+    value
+  );
+}
+
+function assertAttachmentBasename(filename: string, raw: string): void {
+  if (
+    !filename ||
+    filename.includes("/") ||
+    filename.includes("\\") ||
+    filename === "." ||
+    filename === ".." ||
+    path.basename(filename) !== filename
+  ) {
+    throw blocked(`invalid attachment filename "${raw}".`);
+  }
 }
 
 /** Project-relative path of the auto-persisted Mermaid snapshot. */
@@ -250,7 +283,7 @@ export function setImplementationFiles(args: {
   if (args.slot) {
     slot = args.slot;
     if (slot === "next" && !node.next) {
-      throw blocked(`cannot set implements on next: "${node.id}" has no ${node.id}.next.mdx.`);
+      throw blocked(`cannot set implements on next: "${node.id}" has no open evolution.`);
     }
     if (slot === "current" && isProductionState(node.state) && !retired) {
       throw blocked(
@@ -262,7 +295,7 @@ export function setImplementationFiles(args: {
   } else if (isProductionState(node.state)) {
     if (!node.next) {
       throw blocked(
-        `shipped "${node.id}" has no open ${node.id}.next.mdx. Call open_next before set_implementation_files.`
+        `shipped "${node.id}" has no open evolution. Call open_next before set_implementation_files.`
       );
     }
     slot = "next";
@@ -566,6 +599,7 @@ function applyOneStatus(args: {
   const now = new Date().toISOString();
   let promoted = false;
   let promoteSlotFiles: string[] = [];
+  let removedTwin: string[] = [];
 
   if (resolved.promote_next) {
     promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
@@ -597,6 +631,7 @@ function applyOneStatus(args: {
     node.state = resolved.state;
     node.updated_at = now;
     patchFrontmatter(node);
+    writeMirrorTwin(node);
   } else if (node.next && isNextPipelineState(resolved.state)) {
     node.next.state = resolved.state;
     node.next.updated_at = now;
@@ -610,9 +645,14 @@ function applyOneStatus(args: {
       "next"
     );
   } else {
+    const retiring =
+      resolved.state === "deprecated" || resolved.state === "cancelled";
     node.state = resolved.state;
     node.updated_at = now;
     patchFrontmatter(node);
+    if (retiring && isPipelineNodeType(node.type)) {
+      removedTwin = deleteNextSlotFiles(node);
+    }
   }
 
   const changedStability = recomputeStability(graph);
@@ -623,11 +663,16 @@ function applyOneStatus(args: {
   const primaryPaths: string[] = [];
   if (promoted) {
     primaryPaths.push(territoryPath(node, "current"));
+    primaryPaths.push(territoryPath(node, "next"));
     primaryPaths.push(...promoteSlotFiles);
+  } else if (resolved.ship) {
+    primaryPaths.push(territoryPath(node, "current"));
+    primaryPaths.push(territoryPath(node, "next"));
   } else if (node.next && isNextPipelineState(resolved.state)) {
     primaryPaths.push(territoryPath(node, "next"));
   } else {
     primaryPaths.push(territoryPath(node, "current"));
+    primaryPaths.push(...removedTwin);
   }
   const files = [
     ...primaryPaths,
@@ -667,6 +712,7 @@ export function forceUnship(args: {
   node.state = target;
   node.updated_at = now;
   patchFrontmatter(node, "current", { clearShippedAt: true });
+  const removedTwin = deleteNextSlotFiles(node);
 
   const changedStability = recomputeStability(graph);
   const changedJourneys = recomputeJourneyStates(graph);
@@ -675,6 +721,7 @@ export function forceUnship(args: {
 
   const files = [
     territoryPath(node),
+    ...removedTwin,
     ...changedJourneys.map((j) => territoryPath(j)),
     ...changedStability.map((n) => territoryPath(n)),
   ];
@@ -779,7 +826,9 @@ export function discardNext(args: { node_id: string }): Record<string, unknown> 
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   if (!node.next) {
-    throw blocked(`node "${node_id}" has no ${node_id}.next.mdx to discard.`);
+    throw blocked(
+      `node "${node_id}" has no open evolution to discard (standing mirror twins are not discarded).`
+    );
   }
   const next_path = territoryPath(node, "next");
   const slotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: false });
@@ -789,8 +838,127 @@ export function discardNext(args: { node_id: string }): Record<string, unknown> 
   return {
     node_id,
     discarded: true,
+    restored_mirror: true,
     live_state: node.state,
     changed_files: changedFiles([next_path, ...slotFiles], true),
+    ...buildMutationAnchor(loadGraph(), node_id),
+  };
+}
+
+export function patchProject(args: {
+  description?: string;
+  rules?: string;
+}): Record<string, unknown> {
+  if (args.description === undefined && args.rules === undefined) {
+    throw blocked("patch_project requires description and/or rules.");
+  }
+  const result = writeProjectBrief({
+    description: args.description,
+    rules: args.rules,
+  });
+  return {
+    path: result.path,
+    description: result.description,
+    rules: result.rules,
+    changed_files: changedFiles([PROJECT_RELATIVE_PATH]),
+  };
+}
+
+export function patchConfig(args: {
+  sources?: string[];
+  exclude?: string[];
+}): Record<string, unknown> {
+  if (args.sources === undefined && args.exclude === undefined) {
+    throw blocked("patch_config requires sources and/or exclude.");
+  }
+  const current = loadProjectConfig();
+  const next = {
+    sources: args.sources ?? current.sources,
+    exclude: args.exclude ?? current.exclude,
+  };
+  const written = writeProjectConfig(next, { force: true });
+  return {
+    path: written.path,
+    config: written.config,
+    changed_files: changedFiles([written.path]),
+  };
+}
+
+export function putAttachment(args: {
+  node_id: string;
+  filename: string;
+  content_base64: string;
+  slot?: TerritorySlot;
+}): Record<string, unknown> {
+  const { node_id } = args;
+  const graph = loadGraph();
+  const node = findNode(graph, node_id);
+  const filename = args.filename.trim();
+  assertAttachmentBasename(filename, args.filename);
+  const slot: TerritorySlot =
+    args.slot ??
+    (node.next && isPipelineNodeType(node.type) ? "next" : "current");
+  if (slot === "next" && !node.next) {
+    throw blocked(
+      `cannot put attachment on next for "${node_id}" — no open evolution. Call open_next first.`
+    );
+  }
+  if (!isBase64Payload(args.content_base64)) {
+    throw blocked("content_base64 is not valid base64.");
+  }
+  const bytes = Buffer.from(args.content_base64, "base64");
+  const dir = slot === "next" ? nextAttachmentsDir(node) : attachmentsDir(node);
+  fs.mkdirSync(dir, { recursive: true });
+  const abs = path.join(dir, filename);
+  if (path.resolve(abs) !== path.resolve(dir, filename)) {
+    throw blocked(`invalid attachment filename "${args.filename}".`);
+  }
+  fs.writeFileSync(abs, bytes);
+  const rel = `${entityRelativePath(node)}/${slot === "next" ? NEXT_ATTACHMENTS_DIR : ATTACHMENTS_DIR}/${filename}`;
+  return {
+    node_id,
+    slot,
+    path: rel,
+    bytes: bytes.length,
+    changed_files: changedFiles([rel]),
+    ...buildMutationAnchor(loadGraph(), node_id),
+  };
+}
+
+export function removeAttachment(args: {
+  node_id: string;
+  filename: string;
+  slot?: TerritorySlot;
+}): Record<string, unknown> {
+  const { node_id } = args;
+  const graph = loadGraph();
+  const node = findNode(graph, node_id);
+  const filename = args.filename.trim();
+  assertAttachmentBasename(filename, args.filename);
+  const slot: TerritorySlot =
+    args.slot ??
+    (node.next && isPipelineNodeType(node.type) ? "next" : "current");
+  if (slot === "next" && !node.next) {
+    throw blocked(
+      `cannot remove attachment on next for "${node_id}" — no open evolution.`
+    );
+  }
+  const dir = slot === "next" ? nextAttachmentsDir(node) : attachmentsDir(node);
+  const abs = path.join(dir, filename);
+  if (path.resolve(abs) !== path.resolve(dir, filename)) {
+    throw blocked(`invalid attachment filename "${args.filename}".`);
+  }
+  if (!fs.existsSync(abs)) {
+    throw blocked(`attachment "${filename}" not found on ${slot} for "${node_id}".`);
+  }
+  fs.unlinkSync(abs);
+  const rel = `${entityRelativePath(node)}/${slot === "next" ? NEXT_ATTACHMENTS_DIR : ATTACHMENTS_DIR}/${filename}`;
+  return {
+    node_id,
+    slot,
+    path: rel,
+    removed: true,
+    changed_files: changedFiles([rel]),
     ...buildMutationAnchor(loadGraph(), node_id),
   };
 }

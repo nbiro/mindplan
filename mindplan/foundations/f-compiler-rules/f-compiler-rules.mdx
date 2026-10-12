@@ -2,11 +2,11 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — validation-at-transition rules: ghosts, Infrastructure/Behavior First, Completion Check, Interaction Independence, taxonomy."
+description: "Infra — validation-at-transition rules. A next file in state mirror is not an open evolution."
 state: stable
-shipped_at: 2026-10-09T22:27:39.116Z
+shipped_at: 2026-10-11T13:15:38.911Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-09T22:27:39.116Z
+updated_at: 2026-10-11T13:15:38.911Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -17,51 +17,33 @@ role: infra
 ---
 
 
-
-
 # Compiler rules
 
 ## Purpose
 
-Infra — MindPlan compiler. The gates that keep the graph architecturally valid: Completion Check at `ship` / `resolved`, Minimum Territory Shape, Interaction Independence, Infrastructure First, Behavior First, Ghost Interaction / Ghost Interface / Ghost Bug, cancel gates, force_unship, reachability, non-empty existing `implements` on `in-review` and `ship`, and the import-matrix closure that stops at assemblers.
-
-The compiler no longer polices checkbox state while work is building. An agent may check every Atomic Op before `in-review`; Completion Check at `ship` / `resolved` is the only checklist gate. This removes the “leave one Atomic Op open while building” rule and its inherited-checklist exception.
-
-When `## Impact` is present, it must be real prose: an empty or scaffold section fails Minimum Territory Shape on leaving `draft`, entering `in-review`, and `ship` / `resolved`. Absence of the heading is not an error. Section extraction treats `\r\n` and a lone `\r` as newlines before it splits on `##`.
+Infra — validation-at-transition rules. A next file in state `mirror` is not an open evolution: `open_next`, cancel, deprecate, and `force_unship` key off `node.next`, not path existence.
 
 ## Shared Substrate Spec
 
 Intended files: `src/foundations/f-compiler-rules/`
 
-- Keep Completion Check (unchecked count in the active slot blocks `ship` / `resolved`), Minimum Territory Shape including the `## Impact` stub rule, Independence, Infrastructure/Behavior First, Ghost rules, cancel gates, force_unship, reachability
-- Keep: `in-review` and `ship` require a non-empty `implements` list on the active slot with every entry present on disk
-- Keep helpers for reachable Foundations (transitive `depends_on`; do not continue past `role: assembler`; while next is open, live and next edges both count)
-- Keep import-matrix predicates consumed by `i-check-integrity`
-- Keep `extractSection` newline normalization
-- Remove `assertOpenChecklistWhileBuilding`, `isInheritedCheckedChecklist`, and the building-states set they use; callers (`i-steer-plan`, `i-check-integrity`) drop their calls in the same revision
-- Uses `f-source-index` for claim expansion and path presence
+- `validateOpenNext` accepts a standing mirror (blocks only when `node.next` is set)
+- Cancel / deprecate / force_unship messages name an open evolution, not mere file presence
+- Pipeline rules continue to evaluate against live or open-evolution slots only
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- A fully checked checklist on a node at `draft`, `ready`, or `in-progress` (Bug: `open`, `triaged`, `fixing`) is accepted
-- `ship` / `resolved` with any unchecked box is still Blocked by Completion Check with the open count
-- `in-progress` → `in-review` and `ship` are Blocked when implements is empty or missing on disk
-- Assembler stops transitive Foundation reachability for import allowance
-- A present empty or scaffold `## Impact` section is Blocked on `ready`, `in-review`, and `ship`; a body with no `## Impact` heading passes shape
-- A lone-`\r` body with an empty `## Impact` is Blocked for that stub
-- No export named `assertOpenChecklistWhileBuilding` or `isInheritedCheckedChecklist` remains
+- A mirror twin does not block `open_next`
+- An open evolution still blocks a second `open_next`
+- Retire / force_unship wording matches the twin model
 - Verified via `npm test`
-
 
 ## Atomic Ops
 
-- [x] Remove the open-checklist-while-building rule and its inherited-checklist exception
-- [x] Keep Completion Check, Impact shape, implements, and import-matrix gates
+- [x] Treat mirror as non-evolution in open_next / cancel / force_unship gates
 - [x] Verified via `npm test`
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
