@@ -173,6 +173,8 @@ No Dependency Closure / `link_dependent`.
 
 ## MCP Tools
 
+The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are registered in [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract).
+
 | Tool | Kind | Description |
 |------|------|-------------|
 | `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`) |
