@@ -22,6 +22,7 @@ npm test
 |------|---------|
 | `SPEC.md` | Framework specification — source of truth for behaviour |
 | `templates/agent/playbook.md` | Always-on systems dialect installed into consumer projects by `init` |
+| `templates/agent/project.md` | Project brief template copied to `mindplan/project.md` by `init` when missing |
 | `templates/agent/skills/define-entities/` | Entity-definition guide installed by `init` |
 | `templates/agent/skills/plan-project/` | Plan-only session guide installed by `init` |
 | `templates/agent/integrations/` | Per-agent MCP setup guides installed by `init` |

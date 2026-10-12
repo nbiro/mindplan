@@ -116,7 +116,7 @@ npm install && npm run build
 node /absolute/path/to/mindplan/dist/index.js init
 ```
 
-`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), `mindplan/project.md` (description + rules only — not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` and `.cursor/rules/mindplan.mdc` when missing. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`. The stub requires `get_project` before planning or code (dialect + brief in the tool response); when tools are hidden, read `mindplan/agent/playbook.md` and `mindplan/project.md`.
+`init` installs `.cursorignore`, `.cursor/permissions.json`, `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` and `.cursor/rules/mindplan.mdc` when missing. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`. The stub requires `get_project` before planning or code (dialect + brief in the tool response); when tools are hidden, read `mindplan/agent/playbook.md` and `mindplan/project.md`.
 
 3. Register the MCP server — see `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
@@ -186,7 +186,8 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |
 | `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |
-| `patch_project` | mutation | Write `mindplan/project.md` description/rules |
+| `patch_project_description` | mutation | Write the `mindplan/project.md` description |
+| `patch_project_rules` | mutation | Write the `mindplan/project.md` rules |
 | `patch_config` | mutation | Write `mindplan/config.json` sources/exclude |
 | `put_attachment` / `remove_attachment` | mutation | Node attachment files |
 | `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold) |

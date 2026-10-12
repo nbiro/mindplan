@@ -26,7 +26,8 @@ import {
   openNext,
   patchConfig,
   patchNodeTerritory,
-  patchProject,
+  patchProjectDescription,
+  patchProjectRules,
   putAttachment,
   removeAttachment,
   setImplementationFiles,
@@ -285,18 +286,35 @@ export function registerMindPlanTools(server: McpServer): void {
   );
 
   server.registerTool(
-    "patch_project",
+    "patch_project_description",
     {
-      title: "Patch project brief",
+      title: "Patch project description",
       description:
-        "Writes mindplan/project.md description and/or rules via the territory store. " +
-        "Re-call get_project after editing. Do not hand-edit project.md.",
+        "Writes the ## Description section of mindplan/project.md via the territory store. " +
+        "Leaves ## Rules unchanged. Re-call get_project after editing. Do not hand-edit project.md.",
       inputSchema: {
-        description: z.string().optional().describe("Replace the ## Description section body."),
-        rules: z.string().optional().describe("Replace the ## Rules section body."),
+        description: z
+          .string()
+          .describe("Replace the ## Description section body. Empty string clears it."),
       },
     },
-    guarded(({ description, rules }) => patchProject({ description, rules }))
+    guarded(({ description }) => patchProjectDescription({ description }))
+  );
+
+  server.registerTool(
+    "patch_project_rules",
+    {
+      title: "Patch project rules",
+      description:
+        "Writes the ## Rules section of mindplan/project.md via the territory store. " +
+        "Leaves ## Description unchanged. Re-call get_project after editing. Do not hand-edit project.md.",
+      inputSchema: {
+        rules: z
+          .string()
+          .describe("Replace the ## Rules section body. Empty string clears it."),
+      },
+    },
+    guarded(({ rules }) => patchProjectRules({ rules }))
   );
 
   server.registerTool(

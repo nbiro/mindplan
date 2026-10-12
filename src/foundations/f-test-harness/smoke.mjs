@@ -160,9 +160,31 @@ function nextTerritoryPath(...parts) {
 }
 
 {
-  await expectOk("patch_project brief", "patch_project", {
-    description: "A product.",
-    rules: "- Branch from latest main\n- Keep tests green",
+  const rules = "- Branch from latest main\n- Keep tests green";
+  const described = JSON.parse(
+    await expectOk("patch_project_description", "patch_project_description", {
+      description: "A product.",
+    })
+  );
+  if (
+    described.description !== "A product." ||
+    described.rules !== "" ||
+    !described.changed_files?.includes("mindplan/project.md")
+  ) {
+    failures++;
+    console.log(`FAIL patch_project_description must write description only: ${JSON.stringify(described)}`);
+  } else console.log("ok   patch_project_description leaves rules unchanged");
+
+  const ruled = JSON.parse(
+    await expectOk("patch_project_rules", "patch_project_rules", { rules })
+  );
+  if (ruled.description !== "A product." || ruled.rules !== rules) {
+    failures++;
+    console.log(`FAIL patch_project_rules must keep description: ${JSON.stringify(ruled)}`);
+  } else console.log("ok   patch_project_rules leaves description unchanged");
+
+  await expectOk("replace description keeps rules", "patch_project_description", {
+    description: "A revised product.",
   });
   const gp = await call("get_project", {});
   let payload;
@@ -174,13 +196,27 @@ function nextTerritoryPath(...parts) {
   if (
     gp.error ||
     !payload ||
-    payload.description !== "A product." ||
-    payload.rules !== "- Branch from latest main\n- Keep tests green"
+    payload.description !== "A revised product." ||
+    payload.rules !== rules
   ) {
     failures++;
-    console.log(`FAIL get_project must return patch_project description and rules: ${gp.text.slice(0, 240)}`);
-  } else console.log("ok   get_project returns patch_project description and rules");
-  await expectOk("clear project brief", "patch_project", { description: "", rules: "" });
+    console.log(`FAIL get_project must return split brief writes: ${gp.text.slice(0, 240)}`);
+  } else console.log("ok   get_project returns description and rules from separate writes");
+
+  for (const tool of ["patch_project_description", "patch_project_rules"]) {
+    try {
+      const missing = await call(tool, {});
+      if (!missing.error) {
+        failures++;
+        console.log(`FAIL ${tool} must require its section`);
+      } else console.log(`ok   ${tool} rejects a missing section`);
+    } catch {
+      console.log(`ok   ${tool} rejects a missing section`);
+    }
+  }
+
+  await expectOk("clear project description", "patch_project_description", { description: "" });
+  await expectOk("clear project rules", "patch_project_rules", { rules: "" });
 }
 
 // --- create nodes ---
@@ -1523,6 +1559,12 @@ if (initResult.status !== 0) {
 } else if (!fs.existsSync(path.join(initRoot, "mindplan", "project.md"))) {
   failures++;
   console.log("FAIL mindplan-mcp init did not install mindplan/project.md");
+} else if (
+  fs.readFileSync(path.join(initRoot, "mindplan", "project.md"), "utf-8") !==
+  fs.readFileSync(path.join(toolRoot, "templates", "agent", "project.md"), "utf-8")
+) {
+  failures++;
+  console.log("FAIL init project.md must be a copy of templates/agent/project.md");
 } else if (
   (() => {
     const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");

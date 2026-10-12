@@ -845,17 +845,26 @@ export function discardNext(args: { node_id: string }): Record<string, unknown> 
   };
 }
 
-export function patchProject(args: {
-  description?: string;
-  rules?: string;
+export function patchProjectDescription(args: {
+  description: string;
 }): Record<string, unknown> {
-  if (args.description === undefined && args.rules === undefined) {
-    throw blocked("patch_project requires description and/or rules.");
+  if (args.description === undefined) {
+    throw blocked("patch_project_description requires description.");
   }
-  const result = writeProjectBrief({
-    description: args.description,
-    rules: args.rules,
-  });
+  const result = writeProjectBrief({ description: args.description });
+  return {
+    path: result.path,
+    description: result.description,
+    rules: result.rules,
+    changed_files: changedFiles([PROJECT_RELATIVE_PATH]),
+  };
+}
+
+export function patchProjectRules(args: { rules: string }): Record<string, unknown> {
+  if (args.rules === undefined) {
+    throw blocked("patch_project_rules requires rules.");
+  }
+  const result = writeProjectBrief({ rules: args.rules });
   return {
     path: result.path,
     description: result.description,
