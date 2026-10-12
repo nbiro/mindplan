@@ -2,11 +2,11 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime"
-description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves a short get_project pointer as server instructions."
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature code."
 state: mirror
-shipped_at: 2026-10-10T14:10:21.973Z
+shipped_at: 2026-10-12T21:34:22.044Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-10T14:10:21.973Z
+updated_at: 2026-10-12T21:34:22.044Z
 depends_on:
   - f-territory-store
   - f-framework-docs
@@ -17,19 +17,22 @@ role: assembler
 ---
 
 
+
+
 # MCP runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer that requires `get_project` before answering or writing code. It does **not** embed the playbook or project brief bodies.
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change; before each action call `get_rules` then `orient_for_work`; before any new-feature code change, update or create nodes using the plan-project skill. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session.
 
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
 - `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
-- Export `SERVER_INSTRUCTIONS` — fixed short string requiring `get_project`, then `orient_for_work`
-- Always pass `{ instructions: SERVER_INSTRUCTIONS }` (never omit for a missing playbook file)
+- Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and plan-project before new-feature code
+- `with-drift.ts` — Assembler helper that calls `buildDriftReport` from `i-check-integrity` (legal because check depends_on this Assembler) so `if-mcp-tools` can attach drift without importing a non-exposed Interaction
+- Always pass `{ instructions: SERVER_INSTRUCTIONS }`
 - MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
 - MUST NOT load or append `mindplan/project.md` or the playbook body into instructions
 
@@ -37,15 +40,15 @@ Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `dep
 
 ## Acceptance Criteria
 
-- MCP `initialize` instructions equal the short `get_project` pointer constant
+- MCP `initialize` instructions equal the short pointer constant
 - Instructions contain neither the playbook body nor `mindplan/project.md` content
 - Boot never fails over a missing brief or playbook file
 
 ## Atomic Ops
 
-- [x] Replace instructions with the short MUST-call `get_project` pointer
-- [x] Build and run tests (`npm test`)
-- [x] Verified by Reviewer against the contract
+- [x] Update `SERVER_INSTRUCTIONS` for get_rules, orient_for_work, and plan-project
+- [x] Export `withDrift` for the MCP success envelope
+- [x] Verified via `npm test`
 
 ## Attachments
 

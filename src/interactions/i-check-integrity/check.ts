@@ -88,11 +88,13 @@ function toPosix(p: string): string {
 
 function git(args: string[], cwd: string, required: boolean): string {
   try {
+    // Trim only the trailing newline. A leading space is the unstaged half of
+    // porcelain (` D path`); trimming it corrupts the first path.
     return execFileSync("git", args, {
       cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    }).replace(/\s+$/, "");
   } catch (err) {
     if (!required) return "";
     const detail =
@@ -445,6 +447,124 @@ function checkDirtySrc(
       ownerAllowsCommitDiff,
       "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review."
     );
+  }
+}
+
+export type DriftPath = {
+  path: string;
+  owner_id: string;
+  state: string;
+  next_state: string | null;
+};
+
+export type DriftReport = {
+  paths: DriftPath[];
+  unowned: string[];
+  reminder: string;
+};
+
+const DRIFT_REMINDER =
+  "Update each owner so the graph matches before you say this is done. " +
+  "A shipped contract change uses open_next; if the behavior did not change, the graph already matches.";
+
+function claimCoversPath(claim: string, rel: string): boolean {
+  const normalized = claim.trim().replace(/\\/g, "/");
+  if (!normalized) return false;
+  if (normalized.endsWith("/")) return rel.startsWith(normalized);
+  return normalized === rel;
+}
+
+/**
+ * Owner for a path claim expansion dropped (typically a deleted file).
+ * The longest covering claim wins, so a live file claim beats a broader
+ * directory claim on another node's open next. Equal length on the same
+ * node prefers the next slot.
+ */
+function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
+  const nodes = graph.nodes
+    .filter((node) => isPipelineNodeType(node.type) && !RETIRED_STATES.has(node.state))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  let best: { id: string; viaNext: boolean; len: number } | null = null;
+  for (const node of nodes) {
+    const slots: { claims: string[] | undefined; viaNext: boolean }[] = [
+      { claims: node.next?.implements, viaNext: true },
+      { claims: node.implements, viaNext: false },
+    ];
+    for (const slot of slots) {
+      for (const claim of slot.claims ?? []) {
+        if (!claimCoversPath(claim, rel)) continue;
+        const len = claim.trim().replace(/\\/g, "/").length;
+        if (!best || len > best.len) {
+          best = { id: node.id, viaNext: slot.viaNext, len };
+          continue;
+        }
+        if (len === best.len && best.id === node.id && slot.viaNext && !best.viaNext) {
+          best = { id: node.id, viaNext: true, len };
+        }
+      }
+    }
+  }
+  return best?.id ?? null;
+}
+
+/**
+ * Read-only report of uncommitted source files and their implements owners.
+ * Returns null when the tree is clean or git cannot be read. Does not change default check.
+ */
+export function buildDriftReport(options: { cwd?: string } = {}): DriftReport | null {
+  const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
+  const prev = process.env.MINDPLAN_ROOT;
+  if (options.cwd) {
+    process.env.MINDPLAN_ROOT = root;
+  }
+  try {
+    loadProjectConfig(root);
+    const graph = loadGraph();
+    let dirty: DirtySrcPaths;
+    try {
+      dirty = collectDirtySrcPaths(root);
+    } catch {
+      return null;
+    }
+    if (dirty.workingTree.length === 0) return null;
+
+    const buckets = buildOwnershipIndex(graph, root);
+    const universe = new Set(listUniverseFiles(root));
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const paths: DriftPath[] = [];
+    const unowned: string[] = [];
+
+    for (const rel of dirty.workingTree) {
+      const ownerId =
+        exclusiveOwner(buckets, rel) ??
+        ownerOfFile(buckets, rel)?.id ??
+        ownerFromClaims(graph, rel);
+      if (!ownerId) {
+        if (universe.has(rel)) unowned.push(rel);
+        continue;
+      }
+      const node = byId.get(ownerId);
+      if (!node) {
+        unowned.push(rel);
+        continue;
+      }
+      paths.push({
+        path: rel,
+        owner_id: node.id,
+        state: node.state,
+        next_state: node.next?.state ?? null,
+      });
+    }
+
+    if (paths.length === 0 && unowned.length === 0) return null;
+    return { paths, unowned, reminder: DRIFT_REMINDER };
+  } catch {
+    return null;
+  } finally {
+    if (options.cwd) {
+      if (prev === undefined) delete process.env.MINDPLAN_ROOT;
+      else process.env.MINDPLAN_ROOT = prev;
+    }
   }
 }
 

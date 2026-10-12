@@ -16,8 +16,10 @@ import {
   getNodeContext,
   getNodeImplementationHandler,
   getProject,
+  getRules,
   orientForWork,
 } from "../../interactions/i-orient-plan/handlers.js";
+import { withDrift } from "../../foundations/f-mcp-runtime/with-drift.js";
 import {
   createNode,
   discardNext,
@@ -66,7 +68,7 @@ function withRemovedLegacyFiles(payload: unknown): unknown {
 function guarded<A>(handler: (args: A) => unknown): (args: A) => ToolResult {
   return (args: A) => {
     try {
-      return ok(withRemovedLegacyFiles(handler(args)));
+      return ok(withDrift(withRemovedLegacyFiles(handler(args))));
     } catch (err) {
       const removed = drainRemovedLegacyFiles();
       const message = err instanceof Error ? err.message : String(err);
@@ -90,6 +92,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get MindPlan graph",
       description:
+        "Call when you need every node and edge. Prefer orient_for_work for one piece of work. " +
         "Returns the full MindPlan graph — nodes and edges assembled from <id>.mdx frontmatter.",
       inputSchema: {},
     },
@@ -101,10 +104,10 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Export MindPlan view",
       description:
-        "Exports a deterministic typed-DAG projection as Mermaid or DOT for PRs and docs. " +
+        "Call when a human wants a map for a PR or a doc. " +
+        "Exports a deterministic typed-DAG projection as Mermaid or DOT. " +
         "Omit focus for the full filtered map; pass focus for that node plus its 1-hop neighborhood. " +
-        "By default hides deprecated/cancelled nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON; " +
-        "use this when the user wants a diagram / map.",
+        "By default hides deprecated/cancelled nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON.",
       inputSchema: {
         format: z
           .enum(VIEW_FORMATS)
@@ -131,6 +134,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Find related nodes",
       description:
+        "Call before creating a node, to reuse one that already exists. " +
         "Ranks nodes by text query (id/title/description) and returns the focus node plus its 1-hop " +
         "linked neighborhood (summaries only). Prefer this over get_mindplan_graph for orientation. " +
         "Provide query and/or node_id. Use get_node_context for full territory; get_blast_radius for transitive dependents.",
@@ -165,6 +169,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get node implementation",
       description:
+        "Call before editing a file, to see who owns it, or when you need a node's claimed files. " +
         "Returns declared owned files for a node (`implements`), or looks up the owner of a path. " +
         "Interaction/Interface/Foundation: { node_id, files: [{path,exists}], next_files? }. " +
         "Journey/Bug: tagged files of members/affects targets. Pass path for path→owner lookup.",
@@ -187,6 +192,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get node context",
       description:
+        "Call when you are about to read or edit one node's territory. " +
         "Returns authoritative record (graph slice), editable body, attachment paths, and filenames. " +
         "Includes next slot when an evolution is in progress (`next.record` + `next.body`).",
       inputSchema: {
@@ -201,11 +207,11 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Orient for work",
       description:
+        "Call before each action, after get_rules. Not only at session start. " +
         "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
         "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
-        "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream). " +
-        "Prefer this to start a work session.",
+        "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream).",
       inputSchema: {
         query: z
           .string()
@@ -232,13 +238,25 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get project brief",
       description:
+        "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
         "Returns the systems dialect and this product's description and standing rules " +
-        "({ path, description, rules, playbook }). Call before answering or writing code. " +
-        "playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
-        "Re-call after editing the project brief.",
+        "({ path, description, rules, playbook }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md.",
       inputSchema: {},
     },
     guarded(() => getProject())
+  );
+
+  server.registerTool(
+    "get_rules",
+    {
+      title: "Get project rules",
+      description:
+        "Call before each action, before orient_for_work. Returns the mandatory project rules " +
+        "({ path, rules }) from mindplan/project.md. Empty string when the section is empty. " +
+        "Does not return the playbook or description.",
+      inputSchema: {},
+    },
+    guarded(() => getRules())
   );
 
   server.registerTool(
@@ -246,6 +264,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Patch node territory",
       description:
+        "Call when a node's title, description, or body should match the work, before the feature code. Follow the plan-project skill. " +
         "Required writer for territory prose: body (PRD, checklists), optional title/description/role " +
         "(pre-ship or open evolution), toggle_checkboxes. Do not edit mindplan/ MDX with host file tools. " +
         "When a shipped node has an open evolution (not a mirror twin), patches default to next. Optional slot: current|next.",
@@ -290,8 +309,9 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Patch project description",
       description:
+        "Call when the product summary changes, through the plan-project skill. The next session start calls get_project again. " +
         "Writes the ## Description section of mindplan/project.md via the territory store. " +
-        "Leaves ## Rules unchanged. Re-call get_project after editing. Do not hand-edit project.md.",
+        "Leaves ## Rules unchanged. Do not hand-edit project.md.",
       inputSchema: {
         description: z
           .string()
@@ -306,8 +326,9 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Patch project rules",
       description:
+        "Call when standing rules change, through the plan-project skill. The next action calls get_rules again. " +
         "Writes the ## Rules section of mindplan/project.md via the territory store. " +
-        "Leaves ## Description unchanged. Re-call get_project after editing. Do not hand-edit project.md.",
+        "Leaves ## Description unchanged. Do not hand-edit project.md.",
       inputSchema: {
         rules: z
           .string()
@@ -322,6 +343,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Patch project config",
       description:
+        "Call when source roots or exclude paths change, through the plan-project skill. " +
         "Writes mindplan/config.json sources and/or exclude via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
@@ -343,6 +365,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Put node attachment",
       description:
+        "Call when a supporting file should sit beside a node, through the plan-project skill. " +
         "Writes a file under attachments/ (or next-attachments/ while evolving) as base64. " +
         "Slot defaults to next when an open evolution exists.",
       inputSchema: {
@@ -362,6 +385,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Remove node attachment",
       description:
+        "Call when a supporting file should leave a node, through the plan-project skill. " +
         "Deletes a file under attachments/ (or next-attachments/ while evolving). " +
         "Slot defaults to next when an open evolution exists.",
       inputSchema: {
@@ -378,6 +402,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Set implementation files",
       description:
+        "Call before writing a file the node does not yet claim. " +
         "Replaces the server-owned implements list for an Interaction, Interface, or Foundation. " +
         "Pre-ship writes current; shipped writes only an open next (else Blocked → open_next); " +
         "retired nodes may only shrink. Rejects bad paths and ownership conflicts.",
@@ -402,6 +427,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Create node",
       description:
+        "Call when reuse found no node, before any new-feature code. Follow the plan-project skill. " +
         "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
         "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold).",
       inputSchema: {
@@ -425,6 +451,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Link nodes",
       description:
+        "Call when two existing nodes should be connected, as part of the plan-project skill. " +
         "Adds an edge to the DAG. Legal shapes: Interaction -belongs_to-> Journey, " +
         "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
         "Interface -exposes-> Interaction, Interaction -leads_to-> Interaction, " +
@@ -448,6 +475,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Open next evolution",
       description:
+        "Call when a shipped node's contract changes, before editing that contract. Follow the plan-project skill. " +
         "Flips a shipped node's standing <id>.next.mdx twin from state mirror to draft (creates the twin from live if missing). " +
         "Optional title/description overrides. Does not reset checkboxes. The live node keeps serving. " +
         "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror.",
@@ -467,6 +495,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Discard next evolution",
       description:
+        "Call when an open evolution should be abandoned. Follow the plan-project skill. " +
         "Abandons an in-flight evolution and restores <id>.next.mdx as a state: mirror twin of the live file. " +
         "Clears next-attachments/. The live <id>.mdx is unchanged.",
       inputSchema: {
@@ -481,6 +510,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Get blast radius",
       description:
+        "Call before changing a shipped node. " +
         "Returns nodes that depend on the given node (transitive reverse depends_on closure), " +
         "with hop distance, journeys_at_risk, and affected_files grouped by owner " +
         "({ owner_id, owner_type, via[], files[] }; via ∈ focus|dependent|exposing|importer). " +
@@ -504,7 +534,9 @@ export function registerMindPlanTools(server: McpServer): void {
     "unlink_nodes",
     {
       title: "Unlink nodes",
-      description: "Removes edge(s) between two nodes from the source node's frontmatter.",
+      description:
+        "Call when an existing edge should go away, as part of the plan-project skill. " +
+        "Removes edge(s) between two nodes from the source node's frontmatter.",
       inputSchema: {
         source_id: NODE_ID.describe("The id of the edge source node."),
         target_id: NODE_ID.describe("The id of the edge target node."),
@@ -518,6 +550,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Update node status",
       description:
+        "Call when a node should move along the build or bug pipeline, including ship or resolved at handoff. " +
         "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
         "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
         "When an open evolution exists (not a mirror twin), build-pipeline transitions apply to the next slot; " +
@@ -560,6 +593,7 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Force unship (mistaken ship recovery)",
       description:
+        "Call only after the user explicitly confirms a mistaken ship. " +
         "DANGEROUS recovery only. Ask the user first and wait for an explicit yes — never invent confirmation. " +
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
         'Requires confirm exactly equal to "unship:<node_id>". Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin.',

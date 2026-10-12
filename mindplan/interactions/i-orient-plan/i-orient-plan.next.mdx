@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context, report blast radius, and expose get_project (playbook + project brief)."
+description: "Find focus nodes, load territory context, report blast radius, expose get_project, and expose get_rules for mandatory project rules before each action."
 state: mirror
-shipped_at: 2026-10-10T14:10:22.121Z
+shipped_at: 2026-10-12T21:34:22.151Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-10T14:10:22.121Z
+updated_at: 2026-10-12T21:34:22.151Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -21,42 +21,39 @@ implements:
 ---
 
 
+
 # Orient on the plan
 
 ## Purpose
 
-Read-path orientation. Existing query tools unchanged. `get_project` returns the bundled systems dialect plus the repo project brief so agents load both in one call (MCP instructions only point here).
+Read-path orientation. `get_rules` returns only the mandatory project rules so each action can re-load them without the full playbook. A later session that skipped that call would treat rules as optional after the first `get_project`.
 
 ## Actor & Trigger
 
 - **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
-- **Trigger:** MCP/HTTP orient tools; `get_project` with no arguments
+- **Trigger:** MCP/HTTP orient tools; `get_project` / `get_rules` with no arguments
 
 ## Execution Logic
 
 Intended files: `src/interactions/i-orient-plan/`
 
 - Keep existing query tools
-- `get_project` — `{ path, description, rules, playbook }`
-  - description/rules from `loadProjectBrief()`
-  - playbook from package `templates/agent/playbook.md` (walk up from this module); missing → `Blocked:`
+- `get_project` — `{ path, description, rules, playbook }` (first read of dialect + brief)
+- `get_rules` — `{ path, rules }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description
 - `orient_for_work` does **not** carry the brief
-- No separate `get_playbook` tool
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- `get_project` returns playbook equal to the bundled template and empty description/rules when the brief is missing
-- Missing playbook Blocks
-- Existing orient payloads unchanged
+- `get_rules` returns the current rules string and path
+- `get_project` still returns playbook + brief
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Extend `getProject` to return `playbook` with the brief
-- [x] Build and run tests (`npm test`)
-- [x] Verified by Reviewer against the contract
+- [x] Add `getRules` handler and list it in QUERY_TOOLS
+- [x] Verified via `npm test`
 
 ## Attachments
 

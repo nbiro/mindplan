@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin."
+description: "Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin. Also builds a read-only drift report of uncommitted source files and their owners."
 state: stable
-shipped_at: 2026-10-12T06:03:48.847Z
+shipped_at: 2026-10-12T21:34:22.232Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-12T06:03:48.847Z
+updated_at: 2026-10-12T21:34:22.232Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -25,32 +25,35 @@ implements:
 
 ## Purpose
 
-Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`). Open evolutions skip the mirror check.
+Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`). Also builds a read-only drift report of uncommitted source files and their owners so MCP results can remind the agent without changing default check. A later session that only grepped `src/` would miss those owners.
 
 ## Actor & Trigger
 
-- **Actor:** human or CI via `mindplan-mcp check`
-- **Trigger:** CLI check
+- **Actor:** human or CI via `mindplan-mcp check`; MCP tools via `f-mcp-runtime` `withDrift`
+- **Trigger:** CLI check; `buildDriftReport` from the Assembler envelope used by `if-mcp-tools`
 
 ## PRD / Execution Logic
 
 Intended files: `src/interactions/i-check-integrity/`
 
-- `checkMirrorTwins` after presence checks
-- Uses `mirrorDriftReason` from the territory store
+- Keep mirror twin and ownership checks
+- `buildDriftReport()` — uncommitted working tree (`git status --porcelain`), including tracked files deleted from disk. Each path has an owner id/state (directory and file claims still match after the file is gone) or is unowned. Null when clean or git unread
+- Default `check` unchanged; shipped neighbor edits still pass
+- `if-mcp-tools` must not import this package (not exposed); the Assembler re-exports the envelope
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- Missing or drifted mirror Blocks
-- Open evolution does not fail the mirror check
+- Drift report lists owned and unowned dirty source paths, including a deleted claimed file
+- Clean tree or git failure yields no report (or empty)
+- Default check behavior unchanged
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Drift message points at init heal / live MCP write
-- [x] Add mirror twin integrity check
+- [x] Export `buildDriftReport` for uncommitted source ownership
+- [x] Report deleted tracked source paths with their claim owner
 - [x] Verified via `npm test`
 
 ## Attachments

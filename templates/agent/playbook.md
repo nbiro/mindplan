@@ -4,13 +4,14 @@ MindPlan draws the boundaries your agent won’t. Plan and change code **through
 
 ## Dialect
 
-1. **Orient.** Call `orient_for_work` before substantial work. Do not invent architecture from chat or `src/` greps. After a mutation, trust the response `anchor` and `changed_files`.
+1. **Orient.** Call `get_project` before the first answer or code change in a session. Before **each** action, call `get_rules`, then `orient_for_work`. An earlier call does not cover the next action. Do not invent architecture from chat or `src/` greps. After a mutation, trust the response `anchor` and `changed_files`.
 2. **Place work on the graph.** Every change belongs to a Journey, Interaction, Interface, Foundation, or Bug. MCP is the only writer of `mindplan/` (nodes, attachments, `project.md`, `config.json`). Use `patch_node_territory`, `patch_project_description`, `patch_project_rules`, `patch_config`, and attachment tools — never host file tools on that tree.
-3. **`Blocked:` is hard.** Name the cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix it before retrying.
-4. **Claim files before writing them** with `set_implementation_files`.
-5. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
-6. **Handoff matches the graph.** Before self-`ready`, `in-review`, `ship` / Bug `resolved`, or telling the user the work is done, update the graph so it matches the implementation and make the default check exit 0. Fix every `Blocked:` first. Do not wait until `ship`. When the implementation is done and a merge is requested, `ship` the node (Bug: `resolved`). The host typecheck is not a MindPlan gate. Code review is outside this dialect — customize via host process or `mindplan/project.md` rules if desired.
-7. **Project brief.** Agents receive this dialect as `get_project.playbook`. Follow `description` and `rules` from the same response. Edit the description with `patch_project_description` and the rules with `patch_project_rules`; call `get_project` again to re-read.
+3. **New features are graph-first.** Before any code change for a new feature, consult the graph. Update the nodes the feature changes. If no corresponding node exists, create it. Do not start the feature code until that graph work is done. Creating or patching the graph always follows the `plan-project` skill (`define-entities` for create/link). Status moves (`update_node_status`, `force_unship`) stay on the build pipeline.
+4. **`Blocked:` is hard.** Name the cause (structure, lifecycle, completion, confirmation, unstable dependency) and fix it before retrying.
+5. **Claim files before writing them** with `set_implementation_files`.
+6. **Changing shipped work is a blast-radius question.** `get_blast_radius`, then classify each node: **source** (its contract changes → `open_next`, full successor), **neighbor** (files change, behavior doesn't → edit in place), **unaffected** (leave alone).
+7. **Handoff matches the graph.** Before self-`ready`, `in-review`, `ship` / Bug `resolved`, or telling the user the work is done, update the graph so it matches the implementation and make the default check exit 0. Fix every `Blocked:` first. Do not wait until `ship`. When the implementation is done and a merge is requested, `ship` the node (Bug: `resolved`). The host typecheck is not a MindPlan gate. Code review is outside this dialect — customize via host process or `mindplan/project.md` rules if desired.
+8. **Project brief.** Agents receive this dialect as `get_project.playbook`. Rules in `mindplan/project.md` are **mandatory** — call `get_rules` before each action. The description is the product summary, not a rule. Neither overrides a compiler `Blocked:`. Edit the description with `patch_project_description` and the rules with `patch_project_rules`; call `get_project` again after a description change, and `get_rules` after a rules change.
 
 ## Taxonomy
 
@@ -42,6 +43,7 @@ Use the plain words (area, action, entry point, building block, bug) with the us
 
 - Invent tickets outside the graph
 - Add `depends_on` between Interactions, or put feature screen bodies in an Interface
+- Start new-feature code before updating or creating the matching nodes through `plan-project`
 - Hand off work (ready, in-review, ship, or "done") while default check fails
 - Hand off while the graph still describes the previous behavior
 - Merge finished work without shipping the node

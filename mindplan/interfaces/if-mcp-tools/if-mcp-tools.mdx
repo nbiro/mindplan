@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers orient, steer, and export tools, including project description, project rules, config, and attachment writes."
+description: "MCP stdio Interface that registers twenty-three tools with when-to-call hints, attaches a non-empty drift report to successful results, and exposes get_rules."
 state: stable
-shipped_at: 2026-10-12T07:42:07.631Z
+shipped_at: 2026-10-12T21:34:22.315Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-12T07:42:07.631Z
+updated_at: 2026-10-12T21:34:22.315Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -26,7 +26,7 @@ implements:
 
 ## Purpose
 
-MCP stdio Interface that registers orient, steer, and export tools, including separate project description and rules writes, config, and attachments. Twenty-two-tool surface.
+MCP stdio Interface that registers twenty-three tools. Each description leads with when to call the tool. Successful results attach a non-empty drift report via `withDrift` from `f-mcp-runtime`. Without those hints, a long session would treat tools as one-shot session-start helpers.
 
 ## Kind
 
@@ -34,7 +34,7 @@ MCP tool surface (stdio).
 
 ## Exposed Interactions
 
-- `i-orient-plan` — read/orient tools including `get_project`
+- `i-orient-plan` — read/orient tools including `get_project` and `get_rules`
 - `i-steer-plan` — mutate tools including territory, project description, project rules, config, attachments
 - `i-export-map` — `export_mindplan_view`
 
@@ -42,26 +42,26 @@ MCP tool surface (stdio).
 
 Intended files: `src/interfaces/if-mcp-tools/`
 
-- Register `patch_project_description`, `patch_project_rules`, `patch_config`, `put_attachment`, `remove_attachment`
-- Update `open_next` / `discard_next` / `patch_node_territory` descriptions for the twin model
-- Report removed legacy paths on tool results
+- Register `get_rules`
+- Lead every tool description with a when-clause
+- On success, call `withDrift` from `f-mcp-runtime` (which uses `buildDriftReport` from `i-check-integrity`) so a non-empty report attaches as `drift` (`paths`, `unowned`, `reminder`)
+- App Router / MCP mounts Interaction packages; Interface does not own core domain logic
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
 ## Acceptance Criteria
 
-- Twenty-two tools registered
-- `patch_project` is not registered
-- Descriptions match MCP-only + twin lifecycle
+- Twenty-three tools registered
+- Every tool description starts with when to call it
+- Non-empty drift attached; clean tree omits `drift`
 - Verified via `npm test`
 
 ## Atomic Ops
 
-- [x] Register four new tools
-- [x] Update evolution tool descriptions
+- [x] Register `get_rules` and when-hints on all tools
+- [x] Attach non-empty drift on successful results
+- [x] Thin wiring only — handlers stay on Interactions
 - [x] Verified via `npm test`
-- [x] Register patch_project_description and patch_project_rules in place of patch_project
-- [x] Verified the twenty-two-tool surface via `npm test`
 
 ## Attachments
 

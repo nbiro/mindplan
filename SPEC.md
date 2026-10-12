@@ -14,7 +14,7 @@ Everything works great until it doesn’t. MindPlan draws the boundaries your ag
 
 The model is **Interaction-centric**. Agents query *what the system does* (Journeys → Interactions), *how actors enter those behaviors* (Interfaces), and *what shared substrate those behaviors stand on* (Foundations), composed by an Assembler — instead of reconstructing architecture from source on every task.
 
-MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). The always-on agent artifact is the **systems dialect**: a one-screen playbook (`templates/agent/playbook.md`) covering orientation, the taxonomy and edges, file claims, `Blocked:` handling, blast-radius classification, and handoff (the graph matches the implementation; ship when a merge is requested). On connect, MCP server `instructions` are a **short pointer** that requires the agent to call `get_project` before answering or writing code; that tool returns the playbook plus the **project brief** (`mindplan/project.md` — description and standing rules) (§1.1.1). `mindplan-mcp init` also installs the playbook under `mindplan/agent/` (packaging) and host copies under `.cursor/`, plus a short stub (`templates/agent/agents-stub.md`) into root `AGENTS.md` and `.cursor/rules/mindplan.mdc` that requires `get_project` (offline: host copies, not hand-reading `mindplan/**`). Procedures load on demand: entity scaffolding in `define-entities` and plan-only modeling in `plan-project`. The parent may self-`ready` (`draft → ready`) and self-`ship` / self-`resolved` when default check is green and Rules 1–6 allow (§3.1). Code review and similar process gates are outside the dialect. Handoff check is playbook-level, not server-enforced.
+MindPlan is exposed exclusively through a Model Context Protocol (MCP) server — the single write path to graph state. Direct file edits to server-owned frontmatter are out of contract (§9.3). The always-on agent artifact is the **systems dialect**: a one-screen playbook (`templates/agent/playbook.md`) covering orientation, the taxonomy and edges, file claims, `Blocked:` handling, blast-radius classification, graph-first new features, and handoff (the graph matches the implementation; ship when a merge is requested). On connect, MCP server `instructions` are a **short pointer** that requires `get_project` before the first answer or code change, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature code when nodes must be updated or created; `get_project` returns the playbook plus the **project brief** (`mindplan/project.md` — description and standing rules) (§1.1.1). Instructions MUST NOT embed the playbook, description, or rules bodies. `mindplan-mcp init` also installs the playbook under `mindplan/agent/` (packaging) and host copies under `.cursor/`, plus a short stub (`templates/agent/agents-stub.md`) into root `AGENTS.md` and `.cursor/rules/mindplan.mdc` (offline: host copies, not hand-reading `mindplan/**`). Procedures load on demand: entity scaffolding in `define-entities` and graph create/patch (including before new-feature code) in `plan-project`. The parent may self-`ready` (`draft → ready`) and self-`ship` / self-`resolved` when default check is green and Rules 1–6 allow (§3.1). Code review and similar process gates are outside the dialect. Handoff check is playbook-level, not server-enforced.
 
 `GRAPH_VERSION` remains `1`. This Interaction-centric taxonomy is a **breaking** change accepted while the package is unreleased — there is no consumer compatibility layer for the former Workflow-centric schema.
 
@@ -92,12 +92,12 @@ Rules:
 
 - Missing `project.md` is valid. `mindplan-mcp check` MUST NOT require it. Boot MUST NOT fail when it is absent or unreadable.
 - `mindplan-mcp init` MUST copy `templates/agent/project.md` when `mindplan/project.md` is absent. That markdown file is the brief template; do not hardcode its body in TypeScript. `init -f` MUST NOT overwrite an existing brief (product text is owned by the repo).
-- Brief rules guide agents. They MUST NOT override a compiler `Blocked:`.
+- Brief rules are **mandatory** for agents. Call `get_rules` before each action. They MUST NOT override a compiler `Blocked:`. The description is the product summary, not a rule.
 - Do **not** paste the systems dialect into `project.md`. The playbook stays in the package (`templates/agent/playbook.md`); `get_project` composes it with the brief at read time.
-- **Primary channel:** on every MCP connect, server `instructions` MUST be a short pointer that requires the agent to call `get_project` before answering or writing code. Instructions MUST NOT embed the playbook body or the project brief body.
-- **Live read:** MCP tool `get_project` (§8.1) returns `{ path, description, rules, playbook }`. `description` / `rules` come from `loadProjectBrief()`; `playbook` is always the bundled dialect. Missing playbook → `Blocked:`. Call again after editing the brief.
-- **Redundancy:** the `AGENTS.md` / Cursor stub tells agents to call `get_project` first; when tools are hidden, read the init-installed copies under `.cursor/` (rule + skills) and, if present, `AGENTS.md` — not `mindplan/**` (ignored by the host so agents do not hand-edit territory).
-- **Storage seam:** the brief loads through `loadProjectBrief` (today `mindplan/project.md`). A later remote store MAY replace that read; `get_project` keeps the same contract. This specification does not define a cloud backend.
+- **Primary channel:** on every MCP connect, server `instructions` MUST be a short pointer that requires `get_project` before the first answer or code change; `get_rules` then `orient_for_work` before each action; and the plan-project skill before any new-feature code change when nodes must be updated or created. Instructions MUST NOT embed the playbook body, the project description, or the rules body.
+- **Live read:** MCP tool `get_project` (§8.1) returns `{ path, description, rules, playbook }`. `get_rules` returns `{ path, rules }` only. `description` / `rules` come from `loadProjectBrief()`; `playbook` is always the bundled dialect. Missing playbook → `Blocked:`. Call `get_project` again after a description change; call `get_rules` after a rules change.
+- **Redundancy:** the `AGENTS.md` / Cursor stub tells agents to call `get_project` first and `get_rules` / `orient_for_work` before each action; when tools are hidden, read the init-installed copies under `.cursor/` (rule + skills) and, if present, `AGENTS.md` — not `mindplan/**` (ignored by the host so agents do not hand-edit territory).
+- **Storage seam:** the brief loads through `loadProjectBrief` (today `mindplan/project.md`). A later remote store MAY replace that read; `get_project` and `get_rules` keep the same contract. This specification does not define a cloud backend.
 
 ### 1.2 Declared file ownership
 
@@ -888,7 +888,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes twenty-two tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads.
+The server exposes twenty-three tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful tool results MAY include `drift` when uncommitted source files exist (envelope below).
 
 ### 8.1 Read tools
 
@@ -1042,7 +1042,7 @@ Composite orientation for agents: `find_related_nodes` plus full territory for t
 
 #### `get_project`
 
-Live read of the systems dialect and the project brief (§1.1.1). MCP server `instructions` only point here; agents MUST call this before answering or writing code, and MUST call again after `patch_project_description` or `patch_project_rules`.
+Live read of the systems dialect and the project brief (§1.1.1). Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action.
 
 - **Input:** none.
 - **Output:**
@@ -1059,6 +1059,14 @@ Live read of the systems dialect and the project brief (§1.1.1). MCP server `in
 When the brief is missing or unreadable, `description` and `rules` are empty strings and `path` remains the local relative path while territory is file-backed. `playbook` is always loaded from the package’s `templates/agent/playbook.md`.
 
 - **Errors:** missing or unreadable bundled playbook → `Blocked:` (agents MUST NOT invent the dialect). Brief I/O failures surface as empty `description` / `rules` (`loadProjectBrief` MUST NOT throw).
+
+#### `get_rules`
+
+Mandatory project rules only (§1.1.1). Call before each action, before `orient_for_work`.
+
+- **Input:** none.
+- **Output:** `{ path, rules }` from `loadProjectBrief()`. `rules` is an empty string when the section is empty. Does not return the playbook or description.
+- **Errors:** none (`loadProjectBrief` MUST NOT throw).
 
 #### `get_node_implementation`
 
@@ -1120,6 +1128,8 @@ Any change under `mindplan/` goes through the territory store. Agents reach the 
 Orient and trust graph state via MCP `record` responses. Do not treat on-disk frontmatter as authoritative for `state` or edges.
 
 Successful graph mutations MUST include `changed_files: string[]` — repo-relative paths written or deleted (territory MDX, optional scaffolds / attachment paths, and `mindplan/map.md` when the map is refreshed). Agents SHOULD surface these paths to humans because many hosts do not list MCP subprocess writes in their native “edited files” UI.
+
+Successful tool results (reads and mutations) MAY include `drift` when the uncommitted working tree has source files in the ownership universe, including tracked paths deleted from disk: `{ paths: [{ path, owner_id, state, next_state }], unowned: string[], reminder: string }`. A deleted path keeps the owner of the file or directory claim that covers it; otherwise it is unowned. Omit `drift` when the tree is clean or git cannot be read. `drift` is not a `Blocked:` and MUST NOT change default `mindplan-mcp check`.
 
 #### `create_node`
 
@@ -1308,7 +1318,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `<id>.mdx`/`<id>.next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node `<id>.mdx` frontmatter and assemble at runtime per §7; `<id>.next.mdx` proposed edges are not live graph edges.
-- [ ] The twenty-two-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient and `get_project`.
+- [ ] The twenty-three-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient, `get_project`, and `get_rules`.
 - [ ] Mutations are deterministic and atomic per §9.
 - [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
 

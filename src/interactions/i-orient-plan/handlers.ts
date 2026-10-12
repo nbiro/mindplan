@@ -451,7 +451,7 @@ function loadBundledPlaybook(): string {
 
 /**
  * Project brief (description + rules) plus the bundled systems dialect (playbook).
- * MCP instructions only point here — call this before answering or writing code.
+ * Call before the first answer or code change; call again after description/rules change.
  */
 export function getProject(): Record<string, unknown> {
   const brief = loadProjectBrief();
@@ -460,5 +460,16 @@ export function getProject(): Record<string, unknown> {
     description: brief.description,
     rules: brief.rules,
     playbook: loadBundledPlaybook(),
+  };
+}
+
+/**
+ * Mandatory project rules only — call before each action, before orient_for_work.
+ */
+export function getRules(): Record<string, unknown> {
+  const brief = loadProjectBrief();
+  return {
+    path: brief.path,
+    rules: brief.rules,
   };
 }
