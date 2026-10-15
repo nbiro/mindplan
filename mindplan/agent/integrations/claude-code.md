@@ -16,7 +16,7 @@ Before planning or changing code, call orient_for_work and place the work on the
 Skills load on demand: define-entities, plan-project.
 ```
 
-3. **Skills** (optional) — symlink or copy for Claude Code skill discovery:
+3. **Skills** — `mindplan-mcp init --host claude` writes `CLAUDE.md` (`@AGENTS.md`) and copies the skills below. To do it by hand, symlink or copy for Claude Code skill discovery:
    - `mindplan/agent/skills/define-entities/` → `.claude/skills/mindplan-define-entities/`
    - `mindplan/agent/skills/plan-project/` → `.claude/skills/mindplan-plan-project/`
 

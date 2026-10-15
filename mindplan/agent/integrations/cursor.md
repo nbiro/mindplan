@@ -13,7 +13,7 @@
 }
 ```
 
-2. **Always-on stub** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + a short stub) when missing. The stub requires `get_project` (dialect + project brief). MCP `instructions` are the same pointer. If tools are hidden, use `.cursor/rules` + `.cursor/skills` + root `AGENTS.md` — not `mindplan/**`. After upgrading MindPlan, re-run `mindplan-mcp init -f` (or `--force`) to refresh the stub, playbook, skills, and Cursor copies. If the rule was deleted, recreate it with:
+2. **Always-on stub** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + a short stub) when missing. The stub requires `get_project` (dialect + project brief), `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work. MCP `instructions` are the same short pointer (no rules body). If tools are hidden, use `.cursor/rules` + `.cursor/skills` + root `AGENTS.md` — not `mindplan/**`. After upgrading MindPlan, re-run `mindplan-mcp init -f` (or `--force`) to refresh the stub, playbook, skills, and Cursor copies. If the rule was deleted, recreate it with:
 
 ```yaml
 ---

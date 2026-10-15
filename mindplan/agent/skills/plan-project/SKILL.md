@@ -1,18 +1,18 @@
 ---
 name: mindplan-plan-project
 description: >-
-  Plan-only MindPlan sessions: model or restructure the product graph (Journeys,
-  Foundations, Interactions, Interfaces, Bugs, edges, territory) without writing
-  application code. Use when the user wants to plan, architect, greenfield the
-  product model, map capabilities, or reshape the mindplan — not implement
-  features.
+  Create or patch the MindPlan graph (Journeys, Foundations, Interactions,
+  Interfaces, Bugs, edges, territory) without writing application code. Use
+  whenever you create_node, link/unlink, patch territory or project brief/config,
+  open_next, or discard_next — including before any new-feature code change when
+  nodes must be updated or created. Also use for plan-only / greenfield sessions.
 ---
 
 # Plan a MindPlan Project (no code)
 
-Use this skill when the session’s job is **only** to create or reshape MindPlan territory. Application code (files claimed via `implements` / `set_implementation_files`) is out of scope until a later execution session under `get_project.playbook`.
+Use this skill whenever you create or patch MindPlan territory. That includes plan-only sessions and the graph work that must finish **before** any new-feature code change. Application code (files claimed via `implements` / `set_implementation_files`) is out of scope until a later execution session under `get_project.playbook`.
 
-Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity create/link details: the `define-entities` skill. Always-on execution process (build pipeline, bugs, shipping): `get_project.playbook`.
+Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity create/link details: the `define-entities` skill. Always-on execution process (build pipeline, bugs, shipping): `get_project.playbook`. Before each action in this skill, call `get_rules`, then `orient_for_work`.
 
 ## When to use
 
@@ -21,7 +21,9 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 | “Let’s plan / model / map the product” | Yes |
 | Greenfield: define Journeys → draft Interactions → Interfaces → derive Foundations | Yes |
 | Restructure edges, enrich PRDs, rewrite Atomic Ops | Yes |
-| “Implement / build / fix / ship this Interaction” | No — playbook build or Bug loop |
+| Before new-feature code: update or create the matching nodes | Yes — finish this skill, then implement |
+| Any `create_node` / link / territory / brief / config / `open_next` / `discard_next` | Yes |
+| “Implement / build / fix / ship this Interaction” (code already on the graph) | No — playbook build or Bug loop |
 | Mixed “plan then code” in one ask | Plan first with this skill; **stop** and confirm before any implementation session |
 
 ## Hard rules (plan-only)
