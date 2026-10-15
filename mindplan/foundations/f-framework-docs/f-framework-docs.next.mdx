@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, and skills: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, and handoff that updates the graph to match the implementation."
-state: mirror
+description: "Infra — SPEC, playbook, and skills: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that updates the graph to match the implementation, and host install docs for Cursor and Claude Code."
+state: draft
 shipped_at: 2026-10-12T21:34:21.965Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-12T21:34:21.965Z
+updated_at: 2026-10-15T08:52:29.524Z
 depends_on:
   - f-domain-model
 implements:
@@ -16,13 +16,11 @@ implements:
 role: infra
 ---
 
-
-
 # Framework docs
 
 ## Purpose
 
-Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Without those constraints, a long session would treat the graph as session-start only.
+Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Host install docs cover Cursor and Claude Code.
 
 ## Shared Substrate Spec
 
@@ -30,6 +28,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 
 - SPEC §1.1.1 / §8: short instructions; `get_rules`; when-clause on every tool; twenty-three tools
 - Playbook / stub: get_rules then orient_for_work before each action; graph-first new features via plan-project; mandatory rules
+- The stub's offline fallback names the host copies for both hosts (`.cursor/` or `.claude/` plus `CLAUDE.md`)
+- README, SPEC, and the Claude Code integration guide document `init --host cursor|claude|all` and what each host receives
 - plan-project skill description: load when creating or patching the graph, including before new-feature code
 - Never paste rules, playbook, or description into MCP instructions
 
@@ -38,6 +38,7 @@ Depends on: `f-domain-model`.
 ## Acceptance Criteria
 
 - Stub, playbook, SPEC, and plan-project skill match the reanchor dialect
+- Host install docs match what `init --host` writes
 - Tool when-clauses documented in SPEC §8
 - Verified via `npm test`
 
@@ -45,6 +46,7 @@ Depends on: `f-domain-model`.
 
 - [x] Update playbook, agents-stub, and plan-project skill
 - [x] Update SPEC for get_rules, when-hints, drift envelope, twenty-three tools
+- [x] Document init --host in README, SPEC, and the Claude Code guide
 - [x] Verified via `npm test`
 
 ## Attachments
