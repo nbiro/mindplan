@@ -194,7 +194,7 @@ if (r.status !== 0) {
 } else console.log("ok   default check ignores dirty working tree");
 
 {
-  const payload = await call("get_project", {});
+  const payload = await call("orient_for_work", { node_id: "i-feature" });
   const driftPaths = payload?.drift?.paths?.map((p) => p.path) ?? [];
   if (!payload?.drift || !driftPaths.some((p) => p.endsWith("wip.ts"))) {
     failures++;
@@ -204,11 +204,19 @@ if (r.status !== 0) {
   } else console.log("ok   MCP success attaches drift for dirty owned src");
 }
 
+for (const tool of ["get_project", "get_rules"]) {
+  const payload = await call(tool, {});
+  if (payload?.drift !== undefined) {
+    failures++;
+    console.log(`FAIL ${tool} should omit drift on a dirty tree: ${JSON.stringify(payload.drift).slice(0, 300)}`);
+  } else console.log(`ok   ${tool} omits drift on a dirty tree`);
+}
+
 {
   const featurePath = path.join(root, "src", "interactions", "i-feature", "feature.ts");
   const featureBody = fs.readFileSync(featurePath, "utf-8");
   fs.rmSync(featurePath);
-  const payload = await call("get_project", {});
+  const payload = await call("orient_for_work", { node_id: "i-feature" });
   const hit = payload?.drift?.paths?.find((p) => p.path.endsWith("feature.ts"));
   if (!hit || hit.owner_id !== "i-feature") {
     failures++;
@@ -339,7 +347,7 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
     node_id: "f-wide",
     files: ["src/wide/", "src/lonely/"],
   });
-  const payload = await call("get_project", {});
+  const payload = await call("orient_for_work", { node_id: "i-feature" });
   const hit = payload?.drift?.paths?.find((p) => p.path.endsWith("lonely/gone.ts"));
   if (!hit || hit.owner_id !== "i-exact") {
     failures++;
