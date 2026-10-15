@@ -630,27 +630,24 @@ function activeState(node: MindPlanNode): string {
 }
 
 /**
- * A shipped node with an open next, or a pre-ship node that is being built: in-progress or
- * in-review, or already claiming files. A planned node with no files (a draft or ready plan
- * for later work) is not an update and is never walked.
+ * A shipped node with an open next, or a pre-ship node that is being built (in-progress or
+ * in-review). A draft or ready node is a plan for later work, not an update: `all_open_updates`
+ * never walks it. `node_and_dependents` names its seed on purpose, so with `includePlanned`
+ * the seed's dependents may be walked from draft or ready too.
  */
-function isOpenUpdate(node: MindPlanNode): boolean {
+function isOpenUpdate(node: MindPlanNode, includePlanned = false): boolean {
   if (!isPipelineNodeType(node.type)) return false;
   if (node.next) return true;
   if (node.shipped_at) return false;
-  if (!(WALK_PIPELINE as readonly string[]).includes(node.state)) return false;
-  return (
-    node.state === "in-progress" ||
-    node.state === "in-review" ||
-    (node.implements?.length ?? 0) > 0
-  );
+  if (node.state === "in-progress" || node.state === "in-review") return true;
+  return includePlanned && (node.state === "draft" || node.state === "ready");
 }
 
 /** Nodes a scoped call walks, in the order they must move (Foundations, Interactions, Interfaces). */
 function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode[] {
   let selected: MindPlanNode[];
   if (args.scope === "all_open_updates") {
-    selected = graph.nodes.filter(isOpenUpdate);
+    selected = graph.nodes.filter((n) => isOpenUpdate(n));
   } else {
     const seed = findNode(graph, args.node_id!);
     const ids = new Set<string>([seed.id]);
@@ -678,7 +675,7 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode
         }
       }
     }
-    selected = graph.nodes.filter((n) => ids.has(n.id) && isOpenUpdate(n));
+    selected = graph.nodes.filter((n) => ids.has(n.id) && isOpenUpdate(n, true));
   }
   return orderForWalk(graph, selected);
 }

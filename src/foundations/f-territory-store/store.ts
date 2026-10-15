@@ -1612,7 +1612,8 @@ export function patchNodeTerritory(
           `Node rules are written only by patch_node_rules; remove the section from the body.`
       );
     }
-    body = input.body;
+    // Keep the file's own line endings so a rewritten body does not mix LF into CRLF territory.
+    body = input.body.replace(/\r?\n/g, detectEol(raw));
     patched_fields.push("body");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }

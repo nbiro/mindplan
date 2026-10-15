@@ -727,7 +727,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .enum(STATUS_SCOPES)
           .optional()
           .describe(
-            "Walk many nodes in one call to the new_status target: all_open_updates (every shipped node with an open next, and every pre-ship node being built: in-progress, in-review, or claiming files) " +
+            "Walk many nodes in one call to the new_status target: all_open_updates (every shipped node with an open next, and every pre-ship node being built: in-progress or in-review; draft and ready plans are never walked) " +
               "or node_and_dependents (node_id plus its open dependents). The server orders Foundations, Interactions, Interfaces, " +
               "walks each node through the pipeline, and validates the whole walk before writing anything. Target: ready | in-progress | in-review | ship."
           ),

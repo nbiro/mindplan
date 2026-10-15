@@ -282,6 +282,15 @@ for (const [kind, id] of [
 ]) {
   fillAndTick(kind, id);
 }
+// A parked plan: a draft node that already claims files is still a plan, not an update.
+await call("create_node", { id: "f-parked", type: "Foundation", title: "Parked", description: "Infra — later work", role: "infra" });
+write("src/foundations/f-parked/index.ts", "export const parked = 1;\n");
+await call("set_implementation_files", { node_id: "f-parked", files: ["src/foundations/f-parked/"] });
+for (const status of ["ready", "in-progress"]) {
+  await call("update_node_status", {
+    revisions: ["f-core", "f-reg", "i-feature", "if-a", "if-b"].map((node_id) => ({ node_id, new_status: status })),
+  });
+}
 {
   const dry = await call("update_node_status", {
     scope: "all_open_updates",
@@ -300,8 +309,9 @@ for (const [kind, id] of [
       dry.plan[4].startsWith("if-b"),
     JSON.stringify(dry)
   );
-  const stillDraft = (await call("get_node_context", { node_id: "f-core" })).record.state;
-  check("dry_run leaves the node untouched", stillDraft === "draft", stillDraft);
+  const stillBuilding = (await call("get_node_context", { node_id: "f-core" })).record.state;
+  check("dry_run leaves the node untouched", stillBuilding === "in-progress", stillBuilding);
+  check("a draft plan that claims files is not walked", !dry.plan.some((l) => l.startsWith("f-parked")), JSON.stringify(dry.plan));
 }
 
 // --- item 1: shipping a node whose file has an import violation is Blocked ---
@@ -349,12 +359,15 @@ for (const [kind, id] of [
   const afterCore = (await call("get_node_context", { node_id: "f-core" })).record.state;
   check(
     "a scoped walk validates everything before the first write",
-    !!real && afterCore === "draft",
+    !!real && afterCore === "in-progress",
     `${real} / ${afterCore}`
   );
   // Fix the edge, then the whole open set ships in one call.
   await call("link_nodes", { source_id: "i-bad", target_id: "f-extra", edge_type: "depends_on" });
   fillAndTick("foundations", "f-extra");
+  for (const status of ["ready", "in-progress"]) {
+    await call("update_node_status", { node_id: "f-extra", new_status: status });
+  }
 }
 {
   const shipped = await call("update_node_status", { scope: "all_open_updates", new_status: "ship" });
@@ -431,13 +444,15 @@ for (const [kind, id] of [
   await call("patch_node_territory", {
     node_id: "f-core",
     section: "## Purpose",
-    text: "Core substrate. Lives in `src/foundations/f-core/gone-file.ts`.",
+    text: "Core substrate. Lives in `src/foundations/f-core/gone-file.ts` Also see `../elsewhere/notes.md`.",
   });
   await call("update_node_status", { node_id: "f-core", new_status: "in-review" });
   const result = await call("run_check", {});
   check(
     "a body naming a path that no longer exists warns without failing the check",
-    result.ok === true && result.warnings.some((w) => w.includes("gone-file.ts")),
+    result.ok === true &&
+      result.warnings.some((w) => w.includes("gone-file.ts")) &&
+      !result.warnings.some((w) => w.includes("elsewhere")),
     JSON.stringify(result.warnings)
   );
   const cli = runCli(["check"]);

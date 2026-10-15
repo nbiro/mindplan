@@ -294,6 +294,8 @@ export function staleTextWarnings(
     if (seen.has(token)) continue;
     seen.add(token);
     if (/[*<>{}]/.test(token) || token.startsWith("mindplan/")) continue;
+    // Relative references point outside the repo root's own layout; their top segment is "." or "..".
+    if (token.startsWith("./") || token.startsWith("../")) continue;
     const top = token.split("/")[0];
     // Only repo paths: the first segment must be a real top-level directory.
     const topAbs = path.join(root, top);
