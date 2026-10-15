@@ -3,10 +3,10 @@ id: f-framework-docs
 type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, and skills: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that updates the graph to match the implementation, and host install docs for Cursor and Claude Code."
-state: mirror
+state: ready
 shipped_at: 2026-10-15T08:56:01.424Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-15T08:56:01.424Z
+updated_at: 2026-10-15T11:10:16.774Z
 depends_on:
   - f-domain-model
 implements:
@@ -21,14 +21,17 @@ role: infra
 
 ## Purpose
 
-Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Host install docs cover Cursor and Claude Code.
+Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action, and node rules are mandatory via the `rules` block of `orient_for_work`. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Host install docs cover Cursor and Claude Code. Agents must be told the two rule scopes and which tool writes each, or area rules will keep landing in the global list.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-- SPEC §1.1.1 / §8: short instructions; `get_rules`; when-clause on every tool; twenty-three tools
-- Playbook / stub: get_rules then orient_for_work before each action; graph-first new features via plan-project; mandatory rules
+- SPEC §1.1.1 / §8: short instructions; `get_rules`; when-clause on every tool; twenty-four tools
+- SPEC node rules: the `## Rules` territory section (§2), inheritance (own, up `belongs_to`, along transitive `depends_on`, Bugs from affected nodes; never downward or across siblings), the `orient_for_work` `rules` block, `get_blast_radius` `rules_impact`, `get_node_context` `rules`, `patch_node_rules`, and that enforcement is prose only
+- Playbook / stub: get_rules then orient_for_work before each action; both global rules and the node `rules` block are mandatory; graph-first new features via plan-project
+- Playbook / plan-project skill: a rule that applies everywhere goes in `patch_project_rules`; a rule about one area goes on that node with `patch_node_rules`; editing a node's rules is a blast-radius question (read `rules_impact`)
+- `templates/agent/project.md` rules comment points at the same split
 - The stub's offline fallback names the host copies for both hosts (`.cursor/` or `.claude/` plus `CLAUDE.md`)
 - README, SPEC, and the Claude Code integration guide document `init --host cursor|claude|all` and what each host receives
 - plan-project skill description: load when creating or patching the graph, including before new-feature code
@@ -38,7 +41,8 @@ Depends on: `f-domain-model`.
 
 ## Acceptance Criteria
 
-- Stub, playbook, SPEC, and plan-project skill match the reanchor dialect
+- Stub, playbook, SPEC, and plan-project skill match the reanchor dialect and the two-scope rules split
+- SPEC §8 lists `patch_node_rules` and the changed outputs of `orient_for_work`, `get_blast_radius`, and `get_node_context`
 - Host install docs match what `init --host` writes
 - Tool when-clauses documented in SPEC §8
 - Verified via `npm test`
@@ -49,6 +53,10 @@ Depends on: `f-domain-model`.
 - [x] Update SPEC for get_rules, when-hints, drift envelope, twenty-three tools
 - [x] Document init --host in README, SPEC, and the Claude Code guide
 - [x] Verified via `npm test`
+- [ ] Update SPEC for node rules, `patch_node_rules`, the changed outputs, and twenty-four tools
+- [ ] Update playbook, agents-stub, plan-project skill, and project template for the two rule scopes
+- [ ] Refresh the init-installed host copies to match
+- [ ] Verified the node rules docs via `npm test`
 
 ## Attachments
 

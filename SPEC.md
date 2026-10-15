@@ -88,6 +88,8 @@ Each consumer repo MAY hold a **project brief** — what this product is, and st
 
 The brief template is the package file `templates/agent/project.md` (`## Description` and `## Rules`). `init` copies that file when `mindplan/project.md` is absent. Description starts empty. Rules start with the default requirement to list every `mindplan/` path in an MCP write's `changed_files`.
 
+**Two rule scopes.** The project brief's rules are **global**: they apply to every change, and `get_rules` returns them before every action, so they MUST stay short. A rule about one area of the code belongs on that area's node as **node rules** (§6.1.1), written with `patch_node_rules` and delivered by `orient_for_work` (§8.1). Both scopes are mandatory prose; neither is a compiler rule and neither overrides a `Blocked:`.
+
 Rules:
 
 - Missing `project.md` is valid. `mindplan-mcp check` MUST NOT require it. Boot MUST NOT fail when it is absent or unreadable.
@@ -699,11 +701,27 @@ Frontmatter fields:
 | `leads_to` | string[] | **server only** | Interaction only. Target Interaction ids (navigation). Omitted when empty. On `<id>.next.mdx`: proposed edges. |
 | `affects` | string[] | **server only** | Bug only. Target Interaction, Interface, or Foundation ids. Omitted when empty. |
 
-The body is free-form and owned by humans and agents. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `<id>.mdx` pre-ship, or on `<id>.next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) MUST be written only via MCP tools.
+The body is free-form and owned by humans and agents, except the optional `## Rules` section (§6.1.1), which has its own writer. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `<id>.mdx` pre-ship, or on `<id>.next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) MUST be written only via MCP tools.
 
 **Shipped scope freeze:** `patch_node_territory` of `title`/`description` on the `current` slot of a shipped Interaction or Interface MUST be rejected — call `open_next` first. (Same freeze applies to shipped Foundations for material scope changes via playbook; Interaction/Interface freeze is the hard gate.) Host file tools MUST NOT write territory (§8.2).
 
 Frontmatter delimiters (`---`) MUST appear before any JSX. MDX comments use `{/* ... */}` syntax; HTML comments (`<!-- -->`) are not valid MDX and MUST NOT be used in the body.
+
+#### 6.1.1 Node rules
+
+Any node (Journey, Interaction, Interface, Foundation, Bug) MAY carry **node rules**: standing constraints for the work in that node's area, stored as a `## Rules` section in its `<id>.mdx` body. The section runs from a line that is exactly `## Rules` to the next level-1 or level-2 heading, or end of file; at most one per file. It is placed immediately before `## Attachments` when that heading exists, otherwise at the end of the body. An empty rule set has no section. Node rules are not frontmatter, so §9 and `GRAPH_VERSION` (`1`) are unchanged.
+
+- **Single writer.** Only `patch_node_rules` (§8.2) writes the section. `patch_node_territory` MUST preserve it byte-for-byte when it replaces the body, and MUST reject a body that contains a `## Rules` heading (the error names `patch_node_rules`). `get_node_context` returns the body without the section plus a separate `rules` string.
+- **Slot independence.** Rules are not part of a contract evolution. `patch_node_rules` writes the same text to `<id>.mdx` and, when an evolution is open, to `<id>.next.mdx`, so promotion keeps them; it never needs `open_next`, and the mirror twin stays a byte copy of live. Checkbox-looking lines in the section are not Atomic Ops.
+- **Inheritance.** The rules that apply to a node N, in order, each labeled with the node it came from (`via`, `distance`):
+  1. N's own rules (`self`, 0).
+  2. Rules of nodes reached upward through `belongs_to` (`belongs_to`): an Interaction gets its Journeys' rules.
+  3. Rules of the transitive closure of `depends_on` (`depends_on`): a dependent gets its Foundations' rules, and a Foundation gets the rules of the Foundations it depends on.
+  4. For a Bug only: everything each node it `affects` would itself resolve (own, `belongs_to`, `depends_on`), with `via: affects` and distance increased by 1.
+
+  Nothing is inherited downward (a Journey gets no Interaction's rules; a Foundation gets no dependent's), across siblings, or through `exposes` / `leads_to`. Only live edges count; proposed `next` edges do not. A node reached twice keeps its smallest distance; nodes with no rules and `cancelled` / `deprecated` nodes are omitted.
+- **Reach.** The inverse is the node's **rules audience**: exactly the other live nodes whose resolved rules include an entry from N. `get_blast_radius` and `patch_node_rules` report it (§8), because editing a Foundation's rules affects everything that depends on it.
+- **Enforcement.** Prose only. The compiler does not read node rules; no `Blocked:` rule depends on them.
 
 ### 6.2 Frontmatter mirroring
 
@@ -888,7 +906,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes twenty-three tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful tool results MAY include `drift` when uncommitted source files exist (envelope below).
+The server exposes twenty-four tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful tool results MAY include `drift` when uncommitted source files exist (envelope below).
 
 ### 8.1 Read tools
 
@@ -970,6 +988,13 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
       "files": ["src/interfaces/if-checkout-page/page.tsx"]
     }
   ],
+  // always present:
+  "rules_impact": {
+    "has_rules": true,
+    "inherited_by": [
+      { "id": "i-checkout-split", "type": "Interaction", "state": "stable", "via": "depends_on", "distance": 1 }
+    ]
+  },
   // present when focus is an Interaction:
   "reachability": {
     "exposing_interfaces": [{ "id": "if-checkout-page", "type": "Interface", "state": "ready", "title": "...", "description": "..." }],
@@ -994,6 +1019,8 @@ Where:
   - `exposing` — files of Interfaces that expose a focus Interaction
   - `importer` — files owned by other nodes that import the focus node's files (composition-root reverse edge)
   Files are deduplicated within an owner; multiple `via` reasons merge into one entry.
+
+- `rules_impact` is always present: `has_rules` says whether the focus carries node rules (§6.1.1) and `inherited_by` is its rules audience, each `{ id, type, state, via, distance }`, empty when `has_rules` is false or nobody inherits. It is independent of `affected`: a Journey's `inherited_by` lists its Interactions even though no one `depends_on` a Journey. Retired nodes are omitted unless `include_retired` is true.
 
 - **Errors:** unknown `node_id`.
 - **Rationale:** calling this before substantial implementation or `open_next` surfaces both substrate dependents and Interaction-centric reachability (who exposes this behaviour, which Journeys contain it, where navigation flows next). The stable-id model means an evolution never changes what depends on the node. Grouping and the retired filter keep the payload usable for agents.
@@ -1021,11 +1048,12 @@ Where:
     "depends_on": ["f-db"],
     "leads_to": ["i-tip-selection"]
   },
-  "body": "# Split & pay checkout\n\n...",
+  "body": "# Split & pay checkout\n\n...",   // never includes the `## Rules` section
+  "rules": "- Money is integer cents.",       // the node's own rules; "" when none
   "next": null
   // when <id>.next.mdx exists, the payload also carries:
   //   "next_path": ".../<id>.next.mdx", "next_attachments_path": ".../next-attachments",
-  //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, "body": "..." }
+  //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, "body": "..." }  // body without the Rules section; rules are slot-independent
 }
 ```
 
@@ -1037,7 +1065,7 @@ Where:
 Composite orientation for agents: `find_related_nodes` plus full territory for the focus node and `get_blast_radius` when the focus is a Foundation, Interaction, or Interface.
 
 - **Input:** same as `find_related_nodes` (`query`, `node_id`, `type`, `limit`).
-- **Output:** `{ query, matches, focus, nodes, edges, context, blast_radius }` where `context` matches `get_node_context` when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
+- **Output:** `{ query, matches, focus, nodes, edges, context, blast_radius, rules }` where `rules` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` is the focus node's resolved node rules (§6.1.1), each `{ node_id, node_type, via, distance, rules }` labeled with the node it came from and ordered self, `belongs_to`, `depends_on`, `affects`; `[]` when nothing applies. `rules` does not repeat the project brief rules (`get_rules`). And where `context` matches `get_node_context` when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
 - **Errors:** same as `find_related_nodes`.
 
 #### `get_project`
@@ -1065,7 +1093,7 @@ When the brief is missing or unreadable, `description` and `rules` are empty str
 Mandatory project rules only (§1.1.1). Call before each action, before `orient_for_work`.
 
 - **Input:** none.
-- **Output:** `{ path, rules }` from `loadProjectBrief()`. `rules` is an empty string when the section is empty. Does not return the playbook or description.
+- **Output:** `{ path, rules }` from `loadProjectBrief()`. `rules` is an empty string when the section is empty. Does not return the playbook or description. These are the **global** rules only; node rules arrive through `orient_for_work` (§6.1.1).
 - **Errors:** none (`loadProjectBrief` MUST NOT throw).
 
 #### `get_node_implementation`
@@ -1106,7 +1134,17 @@ Patches territory-owned content on `<id>.mdx` or `<id>.next.mdx`. Server-owned f
 - **Slot resolution:** when `slot` is omitted, the server patches `<id>.next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Interaction/Interface with an open evolution, otherwise `<id>.mdx`.
 - **Effect:** writes territory body and/or `title`/`description` scalars on the resolved slot; touches `updated_at` in that slot's frontmatter.
 - **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next", path, changed_files: string[] }` — `path` is the repo-relative MDX written; `changed_files` lists that path. This is the required writer for territory prose.
-- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; explicit `slot: "next"` with no open evolution; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`); write aimed at a `mirror` twin.
+- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; explicit `slot: "next"` with no open evolution; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`); write aimed at a `mirror` twin; a `body` containing a `## Rules` heading (use `patch_node_rules`).
+- **Rules section:** a body replace preserves the node's existing `## Rules` section (§6.1.1).
+
+#### `patch_node_rules`
+
+Writes one node's rules (§6.1.1). Use it for a rule about one area; use `patch_project_rules` for a rule that applies everywhere.
+
+- **Input:** `node_id` (slug, required); `rules` (string, required; empty string clears the section).
+- **Effect:** replaces the `## Rules` section of `<id>.mdx` and, when an evolution is open, of `<id>.next.mdx` with the same text; re-syncs the mirror twin when no evolution is open. Valid for every node type in any non-retired state, including `stable` / `unstable` nodes with no open evolution. Does not change `state`, edges, checkboxes, or `shipped_at`, and does not require `open_next`.
+- **Output:** `{ node_id, rules, slots: ["current"] | ["current", "next"], rules_impact, changed_files }` where `rules_impact` is the node's rules audience (`{ has_rules, inherited_by }`, same shape as `get_blast_radius`) and `changed_files` lists the live file, the open next file or refreshed twin, and `mindplan/map.md`.
+- **Errors:** unknown `node_id`; `cancelled` or `deprecated` node; `rules` containing a level-1 or level-2 heading line.
 
 ### 8.2 Mutation tools
 
@@ -1118,6 +1156,7 @@ Any change under `mindplan/` goes through the territory store. Agents reach the 
 |---------|------------|
 | Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` / `force_unship`, `implements`, Foundation `role` | **MCP only** |
 | `title`, `description`, body (PRD / Atomic Ops), checkbox toggles | **MCP only** (`patch_node_territory`) |
+| A node's `## Rules` section (§6.1.1) | **MCP only** (`patch_node_rules`) |
 | Attachments | **MCP only** (`put_attachment` / `remove_attachment`) |
 | `mindplan/project.md` | **MCP only** (`patch_project_description`, `patch_project_rules`) |
 | `mindplan/config.json` | **MCP only** (`patch_config`) |
@@ -1318,7 +1357,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `<id>.mdx`/`<id>.next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node `<id>.mdx` frontmatter and assemble at runtime per §7; `<id>.next.mdx` proposed edges are not live graph edges.
-- [ ] The twenty-three-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient, `get_project`, and `get_rules`.
+- [ ] The twenty-four-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient, `get_project`, `get_rules`, node `rules` on orient and context, `rules_impact` on blast radius, and `patch_node_rules`.
 - [ ] Mutations are deterministic and atomic per §9.
 - [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
 
