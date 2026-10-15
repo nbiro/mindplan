@@ -271,6 +271,37 @@ export function installCursorPermissions(
   return installTemplateFile(templatePath, destPath, ".cursor/permissions.json", options);
 }
 
+export type InitHost = "cursor" | "claude";
+
+export const INIT_HOSTS: readonly InitHost[] = ["cursor", "claude"];
+
+/** CLAUDE.md imports the shared AGENTS.md stub, because Claude Code reads CLAUDE.md, not AGENTS.md. */
+const CLAUDE_MD_BODY = "@AGENTS.md\n";
+
+export function installClaudeMd(options: InstallOptions = {}): InstallAgentRuleResult {
+  const destPath = path.join(projectRoot(), "CLAUDE.md");
+  if (fs.existsSync(destPath) && options.force !== true) {
+    return { installed: false, path: "CLAUDE.md" };
+  }
+  fs.writeFileSync(destPath, CLAUDE_MD_BODY, "utf-8");
+  return { installed: true, path: "CLAUDE.md" };
+}
+
+export function installClaudeSkills(
+  packageRoot: string,
+  options: InstallOptions = {}
+): InstallSkillResult[] {
+  const root = agentTemplateRoot(packageRoot);
+  return CURSOR_SKILL_COPIES.map(({ template, dest }) =>
+    installTemplateDir(
+      path.join(root, "skills", template),
+      path.join(projectRoot(), ".claude", "skills", dest),
+      path.posix.join(".claude", "skills", dest),
+      options
+    )
+  );
+}
+
 function roleFromDescription(description: string): FoundationRole {
   if (/^Assembler\b/i.test(description)) return "assembler";
   if (/^Design system\b/i.test(description)) return "design-system";
@@ -649,6 +680,8 @@ export function migrateLegacyTerritoryFilenames(): LegacyTerritoryRename[] {
 export type RunInitOptions = {
   force: boolean;
   packageRoot: string;
+  /** Host copies to install. Defaults to ["cursor"]. */
+  hosts?: readonly InitHost[];
 };
 
 export type MirrorBackfill = {
@@ -678,10 +711,18 @@ export type RunInitReport = {
   mcpExample: InstallAgentRuleResult;
   integrations: InstallSkillResult;
   agentsMd: InstallAgentRuleResult;
-  cursorIgnore: InstallAgentRuleResult;
-  cursorSkills: InstallSkillResult[];
-  cursorRule: InstallAgentRuleResult;
-  cursorPermissions: InstallAgentRuleResult;
+  /** Cursor host copies; present only when the cursor host was selected. */
+  cursor?: {
+    ignore: InstallAgentRuleResult;
+    skills: InstallSkillResult[];
+    rule: InstallAgentRuleResult;
+    permissions: InstallAgentRuleResult;
+  };
+  /** Claude Code host copies; present only when the claude host was selected. */
+  claude?: {
+    claudeMd: InstallAgentRuleResult;
+    skills: InstallSkillResult[];
+  };
   /** Standing next twins written for shipped pipeline nodes that lacked a mirror or had drifted. */
   mirrorTwins: MirrorBackfill[];
   /** Shipped nodes whose twin could not be written (live unreadable, etc.). */
@@ -740,10 +781,21 @@ export function runInit(opts: RunInitOptions): RunInitReport {
   const mcpExample = installMcpExample(opts.packageRoot, installOpts);
   const integrations = installAgentIntegrations(opts.packageRoot, installOpts);
   const agentsMd = installRootAgentsMd(opts.packageRoot, installOpts);
-  const cursorIgnore = installCursorIgnore(opts.packageRoot, installOpts);
-  const cursorSkills = installCursorSkills(opts.packageRoot, installOpts);
-  const cursorRule = installCursorRule(opts.packageRoot, installOpts);
-  const cursorPermissions = installCursorPermissions(opts.packageRoot, installOpts);
+  const hosts = opts.hosts ?? ["cursor"];
+  const cursor = hosts.includes("cursor")
+    ? {
+        ignore: installCursorIgnore(opts.packageRoot, installOpts),
+        skills: installCursorSkills(opts.packageRoot, installOpts),
+        rule: installCursorRule(opts.packageRoot, installOpts),
+        permissions: installCursorPermissions(opts.packageRoot, installOpts),
+      }
+    : undefined;
+  const claude = hosts.includes("claude")
+    ? {
+        claudeMd: installClaudeMd(installOpts),
+        skills: installClaudeSkills(opts.packageRoot, installOpts),
+      }
+    : undefined;
   const mirrorBackfill = backfillMirrorTwins();
 
   return {
@@ -758,10 +810,8 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     mcpExample,
     integrations,
     agentsMd,
-    cursorIgnore,
-    cursorSkills,
-    cursorRule,
-    cursorPermissions,
+    cursor,
+    claude,
     mirrorTwins: mirrorBackfill.written,
     mirrorTwinSkips: mirrorBackfill.skipped,
     removedLegacyFiles: drainRemovedLegacyFiles(),
