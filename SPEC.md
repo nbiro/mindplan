@@ -711,7 +711,7 @@ Frontmatter delimiters (`---`) MUST appear before any JSX. MDX comments use `{/*
 
 Any node (Journey, Interaction, Interface, Foundation, Bug) MAY carry **node rules**: standing constraints for the work in that node's area, stored as a `## Rules` section in its `<id>.mdx` body. The section runs from a line that is exactly `## Rules` to the next level-1 or level-2 heading, or end of file; at most one per file. It is placed immediately before `## Attachments` when that heading exists, otherwise at the end of the body. An empty rule set has no section. Node rules are not frontmatter, so §9 and `GRAPH_VERSION` (`1`) are unchanged.
 
-- **Single writer.** Only `patch_node_rules` (§8.2) writes the section. `patch_node_territory` MUST preserve it byte-for-byte when it replaces the body, and MUST reject a body that contains a `## Rules` heading (the error names `patch_node_rules`). `get_node_context` returns the body without the section plus a separate `rules` string.
+- **Single writer.** Only `patch_node_rules` (§8.2) writes the section. `patch_node_territory` MUST preserve its text when it replaces the body, and MUST reject a body that contains a `## Rules` heading (the error names `patch_node_rules`). `get_node_context` returns the body without the section plus a separate `rules` string.
 - **Slot independence.** Rules are not part of a contract evolution. `patch_node_rules` writes the same text to `<id>.mdx` and, when an evolution is open, to `<id>.next.mdx`, so promotion keeps them; it never needs `open_next`, and the mirror twin stays a byte copy of live. Checkbox-looking lines in the section are not Atomic Ops.
 - **Inheritance.** The rules that apply to a node N, in order, each labeled with the node it came from (`via`, `distance`):
   1. N's own rules (`self`, 0).
@@ -719,9 +719,11 @@ Any node (Journey, Interaction, Interface, Foundation, Bug) MAY carry **node rul
   3. Rules of the transitive closure of `depends_on` (`depends_on`): a dependent gets its Foundations' rules, and a Foundation gets the rules of the Foundations it depends on.
   4. For a Bug only: everything each node it `affects` would itself resolve (own, `belongs_to`, `depends_on`), with `via: affects` and distance increased by 1.
 
-  Nothing is inherited downward (a Journey gets no Interaction's rules; a Foundation gets no dependent's), across siblings, or through `exposes` / `leads_to`. Only live edges count; proposed `next` edges do not. A node reached twice keeps its smallest distance; nodes with no rules and `cancelled` / `deprecated` nodes are omitted.
-- **Reach.** The inverse is the node's **rules audience**: exactly the other live nodes whose resolved rules include an entry from N. `get_blast_radius` and `patch_node_rules` report it (§8), because editing a Foundation's rules affects everything that depends on it.
+  Nothing is inherited downward (a Journey gets no Interaction's rules; a Foundation gets no dependent's), across siblings, or through `exposes` / `leads_to`. Only live edges count; proposed `next` edges do not. A node reached twice keeps its smallest distance; nodes with no rules and inactive nodes (`cancelled`, `deprecated`, and closed Bugs: `resolved`, `wontfix`) are omitted.
+- **Reach.** The inverse is the node's **rules audience**: exactly the other active nodes (not inactive, as above) whose resolved rules include an entry from N. `get_blast_radius` and `patch_node_rules` report it (§8), because editing a Foundation's rules affects everything that depends on it.
 - **Enforcement.** Prose only. The compiler does not read node rules; no `Blocked:` rule depends on them.
+- **Adoption.** The heading is the storage format, so a `## Rules` section already present in a node body (written before this feature) is read as that node's rules on the next load, removed from `get_node_context` `body`, and inherited like any other. Rename such a heading (for example `## Constraints`) before upgrading when it is not meant as node rules.
+- **Fences.** Detection is line-based and does not understand fenced code blocks: a `## Rules` line, or a level-1/2 heading line, inside a fence counts as a heading. Keep such lines out of node rules and out of bodies that show a Rules template.
 
 ### 6.2 Frontmatter mirroring
 
@@ -1020,7 +1022,7 @@ Where:
   - `importer` — files owned by other nodes that import the focus node's files (composition-root reverse edge)
   Files are deduplicated within an owner; multiple `via` reasons merge into one entry.
 
-- `rules_impact` is always present: `has_rules` says whether the focus carries node rules (§6.1.1) and `inherited_by` is its rules audience, each `{ id, type, state, via, distance }`, empty when `has_rules` is false or nobody inherits. It is independent of `affected`: a Journey's `inherited_by` lists its Interactions even though no one `depends_on` a Journey. Retired nodes are omitted unless `include_retired` is true.
+- `rules_impact` is always present: `has_rules` says whether the focus carries node rules (§6.1.1) and `inherited_by` is its rules audience, each `{ id, type, state, via, distance }`, empty when `has_rules` is false or nobody inherits. It is independent of `affected`: a Journey's `inherited_by` lists its Interactions even though no one `depends_on` a Journey. Inactive nodes (retired, or closed Bugs) are never listed, whatever `include_retired` says.
 
 - **Errors:** unknown `node_id`.
 - **Rationale:** calling this before substantial implementation or `open_next` surfaces both substrate dependents and Interaction-centric reachability (who exposes this behaviour, which Journeys contain it, where navigation flows next). The stable-id model means an evolution never changes what depends on the node. Grouping and the retired filter keep the payload usable for agents.
@@ -1142,9 +1144,9 @@ Patches territory-owned content on `<id>.mdx` or `<id>.next.mdx`. Server-owned f
 Writes one node's rules (§6.1.1). Use it for a rule about one area; use `patch_project_rules` for a rule that applies everywhere.
 
 - **Input:** `node_id` (slug, required); `rules` (string, required; empty string clears the section).
-- **Effect:** replaces the `## Rules` section of `<id>.mdx` and, when an evolution is open, of `<id>.next.mdx` with the same text; re-syncs the mirror twin when no evolution is open. Valid for every node type in any non-retired state, including `stable` / `unstable` nodes with no open evolution. Does not change `state`, edges, checkboxes, or `shipped_at`, and does not require `open_next`.
-- **Output:** `{ node_id, rules, slots: ["current"] | ["current", "next"], rules_impact, changed_files }` where `rules_impact` is the node's rules audience (`{ has_rules, inherited_by }`, same shape as `get_blast_radius`) and `changed_files` lists the live file, the open next file or refreshed twin, and `mindplan/map.md`.
-- **Errors:** unknown `node_id`; `cancelled` or `deprecated` node; `rules` containing a level-1 or level-2 heading line.
+- **Effect:** replaces the `## Rules` section of `<id>.mdx` and, when an evolution is open, of `<id>.next.mdx` with the same text; re-syncs the mirror twin when no evolution is open. Valid for every node type in any state except inactive ones (`cancelled`, `deprecated`, closed Bugs), including `stable` / `unstable` nodes with no open evolution. Does not change `state`, edges, checkboxes, or `shipped_at`, and does not require `open_next`.
+- **Output:** `{ node_id, rules, slots: ["current"] | ["current", "next"], rules_impact, changed_files }` where `rules_impact` is the node's rules audience (`{ has_rules, inherited_by }`, same shape as `get_blast_radius`) and `changed_files` lists the live file and the open next file or refreshed twin (`mindplan/map.md` does not change: rules are not graph structure).
+- **Errors:** unknown `node_id`; an inactive node (`cancelled`, `deprecated`, or a Bug that is `resolved` or `wontfix`); `rules` containing a level-1 or level-2 heading line.
 
 ### 8.2 Mutation tools
 

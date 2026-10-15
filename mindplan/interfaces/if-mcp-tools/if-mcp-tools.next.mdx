@@ -3,10 +3,10 @@ id: if-mcp-tools
 type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-four tools with when-to-call hints, attaches a non-empty drift report to successful results except get_project and get_rules, and exposes get_rules and patch_node_rules."
-state: ready
-shipped_at: 2026-10-15T11:06:35.840Z
+state: mirror
+shipped_at: 2026-10-15T11:27:52.973Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-15T11:15:11.411Z
+updated_at: 2026-10-15T11:27:52.973Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -19,6 +19,8 @@ exposes:
 implements:
   - src/interfaces/if-mcp-tools/
 ---
+
+
 
 
 # MCP tools
@@ -67,9 +69,9 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Thin wiring only — handlers stay on Interactions
 - [x] Skip drift on `get_project` and `get_rules`
 - [x] Verified via `npm test`
-- [ ] Register `patch_node_rules` and update the tool count to twenty-four
-- [ ] Update the `get_rules` and `orient_for_work` descriptions for node rules
-- [ ] Verified the new tool via `npm test`
+- [x] Register `patch_node_rules` and update the tool count to twenty-four
+- [x] Update the `get_rules` and `orient_for_work` descriptions for node rules
+- [x] Verified the new tool via `npm test`
 
 ## Attachments
 

@@ -36,6 +36,7 @@ import {
   BUG_SEVERITIES,
   GRAPH_VERSION,
   isFoundationRole,
+  isInactiveNode,
   isMirrorState,
   isNextPipelineState,
   isPipelineNodeType,
@@ -595,6 +596,8 @@ function parseNodeFromFrontmatter(
     created_at: fm.created_at,
     updated_at: fm.updated_at,
   };
+  const ownRules = splitNodeRules(raw).rules;
+  if (ownRules) node.rules = ownRules;
   if (fm.shipped_at) node.shipped_at = fm.shipped_at;
   if (fm.severity && (BUG_SEVERITIES as readonly string[]).includes(fm.severity)) {
     node.severity = fm.severity as BugSeverity;
@@ -1194,7 +1197,7 @@ export function countCheckboxesInText(text: string): {
   unchecked: number;
   checked: number;
 } {
-  const normalized = normalizeNewlines(text);
+  const normalized = splitNodeRules(normalizeNewlines(text)).body;
   const unchecked = normalized.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0;
   const checked = normalized.match(/^\s*[-*+]\s+\[[xX]\]/gm)?.length ?? 0;
   return { unchecked, checked };
@@ -1209,12 +1212,118 @@ export function isChecklistComplete(text: string): boolean {
 /** Sorted task-list labels, ignoring checked state. */
 export function checkboxLabels(text: string): string[] {
   const labels: string[] = [];
-  for (const line of normalizeNewlines(text).split("\n")) {
+  for (const line of splitNodeRules(normalizeNewlines(text)).body.split("\n")) {
     const match = line.match(/^\s*[-*+]\s+\[[ xX]\]\s+(.*)$/);
     if (match) labels.push(match[1].trim());
   }
   labels.sort();
   return labels;
+}
+
+const NODE_RULES_HEADING = "## Rules";
+const NODE_RULES_HEADING_LINE = /^## Rules[ \t]*$/;
+const SECTION_BREAK_LINE = /^#{1,2}[ \t]/;
+const ATTACHMENTS_HEADING_LINE = /^## Attachments[ \t]*$/;
+
+/**
+ * Splits a territory body (or full MDX) into the body without the node `## Rules` section and the
+ * section's trimmed text. The section runs from a `## Rules` line to the next level-1/2 heading or EOF.
+ * Only the first section is read.
+ */
+export function splitNodeRules(text: string): { body: string; rules: string } {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => NODE_RULES_HEADING_LINE.test(line.replace(/\r$/, "")));
+  if (start === -1) return { body: text, rules: "" };
+  let end = start + 1;
+  while (end < lines.length && !SECTION_BREAK_LINE.test(lines[end])) end++;
+  const rules = lines
+    .slice(start + 1, end)
+    .join("\n")
+    .replace(/\r/g, "")
+    .trim();
+  return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n"), rules };
+}
+
+/** True when `text` contains a `## Rules` heading line. */
+export function hasNodeRulesHeading(text: string): boolean {
+  return text.split("\n").some((line) => NODE_RULES_HEADING_LINE.test(line.replace(/\r$/, "")));
+}
+
+/**
+ * Inserts the `## Rules` section before `## Attachments` (else at the end). Empty `rules` returns the
+ * body unchanged. `body` must not already contain a Rules section.
+ */
+export function joinNodeRules(body: string, rules: string): string {
+  const text = rules.replace(/\r\n/g, "\n").trim();
+  if (!text) return body;
+  const nl = body.includes("\r\n") ? "\r\n" : "\n";
+  const section = `${NODE_RULES_HEADING}\n\n${text}\n`.replace(/\n/g, nl);
+  const lines = body.split("\n");
+  const at = lines.findIndex((line) => ATTACHMENTS_HEADING_LINE.test(line.replace(/\r$/, "")));
+  if (at === -1) {
+    return `${body.replace(/\s+$/, "")}${nl}${nl}${section}`;
+  }
+  const before = lines.slice(0, at).join("\n").replace(/\s+$/, "");
+  const after = lines.slice(at).join("\n");
+  return `${before}${nl}${nl}${section}${nl}${after}`;
+}
+
+/** Throws unless `rules` can live in a `## Rules` section (a level-1/2 heading would end it). */
+function assertValidNodeRules(rules: string): void {
+  for (const line of rules.split(/\r?\n/)) {
+    if (SECTION_BREAK_LINE.test(line) || /^#{1,2}$/.test(line.trim())) {
+      throw new Error(
+        `Blocked: rules text contains a level-1 or level-2 heading ("${line.trim()}"). ` +
+          `Use plain text, lists, or level-3+ headings inside rules.`
+      );
+    }
+  }
+}
+
+/** The node's own rules read from a territory file. */
+export function readNodeRules(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot = "current"
+): string {
+  return splitNodeRules(readMarkdown(node, slot)).rules;
+}
+
+/**
+ * The only writer of a node's `## Rules` section. Writes the live file and, when an evolution is
+ * open, the same text into the next file; otherwise refreshes the mirror twin. Frontmatter,
+ * state, and edges are untouched. Returns the slots written and repo-relative paths.
+ */
+export function writeNodeRules(
+  node: MindPlanNode,
+  rules: string
+): { slots: TerritorySlot[]; paths: string[] } {
+  if (isInactiveNode(node)) {
+    throw new Error(
+      `Blocked: "${node.id}" is ${node.state}; node rules cannot be written on a retired or closed node.`
+    );
+  }
+  assertValidNodeRules(rules);
+  const text = rules.replace(/\r\n/g, "\n").trim();
+  const slots: TerritorySlot[] = ["current"];
+  if (node.next) slots.push("next");
+  const paths: string[] = [];
+  for (const slot of slots) {
+    const raw = readMarkdown(node, slot);
+    const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n?)([\s\S]*)$/);
+    if (!match) {
+      throw new Error(`Blocked: ${slot} file for "${node.id}" has no YAML frontmatter.`);
+    }
+    const stripped = splitNodeRules(match[2]).body;
+    writeMarkdown(node, `${match[1]}${joinNodeRules(stripped, text)}`, slot);
+    paths.push(markdownRelativePath(node, slot));
+  }
+  if (!node.next) {
+    const twin = syncMirrorAfterLiveWrite(node);
+    if (twin) paths.push(twin);
+  }
+  if (text) node.rules = text;
+  else delete node.rules;
+  return { slots, paths };
 }
 
 /** Splits raw territory MDX into YAML frontmatter block and body. */
@@ -1377,6 +1486,9 @@ export function patchNodeTerritory(
   const patched_fields: string[] = [];
   const now = new Date().toISOString();
   let { frontmatter, body } = split;
+  // The Rules section has its own writer; body edits and checkbox toggles never see or drop it.
+  const { body: bodyWithoutRules, rules: existingRules } = splitNodeRules(body);
+  body = bodyWithoutRules;
 
   if (input.title !== undefined) {
     frontmatter = patchTerritoryScalars(frontmatter, { title: input.title }, now);
@@ -1393,6 +1505,12 @@ export function patchNodeTerritory(
     else node.role = input.role;
   }
   if (input.body !== undefined) {
+    if (hasNodeRulesHeading(input.body)) {
+      throw new Error(
+        `Blocked: body contains a "${NODE_RULES_HEADING}" heading. ` +
+          `Node rules are written only by patch_node_rules; remove the section from the body.`
+      );
+    }
     body = input.body;
     patched_fields.push("body");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
@@ -1409,7 +1527,7 @@ export function patchNodeTerritory(
     );
   }
 
-  writeMarkdown(node, `${frontmatter}\n\n${body}`, slot);
+  writeMarkdown(node, `${frontmatter}\n\n${joinNodeRules(body, existingRules)}`, slot);
   if (slot === "current") syncMirrorAfterLiveWrite(node);
   return { patched_fields, slot };
 }
@@ -1599,7 +1717,9 @@ export function promoteNextSlot(
   }
   frontmatterLines.push("---");
 
-  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${nextSplit.body}`, "current");
+  const liveRules = readNodeRules(node, "current");
+  const promotedBody = joinNodeRules(splitNodeRules(nextSplit.body).body, liveRules);
+  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${promotedBody}`, "current");
 
   // Merge next-attachments into attachments when present
   const nextAtt = nextAttachmentsDir(node);

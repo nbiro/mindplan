@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-three tools with when-to-call hints, attaches a non-empty drift report to successful results except get_project and get_rules, and exposes get_rules."
+description: "MCP stdio Interface that registers twenty-four tools with when-to-call hints, attaches a non-empty drift report to successful results except get_project and get_rules, and exposes get_rules and patch_node_rules."
 state: stable
-shipped_at: 2026-10-15T11:06:35.840Z
+shipped_at: 2026-10-15T11:27:52.973Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-15T11:06:35.840Z
+updated_at: 2026-10-15T11:27:52.973Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -27,7 +27,7 @@ implements:
 
 ## Purpose
 
-MCP stdio Interface that registers twenty-three tools. Each description leads with when to call the tool. Successful results attach a non-empty drift report via `withDrift` from `f-mcp-runtime`, except `get_project` and `get_rules`: `get_rules` runs before every action and would repeat the same report next to `orient_for_work`. Without the when-hints, a long session would treat tools as one-shot session-start helpers.
+MCP stdio Interface that registers twenty-four tools. Each description leads with when to call the tool. Successful results attach a non-empty drift report via `withDrift` from `f-mcp-runtime`, except `get_project` and `get_rules`: `get_rules` runs before every action and would repeat the same report next to `orient_for_work`. `patch_node_rules` is the new tool: it is the only way to write a node's rules, and its description must say when to prefer it over `patch_project_rules`, otherwise area-specific rules keep piling into the global list that `get_rules` returns before every action. Without the when-hints, a long session would treat tools as one-shot session-start helpers.
 
 ## Kind
 
@@ -36,7 +36,7 @@ MCP tool surface (stdio).
 ## Exposed Interactions
 
 - `i-orient-plan` — read/orient tools including `get_project` and `get_rules`
-- `i-steer-plan` — mutate tools including territory, project description, project rules, config, attachments
+- `i-steer-plan` — mutate tools including territory, node rules, project description, project rules, config, attachments
 - `i-export-map` — `export_mindplan_view`
 
 ## Spec
@@ -44,6 +44,8 @@ MCP tool surface (stdio).
 Intended files: `src/interfaces/if-mcp-tools/`
 
 - Register `get_rules`
+- Register `patch_node_rules` with `node_id` (slug) and `rules` (string, required; empty clears). Description starts with the when-clause: call when a rule applies to one node and the work that inherits from it, rather than everywhere (use `patch_project_rules` for everywhere)
+- The `get_rules` description says it returns global rules only and that node rules arrive through `orient_for_work`; the `orient_for_work` description says it returns a `rules` block
 - Lead every tool description with a when-clause
 - On success, call `withDrift` from `f-mcp-runtime` (which uses `buildDriftReport` from `i-check-integrity`) so a non-empty report attaches as `drift` (`paths`, `unowned`, `reminder`)
 - `get_project` and `get_rules` register without drift: their successful payload never carries `drift`. Every other tool keeps it.
@@ -53,8 +55,9 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 
 ## Acceptance Criteria
 
-- Twenty-three tools registered
+- Twenty-four tools registered, including `patch_node_rules`
 - Every tool description starts with when to call it
+- `patch_node_rules` rejects a missing `rules` and a non-slug `node_id` at the zod layer
 - Non-empty drift attached on every successful tool except `get_project` and `get_rules`; clean tree omits `drift`
 - `get_project` and `get_rules` omit `drift` even on a dirty tree
 - Verified via `npm test`
@@ -66,6 +69,9 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Thin wiring only — handlers stay on Interactions
 - [x] Skip drift on `get_project` and `get_rules`
 - [x] Verified via `npm test`
+- [x] Register `patch_node_rules` and update the tool count to twenty-four
+- [x] Update the `get_rules` and `orient_for_work` descriptions for node rules
+- [x] Verified the new tool via `npm test`
 
 ## Attachments
 

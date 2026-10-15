@@ -25,6 +25,7 @@ import {
   projectRoot,
   readMarkdown,
   splitContext,
+  splitNodeRules,
   summarizeGraphNode,
 } from "../../foundations/f-territory-store/store.js";
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
@@ -43,6 +44,7 @@ import {
   interfacesExposing,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
+import { resolveNodeRules, rulesImpact } from "../../foundations/f-graph-search/rules.js";
 
 export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
 
@@ -194,6 +196,7 @@ export function buildBlastRadiusPayload(
     })),
     journeys_at_risk: [...journeysAtRisk].sort(),
     affected_files,
+    rules_impact: rulesImpact(graph, node),
   };
   if (node.type === "Interaction") {
     const reach = interactionReachability(graph, node.id);
@@ -226,7 +229,9 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
     attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
     attachments: listAttachments(node),
     record: nodeToRecord(node),
-    body: currentSplit?.body ?? "",
+    // The Rules section is returned separately; it has its own writer (patch_node_rules).
+    body: splitNodeRules(currentSplit?.body ?? "").body,
+    rules: node.rules ?? "",
     next: null,
   };
   if (node.next) {
@@ -247,7 +252,7 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
         ...(node.next.implements?.length ? { implements: node.next.implements } : {}),
         ...(node.next.role ? { role: node.next.role } : {}),
       },
-      body: nextSplit?.body ?? "",
+      body: splitNodeRules(nextSplit?.body ?? "").body,
     };
   }
   return payload;
@@ -318,16 +323,18 @@ export function orientForWork(args: {
   });
   let context: Record<string, unknown> | null = null;
   let blast_radius: Record<string, unknown> | null = null;
+  let rules: Record<string, unknown> | null = null;
 
   if (related.focus) {
     const node = findNode(graph, related.focus);
     context = buildNodeContextPayload(node);
+    rules = { node_id: node.id, entries: resolveNodeRules(graph, node.id) };
     if (isPipelineNodeType(node.type)) {
       blast_radius = buildBlastRadiusPayload(graph, node);
     }
   }
 
-  return { ...related, context, blast_radius };
+  return { ...related, context, blast_radius, rules };
 }
 
 /**

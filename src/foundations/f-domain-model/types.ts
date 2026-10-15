@@ -111,6 +111,33 @@ export interface MindPlanNode {
   role?: FoundationRole;
   /** Present when `<id>.next.mdx` is an open evolution (not a `mirror` twin). */
   next?: NextSlot;
+  /**
+   * Own node rules — the trimmed `## Rules` section of the live `<id>.mdx` body.
+   * Omitted when empty. Slot-independent: `next` carries no separate rules.
+   */
+  rules?: string;
+}
+
+/** How a rule entry reached the node it was resolved for. */
+export const RULE_VIAS = ["self", "belongs_to", "depends_on", "affects"] as const;
+export type RuleVia = (typeof RULE_VIAS)[number];
+
+/** One node's rules, labeled with the node it came from. */
+export interface RuleEntry {
+  node_id: string;
+  node_type: NodeType;
+  via: RuleVia;
+  distance: number;
+  rules: string;
+}
+
+/** A node that inherits another node's rules. */
+export interface RulesImpactEntry {
+  id: string;
+  type: NodeType;
+  state: NodeState;
+  via: RuleVia;
+  distance: number;
 }
 
 export function isFoundationRole(value: string): value is FoundationRole {
@@ -186,6 +213,19 @@ export function isMirrorState(state: string): state is MirrorState {
 /** Types that use the Foundation/Interaction/Interface build pipeline and may open next. */
 export function isPipelineNodeType(type: NodeType): boolean {
   return type === "Foundation" || type === "Interaction" || type === "Interface";
+}
+
+/**
+ * Nodes that no longer carry live work: retired (`cancelled`, `deprecated`) or closed Bugs
+ * (`resolved`, `wontfix`). Their rules are neither written, inherited, nor reported.
+ */
+export function isInactiveNode(node: Pick<MindPlanNode, "state">): boolean {
+  return (
+    node.state === "cancelled" ||
+    node.state === "deprecated" ||
+    node.state === "resolved" ||
+    node.state === "wontfix"
+  );
 }
 
 /** Pre-ship build states where Interaction/Interface description/title may change when scope shifts. */

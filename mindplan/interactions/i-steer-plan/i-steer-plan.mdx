@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status, links, open_next, territory patches, separate project description and rules writes, config, and attachments."
+description: "Compiler-gated mutate tools: status, links, open_next, territory patches, per-node rules writes, separate project description and rules writes, config, and attachments."
 state: stable
-shipped_at: 2026-10-12T07:42:07.545Z
+shipped_at: 2026-10-15T11:45:44.646Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-12T07:42:07.545Z
+updated_at: 2026-10-15T11:45:44.646Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -24,12 +24,11 @@ implements:
 
 
 
-
 # Steer the plan
 
 ## Purpose
 
-Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, and ordered revisions.
+Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_node_rules`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, and ordered revisions. `patch_node_rules` is the single writer of a node's rules so a territory rewrite can never silently drop them, and a rules edit never needs a contract evolution because rules are standing constraints, not behavior.
 
 ## Actor & Trigger
 
@@ -41,8 +40,11 @@ Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), requir
 Intended files: `src/interactions/i-steer-plan/`
 
 - `open_next` / `discard_next` / ship follow the standing twin lifecycle
-- `patch_node_territory` is the required prose path
-- `patch_project_description` replaces only the brief description; `patch_project_rules` replaces only the brief rules; each leaves the other section unchanged
+- `patch_node_territory` is the required prose path; it preserves the node's `## Rules` section and Blocks a body that contains one, naming `patch_node_rules`
+- `patch_node_rules({ node_id, rules })` replaces the `## Rules` section of that node via `writeNodeRules`; an empty string clears it. Works on any node type in any state except inactive ones (retired, or a closed Bug), including shipped nodes with no open evolution, and never changes state, edges, or checkboxes. With an open evolution it writes the same text to live and next; the mirror twin stays a state-only copy
+  - Blocked: unknown node; `cancelled` / `deprecated` node; a Bug that is `resolved` or `wontfix`; rules text containing a level-1 or level-2 heading line
+  - Output: `{ node_id, rules, slots: ["current"] | ["current","next"], rules_impact, changed_files }` where `rules_impact` is `{ has_rules, inherited_by }` from `rulesImpact` (`f-graph-search`), so the author sees whose work the edit reaches. `changed_files` lists the live `.mdx` plus the open `.next.mdx` or the refreshed twin; `mindplan/map.md` is not rewritten because rules are not graph structure
+- `patch_project_description` replaces only the brief description; `patch_project_rules` replaces only the brief rules (global, apply everywhere); each leaves the other section unchanged
 - `patch_config`, `put_attachment`, `remove_attachment`
 - First ship and promote restore/create the mirror twin; retire/unship delete it
 
@@ -51,6 +53,10 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 ## Acceptance Criteria
 
 - Description and rules are separate project-brief writes
+- `patch_node_rules` then `patch_node_territory` leaves the rules text intact
+- `patch_node_rules` on a stable node leaves it stable with no open evolution, and the mirror twin still passes `check`
+- With an open evolution the rules appear in both `<id>.mdx` and `<id>.next.mdx`
+- Blocked on unknown id, retired node, closed Bug, or a heading line inside the rules
 - Twin lifecycle wired through status / open_next / discard
 - Verified via `npm test`
 
@@ -65,6 +71,12 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - [x] Verified via `npm test`
 - [x] Split project brief writes into patch_project_description and patch_project_rules
 - [x] Verified the split via `npm test`
+- [x] Add the `patchNodeRules` handler and list it in MUTATE_TOOLS
+- [x] Make `patch_node_territory` preserve the Rules section and Block a body containing one
+- [x] Return `rules_impact` and the full `changed_files` list from `patch_node_rules`
+- [x] Verified `patch_node_rules` via `npm test`
+- [x] Block closed Bugs and build `rules_impact` with `rulesImpact`
+- [x] Verified the closed-Bug Block via `npm test`
 
 ## Attachments
 

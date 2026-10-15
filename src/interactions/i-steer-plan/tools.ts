@@ -8,6 +8,7 @@ export const MUTATE_TOOLS = [
   "update_node_status",
   "force_unship",
   "patch_node_territory",
+  "patch_node_rules",
   "open_next",
   "discard_next",
   "set_implementation_files",

@@ -2,11 +2,11 @@
 id: f-graph-search
 type: Foundation
 title: "Graph search"
-description: "Infra — ranks and expands Interaction-centric graph neighborhoods."
+description: "Infra — ranks and expands graph neighborhoods, and resolves which nodes' rules apply to a node (and which nodes a node's rules reach)."
 state: stable
-shipped_at: 2026-10-09T22:27:39.208Z
+shipped_at: 2026-10-15T11:45:44.467Z
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-10-09T22:27:39.208Z
+updated_at: 2026-10-15T11:45:44.467Z
 depends_on:
   - f-domain-model
 implements:
@@ -16,12 +16,11 @@ role: infra
 
 
 
-
 # Graph search
 
 ## Purpose
 
-Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`. Keeps retired nodes out of default ranking so agents focus on the live architecture.
+Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`, plus the pure graph queries that say whose rules apply to a node and whose work a node's rules reach. Keeps retired nodes out of default ranking so agents focus on the live architecture. Rules flow only toward the work that needs them: up `belongs_to`, along `depends_on`, and from affected nodes into Bugs — never downward and never across siblings, otherwise a Journey's local rule would constrain unrelated Interactions. Finished work does not count: a resolved Bug must not pad the list of whose work a Foundation's rules reach.
 
 ## Shared Substrate Spec
 
@@ -31,6 +30,16 @@ Package: `src/foundations/f-graph-search/`
 - Ranking covers all node types including Interaction and Interface (id/title/description scoring; no Interaction-specific branches — ranking is type-agnostic aside from retired filters)
 - `expandNeighborhood` walks all incident edge types including `exposes` and `leads_to`
 - Tests/fixtures must cover Interaction/Interface nodes and `exposes`/`leads_to` neighborhoods once the domain model ships those types
+- `rules.ts` — `resolveNodeRules(graph, nodeId): RuleEntry[]` over **live** edges (proposed `next` edges are ignored):
+  1. the node's own rules (`via: self`, distance 0)
+  2. rules of nodes reached by following `belongs_to` upward (`via: belongs_to`), ascending distance
+  3. rules of nodes reached by the transitive closure of `depends_on` (`via: depends_on`), ascending distance
+  4. for a Bug only: every node it `affects`, plus everything that node would itself resolve (own, `belongs_to`, `depends_on`), all with `via: affects` and distance offset by 1
+  - Not inherited: `exposes` / `leads_to` neighbors, siblings, and anything downward (a Journey gets no Interaction rules; a Foundation gets no dependent's rules; an Interface gets no exposed Interaction's rules)
+  - A node reached twice keeps its smallest distance; nodes with empty rules and inactive nodes (`isInactiveNode`: `cancelled`, `deprecated`, closed Bugs) are omitted; ties order by node id
+- `rulesAudience(graph, nodeId): RulesImpactEntry[]` — exactly the other active nodes whose `resolveNodeRules` includes an entry from `nodeId`, with the `via` and `distance` of that entry; empty when `nodeId` has no rules
+- `rulesImpact(graph, node)` → `{ has_rules, inherited_by }`: the one builder of the `rules_impact` payload used by `get_blast_radius` and `patch_node_rules`
+- All three are pure and read `node.rules` already loaded in the graph; no file I/O. The node index is built once per call, not once per node
 
 Depends on: `f-domain-model`.
 
@@ -41,8 +50,12 @@ Depends on: `f-domain-model`.
 - Limits respect DEFAULT_FIND_LIMIT / MAX_FIND_LIMIT
 - Queries matching Interaction/Interface titles return them as focus candidates
 - 1-hop neighborhoods include `exposes` and `leads_to` neighbors
+- An Interaction resolves its own, its Journey's, and its Foundations' (transitive) rules, each labeled with its source node
+- A Journey resolves only its own; a Foundation resolves its own and its Foundation dependencies'; sibling Interactions never see each other's rules
+- A Bug resolves the full resolution of every node it `affects`
+- `rulesAudience` of a Foundation lists its transitive dependents; of a Journey lists its Interactions; both agree with `resolveNodeRules`
+- Resolved and wontfix Bugs appear in no audience and contribute no rules
 - Verified via `npm test` (`search.test.mjs`)
-
 
 ## Atomic Ops
 
@@ -51,7 +64,14 @@ Depends on: `f-domain-model`.
 - [x] Verified via `npm test`
 - [x] Stable title and H1; description is current purpose (no changelog parentheticals)
 - [x] Verified by Reviewer against the naming contract
+- [x] Add `resolveNodeRules` with the four inheritance steps and retired/empty filtering
+- [x] Add `rulesAudience` as the exact inverse of `resolveNodeRules`
+- [x] Add search-test fixtures for every inherited and every not-inherited direction
+- [x] Verified the rules queries via `npm test`
+- [x] Treat closed Bugs as inactive in both rules queries and test it
+- [x] Build the node index once per call and add `rulesImpact`
+- [x] Verified the inactive-node and `rulesImpact` changes via `npm test`
 
 ## Attachments
 
-_Schemas and diagrams go in `next-attachments/`._
+_None._

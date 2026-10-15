@@ -44,6 +44,7 @@ import {
   splitContext,
   writeImplementsFrontmatter,
   writeMirrorTwin,
+  writeNodeRules,
   writeProjectConfig,
   type TerritorySlot,
 } from "../../foundations/f-territory-store/store.js";
@@ -72,6 +73,7 @@ import {
   validateOpenNext,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
+import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
 
 export function syncNodes(nodes: MindPlanNode[]): void {
@@ -791,6 +793,30 @@ export function patchNodeTerritory(args: {
     path: pathWritten,
     changed_files: changedFiles([pathWritten]),
     ...buildMutationAnchor(loadGraph(), node_id),
+  };
+}
+
+/**
+ * Replace one node's `## Rules` section. Valid in any non-retired state; never changes state,
+ * edges, or checkboxes and never needs open_next. Reports whose work the rules reach.
+ */
+export function patchNodeRules(args: {
+  node_id: string;
+  rules: string;
+}): Record<string, unknown> {
+  const { node_id, rules } = args;
+  if (rules === undefined) {
+    throw blocked("patch_node_rules requires rules.");
+  }
+  const graph = loadGraph();
+  const node = findNode(graph, node_id);
+  const written = writeNodeRules(node, rules);
+  return {
+    node_id,
+    rules: node.rules ?? "",
+    slots: written.slots,
+    rules_impact: rulesImpact(graph, node),
+    changed_files: changedFiles(written.paths),
   };
 }
 
