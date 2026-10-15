@@ -888,7 +888,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes twenty-three tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful tool results MAY include `drift` when uncommitted source files exist (envelope below).
+The server exposes twenty-three tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful results of every tool except `get_project` and `get_rules` MAY include `drift` when uncommitted source files exist (envelope below); `get_project` and `get_rules` MUST NOT include it, because `get_rules` runs before every action and `orient_for_work` already carries the report.
 
 ### 8.1 Read tools
 
@@ -1129,7 +1129,7 @@ Orient and trust graph state via MCP `record` responses. Do not treat on-disk fr
 
 Successful graph mutations MUST include `changed_files: string[]` — repo-relative paths written or deleted (territory MDX, optional scaffolds / attachment paths, and `mindplan/map.md` when the map is refreshed). Agents SHOULD surface these paths to humans because many hosts do not list MCP subprocess writes in their native “edited files” UI.
 
-Successful tool results (reads and mutations) MAY include `drift` when the uncommitted working tree has source files in the ownership universe, including tracked paths deleted from disk: `{ paths: [{ path, owner_id, state, next_state }], unowned: string[], reminder: string }`. A deleted path keeps the owner of the file or directory claim that covers it; otherwise it is unowned. Omit `drift` when the tree is clean or git cannot be read. `drift` is not a `Blocked:` and MUST NOT change default `mindplan-mcp check`.
+Successful tool results (reads and mutations, except `get_project` and `get_rules`) MAY include `drift` when the uncommitted working tree has source files in the ownership universe, including tracked paths deleted from disk: `{ paths: [{ path, owner_id, state, next_state }], unowned: string[], reminder: string }`. A deleted path keeps the owner of the file or directory claim that covers it; otherwise it is unowned. Omit `drift` when the tree is clean or git cannot be read. `drift` is not a `Blocked:` and MUST NOT change default `mindplan-mcp check`.
 
 #### `create_node`
 
