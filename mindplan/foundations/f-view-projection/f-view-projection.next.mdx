@@ -2,11 +2,11 @@
 id: f-view-projection
 type: Foundation
 title: "View projection"
-description: "Infra — Mermaid/DOT projection and the auto-generated mindplan/map.md snapshot."
+description: "Infra — Mermaid/DOT projection (including the mounts edge) and the auto-generated mindplan/map.md snapshot."
 state: mirror
-shipped_at: 2026-10-09T22:27:39.268Z
+shipped_at: 2026-10-15T15:52:10.954Z
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-10-09T22:27:39.268Z
+updated_at: 2026-10-15T15:52:10.954Z
 depends_on:
   - f-domain-model
   - f-graph-search
@@ -17,15 +17,11 @@ role: infra
 ---
 
 
-
-
 # View projection
 
 ## Purpose
 
-Infra — deterministic Mermaid/DOT projection of the territory graph, plus `persistMindPlanMap` for the auto-refreshed `mindplan/map.md` snapshot after mutations.
-
-This evolution adds a one-line plain-language legend under the `# MindPlan map` heading so vibecoders and agents can read the auto-generated map using the shared glossary (area / action / entry point / building block / bug). Projection APIs and diagram content stay unchanged.
+Infra — deterministic Mermaid/DOT projection of the territory graph, plus `persistMindPlanMap` for the auto-refreshed `mindplan/map.md` snapshot after mutations. The projection draws every edge type, so a composition root's `mounts` edges are visible next to `exposes` and `depends_on`.
 
 ## Shared Substrate Spec
 
@@ -33,7 +29,7 @@ Package: `src/foundations/f-view-projection/`
 
 - `view.ts` — `exportMindPlanView`, `persistMindPlanMap`, `graphToMermaid` / `graphToDot`, `VIEW_FORMATS`
 - Uses `expandNeighborhood` from `f-graph-search` and `mindplanRoot` from `f-territory-store`
-- Interaction-centric styling: Interaction clusters, `exposes` + `leads_to` edge styles
+- Interaction-centric styling: Interaction clusters, `exposes` + `leads_to` edge styles; a `mounts` edge is a bold labeled arrow (Mermaid `==>|mounts|`, DOT `style=bold, label="mounts"`)
 - `persistMindPlanMap` writes `# MindPlan map`, auto-generated note, **How to read this** legend line, then the mermaid fence
 - MUST NOT own MCP tool handlers; `i-export-map` and `i-steer-plan` call into this package
 
@@ -42,17 +38,17 @@ Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 ## Acceptance Criteria
 
 - `persistMindPlanMap` includes a one-line How to read this legend using the plain-language glossary
+- A graph with a `mounts` edge renders it in Mermaid and DOT
 - Mermaid/DOT export APIs unchanged for callers
 - Smoke / view tests that assert on `map.md` still pass
-
 
 ## Atomic Ops
 
 - [x] Add How to read this legend in `persistMindPlanMap`
 - [x] Build and run tests (`npm test`) confirming map.md assertions still pass
-- [x] Verified by Reviewer against the contract
 - [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
+- [x] Render the `mounts` edge in Mermaid and DOT
+- [x] Verified the `mounts` rendering via `npm test`
 
 ## Attachments
 

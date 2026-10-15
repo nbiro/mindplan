@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section; keep a shipped next file as a state-only twin."
+description: "Infra — persist territory through the store only, including each node's ## Rules section, the `mounts` edge field, and section/replace body patches; keep a shipped next file as a state-only twin."
 state: mirror
-shipped_at: 2026-10-15T11:45:44.558Z
+shipped_at: 2026-10-15T16:19:52.380Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-15T11:45:44.558Z
+updated_at: 2026-10-15T16:19:52.380Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -17,11 +17,14 @@ role: infra
 
 
 
+
+
+
 # Territory store
 
 ## Purpose
 
-Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer.
+Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer. Small body fixes (one section, one phrase) are first-class writes so an agent does not resend a whole body to change a line.
 
 ## Shared Substrate Spec
 
@@ -32,7 +35,13 @@ Intended files: `src/foundations/f-territory-store/`
 - `openNextSlot` flips mirror→draft (creates twin from live when missing); does not reset checkboxes
 - `discardNextSlot` / `promoteNextSlot` restore the mirror twin (do not delete the next file)
 - Reject writes aimed at a mirror file
+- A whole-body write converts the new body to the file's own line endings, so CRLF territory stays CRLF
 - `writeProjectBrief` for MCP `patch_project_description` and `patch_project_rules`
+- **`mounts` edge field.** `mounts` is a frontmatter edge array like `exposes`: parsed, written, removed by `unlink`, copied by `open_next`, promoted on ship, and a pipeline node with an open evolution writes it to the next slot
+- **Section and replace patches.** `patchNodeTerritory` also takes `section: { heading, text }` and `replace: { find, with, all? }`
+  - `replaceSectionInBody(body, heading, text)` rewrites the lines under one level-2 heading (heading line and other sections untouched, line endings kept; a `## ` line inside a fenced code block is code, not a heading); a missing heading is Blocked and lists the sections
+  - `replaceTextInBody(body, find, with, all?)` replaces one exact piece; Blocked when `find` is not found or matches more than once without `all`
+  - Neither may touch `## Rules`: a `## Rules` heading as the section or inside the new text is Blocked, naming `patch_node_rules`
 - **Node rules section.** A node's rules are the `## Rules` section of its territory body: from a line that is exactly `## Rules` to the next level-1 or level-2 heading or end of file. At most one such section per file
   - `splitNodeRules(body)` → `{ body, rules }` — `body` has the section removed, `rules` is its trimmed text (empty string when absent)
   - `joinNodeRules(body, rules)` — inserts the section immediately before `## Attachments` when present, else appends it; an empty `rules` adds no section (no empty heading)
@@ -57,6 +66,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - Rules checkboxes (`- [ ]`) inside the section are not counted as Atomic Ops
 - CRLF territory stays CRLF through a rules write and a body write
 - Writing rules to a retired node or a closed Bug is Blocked
+- A `mounts` edge round-trips through link, unlink, open_next, and ship
+- A section patch changes only that section; a replace changes exactly one occurrence; the Rules section cannot be patched through either
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -76,6 +87,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Block `writeNodeRules` on closed Bugs through `isInactiveNode`
 - [x] Test promote, CRLF, and inactive-node writes end to end
 - [x] Document adoption and fence limits in SPEC §6.1.1
+- [x] Parse, write, unlink, open, and promote the `mounts` edge field
+- [x] Add `replaceSectionInBody` / `replaceTextInBody` and the `section` / `replace` patch inputs
+- [x] Verified `mounts` and the section/replace patches via `npm test`
+- [x] Skip fenced lines when finding section headings and keep the file's line endings on body writes
 
 ## Attachments
 

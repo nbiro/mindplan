@@ -34,6 +34,7 @@ import {
   nextAttachmentsDir,
   nodeExists,
   nodeToRecord,
+  projectRoot,
   openNextSlot,
   patchFrontmatter,
   patchNodeTerritory as patchNodeTerritoryStore,
@@ -72,6 +73,11 @@ import {
   validateLink,
   validateOpenNext,
 } from "../../foundations/f-compiler-rules/rules.js";
+import {
+  assertCheckCleanForNode,
+  findImportViolationsForClaim,
+  staleTextWarnings,
+} from "../../foundations/f-compiler-rules/integrity.js";
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
@@ -195,7 +201,25 @@ export function buildMutationAnchor(
   };
 }
 
+/**
+ * Default write tail: the touched node's state and next_state. Neighborhood and
+ * record come only with `verbose: true` (`buildMutationAnchor`).
+ */
+export function mutationTail(
+  graph: MindPlanGraph,
+  nodeId: string,
+  verbose?: boolean
+): Record<string, unknown> {
+  const node = findNode(graph, nodeId);
+  const tail: Record<string, unknown> = {
+    state: node.state,
+    next_state: node.next?.state ?? null,
+  };
+  return verbose ? { ...tail, ...buildMutationAnchor(graph, nodeId) } : tail;
+}
+
 export function createNode(args: {
+  verbose?: boolean;
   id: string;
   type: NodeType;
   title: string;
@@ -257,7 +281,7 @@ export function createNode(args: {
     context: current,
     attachments,
     changed_files: changedFiles(files, true),
-    ...buildMutationAnchor(graph, id),
+    ...mutationTail(graph, id, args.verbose),
   };
 }
 
@@ -265,6 +289,7 @@ export function createNode(args: {
  * Replace the implements list for a pipeline node on the appropriate slot.
  */
 export function setImplementationFiles(args: {
+  verbose?: boolean;
   node_id: string;
   files: string[];
   slot?: TerritorySlot;
@@ -340,16 +365,31 @@ export function setImplementationFiles(args: {
   writeImplementsFrontmatter(node, normalized, slot);
   refreshPersistedMap();
   const pathWritten = territoryPath(node, slot);
+  // Scan the claimed files now, so a missing edge is reported with the exact call that fixes it.
+  const claimedGraph = loadGraph();
+  const claimedNode = findNode(claimedGraph, node.id);
+  const importViolations = findImportViolationsForClaim(
+    claimedGraph,
+    projectRoot(),
+    claimedNode,
+    normalized
+  ).map((v) => ({
+    file: v.file,
+    imports: v.imports,
+    ...(v.fix ? { fix: v.fix } : { not_allowed: v.not_allowed }),
+  }));
   return {
     node_id: node.id,
     slot,
     implements: normalized,
+    ...(importViolations.length ? { import_violations: importViolations } : {}),
     changed_files: changedFiles([pathWritten], true),
-    ...buildMutationAnchor(loadGraph(), node.id),
+    ...mutationTail(loadGraph(), node.id, args.verbose),
   };
 }
 
 export function linkNodes(args: {
+  verbose?: boolean;
   source_id: string;
   target_id: string;
   edge_type: (typeof EDGE_TYPES)[number];
@@ -375,7 +415,9 @@ export function linkNodes(args: {
             ? (source.next.exposes ?? []).includes(target_id)
             : edge_type === "leads_to"
               ? (source.next.leads_to ?? []).includes(target_id)
-              : false
+              : edge_type === "mounts"
+                ? (source.next.mounts ?? []).includes(target_id)
+                : false
       : graph.edges.some(
           (e) => e.source === source_id && e.target === target_id && e.type === edge_type
         );
@@ -395,6 +437,8 @@ export function linkNodes(args: {
       source.next.exposes = [...(source.next.exposes ?? []), target_id];
     } else if (edge_type === "leads_to") {
       source.next.leads_to = [...(source.next.leads_to ?? []), target_id];
+    } else if (edge_type === "mounts") {
+      source.next.mounts = [...(source.next.mounts ?? []), target_id];
     }
   }
   addEdgeToFrontmatter(source, edge_type, target_id);
@@ -414,11 +458,12 @@ export function linkNodes(args: {
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     changed_files: changedFiles(files, true),
-    ...buildMutationAnchor(loadGraph(), source_id),
+    ...mutationTail(loadGraph(), source_id, args.verbose),
   };
 }
 
 export function unlinkNodes(args: {
+  verbose?: boolean;
   source_id: string;
   target_id: string;
 }): Record<string, unknown> {
@@ -437,20 +482,24 @@ export function unlinkNodes(args: {
     const nextDepends = source.next.depends_on ?? [];
     const nextExposes = source.next.exposes ?? [];
     const nextLeadsTo = source.next.leads_to ?? [];
+    const nextMounts = source.next.mounts ?? [];
     if (
       nextBelongs.includes(target_id) ||
       nextDepends.includes(target_id) ||
       nextExposes.includes(target_id) ||
-      nextLeadsTo.includes(target_id)
+      nextLeadsTo.includes(target_id) ||
+      nextMounts.includes(target_id)
     ) {
       source.next.belongs_to = nextBelongs.filter((id) => id !== target_id);
       source.next.depends_on = nextDepends.filter((id) => id !== target_id);
       source.next.exposes = nextExposes.filter((id) => id !== target_id);
       source.next.leads_to = nextLeadsTo.filter((id) => id !== target_id);
+      source.next.mounts = nextMounts.filter((id) => id !== target_id);
       if (source.next.belongs_to.length === 0) delete source.next.belongs_to;
       if (source.next.depends_on?.length === 0) delete source.next.depends_on;
       if (source.next.exposes?.length === 0) delete source.next.exposes;
       if (source.next.leads_to?.length === 0) delete source.next.leads_to;
+      if (source.next.mounts?.length === 0) delete source.next.mounts;
       removed += 1;
     }
   }
@@ -475,7 +524,7 @@ export function unlinkNodes(args: {
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     changed_files: changedFiles(files, true),
-    ...buildMutationAnchor(loadGraph(), source_id),
+    ...mutationTail(loadGraph(), source_id, args.verbose),
   };
 }
 
@@ -488,14 +537,48 @@ const STATUS_TIER: Record<string, number> = {
 
 type StatusRevision = { node_id: string; new_status: string };
 
-function normalizeStatusArgs(args: {
+/** Which nodes a scoped status call walks. */
+export const STATUS_SCOPES = ["all_open_updates", "node_and_dependents"] as const;
+export type StatusScope = (typeof STATUS_SCOPES)[number];
+
+/** Forward build pipeline a scoped call walks each node through. */
+const WALK_PIPELINE = ["draft", "ready", "in-progress", "in-review", "ship"] as const;
+
+type StatusArgs = {
   node_id?: string;
   new_status?: string;
   revisions?: StatusRevision[];
-}): { mode: "single" | "batch"; items: StatusRevision[] } {
+  scope?: StatusScope;
+  dry_run?: boolean;
+  verbose?: boolean;
+};
+
+type StatusMode = "single" | "batch" | "scope";
+
+function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: StatusRevision[] } {
   const list = args.revisions;
   const hasList = Array.isArray(list) && list.length > 0;
   const hasSingle = args.node_id !== undefined || args.new_status !== undefined;
+  if (args.scope !== undefined) {
+    if (hasList) {
+      throw blocked("update_node_status accepts either scope or revisions, not both.");
+    }
+    if (!(STATUS_SCOPES as readonly string[]).includes(args.scope)) {
+      throw blocked(`scope must be one of: ${STATUS_SCOPES.join(", ")}.`);
+    }
+    if (!args.new_status || !(WALK_PIPELINE as readonly string[]).includes(args.new_status)) {
+      throw blocked(
+        `scope walks nodes forward to a target: new_status must be one of ${WALK_PIPELINE.join(", ")}.`
+      );
+    }
+    if (args.scope === "node_and_dependents" && !args.node_id) {
+      throw blocked('scope "node_and_dependents" requires node_id (the node whose open dependents walk with it).');
+    }
+    if (args.scope === "all_open_updates" && args.node_id) {
+      throw blocked('scope "all_open_updates" takes no node_id; use "node_and_dependents" for one node.');
+    }
+    return { mode: "scope", items: [] };
+  }
   if (hasList && hasSingle) {
     throw blocked(
       "update_node_status accepts either node_id + new_status, or revisions, not both."
@@ -516,7 +599,7 @@ function normalizeStatusArgs(args: {
   }
   if (!args.node_id || args.new_status === undefined || args.new_status === "") {
     throw blocked(
-      "update_node_status requires node_id and new_status, or a non-empty revisions list."
+      "update_node_status requires node_id and new_status, a non-empty revisions list, or a scope with new_status."
     );
   }
   return {
@@ -541,15 +624,230 @@ function orderStatusRevisions(items: StatusRevision[]): StatusRevision[] {
     .map((row) => row.item);
 }
 
-export function updateNodeStatus(args: {
-  node_id?: string;
-  new_status?: string;
-  revisions?: StatusRevision[];
-}): Record<string, unknown> {
-  const normalized = normalizeStatusArgs(args);
-  if (normalized.mode === "single") {
-    return applyOneStatus(normalized.items[0]);
+/** Active-slot state of a pipeline node: next while evolving, else live. */
+function activeState(node: MindPlanNode): string {
+  return node.next ? node.next.state : node.state;
+}
+
+/**
+ * A shipped node with an open next, or a pre-ship node that is being built (in-progress or
+ * in-review). A draft or ready node is a plan for later work, not an update: `all_open_updates`
+ * never walks it. `node_and_dependents` names its seed on purpose, so with `includePlanned`
+ * the seed's dependents may be walked from draft or ready too.
+ */
+function isOpenUpdate(node: MindPlanNode, includePlanned = false): boolean {
+  if (!isPipelineNodeType(node.type)) return false;
+  if (node.next) return true;
+  if (node.shipped_at) return false;
+  if (node.state === "in-progress" || node.state === "in-review") return true;
+  return includePlanned && (node.state === "draft" || node.state === "ready");
+}
+
+/** Nodes a scoped call walks, in the order they must move (Foundations, Interactions, Interfaces). */
+function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode[] {
+  let selected: MindPlanNode[];
+  if (args.scope === "all_open_updates") {
+    selected = graph.nodes.filter((n) => isOpenUpdate(n));
+  } else {
+    const seed = findNode(graph, args.node_id!);
+    const ids = new Set<string>([seed.id]);
+    const queue = [seed.id];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const edge of graph.edges) {
+        const hit =
+          (edge.type === "depends_on" && edge.target === current) ||
+          (edge.type === "exposes" && edge.target === current);
+        if (hit && !ids.has(edge.source)) {
+          ids.add(edge.source);
+          queue.push(edge.source);
+        }
+      }
+      // Edges proposed on an open next slot count too: that node ships with the new edge.
+      for (const other of graph.nodes) {
+        if (ids.has(other.id) || !other.next) continue;
+        if (
+          (other.next.depends_on ?? []).includes(current) ||
+          (other.next.exposes ?? []).includes(current)
+        ) {
+          ids.add(other.id);
+          queue.push(other.id);
+        }
+      }
+    }
+    selected = graph.nodes.filter((n) => ids.has(n.id) && isOpenUpdate(n, true));
   }
+  return orderForWalk(graph, selected);
+}
+
+/** Tier order (Foundation, Interaction, Interface), then dependency order within a tier. */
+function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode[] {
+  const inSet = new Set(nodes.map((n) => n.id));
+  const done = new Set<string>();
+  const out: MindPlanNode[] = [];
+  const pending = [...nodes].sort(
+    (a, b) =>
+      (STATUS_TIER[a.type] ?? 99) - (STATUS_TIER[b.type] ?? 99) || a.id.localeCompare(b.id)
+  );
+  while (pending.length > 0) {
+    const index = pending.findIndex((n) =>
+      graph.edges.every(
+        (e) =>
+          !(e.source === n.id && e.type === "depends_on") ||
+          !inSet.has(e.target) ||
+          done.has(e.target)
+      )
+    );
+    const [next] = pending.splice(index < 0 ? 0 : index, 1);
+    done.add(next.id);
+    out.push(next);
+  }
+  return out;
+}
+
+type WalkPlan = { node_id: string; steps: string[] };
+
+/** Steps from a node's active state forward to the target; empty when already there or past. */
+function stepsToTarget(node: MindPlanNode, target: string): string[] {
+  const from = (WALK_PIPELINE as readonly string[]).indexOf(activeState(node));
+  const to = (WALK_PIPELINE as readonly string[]).indexOf(target);
+  if (from < 0 || to < 0 || from >= to) return [];
+  return WALK_PIPELINE.slice(from + 1, to + 1);
+}
+
+/**
+ * Validates every step of a plan in memory against a loaded graph, writing nothing.
+ * Returns the first Blocked reason (naming the node and step), or null.
+ */
+function simulateWalk(plan: WalkPlan[]): { blocked: string | null; warnings: string[] } {
+  const graph = loadGraph();
+  const root = projectRoot();
+  const now = new Date().toISOString();
+  const warnings = new Set<string>();
+  for (const row of plan) {
+    const node = findNode(graph, row.node_id);
+    for (const step of row.steps) {
+      try {
+        const resolved = resolveStatusChange(graph, node, step);
+        if (step === "in-review" || step === "ship") {
+          assertCheckCleanForNode(graph, root, node, step);
+          for (const w of staleTextWarnings(graph, root, node)) warnings.add(w);
+        }
+        if (resolved.promote_next) {
+          node.state = resolved.state;
+          node.shipped_at = node.shipped_at ?? now;
+          delete node.next;
+        } else if (resolved.ship) {
+          node.state = resolved.state;
+          node.shipped_at = now;
+        } else if (node.next && isNextPipelineState(resolved.state)) {
+          node.next.state = resolved.state;
+        } else {
+          node.state = resolved.state;
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const reason = message.replace(/^Blocked:\s*/, "");
+        return { blocked: `Blocked: ${reason} (at "${row.node_id}" -> ${step})`, warnings: [...warnings] };
+      }
+    }
+  }
+  return { blocked: null, warnings: [...warnings] };
+}
+
+function describePlan(plan: WalkPlan[], graph: MindPlanGraph): string[] {
+  return plan.map((row) => {
+    const node = findNode(graph, row.node_id);
+    const to = row.steps[row.steps.length - 1];
+    return `${row.node_id}: ${activeState(node)} -> ${to}`;
+  });
+}
+
+const WARNING_CAP = 10;
+
+function capWarnings(warnings: Iterable<string>): string[] {
+  const list = [...new Set(warnings)];
+  if (list.length <= WARNING_CAP) return list;
+  return [...list.slice(0, WARNING_CAP), `... ${list.length - WARNING_CAP} more warning(s); run run_check for all.`];
+}
+
+/** One line per node: `id: from -> to`, `to` being the next slot state while evolving. */
+function statusLine(row: Record<string, unknown>): string {
+  const to = (row.next_state as string | null) ?? String(row.new_state);
+  return `${String(row.node_id)}: ${String(row.previous_state)} -> ${to}`;
+}
+
+export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
+  const normalized = normalizeStatusArgs(args);
+  const verbose = args.verbose === true;
+
+  if (normalized.mode === "scope") {
+    const graph = loadGraph();
+    const nodes = selectScopedNodes(graph, args);
+    const plan: WalkPlan[] = nodes
+      .map((n) => ({ node_id: n.id, steps: stepsToTarget(n, args.new_status!) }))
+      .filter((row) => row.steps.length > 0);
+    const sim = simulateWalk(plan);
+    if (args.dry_run) {
+      return {
+        dry_run: true,
+        scope: args.scope,
+        plan: describePlan(plan, graph),
+        blocked: sim.blocked,
+        ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
+      };
+    }
+    if (sim.blocked) {
+      throw new Error(
+        `${sim.blocked}. Nothing was written: the whole walk is validated before the first transition.`
+      );
+    }
+    const lines: string[] = [];
+    const changed = new Set<string>();
+    const warnings = new Set<string>(sim.warnings);
+    let last: Record<string, unknown> = {};
+    for (const row of plan) {
+      let first: Record<string, unknown> | null = null;
+      for (const step of row.steps) {
+        last = applyOneStatus({ node_id: row.node_id, new_status: step });
+        first = first ?? last;
+        for (const f of (last.changed_files as string[] | undefined) ?? []) changed.add(f);
+      }
+      lines.push(statusLine({ ...last, previous_state: first!.previous_state }));
+    }
+    return {
+      ordered: true,
+      scope: args.scope,
+      lines,
+      changed_files: [...changed],
+      ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
+      ...(verbose
+        ? {
+            journeys_recomputed: last.journeys_recomputed ?? [],
+            stability_recomputed: last.stability_recomputed ?? [],
+          }
+        : {}),
+    };
+  }
+
+  if (args.dry_run) {
+    const graph = loadGraph();
+    const items =
+      normalized.mode === "batch" ? orderStatusRevisions(normalized.items) : normalized.items;
+    const plan: WalkPlan[] = items.map((i) => ({ node_id: i.node_id, steps: [i.new_status] }));
+    const sim = simulateWalk(plan);
+    return {
+      dry_run: true,
+      plan: describePlan(plan, graph),
+      blocked: sim.blocked,
+      ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
+    };
+  }
+
+  if (normalized.mode === "single") {
+    return applyOneStatus({ ...normalized.items[0], verbose: args.verbose });
+  }
+
   const ordered = orderStatusRevisions(normalized.items);
   const applied: Record<string, unknown>[] = [];
   for (const rev of ordered) {
@@ -570,24 +868,36 @@ export function updateNodeStatus(args: {
     }
   }
   const changed = new Set<string>();
+  const warnings = new Set<string>();
   for (const row of applied) {
     const files = row.changed_files;
     if (Array.isArray(files)) {
       for (const file of files) changed.add(String(file));
     }
+    const rowWarnings = row.warnings;
+    if (Array.isArray(rowWarnings)) {
+      for (const w of rowWarnings) warnings.add(String(w));
+    }
   }
   const last = applied[applied.length - 1] ?? {};
   return {
     ordered: true,
-    applied,
-    stopped_on: null,
-    journeys_recomputed: last.journeys_recomputed ?? [],
-    stability_recomputed: last.stability_recomputed ?? [],
+    lines: applied.map(statusLine),
     changed_files: [...changed],
+    ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
+    ...(verbose
+      ? {
+          applied,
+          stopped_on: null,
+          journeys_recomputed: last.journeys_recomputed ?? [],
+          stability_recomputed: last.stability_recomputed ?? [],
+        }
+      : {}),
   };
 }
 
 function applyOneStatus(args: {
+  verbose?: boolean;
   node_id: string;
   new_status: string;
 }): Record<string, unknown> {
@@ -596,6 +906,12 @@ function applyOneStatus(args: {
   const node = findNode(graph, node_id);
 
   const resolved = resolveStatusChange(graph, node, new_status);
+  // Moves to in-review and ship run the check's import and ownership rules on this node's files.
+  let warnings: string[] = [];
+  if (new_status === "in-review" || new_status === "ship") {
+    assertCheckCleanForNode(graph, projectRoot(), node, new_status);
+    warnings = staleTextWarnings(graph, projectRoot(), node);
+  }
 
   const previous = node.next ? node.next.state : node.state;
   const now = new Date().toISOString();
@@ -626,6 +942,11 @@ function applyOneStatus(args: {
     if (node.leads_to) {
       for (const t of node.leads_to) {
         graph.edges.push({ source: node_id, target: t, type: "leads_to" });
+      }
+    }
+    if (node.mounts) {
+      for (const t of node.mounts) {
+        graph.edges.push({ source: node_id, target: t, type: "mounts" });
       }
     }
   } else if (resolved.ship) {
@@ -689,14 +1010,16 @@ function applyOneStatus(args: {
     next_state: node.next?.state ?? null,
     shipped_at: node.shipped_at,
     promoted_next: promoted,
+    ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     changed_files: changedFiles(files, true),
-    ...buildMutationAnchor(loadGraph(), node_id),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
 export function forceUnship(args: {
+  verbose?: boolean;
   node_id: string;
   confirm: string;
   new_status?: "draft" | "ready" | "in-progress" | "in-review";
@@ -737,20 +1060,30 @@ export function forceUnship(args: {
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     changed_files: changedFiles(files, true),
-    ...buildMutationAnchor(loadGraph(), node_id),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
 export function patchNodeTerritory(args: {
+  verbose?: boolean;
   node_id: string;
   title?: string;
   description?: string;
   role?: FoundationRole;
   body?: string;
   toggle_checkboxes?: { contains: string; checked: boolean }[];
+  section?: string;
+  text?: string;
+  replace?: { find: string; with: string; all?: boolean };
   slot?: TerritorySlot;
 }): Record<string, unknown> {
   const { node_id, title, description, role, body, toggle_checkboxes, slot } = args;
+  if ((args.section === undefined) !== (args.text === undefined)) {
+    throw blocked('patch_node_territory section needs both section ("## Heading") and text.');
+  }
+  if (body !== undefined && (args.section !== undefined || args.replace !== undefined)) {
+    throw blocked("patch_node_territory body replaces the whole body; do not combine it with section or replace.");
+  }
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   const resolvedSlot: TerritorySlot =
@@ -772,7 +1105,12 @@ export function patchNodeTerritory(args: {
     }
     assertPipelineTerritoryScalarsEditable(node, "role", resolvedSlot);
   }
-  if (body !== undefined || (toggle_checkboxes?.length ?? 0) > 0) {
+  if (
+    body !== undefined ||
+    args.section !== undefined ||
+    args.replace !== undefined ||
+    (toggle_checkboxes?.length ?? 0) > 0
+  ) {
     const raw = readMarkdown(node, resolvedSlot);
     if (!splitContext(raw)) {
       throw blocked(`${resolvedSlot} file for "${node_id}" has no YAML frontmatter.`);
@@ -784,6 +1122,8 @@ export function patchNodeTerritory(args: {
     role,
     body,
     toggle_checkboxes,
+    section: args.section !== undefined ? { heading: args.section, text: args.text! } : undefined,
+    replace: args.replace,
     slot: resolvedSlot,
   });
   const pathWritten = territoryPath(node, result.slot);
@@ -792,7 +1132,7 @@ export function patchNodeTerritory(args: {
     ...result,
     path: pathWritten,
     changed_files: changedFiles([pathWritten]),
-    ...buildMutationAnchor(loadGraph(), node_id),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
@@ -821,6 +1161,7 @@ export function patchNodeRules(args: {
 }
 
 export function openNext(args: {
+  verbose?: boolean;
   node_id: string;
   title?: string;
   description?: string;
@@ -843,11 +1184,14 @@ export function openNext(args: {
     current,
     next_path,
     changed_files: changedFiles([next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`], true),
-    ...buildMutationAnchor(loadGraph(), node_id),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
-export function discardNext(args: { node_id: string }): Record<string, unknown> {
+export function discardNext(args: {
+  node_id: string;
+  verbose?: boolean;
+}): Record<string, unknown> {
   const { node_id } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
@@ -867,7 +1211,7 @@ export function discardNext(args: { node_id: string }): Record<string, unknown> 
     restored_mirror: true,
     live_state: node.state,
     changed_files: changedFiles([next_path, ...slotFiles], true),
-    ...buildMutationAnchor(loadGraph(), node_id),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
@@ -920,6 +1264,7 @@ export function patchConfig(args: {
 }
 
 export function putAttachment(args: {
+  verbose?: boolean;
   node_id: string;
   filename: string;
   content_base64: string;
@@ -956,11 +1301,12 @@ export function putAttachment(args: {
     path: rel,
     bytes: bytes.length,
     changed_files: changedFiles([rel]),
-    ...buildMutationAnchor(loadGraph(), node_id),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
 export function removeAttachment(args: {
+  verbose?: boolean;
   node_id: string;
   filename: string;
   slot?: TerritorySlot;
@@ -994,6 +1340,6 @@ export function removeAttachment(args: {
     path: rel,
     removed: true,
     changed_files: changedFiles([rel]),
-    ...buildMutationAnchor(loadGraph(), node_id),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }

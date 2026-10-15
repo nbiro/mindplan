@@ -2,11 +2,11 @@
 id: if-cli
 type: Interface
 title: "CLI"
-description: "Print legacy renames that already succeeded when init stops, print legacy files removed during check or view, and let init choose its host copies with --host."
+description: "Print legacy renames that already succeeded when init stops, print legacy files removed during check or view, let init choose its host copies with --host, and print the check's output and warnings."
 state: mirror
-shipped_at: 2026-10-15T08:56:01.791Z
+shipped_at: 2026-10-15T15:52:14.190Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-15T08:56:01.791Z
+updated_at: 2026-10-15T15:52:14.190Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -22,7 +22,7 @@ implements:
 
 ## Purpose
 
-CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help, output, and exit codes only. Init takes `--host cursor|claude|all` to choose which host copies it installs.
+CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help, output, and exit codes only. Init takes `--host cursor|claude|all` to choose which host copies it installs. `check` prints exactly what the `run_check` tool returns, so the CLI and the agent tool cannot drift apart.
 
 ## Kind
 
@@ -43,6 +43,7 @@ Intended files: `src/interfaces/if-cli/`
 - Remove `--layout` parsing and help
 - Print init migration report from `runInit` when applicable
 - When init stops after applying some renames, print those lines before the error
+- `check` prints `renderCheckOutput(result)`: `mindplan-mcp check: ok` on stdout, or the `Blocked:` lines on stderr and exit 1; `Warning:` lines follow either way and never change the exit code
 - `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
 
 ## Acceptance Criteria
@@ -50,12 +51,13 @@ Intended files: `src/interfaces/if-cli/`
 - `--host claude` and `--host all` work; an unknown host exits non-zero with a Blocked message
 - Help documents `--host`
 - `--layout` is an unknown option
+- `check` output matches the `run_check` tool's `output`; warnings print without failing the check
 - No domain logic under this Interface
 - Verified via smoke
 
 ## Impact
 
-Init gains the `--host` flag. Existing invocations behave as before because the default host is Cursor.
+Init gains the `--host` flag. Existing invocations behave as before because the default host is Cursor. `check` additionally prints `Warning:` lines; its exit code is unchanged.
 
 ## Atomic Ops
 
@@ -66,6 +68,8 @@ Init gains the `--host` flag. Existing invocations behave as before because the 
 - [x] Print legacy deletions from check and view on stderr
 - [x] Parse and document `--host`, print host copies grouped
 - [x] Verified via smoke
+- [x] Print the shared check output and warnings from `check`
+- [x] Verified the check output via the ergonomics suite
 
 ## Attachments
 

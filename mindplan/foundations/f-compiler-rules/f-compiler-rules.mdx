@@ -2,11 +2,11 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — validation-at-transition rules. A next file in state mirror is not an open evolution."
+description: "Infra — validation-at-transition rules, the import matrix with the `mounts` composition root, the import and ownership gate for in-review and ship, and stale-text warnings. A next file in state mirror is not an open evolution."
 state: stable
-shipped_at: 2026-10-11T13:15:38.911Z
+shipped_at: 2026-10-15T16:19:53.236Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-11T13:15:38.911Z
+updated_at: 2026-10-15T16:19:53.236Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -17,11 +17,15 @@ role: infra
 ---
 
 
+
+
+
+
 # Compiler rules
 
 ## Purpose
 
-Infra — validation-at-transition rules. A next file in state `mirror` is not an open evolution: `open_next`, cancel, deprecate, and `force_unship` key off `node.next`, not path existence.
+Infra — validation-at-transition rules. A next file in state `mirror` is not an open evolution: `open_next`, cancel, deprecate, and `force_unship` key off `node.next`, not path existence. The same module owns the import matrix, so the check, the claim step, and the ship gate cannot disagree about which imports are legal, and it names the exact graph edit that would make an illegal one legal.
 
 ## Shared Substrate Spec
 
@@ -30,6 +34,13 @@ Intended files: `src/foundations/f-compiler-rules/`
 - `validateOpenNext` accepts a standing mirror (blocks only when `node.next` is set)
 - Cancel / deprecate / force_unship messages name an open evolution, not mere file presence
 - Pipeline rules continue to evaluate against live or open-evolution slots only
+- `validateLink` accepts `mounts` only as Foundation → Interface; `effectiveMounts(node)` reads `next.mounts` while a Foundation evolves
+- `importAllowed` lets a Foundation import exactly the Interfaces it mounts (a composition root); without the edge a Foundation → Interface import stays illegal
+- `integrity.ts`:
+  - `findAllImportViolations` (whole universe, for the check), `findImportViolationsForClaim` (files being claimed), `findImportViolationsForNode` (a node's active-slot files)
+  - Each `ImportViolation` carries the fix: `{ tool: "link_nodes", args }` with `depends_on`, `exposes`, or `mounts`, or `not_allowed` text when no edge can make the import legal (an Interaction importing an Interface, a `depends_on` that would cycle)
+  - `assertCheckCleanForNode` — the gate for moves to `in-review` and `ship`: import and exclusivity violations on the node's active-slot files become one `Blocked: Check failed …`
+  - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked; relative references (`./`, `../`) are skipped; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
@@ -38,12 +49,24 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - A mirror twin does not block `open_next`
 - An open evolution still blocks a second `open_next`
 - Retire / force_unship wording matches the twin model
+- A registry that mounts two Interfaces may import them; the same import without the edge is illegal and its fix is the `mounts` `link_nodes` call
+- A missing `depends_on` / `exposes` yields the exact `link_nodes` call; an Interaction importing an Interface yields `not allowed`
+- The gate Blocks on an import violation and on a file claimed by two nodes
+- Stale-text signals are warnings and never throw; relative paths and fresh checkouts do not warn
+- Cancelling an Interface is Blocked while an active Foundation mounts it
 - Verified via `npm test`
 
 ## Atomic Ops
 
 - [x] Treat mirror as non-evolution in open_next / cancel / force_unship gates
 - [x] Verified via `npm test`
+- [x] Add `mounts` to `validateLink` and `importAllowed`, and `effectiveMounts`
+- [x] Add `integrity.ts` import violations with fixes
+- [x] Add the in-review / ship gate `assertCheckCleanForNode`
+- [x] Add `staleTextWarnings`
+- [x] Verified the import fixes, mounts, gate, and warnings via `npm test`
+- [x] Block cancelling an Interface that a Foundation still mounts
+- [x] Verified the stale-text and cancel refinements via `npm test`
 
 ## Attachments
 

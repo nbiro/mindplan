@@ -2,11 +2,11 @@
 id: f-test-harness
 type: Foundation
 title: "Test harness"
-description: "Infra — smoke, view, search, and check tests including short instructions and get_project playbook."
+description: "Infra — smoke, view, search, check, and ergonomics tests including short instructions, the get_project playbook and check sentence, run_check, mounts, small writes, section patches, scoped status, drift classes, and stale-text warnings."
 state: mirror
-shipped_at: 2026-10-10T14:10:22.049Z
+shipped_at: 2026-10-15T16:19:54.001Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-10T14:10:22.049Z
+updated_at: 2026-10-15T16:19:54.001Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -15,11 +15,15 @@ role: infra
 ---
 
 
+
+
+
+
 # Test harness
 
 ## Purpose
 
-Regression suite for MindPlan. Assert MCP `initialize` instructions are the short `get_project` pointer, and that `get_project` returns the bundled playbook with the project brief.
+Regression suite for MindPlan. Assert MCP `initialize` instructions are the short `get_project` pointer, and that `get_project` returns the bundled playbook with the project brief and the sentence that names the check. The ergonomics suite covers what keeps an agent's session small and honest: the check is reachable and gates shipping, claims report their import fixes, a registry can mount Interfaces, writes return little by default, one section can be patched, a whole open set ships in one call, drift is classified, and stale text warns.
 
 ## Shared Substrate Spec
 
@@ -27,22 +31,31 @@ Intended files: `src/foundations/f-test-harness/`
 
 - Keep existing ownership / smoke coverage
 - Smoke: instructions === short MUST-call constant
-- Smoke: `get_project` returns empty description/rules in sandbox and `playbook` equal to `templates/agent/playbook.md`
+- Smoke: `get_project` returns empty description/rules in sandbox, `playbook` equal to `templates/agent/playbook.md`, and a `check` sentence naming `run_check` and `mindplan-mcp check`
 - Smoke: init installs `mindplan/project.md`; stub mentions `get_project`
+- Smoke: twenty-five tools including `run_check`; a batch status returns one line per node
+- `ergonomics.test.mjs` (run by `npm test`): `run_check` equals the CLI output; a registry importing two Interfaces gets two `mounts` fixes, passes once both are mounted, and one missing mount stays Blocked; claiming an unlinked import returns the `link_nodes` call; moving such a node to in-review is Blocked; a default write result is small and `verbose` adds the anchor; section and replace patches (including every Blocked case); orient `depth`; a scoped walk with `dry_run`, validate-first, and one-call ship in dependency order (a draft plan that claims files is not walked); drift classes and scoping; stale-text warnings that never fail the check and skip relative paths
+- `check.test.mjs`: drift is scoped to the focus node (a deleted claimed file is found by orienting on its owner)
 
 Depends on: `f-mcp-runtime`.
 
 ## Acceptance Criteria
 
-- Smoke passes with short instructions and get_project playbook payload
+- Smoke passes with short instructions and the get_project playbook and check payload
 - Init / force brief cases still pass
 - Existing ownership cases still fail closed when violated
+- The ergonomics suite passes and fails closed on each behavior above
+- Verified via `npm test`
 
 ## Atomic Ops
 
 - [x] Update smoke for short instructions and get_project.playbook
 - [x] Verified via `npm test`
-- [x] Verified by Reviewer against the contract
+- [x] Add `ergonomics.test.mjs` and run it from `npm test`
+- [x] Update smoke for twenty-five tools, batch lines, and the get_project check sentence
+- [x] Scope the check suite's drift assertions to the focus node
+- [x] Verified the ergonomics suite via `npm test`
+- [x] Cover parked plans and relative paths in the ergonomics suite
 
 ## Attachments
 

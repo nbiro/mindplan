@@ -482,6 +482,10 @@ export function importAllowed(
 
   if (fromOwner.type === "Foundation") {
     if (toOwner.type === "Foundation" && reachableIds.has(toOwner.id)) return true;
+    // A composition root: a Foundation may import exactly the Interfaces it mounts.
+    if (toOwner.type === "Interface" && effectiveMounts(fromOwner).includes(toOwner.id)) {
+      return true;
+    }
     if (effectiveRole(fromOwner) === "assembler") {
       // Assembler may import Interfaces/Interactions that depends_on it (live or next).
       if (toOwner.type === "Interface" || toOwner.type === "Interaction") {
@@ -504,6 +508,7 @@ export function importAllowed(
  *   Interaction|Interface --depends_on--> Foundation
  *   Foundation --depends_on--> Foundation
  *   Interface --exposes--> Interaction
+ *   Foundation --mounts--> Interface
  *   Interaction --leads_to--> Interaction
  *   Bug --affects--> Interaction|Interface|Foundation
  *
@@ -526,6 +531,15 @@ export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeTyp
     ) {
       throw blocked(
         `affects edges must target an Interaction, Interface, or Foundation. Got Bug "${source.id}" -> ${target.type} "${target.id}".`
+      );
+    }
+    return;
+  }
+  if (edgeType === "mounts") {
+    if (source.type !== "Foundation" || target.type !== "Interface") {
+      throw blocked(
+        `mounts edges must go Foundation -> Interface. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}". ` +
+          `A composition root (registry, route dispatcher) is a Foundation that mounts the Interfaces it imports.`
       );
     }
     return;
@@ -606,6 +620,14 @@ export function effectiveExposes(node: MindPlanNode): string[] {
     return node.next.exposes ?? [];
   }
   return node.exposes ?? [];
+}
+
+/** Outgoing mounts: proposed next.mounts while evolving a shipped Foundation. */
+export function effectiveMounts(node: MindPlanNode): string[] {
+  if (node.next && node.type === "Foundation") {
+    return node.next.mounts ?? [];
+  }
+  return node.mounts ?? [];
 }
 
 /** Outgoing leads_to: proposed next.leads_to while evolving a shipped Interaction. */
@@ -1115,6 +1137,14 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
     if (RETIRED_OR_CLOSED.has(other.state)) continue;
     if (other.next?.depends_on?.includes(node.id)) {
       byId.set(other.id, other);
+    }
+  }
+  if (node.type === "Interface") {
+    for (const other of graph.nodes) {
+      if (other.id === node.id || RETIRED_OR_CLOSED.has(other.state)) continue;
+      if (effectiveMounts(other).includes(node.id) || (other.mounts ?? []).includes(node.id)) {
+        byId.set(other.id, other);
+      }
     }
   }
   const activeDependents = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));

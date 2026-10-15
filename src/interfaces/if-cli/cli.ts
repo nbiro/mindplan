@@ -11,7 +11,7 @@ import {
   type InitHost,
   type LegacyTerritoryRename,
 } from "../../interactions/i-init-project/init.js";
-import { runIntegrityCheck } from "../../interactions/i-check-integrity/check.js";
+import { renderCheckOutput, runIntegrityCheck } from "../../interactions/i-check-integrity/check.js";
 import { runViewExport } from "../../interactions/i-export-map/handlers.js";
 
 function parseViewArgs(argv: string[]): {
@@ -86,13 +86,12 @@ function runCheckCli(argv: string[]): void {
     const opts = parseCheckArgs(argv);
     const result = runIntegrityCheck({ base: opts.base });
     printRemovedLegacyFiles(result.removedLegacyFiles);
+    const output = renderCheckOutput(result);
     if (result.ok) {
-      console.log("mindplan-mcp check: ok");
+      console.log(output);
       return;
     }
-    for (const line of result.failures) {
-      console.error(line);
-    }
+    console.error(output);
     process.exit(1);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

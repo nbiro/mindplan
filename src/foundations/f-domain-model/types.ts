@@ -44,7 +44,14 @@ export type JourneyState = (typeof JOURNEY_STATES)[number];
 
 export type NodeState = ExecutionState | ProductionState | JourneyState | BugState;
 
-export const EDGE_TYPES = ["depends_on", "belongs_to", "exposes", "leads_to", "affects"] as const;
+export const EDGE_TYPES = [
+  "depends_on",
+  "belongs_to",
+  "exposes",
+  "leads_to",
+  "affects",
+  "mounts",
+] as const;
 export type EdgeType = (typeof EDGE_TYPES)[number];
 
 export const BUG_SEVERITIES = ["low", "medium", "high", "critical"] as const;
@@ -76,6 +83,8 @@ export interface NextSlot {
   exposes?: string[];
   /** Proposed Interaction → Interaction navigation; applied to current on ship. */
   leads_to?: string[];
+  /** Proposed Foundation → Interface ids; applied to current on ship. */
+  mounts?: string[];
   /** Proposed owned files (repo-relative POSIX; directories end in `/`). */
   implements?: string[];
   /** Proposed Foundation role; applied to current on ship. */
@@ -100,6 +109,11 @@ export interface MindPlanNode {
   exposes?: string[];
   /** MCP-only. Interaction → Interaction navigation (not implementation dependency). */
   leads_to?: string[];
+  /**
+   * MCP-only. Foundation → Interface ids. Declares a composition root: the Foundation
+   * may import exactly those Interfaces (e.g. a registry mounting several template entry points).
+   */
+  mounts?: string[];
   /** MCP-only. Bug → Interaction|Interface|Foundation ids. */
   affects?: string[];
   /**

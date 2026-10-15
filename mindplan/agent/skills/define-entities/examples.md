@@ -399,3 +399,23 @@ update_node_status({ node_id: "i-checkout-split", new_status: "ship" })
 ```
 
 `discard_next({ node_id: "i-checkout-split" })` abandons the evolution at any point — deletes `<id>.next.mdx` and `next-attachments/`; `<id>.mdx` is untouched.
+
+## Example — multi-template platform with a composition root
+
+A platform serves two site templates. Each template is its own entry point (Interface) over the shared actions; one module registers both.
+
+```
+create_node({ id: "f-template-registry", type: "Foundation", role: "infra",
+  title: "Template registry", description: "Infra — imports every template entry point for the route dispatcher and redirect list" })
+set_implementation_files({ node_id: "f-template-registry", files: ["src/foundations/f-template-registry/"] })
+→ import_violations: [
+    { file: ".../registry.ts", imports: "src/interfaces/if-template-a/index.ts",
+      fix: { tool: "link_nodes", args: { source_id: "f-template-registry", target_id: "if-template-a", edge_type: "mounts" } } },
+    { file: ".../registry.ts", imports: "src/interfaces/if-template-b/index.ts",
+      fix: { tool: "link_nodes", args: { source_id: "f-template-registry", target_id: "if-template-b", edge_type: "mounts" } } } ]
+link_nodes({ source_id: "f-template-registry", target_id: "if-template-a", edge_type: "mounts" })
+link_nodes({ source_id: "f-template-registry", target_id: "if-template-b", edge_type: "mounts" })
+run_check({})  → ok
+```
+
+Without the two `mounts` edges the same imports fail `run_check` and the move to `in-review`.

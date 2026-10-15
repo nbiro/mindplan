@@ -202,7 +202,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
     lines.push(`  ${mermaidSafeId(bug.id)}["${nodeLabel(bug)}"]`);
   }
 
-  // Edges: omit belongs_to (encoded by clustering); style depends_on / exposes / leads_to / affects
+  // Edges: omit belongs_to (encoded by clustering); style depends_on / exposes / mounts / leads_to / affects
   for (const e of view.edges) {
     if (e.type === "belongs_to") continue;
     if (!byId.has(e.source) || !byId.has(e.target)) continue;
@@ -228,6 +228,11 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
           ? (instanceMap.get(e.target) ?? [mermaidSafeId(e.target)])[0]
           : mermaidSafeId(e.target);
       lines.push(`  ${src} -->|exposes| ${tgt}`);
+      continue;
+    }
+
+    if (e.type === "mounts") {
+      lines.push(`  ${mermaidSafeId(e.source)} ==>|mounts| ${mermaidSafeId(e.target)}`);
       continue;
     }
 
@@ -378,6 +383,12 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     if (e.type === "exposes") {
       lines.push(
         `  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [style=solid, label="exposes"];`
+      );
+      continue;
+    }
+    if (e.type === "mounts") {
+      lines.push(
+        `  ${dotSafeId(e.source)} -> ${dotSafeId(e.target)} [style=bold, label="mounts"];`
       );
       continue;
     }

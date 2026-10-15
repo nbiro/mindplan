@@ -158,7 +158,7 @@ After create, call `set_implementation_files` for pipeline nodes. Implement **on
 |------|----------------|----------|
 | **Interaction** | `belongs_to` → one or more Journeys; `depends_on` → Foundation(s) only | `link_nodes` per Journey + per Foundation |
 | **Interface** | `exposes` → one or more Interactions; optional `depends_on` → Foundation | `link_nodes` |
-| **Foundation** | optional `depends_on` → other Foundation | `link_nodes` if layered |
+| **Foundation** | optional `depends_on` → other Foundation; `mounts` → Interface(s) when it is a composition root | `link_nodes` if layered or mounting |
 | **Bug** | `affects` → Interaction, Interface, or Foundation (before `triaged`) | `link_nodes` |
 | **Journey** | none (Interactions link to it) | — |
 
@@ -167,6 +167,19 @@ Optional navigation:
 ```
 link_nodes({ source_id: "i-orient-plan", target_id: "i-steer-plan", edge_type: "leads_to" })
 ```
+
+### Composition roots (`mounts`)
+
+A Foundation may not import an Interface, so a module whose job is to import several entry points — a template registry, a route dispatcher, a redirect list — has no legal home on `depends_on` alone. Put it on a Foundation and declare what it mounts:
+
+```
+link_nodes({ source_id: "f-registry", target_id: "if-template-a", edge_type: "mounts" })
+link_nodes({ source_id: "f-registry", target_id: "if-template-b", edge_type: "mounts" })
+```
+
+`mounts` permits exactly those imports and nothing else. A registry that mounts two Interfaces passes `run_check`; the same import without the edge is `Blocked:`. You do not need to guess: `set_implementation_files` on the registry returns each missing `link_nodes` call in `import_violations`.
+
+Multi-template platform: one Interface per template (`if-template-a`, `if-template-b`), each `exposes` the shared Interactions; one Foundation `f-registry` owns `registry.ts` and `mounts` both. Do not model the registry as an Interface (it has no actor surface) or as an Interaction.
 
 `leads_to` is navigation only — not a ship gate and not a substitute for sharing state. Cycles are allowed.
 

@@ -35,11 +35,11 @@ linked Foundations are not stable: "f-payments" (in-progress).
 
 The compiler refuses *illegal* moves; it does not freeze the plan.
 
-- **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`)
+- **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`, `mounts`)
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
 - **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id and a standing `<id>.next.mdx` twin (`state: mirror`); `open_next` flips it to `draft` → build → `ship` promotes over `<id>.mdx` and restores the twin
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
-- **Ship after green check** — the implementer `ship`s when default `mindplan-mcp check` is green and legal transitions allow
+- **Ship after green check** — the implementer `ship`s when `run_check` (the CLI `mindplan-mcp check`) is green and legal transitions allow; moves to `in-review` and `ship` also run its import and ownership rules on the node's files, and `update_node_status` with `scope` walks every open update to ship in one call
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees
@@ -177,7 +177,8 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`) |
+| `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); `depth: rules\|body\|full` trims it |
+| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); illegal imports come with their fix |
 | `find_related_nodes` | read | Rank by query; focus + 1-hop |
 | `get_mindplan_graph` | read | Assembled nodes/edges (`version: 1`) |
 | `export_mindplan_view` | read | Mermaid or DOT |
@@ -204,7 +205,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `mindplan-mcp` | Start MCP server (stdio) |
 | `mindplan-mcp init` | Scaffold territory + agent assets |
 | `mindplan-mcp view` | Print Mermaid/DOT (`export` alias) |
-| `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src |
+| `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src; also the `run_check` MCP tool |
 | `mindplan-mcp help` | Usage |
 
 Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`).
