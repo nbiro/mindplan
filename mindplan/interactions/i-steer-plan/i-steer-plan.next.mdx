@@ -4,9 +4,9 @@ type: Interaction
 title: "Steer the plan"
 description: "Compiler-gated mutate tools: status (single, ordered, or scoped walks with dry_run, gated by the check's import and ownership rules), links including mounts, open_next, territory patches by body, section, or replace, per-node rules writes, separate project description and rules writes, config, and attachments; small results unless verbose."
 state: mirror
-shipped_at: 2026-10-15T15:52:13.324Z
+shipped_at: 2026-10-15T16:19:54.802Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-15T15:52:13.324Z
+updated_at: 2026-10-15T16:19:54.802Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -21,6 +21,10 @@ leads_to:
 implements:
   - src/interactions/i-steer-plan/
 ---
+
+
+
+
 
 
 # Steer the plan
@@ -50,7 +54,7 @@ Intended files: `src/interactions/i-steer-plan/`
 - **Claim-time import scan.** `set_implementation_files` writes the claim, then scans the claimed files with `findImportViolationsForClaim` and returns `import_violations: [{ file, imports, fix | not_allowed }]`; `fix` is the exact `link_nodes` call (`depends_on`, `exposes`, or `mounts`)
 - **Status gate.** A move to `in-review` or `ship` runs `assertCheckCleanForNode` (import and ownership violations on the node's active-slot files) after the transition's own rules and before any write; Blocked with every violation and its fix. `staleTextWarnings` for the node return as `warnings` and never block
 - **Links.** `link_nodes` / `unlink_nodes` handle `mounts` (Foundation → Interface) like `exposes`: written to the next slot while a node evolves, promoted on ship
-- **Scoped status.** `update_node_status` takes `scope` (`all_open_updates` | `node_and_dependents` with `node_id`) and `new_status` as the target. It selects the open updates, orders them Foundations, Interactions, Interfaces (dependency order within a tier), walks each from its active state through `draft → ready → in-progress → in-review → ship`, and first validates the whole walk in memory, writing nothing when any step would be Blocked. `dry_run` returns `{ dry_run, plan, blocked, warnings? }` for any form (single, revisions, scope) without writing
+- **Scoped status.** `update_node_status` takes `scope` (`all_open_updates` | `node_and_dependents` with `node_id`) and `new_status` as the target. It selects the open updates (`all_open_updates`: shipped nodes with an open next and pre-ship nodes that are in-progress or in-review, never draft or ready plans; `node_and_dependents`: the named node plus the nodes that depend on or expose it, including edges proposed on a next slot, at any pre-ship state), orders them Foundations, Interactions, Interfaces (dependency order within a tier), walks each from its active state through `draft → ready → in-progress → in-review → ship`, and first validates the whole walk in memory, writing nothing when any step would be Blocked. `dry_run` returns `{ dry_run, plan, blocked, warnings? }` for any form (single, revisions, scope) without writing
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
@@ -66,6 +70,7 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - Claiming a file that imports from an unlinked node returns the `link_nodes` call; a registry importing Interfaces gets one `mounts` fix per Interface
 - Moving a node whose file has an import violation to `in-review` or `ship` is Blocked, and the Blocked text names the fix
 - `section` rewrites one section and leaves the rest; `replace` is Blocked unless the text matches exactly once (or `all`)
+- `all_open_updates` never walks a draft or ready plan, even one that already claims files
 - A scoped walk ships every open update in one call in dependency order, `dry_run` writes nothing, and a Blocked step writes nothing
 - Verified via `npm test`
 
@@ -93,6 +98,8 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - [x] Add `section` / `replace` to `patch_node_territory`
 - [x] Add `scope` and `dry_run` to `update_node_status`
 - [x] Verified the small results, claim scan, gate, mounts, patches, and scoped walks via `npm test`
+- [x] Keep draft and ready plans out of `all_open_updates` and follow proposed next edges in `node_and_dependents`
+- [x] Verified the scope selection via `npm test`
 
 ## Attachments
 
