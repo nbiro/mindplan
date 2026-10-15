@@ -54,12 +54,16 @@ let failures = 0;
     failures++;
     console.log("FAIL playbook must mention get_rules, plan-project, and ship-on-merge handoff");
   } else console.log("ok   playbook mentions get_rules and plan-project");
+  if (!bundledPlaybook.includes("run_check") || !bundledPlaybook.includes("mindplan-mcp check")) {
+    failures++;
+    console.log("FAIL playbook must name the run_check tool and the CLI mindplan-mcp check");
+  } else console.log("ok   playbook names run_check and mindplan-mcp check");
   const playbookLines = bundledPlaybook.split("\n").length;
   if (playbookLines > 60) {
     failures++;
     console.log(`FAIL playbook should stay one screen (${playbookLines} lines)`);
   } else console.log("ok   playbook is one screen");
-  for (const banned of ["base_sha", "Verdict:", "Atomic Op", "mindplan-mcp check", "Plan Reviewer"]) {
+  for (const banned of ["base_sha", "Verdict:", "Atomic Op", "Plan Reviewer"]) {
     if (bundledPlaybook.includes(banned)) {
       failures++;
       console.log(`FAIL playbook must not contain review/checklist procedure text: "${banned}"`);
@@ -162,6 +166,10 @@ function nextTerritoryPath(...parts) {
       failures++;
       console.log(`FAIL get_project shape (empty brief + playbook): ${gp.text.slice(0, 200)}`);
     } else console.log("ok   get_project returns empty brief + bundled playbook");
+    if (!payload || !String(payload.check ?? "").includes("run_check") || !String(payload.check).includes("mindplan-mcp check")) {
+      failures++;
+      console.log(`FAIL get_project must name the check: ${String(payload?.check)}`);
+    } else console.log("ok   get_project names run_check and mindplan-mcp check");
   }
 }
 
@@ -194,10 +202,10 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  if (names.size !== 24 || !names.has("get_rules") || !names.has("patch_node_rules")) {
+  if (names.size !== 25 || !names.has("get_rules") || !names.has("patch_node_rules") || !names.has("run_check")) {
     failures++;
-    console.log(`FAIL expected 24 tools including get_rules and patch_node_rules (got ${names.size})`);
-  } else console.log("ok   twenty-four tools registered including get_rules and patch_node_rules");
+    console.log(`FAIL expected 25 tools including get_rules, patch_node_rules, and run_check (got ${names.size})`);
+  } else console.log("ok   twenty-five tools registered including get_rules, patch_node_rules, and run_check");
   const nodeRulesTool = (listed.tools ?? []).find((t) => t.name === "patch_node_rules");
   if (!nodeRulesTool?.description?.startsWith("Call when")) {
     failures++;
@@ -2256,7 +2264,7 @@ const batchReady = JSON.parse(
     ],
   })
 );
-const readyIds = (batchReady.applied ?? []).map((row) => row.node_id).join(",");
+const readyIds = (batchReady.lines ?? []).map((line) => line.split(":")[0]).join(",");
 if (readyIds !== "f-ord,i-ord,if-ord") {
   failures++;
   console.log(`FAIL ordered ready sequence: ${readyIds}`);

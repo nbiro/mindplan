@@ -2,11 +2,11 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime"
-description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature code."
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature code; scopes the drift report to the node a result is about."
 state: stable
-shipped_at: 2026-10-12T21:34:22.044Z
+shipped_at: 2026-10-15T15:52:09.548Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-15T11:06:33.105Z
+updated_at: 2026-10-15T15:52:09.548Z
 depends_on:
   - f-territory-store
   - f-framework-docs
@@ -17,13 +17,11 @@ role: assembler
 ---
 
 
-
-
 # MCP runtime
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change; before each action call `get_rules` then `orient_for_work`; before any new-feature code change, update or create nodes using the plan-project skill. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session.
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change; before each action call `get_rules` then `orient_for_work`; before any new-feature code change, update or create nodes using the plan-project skill. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session. It also keeps the drift report small: a result carries drift for the node it is about, plus a count of the rest, never the whole tree's dirty files.
 
 ## Shared Substrate Spec
 
@@ -31,7 +29,7 @@ Package: `src/foundations/f-mcp-runtime/`
 
 - `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
 - Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and plan-project before new-feature code
-- `with-drift.ts` — Assembler helper that calls `buildDriftReport` from `i-check-integrity` (legal because check depends_on this Assembler) so `if-mcp-tools` can attach drift without importing a non-exposed Interaction
+- `with-drift.ts` — Assembler helper that calls `buildDriftReport` from `i-check-integrity` (legal because check depends_on this Assembler) so `if-mcp-tools` can attach drift without importing a non-exposed Interaction. It reads the node ids a payload is about (`node_id`, orient `focus`, link ends, created node) and passes them as `nodeIds`, so the report lists that node's files and only counts other owners' (`other_count`); a payload about no node gets the capped whole-tree report
 - Always pass `{ instructions: SERVER_INSTRUCTIONS }`
 - MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
 - MUST NOT load or append `mindplan/project.md` or the playbook body into instructions
@@ -43,12 +41,15 @@ Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `dep
 - MCP `initialize` instructions equal the short pointer constant
 - Instructions contain neither the playbook body nor `mindplan/project.md` content
 - Boot never fails over a missing brief or playbook file
+- Drift on a result about one node lists that node's files and counts the others
 
 ## Atomic Ops
 
 - [x] Update `SERVER_INSTRUCTIONS` for get_rules, orient_for_work, and plan-project
 - [x] Export `withDrift` for the MCP success envelope
 - [x] Verified via `npm test`
+- [x] Scope `withDrift` to the node a payload is about
+- [x] Verified the scoped drift via `npm test`
 
 ## Attachments
 

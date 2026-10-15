@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status, links, open_next, territory patches, per-node rules writes, separate project description and rules writes, config, and attachments."
+description: "Compiler-gated mutate tools: status (single, ordered, or scoped walks with dry_run, gated by the check's import and ownership rules), links including mounts, open_next, territory patches by body, section, or replace, per-node rules writes, separate project description and rules writes, config, and attachments; small results unless verbose."
 state: mirror
-shipped_at: 2026-10-15T11:45:44.646Z
+shipped_at: 2026-10-15T15:52:13.324Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-15T11:45:44.646Z
+updated_at: 2026-10-15T15:52:13.324Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -23,12 +23,11 @@ implements:
 ---
 
 
-
 # Steer the plan
 
 ## Purpose
 
-Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_node_rules`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, and ordered revisions. `patch_node_rules` is the single writer of a node's rules so a territory rewrite can never silently drop them, and a rules edit never needs a contract evolution because rules are standing constraints, not behavior.
+Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_node_rules`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, ordered revisions, and scoped status walks. `patch_node_rules` is the single writer of a node's rules so a territory rewrite can never silently drop them, and a rules edit never needs a contract evolution because rules are standing constraints, not behavior. Writes are cheap to read and cheap to repeat: a default result is the touched node's state and the changed files, a one-line fix does not resend a body, and a whole open set ships in one call. Claiming files and moving toward review run the same import rules as the check, so an illegal import is caught when it is written, with its fix, not after the node merged.
 
 ## Actor & Trigger
 
@@ -40,13 +39,18 @@ Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), requir
 Intended files: `src/interactions/i-steer-plan/`
 
 - `open_next` / `discard_next` / ship follow the standing twin lifecycle
-- `patch_node_territory` is the required prose path; it preserves the node's `## Rules` section and Blocks a body that contains one, naming `patch_node_rules`
+- `patch_node_territory` is the required prose path; it preserves the node's `## Rules` section and Blocks a body that contains one, naming `patch_node_rules`. Besides `body` it takes `section` + `text` (rewrite one `## heading`'s content) and `replace { find, with, all? }` (one exact edit); `body` cannot be combined with them; `section` without `text` is Blocked
 - `patch_node_rules({ node_id, rules })` replaces the `## Rules` section of that node via `writeNodeRules`; an empty string clears it. Works on any node type in any state except inactive ones (retired, or a closed Bug), including shipped nodes with no open evolution, and never changes state, edges, or checkboxes. With an open evolution it writes the same text to live and next; the mirror twin stays a state-only copy
   - Blocked: unknown node; `cancelled` / `deprecated` node; a Bug that is `resolved` or `wontfix`; rules text containing a level-1 or level-2 heading line
   - Output: `{ node_id, rules, slots: ["current"] | ["current","next"], rules_impact, changed_files }` where `rules_impact` is `{ has_rules, inherited_by }` from `rulesImpact` (`f-graph-search`), so the author sees whose work the edit reaches. `changed_files` lists the live `.mdx` plus the open `.next.mdx` or the refreshed twin; `mindplan/map.md` is not rewritten because rules are not graph structure
 - `patch_project_description` replaces only the brief description; `patch_project_rules` replaces only the brief rules (global, apply everywhere); each leaves the other section unchanged
 - `patch_config`, `put_attachment`, `remove_attachment`
 - First ship and promote restore/create the mirror twin; retire/unship delete it
+- **Small results.** Each single-node write returns its own fields plus `state` and `next_state` and `changed_files`; the record and 1-hop neighborhood (`anchor`) only with `verbose: true`. A batch returns `lines`, one `id: from -> to` per node
+- **Claim-time import scan.** `set_implementation_files` writes the claim, then scans the claimed files with `findImportViolationsForClaim` and returns `import_violations: [{ file, imports, fix | not_allowed }]`; `fix` is the exact `link_nodes` call (`depends_on`, `exposes`, or `mounts`)
+- **Status gate.** A move to `in-review` or `ship` runs `assertCheckCleanForNode` (import and ownership violations on the node's active-slot files) after the transition's own rules and before any write; Blocked with every violation and its fix. `staleTextWarnings` for the node return as `warnings` and never block
+- **Links.** `link_nodes` / `unlink_nodes` handle `mounts` (Foundation → Interface) like `exposes`: written to the next slot while a node evolves, promoted on ship
+- **Scoped status.** `update_node_status` takes `scope` (`all_open_updates` | `node_and_dependents` with `node_id`) and `new_status` as the target. It selects the open updates, orders them Foundations, Interactions, Interfaces (dependency order within a tier), walks each from its active state through `draft → ready → in-progress → in-review → ship`, and first validates the whole walk in memory, writing nothing when any step would be Blocked. `dry_run` returns `{ dry_run, plan, blocked, warnings? }` for any form (single, revisions, scope) without writing
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
@@ -58,6 +62,11 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - With an open evolution the rules appear in both `<id>.mdx` and `<id>.next.mdx`
 - Blocked on unknown id, retired node, closed Bug, or a heading line inside the rules
 - Twin lifecycle wired through status / open_next / discard
+- A default write result has no `anchor`; a single write is under about 1k tokens and a batch of many nodes returns one line per node
+- Claiming a file that imports from an unlinked node returns the `link_nodes` call; a registry importing Interfaces gets one `mounts` fix per Interface
+- Moving a node whose file has an import violation to `in-review` or `ship` is Blocked, and the Blocked text names the fix
+- `section` rewrites one section and leaves the rest; `replace` is Blocked unless the text matches exactly once (or `all`)
+- A scoped walk ships every open update in one call in dependency order, `dry_run` writes nothing, and a Blocked step writes nothing
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -77,6 +86,13 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - [x] Verified `patch_node_rules` via `npm test`
 - [x] Block closed Bugs and build `rules_impact` with `rulesImpact`
 - [x] Verified the closed-Bug Block via `npm test`
+- [x] Return small write results by default (`mutationTail`) and one line per node for a batch
+- [x] Scan claimed files in `set_implementation_files` and return `import_violations` with fixes
+- [x] Gate `in-review` and `ship` on the check's import and ownership rules and return stale-text warnings
+- [x] Handle the `mounts` edge in link, unlink, and promote
+- [x] Add `section` / `replace` to `patch_node_territory`
+- [x] Add `scope` and `dry_run` to `update_node_status`
+- [x] Verified the small results, claim scan, gate, mounts, patches, and scoped walks via `npm test`
 
 ## Attachments
 

@@ -301,12 +301,21 @@ export function getNodeContext(args: { node_id: string }): Record<string, unknow
   return buildNodeContextPayload(node);
 }
 
+/** How much orient_for_work returns: rules + record, plus the body, or everything. */
+export const ORIENT_DEPTHS = ["rules", "body", "full"] as const;
+export type OrientDepth = (typeof ORIENT_DEPTHS)[number];
+
 export function orientForWork(args: {
   query?: string;
   node_id?: string;
   type?: NodeType;
   limit?: number;
+  depth?: OrientDepth;
 }): Record<string, unknown> {
+  const depth: OrientDepth = args.depth ?? "full";
+  if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
+    throw blocked(`orient_for_work depth must be one of: ${ORIENT_DEPTHS.join(", ")}.`);
+  }
   const q = (args.query ?? "").trim();
   if (!q && !args.node_id) {
     throw blocked('orient_for_work requires a non-empty "query" and/or "node_id".');
@@ -329,12 +338,32 @@ export function orientForWork(args: {
     const node = findNode(graph, related.focus);
     context = buildNodeContextPayload(node);
     rules = { node_id: node.id, entries: resolveNodeRules(graph, node.id) };
-    if (isPipelineNodeType(node.type)) {
+    if (depth === "full" && isPipelineNodeType(node.type)) {
       blast_radius = buildBlastRadiusPayload(graph, node);
     }
   }
 
-  return { ...related, context, blast_radius, rules };
+  if (depth === "full") {
+    return { ...related, context, blast_radius, rules };
+  }
+  // Lighter depths keep the ranked matches and the focus, not the neighborhood or blast radius.
+  const slim: Record<string, unknown> = {
+    query: related.query,
+    matches: related.matches,
+    focus: related.focus,
+    rules,
+  };
+  if (context) {
+    if (depth === "body") {
+      slim.context = context;
+    } else {
+      const next = context.next as { record?: unknown } | null;
+      slim.context = { record: context.record, next: next ? { record: next.record } : null };
+    }
+  } else {
+    slim.context = null;
+  }
+  return slim;
 }
 
 /**
@@ -456,6 +485,11 @@ function loadBundledPlaybook(): string {
   );
 }
 
+/** Names the integrity check where an agent cannot miss it: get_project is read first. */
+export const CHECK_HINT =
+  "Run the check with the run_check tool (CLI: mindplan-mcp check) before self-ready, in-review, ship / resolved, " +
+  "and before saying the work is done. It must pass; moves to in-review and ship also run its import and ownership rules on the node's files.";
+
 /**
  * Project brief (description + rules) plus the bundled systems dialect (playbook).
  * Call before the first answer or code change; call again after description/rules change.
@@ -467,6 +501,7 @@ export function getProject(): Record<string, unknown> {
     description: brief.description,
     rules: brief.rules,
     playbook: loadBundledPlaybook(),
+    check: CHECK_HINT,
   };
 }
 

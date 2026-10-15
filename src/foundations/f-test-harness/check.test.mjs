@@ -347,7 +347,8 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
     node_id: "f-wide",
     files: ["src/wide/", "src/lonely/"],
   });
-  const payload = await call("orient_for_work", { node_id: "i-feature" });
+  // Drift is scoped to the focus node, so orient on the owner of the deleted file.
+  const payload = await call("orient_for_work", { node_id: "i-exact" });
   const hit = payload?.drift?.paths?.find((p) => p.path.endsWith("lonely/gone.ts"));
   if (!hit || hit.owner_id !== "i-exact") {
     failures++;

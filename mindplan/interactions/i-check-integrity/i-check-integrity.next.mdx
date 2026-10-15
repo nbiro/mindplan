@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin. Also builds a read-only drift report of uncommitted source files and their owners."
+description: "Default check Blocks illegal imports (each with its fix) and a shipped pipeline node whose next file is missing or is not a state-only twin, warns about stale territory text, and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
 state: mirror
-shipped_at: 2026-10-12T21:34:22.232Z
+shipped_at: 2026-10-15T15:52:11.604Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-12T21:34:22.232Z
+updated_at: 2026-10-15T15:52:11.604Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -19,35 +19,40 @@ implements:
 ---
 
 
-
-
 # Check integrity
 
 ## Purpose
 
-Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`). Also builds a read-only drift report of uncommitted source files and their owners so MCP results can remind the agent without changing default check. A later session that only grepped `src/` would miss those owners.
+Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`), and an illegal import with the exact fix. It prints non-blocking warnings when a node's text no longer matches the repo. The same check is reachable by agents as `run_check`, because a check only the CLI exposes is never run. Also builds a read-only drift report of uncommitted source files and their owners, classified so the actionable files are not buried under expected edits. A later session that only grepped `src/` would miss those owners.
 
 ## Actor & Trigger
 
-- **Actor:** human or CI via `mindplan-mcp check`; MCP tools via `f-mcp-runtime` `withDrift`
-- **Trigger:** CLI check; `buildDriftReport` from the Assembler envelope used by `if-mcp-tools`
+- **Actor:** human or CI via `mindplan-mcp check`; agents via `run_check`; MCP tools via `f-mcp-runtime` `withDrift`
+- **Trigger:** CLI check; `run_check`; `buildDriftReport` from the Assembler envelope used by `if-mcp-tools`
 
 ## PRD / Execution Logic
 
 Intended files: `src/interactions/i-check-integrity/`
 
 - Keep mirror twin and ownership checks
-- `buildDriftReport()` — uncommitted working tree (`git status --porcelain`), including tracked files deleted from disk. Each path has an owner id/state (directory and file claims still match after the file is gone) or is unowned. Null when clean or git unread
-- Default `check` unchanged; shipped neighbor edits still pass
-- `if-mcp-tools` must not import this package (not exposed); the Assembler re-exports the envelope
+- Import rule: `findAllImportViolations` (`f-compiler-rules`); each failure ends with `Fix: link_nodes({...})` or `not allowed: ...`; a Foundation importing an Interface it mounts is legal
+- `runIntegrityCheck` returns `{ ok, failures, warnings, removedLegacyFiles }`; `renderCheckOutput` formats it (`mindplan-mcp check: ok`, or one `Blocked:` line per failure, then `Warning:` lines) for both the CLI and `run_check`
+- Warnings never change `ok` or the exit code: a node in review gets every stale-text signal (body names a missing path, a claimed file changed after the body was updated, unticked checkboxes); a shipped node with no open update gets only the missing-path signal; nodes still being built are skipped
+- `runCheckHandler({ base? })` — the `run_check` handler: `{ ok, output, failures, warnings }`
+- `buildDriftReport({ nodeIds? })` — uncommitted working tree (`git status --porcelain`), including tracked files deleted from disk. Each path is classified: `unowned`; `owner_idle` (shipped owner with no open update, or a pre-ship owner not in-progress); `claimed_missing` (a claimed path gone from disk); or expected (the owner has an open update claiming the file) — expected is only a count. With `nodeIds` it lists those owners' files and counts the rest (`other_count`); lists are capped. Null when there is nothing to act on or git is unread
+- Default `check` still ignores the dirty tree; shipped neighbor edits still pass
+- `if-mcp-tools` imports this package because it exposes it (`run_check`); the Assembler re-exports the drift envelope
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- Drift report lists owned and unowned dirty source paths, including a deleted claimed file
+- `run_check` output equals the CLI check output
+- An illegal import fails the check with its fix; a registry that mounts two Interfaces passes and the same import without the edge is still blocked
+- A stale body path warns without failing the check
+- Drift lists owner_idle, claimed_missing, and unowned files, counts expected edits, and scopes to the focus node
 - Clean tree or git failure yields no report (or empty)
-- Default check behavior unchanged
+- Default check pass/fail behavior otherwise unchanged
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -55,6 +60,11 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Export `buildDriftReport` for uncommitted source ownership
 - [x] Report deleted tracked source paths with their claim owner
 - [x] Verified via `npm test`
+- [x] Use the shared import violations (with fixes) in the import check
+- [x] Add warnings to the check result and `renderCheckOutput`
+- [x] Add `runCheckHandler` for the `run_check` tool
+- [x] Classify drift (unowned, owner_idle, claimed_missing, expected count) and scope it to nodes
+- [x] Verified the check output, warnings, and drift classes via `npm test`
 
 ## Attachments
 

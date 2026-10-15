@@ -72,7 +72,14 @@ const DIR_TO_TYPE: Record<string, NodeType> = {
   bugs: "Bug",
 };
 
-const EDGE_FIELDS = ["belongs_to", "depends_on", "exposes", "leads_to", "affects"] as const;
+const EDGE_FIELDS = [
+  "belongs_to",
+  "depends_on",
+  "exposes",
+  "leads_to",
+  "affects",
+  "mounts",
+] as const;
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
 /** Array fields parsed like edges (YAML list or inline). */
@@ -463,6 +470,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     exposes: [],
     leads_to: [],
     affects: [],
+    mounts: [],
   };
   let implementsList: string[] = [];
 
@@ -521,7 +529,7 @@ function stripListFieldLines(inner: string): string {
   const result: string[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (/^(belongs_to|depends_on|exposes|leads_to|affects|implements):/.test(lines[i])) {
+    if (/^(belongs_to|depends_on|exposes|leads_to|affects|mounts|implements):/.test(lines[i])) {
       i++;
       while (i < lines.length && /^\s+-\s+/.test(lines[i])) i++;
       continue;
@@ -606,6 +614,7 @@ function parseNodeFromFrontmatter(
   if (parsed.arrays.depends_on.length > 0) node.depends_on = [...parsed.arrays.depends_on];
   if (parsed.arrays.exposes.length > 0) node.exposes = [...parsed.arrays.exposes];
   if (parsed.arrays.leads_to.length > 0) node.leads_to = [...parsed.arrays.leads_to];
+  if (parsed.arrays.mounts.length > 0) node.mounts = [...parsed.arrays.mounts];
   if (parsed.arrays.affects.length > 0) node.affects = [...parsed.arrays.affects];
   if (parsed.implements.length > 0) node.implements = [...parsed.implements];
   if (fm.role) {
@@ -657,6 +666,7 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
   if (parsed.arrays.depends_on.length > 0) slot.depends_on = [...parsed.arrays.depends_on];
   if (parsed.arrays.exposes.length > 0) slot.exposes = [...parsed.arrays.exposes];
   if (parsed.arrays.leads_to.length > 0) slot.leads_to = [...parsed.arrays.leads_to];
+  if (parsed.arrays.mounts.length > 0) slot.mounts = [...parsed.arrays.mounts];
   if (parsed.implements.length > 0) slot.implements = [...parsed.implements];
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
@@ -728,6 +738,11 @@ export function discoverEdges(nodes: MindPlanNode[]): MindPlanEdge[] {
     if (node.leads_to) {
       for (const target of node.leads_to) {
         edges.push({ source: node.id, target, type: "leads_to" });
+      }
+    }
+    if (node.mounts) {
+      for (const target of node.mounts) {
+        edges.push({ source: node.id, target, type: "mounts" });
       }
     }
     if (node.affects) {
@@ -887,6 +902,7 @@ export function patchFrontmatterEdges(
     exposes: edges.exposes ?? parsed.arrays.exposes,
     leads_to: edges.leads_to ?? parsed.arrays.leads_to,
     affects: edges.affects ?? parsed.arrays.affects,
+    mounts: edges.mounts ?? parsed.arrays.mounts,
   };
 
   let inner = stripEdgeFieldLines(rawInner);
@@ -908,7 +924,8 @@ export function edgeWriteSlot(node: MindPlanNode, edgeType: EdgeType): Territory
     (edgeType === "belongs_to" ||
       edgeType === "depends_on" ||
       edgeType === "exposes" ||
-      edgeType === "leads_to")
+      edgeType === "leads_to" ||
+      edgeType === "mounts")
   ) {
     return "next";
   }
@@ -962,6 +979,7 @@ export function removeEdgesFromFrontmatter(
         exposes: parsed.arrays.exposes.filter((id) => id !== targetId),
         leads_to: parsed.arrays.leads_to.filter((id) => id !== targetId),
         affects: parsed.arrays.affects.filter((id) => id !== targetId),
+        mounts: parsed.arrays.mounts.filter((id) => id !== targetId),
       },
       now,
       slot
@@ -1361,6 +1379,7 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.depends_on?.length) record.depends_on = [...node.depends_on];
   if (node.exposes?.length) record.exposes = [...node.exposes];
   if (node.leads_to?.length) record.leads_to = [...node.leads_to];
+  if (node.mounts?.length) record.mounts = [...node.mounts];
   if (node.affects?.length) record.affects = [...node.affects];
   if (node.implements?.length) record.implements = [...node.implements];
   if (node.next) {
@@ -1373,6 +1392,7 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
       ...(node.next.depends_on?.length ? { depends_on: [...node.next.depends_on] } : {}),
       ...(node.next.exposes?.length ? { exposes: [...node.next.exposes] } : {}),
       ...(node.next.leads_to?.length ? { leads_to: [...node.next.leads_to] } : {}),
+      ...(node.next.mounts?.length ? { mounts: [...node.next.mounts] } : {}),
       ...(node.next.implements?.length ? { implements: [...node.next.implements] } : {}),
       ...(node.next.role ? { role: node.next.role } : {}),
     };
@@ -1387,9 +1407,90 @@ export type PatchNodeTerritoryInput = {
   /** Foundation role — same slot rules as title/description. */
   role?: FoundationRole;
   toggle_checkboxes?: { contains: string; checked: boolean }[];
+  /** Replace the text under one `## heading` (heading line kept, other sections untouched). */
+  section?: { heading: string; text: string };
+  /** Replace one exact text occurrence in the body (`all` replaces every occurrence). */
+  replace?: { find: string; with: string; all?: boolean };
   /** Override default slot selection. */
   slot?: TerritorySlot;
 };
+
+function detectEol(text: string): "\r\n" | "\n" {
+  return text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+function normalizeHeadingName(heading: string): string {
+  return heading.replace(/^\s*##\s*/, "").trim();
+}
+
+/** Replaces the content under one level-2 heading; Blocked when the heading is missing. */
+export function replaceSectionInBody(
+  body: string,
+  heading: string,
+  text: string
+): string {
+  const name = normalizeHeadingName(heading);
+  if (!name) throw new Error('Blocked: section requires a heading such as "## Purpose".');
+  const eol = detectEol(body);
+  const lines = body.split(/\r?\n/);
+  const headings: { index: number; name: string }[] = [];
+  let fence: string | null = null;
+  lines.forEach((line, index) => {
+    // A '## ' line inside a fenced code block is code, not a heading.
+    const f = line.match(/^\s*(```|~~~)/);
+    if (f) {
+      if (fence === null) fence = f[1];
+      else if (fence === f[1]) fence = null;
+      return;
+    }
+    if (fence !== null) return;
+    const m = line.match(/^##\s+(.+?)\s*$/);
+    if (m) headings.push({ index, name: m[1] });
+  });
+  const hit = headings.find((h) => h.name.toLowerCase() === name.toLowerCase());
+  if (!hit) {
+    throw new Error(
+      `Blocked: no "## ${name}" section in territory body. ` +
+        `Sections: ${headings.map((h) => `"## ${h.name}"`).join(", ") || "(none)"}.`
+    );
+  }
+  const nextHeading = headings.find((h) => h.index > hit.index);
+  const end = nextHeading ? nextHeading.index : lines.length;
+  const replacement = text.replace(/^(\r?\n)+/, "").replace(/(\r?\n)+$/, "").split(/\r?\n/);
+  const out = [
+    ...lines.slice(0, hit.index + 1),
+    "",
+    ...replacement,
+    ...(nextHeading ? [""] : []),
+    ...lines.slice(end),
+    ...(nextHeading ? [] : [""]),
+  ];
+  return out.join(eol);
+}
+
+/** Replaces one exact occurrence of `find` in the body; Blocked on zero or ambiguous matches. */
+export function replaceTextInBody(
+  body: string,
+  find: string,
+  replacement: string,
+  all = false
+): string {
+  if (!find) throw new Error("Blocked: replace.find must be non-empty.");
+  const eol = detectEol(body);
+  const normalizedFind = find.replace(/\r?\n/g, eol);
+  const normalizedWith = replacement.replace(/\r?\n/g, eol);
+  const parts = body.split(normalizedFind);
+  const count = parts.length - 1;
+  if (count === 0) {
+    throw new Error(`Blocked: replace.find text not found in territory body: "${find.slice(0, 80)}".`);
+  }
+  if (count > 1 && !all) {
+    throw new Error(
+      `Blocked: replace.find matches ${count} places in territory body; make it unique or pass all: true.`
+    );
+  }
+  return parts.join(normalizedWith);
+}
 
 /**
  * Default patch target: when a shipped Foundation/Interaction/Interface has `<id>.next.mdx`, patches go to next.
@@ -1515,6 +1616,31 @@ export function patchNodeTerritory(
     patched_fields.push("body");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
+  if (input.section !== undefined) {
+    if (normalizeHeadingName(input.section.heading).toLowerCase() === "rules") {
+      throw new Error(
+        `Blocked: "${NODE_RULES_HEADING}" is written only by patch_node_rules; it cannot be patched as a section.`
+      );
+    }
+    if (hasNodeRulesHeading(input.section.text)) {
+      throw new Error(
+        `Blocked: section text contains a "${NODE_RULES_HEADING}" heading. Node rules are written only by patch_node_rules.`
+      );
+    }
+    body = replaceSectionInBody(body, input.section.heading, input.section.text);
+    patched_fields.push("section");
+    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
+  if (input.replace !== undefined) {
+    if (hasNodeRulesHeading(input.replace.with)) {
+      throw new Error(
+        `Blocked: replace.with contains a "${NODE_RULES_HEADING}" heading. Node rules are written only by patch_node_rules.`
+      );
+    }
+    body = replaceTextInBody(body, input.replace.find, input.replace.with, input.replace.all);
+    patched_fields.push("replace");
+    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
   if (input.toggle_checkboxes?.length) {
     body = toggleCheckboxesInBody(body, input.toggle_checkboxes);
     patched_fields.push("toggle_checkboxes");
@@ -1523,7 +1649,7 @@ export function patchNodeTerritory(
 
   if (patched_fields.length === 0) {
     throw new Error(
-      "Blocked: patch_node_territory requires at least one of title, description, role, body, or toggle_checkboxes."
+      "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, or toggle_checkboxes."
     );
   }
 
@@ -1619,6 +1745,7 @@ export function openNextSlot(
   if (parsed.arrays.depends_on.length) slot.depends_on = [...parsed.arrays.depends_on];
   if (parsed.arrays.exposes.length) slot.exposes = [...parsed.arrays.exposes];
   if (parsed.arrays.leads_to.length) slot.leads_to = [...parsed.arrays.leads_to];
+  if (parsed.arrays.mounts.length) slot.mounts = [...parsed.arrays.mounts];
   if (parsed.implements.length) slot.implements = [...parsed.implements];
   if (parsed.scalars.role && isFoundationRole(parsed.scalars.role)) {
     slot.role = parsed.scalars.role;
@@ -1675,6 +1802,7 @@ export function promoteNextSlot(
   const depends_on = nextParsed.arrays.depends_on;
   const exposes = nextParsed.arrays.exposes;
   const leads_to = nextParsed.arrays.leads_to;
+  const mounts = nextParsed.arrays.mounts;
   const implementsList = nextParsed.implements;
   const role =
     nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
@@ -1707,6 +1835,10 @@ export function promoteNextSlot(
   if (leads_to.length > 0) {
     frontmatterLines.push("leads_to:");
     for (const id of leads_to) frontmatterLines.push(`  - ${id}`);
+  }
+  if (mounts.length > 0) {
+    frontmatterLines.push("mounts:");
+    for (const id of mounts) frontmatterLines.push(`  - ${id}`);
   }
   if (implementsList.length > 0) {
     frontmatterLines.push("implements:");
@@ -1747,6 +1879,8 @@ export function promoteNextSlot(
   else delete node.exposes;
   if (leads_to.length > 0) node.leads_to = [...leads_to];
   else delete node.leads_to;
+  if (mounts.length > 0) node.mounts = [...mounts];
+  else delete node.mounts;
   if (implementsList.length > 0) node.implements = [...implementsList];
   else delete node.implements;
   if (role) node.role = role;

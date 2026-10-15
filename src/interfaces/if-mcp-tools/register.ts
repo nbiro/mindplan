@@ -10,6 +10,7 @@ import { EDGE_TYPES, NODE_TYPES } from "../../foundations/f-domain-model/types.j
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT } from "../../foundations/f-graph-search/search.js";
 import { VIEW_FORMATS } from "../../foundations/f-view-projection/view.js";
 import {
+  ORIENT_DEPTHS,
   findRelatedNodesHandler,
   getBlastRadius,
   getMindPlanGraph,
@@ -21,6 +22,7 @@ import {
 } from "../../interactions/i-orient-plan/handlers.js";
 import { withDrift } from "../../foundations/f-mcp-runtime/with-drift.js";
 import {
+  STATUS_SCOPES,
   createNode,
   discardNext,
   forceUnship,
@@ -37,6 +39,7 @@ import {
   unlinkNodes,
   updateNodeStatus,
 } from "../../interactions/i-steer-plan/handlers.js";
+import { runCheckHandler } from "../../interactions/i-check-integrity/check.js";
 import { exportMindPlanViewHandler } from "../../interactions/i-export-map/handlers.js";
 import { FOUNDATION_ROLES } from "../../foundations/f-domain-model/types.js";
 import { drainRemovedLegacyFiles } from "../../foundations/f-territory-store/store.js";
@@ -68,15 +71,17 @@ function withRemovedLegacyFiles(payload: unknown): unknown {
 
 /**
  * Wrap a handler with the §5.1 error contract. Successful results carry `drift`
- * unless `drift: false` — get_project and get_rules run before every action, so
- * drift rides on orient_for_work and the write tools instead.
+ * (scoped to the touched node) unless `drift: false` — get_project and get_rules run before
+ * every action, so drift rides on orient_for_work and the read tools instead. A `write` tool
+ * carries it only with `verbose: true`, so a default write stays small.
  */
 function guarded<A>(
   handler: (args: A) => unknown,
-  options: { drift?: boolean } = {}
+  options: { drift?: boolean; write?: boolean } = {}
 ): (args: A) => ToolResult {
-  const attachDrift = options.drift !== false;
   return (args: A) => {
+    const verbose = (args as { verbose?: boolean } | undefined)?.verbose === true;
+    const attachDrift = options.drift !== false && (!options.write || verbose);
     try {
       const payload = withRemovedLegacyFiles(handler(args));
       return ok(attachDrift ? withDrift(payload) : payload);
@@ -92,12 +97,38 @@ function guarded<A>(
   };
 }
 
+const VERBOSE = z
+  .boolean()
+  .optional()
+  .describe(
+    "Also return the node's record, its 1-hop neighborhood, and drift. Default false: a write returns { node_id, state, next_state, changed_files }."
+  );
+
 const NODE_ID = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-_]*$/, "ids must be kebab_case/slug style: lowercase letters, digits, - and _");
 
 /** Register every MindPlan MCP tool onto the given server. */
 export function registerMindPlanTools(server: McpServer): void {
+  server.registerTool(
+    "run_check",
+    {
+      title: "Run the integrity check",
+      description:
+        "Call before in-review, before ship, and before telling the user the work is done. " +
+        "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence, mirror twins, leftovers, and the import matrix. " +
+        "Returns { ok, output, failures, warnings }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import). " +
+        "Warnings flag stale territory text and never fail the check. Moves to in-review and ship run this check on the node's files themselves.",
+      inputSchema: {
+        base: z
+          .string()
+          .optional()
+          .describe("Opt-in: also enforce dirty-src ownership against this git ref (not used by CI)."),
+      },
+    },
+    guarded(({ base }) => runCheckHandler({ base }), { drift: false })
+  );
+
   server.registerTool(
     "get_mindplan_graph",
     {
@@ -239,10 +270,16 @@ export function registerMindPlanTools(server: McpServer): void {
           .max(MAX_FIND_LIMIT)
           .optional()
           .describe(`Max ranked matches (default ${DEFAULT_FIND_LIMIT}).`),
+        depth: z
+          .enum(ORIENT_DEPTHS)
+          .optional()
+          .describe(
+            "rules: the node's rules and record only. body: also its body. full (default): also the neighborhood and blast radius."
+          ),
       },
     },
-    guarded(({ query, node_id, type, limit }) =>
-      orientForWork({ query, node_id, type, limit })
+    guarded(({ query, node_id, type, limit, depth }) =>
+      orientForWork({ query, node_id, type, limit, depth })
     )
   );
 
@@ -279,10 +316,13 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Patch node territory",
       description:
         "Call when a node's title, description, or body should match the work, before the feature code. Follow the plan-project skill. " +
-        "Required writer for territory prose: body (PRD, checklists), optional title/description/role " +
-        "(pre-ship or open evolution), toggle_checkboxes. Do not edit mindplan/ MDX with host file tools. " +
+        "Required writer for territory prose: body (whole body), section + text (rewrite one ## section), " +
+        "replace { find, with } (one exact edit), toggle_checkboxes, optional title/description/role " +
+        "(pre-ship or open evolution). Prefer section/replace for small fixes: they do not resend the body. " +
+        "Do not edit mindplan/ MDX with host file tools. " +
         "When a shipped node has an open evolution (not a mirror twin), patches default to next. Optional slot: current|next.",
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.describe("Node whose territory to patch."),
         title: z
           .string()
@@ -298,6 +338,24 @@ export function registerMindPlanTools(server: McpServer): void {
           .optional()
           .describe("Foundation role (pre-ship or next slot)."),
         body: z.string().optional().describe("Replace entire territory body below frontmatter."),
+        section: z
+          .string()
+          .optional()
+          .describe(
+            'Heading of one section to rewrite, e.g. "## Purpose". Needs text. Other sections and the heading line stay as they are.'
+          ),
+        text: z
+          .string()
+          .optional()
+          .describe("Replacement text for the section named by section."),
+        replace: z
+          .object({
+            find: z.string().min(1).describe("Exact text to find in the body (must be unique unless all)."),
+            with: z.string().describe("Replacement text."),
+            all: z.boolean().optional().describe("Replace every occurrence."),
+          })
+          .optional()
+          .describe("Replace one exact piece of the body without resending it."),
         toggle_checkboxes: z
           .array(
             z.object({
@@ -313,8 +371,34 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Territory slot to patch. Defaults to next when an open evolution exists."),
       },
     },
-    guarded(({ node_id, title, description, role, body, toggle_checkboxes, slot }) =>
-      patchNodeTerritory({ node_id, title, description, role, body, toggle_checkboxes, slot })
+    guarded(
+      ({
+        node_id,
+        title,
+        description,
+        role,
+        body,
+        section,
+        text,
+        replace,
+        toggle_checkboxes,
+        slot,
+        verbose,
+      }) =>
+        patchNodeTerritory({
+          node_id,
+          title,
+          description,
+          role,
+          body,
+          section,
+          text,
+          replace,
+          toggle_checkboxes,
+          slot,
+          verbose,
+        }),
+      { write: true }
     )
   );
 
@@ -336,7 +420,7 @@ export function registerMindPlanTools(server: McpServer): void {
           ),
       },
     },
-    guarded(({ node_id, rules }) => patchNodeRules({ node_id, rules }))
+    guarded(({ node_id, rules }) => patchNodeRules({ node_id, rules }), { write: true })
   );
 
   server.registerTool(
@@ -353,7 +437,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Replace the ## Description section body. Empty string clears it."),
       },
     },
-    guarded(({ description }) => patchProjectDescription({ description }))
+    guarded(({ description }) => patchProjectDescription({ description }), { write: true })
   );
 
   server.registerTool(
@@ -370,7 +454,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Replace the ## Rules section body. Empty string clears it."),
       },
     },
-    guarded(({ rules }) => patchProjectRules({ rules }))
+    guarded(({ rules }) => patchProjectRules({ rules }), { write: true })
   );
 
   server.registerTool(
@@ -392,7 +476,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Glob list excluded from the universe (replaces exclude when set)."),
       },
     },
-    guarded(({ sources, exclude }) => patchConfig({ sources, exclude }))
+    guarded(({ sources, exclude }) => patchConfig({ sources, exclude }), { write: true })
   );
 
   server.registerTool(
@@ -404,14 +488,17 @@ export function registerMindPlanTools(server: McpServer): void {
         "Writes a file under attachments/ (or next-attachments/ while evolving) as base64. " +
         "Slot defaults to next when an open evolution exists.",
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.describe("Node that owns the attachment."),
         filename: z.string().min(1).describe("Basename only (no path separators)."),
         content_base64: z.string().describe("File bytes encoded as base64."),
         slot: z.enum(["current", "next"]).optional().describe("Attachment slot override."),
       },
     },
-    guarded(({ node_id, filename, content_base64, slot }) =>
-      putAttachment({ node_id, filename, content_base64, slot })
+    guarded(
+      ({ node_id, filename, content_base64, slot, verbose }) =>
+        putAttachment({ node_id, filename, content_base64, slot, verbose }),
+      { write: true }
     )
   );
 
@@ -424,12 +511,17 @@ export function registerMindPlanTools(server: McpServer): void {
         "Deletes a file under attachments/ (or next-attachments/ while evolving). " +
         "Slot defaults to next when an open evolution exists.",
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.describe("Node that owns the attachment."),
         filename: z.string().min(1).describe("Basename only (no path separators)."),
         slot: z.enum(["current", "next"]).optional().describe("Attachment slot override."),
       },
     },
-    guarded(({ node_id, filename, slot }) => removeAttachment({ node_id, filename, slot }))
+    guarded(
+      ({ node_id, filename, slot, verbose }) =>
+        removeAttachment({ node_id, filename, slot, verbose }),
+      { write: true }
+    )
   );
 
   server.registerTool(
@@ -442,6 +534,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Pre-ship writes current; shipped writes only an open next (else Blocked → open_next); " +
         "retired nodes may only shrink. Rejects bad paths and ownership conflicts.",
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.describe("Pipeline node whose implements list to replace."),
         files: z
           .array(z.string())
@@ -454,7 +547,11 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Optional slot override. Defaults by lifecycle."),
       },
     },
-    guarded(({ node_id, files, slot }) => setImplementationFiles({ node_id, files, slot }))
+    guarded(
+      ({ node_id, files, slot, verbose }) =>
+        setImplementationFiles({ node_id, files, slot, verbose }),
+      { write: true }
+    )
   );
 
   server.registerTool(
@@ -466,6 +563,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
         "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold).",
       inputSchema: {
+        verbose: VERBOSE,
         id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
         type: z.enum(NODE_TYPES).describe("Journey | Interaction | Interface | Foundation | Bug"),
         title: z.string().min(1).describe("Human-readable title (written to <id>.mdx frontmatter)."),
@@ -476,8 +574,10 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Required for Foundation: assembler | infra | design-system | adapter."),
       },
     },
-    guarded(({ id, type, title, description, role }) =>
-      createNode({ id, type, title, description, role })
+    guarded(
+      ({ id, type, title, description, role, verbose }) =>
+        createNode({ id, type, title, description, role, verbose }),
+      { write: true }
     )
   );
 
@@ -489,19 +589,22 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call when two existing nodes should be connected, as part of the plan-project skill. " +
         "Adds an edge to the DAG. Legal shapes: Interaction -belongs_to-> Journey, " +
         "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
-        "Interface -exposes-> Interaction, Interaction -leads_to-> Interaction, " +
+        "Interface -exposes-> Interaction, Foundation -mounts-> Interface (a composition root that imports Interfaces), Interaction -leads_to-> Interaction, " +
         "Bug -affects-> Interaction|Interface|Foundation. " +
         "While a node has <id>.next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship).",
       inputSchema: {
+        verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),
         target_id: NODE_ID.describe("The id of the edge target node."),
         edge_type: z
           .enum(EDGE_TYPES)
-          .describe("belongs_to | depends_on | exposes | leads_to | affects"),
+          .describe("belongs_to | depends_on | exposes | leads_to | affects | mounts"),
       },
     },
-    guarded(({ source_id, target_id, edge_type }) =>
-      linkNodes({ source_id, target_id, edge_type })
+    guarded(
+      ({ source_id, target_id, edge_type, verbose }) =>
+        linkNodes({ source_id, target_id, edge_type, verbose }),
+      { write: true }
     )
   );
 
@@ -515,6 +618,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Optional title/description overrides. Does not reset checkboxes. The live node keeps serving. " +
         "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror.",
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.describe(
           "Id of the shipped Foundation, Interaction, or Interface to evolve."
         ),
@@ -522,7 +626,11 @@ export function registerMindPlanTools(server: McpServer): void {
         description: z.string().optional().describe("Optional new description for the next slot."),
       },
     },
-    guarded(({ node_id, title, description }) => openNext({ node_id, title, description }))
+    guarded(
+      ({ node_id, title, description, verbose }) =>
+        openNext({ node_id, title, description, verbose }),
+      { write: true }
+    )
   );
 
   server.registerTool(
@@ -534,10 +642,11 @@ export function registerMindPlanTools(server: McpServer): void {
         "Abandons an in-flight evolution and restores <id>.next.mdx as a state: mirror twin of the live file. " +
         "Clears next-attachments/. The live <id>.mdx is unchanged.",
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.describe("Id of the node whose open evolution to discard."),
       },
     },
-    guarded(({ node_id }) => discardNext({ node_id }))
+    guarded(({ node_id, verbose }) => discardNext({ node_id, verbose }), { write: true })
   );
 
   server.registerTool(
@@ -573,11 +682,15 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call when an existing edge should go away, as part of the plan-project skill. " +
         "Removes edge(s) between two nodes from the source node's frontmatter.",
       inputSchema: {
+        verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),
         target_id: NODE_ID.describe("The id of the edge target node."),
       },
     },
-    guarded(({ source_id, target_id }) => unlinkNodes({ source_id, target_id }))
+    guarded(
+      ({ source_id, target_id, verbose }) => unlinkNodes({ source_id, target_id, verbose }),
+      { write: true }
+    )
   );
 
   server.registerTool(
@@ -591,8 +704,12 @@ export function registerMindPlanTools(server: McpServer): void {
         "When an open evolution exists (not a mirror twin), build-pipeline transitions apply to the next slot; " +
         "ship promotes next over current and restores the mirror twin. " +
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
+        "Pass scope + new_status to walk every open update (or a node and its dependents) to a target in one call, validated before the first write; dry_run previews it. " +
+        "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
+        "A batch returns one line per node. " +
         "Journey and production stable/unstable are computed automatically.",
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.optional().describe(
           "The id of the single node to transition. Mutually exclusive with revisions."
         ),
@@ -605,6 +722,20 @@ export function registerMindPlanTools(server: McpServer): void {
               "From stable/unstable: deprecated only (or open_next then build/ship next). " +
               "Pre-ship abandon: cancelled from draft|ready|in-progress|in-review. " +
               "Required with node_id. Omit when using revisions."
+          ),
+        scope: z
+          .enum(STATUS_SCOPES)
+          .optional()
+          .describe(
+            "Walk many nodes in one call to the new_status target: all_open_updates (every shipped node with an open next, and every pre-ship node being built: in-progress, in-review, or claiming files) " +
+              "or node_and_dependents (node_id plus its open dependents). The server orders Foundations, Interactions, Interfaces, " +
+              "walks each node through the pipeline, and validates the whole walk before writing anything. Target: ready | in-progress | in-review | ship."
+          ),
+        dry_run: z
+          .boolean()
+          .optional()
+          .describe(
+            "Validate and return the plan and the first Blocked reason without writing anything."
           ),
         revisions: z
           .array(
@@ -620,7 +751,7 @@ export function registerMindPlanTools(server: McpServer): void {
           ),
       },
     },
-    guarded((args) => updateNodeStatus(args))
+    guarded((args) => updateNodeStatus(args), { write: true })
   );
 
   server.registerTool(
@@ -633,6 +764,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
         'Requires confirm exactly equal to "unship:<node_id>". Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin.',
       inputSchema: {
+        verbose: VERBOSE,
         node_id: NODE_ID.describe(
           "Stable/unstable Foundation, Interaction, or Interface to unship."
         ),
@@ -645,8 +777,10 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Pre-ship target state (default ready)."),
       },
     },
-    guarded(({ node_id, confirm, new_status }) =>
-      forceUnship({ node_id, confirm, new_status })
+    guarded(
+      ({ node_id, confirm, new_status, verbose }) =>
+        forceUnship({ node_id, confirm, new_status, verbose }),
+      { write: true }
     )
   );
 }

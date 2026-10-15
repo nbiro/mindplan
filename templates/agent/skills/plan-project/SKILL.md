@@ -100,7 +100,7 @@ On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. 
 
 When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
-1. Default `mindplan-mcp check` exits `0`. Fix every `Blocked:` first.
+1. `run_check` (CLI `mindplan-mcp check`) returns ok. Fix every `Blocked:` first.
 2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces).
 3. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
 
@@ -110,7 +110,7 @@ When the user says **“ship the plan”**, **“ship it”** (in a plan-only se
 
 Requirements before self-ready:
 
-- Default `mindplan-mcp check` exits `0`
+- `run_check` returns ok (same as `mindplan-mcp check` exiting `0`)
 - Links complete (Interactions: at least one `belongs_to` + one Foundation `depends_on`; Interfaces: at least one `exposes`; Bugs past `open`: `affects`)
 - Territory is a full contract with **unchecked** Atomic Ops
 - Call `update_node_status` → `ready` yourself, one `revisions` call for the set

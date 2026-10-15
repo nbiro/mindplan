@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (37 nodes, 97 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (37 nodes, 98 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -138,6 +138,7 @@ flowchart TB
   if_mcp_tools --> f_graph_search
   if_mcp_tools --> f_mcp_runtime
   if_mcp_tools --> f_view_projection
+  if_mcp_tools -->|exposes| i_check_integrity__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_export_map__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_orient_plan__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_steer_plan__in__j_plan_console

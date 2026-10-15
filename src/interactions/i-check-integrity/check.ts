@@ -12,9 +12,11 @@ import {
   isProductionState,
 } from "../../foundations/f-domain-model/types.js";
 import {
-  effectiveRole,
-  importAllowed,
-} from "../../foundations/f-compiler-rules/rules.js";
+  STALE_ALL,
+  STALE_PATHS_ONLY,
+  findAllImportViolations,
+  staleTextWarnings,
+} from "../../foundations/f-compiler-rules/integrity.js";
 import {
   buildOwnershipIndex,
   exclusiveOwner,
@@ -23,7 +25,6 @@ import {
   type OwnershipBuckets,
 } from "../../foundations/f-source-index/ownership.js";
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
-import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
 import {
   drainRemovedLegacyFiles,
@@ -62,6 +63,8 @@ export interface CheckOptions {
 export interface CheckResult {
   ok: boolean;
   failures: string[];
+  /** Non-blocking: territory text that no longer matches the repo. Never changes `ok`. */
+  warnings: string[];
   /** Legacy territory files deleted while loading the graph. */
   removedLegacyFiles: RemovedLegacyFile[];
 }
@@ -322,29 +325,29 @@ function checkImports(
   root: string,
   failures: string[]
 ): void {
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const universe = listUniverseFiles(root);
-  for (const file of universe) {
-    if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file)) continue;
-    const fromOwnerId = exclusiveOwner(buckets, file);
-    if (!fromOwnerId) continue;
-    const fromOwner = byId.get(fromOwnerId);
-    if (!fromOwner) continue;
+  for (const violation of findAllImportViolations(graph, buckets, root)) {
+    fail(failures, violation.message);
+  }
+}
 
-    for (const edge of listResolvedImports(file, root)) {
-      const toOwnerId = exclusiveOwner(buckets, edge.to);
-      if (!toOwnerId) continue;
-      const toOwner = byId.get(toOwnerId);
-      if (!toOwner) continue;
-      if (importAllowed(fromOwner, toOwner, graph)) continue;
-      fail(
-        failures,
-        `imports: "${file}" (owner "${fromOwnerId}") may not import "${edge.to}" ` +
-          `(owner "${toOwnerId}" / ${toOwner.type}` +
-          `${toOwner.type === "Foundation" ? ` role=${effectiveRole(toOwner) ?? "?"}` : ""}).`
-      );
+/**
+ * Stale-text warnings. A node in review gets every signal (it is about to ship). A shipped node
+ * with no open update gets only the missing-path signal. Nodes still being built are skipped:
+ * they are expected to name files they have not written yet.
+ */
+function collectWarnings(graph: MindPlanGraph, root: string): string[] {
+  const warnings: string[] = [];
+  for (const node of graph.nodes) {
+    if (!isPipelineNodeType(node.type)) continue;
+    if (RETIRED_STATES.has(node.state)) continue;
+    const active = node.next ? node.next.state : node.state;
+    if (active === "in-review") {
+      warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_ALL));
+    } else if (!node.next && isProductionState(node.state)) {
+      warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_PATHS_ONLY));
     }
   }
+  return warnings;
 }
 
 function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
@@ -450,22 +453,42 @@ function checkDirtySrc(
   }
 }
 
+/**
+ * Drift classes (SPEC §5.1 `drift`):
+ * - `owner_idle`: the file is owned by a node with no open update (a shipped node with no
+ *   open next, or a pre-ship node that is not in-progress).
+ * - `claimed_missing`: a node claims a path that is missing from disk (a deleted tracked file).
+ * - `unowned`: an in-universe file with no owner.
+ * - `expected`: the owner has an open update that claims the file. Reported as a count only.
+ */
+export type DriftClass = "owner_idle" | "claimed_missing";
+
 export type DriftPath = {
   path: string;
   owner_id: string;
   state: string;
   next_state: string | null;
+  class: DriftClass;
 };
 
 export type DriftReport = {
   paths: DriftPath[];
   unowned: string[];
+  /** Dirty files whose owner has an open update claiming them. */
+  expected: number;
+  /** Entries beyond the per-list cap (lists are capped so one write stays small). */
+  more?: number;
+  /** When scoped to nodes: dirty owned files that belong to other nodes. */
+  other_count?: number;
   reminder: string;
 };
 
 const DRIFT_REMINDER =
   "Update each owner so the graph matches before you say this is done. " +
   "A shipped contract change uses open_next; if the behavior did not change, the graph already matches.";
+
+/** Per-list cap for scoped and default drift lists. */
+const DRIFT_LIST_CAP = 20;
 
 function claimCoversPath(claim: string, rel: string): boolean {
   const normalized = claim.trim().replace(/\\/g, "/");
@@ -507,11 +530,32 @@ function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
   return best?.id ?? null;
 }
 
+/** True when the owner has an open update that is allowed to be editing `rel` right now. */
+function hasOpenUpdateFor(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  node: MindPlanNode,
+  rel: string
+): boolean {
+  if (node.next) {
+    if (ACTIVE_BUILD.has(node.next.state) && buckets.next.get(rel) === node.id) return true;
+    return bugAllowsDirty(graph, node.id);
+  }
+  if (!node.shipped_at && ACTIVE_BUILD.has(node.state)) return true;
+  return bugAllowsDirty(graph, node.id);
+}
+
+export interface DriftOptions {
+  cwd?: string;
+  /** Report only these owners' files in detail; other owned files become `other_count`. */
+  nodeIds?: string[];
+}
+
 /**
- * Read-only report of uncommitted source files and their implements owners.
- * Returns null when the tree is clean or git cannot be read. Does not change default check.
+ * Read-only report of uncommitted source files and their implements owners, classified.
+ * Returns null when there is nothing to report or git cannot be read. Does not change default check.
  */
-export function buildDriftReport(options: { cwd?: string } = {}): DriftReport | null {
+export function buildDriftReport(options: DriftOptions = {}): DriftReport | null {
   const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
   const prev = process.env.MINDPLAN_ROOT;
   if (options.cwd) {
@@ -528,24 +572,42 @@ export function buildDriftReport(options: { cwd?: string } = {}): DriftReport | 
     }
     if (dirty.workingTree.length === 0) return null;
 
+    const scope = options.nodeIds && options.nodeIds.length > 0 ? new Set(options.nodeIds) : null;
     const buckets = buildOwnershipIndex(graph, root);
     const universe = new Set(listUniverseFiles(root));
     const byId = new Map(graph.nodes.map((n) => [n.id, n]));
     const paths: DriftPath[] = [];
     const unowned: string[] = [];
+    let expected = 0;
+    let otherCount = 0;
 
     for (const rel of dirty.workingTree) {
+      const exists = fs.existsSync(path.join(root, ...rel.split("/")));
       const ownerId =
         exclusiveOwner(buckets, rel) ??
         ownerOfFile(buckets, rel)?.id ??
         ownerFromClaims(graph, rel);
-      if (!ownerId) {
+      const node = ownerId ? byId.get(ownerId) : undefined;
+      if (!node) {
         if (universe.has(rel)) unowned.push(rel);
         continue;
       }
-      const node = byId.get(ownerId);
-      if (!node) {
-        unowned.push(rel);
+      if (scope && !scope.has(node.id)) {
+        otherCount += 1;
+        continue;
+      }
+      if (!exists) {
+        paths.push({
+          path: rel,
+          owner_id: node.id,
+          state: node.state,
+          next_state: node.next?.state ?? null,
+          class: "claimed_missing",
+        });
+        continue;
+      }
+      if (hasOpenUpdateFor(graph, buckets, node, rel)) {
+        expected += 1;
         continue;
       }
       paths.push({
@@ -553,11 +615,28 @@ export function buildDriftReport(options: { cwd?: string } = {}): DriftReport | 
         owner_id: node.id,
         state: node.state,
         next_state: node.next?.state ?? null,
+        class: "owner_idle",
       });
     }
 
-    if (paths.length === 0 && unowned.length === 0) return null;
-    return { paths, unowned, reminder: DRIFT_REMINDER };
+    let more = 0;
+    const capped = <T>(list: T[]): T[] => {
+      if (list.length <= DRIFT_LIST_CAP) return list;
+      more += list.length - DRIFT_LIST_CAP;
+      return list.slice(0, DRIFT_LIST_CAP);
+    };
+    const report: DriftReport = {
+      paths: capped(paths),
+      unowned: capped(unowned),
+      expected,
+      reminder: DRIFT_REMINDER,
+    };
+    if (more > 0) report.more = more;
+    if (scope) report.other_count = otherCount;
+
+    // Only expected edits: a count with no action to take is noise.
+    if (paths.length === 0 && unowned.length === 0 && !(scope && otherCount > 0)) return null;
+    return report;
   } catch {
     return null;
   } finally {
@@ -573,6 +652,7 @@ export function buildDriftReport(options: { cwd?: string } = {}): DriftReport | 
  */
 export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   const failures: string[] = [];
+  const warnings: string[] = [];
   const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
   const prev = process.env.MINDPLAN_ROOT;
   if (options.cwd) {
@@ -591,7 +671,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
       if (prev === undefined) delete process.env.MINDPLAN_ROOT;
       else process.env.MINDPLAN_ROOT = prev;
     }
-    return { ok: false, failures, removedLegacyFiles: drainRemovedLegacyFiles() };
+    return { ok: false, failures, warnings, removedLegacyFiles: drainRemovedLegacyFiles() };
   }
 
   try {
@@ -601,6 +681,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     checkMirrorTwins(graph, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, failures);
+    warnings.push(...collectWarnings(graph, root));
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, options.base, failures);
     }
@@ -614,5 +695,37 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     }
   }
 
-  return { ok: failures.length === 0, failures, removedLegacyFiles: drainRemovedLegacyFiles() };
+  return {
+    ok: failures.length === 0,
+    failures,
+    warnings,
+    removedLegacyFiles: drainRemovedLegacyFiles(),
+  };
+}
+
+/**
+ * The text `mindplan-mcp check` prints: `mindplan-mcp check: ok` or one `Blocked:` line
+ * per failure, then any warnings. The CLI and the run_check tool share it.
+ */
+export function renderCheckOutput(result: CheckResult): string {
+  const lines = result.ok ? ["mindplan-mcp check: ok"] : [...result.failures];
+  for (const warning of result.warnings) lines.push(`Warning: ${warning}`);
+  return lines.join("\n");
+}
+
+/**
+ * `run_check` MCP handler: the same text `mindplan-mcp check` prints, plus the parts split out.
+ * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings.
+ */
+export function runCheckHandler(args: { base?: string } = {}): Record<string, unknown> {
+  const result = runIntegrityCheck({ base: args.base });
+  return {
+    ok: result.ok,
+    output: renderCheckOutput(result),
+    failures: result.failures,
+    warnings: result.warnings,
+    ...(result.removedLegacyFiles.length
+      ? { removed_legacy_files: result.removedLegacyFiles.map((f) => f.from) }
+      : {}),
+  };
 }

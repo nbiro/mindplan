@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, and skills: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that updates the graph to match the implementation, and host install docs for Cursor and Claude Code."
+description: "Infra — SPEC, playbook, and skills: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check and updates the graph to match the implementation, the mounts composition root, and host install docs for Cursor and Claude Code."
 state: stable
-shipped_at: 2026-10-15T11:27:52.651Z
+shipped_at: 2026-10-15T15:52:07.534Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-15T11:27:52.651Z
+updated_at: 2026-10-15T15:52:07.534Z
 depends_on:
   - f-domain-model
 implements:
@@ -17,21 +17,24 @@ role: infra
 ---
 
 
-
 # Framework docs
 
 ## Purpose
 
-Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action, and node rules are mandatory via the `rules` block of `orient_for_work`. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Host install docs cover Cursor and Claude Code. Agents must be told the two rule scopes and which tool writes each, or area rules will keep landing in the global list.
+Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action, and node rules are mandatory via the `rules` block of `orient_for_work`. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Host install docs cover Cursor and Claude Code. Agents must be told the two rule scopes and which tool writes each, or area rules will keep landing in the global list. The check must be impossible to miss: the playbook and `get_project` name `run_check` (CLI `mindplan-mcp check`), because an agent that only ever saw the CLI never ran it and shipped nodes that failed it.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-- SPEC §1.1.1 / §8: short instructions; `get_rules`; when-clause on every tool; twenty-four tools
+- SPEC §1.1.1 / §8: short instructions; `get_rules`; when-clause on every tool; twenty-five tools
 - SPEC node rules: the `## Rules` territory section (§6.1.1), inheritance (own, up `belongs_to`, along transitive `depends_on`, Bugs from affected nodes; never downward or across siblings), the `orient_for_work` `rules` block, `get_blast_radius` `rules_impact`, `get_node_context` `rules`, `patch_node_rules`, and that enforcement is prose only
-- Playbook / stub: get_rules then orient_for_work before each action; both global rules and the node `rules` block are mandatory; graph-first new features via plan-project
+- SPEC check and gate: `run_check` (§8.1), the in-review / ship gate and import fixes (§5.10, §9.6), stale-text warnings (§9.6)
+- SPEC small writes: `verbose`, the default write result, one line per node for a batch, scoped drift and its classes (§8 preamble), orient `depth`, `patch_node_territory` `section` / `replace`, `update_node_status` `scope` / `dry_run` (§8.2)
+- SPEC composition root: the `mounts` edge (§2.2) and the multi-template registry example (§1.2.2)
+- Playbook / stub: get_rules then orient_for_work before each action; both global rules and the node `rules` block are mandatory; graph-first new features via plan-project; `run_check` before handoff
 - Playbook / plan-project skill: a rule that applies everywhere goes in `patch_project_rules`; a rule about one area goes on that node with `patch_node_rules`; editing a node's rules is a blast-radius question (read `rules_impact`)
+- define-entities skill and examples: the `mounts` edge and the multi-template example
 - The stub's offline fallback names the host copies for both hosts (`.cursor/` or `.claude/` plus `CLAUDE.md`)
 - README, SPEC, and the Claude Code integration guide document `init --host cursor|claude|all` and what each host receives
 - plan-project skill description: load when creating or patching the graph, including before new-feature code
@@ -42,7 +45,9 @@ Depends on: `f-domain-model`.
 ## Acceptance Criteria
 
 - Stub, playbook, SPEC, and plan-project skill match the reanchor dialect and the two-scope rules split
-- SPEC §8 lists `patch_node_rules` and the changed outputs of `orient_for_work`, `get_blast_radius`, and `get_node_context`
+- SPEC §8 lists `patch_node_rules`, `run_check`, and the changed outputs of `orient_for_work`, `get_blast_radius`, `get_node_context`, the write tools, and `update_node_status`
+- The playbook names `run_check` and `mindplan-mcp check`, and stays one screen
+- SPEC §2.2 and the define-entities skill document `mounts` with the multi-template example
 - Host install docs match what `init --host` writes
 - Tool when-clauses documented in SPEC §8
 - Verified via `npm test`
@@ -57,6 +62,11 @@ Depends on: `f-domain-model`.
 - [x] Update playbook, agents-stub, plan-project skill, and README for the two rule scopes
 - [x] Refresh the init-installed host copies to match
 - [x] Verified the node rules docs via `npm test`
+- [x] Update SPEC for `run_check`, the check gate, import fixes, warnings, drift classes, small writes, orient depth, section patches, scoped status, and twenty-five tools
+- [x] Update SPEC and the define-entities skill and examples for `mounts` and the multi-template example
+- [x] Name `run_check` in the playbook, plan-project skill, and README
+- [x] Refresh the init-installed host copies again
+- [x] Verified the docs via `npm test`
 
 ## Attachments
 
