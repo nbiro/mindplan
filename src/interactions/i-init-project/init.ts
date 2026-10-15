@@ -216,7 +216,7 @@ export function installCursorIgnore(
   return installTemplateFile(templatePath, destPath, ".cursorignore", options);
 }
 
-const CURSOR_SKILL_COPIES = [
+const HOST_SKILL_COPIES = [
   { template: "define-entities", dest: "mindplan-define-entities" },
   { template: "plan-project", dest: "mindplan-plan-project" },
 ] as const;
@@ -226,7 +226,7 @@ export function installCursorSkills(
   options: InstallOptions = {}
 ): InstallSkillResult[] {
   const root = agentTemplateRoot(packageRoot);
-  return CURSOR_SKILL_COPIES.map(({ template, dest }) =>
+  return HOST_SKILL_COPIES.map(({ template, dest }) =>
     installTemplateDir(
       path.join(root, "skills", template),
       path.join(projectRoot(), ".cursor", "skills", dest),
@@ -292,7 +292,7 @@ export function installClaudeSkills(
   options: InstallOptions = {}
 ): InstallSkillResult[] {
   const root = agentTemplateRoot(packageRoot);
-  return CURSOR_SKILL_COPIES.map(({ template, dest }) =>
+  return HOST_SKILL_COPIES.map(({ template, dest }) =>
     installTemplateDir(
       path.join(root, "skills", template),
       path.join(projectRoot(), ".claude", "skills", dest),

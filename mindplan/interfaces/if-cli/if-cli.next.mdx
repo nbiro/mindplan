@@ -2,11 +2,11 @@
 id: if-cli
 type: Interface
 title: "CLI"
-description: "Print legacy renames that already succeeded when init stops, and print legacy files removed during check or view."
+description: "Print legacy renames that already succeeded when init stops, print legacy files removed during check or view, and let init choose its host copies with --host."
 state: mirror
-shipped_at: 2026-10-12T06:31:01.992Z
+shipped_at: 2026-10-15T08:56:01.791Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-12T06:31:01.992Z
+updated_at: 2026-10-15T08:56:01.791Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -18,19 +18,11 @@ implements:
 ---
 
 
-
-
-
-
-
-
-
-
 # CLI
 
 ## Purpose
 
-CLI Interface for `mindplan-mcp` subcommands. Drops `--layout`. Init reporting mentions sources migration. Owns argv parsing, help, output, exit codes only.
+CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help, output, and exit codes only. Init takes `--host cursor|claude|all` to choose which host copies it installs.
 
 ## Kind
 
@@ -38,7 +30,7 @@ CLI command surface.
 
 ## Exposed Interactions
 
-- `i-init-project` — `init` (`-f` / `--force`; no `--layout`)
+- `i-init-project` — `init` (`-f` / `--force`, `--host cursor|claude|all`; no `--layout`)
 - `i-check-integrity` — `check` (default ownership; `--base` opt-in)
 - `i-export-map` — `view` / `export`
 
@@ -46,6 +38,8 @@ CLI command surface.
 
 Intended files: `src/interfaces/if-cli/`
 
+- `--host` accepts `cursor`, `claude`, or `all`; default `cursor`; any other value is `Blocked: unknown init host`
+- Print one line per installed host copy, grouped by host
 - Remove `--layout` parsing and help
 - Print init migration report from `runInit` when applicable
 - When init stops after applying some renames, print those lines before the error
@@ -53,32 +47,26 @@ Intended files: `src/interfaces/if-cli/`
 
 ## Acceptance Criteria
 
+- `--host claude` and `--host all` work; an unknown host exits non-zero with a Blocked message
+- Help documents `--host`
 - `--layout` is an unknown option
-- Help documents sources-oriented init/check
 - No domain logic under this Interface
 - Verified via smoke
 
-
 ## Impact
 
-Commands, flags, and exit codes are unchanged. Init’s closing tips change to match the stub install: the tip shown when an existing `AGENTS.md` was kept now tells the maintainer to add the MindPlan stub (orient first, follow the MCP server instructions) rather than reference the full playbook. The tip claiming Plan Review (`draft → ready`) is mandatory is removed — it was already false after self-ready shipped. The `--base` help line describes the same opt-in dirty-src check.
+Init gains the `--host` flag. Existing invocations behave as before because the default host is Cursor.
 
 ## Atomic Ops
 
 - [x] Skipped mirror twin lines printed on init
-- [x] CLI prints skipped mirror twin lines
 - [x] Remove `--layout` from argv/help
 - [x] Surface sources migration output from init
 - [x] Print renames already applied when init stops
 - [x] Print legacy deletions from check and view on stderr
+- [x] Parse and document `--host`, print host copies grouped
 - [x] Verified via smoke
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
 
 ## Attachments
 
 _None._
-
-## Impact
-
-Title and description only; CLI wiring and exposed Interactions unchanged.
