@@ -27,6 +27,7 @@ import {
   linkNodes,
   openNext,
   patchConfig,
+  patchNodeRules,
   patchNodeTerritory,
   patchProjectDescription,
   patchProjectRules,
@@ -203,7 +204,7 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Get node context",
       description:
         "Call when you are about to read or edit one node's territory. " +
-        "Returns authoritative record (graph slice), editable body, attachment paths, and filenames. " +
+        "Returns authoritative record (graph slice), editable body (without the ## Rules section), the node's own rules, attachment paths, and filenames. " +
         "Includes next slot when an evolution is in progress (`next.record` + `next.body`).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
@@ -220,6 +221,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call before each action, after get_rules. Not only at session start. " +
         "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
         "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
+        "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
+        "or an affected node's for a Bug), each labeled with the node it came from. Those rules are mandatory. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
         "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream).",
       inputSchema: {
@@ -263,6 +266,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call before each action, before orient_for_work. Returns the mandatory project rules " +
         "({ path, rules }) from mindplan/project.md. Empty string when the section is empty. " +
+        "These are the global rules only; node rules arrive through orient_for_work. " +
         "Does not return the playbook or description.",
       inputSchema: {},
     },
@@ -312,6 +316,27 @@ export function registerMindPlanTools(server: McpServer): void {
     guarded(({ node_id, title, description, role, body, toggle_checkboxes, slot }) =>
       patchNodeTerritory({ node_id, title, description, role, body, toggle_checkboxes, slot })
     )
+  );
+
+  server.registerTool(
+    "patch_node_rules",
+    {
+      title: "Patch node rules",
+      description:
+        "Call when a rule applies to one node and the work that inherits from it, not everywhere " +
+        "(use patch_project_rules for rules that apply everywhere). Follow the plan-project skill. " +
+        "Replaces the ## Rules section of that node; an empty string clears it. Works on any non-retired node, " +
+        "including shipped ones, without open_next. Returns rules_impact: the nodes whose work the rules reach.",
+      inputSchema: {
+        node_id: NODE_ID.describe("Node whose rules to replace."),
+        rules: z
+          .string()
+          .describe(
+            "Replace the node's ## Rules section. Empty string clears it. No level-1 or level-2 headings."
+          ),
+      },
+    },
+    guarded(({ node_id, rules }) => patchNodeRules({ node_id, rules }))
   );
 
   server.registerTool(

@@ -711,7 +711,7 @@ Frontmatter delimiters (`---`) MUST appear before any JSX. MDX comments use `{/*
 
 Any node (Journey, Interaction, Interface, Foundation, Bug) MAY carry **node rules**: standing constraints for the work in that node's area, stored as a `## Rules` section in its `<id>.mdx` body. The section runs from a line that is exactly `## Rules` to the next level-1 or level-2 heading, or end of file; at most one per file. It is placed immediately before `## Attachments` when that heading exists, otherwise at the end of the body. An empty rule set has no section. Node rules are not frontmatter, so §9 and `GRAPH_VERSION` (`1`) are unchanged.
 
-- **Single writer.** Only `patch_node_rules` (§8.2) writes the section. `patch_node_territory` MUST preserve it byte-for-byte when it replaces the body, and MUST reject a body that contains a `## Rules` heading (the error names `patch_node_rules`). `get_node_context` returns the body without the section plus a separate `rules` string.
+- **Single writer.** Only `patch_node_rules` (§8.2) writes the section. `patch_node_territory` MUST preserve its text when it replaces the body, and MUST reject a body that contains a `## Rules` heading (the error names `patch_node_rules`). `get_node_context` returns the body without the section plus a separate `rules` string.
 - **Slot independence.** Rules are not part of a contract evolution. `patch_node_rules` writes the same text to `<id>.mdx` and, when an evolution is open, to `<id>.next.mdx`, so promotion keeps them; it never needs `open_next`, and the mirror twin stays a byte copy of live. Checkbox-looking lines in the section are not Atomic Ops.
 - **Inheritance.** The rules that apply to a node N, in order, each labeled with the node it came from (`via`, `distance`):
   1. N's own rules (`self`, 0).
@@ -1143,7 +1143,7 @@ Writes one node's rules (§6.1.1). Use it for a rule about one area; use `patch_
 
 - **Input:** `node_id` (slug, required); `rules` (string, required; empty string clears the section).
 - **Effect:** replaces the `## Rules` section of `<id>.mdx` and, when an evolution is open, of `<id>.next.mdx` with the same text; re-syncs the mirror twin when no evolution is open. Valid for every node type in any non-retired state, including `stable` / `unstable` nodes with no open evolution. Does not change `state`, edges, checkboxes, or `shipped_at`, and does not require `open_next`.
-- **Output:** `{ node_id, rules, slots: ["current"] | ["current", "next"], rules_impact, changed_files }` where `rules_impact` is the node's rules audience (`{ has_rules, inherited_by }`, same shape as `get_blast_radius`) and `changed_files` lists the live file, the open next file or refreshed twin, and `mindplan/map.md`.
+- **Output:** `{ node_id, rules, slots: ["current"] | ["current", "next"], rules_impact, changed_files }` where `rules_impact` is the node's rules audience (`{ has_rules, inherited_by }`, same shape as `get_blast_radius`) and `changed_files` lists the live file and the open next file or refreshed twin (`mindplan/map.md` does not change: rules are not graph structure).
 - **Errors:** unknown `node_id`; `cancelled` or `deprecated` node; `rules` containing a level-1 or level-2 heading line.
 
 ### 8.2 Mutation tools

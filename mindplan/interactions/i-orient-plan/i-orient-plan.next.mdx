@@ -3,10 +3,10 @@ id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
 description: "Find focus nodes, load territory context, return the focus node's inherited rules, report blast radius with rules impact, expose get_project, and expose get_rules for global project rules before each action."
-state: ready
-shipped_at: 2026-10-12T21:34:22.151Z
+state: mirror
+shipped_at: 2026-10-15T11:27:52.750Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-15T11:10:16.849Z
+updated_at: 2026-10-15T11:27:52.750Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -19,6 +19,8 @@ leads_to:
 implements:
   - src/interactions/i-orient-plan/
 ---
+
+
 
 
 # Orient on the plan
@@ -62,10 +64,10 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 
 - [x] Add `getRules` handler and list it in QUERY_TOOLS
 - [x] Verified via `npm test`
-- [ ] Add the `rules` block to `orient_for_work` using `resolveNodeRules`
-- [ ] Add `rules_impact` to `get_blast_radius` using `rulesAudience`
-- [ ] Split `rules` from `body` in `get_node_context` (live and next)
-- [ ] Verified the node rules orientation via `npm test`
+- [x] Add the `rules` block to `orient_for_work` using `resolveNodeRules`
+- [x] Add `rules_impact` to `get_blast_radius` using `rulesAudience`
+- [x] Split `rules` from `body` in `get_node_context` (live and next)
+- [x] Verified the node rules orientation via `npm test`
 
 ## Attachments
 

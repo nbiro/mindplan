@@ -186,6 +186,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |
 | `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |
+| `patch_node_rules` | mutation | Write one node's `## Rules`; `orient_for_work` delivers them to the node and everything that inherits from it |
 | `patch_project_description` | mutation | Write the `mindplan/project.md` description |
 | `patch_project_rules` | mutation | Write the `mindplan/project.md` rules |
 | `patch_config` | mutation | Write `mindplan/config.json` sources/exclude |

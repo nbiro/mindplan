@@ -8,6 +8,12 @@ import {
   rankNodes,
 } from "../../../dist/foundations/f-graph-search/search.js";
 import { GRAPH_VERSION } from "../../../dist/foundations/f-domain-model/types.js";
+import { resolveNodeRules, rulesAudience } from "../../../dist/foundations/f-graph-search/rules.js";
+import {
+  countCheckboxesInText,
+  joinNodeRules,
+  splitNodeRules,
+} from "../../../dist/foundations/f-territory-store/store.js";
 
 const graph = {
   version: GRAPH_VERSION,
@@ -128,4 +134,81 @@ assert.ok(
 
 console.log("ok   search excludes deprecated/cancelled/closed from ranking");
 console.log("ok   Interface ranking + exposes/leads_to neighborhoods");
+
+// --- node rules: resolution, audience, and the Rules section helpers ---
+{
+  const mk = (id, type, extra = {}) => ({
+    id,
+    type,
+    title: id,
+    description: id,
+    state: "stable",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    ...extra,
+  });
+  const g = {
+    version: GRAPH_VERSION,
+    edges: [],
+    nodes: [
+      mk("j-a", "Journey", { rules: "J" }),
+      mk("f-low", "Foundation", { rules: "LOW" }),
+      mk("f-mid", "Foundation", { rules: "MID", depends_on: ["f-low"] }),
+      mk("f-dead", "Foundation", { rules: "DEAD", state: "deprecated" }),
+      mk("i-x", "Interaction", {
+        rules: "X",
+        belongs_to: ["j-a"],
+        depends_on: ["f-mid", "f-dead"],
+        leads_to: ["i-y"],
+      }),
+      mk("i-y", "Interaction", { rules: "Y", belongs_to: ["j-a"] }),
+      mk("if-p", "Interface", { rules: "P", depends_on: ["f-mid"], exposes: ["i-x"] }),
+      mk("b-1", "Bug", { state: "open", affects: ["i-x", "f-mid"] }),
+    ],
+  };
+  const label = (id) => resolveNodeRules(g, id).map((e) => `${e.node_id}:${e.via}:${e.distance}`);
+
+  assert.deepEqual(label("i-x"), ["i-x:self:0", "j-a:belongs_to:1", "f-mid:depends_on:1", "f-low:depends_on:2"]);
+  assert.deepEqual(label("i-y"), ["i-y:self:0", "j-a:belongs_to:1"], "leads_to / siblings are not inherited");
+  assert.deepEqual(label("j-a"), ["j-a:self:0"], "nothing flows down to a Journey");
+  assert.deepEqual(label("f-mid"), ["f-mid:self:0", "f-low:depends_on:1"], "nothing flows up to a Foundation");
+  assert.deepEqual(label("if-p"), ["if-p:self:0", "f-mid:depends_on:1", "f-low:depends_on:2"], "exposes is not inherited");
+  assert.equal(label("i-x").some((e) => e.startsWith("f-dead")), false, "retired nodes are omitted");
+  assert.deepEqual(
+    label("b-1"),
+    ["f-mid:affects:1", "i-x:affects:1", "f-low:affects:2", "j-a:affects:2"],
+    "Bug takes the resolution of each affected node; a node reached twice keeps its smallest distance"
+  );
+  assert.deepEqual(resolveNodeRules(g, "nope"), []);
+
+  assert.deepEqual(
+    rulesAudience(g, "f-low").map((e) => e.id),
+    ["f-mid", "b-1", "i-x", "if-p"]
+  );
+  for (const target of g.nodes) {
+    const expected = g.nodes
+      .filter((n) => n.id !== target.id && target.rules && resolveNodeRules(g, n.id).some((e) => e.node_id === target.id))
+      .map((n) => n.id)
+      .sort();
+    assert.deepEqual(rulesAudience(g, target.id).map((e) => e.id).sort(), expected, `audience of ${target.id} inverts resolution`);
+  }
+  assert.deepEqual(rulesAudience(g, "b-1"), [], "a node without rules reaches nobody");
+
+  const body = "# T\n\n## Purpose\n\nBody.\n\n## Rules\n\n- One\n- [ ] two\n\n## Attachments\n\n_None._\n";
+  const split = splitNodeRules(body);
+  assert.equal(split.rules, "- One\n- [ ] two");
+  assert.equal(split.body.includes("## Rules"), false);
+  assert.equal(countCheckboxesInText(body).unchecked, 0, "Rules checkboxes are not Atomic Ops");
+  const rejoined = joinNodeRules(split.body, split.rules);
+  assert.equal(splitNodeRules(rejoined).rules, "- One\n- [ ] two");
+  assert.ok(rejoined.indexOf("## Rules") < rejoined.indexOf("## Attachments"), "Rules sits before Attachments");
+  assert.equal(splitNodeRules(joinNodeRules(split.body, "")).rules, "", "empty rules adds no section");
+  const noAtt = joinNodeRules("# T\n\nBody.\n", "- r");
+  assert.ok(noAtt.endsWith("## Rules\n\n- r\n"), "appended at the end without Attachments");
+  assert.equal(joinNodeRules(rejoined, ""), rejoined);
+  const crlfBody = joinNodeRules("# T\r\n\r\nBody.\r\n", "- r");
+  assert.ok(crlfBody.includes("\r\n## Rules\r\n\r\n- r\r\n") && !/[^\r]\n/.test(crlfBody), "CRLF bodies stay CRLF");
+  assert.equal(splitNodeRules(crlfBody).rules, "- r");
+  console.log("ok   node rules inheritance, audience inverse, and Rules section helpers");
+}
 console.log("SEARCH UNIT TESTS PASSED");

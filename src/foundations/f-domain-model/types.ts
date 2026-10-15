@@ -111,6 +111,33 @@ export interface MindPlanNode {
   role?: FoundationRole;
   /** Present when `<id>.next.mdx` is an open evolution (not a `mirror` twin). */
   next?: NextSlot;
+  /**
+   * Own node rules — the trimmed `## Rules` section of the live `<id>.mdx` body.
+   * Omitted when empty. Slot-independent: `next` carries no separate rules.
+   */
+  rules?: string;
+}
+
+/** How a rule entry reached the node it was resolved for. */
+export const RULE_VIAS = ["self", "belongs_to", "depends_on", "affects"] as const;
+export type RuleVia = (typeof RULE_VIAS)[number];
+
+/** One node's rules, labeled with the node it came from. */
+export interface RuleEntry {
+  node_id: string;
+  node_type: NodeType;
+  via: RuleVia;
+  distance: number;
+  rules: string;
+}
+
+/** A node that inherits another node's rules. */
+export interface RulesImpactEntry {
+  id: string;
+  type: NodeType;
+  state: NodeState;
+  via: RuleVia;
+  distance: number;
 }
 
 export function isFoundationRole(value: string): value is FoundationRole {

@@ -194,10 +194,15 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  if (names.size !== 23 || !names.has("get_rules")) {
+  if (names.size !== 24 || !names.has("get_rules") || !names.has("patch_node_rules")) {
     failures++;
-    console.log(`FAIL expected 23 tools including get_rules (got ${names.size})`);
-  } else console.log("ok   twenty-three tools registered including get_rules");
+    console.log(`FAIL expected 24 tools including get_rules and patch_node_rules (got ${names.size})`);
+  } else console.log("ok   twenty-four tools registered including get_rules and patch_node_rules");
+  const nodeRulesTool = (listed.tools ?? []).find((t) => t.name === "patch_node_rules");
+  if (!nodeRulesTool?.description?.startsWith("Call when")) {
+    failures++;
+    console.log("FAIL patch_node_rules description must lead with when to call it");
+  } else console.log("ok   patch_node_rules description has when-hint");
   const orient = (listed.tools ?? []).find((t) => t.name === "orient_for_work");
   if (!orient?.description?.startsWith("Call before each action")) {
     failures++;
@@ -2614,6 +2619,160 @@ role: infra
     console.log(`FAIL both evolution names should keep the id-named file: ${nextClashGraphCall.text}`);
   } else console.log("ok   both evolution names keep the id-named file and delete next.mdx");
   fs.rmSync(nextClashDir, { recursive: true, force: true });
+}
+
+// --- node rules: storage, inheritance, delivery, blast radius ---
+{
+  const json = async (tool, args) => JSON.parse((await call(tool, args)).text);
+  const ids = (entries) => entries.map((e) => e.node_id);
+  const readFile = (...parts) => fs.readFileSync(path.join(root, "mindplan", ...parts), "utf-8");
+
+  await shipFoundation("f-rules-base", "Rules base");
+  await expectOk("create f-rules-top", "create_node", {
+    id: "f-rules-top", type: "Foundation", title: "Rules top", description: "Infra — rules top", role: "infra",
+  });
+  await expectOk("create j-rules", "create_node", {
+    id: "j-rules", type: "Journey", title: "Rules area", description: "Area for node rules smoke",
+  });
+  for (const id of ["i-rules-a", "i-rules-b"]) {
+    await expectOk(`create ${id}`, "create_node", {
+      id, type: "Interaction", title: id, description: `Interaction ${id}`,
+    });
+    await expectOk(`${id} belongs_to j-rules`, "link_nodes", { source_id: id, target_id: "j-rules", edge_type: "belongs_to" });
+    await expectOk(`${id} depends_on f-rules-base`, "link_nodes", { source_id: id, target_id: "f-rules-base", edge_type: "depends_on" });
+  }
+  await expectOk("f-rules-top depends_on f-rules-base", "link_nodes", {
+    source_id: "f-rules-top", target_id: "f-rules-base", edge_type: "depends_on",
+  });
+  await expectOk("create bug-rules", "create_node", {
+    id: "bug-rules", type: "Bug", title: "Rules bug", description: "Bug on i-rules-a",
+  });
+  await expectOk("bug-rules affects i-rules-a", "link_nodes", { source_id: "bug-rules", target_id: "i-rules-a", edge_type: "affects" });
+
+  // Write rules on a shipped Foundation without open_next; twin stays a state-only copy.
+  const baseRules = "- Money is integer cents.\n- [ ] Not an atomic op";
+  const written = await json("patch_node_rules", { node_id: "f-rules-base", rules: baseRules });
+  const audience = (written.rules_impact?.inherited_by ?? []).map((e) => e.id).sort();
+  if (
+    written.rules !== baseRules ||
+    JSON.stringify(written.slots) !== '["current"]' ||
+    written.rules_impact?.has_rules !== true ||
+    JSON.stringify(audience) !== JSON.stringify(["bug-rules", "f-rules-top", "i-rules-a", "i-rules-b"]) ||
+    !written.changed_files?.includes("mindplan/foundations/f-rules-base/f-rules-base.mdx") ||
+    !written.changed_files?.includes("mindplan/foundations/f-rules-base/f-rules-base.next.mdx")
+  ) {
+    failures++;
+    console.log(`FAIL patch_node_rules on shipped Foundation: ${JSON.stringify(written)}`);
+  } else console.log("ok   patch_node_rules writes a shipped node without open_next and reports its audience");
+  const baseCtx = await json("get_node_context", { node_id: "f-rules-base" });
+  const liveRaw = readFile("foundations", "f-rules-base", "f-rules-base.mdx");
+  const twinRaw = readFile("foundations", "f-rules-base", "f-rules-base.next.mdx");
+  if (
+    baseCtx.record.state !== "stable" ||
+    baseCtx.next !== null ||
+    baseCtx.rules !== baseRules ||
+    baseCtx.body.includes("## Rules") ||
+    !liveRaw.includes("## Rules") ||
+    !twinRaw.includes("state: mirror") ||
+    twinRaw.replace(/^state:.*$/m, "") !== liveRaw.replace(/^state:.*$/m, "")
+  ) {
+    failures++;
+    console.log(`FAIL shipped node rules: stays stable, body excludes Rules, twin mirrors live`);
+  } else console.log("ok   shipped node stays stable, get_node_context splits rules from body, twin mirrors live");
+
+  await expectOk("patch_node_rules j-rules", "patch_node_rules", { node_id: "j-rules", rules: "- Journey rule." });
+  await expectOk("patch_node_rules i-rules-a", "patch_node_rules", { node_id: "i-rules-a", rules: "- Own rule A." });
+
+  // Inheritance and labels.
+  const orientA = await json("orient_for_work", { node_id: "i-rules-a" });
+  const viaA = orientA.rules?.entries?.map((e) => `${e.node_id}:${e.via}:${e.distance}`);
+  if (JSON.stringify(viaA) !== JSON.stringify(["i-rules-a:self:0", "j-rules:belongs_to:1", "f-rules-base:depends_on:1"])) {
+    failures++;
+    console.log(`FAIL Interaction rules: ${JSON.stringify(viaA)}`);
+  } else console.log("ok   orient_for_work Interaction gets own, Journey, and Foundation rules, labeled by source");
+  const orientB = await json("orient_for_work", { node_id: "i-rules-b" });
+  if (JSON.stringify(ids(orientB.rules.entries)) !== JSON.stringify(["j-rules", "f-rules-base"])) {
+    failures++;
+    console.log(`FAIL sibling Interaction must not inherit: ${JSON.stringify(ids(orientB.rules.entries))}`);
+  } else console.log("ok   sibling Interactions do not share rules");
+  const orientJ = await json("orient_for_work", { node_id: "j-rules" });
+  if (JSON.stringify(ids(orientJ.rules.entries)) !== '["j-rules"]') {
+    failures++;
+    console.log(`FAIL Journey must not inherit downward: ${JSON.stringify(ids(orientJ.rules.entries))}`);
+  } else console.log("ok   Journey gets only its own rules");
+  const orientT = await json("orient_for_work", { node_id: "f-rules-top" });
+  if (JSON.stringify(orientT.rules.entries.map((e) => `${e.node_id}:${e.via}`)) !== '["f-rules-base:depends_on"]') {
+    failures++;
+    console.log(`FAIL Foundation dependency rules: ${JSON.stringify(orientT.rules.entries)}`);
+  } else console.log("ok   Foundation inherits its Foundation dependencies' rules");
+  const orientBug = await json("orient_for_work", { node_id: "bug-rules" });
+  if (
+    JSON.stringify(orientBug.rules.entries.map((e) => `${e.node_id}:${e.via}:${e.distance}`)) !==
+    JSON.stringify(["i-rules-a:affects:1", "f-rules-base:affects:2", "j-rules:affects:2"])
+  ) {
+    failures++;
+    console.log(`FAIL Bug rules from affected nodes: ${JSON.stringify(orientBug.rules.entries)}`);
+  } else console.log("ok   Bug inherits the resolved rules of the nodes it affects");
+  const orientNone = await json("orient_for_work", { query: "zzzzqqqq" });
+  if (orientNone.rules !== null) {
+    failures++;
+    console.log(`FAIL rules must be null without a focus: ${JSON.stringify(orientNone.rules)}`);
+  } else console.log("ok   orient_for_work rules is null without a focus");
+
+  // Blast radius reports who the rules reach.
+  const blast = await json("get_blast_radius", { node_id: "j-rules" });
+  if (
+    blast.rules_impact?.has_rules !== true ||
+    JSON.stringify(blast.rules_impact.inherited_by.map((e) => e.id)) !== JSON.stringify(["i-rules-a", "i-rules-b", "bug-rules"]) ||
+    blast.affected?.length !== 0
+  ) {
+    failures++;
+    console.log(`FAIL Journey rules_impact: ${JSON.stringify(blast)}`);
+  } else console.log("ok   get_blast_radius reports rules_impact independent of affected");
+  const blastNone = await json("get_blast_radius", { node_id: "i-rules-b" });
+  if (blastNone.rules_impact?.has_rules !== false || blastNone.rules_impact.inherited_by.length !== 0) {
+    failures++;
+    console.log(`FAIL node without rules rules_impact: ${JSON.stringify(blastNone.rules_impact)}`);
+  } else console.log("ok   get_blast_radius rules_impact is empty without rules");
+
+  // Body writes keep the section; a body carrying the heading is rejected.
+  await expectOk("patch_node_territory body on j-rules", "patch_node_territory", {
+    node_id: "j-rules", body: "# Rules area\n\nA new body.\n",
+  });
+  const jCtx = await json("get_node_context", { node_id: "j-rules" });
+  if (jCtx.rules !== "- Journey rule." || !jCtx.body.includes("A new body.") || jCtx.body.includes("## Rules")) {
+    failures++;
+    console.log(`FAIL body write must preserve rules: ${JSON.stringify(jCtx)}`);
+  } else console.log("ok   patch_node_territory preserves the Rules section");
+  await expectBlockedContaining("body containing ## Rules", "patch_node_territory", {
+    node_id: "j-rules", body: "# X\n\n## Rules\n\n- sneaky\n",
+  }, "patch_node_rules");
+  await expectBlockedContaining("rules with a level-2 heading", "patch_node_rules", {
+    node_id: "j-rules", rules: "- ok\n## Not allowed",
+  }, "heading");
+  await expectBlocked("patch_node_rules unknown node", "patch_node_rules", { node_id: "j-nope", rules: "x" });
+
+  // Open evolution: same text lands in live and next; discard restores the twin.
+  await expectOk("open_next f-rules-base", "open_next", { node_id: "f-rules-base" });
+  const evolving = await json("patch_node_rules", { node_id: "f-rules-base", rules: "- Evolving rule." });
+  const nextRaw = readFile("foundations", "f-rules-base", "f-rules-base.next.mdx");
+  if (
+    JSON.stringify(evolving.slots) !== '["current","next"]' ||
+    !readFile("foundations", "f-rules-base", "f-rules-base.mdx").includes("- Evolving rule.") ||
+    !nextRaw.includes("- Evolving rule.")
+  ) {
+    failures++;
+    console.log(`FAIL rules with an open evolution: ${JSON.stringify(evolving)}`);
+  } else console.log("ok   rules are written to live and next while an evolution is open");
+  await expectOk("discard_next f-rules-base", "discard_next", { node_id: "f-rules-base" });
+
+  // Clearing removes the section.
+  await expectOk("clear j-rules rules", "patch_node_rules", { node_id: "j-rules", rules: "" });
+  const cleared = await json("get_node_context", { node_id: "j-rules" });
+  if (cleared.rules !== "" || readFile("journeys", "j-rules", "j-rules.mdx").includes("## Rules")) {
+    failures++;
+    console.log("FAIL empty rules must remove the section");
+  } else console.log("ok   empty rules removes the section");
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
