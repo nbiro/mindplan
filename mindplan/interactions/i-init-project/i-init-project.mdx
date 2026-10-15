@@ -2,11 +2,11 @@
 id: i-init-project
 type: Interaction
 title: "Init project"
-description: "Init ignores the mindplan/ tree in the host and writes a missing mirror for each already-shipped pipeline node."
+description: "Init installs the playbook, project brief, and host copies for the chosen host (Cursor, Claude Code, or both), ignores the mindplan/ tree in Cursor, and writes a missing mirror for each already-shipped pipeline node."
 state: stable
-shipped_at: 2026-10-12T06:31:01.830Z
+shipped_at: 2026-10-15T08:56:01.599Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-12T06:31:01.830Z
+updated_at: 2026-10-15T08:56:01.599Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -19,29 +19,26 @@ implements:
 ---
 
 
-
-
-
-
-
-
 # Init project
 
 ## Purpose
 
-Init ignores the `mindplan/` tree in the host (`.cursorignore` → `mindplan/**`) and writes a missing mirror for each already-shipped pipeline node.
+Init installs the playbook, project brief, and host copies for the chosen host (Cursor, Claude Code, or both). It ignores the `mindplan/` tree in Cursor (`.cursorignore` → `mindplan/**`) and writes a missing mirror for each already-shipped pipeline node.
 
 ## Actor & Trigger
 
 - **Actor:** human via CLI
-- **Trigger:** `mindplan-mcp init`
+- **Trigger:** `mindplan-mcp init [--host cursor|claude|all]`
 
 ## PRD / Execution Logic
 
 Intended files: `src/interactions/i-init-project/`
 
+- `runInit` takes `hosts` (default `["cursor"]`) and installs only the chosen host copies
+- Cursor host: `.cursorignore`, `.cursor/skills/`, `.cursor/rules/mindplan.mdc`, `.cursor/permissions.json`
+- Claude Code host: `CLAUDE.md` containing `@AGENTS.md`, and `.claude/skills/mindplan-*`; an existing `CLAUDE.md` is kept unless `--force`
+- The report carries `cursor` and `claude` groups that are present only when selected
 - `backfillMirrorTwins` after installers
-- Cursor ignore template covers `mindplan/**`
 - Graph-load failures during backfill are skipped (incomplete migration fixtures)
 
 Depends on: `f-territory-store`, `f-source-index`.
@@ -49,7 +46,9 @@ Depends on: `f-territory-store`, `f-source-index`.
 ## Acceptance Criteria
 
 - Init backfills missing mirrors
-- Host ignore covers the whole mindplan tree
+- `--host claude` installs `CLAUDE.md` and `.claude/skills/` and no Cursor files
+- `--host all` installs both hosts; the default still installs Cursor only
+- Host ignore covers the whole mindplan tree for Cursor
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -59,6 +58,8 @@ Depends on: `f-territory-store`, `f-source-index`.
 - [x] Init rewrites missing and drifted mirror twins
 - [x] backfillMirrorTwins + report
 - [x] cursorignore mindplan/**
+- [x] Host selection: runInit hosts option and grouped cursor/claude report
+- [x] Claude Code host copies: CLAUDE.md and .claude/skills
 - [x] Verified via `npm test`
 
 ## Attachments
