@@ -2775,6 +2775,81 @@ role: infra
   } else console.log("ok   empty rules removes the section");
 }
 
+
+// --- node rules: ship an evolution, CRLF territory, retired and closed nodes ---
+{
+  const json = async (tool, args) => JSON.parse((await call(tool, args)).text);
+  const readRules = (...parts) => fs.readFileSync(path.join(root, "mindplan", ...parts), "utf-8");
+
+  // Ship an evolution that carries rules; promote must keep exactly one Rules section.
+  await expectOk("open_next f-rules-base again", "open_next", { node_id: "f-rules-base" });
+  await expectOk("patch_node_rules during evolution", "patch_node_rules", {
+    node_id: "f-rules-base", rules: "- Shipped rule.",
+  });
+  for (const status of ["ready", "in-progress", "in-review", "ship"]) {
+    await expectOk(`f-rules-base evolution -> ${status}`, "update_node_status", {
+      node_id: "f-rules-base", new_status: status,
+    });
+  }
+  const shippedLive = readRules("foundations", "f-rules-base", "f-rules-base.mdx");
+  const shippedTwin = readRules("foundations", "f-rules-base", "f-rules-base.next.mdx");
+  const shippedCtx = await json("get_node_context", { node_id: "f-rules-base" });
+  if (
+    (shippedLive.match(/^## Rules$/gm) ?? []).length !== 1 ||
+    !shippedLive.includes("- Shipped rule.") ||
+    shippedCtx.rules !== "- Shipped rule." ||
+    shippedCtx.record.state !== "stable" ||
+    !shippedTwin.includes("state: mirror") ||
+    shippedTwin.replace(/^state:.*$/m, "") !== shippedLive.replace(/^state:.*$/m, "")
+  ) {
+    failures++;
+    console.log("FAIL shipping an evolution must keep exactly one Rules section and a true twin");
+  } else console.log("ok   promote keeps the node rules and restores a true mirror twin");
+
+  // CRLF territory stays CRLF through a rules write and a body write.
+  const crlfPath = territoryPath("interactions", "i-rules-b");
+  fs.writeFileSync(crlfPath, fs.readFileSync(crlfPath, "utf-8").replace(/\r?\n/g, "\r\n"));
+  await expectOk("patch_node_rules on CRLF file", "patch_node_rules", {
+    node_id: "i-rules-b", rules: "- Windows line one.\n- Windows line two.",
+  });
+  const afterRules = fs.readFileSync(crlfPath, "utf-8");
+  if (/[^\r]\n/.test(afterRules)) {
+    failures++;
+    console.log(`FAIL a rules write must keep CRLF territory CRLF: ${JSON.stringify(afterRules.slice(0, 300))}`);
+  } else console.log("ok   a rules write keeps CRLF territory CRLF");
+  await expectOk("patch_node_territory body on CRLF file", "patch_node_territory", {
+    node_id: "i-rules-b", body: "# i-rules-b\r\n\r\nCRLF body.\r\n",
+  });
+  const crlfCtx = await json("get_node_context", { node_id: "i-rules-b" });
+  const afterBody = fs.readFileSync(crlfPath, "utf-8");
+  if (
+    crlfCtx.rules !== "- Windows line one.\n- Windows line two." ||
+    !afterBody.includes("\r\n## Rules\r\n\r\n- Windows line one.\r\n- Windows line two.\r\n")
+  ) {
+    failures++;
+    console.log(`FAIL a body write must keep the CRLF Rules section: ${JSON.stringify(afterBody.slice(-200))}`);
+  } else console.log("ok   a body write keeps the CRLF Rules section intact");
+
+  // Retired and closed nodes cannot take rules and do not appear in an audience.
+  await expectOk("wontfix bug-rules", "update_node_status", { node_id: "bug-rules", new_status: "wontfix" });
+  await expectBlockedContaining("rules on a closed Bug", "patch_node_rules", {
+    node_id: "bug-rules", rules: "- no",
+  }, "closed");
+  const audienceNow = (await json("get_blast_radius", { node_id: "j-rules" })).rules_impact;
+  const base = (await json("get_blast_radius", { node_id: "f-rules-base" })).rules_impact;
+  if (
+    audienceNow.inherited_by.some((e) => e.id === "bug-rules") ||
+    base.inherited_by.some((e) => e.id === "bug-rules")
+  ) {
+    failures++;
+    console.log("FAIL closed Bug must leave every rules audience");
+  } else console.log("ok   closed Bugs leave the rules audience");
+  await expectOk("cancel f-rules-top", "update_node_status", { node_id: "f-rules-top", new_status: "cancelled" });
+  await expectBlockedContaining("rules on a cancelled node", "patch_node_rules", {
+    node_id: "f-rules-top", rules: "- no",
+  }, "retired");
+}
+
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
 await client.close();
 process.exit(failures === 0 ? 0 : 1);

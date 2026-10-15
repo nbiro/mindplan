@@ -36,6 +36,7 @@ import {
   BUG_SEVERITIES,
   GRAPH_VERSION,
   isFoundationRole,
+  isInactiveNode,
   isMirrorState,
   isNextPipelineState,
   isPipelineNodeType,
@@ -1296,9 +1297,9 @@ export function writeNodeRules(
   node: MindPlanNode,
   rules: string
 ): { slots: TerritorySlot[]; paths: string[] } {
-  if (node.state === "cancelled" || node.state === "deprecated") {
+  if (isInactiveNode(node)) {
     throw new Error(
-      `Blocked: "${node.id}" is ${node.state}; node rules cannot be written on a retired node.`
+      `Blocked: "${node.id}" is ${node.state}; node rules cannot be written on a retired or closed node.`
     );
   }
   assertValidNodeRules(rules);

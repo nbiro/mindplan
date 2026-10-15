@@ -8,7 +8,7 @@ import {
   rankNodes,
 } from "../../../dist/foundations/f-graph-search/search.js";
 import { GRAPH_VERSION } from "../../../dist/foundations/f-domain-model/types.js";
-import { resolveNodeRules, rulesAudience } from "../../../dist/foundations/f-graph-search/rules.js";
+import { resolveNodeRules, rulesAudience, rulesImpact } from "../../../dist/foundations/f-graph-search/rules.js";
 import {
   countCheckboxesInText,
   joinNodeRules,
@@ -164,8 +164,13 @@ console.log("ok   Interface ranking + exposes/leads_to neighborhoods");
       mk("i-y", "Interaction", { rules: "Y", belongs_to: ["j-a"] }),
       mk("if-p", "Interface", { rules: "P", depends_on: ["f-mid"], exposes: ["i-x"] }),
       mk("b-1", "Bug", { state: "open", affects: ["i-x", "f-mid"] }),
+      mk("b-done", "Bug", { state: "resolved", affects: ["i-x"] }),
+      mk("b-wont", "Bug", { state: "wontfix", rules: "WONT", affects: ["i-x"] }),
     ],
   };
+  const impact = rulesImpact(g, g.nodes.find((n) => n.id === "f-low"));
+  assert.equal(impact.has_rules, true);
+  assert.deepEqual(impact.inherited_by.map((e) => e.id), ["f-mid", "b-1", "i-x", "if-p"]);
   const label = (id) => resolveNodeRules(g, id).map((e) => `${e.node_id}:${e.via}:${e.distance}`);
 
   assert.deepEqual(label("i-x"), ["i-x:self:0", "j-a:belongs_to:1", "f-mid:depends_on:1", "f-low:depends_on:2"]);
@@ -180,6 +185,17 @@ console.log("ok   Interface ranking + exposes/leads_to neighborhoods");
     "Bug takes the resolution of each affected node; a node reached twice keeps its smallest distance"
   );
   assert.deepEqual(resolveNodeRules(g, "nope"), []);
+  assert.equal(
+    rulesAudience(g, "i-x").some((e) => e.id === "b-done" || e.id === "b-wont"),
+    false,
+    "closed Bugs are not in the rules audience"
+  );
+  assert.equal(
+    rulesAudience(g, "f-mid").some((e) => e.id === "b-done"),
+    false,
+    "a resolved Bug does not appear under any Foundation either"
+  );
+  assert.deepEqual(rulesAudience(g, "b-wont"), [], "a closed Bug's own rules reach nobody");
 
   assert.deepEqual(
     rulesAudience(g, "f-low").map((e) => e.id),
@@ -187,7 +203,7 @@ console.log("ok   Interface ranking + exposes/leads_to neighborhoods");
   );
   for (const target of g.nodes) {
     const expected = g.nodes
-      .filter((n) => n.id !== target.id && target.rules && resolveNodeRules(g, n.id).some((e) => e.node_id === target.id))
+      .filter((n) => n.id !== target.id && !["resolved", "wontfix", "cancelled", "deprecated"].includes(n.state) && target.rules && resolveNodeRules(g, n.id).some((e) => e.node_id === target.id))
       .map((n) => n.id)
       .sort();
     assert.deepEqual(rulesAudience(g, target.id).map((e) => e.id).sort(), expected, `audience of ${target.id} inverts resolution`);

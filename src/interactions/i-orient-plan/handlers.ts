@@ -44,7 +44,7 @@ import {
   interfacesExposing,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
-import { resolveNodeRules, rulesAudience } from "../../foundations/f-graph-search/rules.js";
+import { resolveNodeRules, rulesImpact } from "../../foundations/f-graph-search/rules.js";
 
 export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
 
@@ -196,10 +196,7 @@ export function buildBlastRadiusPayload(
     })),
     journeys_at_risk: [...journeysAtRisk].sort(),
     affected_files,
-    rules_impact: {
-      has_rules: Boolean(node.rules),
-      inherited_by: rulesAudience(graph, node.id),
-    },
+    rules_impact: rulesImpact(graph, node),
   };
   if (node.type === "Interaction") {
     const reach = interactionReachability(graph, node.id);

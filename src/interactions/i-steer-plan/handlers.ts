@@ -73,7 +73,7 @@ import {
   validateOpenNext,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
-import { rulesAudience } from "../../foundations/f-graph-search/rules.js";
+import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
 
 export function syncNodes(nodes: MindPlanNode[]): void {
@@ -815,10 +815,7 @@ export function patchNodeRules(args: {
     node_id,
     rules: node.rules ?? "",
     slots: written.slots,
-    rules_impact: {
-      has_rules: Boolean(node.rules),
-      inherited_by: rulesAudience(graph, node_id),
-    },
+    rules_impact: rulesImpact(graph, node),
     changed_files: changedFiles(written.paths),
   };
 }

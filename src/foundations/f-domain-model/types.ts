@@ -215,6 +215,19 @@ export function isPipelineNodeType(type: NodeType): boolean {
   return type === "Foundation" || type === "Interaction" || type === "Interface";
 }
 
+/**
+ * Nodes that no longer carry live work: retired (`cancelled`, `deprecated`) or closed Bugs
+ * (`resolved`, `wontfix`). Their rules are neither written, inherited, nor reported.
+ */
+export function isInactiveNode(node: Pick<MindPlanNode, "state">): boolean {
+  return (
+    node.state === "cancelled" ||
+    node.state === "deprecated" ||
+    node.state === "resolved" ||
+    node.state === "wontfix"
+  );
+}
+
 /** Pre-ship build states where Interaction/Interface description/title may change when scope shifts. */
 export const PRE_SHIP_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
 export type PreShipState = (typeof PRE_SHIP_STATES)[number];
