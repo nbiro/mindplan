@@ -1619,6 +1619,7 @@ if (initResult.status !== 0) {
       !stub.includes("get_rules") ||
       !stub.includes("plan-project") ||
       !stub.includes(".cursor/") ||
+      !stub.includes(".claude/") ||
       !stub.includes("mindplan/**") ||
       stub.includes("read `mindplan/agent/playbook.md`")
     );
@@ -1766,6 +1767,55 @@ Adapted so the already-shipped contract still holds.
       `FAIL init should report mirrorTwinSkips (status=${skipInit.status}): ${skipOut}`
     );
   } else console.log("ok   init reports skipped mirror twin writes");
+}
+
+// --- init --host: claude installs CLAUDE.md + .claude/skills, not .cursor ---
+{
+  const runHost = (root, ...args) =>
+    spawnSync(process.execPath, [serverEntry, "init", ...args], {
+      cwd: root,
+      env: { ...process.env, MINDPLAN_ROOT: root },
+      encoding: "utf-8",
+    });
+  const claudeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-claude-"));
+  const claudeInit = runHost(claudeRoot, "--host", "claude");
+  const claudeMd = path.join(claudeRoot, "CLAUDE.md");
+  if (claudeInit.status !== 0) {
+    failures++;
+    console.log(`FAIL init --host claude exit ${claudeInit.status}: ${claudeInit.stderr || claudeInit.stdout}`);
+  } else if (
+    !fs.existsSync(claudeMd) ||
+    fs.readFileSync(claudeMd, "utf-8") !== "@AGENTS.md\n" ||
+    !fs.existsSync(path.join(claudeRoot, ".claude", "skills", "mindplan-define-entities", "SKILL.md")) ||
+    !fs.existsSync(path.join(claudeRoot, ".claude", "skills", "mindplan-plan-project", "SKILL.md"))
+  ) {
+    failures++;
+    console.log("FAIL init --host claude must install CLAUDE.md (@AGENTS.md) and .claude/skills/");
+  } else if (
+    fs.existsSync(path.join(claudeRoot, ".cursor")) ||
+    fs.existsSync(path.join(claudeRoot, ".cursorignore"))
+  ) {
+    failures++;
+    console.log("FAIL init --host claude must not install Cursor files");
+  } else {
+    fs.writeFileSync(claudeMd, "custom\n");
+    runHost(claudeRoot, "--host", "claude");
+    if (fs.readFileSync(claudeMd, "utf-8") !== "custom\n") {
+      failures++;
+      console.log("FAIL init --host claude must keep an existing CLAUDE.md without --force");
+    } else console.log("ok   init --host claude installs Claude Code host copies only");
+  }
+  const allRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-all-"));
+  runHost(allRoot, "--host", "all");
+  if (!fs.existsSync(path.join(allRoot, ".cursor", "rules", "mindplan.mdc")) || !fs.existsSync(path.join(allRoot, "CLAUDE.md"))) {
+    failures++;
+    console.log("FAIL init --host all must install both Cursor and Claude copies");
+  } else console.log("ok   init --host all installs both hosts");
+  const badHost = runHost(claudeRoot, "--host", "vim");
+  if (badHost.status === 0 || !String(badHost.stderr).includes("Blocked: unknown init host")) {
+    failures++;
+    console.log("FAIL init --host with an unknown host must be blocked");
+  } else console.log("ok   init --host rejects unknown hosts");
 }
 
 const layoutReject = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {

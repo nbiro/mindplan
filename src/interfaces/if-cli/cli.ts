@@ -4,9 +4,11 @@
  */
 
 import {
+  INIT_HOSTS,
   LegacyTerritoryMigrationError,
   resolvePackageRoot,
   runInit,
+  type InitHost,
   type LegacyTerritoryRename,
 } from "../../interactions/i-init-project/init.js";
 import { runIntegrityCheck } from "../../interactions/i-check-integrity/check.js";
@@ -109,26 +111,46 @@ Options:
   }
 }
 
-function parseInitArgs(argv: string[]): { force: boolean; error?: string } {
+function parseInitArgs(argv: string[]): {
+  force: boolean;
+  hosts: InitHost[];
+  error?: string;
+} {
   let force = false;
+  let hosts: InitHost[] = ["cursor"];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-f" || arg === "--force") {
       force = true;
+    } else if (arg === "--host" || arg.startsWith("--host=")) {
+      const value = arg === "--host" ? argv[++i] : arg.slice("--host=".length);
+      if (value === "all") {
+        hosts = [...INIT_HOSTS];
+      } else if ((INIT_HOSTS as readonly string[]).includes(value)) {
+        hosts = [value as InitHost];
+      } else {
+        return {
+          force: false,
+          hosts,
+          error: `Blocked: unknown init host "${value ?? ""}". Use --host cursor|claude|all.`,
+        };
+      }
     } else if (arg === "--layout" || arg.startsWith("--layout=")) {
       return {
         force: false,
+        hosts,
         error:
           'Blocked: --layout is removed. Run `mindplan-mcp init` to migrate implementation_packages to { sources, exclude }.',
       };
     } else {
       return {
         force: false,
-        error: `Blocked: unknown init option "${arg}". Use -f|--force only.`,
+        hosts,
+        error: `Blocked: unknown init option "${arg}". Use -f|--force or --host cursor|claude|all.`,
       };
     }
   }
-  return { force };
+  return { force, hosts };
 }
 
 function printRemovedLegacyFiles(removed: { from: string; to: string }[]): void {
@@ -189,12 +211,20 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
   printInstall("MCP example", report.mcpExample);
   printInstall("agent integrations", report.integrations);
   printInstall("AGENTS.md", report.agentsMd);
-  printInstall(".cursorignore", report.cursorIgnore);
-  for (const cursorSkill of report.cursorSkills) {
-    printInstall("Cursor skill", cursorSkill);
+  if (report.cursor) {
+    printInstall(".cursorignore", report.cursor.ignore);
+    for (const cursorSkill of report.cursor.skills) {
+      printInstall("Cursor skill", cursorSkill);
+    }
+    printInstall("Cursor rule", report.cursor.rule);
+    printInstall(".cursor/permissions.json", report.cursor.permissions);
   }
-  printInstall("Cursor rule", report.cursorRule);
-  printInstall(".cursor/permissions.json", report.cursorPermissions);
+  if (report.claude) {
+    printInstall("CLAUDE.md", report.claude.claudeMd);
+    for (const claudeSkill of report.claude.skills) {
+      printInstall("Claude skill", claudeSkill);
+    }
+  }
   for (const twin of report.mirrorTwins) {
     console.log(`Wrote mirror twin ${twin.path} (${twin.node_id})`);
   }
@@ -204,7 +234,7 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
 
   if (!report.agentsMd.installed) {
     console.log(
-      "Tip: your existing AGENTS.md was kept. Add the MindPlan stub (see the Cursor rule or templates/agent/agents-stub.md): orient with orient_for_work first, and follow the MindPlan MCP server instructions."
+      "Tip: your existing AGENTS.md was kept. Add the MindPlan stub (see the host rule or templates/agent/agents-stub.md): orient with orient_for_work first, and follow the MindPlan MCP server instructions."
     );
   }
 
@@ -217,7 +247,7 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
 function printHelp(): void {
   console.log(`Usage:
   mindplan-mcp              Start the MCP server (stdio)
-  mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and .cursorignore.
+  mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and host copies (--host).
                             Also renames legacy current.mdx / next.mdx to <id>.mdx / <id>.next.mdx.
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
@@ -225,8 +255,10 @@ function printHelp(): void {
   mindplan-mcp help         Show this message
 
 Init options:
-  -f, --force               Overwrite existing agent assets (playbook, skills, Cursor copies,
-                            AGENTS.md, .cursorignore, permissions, etc.) from package templates.
+  --host cursor|claude|all  Host copies to install: Cursor (.cursor/, .cursorignore), Claude Code
+                            (CLAUDE.md, .claude/skills/), or both (default: cursor).
+  -f, --force               Overwrite existing agent assets (playbook, skills, host copies,
+                            AGENTS.md, CLAUDE.md, .cursorignore, permissions, etc.) from package templates.
                             Also migrates legacy implementation_packages → { sources, exclude }.
 
 View options:
@@ -259,6 +291,7 @@ export function runCli(argv: string[] = process.argv): boolean {
       const packageRoot = resolvePackageRoot(import.meta.url);
       const report = runInit({
         force: parsed.force,
+        hosts: parsed.hosts,
         packageRoot,
       });
       printInitReport(report);
