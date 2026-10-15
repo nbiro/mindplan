@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context, report blast radius, expose get_project, and expose get_rules for mandatory project rules before each action."
-state: mirror
+description: "Find focus nodes, load territory context, return the focus node's inherited rules, report blast radius with rules impact, expose get_project, and expose get_rules for global project rules before each action."
+state: ready
 shipped_at: 2026-10-12T21:34:22.151Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-12T21:34:22.151Z
+updated_at: 2026-10-15T11:10:16.849Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -21,17 +21,16 @@ implements:
 ---
 
 
-
 # Orient on the plan
 
 ## Purpose
 
-Read-path orientation. `get_rules` returns only the mandatory project rules so each action can re-load them without the full playbook. A later session that skipped that call would treat rules as optional after the first `get_project`.
+Read-path orientation. `get_rules` returns only the mandatory project-wide rules so each action can re-load them without the full playbook; `orient_for_work` returns the rules that apply to the focus node, each labeled with the node it came from. A later session that skipped either would treat rules as optional after the first `get_project`, and a rule written on a Foundation would stop protecting the code that depends on it.
 
 ## Actor & Trigger
 
 - **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
-- **Trigger:** MCP/HTTP orient tools; `get_project` / `get_rules` with no arguments
+- **Trigger:** MCP/HTTP orient tools; `get_project` / `get_rules` with no arguments; `orient_for_work` with a focus
 
 ## Execution Logic
 
@@ -39,21 +38,34 @@ Intended files: `src/interactions/i-orient-plan/`
 
 - Keep existing query tools
 - `get_project` — `{ path, description, rules, playbook }` (first read of dialect + brief)
-- `get_rules` — `{ path, rules }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description
-- `orient_for_work` does **not** carry the brief
+- `get_rules` — `{ path, rules }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description. These are the **global** rules only: rules that apply everywhere. Rules about one area of the code live on that area's node
+- `orient_for_work` returns a separate `rules` block next to `context` and `blast_radius`: `{ node_id, entries: RuleEntry[] }` from `resolveNodeRules` (`f-graph-search`), or `null` when there is no focus. Each entry is `{ node_id, node_type, via, distance, rules }`, ordered self, then `belongs_to`, then `depends_on`, then `affects`. `entries` is `[]` when nothing applies. It does **not** repeat the project brief rules
+- `get_node_context` returns `body` without the `## Rules` section and a separate `rules` string for that node's own rules (and the same for the `next` slot's body)
+- `get_blast_radius` adds `rules_impact` for every focus type: `{ node_id, has_rules, inherited_by: RulesImpactEntry[] }` from `rulesAudience`. It reports who is reached by the focus's rules, so editing a Foundation's rules shows every dependent; `affected` / `affected_files` / `reachability` are unchanged. When the focus has no rules, `has_rules` is `false` and `inherited_by` is `[]`
+- Rules are advisory prose: nothing here is a `Blocked:`
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- `get_rules` returns the current rules string and path
+- `get_rules` returns the current project rules string and path, unchanged in shape
 - `get_project` still returns playbook + brief
+- `orient_for_work` on an Interaction returns its own rules, its Journey's, and its Foundations' (transitive), each entry naming its source node and `via`
+- `orient_for_work` on a Journey returns only the Journey's own rules; on a Bug returns the resolved rules of the nodes it affects
+- Sibling Interactions never appear in each other's `rules`
+- `rules` is `null` without a focus and `entries` is `[]` when no rules apply
+- `get_blast_radius` on a Foundation with rules lists its transitive dependents in `rules_impact.inherited_by`
+- `get_node_context` `body` excludes the Rules section and `rules` carries it
 - Verified via `npm test`
 
 ## Atomic Ops
 
 - [x] Add `getRules` handler and list it in QUERY_TOOLS
 - [x] Verified via `npm test`
+- [ ] Add the `rules` block to `orient_for_work` using `resolveNodeRules`
+- [ ] Add `rules_impact` to `get_blast_radius` using `rulesAudience`
+- [ ] Split `rules` from `body` in `get_node_context` (live and next)
+- [ ] Verified the node rules orientation via `npm test`
 
 ## Attachments
 

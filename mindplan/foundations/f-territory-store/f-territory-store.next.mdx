@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only; keep a shipped next file as a state-only twin."
-state: mirror
+description: "Infra — persist territory through the store only, including each node's ## Rules section; keep a shipped next file as a state-only twin."
+state: ready
 shipped_at: 2026-10-12T06:31:01.685Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-12T06:50:36.372Z
+updated_at: 2026-10-15T11:10:16.633Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -20,7 +20,7 @@ role: infra
 
 ## Purpose
 
-Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md`.
+Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules.
 
 ## Shared Substrate Spec
 
@@ -32,6 +32,15 @@ Intended files: `src/foundations/f-territory-store/`
 - `discardNextSlot` / `promoteNextSlot` restore the mirror twin (do not delete the next file)
 - Reject writes aimed at a mirror file
 - `writeProjectBrief` for MCP `patch_project_description` and `patch_project_rules`
+- **Node rules section.** A node's rules are the `## Rules` section of its territory body: from a line that is exactly `## Rules` to the next level-1 or level-2 heading or end of file. At most one such section per file
+  - `splitNodeRules(body)` → `{ body, rules }` — `body` has the section removed, `rules` is its trimmed text (empty string when absent)
+  - `joinNodeRules(body, rules)` — inserts the section immediately before `## Attachments` when present, else appends it; an empty `rules` removes the section entirely (no empty heading)
+  - `writeNodeRules(id, rules)` — the only writer of the section. Writes the live `<id>.mdx` and, when an evolution is open, the same text into `<id>.next.mdx`; re-syncs the mirror twin when no evolution is open. Does not touch frontmatter, state, or edges. Returns the written paths for `changed_files`
+  - Discover reads `node.rules` from the live `<id>.mdx` via `splitNodeRules`
+  - Body writes (`patch_node_territory`, `open_next` seeding, promote) preserve the existing `## Rules` section byte-for-byte; a body that itself contains a `## Rules` heading is rejected with `Blocked:` naming `patch_node_rules`
+  - Reading a node's territory for tools returns the body without the section plus `rules` separately
+  - Rules text may not contain a level-1 or level-2 heading line (it would end the section); `writeNodeRules` rejects it
+- The Rules section does not affect Minimum Territory Shape, Atomic Op counting, or mirror-twin equality (the twin is a byte copy, section included)
 
 Depends on: `f-domain-model`, `f-source-index`.
 
@@ -40,6 +49,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 - Standing twin after first ship; open_next is a state flip
 - Live MCP writes keep the twin true when no evolution is open
 - Ship/discard restore mirror; retire/unship delete it
+- `writeNodeRules` then `patch_node_territory` body write leaves the rules text unchanged
+- A body containing `## Rules` is rejected; an empty rules string removes the section
+- With an open evolution, rules written to live are also in the next file, and promote keeps them
+- Rules checkboxes (`- [ ]`) inside the section are not counted as Atomic Ops
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -51,6 +64,11 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] open_next / discard / promote twin lifecycle
 - [x] Sync after live writes; writeProjectBrief
 - [x] Verified via `npm test`
+- [ ] Add `splitNodeRules` / `joinNodeRules` and the heading-termination rules
+- [ ] Add `writeNodeRules` (live + open next + twin sync) and set `node.rules` in discover
+- [ ] Preserve the section across body writes, open_next, and promote; reject a body containing `## Rules`
+- [ ] Return body-without-rules plus `rules` from the territory read used by `get_node_context`
+- [ ] Verified the node rules section via `npm test`
 
 ## Attachments
 

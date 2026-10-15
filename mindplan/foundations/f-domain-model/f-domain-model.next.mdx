@@ -2,11 +2,11 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types, edges, implements claims, Foundation roles, and the next-file mirror state."
-state: mirror
+description: "Infra — node types, edges, implements claims, Foundation roles, the next-file mirror state, and the per-node rules field and rule-entry types."
+state: ready
 shipped_at: 2026-10-11T13:15:38.671Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-11T13:15:38.671Z
+updated_at: 2026-10-15T11:10:16.564Z
 implements:
   - src/foundations/f-domain-model/
 role: infra
@@ -17,7 +17,7 @@ role: infra
 
 ## Purpose
 
-Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, and open evolutions. Adds `MIRROR_STATE` / `isMirrorState`. Discover must not set `node.next` for a mirror twin. `GRAPH_VERSION` stays `1`.
+Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, open evolutions, and per-node rules. `node.next` means an open evolution only; a standing twin does not populate it. Rules are prose attached to a node but are not frontmatter: they live in the node's `## Rules` body section (owned by `f-territory-store`), so the §9 frontmatter schema and `GRAPH_VERSION` (`1`) do not change.
 
 ## Shared Substrate Spec
 
@@ -26,7 +26,10 @@ Intended files: `src/foundations/f-domain-model/`
 - `types.ts` — `NODE_TYPES`, edges, state machines, `MindPlanNode` / `NextSlot`
 - `MIRROR_STATE` (`mirror`) and `isMirrorState` — next-file twin state, not a pipeline state
 - `NextSlot` remains draft|ready|in-progress|in-review only
-- `node.next` means an open evolution; a standing twin does not populate it
+- `MindPlanNode.rules?: string` — the node's own rules text, trimmed; omitted when empty. Loaded from the live `<id>.mdx` only (rules are slot-independent; `next` carries no separate rules)
+- `RULE_VIAS` / `RuleVia` — `self | belongs_to | depends_on | affects`: how a rule entry reached the node it is resolved for
+- `RuleEntry` — `{ node_id, node_type, via: RuleVia, distance: number, rules: string }`: one node's rules, labeled with the node it came from
+- `RulesImpactEntry` — `{ id, type, state, via: RuleVia, distance }`: a node that inherits some other node's rules
 
 Depends on: none.
 
@@ -34,6 +37,8 @@ Depends on: none.
 
 - `mirror` is a typed next-file state distinct from pipeline states
 - Open-evolution types unchanged
+- `MindPlanNode.rules` is optional; a graph with no rules sections loads exactly as before
+- `RuleEntry` always names its source node and `via`
 - `GRAPH_VERSION` remains `1`
 - Verified via `npm test`
 
@@ -42,6 +47,9 @@ Depends on: none.
 - [x] Add `MIRROR_STATE` and `isMirrorState`
 - [x] Document that `node.next` is open evolution only
 - [x] Verified via `npm test`
+- [ ] Add optional `MindPlanNode.rules`
+- [ ] Add `RULE_VIAS`, `RuleEntry`, and `RulesImpactEntry`
+- [ ] Verified the rules types via `npm test`
 
 ## Attachments
 
