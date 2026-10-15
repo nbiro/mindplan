@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-three tools with when-to-call hints, attaches a non-empty drift report to successful results, and exposes get_rules."
+description: "MCP stdio Interface that registers twenty-three tools with when-to-call hints, attaches a non-empty drift report to successful results except get_project and get_rules, and exposes get_rules."
 state: stable
-shipped_at: 2026-10-12T21:34:22.315Z
+shipped_at: 2026-10-15T11:06:35.840Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-12T21:34:22.315Z
+updated_at: 2026-10-15T11:06:35.840Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -22,11 +22,12 @@ implements:
 
 
 
+
 # MCP tools
 
 ## Purpose
 
-MCP stdio Interface that registers twenty-three tools. Each description leads with when to call the tool. Successful results attach a non-empty drift report via `withDrift` from `f-mcp-runtime`. Without those hints, a long session would treat tools as one-shot session-start helpers.
+MCP stdio Interface that registers twenty-three tools. Each description leads with when to call the tool. Successful results attach a non-empty drift report via `withDrift` from `f-mcp-runtime`, except `get_project` and `get_rules`: `get_rules` runs before every action and would repeat the same report next to `orient_for_work`. Without the when-hints, a long session would treat tools as one-shot session-start helpers.
 
 ## Kind
 
@@ -45,6 +46,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - Register `get_rules`
 - Lead every tool description with a when-clause
 - On success, call `withDrift` from `f-mcp-runtime` (which uses `buildDriftReport` from `i-check-integrity`) so a non-empty report attaches as `drift` (`paths`, `unowned`, `reminder`)
+- `get_project` and `get_rules` register without drift: their successful payload never carries `drift`. Every other tool keeps it.
 - App Router / MCP mounts Interaction packages; Interface does not own core domain logic
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
@@ -53,7 +55,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 
 - Twenty-three tools registered
 - Every tool description starts with when to call it
-- Non-empty drift attached; clean tree omits `drift`
+- Non-empty drift attached on every successful tool except `get_project` and `get_rules`; clean tree omits `drift`
+- `get_project` and `get_rules` omit `drift` even on a dirty tree
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -61,6 +64,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Register `get_rules` and when-hints on all tools
 - [x] Attach non-empty drift on successful results
 - [x] Thin wiring only — handlers stay on Interactions
+- [x] Skip drift on `get_project` and `get_rules`
 - [x] Verified via `npm test`
 
 ## Attachments

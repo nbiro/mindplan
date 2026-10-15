@@ -65,10 +65,20 @@ function withRemovedLegacyFiles(payload: unknown): unknown {
   return { result: payload, removed_legacy_files: froms };
 }
 
-function guarded<A>(handler: (args: A) => unknown): (args: A) => ToolResult {
+/**
+ * Wrap a handler with the §5.1 error contract. Successful results carry `drift`
+ * unless `drift: false` — get_project and get_rules run before every action, so
+ * drift rides on orient_for_work and the write tools instead.
+ */
+function guarded<A>(
+  handler: (args: A) => unknown,
+  options: { drift?: boolean } = {}
+): (args: A) => ToolResult {
+  const attachDrift = options.drift !== false;
   return (args: A) => {
     try {
-      return ok(withDrift(withRemovedLegacyFiles(handler(args))));
+      const payload = withRemovedLegacyFiles(handler(args));
+      return ok(attachDrift ? withDrift(payload) : payload);
     } catch (err) {
       const removed = drainRemovedLegacyFiles();
       const message = err instanceof Error ? err.message : String(err);
@@ -243,7 +253,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "({ path, description, rules, playbook }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md.",
       inputSchema: {},
     },
-    guarded(() => getProject())
+    guarded(() => getProject(), { drift: false })
   );
 
   server.registerTool(
@@ -256,7 +266,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Does not return the playbook or description.",
       inputSchema: {},
     },
-    guarded(() => getRules())
+    guarded(() => getRules(), { drift: false })
   );
 
   server.registerTool(

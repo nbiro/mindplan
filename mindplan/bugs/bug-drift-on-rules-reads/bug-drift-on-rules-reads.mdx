@@ -1,0 +1,48 @@
+---
+id: bug-drift-on-rules-reads
+type: Bug
+title: "Drift repeated on get_project and get_rules"
+description: "guarded() attaches the full uncommitted-source drift report to every successful MCP result, so get_project and get_rules (called before every action) repeat it; drift should ride only on orient_for_work and the write tools."
+state: resolved
+created_at: 2026-10-15T11:01:23.343Z
+updated_at: 2026-10-15T11:06:33.104Z
+affects:
+  - if-mcp-tools
+  - f-mcp-runtime
+---
+
+
+
+# Drift repeated on get_project and get_rules
+
+## Summary
+
+`guarded()` in `src/interfaces/if-mcp-tools/register.ts` passes every successful result through `withDrift` (`src/foundations/f-mcp-runtime/with-drift.ts`). `get_project` and `get_rules` therefore return the full uncommitted-source drift report, and `get_rules` runs before every action, so the same report is repeated on every turn next to the one `orient_for_work` already carries.
+
+## Repro Steps
+
+1. Leave an owned source file under `src/` uncommitted.
+2. Call `get_rules` (or `get_project`), then `orient_for_work`.
+
+## Expected / Actual
+
+**Expected:** `drift` appears on `orient_for_work` and the write tools only; `get_project` and `get_rules` return just their brief/rules payload.
+
+**Actual:** all three responses carry the same `drift` block.
+
+## Fix
+
+- `guarded()` takes an option to skip `withDrift`; `get_project` and `get_rules` register with it. Every other tool keeps drift.
+- SPEC §5 names which tools carry `drift`.
+- `if-mcp-tools` contract evolves (source); `f-mcp-runtime` `withDrift` is unchanged (unaffected); `f-test-harness` and `f-framework-docs` are neighbors edited in place.
+
+## Fix Checklist
+
+- [x] Root cause identified
+- [x] Fix implemented
+- [x] Regression test added
+- [x] SPEC §5 names the drift-carrying tools
+
+## Attachments
+
+_None._
