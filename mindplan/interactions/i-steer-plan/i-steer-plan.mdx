@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status (single, ordered, or scoped walks with dry_run, gated by the check's import and ownership rules), links including mounts, open_next, territory patches by body, section, or replace, per-node rules writes, separate project description and rules writes, config, and attachments; small results unless verbose."
+description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship), links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, per-node rules writes, separate project description and rules writes, config, and attachments; small results unless verbose."
 state: stable
-shipped_at: 2026-10-15T16:19:54.802Z
+shipped_at: 2026-10-19T12:09:48.856Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-15T16:19:54.802Z
+updated_at: 2026-10-19T12:09:48.856Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -21,6 +21,12 @@ leads_to:
 implements:
   - src/interactions/i-steer-plan/
 ---
+
+
+
+
+
+
 
 
 
@@ -55,6 +61,10 @@ Intended files: `src/interactions/i-steer-plan/`
 - **Status gate.** A move to `in-review` or `ship` runs `assertCheckCleanForNode` (import and ownership violations on the node's active-slot files) after the transition's own rules and before any write; Blocked with every violation and its fix. `staleTextWarnings` for the node return as `warnings` and never block
 - **Links.** `link_nodes` / `unlink_nodes` handle `mounts` (Foundation → Interface) like `exposes`: written to the next slot while a node evolves, promoted on ship
 - **Scoped status.** `update_node_status` takes `scope` (`all_open_updates` | `node_and_dependents` with `node_id`) and `new_status` as the target. It selects the open updates (`all_open_updates`: shipped nodes with an open next and pre-ship nodes that are in-progress or in-review, never draft or ready plans; `node_and_dependents`: the named node plus the nodes that depend on or expose it, including edges proposed on a next slot, at any pre-ship state), orders them Foundations, Interactions, Interfaces (dependency order within a tier), walks each from its active state through `draft → ready → in-progress → in-review → ship`, and first validates the whole walk in memory, writing nothing when any step would be Blocked. `dry_run` returns `{ dry_run, plan, blocked, warnings? }` for any form (single, revisions, scope) without writing
+- **Readiness reset.** A contract write to a slot whose state is `ready` moves that slot back to `draft`: `patch_node_territory` (title, description, role, body, section, replace, toggle_checkboxes), `set_implementation_files` (when the list changes), and `link_nodes` / `unlink_nodes` on the source node. The territory store's writers make the reset (`demoteReadySlot`) and report it; the handlers only turn that into the result, which carries the new `state` / `next_state` and `readiness_reset: { slot, from: "ready", to: "draft", note }`. Writes that never reset: `patch_node_rules`, `change` / `change_ref` writes, attachments, and any write to a slot in `draft`, `in-progress`, or `in-review` (ticking finished work is how a revision completes)
+- **Review is not skipped silently.** A scoped walk to `ship` that would move a node whose active state is before `in-review` is Blocked unless `skip_review: true`. With it each node still walks `in-progress → in-review → ship`, runs the in-review gate at that step, and the result lists `skipped_review`. `dry_run` lists every transition, one `id: from -> to` line per step
+- **Change groups.** `create_node` and `open_next` take `change` / `change_ref`; `patch_node_territory` sets or clears them on the active slot. `update_node_status` with `scope: "change"` and `change` walks every open revision in that change, including draft and ready ones
+- **Checkbox results.** `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; the result returns `toggled`, the lines as written
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
@@ -73,6 +83,11 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - `all_open_updates` never walks a draft or ready plan, even one that already claims files
 - A scoped walk ships every open update in one call in dependency order, `dry_run` writes nothing, and a Blocked step writes nothing
 - Verified via `npm test`
+- Each contract write on a `ready` next slot (territory patch, claim, link, unlink) returns `next_state: "draft"` and `readiness_reset`; the same write on an in-progress slot changes no state
+- `patch_node_rules` and change writes never reset readiness
+- A scoped walk to `ship` from `ready` is Blocked without `skip_review`; with it the result lists `skipped_review` and every node passed the in-review gate
+- `dry_run` of a scoped walk lists one line per transition
+- `scope: "change"` walks exactly the change's open revisions
 
 ## Atomic Ops
 
@@ -100,6 +115,11 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - [x] Verified the small results, claim scan, gate, mounts, patches, and scoped walks via `npm test`
 - [x] Keep draft and ready plans out of `all_open_updates` and follow proposed next edges in `node_and_dependents`
 - [x] Verified the scope selection via `npm test`
+- [x] Reset a `ready` slot to `draft` on contract writes and report `readiness_reset`
+- [x] Require `skip_review` for scoped walks that jump to ship, list every step in `dry_run`, and report `skipped_review`
+- [x] Add `change` / `change_ref` to create, open_next, and territory patches, and `scope: "change"`
+- [x] Pass `all`, `note`, and `not_applicable` through and return `toggled`
+- [x] Verified readiness reset, skip_review, change walks, and toggles via `npm test`
 
 ## Attachments
 

@@ -11,10 +11,11 @@ import type {
   MindPlanNode,
 } from "../f-domain-model/types.js";
 import { isPipelineNodeType } from "../f-domain-model/types.js";
-import { expandClaims } from "../f-source-index/claims.js";
+import { expandClaims, isGlobClaim, validateClaimPath } from "../f-source-index/claims.js";
 import { listResolvedImports } from "../f-source-index/imports.js";
 import {
   buildOwnershipIndex,
+  claimantsOf,
   exclusiveOwner,
   type OwnershipBuckets,
 } from "../f-source-index/ownership.js";
@@ -50,6 +51,11 @@ export type ImportViolation = {
   /** Present when no edge can make the import legal. */
   not_allowed: string | null;
   message: string;
+  /**
+   * Found only through a next-slot or released claim, which the check did not scan before.
+   * The check reports it as a warning for one release before it Blocks.
+   */
+  advisory: boolean;
 };
 
 function formatFix(fix: ImportFix): string {
@@ -134,7 +140,8 @@ function scanFiles(
   root: string,
   owner: MindPlanNode,
   files: string[],
-  selfFiles?: Set<string>
+  selfFiles?: Set<string>,
+  opts: { releasedTargets?: boolean } = {}
 ): ImportViolation[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const out: ImportViolation[] = [];
@@ -142,7 +149,12 @@ function scanFiles(
     if (!SOURCE_FILE.test(file)) continue;
     for (const edge of listResolvedImports(file, root)) {
       if (selfFiles?.has(edge.to)) continue;
-      const toOwnerId = exclusiveOwner(buckets, edge.to);
+      let toOwnerId = exclusiveOwner(buckets, edge.to);
+      let viaReleased = false;
+      if (!toOwnerId && opts.releasedTargets && buckets.released.has(edge.to)) {
+        toOwnerId = buckets.released.get(edge.to)!;
+        viaReleased = true;
+      }
       if (!toOwnerId) continue;
       const to = byId.get(toOwnerId);
       if (!to) continue;
@@ -161,27 +173,223 @@ function scanFiles(
         fix: remedy.fix,
         not_allowed: remedy.fix ? null : remedy.not_allowed,
         message,
+        advisory: viaReleased,
       });
     }
   }
   return out;
 }
 
-/** Every illegal import across the ownership universe (the check's import rule). */
+/**
+ * Every illegal import across the ownership universe (the check's import rule). Each file is
+ * scanned as every node that claims it (live, next slot, released), and import targets resolve
+ * through released claims too. A violation the exclusive-owner scan alone would not find is
+ * `advisory`.
+ */
 export function findAllImportViolations(
   graph: MindPlanGraph,
   buckets: OwnershipBuckets,
-  root: string
+  root: string,
+  universe: string[] = listUniverseFiles(root)
 ): ImportViolation[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const out: ImportViolation[] = [];
-  for (const file of listUniverseFiles(root)) {
-    const ownerId = exclusiveOwner(buckets, file);
-    const owner = ownerId ? byId.get(ownerId) : undefined;
-    if (!owner) continue;
-    out.push(...scanFiles(graph, buckets, root, owner, [file]));
+  for (const file of universe) {
+    const exclusive = exclusiveOwner(buckets, file);
+    const ownerIds = new Set(claimantsOf(buckets, file).map((c) => c.id));
+    for (const ownerId of ownerIds) {
+      const owner = byId.get(ownerId);
+      if (!owner) continue;
+      const found = scanFiles(graph, buckets, root, owner, [file], undefined, {
+        releasedTargets: true,
+      });
+      for (const v of found) {
+        out.push({ ...v, advisory: v.advisory || ownerId !== exclusive });
+      }
+    }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Coverage fixes
+// ---------------------------------------------------------------------------
+
+/** One call of the fix that claims an unclaimed file for its probable owner. */
+export type CoverageFixCall = {
+  tool: "open_next" | "set_implementation_files";
+  args: Record<string, unknown>;
+};
+
+/** Leading directory segments a claim names before any glob or file name. */
+function claimDirSegments(claim: string): string[] {
+  const parts = claim.replace(/\/$/, "").split("/");
+  const firstGlob = parts.findIndex((p) => isGlobClaim(p));
+  if (firstGlob >= 0) return parts.slice(0, firstGlob);
+  return claim.endsWith("/") ? parts : parts.slice(0, -1);
+}
+
+/**
+ * The non-retired pipeline node whose claim shares the longest directory prefix with `file`
+ * (ties go to the lower id). Sharing only a top-level folder such as `src/` says nothing about
+ * ownership, so a file two or more folders deep needs at least two shared folders. Null when
+ * no claim is that close.
+ */
+export function probableOwner(graph: MindPlanGraph, file: string): MindPlanNode | null {
+  const fileDirs = file.split("/").slice(0, -1);
+  const minScore = Math.min(2, fileDirs.length);
+  let best: { node: MindPlanNode; score: number } | null = null;
+  const nodes = graph.nodes
+    .filter(
+      (n) => isPipelineNodeType(n.type) && n.state !== "cancelled" && n.state !== "deprecated"
+    )
+    .sort((a, b) => a.id.localeCompare(b.id));
+  for (const node of nodes) {
+    for (const raw of [...(node.implements ?? []), ...(node.next?.implements ?? [])]) {
+      let claim: string;
+      try {
+        claim = validateClaimPath(raw);
+      } catch {
+        continue;
+      }
+      const dirs = claimDirSegments(claim);
+      let score = 0;
+      while (score < dirs.length && score < fileDirs.length && dirs[score] === fileDirs[score]) {
+        score++;
+      }
+      if (score > 0 && score >= minScore && (!best || score > best.score)) best = { node, score };
+    }
+  }
+  return best?.node ?? null;
+}
+
+/** The calls that add `file` to the owner's active claim list, opening an evolution first when shipped. */
+export function coverageFix(owner: MindPlanNode, file: string): CoverageFixCall[] {
+  const shippedIdle = Boolean(owner.shipped_at) && !owner.next;
+  const current = (owner.next ? owner.next.implements : owner.implements) ?? [];
+  const files = [...new Set([...current, file])].sort((a, b) => a.localeCompare(b));
+  const claim: CoverageFixCall = {
+    tool: "set_implementation_files",
+    args: { node_id: owner.id, files },
+  };
+  return shippedIdle ? [{ tool: "open_next", args: { node_id: owner.id } }, claim] : [claim];
+}
+
+/** `Fix: a({...}) then b({...}).` */
+export function formatCoverageFix(calls: CoverageFixCall[]): string {
+  return `Fix: ${calls.map((c) => `${c.tool}(${JSON.stringify(c.args)})`).join(" then ")}.`;
+}
+
+// ---------------------------------------------------------------------------
+// Route families
+// ---------------------------------------------------------------------------
+
+const ROUTE_FILE =
+  /^(page|route|layout|template|loading|error|not-found|default)\.(ts|tsx|js|jsx|mjs|cjs|md|mdx)$/;
+
+/** A route segment that names a fixed path (not `[param]`, `(group)`, or `@slot`). */
+function isStaticSegment(segment: string): boolean {
+  return !/^[[(@]/.test(segment);
+}
+
+const LAYOUT_FILE = /^layout\.(ts|tsx|js|jsx|mjs|cjs)$/;
+
+/**
+ * App Router roots: `app/` folders (at any depth) that hold a root layout, directly or inside a
+ * route group (`app/(site)/layout.tsx`). An `app/` folder without one is not a router.
+ */
+export function appRouterRoots(universe: string[]): Set<string> {
+  const roots = new Set<string>();
+  for (const file of universe) {
+    const parts = file.split("/");
+    if (!LAYOUT_FILE.test(parts[parts.length - 1])) continue;
+    const dirs = parts.slice(0, -1);
+    const last = dirs[dirs.length - 1];
+    if (last === "app") roots.add(dirs.join("/"));
+    else if (dirs.length >= 2 && /^\(.*\)$/.test(last) && dirs[dirs.length - 2] === "app") {
+      roots.add(dirs.slice(0, -1).join("/"));
+    }
+  }
+  return roots;
+}
+
+/**
+ * The route family of an App Router route file: its folder cut after the last static segment
+ * below the router root, so `app/sites/[site]/[lang]/blog/[slug]/page.tsx` → `app/sites/[site]/[lang]/blog/`.
+ * Null for a file that is not a route file under one of `roots` (see `appRouterRoots`).
+ */
+export function routeFamilyOf(file: string, roots: Set<string>): string | null {
+  const parts = file.split("/");
+  if (!ROUTE_FILE.test(parts[parts.length - 1])) return null;
+  const dirs = parts.slice(0, -1);
+  let appIndex = -1;
+  for (let i = 0; i < dirs.length; i++) {
+    if (dirs[i] === "app" && roots.has(dirs.slice(0, i + 1).join("/"))) {
+      appIndex = i;
+      break;
+    }
+  }
+  if (appIndex < 0) return null;
+  let end = appIndex;
+  for (let i = appIndex + 1; i < dirs.length; i++) {
+    if (isStaticSegment(dirs[i])) end = i;
+  }
+  return `${dirs.slice(0, end + 1).join("/")}/`;
+}
+
+function describeRouteOwner(node: MindPlanNode): string {
+  if (node.type === "Foundation") {
+    const role = effectiveRole(node);
+    return `"${node.id}" (${role === "assembler" ? "Assembler" : `Foundation${role ? ` ${role}` : ""}`})`;
+  }
+  return `"${node.id}" (${node.type === "Interface" ? "entry point" : node.type})`;
+}
+
+/**
+ * Warnings for route families whose route files have more than one owner. The rule: the
+ * Assembler owns routes that dispatch to whichever template is active; a template's entry
+ * point owns only routes that exist for that template alone.
+ */
+export function routeFamilySplits(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  universe: string[]
+): string[] {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const families = new Map<string, Map<string, string[]>>();
+  const roots = appRouterRoots(universe);
+  for (const file of universe) {
+    const family = routeFamilyOf(file, roots);
+    if (!family) continue;
+    const ownerId = exclusiveOwner(buckets, file);
+    if (!ownerId) continue;
+    let owners = families.get(family);
+    if (!owners) {
+      owners = new Map();
+      families.set(family, owners);
+    }
+    owners.set(ownerId, [...(owners.get(ownerId) ?? []), file]);
+  }
+  const warnings: string[] = [];
+  for (const [family, owners] of [...families].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (owners.size < 2) continue;
+    const list = [...owners.keys()]
+      .sort()
+      .map((id) => {
+        const node = byId.get(id);
+        const files = owners.get(id)!;
+        const shown = files.slice(0, 2).map((f) => `"${f}"`).join(", ");
+        return `${node ? describeRouteOwner(node) : `"${id}"`} owns ${shown}${files.length > 2 ? ", ..." : ""}`;
+      })
+      .join("; ");
+    warnings.push(
+      `routes: route family "${family}" is split: ${list}. ` +
+        `The Assembler owns routes that dispatch to whichever template is active; ` +
+        `a template's entry point owns only routes that exist for that template alone. ` +
+        `Move the family's routes to one owner with set_implementation_files.`
+    );
+  }
+  return warnings;
 }
 
 /**

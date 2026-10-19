@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Default check Blocks illegal imports (each with its fix) and a shipped pipeline node whose next file is missing or is not a state-only twin, warns about stale territory text, and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
+description: "Default check Blocks unclaimed source files (with the probable owner and the claim call), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text and split route families; checks one change's members on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
 state: stable
-shipped_at: 2026-10-15T15:52:11.604Z
+shipped_at: 2026-10-19T12:09:48.407Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-15T15:52:11.604Z
+updated_at: 2026-10-19T12:09:48.407Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -17,6 +17,13 @@ depends_on:
 implements:
   - src/interactions/i-check-integrity/
 ---
+
+
+
+
+
+
+
 
 
 # Check integrity
@@ -42,6 +49,10 @@ Intended files: `src/interactions/i-check-integrity/`
 - `buildDriftReport({ nodeIds? })` — uncommitted working tree (`git status --porcelain`), including tracked files deleted from disk. Each path is classified: `unowned`; `owner_idle` (shipped owner with no open update, or a pre-ship owner not in-progress); `claimed_missing` (a claimed path gone from disk); or expected (the owner has an open update claiming the file) — expected is only a count. With `nodeIds` it lists those owners' files and counts the rest (`other_count`); lists are capped. Null when there is nothing to act on or git is unread
 - Default `check` still ignores the dirty tree; shipped neighbor edits still pass
 - `if-mcp-tools` imports this package because it exposes it (`run_check`); the Assembler re-exports the drift envelope
+- **Coverage.** An in-universe file (configured `sources` minus `exclude`) that no current or next claim of a non-retired node covers is `Blocked: Coverage: …` with the probable owner (by path) and the exact `set_implementation_files` call, preceded by `open_next` when that owner is shipped with no open evolution. A retired node's claim no longer counts as coverage; such a file is reported once, by the leftovers rule, not again as Coverage. The universe is listed once per run and shared by coverage, imports, and route families
+- **Next-slot imports.** The import rule runs over every claimant of a file (live, next-slot, released). Violations the check did not scan before (advisory) print as `Warning: imports (next slot): …` for one release, then Block
+- **Route families.** Split ownership of one route family is a warning
+- **Changes.** `runCheckHandler({ base?, change? })` adds `change: { id, members, failures, warnings }`: each member's active-slot import and ownership violations (Blocked lines that make `ok` false) and its stale-text warnings; a member violation the global import rule already reported is not repeated. An unknown change id with no open members is Blocked
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
@@ -54,6 +65,10 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - Clean tree or git failure yields no report (or empty)
 - Default check pass/fail behavior otherwise unchanged
 - Verified via `npm test`
+- A new unclaimed source file fails with `Blocked: Coverage`, its probable owner, and the claim call
+- An illegal import in a file claimed only on a next slot warns with `imports (next slot)` and does not fail
+- `run_check` with `change` reports the members and fails when a member has an import violation
+- `run_check` on this repository's graph reports no new failures
 
 ## Atomic Ops
 
@@ -65,6 +80,11 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Add `runCheckHandler` for the `run_check` tool
 - [x] Classify drift (unowned, owner_idle, claimed_missing, expected count) and scope it to nodes
 - [x] Verified the check output, warnings, and drift classes via `npm test`
+- [x] Report `Blocked: Coverage` with the probable owner and fix; stop counting retired claims as coverage
+- [x] Report advisory next-slot import violations as warnings
+- [x] Warn on split route families
+- [x] Add `change` to `runCheckHandler`
+- [x] Verified coverage, next-slot imports, route families, and the change check via `npm test`
 
 ## Attachments
 

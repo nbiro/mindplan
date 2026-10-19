@@ -2,11 +2,11 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — validation-at-transition rules, the import matrix with the `mounts` composition root, the import and ownership gate for in-review and ship, and stale-text warnings. A next file in state mirror is not an open evolution."
+description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import and ownership gate for in-review and ship, annotated checklist completion, stale-text warnings, and split route-family warnings. A next file in state mirror is not an open evolution."
 state: stable
-shipped_at: 2026-10-15T16:19:53.236Z
+shipped_at: 2026-10-19T12:09:47.764Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-15T16:19:53.236Z
+updated_at: 2026-10-19T12:09:47.764Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -15,6 +15,14 @@ implements:
   - src/foundations/f-compiler-rules/
 role: infra
 ---
+
+
+
+
+
+
+
+
 
 
 
@@ -41,6 +49,11 @@ Intended files: `src/foundations/f-compiler-rules/`
   - Each `ImportViolation` carries the fix: `{ tool: "link_nodes", args }` with `depends_on`, `exposes`, or `mounts`, or `not_allowed` text when no edge can make the import legal (an Interaction importing an Interface, a `depends_on` that would cycle)
   - `assertCheckCleanForNode` — the gate for moves to `in-review` and `ship`: import and exclusivity violations on the node's active-slot files become one `Blocked: Check failed …`
   - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked; relative references (`./`, `../`) are skipped; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
+  - `findAllImportViolations` scans every claimant of a file (live, next-slot, and released current-slot owners) and resolves import targets through every claim. A violation found only through a next-slot or released claim, which the check did not scan before, is marked `advisory`; the check reports it as a warning for one release before it Blocks
+  - `probableOwner(graph, file)` — the non-retired pipeline node whose claim shares the longest directory prefix with an unclaimed file (a file two or more folders deep needs at least two shared folders), and `coverageFix` — the exact call that claims it (`set_implementation_files` with the active-slot list plus the file, preceded by `open_next` for a shipped owner with no open evolution)
+  - `routeFamilySplits(graph, buckets, universe)` — warnings when the route files (`page`, `route`, `layout`, `template`, `loading`, `error`, `not-found`, `default`) of one route family are owned by more than one node. Only router roots count (`appRouterRoots`: an `app/` folder with a root `layout`, directly or in a route group). `findAllImportViolations` also takes the universe so the check lists it once. A route family is the route folder cut after its last static segment, so `app/sites/[site]/[lang]/blog/[slug]/page.tsx` belongs to `app/sites/[site]/[lang]/blog/`. Rule (SPEC): the Assembler owns routes that dispatch to whichever template is active; a template's entry point owns only routes that exist for that template alone
+- `changeMembers(graph, change)` (`rules.ts`) — the open revisions of a change: pipeline nodes whose `activeChange` is the id, shipped with an open next or pre-ship and not retired; shared by the change walk, the change check, and the change blast radius
+- Completion Check counts `- [x] … — note: …` and `- [x] … — n/a: <reason>` as done; a `— n/a:` with no reason counts as unchecked
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
@@ -55,6 +68,10 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Stale-text signals are warnings and never throw; relative paths and fresh checkouts do not warn
 - Cancelling an Interface is Blocked while an active Foundation mounts it
 - Verified via `npm test`
+- An illegal import in a file claimed only by an open next slot (or a released file) is found and marked advisory
+- `probableOwner` picks the node with the longest shared claim prefix; the fix opens the evolution first for a shipped owner
+- A route family owned by an Assembler and a template entry point yields one warning; a family with one owner yields none
+- An annotated tick passes the Completion Check; an `— n/a:` with no reason does not
 
 ## Atomic Ops
 
@@ -67,6 +84,10 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - [x] Verified the import fixes, mounts, gate, and warnings via `npm test`
 - [x] Block cancelling an Interface that a Foundation still mounts
 - [x] Verified the stale-text and cancel refinements via `npm test`
+- [x] Scan every claimant in `findAllImportViolations` and mark next-slot and released findings advisory
+- [x] Add `probableOwner` and `coverageFix`
+- [x] Add `routeFamilySplits`
+- [x] Verified next-slot imports, coverage fixes, and route families via `npm test`
 
 ## Attachments
 

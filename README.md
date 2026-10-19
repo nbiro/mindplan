@@ -39,7 +39,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
 - **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id and a standing `<id>.next.mdx` twin (`state: mirror`); `open_next` flips it to `draft` → build → `ship` promotes over `<id>.mdx` and restores the twin
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
-- **Ship after green check** — the implementer `ship`s when `run_check` (the CLI `mindplan-mcp check`) is green and legal transitions allow; moves to `in-review` and `ship` also run its import and ownership rules on the node's files, and `update_node_status` with `scope` walks every open update to ship in one call
+- **Ship after green check** — the implementer `ship`s when `run_check` (the CLI `mindplan-mcp check`) is green and legal transitions allow; moves to `in-review` and `ship` also run its import and ownership rules on the node's files, and `update_node_status` with `scope` walks every open update (or one change's revisions) through in-review to ship in one call — jumping past in-review needs `skip_review: true`, which is reported
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees
@@ -178,11 +178,11 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | Tool | Kind | Description |
 |------|------|-------------|
 | `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); `depth: rules\|body\|full` trims it |
-| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); illegal imports come with their fix |
+| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every revision in a change |
 | `find_related_nodes` | read | Rank by query; focus + 1-hop |
 | `get_mindplan_graph` | read | Assembled nodes/edges (`version: 1`) |
 | `export_mindplan_view` | read | Mermaid or DOT |
-| `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files`; cancelled/deprecated omitted unless `include_retired` |
+| `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired` |
 | `get_node_context` | read | `record` + `body` (+ `next.record`/`next.body` when evolving) |
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |

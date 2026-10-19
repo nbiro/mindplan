@@ -123,7 +123,7 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("unknown check option")) 
 fs.mkdirSync(path.join(root, "src", "orphan"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "orphan", "x.ts"), "export {};\n");
 r = runCheck([]);
-if (r.status === 0 || !(r.stderr || r.stdout).includes("coverage")) {
+if (r.status === 0 || !(r.stderr || r.stdout).includes("Blocked: Coverage") || !(r.stderr || r.stdout).includes("set_implementation_files")) {
   failures++;
   console.log(`FAIL expected coverage failure: status=${r.status} out=${r.stderr || r.stdout}`);
 } else console.log("ok   unowned universe file fails coverage");

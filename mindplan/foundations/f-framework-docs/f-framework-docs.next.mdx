@@ -2,19 +2,25 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, and skills: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check and updates the graph to match the implementation, the mounts composition root, and host install docs for Cursor and Claude Code."
+description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups, glob claims, shared-route ownership, and host install docs for Cursor and Claude Code."
 state: mirror
-shipped_at: 2026-10-15T15:52:07.534Z
+shipped_at: 2026-10-19T12:09:47.974Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-15T15:52:07.534Z
+updated_at: 2026-10-19T12:09:47.974Z
 depends_on:
   - f-domain-model
 implements:
+  - CHANGELOG.md
   - README.md
   - SPEC.md
   - templates/
 role: infra
 ---
+
+
+
+
+
 
 
 # Framework docs
@@ -39,6 +45,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 - README, SPEC, and the Claude Code integration guide document `init --host cursor|claude|all` and what each host receives
 - plan-project skill description: load when creating or patching the graph, including before new-feature code
 - Never paste rules, playbook, or description into MCP instructions
+- **Honesty behavior in SPEC and the playbook.** SPEC documents: which writes reset a `ready` revision to `draft` (and which never do); `Blocked: Coverage` with its probable owner and fix; the import rule over next-slot and released claims (warnings for one release); `skip_review` and the per-step dry run; unambiguous `toggle_checkboxes` with `all`, `note`, and `not_applicable`; change ids (`change`, `change_ref`, `scope: "change"`, change blast radius, change check); glob claims; and the shared-route rule (the Assembler owns routes that dispatch to the active template; a template's entry point owns only its own routes) with its split-family warning. The bundled playbook names readiness reset, skip_review, notes, and change ids
+- **Changelog.** `CHANGELOG.md` lists every behavior change per release
 
 Depends on: `f-domain-model`.
 
@@ -51,6 +59,7 @@ Depends on: `f-domain-model`.
 - Host install docs match what `init --host` writes
 - Tool when-clauses documented in SPEC §8
 - Verified via `npm test`
+- SPEC, the playbook, and the changelog describe every behavior change in this revision
 
 ## Atomic Ops
 
@@ -67,6 +76,9 @@ Depends on: `f-domain-model`.
 - [x] Name `run_check` in the playbook, plan-project skill, and README
 - [x] Refresh the init-installed host copies again
 - [x] Verified the docs via `npm test`
+- [x] Document readiness reset, coverage, next-slot imports, skip_review, toggles and notes, change ids, glob claims, and shared-route ownership in SPEC
+- [x] Update the bundled playbook and skills
+- [x] Add `CHANGELOG.md`
 
 ## Attachments
 

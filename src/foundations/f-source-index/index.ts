@@ -13,8 +13,10 @@ export {
 } from "./config.js";
 
 export {
+  claimCoversPath,
   claimEntryExists,
   expandClaims,
+  isGlobClaim,
   normalizeClaimList,
   validateClaimPath,
 } from "./claims.js";
@@ -30,9 +32,11 @@ export {
 
 export {
   buildOwnershipIndex,
+  claimantsOf,
   exclusiveOwner,
   nodeOwnedFiles,
   ownerOfFile,
   releasedClaimEntries,
+  type Claimant,
   type OwnershipBuckets,
 } from "./ownership.js";

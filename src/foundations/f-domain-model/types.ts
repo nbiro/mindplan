@@ -89,6 +89,10 @@ export interface NextSlot {
   implements?: string[];
   /** Proposed Foundation role; applied to current on ship. */
   role?: FoundationRole;
+  /** Change id grouping this revision with others (dropped on ship). */
+  change?: string;
+  /** Branch or PR reference for the change. */
+  change_ref?: string;
 }
 
 export interface MindPlanNode {
@@ -130,6 +134,23 @@ export interface MindPlanNode {
    * Omitted when empty. Slot-independent: `next` carries no separate rules.
    */
   rules?: string;
+  /** Change id grouping this pre-ship revision with others (cleared on first ship). */
+  change?: string;
+  /** Branch or PR reference for the change. */
+  change_ref?: string;
+}
+
+/** A change id: a slug like a node id. */
+export const CHANGE_ID_PATTERN = /^[a-z0-9][a-z0-9-_]*$/;
+
+/**
+ * The change an open revision belongs to: the next slot's while a shipped node evolves,
+ * the live one before first ship, and none for a shipped node with no open next.
+ */
+export function activeChange(node: MindPlanNode): string | undefined {
+  if (node.next) return node.next.change;
+  if (node.shipped_at) return undefined;
+  return node.change;
 }
 
 /** How a rule entry reached the node it was resolved for. */

@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section, the `mounts` edge field, and section/replace body patches; keep a shipped next file as a state-only twin."
+description: "Infra — persist territory through the store only, including each node's ## Rules section, the `mounts` edge field, the change id and ref, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin."
 state: stable
-shipped_at: 2026-10-15T16:19:52.380Z
+shipped_at: 2026-10-19T12:09:47.534Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-15T16:19:52.380Z
+updated_at: 2026-10-19T12:09:47.534Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -14,6 +14,13 @@ implements:
   - src/foundations/f-territory-store/
 role: infra
 ---
+
+
+
+
+
+
+
 
 
 
@@ -52,6 +59,10 @@ Intended files: `src/foundations/f-territory-store/`
   - **Adoption.** A `## Rules` section already in a body is read as that node's rules on the next load; nothing migrates it and nothing warns. SPEC §6.1.1 documents this so authors rename such a heading first
   - **Fences.** Parsing is line-based and ignores code fences; a heading-like line inside a fence counts as a heading (documented in SPEC §6.1.1)
 - Checkbox counting and label comparison ignore the Rules section, so it does not affect Minimum Territory Shape, Atomic Op counting, or mirror-twin equality (the twin is a byte copy, section included)
+- **Checkbox toggles.** `toggleCheckboxesInBody` returns `{ body, toggled }`. A `contains` that matches more than one checkbox line is Blocked with the matching lines unless the toggle passes `all: true`; zero matches stay Blocked. `note` ticks the line and appends ` — note: <text>`; `not_applicable` ticks it and appends ` — n/a: <reason>`; unticking strips an annotation and re-toggling replaces it, so the item's own wording never changes
+- **Readiness demotion.** `demoteReadySlot(node, slot)` sends a `ready` slot to `draft`. The contract writers call it after writing and return whether they did: `patchNodeTerritory` (any field but `change` / `change_ref`, as `readinessReset`), `writeImplementsFrontmatter` (only when the list changes), `addEdgeToFrontmatter`, and `removeEdgesFromFrontmatter`. `validateChangeInput` is the one change-id validator
+- **Annotated completion.** `countCheckboxesInText` counts an `— n/a:` line with an empty reason as unchecked; `checkboxLabels` strips annotations
+- **Change frontmatter.** `change` / `change_ref` scalars are read from the live file and the open next file; `writeChangeFrontmatter(node, { change, change_ref }, slot)` sets or clears them (empty string clears) without touching state or `updated_at`; `patchNodeTerritory` takes them as patch fields (validated slug / one-line ref); `create_node`, `open_next`, and first ship call the writer; `promoteNextSlot` drops them because it rebuilds the live frontmatter
 
 Depends on: `f-domain-model`, `f-source-index`.
 
@@ -69,6 +80,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 - A `mounts` edge round-trips through link, unlink, open_next, and ship
 - A section patch changes only that section; a replace changes exactly one occurrence; the Rules section cannot be patched through either
 - Verified via `npm test`
+- A `contains` matching two checkbox lines is Blocked and the Blocked text lists both lines; with `all: true` both toggle
+- A note or not-applicable reason is appended to the line without rewording it; unticking removes it
+- `change` / `change_ref` round-trip through the live and next files and are gone after ship
 
 ## Atomic Ops
 
@@ -91,6 +105,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Add `replaceSectionInBody` / `replaceTextInBody` and the `section` / `replace` patch inputs
 - [x] Verified `mounts` and the section/replace patches via `npm test`
 - [x] Skip fenced lines when finding section headings and keep the file's line endings on body writes
+- [x] Block ambiguous toggles unless `all`, and return the toggled lines
+- [x] Write notes and not-applicable reasons; count an empty reason as unchecked
+- [x] Read and write `change` / `change_ref`; drop them on ship
+- [x] Verified toggles, notes, and change frontmatter via `npm test`
 
 ## Attachments
 

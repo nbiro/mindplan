@@ -2,17 +2,24 @@
 id: f-source-index
 type: Foundation
 title: "Source index"
-description: "Infra — ownership universe and MCP write of mindplan/config.json."
+description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, and MCP write of mindplan/config.json."
 state: stable
-shipped_at: 2026-10-11T13:15:38.747Z
+shipped_at: 2026-10-19T12:09:47.275Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-10-11T13:15:38.747Z
+updated_at: 2026-10-19T12:09:47.275Z
 depends_on:
   - f-domain-model
 implements:
   - src/foundations/f-source-index/
 role: infra
 ---
+
+
+
+
+
+
+
 
 
 # Source index
@@ -28,6 +35,8 @@ Intended files: `src/foundations/f-source-index/`
 - `writeProjectConfig` remains the store write for config
 - Steer exposes `patch_config` that calls it with `force: true`
 - Claim expansion / ownership unchanged
+- **Glob claims.** An `implements` entry with `*`, `**`, or `?` is a glob claim (`isGlobClaim`); `[` and `]` stay literal so route folders such as `[slug]` are plain paths. `validateClaimPath` accepts globs; `expandClaims` walks from the glob's static prefix and keeps matching files (a trailing `/` matches every file beneath each matching directory, e.g. `src/templates/*/actions/i-read-post/`); `claimEntryExists` is true for a glob that matches at least one file; `claimCoversPath(claim, path)` answers for files, directories, and globs. Exclusivity stays per expanded file, so two nodes whose claims overlap on a file still conflict. Directory and glob expansion skip `.git/` and `node_modules/`. Glob expansions are cached until the event loop turns, so one tool call walks each glob once
+- **Claimants.** `claimantsOf(buckets, file)` lists every non-retired claim on a file: its live owner, its next-slot owner, and a released current-slot owner
 
 Depends on: `f-domain-model`.
 
@@ -35,11 +44,17 @@ Depends on: `f-domain-model`.
 
 - Config writes go through the store API used by MCP
 - Verified via `npm test`
+- `src/templates/*/actions/i-read-post/` expands to the files under that folder in every template, and a glob that matches nothing is missing on disk
+- `[slug]` in a claim is a literal folder name
+- Two nodes whose claims (glob or not) cover the same file conflict
 
 ## Atomic Ops
 
 - [x] Expose config write for steer `patch_config`
 - [x] Verified via `npm test`
+- [x] Accept and expand glob claims (`isGlobClaim`, `expandClaims`, `claimEntryExists`, `claimCoversPath`)
+- [x] Add `claimantsOf`
+- [x] Verified glob claims via `npm test`
 
 ## Attachments
 

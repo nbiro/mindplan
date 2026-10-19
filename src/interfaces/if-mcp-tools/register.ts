@@ -108,6 +108,19 @@ const NODE_ID = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-_]*$/, "ids must be kebab_case/slug style: lowercase letters, digits, - and _");
 
+const CHANGE_ID = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-_]*$/, "change ids are slugs: lowercase letters, digits, - and _");
+
+const CHANGE_REF = z
+  .string()
+  .optional()
+  .describe("Optional branch name or PR URL for the change. Empty string clears it.");
+
+/** Which writes send a ready revision back to draft; repeated in the write tools' hints. */
+const READINESS_HINT =
+  "A contract write to a slot in state ready (territory text or checkboxes, claims, links) moves that slot back to draft and returns readiness_reset; self-ready it again after review.";
+
 /** Register every MindPlan MCP tool onto the given server. */
 export function registerMindPlanTools(server: McpServer): void {
   server.registerTool(
@@ -118,15 +131,21 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call before in-review, before ship, and before telling the user the work is done. " +
         "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence, mirror twins, leftovers, and the import matrix. " +
         "Returns { ok, output, failures, warnings }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import). " +
-        "Warnings flag stale territory text and never fail the check. Moves to in-review and ship run this check on the node's files themselves.",
+        "Warnings flag stale territory text, next-slot imports (one release before they Block), and split route families, and never fail the check. " +
+        "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
+        "Pass change to also run the in-review gate on every open revision in that change. " +
+        "Moves to in-review and ship run this check on the node's files themselves.",
       inputSchema: {
         base: z
           .string()
           .optional()
           .describe("Opt-in: also enforce dirty-src ownership against this git ref (not used by CI)."),
+        change: CHANGE_ID.optional().describe(
+          "Also check every open revision in this change (imports, ownership, stale text) and list its members."
+        ),
       },
     },
-    guarded(({ base }) => runCheckHandler({ base }), { drift: false })
+    guarded(({ base, change }) => runCheckHandler({ base, change }), { drift: false })
   );
 
   server.registerTool(
@@ -320,7 +339,9 @@ export function registerMindPlanTools(server: McpServer): void {
         "replace { find, with } (one exact edit), toggle_checkboxes, optional title/description/role " +
         "(pre-ship or open evolution). Prefer section/replace for small fixes: they do not resend the body. " +
         "Do not edit mindplan/ MDX with host file tools. " +
-        "When a shipped node has an open evolution (not a mirror twin), patches default to next. Optional slot: current|next.",
+        "When a shipped node has an open evolution (not a mirror twin), patches default to next. Optional slot: current|next. " +
+        READINESS_HINT +
+        " change / change_ref set the revision's change id (grouping only: never resets readiness).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node whose territory to patch."),
@@ -360,11 +381,34 @@ export function registerMindPlanTools(server: McpServer): void {
           .array(
             z.object({
               contains: z.string().min(1).describe("Substring to match on a checkbox line."),
-              checked: z.boolean().describe("true for [x], false for [ ]."),
+              checked: z
+                .boolean()
+                .optional()
+                .describe("true for [x], false for [ ]. Optional with not_applicable (it ticks)."),
+              all: z
+                .boolean()
+                .optional()
+                .describe("Toggle every matching line. Without it, a substring matching several lines is Blocked."),
+              note: z
+                .string()
+                .optional()
+                .describe('Tick with a note, written as " — note: <text>" after the item.'),
+              not_applicable: z
+                .string()
+                .optional()
+                .describe('Tick as not applicable with a reason, written as " — n/a: <reason>". Counts as done.'),
             })
           )
           .optional()
-          .describe("Toggle markdown checkboxes by matching line content."),
+          .describe(
+            "Toggle markdown checkboxes by matching line content. Returns toggled: the lines as written. " +
+              "Close an item honestly with note or not_applicable instead of rewording it."
+          ),
+        change: z
+          .string()
+          .optional()
+          .describe("Set this revision's change id (a slug); empty string clears it."),
+        change_ref: CHANGE_REF,
         slot: z
           .enum(["current", "next"])
           .optional()
@@ -382,6 +426,8 @@ export function registerMindPlanTools(server: McpServer): void {
         text,
         replace,
         toggle_checkboxes,
+        change,
+        change_ref,
         slot,
         verbose,
       }) =>
@@ -395,6 +441,8 @@ export function registerMindPlanTools(server: McpServer): void {
           text,
           replace,
           toggle_checkboxes,
+          change,
+          change_ref,
           slot,
           verbose,
         }),
@@ -532,7 +580,9 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call before writing a file the node does not yet claim. " +
         "Replaces the server-owned implements list for an Interaction, Interface, or Foundation. " +
         "Pre-ship writes current; shipped writes only an open next (else Blocked → open_next); " +
-        "retired nodes may only shrink. Rejects bad paths and ownership conflicts.",
+        "retired nodes may only shrink. Rejects bad paths and ownership conflicts. " +
+        "Entries are files, directories ending in /, or globs (* ** ?; [ ] stay literal), e.g. src/templates/*/actions/i-read-post/. " +
+        READINESS_HINT,
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Pipeline node whose implements list to replace."),
@@ -572,11 +622,15 @@ export function registerMindPlanTools(server: McpServer): void {
           .enum(FOUNDATION_ROLES)
           .optional()
           .describe("Required for Foundation: assembler | infra | design-system | adapter."),
+        change: CHANGE_ID.optional().describe(
+          "Optional change id (a slug) that ties this new Foundation, Interaction, or Interface to other revisions of one change."
+        ),
+        change_ref: CHANGE_REF,
       },
     },
     guarded(
-      ({ id, type, title, description, role, verbose }) =>
-        createNode({ id, type, title, description, role, verbose }),
+      ({ id, type, title, description, role, change, change_ref, verbose }) =>
+        createNode({ id, type, title, description, role, change, change_ref, verbose }),
       { write: true }
     )
   );
@@ -591,7 +645,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
         "Interface -exposes-> Interaction, Foundation -mounts-> Interface (a composition root that imports Interfaces), Interaction -leads_to-> Interaction, " +
         "Bug -affects-> Interaction|Interface|Foundation. " +
-        "While a node has <id>.next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship).",
+        "While a node has <id>.next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship). " +
+        READINESS_HINT,
       inputSchema: {
         verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),
@@ -616,7 +671,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call when a shipped node's contract changes, before editing that contract. Follow the plan-project skill. " +
         "Flips a shipped node's standing <id>.next.mdx twin from state mirror to draft (creates the twin from live if missing). " +
         "Optional title/description overrides. Does not reset checkboxes. The live node keeps serving. " +
-        "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror.",
+        "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror. " +
+        "Pass change to tie this revision to the others of one change (update_node_status scope change, get_blast_radius change, run_check change act on the group).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(
@@ -624,11 +680,13 @@ export function registerMindPlanTools(server: McpServer): void {
         ),
         title: z.string().min(1).optional().describe("Optional new title for the next slot."),
         description: z.string().optional().describe("Optional new description for the next slot."),
+        change: CHANGE_ID.optional().describe("Optional change id (a slug) grouping this revision with others."),
+        change_ref: CHANGE_REF,
       },
     },
     guarded(
-      ({ node_id, title, description, verbose }) =>
-        openNext({ node_id, title, description, verbose }),
+      ({ node_id, title, description, change, change_ref, verbose }) =>
+        openNext({ node_id, title, description, change, change_ref, verbose }),
       { write: true }
     )
   );
@@ -660,17 +718,19 @@ export function registerMindPlanTools(server: McpServer): void {
         "({ owner_id, owner_type, via[], files[] }; via ∈ focus|dependent|exposing|importer). " +
         "Cancelled and deprecated nodes are omitted by default; set include_retired to see them " +
         "(BFS still traverses through retired nodes so live dependents keep true distances). " +
-        "When the focus is an Interaction, also returns reachability.",
+        "When the focus is an Interaction, also returns reachability. " +
+        "Pass change instead of node_id for the merged radius of every open revision in a change.",
       inputSchema: {
-        node_id: NODE_ID.describe("The id of the node whose dependents to analyze."),
+        node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),
+        change: CHANGE_ID.optional().describe("A change id: merge the blast radius of all its open revisions."),
         include_retired: z
           .boolean()
           .optional()
           .describe("Include cancelled/deprecated nodes (default false)."),
       },
     },
-    guarded(({ node_id, include_retired }) =>
-      getBlastRadius({ node_id, include_retired })
+    guarded(({ node_id, change, include_retired }) =>
+      getBlastRadius({ node_id, change, include_retired })
     )
   );
 
@@ -680,7 +740,8 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Unlink nodes",
       description:
         "Call when an existing edge should go away, as part of the plan-project skill. " +
-        "Removes edge(s) between two nodes from the source node's frontmatter.",
+        "Removes edge(s) between two nodes from the source node's frontmatter. " +
+        READINESS_HINT,
       inputSchema: {
         verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),
@@ -704,7 +765,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "When an open evolution exists (not a mirror twin), build-pipeline transitions apply to the next slot; " +
         "ship promotes next over current and restores the mirror twin. " +
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
-        "Pass scope + new_status to walk every open update (or a node and its dependents) to a target in one call, validated before the first write; dry_run previews it. " +
+        "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
+        "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +
         "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
         "A batch returns one line per node. " +
         "Journey and production stable/unstable are computed automatically.",
@@ -728,8 +790,16 @@ export function registerMindPlanTools(server: McpServer): void {
           .optional()
           .describe(
             "Walk many nodes in one call to the new_status target: all_open_updates (every shipped node with an open next, and every pre-ship node being built: in-progress or in-review; draft and ready plans are never walked) " +
-              "or node_and_dependents (node_id plus its open dependents). The server orders Foundations, Interactions, Interfaces, " +
+              "or node_and_dependents (node_id plus its open dependents), or change (every open revision with that change id, draft and ready included). " +
+              "The server orders Foundations, Interactions, Interfaces, " +
               "walks each node through the pipeline, and validates the whole walk before writing anything. Target: ready | in-progress | in-review | ship."
+          ),
+        change: CHANGE_ID.optional().describe('The change id walked by scope "change".'),
+        skip_review: z
+          .boolean()
+          .optional()
+          .describe(
+            "Scoped walk to ship only: allow moving nodes that are not in-review yet. Each still passes the in-review gate; the result lists skipped_review."
           ),
         dry_run: z
           .boolean()

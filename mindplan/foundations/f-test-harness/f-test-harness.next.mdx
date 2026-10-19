@@ -2,17 +2,22 @@
 id: f-test-harness
 type: Foundation
 title: "Test harness"
-description: "Infra — smoke, view, search, check, and ergonomics tests including short instructions, the get_project playbook and check sentence, run_check, mounts, small writes, section patches, scoped status, drift classes, and stale-text warnings."
+description: "Infra — smoke, view, search, check, ergonomics, and honesty tests including short instructions, the get_project playbook and check sentence, run_check, mounts, small writes, section patches, scoped status, drift classes, stale-text warnings, readiness reset, coverage fixes, next-slot imports, skip_review, checkbox matching and notes, change groups, glob claims, and route-family warnings."
 state: mirror
-shipped_at: 2026-10-15T16:19:54.001Z
+shipped_at: 2026-10-19T12:09:48.196Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-15T16:19:54.001Z
+updated_at: 2026-10-19T12:09:48.196Z
 depends_on:
   - f-mcp-runtime
 implements:
   - src/foundations/f-test-harness/
 role: infra
 ---
+
+
+
+
+
 
 
 
@@ -36,6 +41,7 @@ Intended files: `src/foundations/f-test-harness/`
 - Smoke: twenty-five tools including `run_check`; a batch status returns one line per node
 - `ergonomics.test.mjs` (run by `npm test`): `run_check` equals the CLI output; a registry importing two Interfaces gets two `mounts` fixes, passes once both are mounted, and one missing mount stays Blocked; claiming an unlinked import returns the `link_nodes` call; moving such a node to in-review is Blocked; a default write result is small and `verbose` adds the anchor; section and replace patches (including every Blocked case); orient `depth`; a scoped walk with `dry_run`, validate-first, and one-call ship in dependency order (a draft plan that claims files is not walked); drift classes and scoping; stale-text warnings that never fail the check and skip relative paths
 - `check.test.mjs`: drift is scoped to the focus node (a deleted claimed file is found by orienting on its owner)
+- `honesty.test.mjs` (run by `npm test`) covers: readiness reset per write and the toggle exemption; `Blocked: Coverage` with probable owner and fix; next-slot import warnings; `skip_review` and the per-step dry run; ambiguous toggles, `all`, `toggled`, notes, and not-applicable reasons passing the completion check; change ids across `open_next`, `scope: "change"`, change blast radius, and change check; glob claims (expansion, exclusivity, path lookup); and the split route-family warning
 
 Depends on: `f-mcp-runtime`.
 
@@ -46,6 +52,7 @@ Depends on: `f-mcp-runtime`.
 - Existing ownership cases still fail closed when violated
 - The ergonomics suite passes and fails closed on each behavior above
 - Verified via `npm test`
+- `npm test` runs `honesty.test.mjs` and it passes
 
 ## Atomic Ops
 
@@ -56,6 +63,8 @@ Depends on: `f-mcp-runtime`.
 - [x] Scope the check suite's drift assertions to the focus node
 - [x] Verified the ergonomics suite via `npm test`
 - [x] Cover parked plans and relative paths in the ergonomics suite
+- [x] Add `honesty.test.mjs` and run it from `npm test`
+- [x] Verified via `npm test`
 
 ## Attachments
 

@@ -295,18 +295,21 @@ for (const status of ["ready", "in-progress"]) {
   const dry = await call("update_node_status", {
     scope: "all_open_updates",
     new_status: "ship",
+    skip_review: true,
     dry_run: true,
   });
   check(
-    "dry_run lists the walk in Foundation, Interaction, Interface order and writes nothing",
+    "dry_run lists every transition in Foundation, Interaction, Interface order and writes nothing",
     dry.dry_run === true &&
       dry.blocked === null &&
-      dry.plan.length === 5 &&
-      dry.plan[0].startsWith("f-core") &&
-      dry.plan[1].startsWith("f-reg") &&
-      dry.plan[2].startsWith("i-feature") &&
-      dry.plan[3].startsWith("if-a") &&
-      dry.plan[4].startsWith("if-b"),
+      dry.plan.length === 10 &&
+      dry.plan[0] === "f-core: in-progress -> in-review" &&
+      dry.plan[1] === "f-core: in-review -> ship" &&
+      dry.plan[2].startsWith("f-reg") &&
+      dry.plan[4].startsWith("i-feature") &&
+      dry.plan[6].startsWith("if-a") &&
+      dry.plan[8].startsWith("if-b") &&
+      dry.skipped_review?.length === 5,
     JSON.stringify(dry)
   );
   const stillBuilding = (await call("get_node_context", { node_id: "f-core" })).record.state;
@@ -355,6 +358,7 @@ for (const status of ["ready", "in-progress"]) {
   const real = await blocked("update_node_status", {
     scope: "all_open_updates",
     new_status: "ship",
+    skip_review: true,
   });
   const afterCore = (await call("get_node_context", { node_id: "f-core" })).record.state;
   check(
@@ -370,6 +374,8 @@ for (const status of ["ready", "in-progress"]) {
   }
 }
 {
+  // Review stop first, then ship: a walk from in-progress straight to ship needs skip_review.
+  await call("update_node_status", { scope: "all_open_updates", new_status: "in-review" });
   const shipped = await call("update_node_status", { scope: "all_open_updates", new_status: "ship" });
   const states = {};
   for (const id of ["f-core", "f-reg", "f-extra", "i-feature", "i-bad", "if-a", "if-b"]) {

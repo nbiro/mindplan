@@ -18,7 +18,7 @@ export type OwnershipBuckets = {
 /**
  * Build ownership index from implements lists.
  * Exclusivity uses live ∪ next (released excluded).
- * Coverage uses live ∪ next ∪ released ∪ retired.
+ * Coverage uses live ∪ next ∪ released (`claimantsOf`); retired claims only feed leftovers.
  */
 export function buildOwnershipIndex(
   graph: MindPlanGraph,
@@ -114,6 +114,18 @@ export function ownerOfFile(
   if (buckets.released.has(file)) return { id: buckets.released.get(file)!, via: "released" };
   if (buckets.retired.has(file)) return { id: buckets.retired.get(file)!, via: "retired" };
   return null;
+}
+
+/** One non-retired claim on a file. `released` is a current-slot claim an open next dropped. */
+export type Claimant = { id: string; via: "live" | "next" | "released" };
+
+/** Every non-retired claim on a file: its next-slot owner, its live owner, and a released owner. */
+export function claimantsOf(buckets: OwnershipBuckets, file: string): Claimant[] {
+  const out: Claimant[] = [];
+  if (buckets.next.has(file)) out.push({ id: buckets.next.get(file)!, via: "next" });
+  if (buckets.live.has(file)) out.push({ id: buckets.live.get(file)!, via: "live" });
+  if (buckets.released.has(file)) out.push({ id: buckets.released.get(file)!, via: "released" });
+  return out;
 }
 
 /** Expanded files for a pipeline node's live and/or next slot. */
