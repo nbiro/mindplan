@@ -43,8 +43,11 @@ import {
   removeEdgesFromFrontmatter,
   scaffoldEntity,
   splitContext,
+  validateChangeInput,
+  writeChangeFrontmatter,
   writeImplementsFrontmatter,
   writeMirrorTwin,
+  type CheckboxToggle,
   writeNodeRules,
   writeProjectConfig,
   type TerritorySlot,
@@ -54,7 +57,9 @@ import {
   writeProjectBrief,
 } from "../../foundations/f-territory-store/project.js";
 import {
+  claimCoversPath,
   expandClaims,
+  isGlobClaim,
   normalizeClaimList,
 } from "../../foundations/f-source-index/claims.js";
 import {
@@ -65,6 +70,7 @@ import {
   assertAcyclicDependsOn,
   assertPipelineTerritoryScalarsEditable,
   blocked,
+  changeMembers,
   findNode,
   recomputeJourneyStates,
   recomputeStability,
@@ -218,6 +224,38 @@ export function mutationTail(
   return verbose ? { ...tail, ...buildMutationAnchor(graph, nodeId) } : tail;
 }
 
+/** What a readiness reset reports: the slot that left `ready`. */
+export type ReadinessReset = {
+  slot: TerritorySlot;
+  from: "ready";
+  to: "draft";
+  note: string;
+};
+
+const READINESS_NOTE =
+  "This revision was ready; a contract write sent it back to draft. Review the contract and self-ready it again.";
+
+/**
+ * Report a readiness reset the store made during a contract write (`demoteReadySlot`).
+ * A ready → draft move never changes a Journey state, so only the map is refreshed.
+ */
+function readinessResult(
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot,
+  demoted: boolean
+): { reset: ReadinessReset | null; files: string[] } {
+  if (!demoted) return { reset: null, files: [] };
+  refreshPersistedMap();
+  return {
+    reset: { slot, from: "ready", to: "draft", note: READINESS_NOTE },
+    files: [territoryPath(node, slot)],
+  };
+}
+
+function readinessFields(reset: ReadinessReset | null): Record<string, unknown> {
+  return reset ? { readiness_reset: reset } : {};
+}
+
 export function createNode(args: {
   verbose?: boolean;
   id: string;
@@ -225,6 +263,8 @@ export function createNode(args: {
   title: string;
   description: string;
   role?: FoundationRole;
+  change?: string;
+  change_ref?: string;
 }): Record<string, unknown> {
   const { id, type, title, description } = args;
   // Validate config before writing territory.
@@ -255,6 +295,10 @@ export function createNode(args: {
   } else if (args.role !== undefined) {
     throw blocked(`role is only valid when creating a Foundation (got ${type}).`);
   }
+  if ((args.change !== undefined || args.change_ref !== undefined) && !isPipelineNodeType(type)) {
+    throw blocked(`change applies to Foundations, Interactions, and Interfaces (got ${type}).`);
+  }
+  validateChangeInput(args);
   const now = new Date().toISOString();
   const node: MindPlanNode = {
     id,
@@ -268,6 +312,7 @@ export function createNode(args: {
   };
   ensureDirectories();
   scaffoldEntity(node, { title, description: desc });
+  writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref });
   const rel = entityRelativePath(node);
   const current = territoryPath(node, "current");
   const attachments = `${rel}/${ATTACHMENTS_DIR}`;
@@ -344,7 +389,7 @@ export function setImplementationFiles(args: {
     }
     for (const e of normalized) {
       const covered = (node.implements ?? []).some(
-        (p) => p === e || (p.endsWith("/") && (e === p || e.startsWith(p)))
+        (p) => p === e || (!isGlobClaim(e) && claimCoversPath(p, e))
       );
       if (!covered) {
         throw blocked(
@@ -362,9 +407,10 @@ export function setImplementationFiles(args: {
     }
   }
 
-  writeImplementsFrontmatter(node, normalized, slot);
+  const demoted = writeImplementsFrontmatter(node, normalized, slot);
   refreshPersistedMap();
   const pathWritten = territoryPath(node, slot);
+  const readiness = readinessResult(node, slot, demoted);
   // Scan the claimed files now, so a missing edge is reported with the exact call that fixes it.
   const claimedGraph = loadGraph();
   const claimedNode = findNode(claimedGraph, node.id);
@@ -383,7 +429,8 @@ export function setImplementationFiles(args: {
     slot,
     implements: normalized,
     ...(importViolations.length ? { import_violations: importViolations } : {}),
-    changed_files: changedFiles([pathWritten], true),
+    ...readinessFields(readiness.reset),
+    changed_files: changedFiles([pathWritten, ...readiness.files], true),
     ...mutationTail(loadGraph(), node.id, args.verbose),
   };
 }
@@ -441,22 +488,25 @@ export function linkNodes(args: {
       source.next.mounts = [...(source.next.mounts ?? []), target_id];
     }
   }
-  addEdgeToFrontmatter(source, edge_type, target_id);
+  const demoted = addEdgeToFrontmatter(source, edge_type, target_id);
 
   const changedJourneys = recomputeJourneyStates(graph);
   const changedStability = recomputeStability(graph);
   syncNodes([...changedJourneys, ...changedStability]);
   refreshPersistedMap();
+  const readiness = readinessResult(source, writeSlot, demoted);
   const files = [
     territoryPath(source, writeSlot),
     ...changedJourneys.map((j) => territoryPath(j)),
     ...changedStability.map((n) => territoryPath(n)),
+    ...readiness.files,
   ];
   return {
     linked: { source: source_id, target: target_id, type: edge_type },
     slot: writeSlot,
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+    ...readinessFields(readiness.reset),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), source_id, args.verbose),
   };
@@ -507,22 +557,25 @@ export function unlinkNodes(args: {
   if (removed === 0) {
     throw blocked(`no edge exists between "${source_id}" and "${target_id}".`);
   }
-  removeEdgesFromFrontmatter(source, target_id);
+  const demoted = removeEdgesFromFrontmatter(source, target_id);
   const changedJourneys = recomputeJourneyStates(graph);
   const changedStability = recomputeStability(graph);
   syncNodes([...changedJourneys, ...changedStability]);
   refreshPersistedMap();
   const sourceFiles = [territoryPath(source, "current")];
   if (source.next) sourceFiles.push(territoryPath(source, "next"));
+  const readiness = readinessResult(source, source.next ? "next" : "current", demoted);
   const files = [
     ...sourceFiles,
     ...changedJourneys.map((j) => territoryPath(j)),
     ...changedStability.map((n) => territoryPath(n)),
+    ...readiness.files,
   ];
   return {
     removed,
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+    ...readinessFields(readiness.reset),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), source_id, args.verbose),
   };
@@ -538,7 +591,7 @@ const STATUS_TIER: Record<string, number> = {
 type StatusRevision = { node_id: string; new_status: string };
 
 /** Which nodes a scoped status call walks. */
-export const STATUS_SCOPES = ["all_open_updates", "node_and_dependents"] as const;
+export const STATUS_SCOPES = ["all_open_updates", "node_and_dependents", "change"] as const;
 export type StatusScope = (typeof STATUS_SCOPES)[number];
 
 /** Forward build pipeline a scoped call walks each node through. */
@@ -549,6 +602,10 @@ type StatusArgs = {
   new_status?: string;
   revisions?: StatusRevision[];
   scope?: StatusScope;
+  /** Change id walked by `scope: "change"`. */
+  change?: string;
+  /** Let a scoped walk to `ship` move nodes that have not reached in-review. Reported in the result. */
+  skip_review?: boolean;
   dry_run?: boolean;
   verbose?: boolean;
 };
@@ -577,7 +634,23 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
     if (args.scope === "all_open_updates" && args.node_id) {
       throw blocked('scope "all_open_updates" takes no node_id; use "node_and_dependents" for one node.');
     }
+    if (args.scope === "change") {
+      if (!args.change) {
+        throw blocked('scope "change" requires change (the change id whose revisions walk together).');
+      }
+      if (args.node_id) {
+        throw blocked('scope "change" takes no node_id; the change names its revisions.');
+      }
+    } else if (args.change !== undefined) {
+      throw blocked('change is only used with scope "change".');
+    }
     return { mode: "scope", items: [] };
+  }
+  if (args.change !== undefined) {
+    throw blocked('change is only used with scope "change".');
+  }
+  if (args.skip_review === true) {
+    throw blocked("skip_review only applies to a scoped walk to ship.");
   }
   if (hasList && hasSingle) {
     throw blocked(
@@ -648,6 +721,13 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode
   let selected: MindPlanNode[];
   if (args.scope === "all_open_updates") {
     selected = graph.nodes.filter((n) => isOpenUpdate(n));
+  } else if (args.scope === "change") {
+    selected = changeMembers(graph, args.change!);
+    if (selected.length === 0) {
+      throw blocked(
+        `change "${args.change}" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).`
+      );
+    }
   } else {
     const seed = findNode(graph, args.node_id!);
     const ids = new Set<string>([seed.id]);
@@ -755,12 +835,36 @@ function simulateWalk(plan: WalkPlan[]): { blocked: string | null; warnings: str
   return { blocked: null, warnings: [...warnings] };
 }
 
+/** Every transition a plan makes, one `id: from -> to` line per step. */
 function describePlan(plan: WalkPlan[], graph: MindPlanGraph): string[] {
-  return plan.map((row) => {
-    const node = findNode(graph, row.node_id);
-    const to = row.steps[row.steps.length - 1];
-    return `${row.node_id}: ${activeState(node)} -> ${to}`;
-  });
+  const lines: string[] = [];
+  for (const row of plan) {
+    let from = activeState(findNode(graph, row.node_id));
+    for (const step of row.steps) {
+      lines.push(`${row.node_id}: ${from} -> ${step}`);
+      from = step;
+    }
+  }
+  return lines;
+}
+
+/** Nodes a walk would take to ship without stopping at in-review first. */
+function nodesSkippingReview(plan: WalkPlan[], graph: MindPlanGraph): string[] {
+  return plan
+    .filter(
+      (row) =>
+        row.steps[row.steps.length - 1] === "ship" &&
+        activeState(findNode(graph, row.node_id)) !== "in-review"
+    )
+    .map((row) => row.node_id);
+}
+
+function skipReviewBlocked(ids: string[]): string {
+  return (
+    `Blocked: this walk would take ${ids.map((id) => `"${id}"`).join(", ")} to ship without a review stop ` +
+    `(not in-review yet). Walk to in-review first and review, or pass skip_review: true to walk through ` +
+    `in-progress and in-review in this call; skipped reviews are reported.`
+  );
 }
 
 const WARNING_CAP = 10;
@@ -787,15 +891,24 @@ export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
     const plan: WalkPlan[] = nodes
       .map((n) => ({ node_id: n.id, steps: stepsToTarget(n, args.new_status!) }))
       .filter((row) => row.steps.length > 0);
+    const skipping = nodesSkippingReview(plan, graph);
+    const reviewBlock =
+      skipping.length > 0 && args.skip_review !== true ? skipReviewBlocked(skipping) : null;
     const sim = simulateWalk(plan);
+    const skipped = args.skip_review === true && skipping.length > 0 ? { skipped_review: skipping } : {};
     if (args.dry_run) {
       return {
         dry_run: true,
         scope: args.scope,
+        ...(args.scope === "change" ? { change: args.change } : {}),
         plan: describePlan(plan, graph),
-        blocked: sim.blocked,
+        blocked: reviewBlock ?? sim.blocked,
+        ...skipped,
         ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
       };
+    }
+    if (reviewBlock) {
+      throw new Error(`${reviewBlock} Nothing was written.`);
     }
     if (sim.blocked) {
       throw new Error(
@@ -818,7 +931,9 @@ export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
     return {
       ordered: true,
       scope: args.scope,
+      ...(args.scope === "change" ? { change: args.change } : {}),
       lines,
+      ...skipped,
       changed_files: [...changed],
       ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
       ...(verbose
@@ -950,6 +1065,11 @@ function applyOneStatus(args: {
       }
     }
   } else if (resolved.ship) {
+    // A shipped node is no longer an open revision: its change membership ends here.
+    writeChangeFrontmatter(node, {
+      change: node.change ? "" : undefined,
+      change_ref: node.change_ref ? "" : undefined,
+    });
     node.shipped_at = now;
     node.state = resolved.state;
     node.updated_at = now;
@@ -1071,13 +1191,16 @@ export function patchNodeTerritory(args: {
   description?: string;
   role?: FoundationRole;
   body?: string;
-  toggle_checkboxes?: { contains: string; checked: boolean }[];
+  toggle_checkboxes?: CheckboxToggle[];
   section?: string;
   text?: string;
   replace?: { find: string; with: string; all?: boolean };
+  change?: string;
+  change_ref?: string;
   slot?: TerritorySlot;
 }): Record<string, unknown> {
   const { node_id, title, description, role, body, toggle_checkboxes, slot } = args;
+  validateChangeInput(args);
   if ((args.section === undefined) !== (args.text === undefined)) {
     throw blocked('patch_node_territory section needs both section ("## Heading") and text.');
   }
@@ -1105,6 +1228,17 @@ export function patchNodeTerritory(args: {
     }
     assertPipelineTerritoryScalarsEditable(node, "role", resolvedSlot);
   }
+  const changeWrite = args.change !== undefined || args.change_ref !== undefined;
+  if (changeWrite) {
+    if (!isPipelineNodeType(node.type)) {
+      throw blocked(`change applies to Foundations, Interactions, and Interfaces; "${node_id}" is a ${node.type}.`);
+    }
+    if (resolvedSlot === "current" && node.shipped_at) {
+      throw blocked(
+        `"${node_id}" is shipped; a change id belongs to an open revision. Call open_next (it takes change) or patch the next slot.`
+      );
+    }
+  }
   if (
     body !== undefined ||
     args.section !== undefined ||
@@ -1124,14 +1258,19 @@ export function patchNodeTerritory(args: {
     toggle_checkboxes,
     section: args.section !== undefined ? { heading: args.section, text: args.text! } : undefined,
     replace: args.replace,
+    change: args.change,
+    change_ref: args.change_ref,
     slot: resolvedSlot,
   });
   const pathWritten = territoryPath(node, result.slot);
+  const { readinessReset, ...written } = result;
+  const readiness = readinessResult(node, result.slot, readinessReset);
   return {
     node_id,
-    ...result,
+    ...written,
     path: pathWritten,
-    changed_files: changedFiles([pathWritten]),
+    ...readinessFields(readiness.reset),
+    changed_files: changedFiles([pathWritten, ...readiness.files], readiness.reset !== null),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
@@ -1165,13 +1304,17 @@ export function openNext(args: {
   node_id: string;
   title?: string;
   description?: string;
+  change?: string;
+  change_ref?: string;
 }): Record<string, unknown> {
   const { node_id, title, description } = args;
+  validateChangeInput(args);
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   validateOpenNext(node);
   const next = openNextSlot(node, { title, description });
   node.next = next;
+  writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref }, "next");
   const rel = entityRelativePath(node);
   const current = territoryPath(node, "current");
   const next_path = territoryPath(node, "next");

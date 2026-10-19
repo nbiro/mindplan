@@ -103,7 +103,9 @@ Rules:
 
 ### 1.2 Declared file ownership
 
-Interaction, Interface, and Foundation nodes declare the files they own via server-owned frontmatter `implements: string[]` (written only by MCP — `set_implementation_files`). Entries are repo-relative POSIX paths: exact files, or directories ending in `/` that own everything beneath. Queries and `check` expand directories. Paths MUST NOT contain `..` or live under `mindplan/`. `.gitkeep` is ignored.
+Interaction, Interface, and Foundation nodes declare the files they own via server-owned frontmatter `implements: string[]` (written only by MCP — `set_implementation_files`). Entries are repo-relative POSIX paths: exact files, directories ending in `/` that own everything beneath, or **glob claims**. Queries and `check` expand directories and globs to the files on disk. Paths MUST NOT contain `..` or live under `mindplan/`. `.gitkeep` is ignored.
+
+**Glob claims.** An entry containing `*`, `**`, or `?` is a glob. `*` and `?` match within one path segment; `**` matches any depth. `[` and `]` are literal, so App Router folders such as `[slug]` are plain paths. A glob ending in `/` owns every file beneath each matching directory: an action that owns its views in every template claims `src/templates/*/actions/i-read-post/`. A glob entry exists on disk (presence, §9.6) when it matches at least one file. Exclusivity is per expanded file: two nodes whose claims (glob or not) cover the same file conflict, and `set_implementation_files` rejects the second claim. `get_node_implementation` lists the concrete files a glob expands to, and a path lookup finds its owner through a glob.
 
 | Node type | Ownership |
 |---|---|
@@ -134,6 +136,7 @@ Rules:
 - A config that still has `implementation_packages` MUST hard-fail with `Blocked:` pointing at `mindplan-mcp init` (migration). Invalid JSON / shape also hard-fails.
 - `create_node` does **not** scaffold `src/<type>/<id>/`. Declare files with `set_implementation_files`.
 - Default `mindplan-mcp check` enforces exclusivity, coverage, presence, leftovers, and the import matrix over the universe. Opt-in `--base` applies dirty-src lifecycle using the implements index.
+- **Coverage.** Every file in the universe (`sources` minus `exclude`, git-visible including untracked) MUST be claimed in the current or `next` slot of a non-retired node. An unclaimed file is `Blocked: Coverage: …` naming the probable owner (the node whose claim shares the longest directory prefix with the file; a file two or more folders deep needs at least two shared folders, so sharing only `src/` names no owner) and the exact fix: `set_implementation_files` with that node's active-slot list plus the file, preceded by `open_next` when the owner is shipped with no open evolution. A retired node's claim does not cover a file; such a file is reported once, by the leftovers rule, not again as Coverage.
 
 #### 1.2.2 Ownership split (Interaction owns the body; Interface mounts)
 
@@ -150,6 +153,15 @@ Rules:
 **Build order (per exposed Interaction):** Interaction `in-progress` → implement + declare files → only then Interface thin mount/wire.
 
 Default Atomic Ops templates (§6.3) and the playbook encode this split.
+
+#### 1.2.3 Shared app routes (Assembler vs template entry point)
+
+A product with several templates (site themes, white-label shells) often has routes that exist for every template, for example `app/sites/[site]/[lang]/blog/*`. One route family has one owner:
+
+- **The Assembler owns routes that dispatch to whichever template is active.** A template-agnostic route reads the active template and renders its entry point (through `mounts`, §1.2.2); it is composition, so it belongs to the Assembler Foundation.
+- **A template's entry point (its Interface) owns only routes that exist for that template alone.**
+
+A **router root** is an `app/` folder (at any depth) that holds a root `layout` file, directly or in a route group (`app/(site)/layout.tsx`); an `app/` folder without one is not a router. A **route family** is a route folder below a router root, cut after its last static segment: the route files (`page`, `route`, `layout`, `template`, `loading`, `error`, `not-found`, `default`) of `app/sites/[site]/[lang]/blog/page.tsx` and `app/sites/[site]/[lang]/blog/[slug]/page.tsx` are one family, `app/sites/[site]/[lang]/blog/`. Dynamic (`[x]`), group (`(x)`), and slot (`@x`) segments do not start a new family. The check warns (§9.6) when one family's route files have more than one owner; the warning names each owner and the rule. It is a warning, not a `Blocked:`.
 
 ### 1.3 Screaming architecture
 
@@ -323,6 +335,18 @@ Foundations, Interactions, and Interfaces move through a manual build pipeline, 
 
 **Ship transition:** `update_node_status(..., "ship")` from `in-review` sets `shipped_at` and computes `stable` or `unstable` (§3.5). There is no manual `active` state. The implementing agent MAY `ship` (or Bug `resolved`) its own revision when default `mindplan-mcp check` is green and legal transitions / Rules 1–6 allow. Classify the revision per §3.7 (source, neighbor, unaffected) for `open_next` vs edit-in-place — not for a Reviewer gate. MindPlan does **not** require spawning an independent Reviewer, Approve/Reject protocol, or any code-quality judgment before `ship`. Code review and similar process gates are **outside the dialect**; projects MAY add them via host tooling or `mindplan/project.md` standing rules. The parent MAY self-`ready` (`draft` → `ready`) in one ordered `update_node_status` call. Status advances for a multi-node revision in one ordered `update_node_status` call (§3.7). `Blocked: Infrastructure First` (Rule 3, §5.4) or Behavior First defers production entry until deps are ready; that is a compiler gate, not a quality Reject.
 
+**Readiness reset.** `ready` is a judgment about a contract. A contract write to a slot whose state is `ready` — `<id>.mdx` of a pre-ship node, or an open `<id>.next.mdx` — moves that slot back to `draft`, and the write's result says so: the new `state` / `next_state` plus `readiness_reset: { slot, from: "ready", to: "draft", note }`. Self-ready it again after reviewing the changed contract.
+
+| Write | Resets a `ready` slot |
+|---|---|
+| `patch_node_territory`: `title`, `description`, `role`, `body`, `section`, `replace`, `toggle_checkboxes` | Yes |
+| `set_implementation_files` | Yes, when the claim list changes (re-sending the same list does not reset) |
+| `link_nodes` / `unlink_nodes` (the source node's written slot) | Yes |
+| `patch_node_territory` with only `change` / `change_ref` | No — grouping metadata, not contract |
+| `patch_node_rules` | No — rules are standing constraints, not the contract |
+| `put_attachment` / `remove_attachment` | No |
+| Any write to a slot in `draft`, `in-progress`, or `in-review` | No — ticking finished work and matching the territory to the code is how a revision completes |
+
 **Cancel transition:** `update_node_status(..., "cancelled")` abandons a Foundation, Interaction, or Interface that never shipped. It is blocked while `<id>.next.mdx` is open, or while any **active** (non-`cancelled`/`deprecated`/`resolved`/`wontfix`) node still `depends_on` this node (or, for Interactions, while an active Interface still `exposes` it — implementations SHOULD reject cancel when active dependents of either edge kind exist). Packages and territory folders are left on disk. There is no uncancel in v1 — cancelled is terminal like `deprecated`.
 
 | From \ To | draft | ready | in-progress | in-review | stable/unstable | cancelled | deprecated |
@@ -366,6 +390,15 @@ An Atomic Operation is a PR-sized unit of work expressed as a Markdown task-list
 ```
 
 Recognized syntax: a list item beginning with `-`, `*`, or `+`, followed by `[ ]` (open) or `[x]` (complete). Checkbox state is parsed from the relevant file (`<id>.mdx`, or `<id>.next.mdx` when evolving) at validation time — the file on disk is the source of truth for completion, not the graph.
+
+**Closing an item honestly.** An item that was done differently, or does not apply, is closed with an annotation instead of being reworded:
+
+```markdown
+- [x] Load test checkout — note: verified manually against staging
+- [x] Migrate legacy orders — n/a: no legacy orders exist in this market
+```
+
+`toggle_checkboxes` writes these (`note`, `not_applicable`, §8.1). Both count as complete. A `— n/a:` with no reason counts as open. Unticking removes the annotation; the item's own words never change.
 
 JSX in the file is invisible to this check (§6.4.4): only Markdown task-list syntax gates completion.
 
@@ -468,6 +501,18 @@ The implementer advances the successor set with one `update_node_status` call (�
 
 `Blocked: Infrastructure First`, or Behavior First because an exposed Interaction is not yet shippable, defers production entry until deps allow — that is a compiler gate, not a quality judgment. Any other `Blocked:` stops the call.
 
+**Scoped walks do not skip review.** `update_node_status` with `scope` walks each selected node through every stage (`ready → in-progress → in-review → ship`), running each transition's rules and the in-review check gate at that step. A walk to `ship` that would move a node whose active state is not yet `in-review` is `Blocked:` unless the call passes `skip_review: true`; with it the walk still stops at `in-review` for the gate and the result lists those nodes in `skipped_review`. The usual flow is two calls: walk to `in-review`, review, then walk to `ship`. `dry_run` lists every transition the walk will make, one `id: from -> to` line per step.
+
+#### Change ids
+
+One feature often touches several nodes. A **change id** (a slug, optional `change_ref` naming the branch or PR) ties their revisions together without a new node type:
+
+- `create_node` and `open_next` take `change` / `change_ref`; `patch_node_territory` sets or clears them (empty string clears) on the active slot. They live in the frontmatter of the revision's file: `<id>.next.mdx` for a shipped node, `<id>.mdx` before first ship.
+- **Members** of a change are its open revisions: shipped nodes with an open `next` carrying the id, and pre-ship, non-retired nodes carrying it, at any state including `draft` and `ready`.
+- `update_node_status` with `scope: "change"` and `change` walks every member (same ordering, validation, and `skip_review` rule as the other scopes).
+- `get_blast_radius` with `change` returns the members' merged radius; `run_check` with `change` also runs the in-review gate on every member (§8.1).
+- Shipping ends membership: promotion drops the id with the rest of the next slot, and first ship clears it from `<id>.mdx`. A change with no members is `Blocked:` where a change is required.
+
 #### Check before handoff
 
 Before the agent stops owning the work, it MUST update the graph so it matches the implementation. Default `mindplan-mcp check` MUST exit 0 before self-`ready`, entering `in-review`, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. When the implementation is done and a merge is requested, the agent MUST `ship` the node (Bug: `resolved`). Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). It does not invoke a host typechecker; host typecheck is not a MindPlan gate. Agents run it with the `run_check` tool (§8.1), which returns the same output as the CLI. The server also runs the check's import-matrix and exclusivity rules on a node's active-slot files at every move to `in-review` and `ship` (§5.13); a violation is a `Blocked:` that names the fix. Stale-text warnings (§9.6) ride along and never block.
@@ -557,6 +602,8 @@ Rationale: an entry surface must not go live while the behaviours it exposes (or
 A Foundation, Interaction, or Interface MUST NOT transition to `ship` while its active territory file (`<id>.mdx`, or `<id>.next.mdx` while evolving) contains one or more unchecked Atomic Operations (`[ ]`). A Bug MUST NOT transition to `resolved` while unchecked items remain. The rejection message MUST include the count of open checkboxes.
 
 `in-review` MUST NOT require a complete checklist. Agents enter `in-review` with open DoD items, then tick them while in review.
+
+An item ticked with a note (`— note: …`) or as not applicable with a reason (`— n/a: <reason>`, §3.3) is complete. `— n/a:` with an empty reason counts as unchecked.
 
 Atomic Ops are a **ship-time ledger**: the record confirmed before `ship` / `resolved`, not a plan and not progress narration. The server does not restrict when boxes may be checked, including checking every box while the node is still `draft`, `ready`, or `in-progress`. The Completion Check at ship is the only checklist gate.
 
@@ -741,7 +788,9 @@ After any accepted mutation, the server MUST rewrite server-owned fields in each
 - **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, `exposes`, `leads_to`, or `affects`) on the source node's active slot, plus `updated_at:`.
 - **Opening an evolution (`open_next`):** creates `<id>.next.mdx` with `state: draft`, copied/overridden `title:`/`description:`, and proposed edge arrays from `<id>.mdx` at open time.
 - **Discarding an evolution (`discard_next`):** restores `<id>.next.mdx` as a `mirror` twin of live and clears `next-attachments/`; `<id>.mdx` is untouched.
-- **Ship / promotion (`update_node_status(..., "ship")`):** on a first build, writes `state:`, `updated_at:`, and `shipped_at:` on `<id>.mdx` and creates the standing `mirror` twin. When promoting an open evolution, copies next onto live, sets computed `stable`/`unstable`, refreshes timestamps, and restores the `mirror` twin. There is no other node's frontmatter to update — the `id` never changes.
+- **Ship / promotion (`update_node_status(..., "ship")`):** on a first build, writes `state:`, `updated_at:`, and `shipped_at:` on `<id>.mdx`, removes `change:` / `change_ref:`, and creates the standing `mirror` twin. When promoting an open evolution, copies next onto live (without `change:` / `change_ref:`), sets computed `stable`/`unstable`, refreshes timestamps, and restores the `mirror` twin. There is no other node's frontmatter to update — the `id` never changes.
+- **Readiness reset (§3.1):** a contract write to a `ready` slot sets `state: draft` and `updated_at:` on that slot.
+- **Change ids (§3.7):** `change:` and `change_ref:` are optional scalars on the revision's file, written by `create_node`, `open_next`, and `patch_node_territory`.
 
 Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the file. If the file is missing or has no frontmatter, mirroring is skipped silently.
 
@@ -980,7 +1029,8 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 
 #### `get_blast_radius`
 
-- **Input:** `node_id` (slug); optional `include_retired` (boolean, default `false`).
+- **Input:** exactly one of `node_id` (slug) or `change` (change id, §3.7); optional `include_retired` (boolean, default `false`).
+- **Output (change):** `{ change, members: [{ id, type, state, next_state }], affected, journeys_at_risk, affected_files, rules_impact }` — the members' radii merged: `affected` keeps each node's smallest distance and leaves out the members themselves; `affected_files` merges groups per owner; `rules_impact` is keyed by member id. `Blocked:` when the change has no open revisions.
 - **Output:**
 
 ```jsonc
@@ -1083,8 +1133,9 @@ Composite orientation for agents: `find_related_nodes` plus full territory for t
 
 Runs the same check as `mindplan-mcp check` (§9.6), so agents cannot miss it.
 
-- **Input:** `base` (git ref, optional) — opt-in dirty-src, as `--base`.
-- **Output:** `{ ok: boolean, output: string, failures: string[], warnings: string[], removed_legacy_files? }`. `output` is exactly what the CLI prints: `mindplan-mcp check: ok`, or one `Blocked:` line per failure, then `Warning:` lines. An illegal import failure names the fix (§9.6).
+- **Input:** `base` (git ref, optional) — opt-in dirty-src, as `--base`; `change` (change id, optional).
+- **Output:** `{ ok: boolean, output: string, failures: string[], warnings: string[], change?, removed_legacy_files? }`. `output` is exactly what the CLI prints: `mindplan-mcp check: ok`, or one `Blocked:` line per failure, then `Warning:` lines. An illegal import failure names the fix (§9.6).
+- **Change:** with `change`, the check also runs the in-review gate on every open revision in the change: import and ownership violations on each member's active-slot files are added to `failures` as `Blocked: change "<id>": …` (so `ok` is false), except a violation the global import rule already reported, which is not repeated, and every stale-text signal for the members is added to `warnings`. The output adds `change: { id, members: [{ id, type, state, next_state }] }`. A change with no open revisions is a `Blocked:` failure.
 - **Errors:** a failed check is a successful call with `ok: false`, including a git failure with `base` set or an invalid config (reported as a `Blocked:` failure).
 - **Playbook:** call it before self-`ready`, `in-review`, `ship` / `resolved`, and before saying the work is done.
 
@@ -1132,7 +1183,7 @@ Returns declared file ownership (§1.2) for a node, or the owner of a path.
 }
 ```
 
-`next_files` is present only when an open `next` slot declares `implements`.
+`next_files` is present only when an open `next` slot declares `implements`. Directory and glob claims are expanded to the concrete files on disk.
 
 - **Output (Journey):** files of member Interactions plus Interfaces that expose them, tagged `{ path, owner_id, owner_type, exists }`.
 - **Output (Bug):** files of `affects` targets, tagged the same way.
@@ -1151,13 +1202,14 @@ Patches territory-owned content on `<id>.mdx` or `<id>.next.mdx`. Server-owned f
   - `body` (string, optional) — replaces entire body below frontmatter
   - `section` (string, optional) + `text` (string) — rewrites the content under one `## heading` (`"## Purpose"` or `"Purpose"`); the heading line and every other section are untouched. `section` and `text` go together.
   - `replace` (`{ find, with, all? }`, optional) — replaces one exact piece of the body; `find` MUST match exactly once unless `all: true`. `body` MUST NOT be combined with `section` or `replace`.
-  - `toggle_checkboxes` (array of `{ contains, checked }`, optional) — match checkbox lines by substring
+  - `toggle_checkboxes` (array of `{ contains, checked?, all?, note?, not_applicable? }`, optional) — match checkbox lines by substring of the whole line (marker included). A `contains` that matches more than one checkbox line is `Blocked:` and the error lists every matching line, unless `all: true` toggles them all. `note` ticks the item and appends ` — note: <text>`; `not_applicable` ticks it and appends ` — n/a: <reason>` (`checked` may be omitted); both count as complete (§3.3, §5.6). Unticking strips an annotation; a new annotation replaces the old one.
+  - `change` / `change_ref` (string, optional) — set the active slot's change id and branch/PR reference (§3.7); an empty string clears. Grouping metadata: it never resets readiness. `Blocked:` on the live file of a shipped node (a change belongs to an open revision).
   - `slot` (`current` \| `next`, optional) — explicitly select the territory file to patch; errors if `next` is requested but no open evolution exists (a `mirror` twin is not enough)
   - At least one patch field is required.
 - **Slot resolution:** when `slot` is omitted, the server patches `<id>.next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Interaction/Interface with an open evolution, otherwise `<id>.mdx`.
 - **Effect:** writes territory body and/or `title`/`description` scalars on the resolved slot; touches `updated_at` in that slot's frontmatter.
-- **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next", path, changed_files: string[] }` — `path` is the repo-relative MDX written; `changed_files` lists that path. This is the required writer for territory prose.
-- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; `section` heading not found (the error lists the sections); `section` without `text`; `replace.find` not found, or found more than once without `all`; `section: "## Rules"` (use `patch_node_rules`); explicit `slot: "next"` with no open evolution; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`); write aimed at a `mirror` twin; a `body` containing a `## Rules` heading (use `patch_node_rules`).
+- **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next", path, toggled?, readiness_reset?, changed_files: string[], state, next_state }` — `path` is the repo-relative MDX written; `toggled` lists the checkbox lines as written; `readiness_reset` is present when the write moved a `ready` slot back to `draft` (§3.1); `changed_files` lists that path. This is the required writer for territory prose.
+- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; a `contains` matching several checkbox lines without `all` (lists the lines); `note` together with `not_applicable`, or either with `checked: false`; an empty note or reason; an invalid change id; `section` heading not found (the error lists the sections); `section` without `text`; `replace.find` not found, or found more than once without `all`; `section: "## Rules"` (use `patch_node_rules`); explicit `slot: "next"` with no open evolution; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`); write aimed at a `mirror` twin; a `body` containing a `## Rules` heading (use `patch_node_rules`).
 - **Rules section:** a body replace preserves the node's existing `## Rules` section (§6.1.1).
 
 #### `patch_node_rules`
@@ -1204,7 +1256,7 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 
 #### `create_node`
 
-- **Input:** `id` (slug), `type` (`Journey|Foundation|Interaction|Interface|Bug`), `title` (non-empty), `description`, `role` (required when `type` is Foundation: `assembler|infra|design-system|adapter`).
+- **Input:** `id` (slug), `type` (`Journey|Foundation|Interaction|Interface|Bug`), `title` (non-empty), `description`, `role` (required when `type` is Foundation: `assembler|infra|design-system|adapter`), optional `change` / `change_ref` (Foundation, Interaction, or Interface only; §3.7).
 - **Effect:** scaffolds the entity folder with a full-frontmatter `<id>.mdx` (§6.3). Does **not** scaffold `src/<type>/<id>/`. Declare owned files afterward with `set_implementation_files`. Does not write edge fields — those are added by `link_nodes`. Never creates a `<id>.next.mdx`.
 - **Output:** `{ created: <node from frontmatter>, folder, current, context, attachments, changed_files, state, next_state }` (project-relative paths; `context` is a deprecated alias for `current`; `anchor` with `verbose: true`).
 - **Errors:** duplicate `id`; Foundation missing/invalid `role`.
@@ -1214,13 +1266,15 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 - **Input:** `node_id` (Interaction, Interface, or Foundation), `files` (string[] of repo-relative POSIX paths), optional `slot` (`current`|`next`).
 - **Effect:** replaces the active slot's `implements` list. Pre-ship nodes write `current`. Shipped nodes write only an open `next` (else `Blocked:` → `open_next`). Retired nodes (`cancelled`/`deprecated`) may only shrink their list. Rejects `..`, paths under `mindplan/`, and ownership conflicts with other live/next claims.
 - **Import scan:** after writing, scans the claimed files and returns `import_violations: [{ file, imports, fix }]` for each illegal import (omitted when none). `fix` is the exact call that makes it legal: `{ tool: "link_nodes", args: { source_id, target_id, edge_type } }` — `depends_on` for a missing Foundation, `exposes` for an unexposed Interaction, `mounts` for a Foundation importing an Interface. When no edge can make the import legal the entry has `not_allowed` instead (for example an Interaction importing an Interface, or a `depends_on` that would create a cycle). The claim is still written; the violation is also a `Blocked:` at `in-review` / `ship` (§5.10).
-- **Output:** `{ node_id, slot, implements, import_violations?, changed_files, state, next_state }`.
+- **Entries:** files, directories ending in `/`, or glob claims (§1.2).
+- **Readiness:** a claim on a slot in `ready` moves it back to `draft` (§3.1).
+- **Output:** `{ node_id, slot, implements, import_violations?, readiness_reset?, changed_files, state, next_state }`.
 - **Errors:** unknown/wrong type; shipped without open next; retired expand; bad path; exclusivity conflict.
 
 #### `open_next`
 
-- **Input:** `node_id` (shipped Foundation, Interaction, or Interface), `title` (optional), `description` (optional).
-- **Effect:** validates Rule 10 (§5.11), ensures a standing twin exists (creates from live when missing), flips `state` from `mirror` to `draft` (optional title/description; checkboxes unchanged), ensures `next-attachments/`. `<id>.mdx` is unchanged. A drifted `mirror` twin (not a state-only copy of live) MUST be rejected — heal with `mindplan-mcp init` or a live MCP write first.
+- **Input:** `node_id` (shipped Foundation, Interaction, or Interface), `title` (optional), `description` (optional), `change` / `change_ref` (optional; §3.7).
+- **Effect:** validates Rule 10 (§5.11), ensures a standing twin exists (creates from live when missing), flips `state` from `mirror` to `draft` (optional title/description; checkboxes unchanged), writes the change id on the next slot when given, ensures `next-attachments/`. `<id>.mdx` is unchanged. A drifted `mirror` twin (not a state-only copy of live) MUST be rejected — heal with `mindplan-mcp init` or a live MCP write first.
 - **Output:** `{ node_id, live_state, next: { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, folder, current, next_path, changed_files }`.
 - **Errors:** unknown `node_id`; wrong type; node not shipped; node already has an open evolution; drifted mirror twin.
 
@@ -1261,7 +1315,8 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 
 - **Input:** `source_id`, `target_id`, `edge_type` (`depends_on|belongs_to|exposes|leads_to|affects|mounts`).
 - **Effect:** validates §5.10, then appends the target id to the source node's outgoing edge array — on `<id>.mdx`, or on the proposed edges of an open `<id>.next.mdx` when the source is a Foundation/Interaction/Interface currently evolving (§2.2). Recomputes stability (§3.5) and Journey states (§4) from the live graph (`next`-slot edges never affect these computations until promoted), patches affected frontmatter fields.
-- **Output:** `{ linked: {source, target, type}, slot: "current" | "next", journeys_recomputed: [...], stability_recomputed: [{id, state}], changed_files }`.
+- **Readiness:** when the written slot of the source is `ready`, it moves back to `draft` (§3.1).
+- **Output:** `{ linked: {source, target, type}, slot: "current" | "next", journeys_recomputed: [...], stability_recomputed: [{id, state}], readiness_reset?, changed_files }`.
 - **Errors:** unknown ids; illegal shape; Interaction Independence violation; self-link; duplicate edge (on the resolved slot); `depends_on` dependency cycle.
 - **Note:** there is no `link_dependent` parameter and no Dependency Closure cascade.
 
@@ -1269,7 +1324,8 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 
 - **Input:** `source_id`, `target_id`.
 - **Effect:** removes **all** edges from `source_id` to `target_id` (any type) from the source node's `<id>.mdx` frontmatter and, when present, from an open `<id>.next.mdx`'s proposed edges; recomputes stability and Journey states; mirrors frontmatter.
-- **Output:** `{ removed: <count>, journeys_recomputed: [...], stability_recomputed: [...], changed_files }`.
+- **Readiness:** when the source's active slot (`next` while evolving) is `ready`, it moves back to `draft` (§3.1).
+- **Output:** `{ removed: <count>, journeys_recomputed: [...], stability_recomputed: [...], readiness_reset?, changed_files }`.
 - **Errors:** unknown ids; no edge exists between the pair (on either slot).
 - **Note:** unlinking does not retroactively demote a node already past a gate; guardrails are evaluated at transition time only (§9.2).
 
@@ -1277,16 +1333,17 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 
 - **Input (one node):** `node_id`, `new_status` (string; build/Bug state name, or `ship` for Foundation/Interaction/Interface production entry).
 - **Input (one revision):** `revisions` — a non-empty array of `{ node_id, new_status }`. Mutually exclusive with `node_id` / `new_status`. Duplicate `node_id` values are rejected.
-- **Input (scope):** `scope` (`all_open_updates` \| `node_and_dependents`) with `new_status` as the target (`ready` \| `in-progress` \| `in-review` \| `ship`); `node_and_dependents` also takes `node_id`. Mutually exclusive with `revisions`. `all_open_updates` selects every shipped Foundation/Interaction/Interface with an open `next`, and every pre-ship one that is being built (`in-progress` or `in-review`); a `draft` or `ready` node is a plan, not an update, and is never walked by `all_open_updates`; `node_and_dependents` selects `node_id` plus the nodes that `depends_on` it or `exposes` it, transitively (including their proposed `next` edges), and walks those that are open updates or pre-ship at any state, because the caller named the seed.
+- **Input (scope):** `scope` (`all_open_updates` \| `node_and_dependents` \| `change`) with `new_status` as the target (`ready` \| `in-progress` \| `in-review` \| `ship`); `node_and_dependents` also takes `node_id`; `change` takes `change` (the change id) and walks every member of that change (§3.7), including `draft` and `ready` ones; `skip_review` (boolean) lets a walk to `ship` move nodes that are not yet `in-review` (see below). Mutually exclusive with `revisions`. `all_open_updates` selects every shipped Foundation/Interaction/Interface with an open `next`, and every pre-ship one that is being built (`in-progress` or `in-review`); a `draft` or `ready` node is a plan, not an update, and is never walked by `all_open_updates`; `node_and_dependents` selects `node_id` plus the nodes that `depends_on` it or `exposes` it, transitively (including their proposed `next` edges), and walks those that are open updates or pre-ship at any state, because the caller named the seed.
 - **Input (any form):** `dry_run` (boolean) — validate and return the plan without writing; `verbose` (boolean).
 - **Effect (one node):** runs the full §5.13 pipeline. When the node has no open evolution, mutations apply to `<id>.mdx` exactly as in a first build (first `ship` also creates the standing `mirror` twin). When an evolution is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies next onto live, merges non-`.gitkeep` files from `next-attachments/` into `attachments/`, computes `stable`/`unstable`, sets `shipped_at`, and restores the `mirror` twin (§3.6, §5.11). Recomputes stability and Journey states, persists, mirrors frontmatter.
 - **Effect (revision):** orders the list **Foundations, then Interactions, then Interfaces, then Bugs** (caller order within a tier) and applies the one-node effect to each, reloading the graph between nodes so later gates see earlier writes (§3.7). Stops on the first `Blocked:`. Earlier nodes stay transitioned.
-- **Effect (scope):** orders the selected nodes Foundations, Interactions, Interfaces (dependency order within a tier), then walks each from its active state through `draft → ready → in-progress → in-review → ship` to the target, skipping nodes already there. The whole walk is validated in memory first — every transition rule plus the check gate (§5.10) — and **nothing is written** if any step would be `Blocked:`.
+- **Effect (scope):** orders the selected nodes Foundations, Interactions, Interfaces (dependency order within a tier), then walks each from its active state through `draft → ready → in-progress → in-review → ship` to the target, skipping nodes already there. Every intermediate stage runs: a node never jumps from `ready` to `stable`, and the in-review check gate runs at the `in-review` step. The whole walk is validated in memory first — every transition rule plus the check gate (§5.10) — and **nothing is written** if any step would be `Blocked:`.
+- **Effect (scope to `ship`):** when any selected node's active state is not `in-review`, the walk is `Blocked:` (nothing written) unless `skip_review: true`. With it, those nodes still walk through `in-progress` and `in-review` (gate included) in this call, and the result lists them in `skipped_review`.
 - **Effect (check gate):** a move to `in-review` or `ship` runs the check's import and exclusivity rules on the node's active-slot files and is `Blocked:` on a violation (§5.10). Stale-text warnings (§9.6) for the node are returned as `warnings` and never block.
 - **Output (one node):** `{ node_id, previous_state, new_state, state, next_state, shipped_at, promoted_next: boolean, warnings?, journeys_recomputed: [...], stability_recomputed: [...], changed_files }` (`anchor` with `verbose`). `state` is the live state. On promote, `changed_files` includes `<id>.mdx`, the restored `<id>.next.mdx` mirror twin, cleared `next-attachments/` paths, and any `attachments/<file>` copies from the next slot.
-- **Output (revision / scope):** `{ ordered: true, lines: ["<id>: <from> -> <to>", ...], changed_files, warnings? }` — one line per node (`to` is the `next` state while evolving). `changed_files` is the union of every applied transition, including `mindplan/map.md`. With `verbose`: also `applied` (the one-node outputs) and the recomputed Journey/stability lists.
-- **Output (dry_run):** `{ dry_run: true, plan: ["<id>: <from> -> <to>", ...], blocked: string | null, warnings? }`; `blocked` names the first failing node and step.
-- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–6 violations; manual `stable`/`unstable` attempt; `ship` attempted while `<id>.next.mdx` is not in-review; `deprecated` attempted while `<id>.next.mdx` is open; both input forms at once; empty or duplicate `revisions`; `scope` with `revisions`, without a forward `new_status`, or `node_and_dependents` without `node_id`; a check-gate violation (`Blocked: Check failed for "<id>" …`). A scope walk that is `Blocked:` writes nothing. Illegal production retreats SHOULD mention `force_unship` and the `unship:<node_id>` confirm shape. A revision that stops names the blocked node and the nodes already applied, and still begins with `Blocked: `.
+- **Output (revision / scope):** `{ ordered: true, scope?, change?, lines: ["<id>: <from> -> <to>", ...], skipped_review?, changed_files, warnings? }` — one line per node (`to` is the `next` state while evolving). `changed_files` is the union of every applied transition, including `mindplan/map.md`. With `verbose`: also `applied` (the one-node outputs) and the recomputed Journey/stability lists.
+- **Output (dry_run):** `{ dry_run: true, scope?, change?, plan: ["<id>: <from> -> <to>", ...], blocked: string | null, skipped_review?, warnings? }`; `plan` lists **every transition**, one line per step (a node walking `ready → ship` contributes three lines); `blocked` names the first failing node and step, or the review skip.
+- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–6 violations; manual `stable`/`unstable` attempt; `ship` attempted while `<id>.next.mdx` is not in-review; `deprecated` attempted while `<id>.next.mdx` is open; both input forms at once; empty or duplicate `revisions`; `scope` with `revisions`, without a forward `new_status`, or `node_and_dependents` without `node_id`; `scope: "change"` without `change`, or a change with no open revisions; `change` or `skip_review` outside a scoped walk; a scoped walk to `ship` past nodes not yet `in-review` without `skip_review`; a check-gate violation (`Blocked: Check failed for "<id>" …`). A scope walk that is `Blocked:` writes nothing. Illegal production retreats SHOULD mention `force_unship` and the `unship:<node_id>` confirm shape. A revision that stops names the blocked node and the nodes already applied, and still begins with `Blocked: `.
 
 #### `force_unship`
 
@@ -1331,13 +1388,15 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 | Mode | Command | Checks |
 |------|---------|--------|
-| Default | `mindplan-mcp check` | Graph load; **exclusivity** (each universe file ≤1 owner); **coverage** (every universe file owned); **presence** (in-review/shipped live entries exist on disk, except live entries an open `next` has **released** per §1.2; `next` in-review entries exist); **mirror twins** (each shipped Foundation/Interaction/Interface with no open evolution has a `<id>.next.mdx` that is a state-only copy of live — missing or drifted → Block; run `init` to backfill/heal); **leftovers** (retired-node claims until deleted/reassigned); **import matrix** (§1.2, including `mounts`). Does **not** run dirty-src. Does **not** fail because nodes are mid-pipeline. |
+| Default | `mindplan-mcp check` | Graph load; **exclusivity** (each universe file ≤1 owner); **coverage** (every universe file claimed in a current or next slot of a non-retired node; `Blocked: Coverage` names the probable owner and the fix, §1.2.1); **presence** (in-review/shipped live entries exist on disk, except live entries an open `next` has **released** per §1.2; `next` in-review entries exist); **mirror twins** (each shipped Foundation/Interaction/Interface with no open evolution has a `<id>.next.mdx` that is a state-only copy of live — missing or drifted → Block; run `init` to backfill/heal); **leftovers** (retired-node claims until deleted/reassigned); **import matrix** (§1.2, including `mounts`). Does **not** run dirty-src. Does **not** fail because nodes are mid-pipeline. |
 | Dirty-src (opt-in) | `mindplan-mcp check --base <ref>` | Default checks plus dirty universe ownership vs `<ref>` using the implements index: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`), or a shipped (`stable`/`unstable`) owner with no open `next` (neighbors edit in place, §3.7); **committed** paths vs `base...HEAD` allow review/shipped/cancelled/deprecated, but when `<id>.next.mdx` is open only `next` in `in-progress`/`in-review` counts. Changed file with no owner fails. Explicit `--base` fails closed on git errors. |
 | Invalid config | any check mode | Fail immediately if `mindplan/config.json` exists but is invalid (bad JSON / shape / lingering `implementation_packages`) |
 
 **Import fixes.** Every illegal-import failure ends with its fix: `Fix: link_nodes({"source_id":…,"target_id":…,"edge_type":…}).` when an edge would make it legal (`depends_on`, `exposes`, or `mounts`), or `not allowed: …` when none can (for example an Interaction importing an Interface).
 
-**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`.
+**Imports over every claim.** The import matrix scans each universe file as every node that claims it — its live owner, its `next`-slot owner, and a **released** current-slot owner (a file the open `next` dropped) — and resolves import targets through released claims too. A violation that only this wider scan finds (a released file, a target that is only released, or a file's second claimant) is reported as `Warning: imports (next slot): …` in this release so existing graphs keep passing; it becomes `Blocked:` in the next release.
+
+**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`. The check also warns about next-slot imports (above) and about a **route family split** between owners (§1.2.3): `Warning: routes: route family "<dir>/" is split: "<id>" (Assembler) owns …; "<id>" (entry point) owns …`.
 
 The `run_check` tool (§8.1) returns this same output to agents. Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
 
@@ -1437,6 +1496,10 @@ An implementation is MindPlan-compliant if and only if:
 | Stability flip | (informational) `stability_recomputed: [{ "id": "i-checkout", "state": "unstable" }]` in tool response |
 | No edge to remove | `Blocked: no edge exists between "i-tips" and "f-db".` |
 | Shipped scope freeze | `Blocked: Use open_next for material scope changes on live work.` |
+| Coverage | `Blocked: Coverage: "src/i-b/extra.ts" is inside the configured sources but no node claims it in a current or next slot. Probable owner by path: "i-b". Fix: set_implementation_files({"node_id":"i-b","files":["src/i-b/b.ts","src/i-b/extra.ts"]}).` |
+| Ambiguous checkbox | `Blocked: "Write" matches 2 checkbox lines; make it unique or pass all: true. Matches:` followed by one `- <line>` per match |
+| Review skip | `Blocked: this walk would take "f-quick" to ship without a review stop (not in-review yet). Walk to in-review first and review, or pass skip_review: true …` |
+| Empty change | `Blocked: change "feat-x" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).` |
 
 ## Appendix B — Reference lifecycle walkthrough
 

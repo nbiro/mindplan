@@ -39,6 +39,7 @@ import {
 import {
   blocked,
   blastRadiusDependents,
+  changeMembers,
   findNode,
   interactionReachability,
   interfacesExposing,
@@ -251,6 +252,8 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
         ...(node.next.leads_to?.length ? { leads_to: node.next.leads_to } : {}),
         ...(node.next.implements?.length ? { implements: node.next.implements } : {}),
         ...(node.next.role ? { role: node.next.role } : {}),
+        ...(node.next.change ? { change: node.next.change } : {}),
+        ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
       },
       body: splitNodeRules(nextSplit?.body ?? "").body,
     };
@@ -285,14 +288,91 @@ export function findRelatedNodesHandler(args: {
 }
 
 export function getBlastRadius(args: {
-  node_id: string;
+  node_id?: string;
+  change?: string;
   include_retired?: boolean;
 }): Record<string, unknown> {
+  if ((args.node_id === undefined) === (args.change === undefined)) {
+    throw blocked('get_blast_radius takes exactly one of "node_id" or "change".');
+  }
   const graph = loadGraph();
-  const node = findNode(graph, args.node_id);
+  if (args.change !== undefined) {
+    return buildChangeBlastRadiusPayload(graph, args.change, {
+      include_retired: args.include_retired,
+    });
+  }
+  const node = findNode(graph, args.node_id!);
   return buildBlastRadiusPayload(graph, node, {
     include_retired: args.include_retired,
   });
+}
+
+/**
+ * Blast radius of a whole change: the members' radii merged. `affected` keeps each node's
+ * smallest distance and leaves out the members themselves; files group by owner.
+ */
+export function buildChangeBlastRadiusPayload(
+  graph: MindPlanGraph,
+  change: string,
+  opts: { include_retired?: boolean } = {}
+): Record<string, unknown> {
+  const members = changeMembers(graph, change);
+  if (members.length === 0) {
+    throw blocked(
+      `change "${change}" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).`
+    );
+  }
+  const memberIds = new Set(members.map((m) => m.id));
+  const affected = new Map<string, { id: string; type: string; state: string; distance: number }>();
+  const journeys = new Set<string>();
+  const files = new Map<string, { owner_id: string; owner_type: string; via: Set<string>; files: Set<string> }>();
+  const rulesReach = new Map<string, unknown>();
+  for (const member of members) {
+    const one = buildBlastRadiusPayload(graph, member, opts);
+    for (const row of one.affected as { id: string; type: string; state: string; distance: number }[]) {
+      if (memberIds.has(row.id)) continue;
+      const prev = affected.get(row.id);
+      if (!prev || row.distance < prev.distance) affected.set(row.id, row);
+    }
+    for (const j of one.journeys_at_risk as string[]) journeys.add(j);
+    for (const group of one.affected_files as {
+      owner_id: string;
+      owner_type: string;
+      via: string[];
+      files: string[];
+    }[]) {
+      let merged = files.get(group.owner_id);
+      if (!merged) {
+        merged = { owner_id: group.owner_id, owner_type: group.owner_type, via: new Set(), files: new Set() };
+        files.set(group.owner_id, merged);
+      }
+      for (const v of group.via) merged.via.add(v);
+      for (const f of group.files) merged.files.add(f);
+    }
+    rulesReach.set(member.id, one.rules_impact);
+  }
+  return {
+    change,
+    members: members.map((m) => ({
+      id: m.id,
+      type: m.type,
+      state: m.state,
+      next_state: m.next?.state ?? null,
+    })),
+    affected: [...affected.values()].sort(
+      (a, b) => a.distance - b.distance || a.id.localeCompare(b.id)
+    ),
+    journeys_at_risk: [...journeys].sort(),
+    affected_files: [...files.values()]
+      .map((g) => ({
+        owner_id: g.owner_id,
+        owner_type: g.owner_type,
+        via: VIA_ORDER.filter((v) => g.via.has(v)),
+        files: [...g.files].sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => a.owner_id.localeCompare(b.owner_id)),
+    rules_impact: Object.fromEntries(rulesReach),
+  };
 }
 
 export function getNodeContext(args: { node_id: string }): Record<string, unknown> {

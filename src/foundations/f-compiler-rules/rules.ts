@@ -16,6 +16,7 @@ import type {
   ProductionState,
 } from "../f-domain-model/types.js";
 import {
+  activeChange,
   BUG_STATES,
   BUG_TRANSITIONS,
   EXECUTION_STATES,
@@ -252,6 +253,19 @@ function runMinimumTerritoryShape(
   ) {
     assertMinimumTerritoryShape(node, slot);
   }
+}
+
+/**
+ * Open revisions in a change: Foundations, Interactions, and Interfaces whose active change is
+ * `change` — a shipped node with an open next, or a pre-ship node that is not retired. Draft and
+ * ready revisions belong too: the change names them.
+ */
+export function changeMembers(graph: MindPlanGraph, change: string): MindPlanNode[] {
+  return graph.nodes.filter((n) => {
+    if (!isPipelineNodeType(n.type) || activeChange(n) !== change) return false;
+    if (n.next) return true;
+    return !n.shipped_at && n.state !== "cancelled" && n.state !== "deprecated";
+  });
 }
 
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {

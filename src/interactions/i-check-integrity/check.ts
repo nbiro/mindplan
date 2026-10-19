@@ -14,17 +14,29 @@ import {
 import {
   STALE_ALL,
   STALE_PATHS_ONLY,
+  coverageFix,
   findAllImportViolations,
+  findImportViolationsForNode,
+  findOwnershipConflicts,
+  formatCoverageFix,
+  probableOwner,
+  routeFamilySplits,
   staleTextWarnings,
 } from "../../foundations/f-compiler-rules/integrity.js";
+import { changeMembers } from "../../foundations/f-compiler-rules/rules.js";
 import {
   buildOwnershipIndex,
+  claimantsOf,
   exclusiveOwner,
   ownerOfFile,
   releasedClaimEntries,
   type OwnershipBuckets,
 } from "../../foundations/f-source-index/ownership.js";
-import { expandClaims } from "../../foundations/f-source-index/claims.js";
+import {
+  claimCoversPath,
+  claimEntryExists,
+  expandClaims,
+} from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
 import {
   drainRemovedLegacyFiles,
@@ -58,6 +70,16 @@ export interface CheckOptions {
   base?: string;
   /** Override project root (tests). */
   cwd?: string;
+  /** Also run the in-review gate on every open revision in this change. */
+  change?: string;
+}
+
+/** One change's members and what the in-review gate finds on them. */
+export interface ChangeCheck {
+  id: string;
+  members: { id: string; type: string; state: string; next_state: string | null }[];
+  failures: string[];
+  warnings: string[];
 }
 
 export interface CheckResult {
@@ -67,6 +89,43 @@ export interface CheckResult {
   warnings: string[];
   /** Legacy territory files deleted while loading the graph. */
   removedLegacyFiles: RemovedLegacyFile[];
+  /** Present when the check ran for a change. Its failures are also in `failures`. */
+  change?: ChangeCheck;
+}
+
+/**
+ * The in-review gate on every open revision in a change: import and ownership violations on
+ * each member's active-slot files (Blocked), and every stale-text signal (warnings).
+ */
+function checkChange(graph: MindPlanGraph, root: string, change: string): ChangeCheck {
+  const members = changeMembers(graph, change);
+  const failures: string[] = [];
+  const warnings: string[] = [];
+  if (members.length === 0) {
+    failures.push(
+      `Blocked: change "${change}" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).`
+    );
+  }
+  for (const node of members) {
+    for (const v of findImportViolationsForNode(graph, root, node)) {
+      failures.push(`Blocked: change "${change}": ${v.message}`);
+    }
+    for (const conflict of findOwnershipConflicts(graph, root, node)) {
+      failures.push(`Blocked: change "${change}": ${conflict}`);
+    }
+    warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_ALL));
+  }
+  return {
+    id: change,
+    members: members.map((n) => ({
+      id: n.id,
+      type: n.type,
+      state: n.state,
+      next_state: n.next?.state ?? null,
+    })),
+    failures,
+    warnings: [...new Set(warnings)],
+  };
 }
 
 export interface DirtySrcPaths {
@@ -220,17 +279,28 @@ function checkExclusivity(
   return buildOwnershipIndex(graph, root);
 }
 
+/**
+ * Every in-universe file needs a claim in a current or next slot of a non-retired node.
+ * A retired node's claim does not count (the leftovers rule Blocks that file too).
+ */
 function checkCoverage(
+  graph: MindPlanGraph,
   buckets: OwnershipBuckets,
-  root: string,
+  universe: string[],
   failures: string[]
 ): void {
-  const universe = listUniverseFiles(root);
   for (const file of universe) {
-    const owner = ownerOfFile(buckets, file);
-    if (!owner) {
-      fail(failures, `coverage: universe file "${file}" has no owner (implements claim).`);
-    }
+    if (claimantsOf(buckets, file).length > 0) continue;
+    // A retired claim on a file on disk is the leftovers rule's failure; do not report it twice.
+    if (buckets.retired.has(file)) continue;
+    const owner = probableOwner(graph, file);
+    const hint = owner
+      ? ` Probable owner by path: "${owner.id}". ${formatCoverageFix(coverageFix(owner, file))}`
+      : " No node claims a nearby path: create or pick the owning node, then claim the file with set_implementation_files.";
+    fail(
+      failures,
+      `Coverage: "${file}" is inside the configured sources but no node claims it in a current or next slot.${hint}`
+    );
   }
 }
 
@@ -249,11 +319,7 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
       const list = entries ?? [];
       for (const entry of list) {
         if (skip?.has(entry)) continue;
-        const abs = path.join(root, ...entry.replace(/\/$/, "").split("/"));
-        const exists = entry.endsWith("/")
-          ? fs.existsSync(abs) && fs.statSync(abs).isDirectory()
-          : fs.existsSync(abs) && fs.statSync(abs).isFile();
-        if (!exists) {
+        if (!claimEntryExists(entry, root)) {
           fail(
             failures,
             `presence: "${node.id}" ${label} implements entry missing on disk: "${entry}".`
@@ -319,14 +385,30 @@ function checkLeftovers(
   }
 }
 
+/**
+ * Import rule over every claimant of a file. Violations only the next-slot / released scan finds
+ * are warnings for one release (existing graphs keep passing), then they Block.
+ */
 function checkImports(
   graph: MindPlanGraph,
   buckets: OwnershipBuckets,
   root: string,
-  failures: string[]
+  universe: string[],
+  failures: string[],
+  warnings: string[]
 ): void {
-  for (const violation of findAllImportViolations(graph, buckets, root)) {
-    fail(failures, violation.message);
+  const seen = new Set<string>();
+  for (const violation of findAllImportViolations(graph, buckets, root, universe)) {
+    if (seen.has(violation.message)) continue;
+    seen.add(violation.message);
+    if (violation.advisory) {
+      warnings.push(
+        `${violation.message.replace(/^imports:/, "imports (next slot):")} ` +
+          `This is a warning in this release and Blocks in the next one.`
+      );
+    } else {
+      fail(failures, violation.message);
+    }
   }
 }
 
@@ -490,13 +572,6 @@ const DRIFT_REMINDER =
 /** Per-list cap for scoped and default drift lists. */
 const DRIFT_LIST_CAP = 20;
 
-function claimCoversPath(claim: string, rel: string): boolean {
-  const normalized = claim.trim().replace(/\\/g, "/");
-  if (!normalized) return false;
-  if (normalized.endsWith("/")) return rel.startsWith(normalized);
-  return normalized === rel;
-}
-
 /**
  * Owner for a path claim expansion dropped (typically a deleted file).
  * The longest covering claim wins, so a live file claim beats a broader
@@ -653,6 +728,7 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
 export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   const failures: string[] = [];
   const warnings: string[] = [];
+  let changeReport: ChangeCheck | undefined;
   const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
   const prev = process.env.MINDPLAN_ROOT;
   if (options.cwd) {
@@ -676,14 +752,19 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
 
   try {
     const buckets = checkExclusivity(graph, root, failures);
-    checkCoverage(buckets, root, failures);
+    const universe = listUniverseFiles(root);
+    checkCoverage(graph, buckets, universe, failures);
     checkPresence(graph, root, failures);
     checkMirrorTwins(graph, failures);
     checkLeftovers(graph, buckets, root, failures);
-    checkImports(graph, buckets, root, failures);
+    checkImports(graph, buckets, root, universe, failures, warnings);
     warnings.push(...collectWarnings(graph, root));
+    warnings.push(...routeFamilySplits(graph, buckets, universe));
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, options.base, failures);
+    }
+    if (options.change !== undefined) {
+      changeReport = checkChange(graph, root, options.change);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -695,11 +776,20 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     }
   }
 
+  if (changeReport) {
+    // A member violation the global import check already reported is not repeated.
+    for (const f of changeReport.failures) {
+      const plain = f.replace(/^Blocked: change "[^"]*": /, "Blocked: ");
+      if (!failures.includes(plain)) failures.push(f);
+    }
+    for (const w of changeReport.warnings) if (!warnings.includes(w)) warnings.push(w);
+  }
   return {
     ok: failures.length === 0,
     failures,
     warnings,
     removedLegacyFiles: drainRemovedLegacyFiles(),
+    ...(changeReport ? { change: changeReport } : {}),
   };
 }
 
@@ -717,13 +807,18 @@ export function renderCheckOutput(result: CheckResult): string {
  * `run_check` MCP handler: the same text `mindplan-mcp check` prints, plus the parts split out.
  * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings.
  */
-export function runCheckHandler(args: { base?: string } = {}): Record<string, unknown> {
-  const result = runIntegrityCheck({ base: args.base });
+export function runCheckHandler(
+  args: { base?: string; change?: string } = {}
+): Record<string, unknown> {
+  const result = runIntegrityCheck({ base: args.base, change: args.change });
   return {
     ok: result.ok,
     output: renderCheckOutput(result),
     failures: result.failures,
     warnings: result.warnings,
+    ...(result.change
+      ? { change: { id: result.change.id, members: result.change.members } }
+      : {}),
     ...(result.removedLegacyFiles.length
       ? { removed_legacy_files: result.removedLegacyFiles.map((f) => f.from) }
       : {}),

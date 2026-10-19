@@ -2,15 +2,20 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims, Foundation roles, the next-file mirror state, and the per-node rules field and rule-entry types."
+description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs), Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, and the optional change id and change ref that group revisions."
 state: mirror
-shipped_at: 2026-10-15T15:52:06.880Z
+shipped_at: 2026-10-19T12:09:47.041Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-15T15:52:06.880Z
+updated_at: 2026-10-19T12:09:47.041Z
 implements:
   - src/foundations/f-domain-model/
 role: infra
 ---
+
+
+
+
+
 
 
 # Domain model
@@ -33,6 +38,7 @@ Intended files: `src/foundations/f-domain-model/`
 - `RuleEntry` — `{ node_id, node_type, via: RuleVia, distance: number, rules: string }`: one node's rules, labeled with the node it came from
 - `RulesImpactEntry` — `{ id, type, state, via: RuleVia, distance }`: a node that inherits some other node's rules
 - `isInactiveNode(node)` — true for `cancelled`, `deprecated`, and closed Bugs (`resolved`, `wontfix`): such nodes neither take nor give rules
+- **Change groups.** `MindPlanNode.change?` / `change_ref?` and `NextSlot.change?` / `change_ref?`: a change id (`CHANGE_ID_PATTERN`, a slug) that ties revisions into one change, and an optional branch or PR reference. `activeChange(node)` is the open revision's change: `next.change` while a shipped node evolves, the live `change` before first ship, and nothing for a shipped node with no open next
 
 Depends on: none.
 
@@ -46,6 +52,7 @@ Depends on: none.
 - `isInactiveNode` is true for exactly the four inactive states
 - `GRAPH_VERSION` remains `1`
 - Verified via `npm test`
+- `activeChange` returns the next slot's change while evolving, the live change before first ship, and nothing for a shipped node with no open next
 
 ## Atomic Ops
 
@@ -59,6 +66,8 @@ Depends on: none.
 - [x] Verified `isInactiveNode` via `npm test`
 - [x] Add the `mounts` edge type and `mounts` on `MindPlanNode` and `NextSlot`
 - [x] Verified `mounts` via `npm test`
+- [x] Add `change` / `change_ref` to nodes and next slots, `CHANGE_ID_PATTERN`, and `activeChange`
+- [x] Verified the change fields via `npm test`
 
 ## Attachments
 

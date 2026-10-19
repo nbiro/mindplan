@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-five tools with when-to-call hints, returns small write results unless verbose, scopes drift to the touched node on reads, and exposes run_check, get_rules, and patch_node_rules."
+description: "MCP stdio Interface that registers twenty-five tools with when-to-call hints, returns small write results unless verbose, scopes drift to the touched node on reads, exposes run_check, get_rules, and patch_node_rules, and takes change ids on open_next, create_node, update_node_status, get_blast_radius, and run_check."
 state: stable
-shipped_at: 2026-10-15T15:52:14.983Z
+shipped_at: 2026-10-19T12:09:49.107Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-15T15:52:14.983Z
+updated_at: 2026-10-19T12:09:49.107Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -20,6 +20,11 @@ exposes:
 implements:
   - src/interfaces/if-mcp-tools/
 ---
+
+
+
+
+
 
 
 # MCP tools
@@ -52,6 +57,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - `patch_node_territory` takes `section` + `text` and `replace { find, with, all? }` besides `body`; `update_node_status` takes `scope` and `dry_run`; `link_nodes` accepts the `mounts` edge type
 - Read results attach a non-empty drift report (`paths` with `class`, `unowned`, `expected`, `other_count`, `reminder`) scoped to the node; `get_project`, `get_rules`, and `run_check` never carry `drift`
 - App Router / MCP mounts Interaction packages; Interface does not own core domain logic
+- **Schemas for the honesty fixes.** `create_node`, `open_next`, and `patch_node_territory` take `change` / `change_ref`; `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; `update_node_status` takes `scope: "change"` with `change`, and `skip_review`; `get_blast_radius` takes `node_id` or `change`; `run_check` takes `change`. Hints name which writes send a `ready` revision back to `draft`. The tool count stays twenty-five
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
@@ -64,6 +70,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - Non-empty scoped drift attached on read results except `get_project`, `get_rules`, and `run_check`; clean tree omits `drift`
 - `run_check` output equals the CLI check output
 - Verified via `npm test`
+- The new fields reach their handlers; `get_blast_radius` without `node_id` or `change` is Blocked
 
 ## Atomic Ops
 
@@ -79,6 +86,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Add `verbose` to the write tools and drop default drift from writes
 - [x] Add `section` / `replace`, `scope` / `dry_run`, `depth`, and the `mounts` edge type to the schemas
 - [x] Verified the new tools and parameters via `npm test`
+- [x] Add the change, skip_review, and toggle fields to the tool schemas and hints
+- [x] Verified the schemas via `npm test`
 
 ## Attachments
 

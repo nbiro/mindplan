@@ -34,6 +34,7 @@ import type {
 } from "../f-domain-model/types.js";
 import {
   BUG_SEVERITIES,
+  CHANGE_ID_PATTERN,
   GRAPH_VERSION,
   isFoundationRole,
   isInactiveNode,
@@ -607,6 +608,8 @@ function parseNodeFromFrontmatter(
   const ownRules = splitNodeRules(raw).rules;
   if (ownRules) node.rules = ownRules;
   if (fm.shipped_at) node.shipped_at = fm.shipped_at;
+  if (fm.change) node.change = fm.change;
+  if (fm.change_ref) node.change_ref = fm.change_ref;
   if (fm.severity && (BUG_SEVERITIES as readonly string[]).includes(fm.severity)) {
     node.severity = fm.severity as BugSeverity;
   }
@@ -662,6 +665,8 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
     description: fm.description ?? "",
     updated_at: fm.updated_at,
   };
+  if (fm.change) slot.change = fm.change;
+  if (fm.change_ref) slot.change_ref = fm.change_ref;
   if (parsed.arrays.belongs_to.length > 0) slot.belongs_to = [...parsed.arrays.belongs_to];
   if (parsed.arrays.depends_on.length > 0) slot.depends_on = [...parsed.arrays.depends_on];
   if (parsed.arrays.exposes.length > 0) slot.exposes = [...parsed.arrays.exposes];
@@ -932,12 +937,15 @@ export function edgeWriteSlot(node: MindPlanNode, edgeType: EdgeType): Territory
   return "current";
 }
 
-/** Appends a target id to the source node's outgoing edge array for edge_type. */
+/**
+ * Appends a target id to the source node's outgoing edge array for edge_type.
+ * Returns true when the write sent a `ready` slot back to `draft`.
+ */
 export function addEdgeToFrontmatter(
   node: MindPlanNode,
   edgeType: EdgeType,
   targetId: string
-): void {
+): boolean {
   const slot = edgeWriteSlot(node, edgeType);
   const raw = readMarkdown(node, slot);
   const parsed = parseFrontmatter(raw);
@@ -953,13 +961,14 @@ export function addEdgeToFrontmatter(
   const now = new Date().toISOString();
   patchFrontmatterEdges(node, { [field]: current }, now, slot);
   if (slot === "current") syncMirrorAfterLiveWrite(node);
+  return demoteReadySlot(node, slot);
 }
 
 /** Removes target_id from all outgoing edge arrays on the source node (current and open evolution). */
 export function removeEdgesFromFrontmatter(
   node: MindPlanNode,
   targetId: string
-): void {
+): boolean {
   const now = new Date().toISOString();
   for (const slot of ["current", "next"] as const) {
     // Mirror twins are not evolutions — only patch next when node.next is set.
@@ -986,6 +995,7 @@ export function removeEdgesFromFrontmatter(
     );
     if (slot === "current") syncMirrorAfterLiveWrite(node);
   }
+  return demoteReadySlot(node, node.next ? "next" : "current");
 }
 
 /** Scaffolds an entity folder: `<id>.mdx` + empty attachments/ directory. */
@@ -1216,8 +1226,10 @@ export function countCheckboxesInText(text: string): {
   checked: number;
 } {
   const normalized = splitNodeRules(normalizeNewlines(text)).body;
-  const unchecked = normalized.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0;
-  const checked = normalized.match(/^\s*[-*+]\s+\[[xX]\]/gm)?.length ?? 0;
+  // A not-applicable tick with no reason is not done.
+  const emptyNa = normalized.match(/^[ \t]*[-*+][ \t]+\[[xX]\].*[ \t]—[ \t]+n\/a:[ \t]*$/gm)?.length ?? 0;
+  const unchecked = (normalized.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0) + emptyNa;
+  const checked = (normalized.match(/^\s*[-*+]\s+\[[xX]\]/gm)?.length ?? 0) - emptyNa;
   return { unchecked, checked };
 }
 
@@ -1232,7 +1244,7 @@ export function checkboxLabels(text: string): string[] {
   const labels: string[] = [];
   for (const line of splitNodeRules(normalizeNewlines(text)).body.split("\n")) {
     const match = line.match(/^\s*[-*+]\s+\[[ xX]\]\s+(.*)$/);
-    if (match) labels.push(match[1].trim());
+    if (match) labels.push(match[1].replace(/\s+—\s+(?:note|n\/a):.*$/, "").trim());
   }
   labels.sort();
   return labels;
@@ -1382,6 +1394,8 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.mounts?.length) record.mounts = [...node.mounts];
   if (node.affects?.length) record.affects = [...node.affects];
   if (node.implements?.length) record.implements = [...node.implements];
+  if (node.change) record.change = node.change;
+  if (node.change_ref) record.change_ref = node.change_ref;
   if (node.next) {
     record.next = {
       state: node.next.state,
@@ -1395,6 +1409,8 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
       ...(node.next.mounts?.length ? { mounts: [...node.next.mounts] } : {}),
       ...(node.next.implements?.length ? { implements: [...node.next.implements] } : {}),
       ...(node.next.role ? { role: node.next.role } : {}),
+      ...(node.next.change ? { change: node.next.change } : {}),
+      ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
     };
   }
   return record;
@@ -1406,7 +1422,11 @@ export type PatchNodeTerritoryInput = {
   body?: string;
   /** Foundation role — same slot rules as title/description. */
   role?: FoundationRole;
-  toggle_checkboxes?: { contains: string; checked: boolean }[];
+  toggle_checkboxes?: CheckboxToggle[];
+  /** Set (or clear with "") the change id of this slot. Grouping metadata, not contract. */
+  change?: string;
+  /** Set (or clear with "") the branch or PR reference of this slot's change. */
+  change_ref?: string;
   /** Replace the text under one `## heading` (heading line kept, other sections untouched). */
   section?: { heading: string; text: string };
   /** Replace one exact text occurrence in the body (`all` replaces every occurrence). */
@@ -1518,30 +1538,90 @@ export function resolveTerritorySlot(
   return "current";
 }
 
+/** One checkbox toggle: match by substring, tick or untick, optionally annotate. */
+export type CheckboxToggle = {
+  contains: string;
+  /** true for [x], false for [ ]. Defaults to true when `not_applicable` is set. */
+  checked?: boolean;
+  /** Toggle every matching line instead of Blocking on an ambiguous match. */
+  all?: boolean;
+  /** Tick with a note: appends ` — note: <text>`. */
+  note?: string;
+  /** Tick as not applicable: appends ` — n/a: <reason>`. */
+  not_applicable?: string;
+};
+
+const CHECKBOX_LINE = /^\s*[-*+]\s+\[[ xX]\]/;
+/** A trailing annotation written by a toggle: ` — note: …` or ` — n/a: …`. */
+const CHECKBOX_ANNOTATION = /\s+—\s+(?:note|n\/a):.*$/;
+
+function oneLine(value: string, field: string): string {
+  const text = value.replace(/\s*\r?\n\s*/g, " ").trim();
+  if (!text) throw new Error(`Blocked: toggle_checkboxes ${field} must be non-empty.`);
+  return text;
+}
+
+/**
+ * Toggle checkbox lines by substring. A substring that matches several checkbox lines is
+ * Blocked (listing them) unless the toggle passes `all`. A note or not-applicable reason is
+ * appended to the line, so the item's own wording never changes; unticking strips it.
+ * Returns the new body and the lines as written.
+ */
 export function toggleCheckboxesInBody(
   body: string,
-  toggles: { contains: string; checked: boolean }[]
-): string {
+  toggles: CheckboxToggle[]
+): { body: string; toggled: string[] } {
+  const eol = detectEol(body);
   const lines = body.split(/\r?\n/);
+  const toggled: string[] = [];
   for (const toggle of toggles) {
-    let matched = false;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!/^\s*[-*+]\s+\[[ x]\]/.test(line) || !line.includes(toggle.contains)) continue;
-      lines[i] = line.replace(
-        /^\s*([-*+]\s+)\[[ x]\]/,
-        (_, prefix) => `${prefix}[${toggle.checked ? "x" : " "}]`
-      );
-      matched = true;
-      break;
+    if (toggle.note !== undefined && toggle.not_applicable !== undefined) {
+      throw new Error("Blocked: a toggle takes note or not_applicable, not both.");
     }
-    if (!matched) {
+    const checked = toggle.checked ?? (toggle.not_applicable !== undefined ? true : undefined);
+    if (checked === undefined) {
+      throw new Error(`Blocked: toggle for "${toggle.contains}" needs checked (true or false).`);
+    }
+    if (!checked && (toggle.note !== undefined || toggle.not_applicable !== undefined)) {
+      throw new Error(
+        `Blocked: note and not_applicable tick the item; they cannot be combined with checked: false.`
+      );
+    }
+    const suffix =
+      toggle.note !== undefined
+        ? ` — note: ${oneLine(toggle.note, "note")}`
+        : toggle.not_applicable !== undefined
+          ? ` — n/a: ${oneLine(toggle.not_applicable, "not_applicable")}`
+          : null;
+
+    const hits: number[] = [];
+    lines.forEach((line, i) => {
+      if (CHECKBOX_LINE.test(line) && line.includes(toggle.contains)) hits.push(i);
+    });
+    if (hits.length === 0) {
       throw new Error(
         `Blocked: no checkbox line containing "${toggle.contains}" in territory body.`
       );
     }
+    if (hits.length > 1 && !toggle.all) {
+      throw new Error(
+        `Blocked: "${toggle.contains}" matches ${hits.length} checkbox lines; make it unique or pass all: true. Matches:\n` +
+          hits.map((i) => `- ${lines[i].trim()}`).join("\n")
+      );
+    }
+    for (const i of hits) {
+      let line = lines[i].replace(
+        /^(\s*[-*+]\s+)\[[ xX]\]/,
+        (_, prefix) => `${prefix}[${checked ? "x" : " "}]`
+      );
+      // Unticking drops an annotation; a new annotation replaces the old one.
+      if (!checked || suffix !== null) line = line.replace(CHECKBOX_ANNOTATION, "");
+      if (suffix !== null) line = `${line.replace(/\s+$/, "")}${suffix}`;
+      lines[i] = line;
+      toggled.push(line.trim());
+    }
   }
-  return lines.join("\n");
+  return { body: lines.join(eol), toggled };
 }
 
 function patchTerritoryScalars(
@@ -1576,7 +1656,7 @@ function patchTerritoryScalars(
 export function patchNodeTerritory(
   node: MindPlanNode,
   input: PatchNodeTerritoryInput
-): { patched_fields: string[]; slot: TerritorySlot } {
+): { patched_fields: string[]; slot: TerritorySlot; readinessReset: boolean; toggled?: string[] } {
   const slot = resolveTerritorySlot(node, input.slot);
   const raw = readMarkdown(node, slot);
   const split = splitContext(raw);
@@ -1642,21 +1722,123 @@ export function patchNodeTerritory(
     patched_fields.push("replace");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
+  let toggled: string[] | undefined;
   if (input.toggle_checkboxes?.length) {
-    body = toggleCheckboxesInBody(body, input.toggle_checkboxes);
+    const result = toggleCheckboxesInBody(body, input.toggle_checkboxes);
+    body = result.body;
+    toggled = result.toggled;
     patched_fields.push("toggle_checkboxes");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
+  if (input.change !== undefined || input.change_ref !== undefined) {
+    frontmatter = applyChangeScalars(frontmatter, input);
+    if (input.change !== undefined) patched_fields.push("change");
+    if (input.change_ref !== undefined) patched_fields.push("change_ref");
+    assignChange(slot === "next" && node.next ? node.next : node, input);
   }
 
   if (patched_fields.length === 0) {
     throw new Error(
-      "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, or toggle_checkboxes."
+      "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, toggle_checkboxes, change, or change_ref."
     );
   }
 
   writeMarkdown(node, `${frontmatter}\n\n${joinNodeRules(body, existingRules)}`, slot);
   if (slot === "current") syncMirrorAfterLiveWrite(node);
-  return { patched_fields, slot };
+  // Change ids are grouping metadata; every other field is the contract readiness was judged on.
+  const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref");
+  const readinessReset = contractWrite && demoteReadySlot(node, slot);
+  return { patched_fields, slot, readinessReset, ...(toggled ? { toggled } : {}) };
+}
+
+/**
+ * A contract write (territory text, claims, edges) to a slot in `ready` sends that slot back to
+ * `draft`: readiness was judged against the contract before the write. Every store writer of
+ * contract calls this after writing. Returns true when it demoted the slot.
+ */
+export function demoteReadySlot(node: MindPlanNode, slot: TerritorySlot): boolean {
+  if (!isPipelineNodeType(node.type)) return false;
+  const now = new Date().toISOString();
+  if (slot === "next") {
+    if (!node.next || node.next.state !== "ready") return false;
+    node.next.state = "draft";
+    node.next.updated_at = now;
+    patchFrontmatter({ id: node.id, type: node.type, state: "draft", updated_at: now }, "next");
+    return true;
+  }
+  if (node.next || node.shipped_at || node.state !== "ready") return false;
+  node.state = "draft";
+  node.updated_at = now;
+  patchFrontmatter(node);
+  return true;
+}
+
+/** Validates change scalars: "" clears; a change id is a slug; a ref is one line. */
+export function validateChangeInput(input: { change?: string; change_ref?: string }): void {
+  if (input.change !== undefined && input.change !== "" && !CHANGE_ID_PATTERN.test(input.change)) {
+    throw new Error(
+      `Blocked: change id "${input.change}" must be a slug (lowercase letters, digits, "-" or "_").`
+    );
+  }
+  if (input.change_ref !== undefined && /[\r\n]/.test(input.change_ref)) {
+    throw new Error("Blocked: change_ref must be one line (a branch name or PR URL).");
+  }
+}
+
+/** Sets or removes `change` / `change_ref` lines in a `---` fenced frontmatter block. */
+function applyChangeScalars(
+  frontmatter: string,
+  input: { change?: string; change_ref?: string }
+): string {
+  validateChangeInput(input);
+  const nl = frontmatter.includes("\r\n") ? "\r\n" : "\n";
+  let out = frontmatter;
+  for (const key of ["change", "change_ref"] as const) {
+    const value = input[key];
+    if (value === undefined) continue;
+    const line = new RegExp(`^${key}:.*$`, "m");
+    if (value === "") {
+      out = out.replace(new RegExp(`\\r?\\n${key}:.*$`, "m"), "");
+    } else if (line.test(out)) {
+      out = out.replace(line, `${key}: ${JSON.stringify(value)}`);
+    } else {
+      out = out.replace(/(\r?\n---)$/, `${nl}${key}: ${JSON.stringify(value)}$1`);
+    }
+  }
+  return out;
+}
+
+function assignChange(
+  target: { change?: string; change_ref?: string },
+  input: { change?: string; change_ref?: string }
+): void {
+  if (input.change !== undefined) {
+    if (input.change) target.change = input.change;
+    else delete target.change;
+  }
+  if (input.change_ref !== undefined) {
+    if (input.change_ref) target.change_ref = input.change_ref;
+    else delete target.change_ref;
+  }
+}
+
+/**
+ * Set or clear (empty string) the change id and ref on one slot's frontmatter.
+ * Grouping metadata: never touches state or `updated_at`.
+ */
+export function writeChangeFrontmatter(
+  node: MindPlanNode,
+  input: { change?: string; change_ref?: string },
+  slot: TerritorySlot = "current"
+): void {
+  if (input.change === undefined && input.change_ref === undefined) return;
+  if (slot === "next" && !node.next) {
+    throw new Error(`Blocked: node "${node.id}" has no open evolution to carry a change id.`);
+  }
+  const { file, raw, fence } = requireMutableFrontmatter(node, slot);
+  const patched = applyChangeScalars(fence, input);
+  if (patched !== fence) fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+  assignChange(slot === "next" && node.next ? node.next : node, input);
 }
 
 /**
@@ -1892,12 +2074,13 @@ export function promoteNextSlot(
 /**
  * Write (replace) the `implements` list on current or next frontmatter.
  * Updates the in-memory node accordingly. Used by set_implementation_files and init migration.
+ * Returns true when a changed list sent a `ready` slot back to `draft`; an identical list does not.
  */
 export function writeImplementsFrontmatter(
   node: MindPlanNode,
   files: string[],
   slot: TerritorySlot = "current"
-): void {
+): boolean {
   const normalized = normalizeClaimList(files);
   const { file, raw, fence, inner: rawInner } = requireMutableFrontmatter(node, slot);
   const parsed = parseFrontmatter(raw);
@@ -1907,6 +2090,7 @@ export function writeImplementsFrontmatter(
     );
   }
   const now = new Date().toISOString();
+  const unchanged = normalizeClaimList(parsed.implements).join("\n") === normalized.join("\n");
   let inner = stripListFieldLines(rawInner);
   inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   const edgeLines = formatEdgeFieldLines(parsed.arrays);
@@ -1928,6 +2112,7 @@ export function writeImplementsFrontmatter(
     node.updated_at = now;
     syncMirrorAfterLiveWrite(node);
   }
+  return !unchanged && demoteReadySlot(node, slot);
 }
 
 /**
