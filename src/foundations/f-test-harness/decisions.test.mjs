@@ -355,6 +355,24 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     !orientNow.decisions.entries.some((e) => e.id === "d-capacity-on-booking") &&
       orientAll.decisions.entries.some((e) => e.id === "d-capacity-on-booking" && e.status === "superseded")
   );
+  const ctxNow = await call("get_node_context", { node_id: "f-bookings" });
+  const ctxAll = await call("get_node_context", { node_id: "f-bookings", include_superseded: true });
+  const ctxOld = ctxAll.decisions.find((d) => d.id === "d-capacity-on-booking");
+  check(
+    "get_node_context leaves the superseded decision out unless asked, like list_decisions",
+    !ctxNow.decisions.some((d) => d.id === "d-capacity-on-booking") &&
+      ctxNow.next.decisions.map((d) => d.id).join() === "d-evening-capacity-table" &&
+      ctxOld?.status === "superseded" &&
+      ctxOld?.superseded_by === "d-evening-capacity-table",
+    JSON.stringify({ now: ctxNow.decisions, all: ctxAll.decisions })
+  );
+  const orientCtx = await call("orient_for_work", { node_id: "f-bookings", depth: "body" });
+  const orientCtxAll = await call("orient_for_work", { node_id: "f-bookings", depth: "body", include_superseded: true });
+  check(
+    "orient_for_work passes include_superseded into the context it embeds",
+    !orientCtx.context.decisions.some((d) => d.id === "d-capacity-on-booking") &&
+      orientCtxAll.context.decisions.some((d) => d.id === "d-capacity-on-booking" && d.status === "superseded")
+  );
   const twice = await blocked("record_decision", {
     node_id: "f-bookings",
     decision: "Again.",
@@ -365,6 +383,25 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   check("superseding an already-superseded decision is Blocked", twice?.includes("already superseded"), twice ?? "");
   const cleared = await call("run_check", {});
   check("recording the decision clears the warning", decisionWarnings(cleared, "f-bookings").length === 0, JSON.stringify(cleared.warnings));
+
+  await call("record_decision", {
+    node_id: "f-bookings",
+    id: "d-evening-capacity-view",
+    decision: "Evening capacity is a view over bookings.",
+    alternatives: ["A separate table (two writers for one fact)"],
+    why: "One writer.",
+    supersedes: "d-evening-capacity-table",
+  });
+  const nextNow = await call("get_node_context", { node_id: "f-bookings" });
+  const nextAll = await call("get_node_context", { node_id: "f-bookings", include_superseded: true });
+  const nextOld = nextAll.next.decisions.find((d) => d.id === "d-evening-capacity-table");
+  check(
+    "get_node_context filters next.decisions the same way",
+    nextNow.next.decisions.map((d) => d.id).join() === "d-evening-capacity-view" &&
+      nextOld?.status === "superseded" &&
+      nextOld?.superseded_by === "d-evening-capacity-view",
+    JSON.stringify({ now: nextNow.next.decisions, all: nextAll.next.decisions })
+  );
 
   await call("discard_next", { node_id: "f-bookings" });
   const back = await call("list_decisions", { node_id: "f-bookings" });

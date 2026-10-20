@@ -185,7 +185,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts |
 | `list_decisions` | read | Decision records of a node, a change, or the graph; superseded ones on request |
 | `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired` |
-| `get_node_context` | read | `record` + `body` (+ `next.record`/`next.body` when evolving) |
+| `get_node_context` | read | `record` + `body` + `decisions` (superseded only with `include_superseded`; + `next.record`/`next.body`/`next.decisions` when evolving) |
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |
 | `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |

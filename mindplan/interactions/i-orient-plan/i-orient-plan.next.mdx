@@ -4,9 +4,9 @@ type: Interaction
 title: "Orient on the plan"
 description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change with rules impact and the decisions it reaches, expand glob claims to concrete files, expose get_project (naming the check), and expose get_rules for global project rules before each action."
 state: mirror
-shipped_at: 2026-10-20T13:04:11.120Z
+shipped_at: 2026-10-20T13:57:05.261Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-20T13:35:54.863Z
+updated_at: 2026-10-20T13:57:05.261Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -19,6 +19,11 @@ leads_to:
 implements:
   - src/interactions/i-orient-plan/
 ---
+
+
+
+
+
 
 # Orient on the plan
 
@@ -48,7 +53,7 @@ Intended files: `src/interactions/i-orient-plan/`
 - Node context shows `change` / `change_ref` on the live record and the next record
 - **Decisions block.** `orient_for_work` returns `decisions` next to `rules` at every depth: `{ node_id, entries: DecisionEntry[] }` from `resolveNodeDecisions` (own, `belongs_to`, `depends_on`, and for a Bug `affects`), each entry carrying its record, `node_id`, `node_type`, `via`, `distance`, and `status`; superseded entries are left out unless `include_superseded: true` (then each names `superseded_by`); at `depth: "rules"` each entry is compact (`id`, `decision`, `why`, and its labels) because orientation runs before every action, while `body` / `full` and `list_decisions` return whole records; `null` without a focus
 - **`list_decisions({ node_id?, change?, include_superseded? })`** → `{ decisions: DecisionEntry[], count }` from `listDecisions`: one node's own decisions (its active slot), every decision recorded under a change, or every decision in the graph; superseded entries only with `include_superseded`, each then naming `superseded_by`. Blocked on an unknown node. Listed in `QUERY_TOOLS`
-- `get_node_context` returns `body` without the `## Decisions` section too, plus `decisions` (the live file's entries, each with `status`) and `next.decisions` for an open next, whose record also shows `opened_at`
+- `get_node_context` returns `body` without the `## Decisions` section too, plus `decisions` (the live file's entries, each with `status`) and `next.decisions` for an open next, whose record also shows `opened_at`. It takes `include_superseded` (default `false`) like `list_decisions`: superseded entries are left out of both lists unless asked for, so a long trail does not bury the decisions that currently apply. `orient_for_work` passes its own `include_superseded` through to the `context` it embeds
 - `get_blast_radius` adds `decisions`: the active decisions held by the focus (`via: focus`, distance 0) and by each visible affected node (`via: dependent`, its distance), each `{ id, node_id, via, distance, decision }`; inactive nodes' decisions are left out, even with `include_retired`. The change radius merges them across members (a member's own decisions are `focus`)
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
@@ -72,6 +77,7 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - `list_decisions` returns a node's, a change's, and the graph's decisions; with `include_superseded` the superseded entry carries `superseded_by`
 - `get_blast_radius` on a Foundation lists its own and its dependents' active decisions
 - `get_node_context` `body` excludes the Decisions section and `decisions` carries it
+- `get_node_context` leaves a superseded decision out of `decisions` by default and returns it with `include_superseded`, naming `superseded_by`; `orient_for_work` with `include_superseded` shows it in `context.decisions` too
 
 ## Atomic Ops
 
@@ -92,6 +98,21 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Add `decisions` to `get_blast_radius` (node and change) and to `get_node_context`
 - [x] Verified decision orientation via `npm test`
 - [x] Compact decisions at depth rules, leave retired decisions out of the blast radius, and show `opened_at` (review fixes)
+- [x] Add `include_superseded` to `get_node_context` and pass orientation's flag into the embedded context
+- [x] Verified the get_node_context default via `npm test`
+
+## Decisions
+
+### d-node-context-hides-superseded
+
+- Decision: get_node_context leaves superseded decisions out of decisions and next.decisions unless include_superseded, the same default and flag as list_decisions and orient_for_work.
+- Alternatives:
+  - Keep returning every entry because the full read is meant for history (a node with a long trail buries its current decisions, and the two readers disagree on the same default)
+  - Return every entry with status and let the caller filter (every caller reimplements the same filter that list_decisions already applies)
+- Why: Every decision reader should answer the same question by default: what currently applies. The trail stays one flag away.
+- Consequences: A client that relied on superseded entries in get_node_context must pass include_superseded.
+- Change: node-context-superseded
+- Date: 2026-10-20
 
 ## Attachments
 

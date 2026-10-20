@@ -4,9 +4,9 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-seven tools with when-to-call hints, returns small write results unless verbose, scopes drift to the touched node on reads, exposes run_check, get_rules, patch_node_rules, record_decision, and list_decisions, and takes change ids on open_next, create_node, update_node_status, get_blast_radius, and run_check."
 state: mirror
-shipped_at: 2026-10-20T13:04:11.362Z
+shipped_at: 2026-10-20T13:57:05.425Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-20T13:35:58.806Z
+updated_at: 2026-10-20T13:57:05.425Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -20,6 +20,10 @@ exposes:
 implements:
   - src/interfaces/if-mcp-tools/
 ---
+
+
+
+
 
 # MCP tools
 
@@ -52,7 +56,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - Read results attach a non-empty drift report (`paths` with `class`, `unowned`, `expected`, `other_count`, `reminder`) scoped to the node; `get_project`, `get_rules`, and `run_check` never carry `drift`
 - App Router / MCP mounts Interaction packages; Interface does not own core domain logic
 - **Schemas for the honesty fixes.** `create_node`, `open_next`, and `patch_node_territory` take `change` / `change_ref`; `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; `update_node_status` takes `scope: "change"` with `change`, and `skip_review`; `get_blast_radius` takes `node_id` or `change`; `run_check` takes `change`. Hints name which writes send a `ready` revision back to `draft`.
-- **Decision tools.** Register `record_decision` (a write tool: `verbose`, no default drift) with `node_id`, `decision`, `alternatives` (non-empty array), `why`, and optional `consequences`, `supersedes`, `change`, `id`; register `list_decisions` (a read tool, drift attached) with optional `node_id`, `change`, and `include_superseded`. `record_decision`'s description leads with: call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact). `export_mindplan_view` takes `decisions`; `patch_config` takes `decisions: { blast_radius?, schema_files? }` as a strict object (an unknown key is rejected, not stripped); the `record_decision` id schema uses `DECISION_ID_PATTERN`. `orient_for_work` takes `include_superseded` and its description names the `decisions` block; `get_blast_radius` names `decisions`, and `update_node_status` names `Blocked: Decision` at in-review. Twenty-seven tools
+- **Decision tools.** Register `record_decision` (a write tool: `verbose`, no default drift) with `node_id`, `decision`, `alternatives` (non-empty array), `why`, and optional `consequences`, `supersedes`, `change`, `id`; register `list_decisions` (a read tool, drift attached) with optional `node_id`, `change`, and `include_superseded`. `record_decision`'s description leads with: call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact). `export_mindplan_view` takes `decisions`; `patch_config` takes `decisions: { blast_radius?, schema_files? }` as a strict object (an unknown key is rejected, not stripped); the `record_decision` id schema uses `DECISION_ID_PATTERN`. `orient_for_work` and `get_node_context` take `include_superseded` (the same flag as `list_decisions`) and their descriptions name the `decisions` block; `get_blast_radius` names `decisions`, and `update_node_status` names `Blocked: Decision` at in-review. Twenty-seven tools
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
@@ -89,6 +93,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Add `decisions` to the `export_mindplan_view` and `patch_config` schemas and update the orient, blast-radius, and status hints
 - [x] Verified the decision tools via `npm test`
 - [x] Make the `decisions` config schema strict and reuse `DECISION_ID_PATTERN` (review fixes)
+- [x] Add `include_superseded` to the `get_node_context` schema and hint
+- [x] Verified the schema via `npm test`
 
 ## Attachments
 

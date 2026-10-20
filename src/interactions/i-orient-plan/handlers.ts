@@ -54,6 +54,7 @@ import {
   resolveNodeDecisions,
   slotDecisions,
   supersessionIndex,
+  type DecisionQueryOptions,
 } from "../../foundations/f-graph-search/decisions.js";
 
 export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
@@ -262,14 +263,19 @@ function blastRadiusDecisions(
 /**
  * Territory context of one node: the live body and the open next body without the Rules and
  * Decisions sections, which come back separately (`rules`, `decisions`, `next.decisions`).
+ * Superseded decisions are left out of both lists unless `include_superseded`, the same default
+ * as `list_decisions` and `orient_for_work`, so a long trail does not bury what currently applies.
  */
 export function buildNodeContextPayload(
   graph: MindPlanGraph,
-  node: MindPlanNode
+  node: MindPlanNode,
+  opts: DecisionQueryOptions = {}
 ): Record<string, unknown> {
   const rel = entityRelativePath(node);
   const currentRaw = readMarkdown(node, "current");
   const currentSplit = splitContext(currentRaw);
+  // One supersession index serves both slots.
+  const index = supersessionIndex(graph);
   const payload: Record<string, unknown> = {
     folder: rel,
     current_path: markdownRelativePath(node, "current"),
@@ -279,7 +285,7 @@ export function buildNodeContextPayload(
     // The Rules and Decisions sections are returned separately; each has its own writer.
     body: withoutOwnedSections(currentSplit?.body ?? ""),
     rules: node.rules ?? "",
-    decisions: slotDecisions(graph, node, "current"),
+    decisions: slotDecisions(graph, node, "current", opts, index),
     next: null,
   };
   if (node.next) {
@@ -304,7 +310,7 @@ export function buildNodeContextPayload(
         ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
       },
       body: withoutOwnedSections(nextSplit?.body ?? ""),
-      decisions: slotDecisions(graph, node, "next"),
+      decisions: slotDecisions(graph, node, "next", opts, index),
     };
   }
   return payload;
@@ -434,10 +440,13 @@ export function buildChangeBlastRadiusPayload(
   };
 }
 
-export function getNodeContext(args: { node_id: string }): Record<string, unknown> {
+export function getNodeContext(args: {
+  node_id: string;
+  include_superseded?: boolean;
+}): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  return buildNodeContextPayload(graph, node);
+  return buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
 }
 
 /**
@@ -497,7 +506,7 @@ export function orientForWork(args: {
 
   if (related.focus) {
     const node = findNode(graph, related.focus);
-    context = buildNodeContextPayload(graph, node);
+    context = buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
     rules = { node_id: node.id, entries: resolveNodeRules(graph, node.id) };
     decisions = {
       node_id: node.id,

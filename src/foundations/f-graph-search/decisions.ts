@@ -53,6 +53,14 @@ function toEntry(
 
 export type DecisionQueryOptions = { include_superseded?: boolean };
 
+/**
+ * The one filter every decision reader applies: superseded entries are left out unless
+ * `include_superseded`, so list_decisions, orient_for_work, and get_node_context agree by default.
+ */
+function keepsEntry(opts: DecisionQueryOptions): (entry: DecisionEntry) => boolean {
+  return (entry) => Boolean(opts.include_superseded) || entry.status === "active";
+}
+
 /** One node's own decisions (its active slot), with computed status. */
 export function nodeDecisions(
   graph: MindPlanGraph,
@@ -60,20 +68,24 @@ export function nodeDecisions(
   opts: DecisionQueryOptions = {},
   index: Map<string, string> = supersessionIndex(graph)
 ): DecisionEntry[] {
-  return activeDecisions(node)
-    .map((d) => toEntry(node, d, index))
-    .filter((e) => opts.include_superseded || e.status === "active");
+  return activeDecisions(node).map((d) => toEntry(node, d, index)).filter(keepsEntry(opts));
 }
 
-/** Decision entries of a node's live file (`slot: "current"`) or open next file, with status. */
+/**
+ * Decision entries of a node's live file (`slot: "current"`) or open next file, with status.
+ * Status follows the active slot (`supersessionIndex`), so a live decision superseded by one
+ * recorded on the node's open next file is left out of the live list by default too; it comes
+ * back if that revision is discarded. Pass `index` to reuse one build across both slots.
+ */
 export function slotDecisions(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  slot: "current" | "next"
+  slot: "current" | "next",
+  opts: DecisionQueryOptions = {},
+  index: Map<string, string> = supersessionIndex(graph)
 ): DecisionEntry[] {
-  const index = supersessionIndex(graph);
   const records = slot === "next" ? node.next?.decisions ?? [] : node.decisions ?? [];
-  return records.map((d) => toEntry(node, d, index));
+  return records.map((d) => toEntry(node, d, index)).filter(keepsEntry(opts));
 }
 
 /**
@@ -87,12 +99,12 @@ export function resolveNodeDecisions(
   opts: DecisionQueryOptions = {}
 ): DecisionEntry[] {
   const index = supersessionIndex(graph);
+  const keep = keepsEntry(opts);
   const out: DecisionEntry[] = [];
   for (const { node, via, distance } of inheritanceSources(graph, nodeId)) {
     for (const record of activeDecisions(node)) {
       const entry = toEntry(node, record, index, { via, distance });
-      if (entry.status === "superseded" && !opts.include_superseded) continue;
-      out.push(entry);
+      if (keep(entry)) out.push(entry);
     }
   }
   return out;
