@@ -1153,7 +1153,7 @@ Where:
 
 #### `get_node_context`
 
-- **Input:** `node_id` (slug), `include_superseded` (boolean, default `false`: superseded decisions are left out of `decisions` and `next.decisions`, the same default and flag as `list_decisions` and `orient_for_work`; with it, each superseded entry names `superseded_by`).
+- **Input:** `node_id` (slug), `include_superseded` (boolean, default `false`: superseded decisions are left out of `decisions` and `next.decisions`, the same default and flag as `list_decisions` and `orient_for_work`; with it, each superseded entry names `superseded_by`). Status follows the active slot (§6.1.2), so a live decision that a decision on the node's open `next` file supersedes is left out of the live `decisions` too, until that revision is discarded.
 - **Output:** always includes the live `<id>.mdx` slice; when the node has an open `<id>.next.mdx` (Foundation/Interaction/Interface only), also includes a `next` object with that slot's record, body, and paths:
 
 ```jsonc

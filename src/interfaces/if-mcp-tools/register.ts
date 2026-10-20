@@ -265,7 +265,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call when you are about to read or edit one node's territory. " +
         "Returns authoritative record (graph slice), editable body (without the ## Rules and ## Decisions sections), the node's own rules, " +
-        "its decisions (active ones; superseded only with include_superseded, as in list_decisions), attachment paths, and filenames. " +
+        "its decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), attachment paths, and filenames. " +
         "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),

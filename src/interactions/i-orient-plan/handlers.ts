@@ -274,6 +274,8 @@ export function buildNodeContextPayload(
   const rel = entityRelativePath(node);
   const currentRaw = readMarkdown(node, "current");
   const currentSplit = splitContext(currentRaw);
+  // One supersession index serves both slots.
+  const index = supersessionIndex(graph);
   const payload: Record<string, unknown> = {
     folder: rel,
     current_path: markdownRelativePath(node, "current"),
@@ -283,7 +285,7 @@ export function buildNodeContextPayload(
     // The Rules and Decisions sections are returned separately; each has its own writer.
     body: withoutOwnedSections(currentSplit?.body ?? ""),
     rules: node.rules ?? "",
-    decisions: slotDecisions(graph, node, "current", opts),
+    decisions: slotDecisions(graph, node, "current", opts, index),
     next: null,
   };
   if (node.next) {
@@ -308,7 +310,7 @@ export function buildNodeContextPayload(
         ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
       },
       body: withoutOwnedSections(nextSplit?.body ?? ""),
-      decisions: slotDecisions(graph, node, "next", opts),
+      decisions: slotDecisions(graph, node, "next", opts, index),
     };
   }
   return payload;
