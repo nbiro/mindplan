@@ -1554,11 +1554,17 @@ export function appendDecision(
   return { slot, paths };
 }
 
-/** Splits raw territory MDX into YAML frontmatter block and body. */
-export function splitContext(raw: string): { frontmatter: string; body: string } | null {
+/**
+ * Splits raw territory MDX into YAML frontmatter block, the newline after its closing `---`
+ * (`separator`), and body. `frontmatter + separator + body` is the raw text, so writers that rebuild
+ * a file keep its layout; the body keeps any blank lines that follow.
+ */
+export function splitContext(
+  raw: string
+): { frontmatter: string; separator: string; body: string } | null {
   const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---)(\r?\n?)([\s\S]*)$/);
   if (!match) return null;
-  return { frontmatter: match[1], body: match[3] };
+  return { frontmatter: match[1], separator: match[2], body: match[3] };
 }
 
 /** Compact node summary for blast-radius / reachability payloads. */
@@ -1872,7 +1878,7 @@ export function patchNodeTerritory(
 
   const patched_fields: string[] = [];
   const now = new Date().toISOString();
-  let { frontmatter, body } = split;
+  let { frontmatter, separator, body } = split;
   // The Rules and Decisions sections have their own writers; body edits and checkbox toggles
   // never see or drop them.
   const { body: bodyWithoutRules, rules: existingRules } = splitNodeRules(body);
@@ -1907,7 +1913,10 @@ export function patchNodeTerritory(
       );
     }
     // Keep the file's own line endings so a rewritten body does not mix LF into CRLF territory.
-    body = input.body.replace(/\r?\n/g, detectEol(raw));
+    const eol = detectEol(raw);
+    body = input.body.replace(/\r?\n/g, eol);
+    // One blank line below the frontmatter, unless the new body starts with its own.
+    separator = /^\r?\n/.test(body) ? eol : `${eol}${eol}`;
     patched_fields.push("body");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
@@ -1974,7 +1983,7 @@ export function patchNodeTerritory(
 
   writeMarkdown(
     node,
-    `${frontmatter}\n\n${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
+    `${frontmatter}${separator}${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
     slot
   );
   const twin = slot === "current" ? syncMirrorAfterLiveWrite(node) : null;
@@ -2273,7 +2282,12 @@ export function promoteNextSlot(
 
   const liveRules = readNodeRules(node, "current");
   const promotedBody = joinNodeRules(splitNodeRules(nextSplit.body).body, liveRules);
-  writeMarkdown(node, `${frontmatterLines.join("\n")}\n\n${promotedBody}`, "current");
+  // The live file takes the next file's line endings and frontmatter-to-body layout.
+  writeMarkdown(
+    node,
+    `${frontmatterLines.join(detectEol(nextRaw))}${nextSplit.separator}${promotedBody}`,
+    "current"
+  );
 
   // Merge next-attachments into attachments when present
   const nextAtt = nextAttachmentsDir(node);

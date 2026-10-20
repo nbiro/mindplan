@@ -1,7 +1,8 @@
 /**
  * Graph-honesty coverage: readiness reset on contract writes, Blocked: Coverage with its fix,
  * next-slot imports, skip_review for scoped ship walks, unambiguous checkbox toggles with notes
- * and not-applicable reasons, change groups, glob claims, and split route families.
+ * and not-applicable reasons, change groups, glob claims, territory writes that keep the
+ * frontmatter-to-body layout and CRLF, and split route families.
  * Run via npm test.
  */
 import * as fs from "fs";
@@ -430,6 +431,94 @@ fillAndTick("interactions", "i-b");
     "[slug] in a claim is a literal folder name",
     lit.files.some((f) => f.path === "src/routes/[slug]/x.ts" && f.exists),
     JSON.stringify(lit)
+  );
+}
+
+// --- territory writes keep the bytes between the frontmatter and the body, and CRLF stays CRLF ---
+{
+  await call("create_node", { id: "f-lay", type: "Foundation", title: "Layout", description: "Infra — layout", role: "infra" });
+  write("src/f-lay/index.ts", "export const lay = 1;\n");
+  await call("set_implementation_files", { node_id: "f-lay", files: ["src/f-lay/"] });
+  fillAndTick("foundations", "f-lay");
+  const layFile = territory("foundations", "f-lay");
+  const layNext = territory("foundations", "f-lay", "next");
+  // A Windows checkout: the whole file is CRLF.
+  fs.writeFileSync(layFile, fs.readFileSync(layFile, "utf-8").replace(/\r?\n/g, "\r\n"));
+  const read = (file) => fs.readFileSync(file, "utf-8");
+  // Everything above the title, with the fields these writes are meant to change masked out.
+  const head = (file) => {
+    const text = read(file);
+    return text.slice(0, text.indexOf("# Layout")).replace(/^(updated_at|shipped_at|description):.*$/gm, "$1:");
+  };
+  const hasLf = (text) => /(^|[^\r])\n/.test(text);
+  // The closing `---` line and everything after it.
+  const fromFence = (file) => {
+    const text = read(file);
+    return text.slice(text.indexOf("\n---", 3) + 1);
+  };
+  const original = head(layFile);
+  check("the layout fixture has one blank line after the frontmatter", original.endsWith("\r\n---\r\n\r\n"), JSON.stringify(original));
+
+  for (const [label, patch] of [
+    ["replace", { replace: { find: "Honesty-test filled territory.", with: "Layout text.", all: true } }],
+    ["section", { section: "## Purpose", text: "Keeps the layout." }],
+    ["toggle", { toggle_checkboxes: [{ contains: "Spec written", checked: false }] }],
+    ["second toggle", { toggle_checkboxes: [{ contains: "Spec written", checked: true }] }],
+    ["description", { description: "Infra — layout kept" }],
+  ]) {
+    await call("patch_node_territory", { node_id: "f-lay", ...patch });
+    check(
+      `a ${label} patch changes nothing else before the body and keeps the file CRLF`,
+      head(layFile) === original && !hasLf(read(layFile)),
+      JSON.stringify(head(layFile))
+    );
+  }
+
+  const { body: fullBody } = await call("get_node_context", { node_id: "f-lay" });
+  await call("patch_node_territory", { node_id: "f-lay", body: "# Layout\n\nWhole body.\n" });
+  check(
+    "a whole-body write starting with text gets one blank line below the frontmatter",
+    head(layFile) === original && !hasLf(read(layFile)),
+    JSON.stringify(head(layFile))
+  );
+  await call("patch_node_territory", { node_id: "f-lay", body: "\n\n# Layout\n\nWhole body.\n" });
+  check(
+    "a whole-body write keeps the blank lines the body starts with",
+    head(layFile) === `${original}\r\n` && !hasLf(read(layFile)),
+    JSON.stringify(head(layFile))
+  );
+  await call("patch_node_territory", { node_id: "f-lay", body: fullBody });
+  check(
+    "writing back the body get_node_context returned restores the layout",
+    head(layFile) === original && read(layFile).endsWith(fullBody),
+    JSON.stringify(head(layFile))
+  );
+
+  // Ship, open an evolution, patch it, and ship it: promote keeps the next file's layout and CRLF.
+  await walk("f-lay", ["ready", "in-progress", "in-review", "ship"]);
+  await call("open_next", { node_id: "f-lay" });
+  await call("patch_node_territory", { node_id: "f-lay", section: "## Purpose", text: "Next purpose." });
+  await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ contains: "Spec written", checked: true }] });
+  // A shipped Foundation's revision needs a decision before in-review; recording it is a write too.
+  await call("record_decision", {
+    node_id: "f-lay",
+    decision: "The purpose stays one line.",
+    alternatives: ["A longer purpose (this fixture only exercises the file layout)"],
+    why: "The test checks bytes, not prose.",
+  });
+  check(
+    "patches and a decision on an open next file keep its layout and CRLF",
+    fromFence(layNext).startsWith("---\r\n\r\n# Layout") && !hasLf(fromFence(layNext)),
+    JSON.stringify(fromFence(layNext).slice(0, 40))
+  );
+  await walk("f-lay", ["ready", "in-progress", "in-review", "ship"]);
+  check(
+    "shipping an evolution keeps one blank line after the frontmatter and the file CRLF",
+    fromFence(layFile).startsWith("---\r\n\r\n# Layout") &&
+      read(layFile).includes("Next purpose.") &&
+      !hasLf(read(layFile)) &&
+      !hasLf(read(layNext)),
+    JSON.stringify(head(layFile))
   );
 }
 
