@@ -2,11 +2,11 @@
 id: i-export-map
 type: Interaction
 title: "See the map"
-description: "Owns the export_mindplan_view MCP handler (optionally with per-node decision counts) and the view export used by the CLI view/export command."
+description: "Owns the export_mindplan_view MCP handler (optionally with per-node decision counts, writable to a file, and refusing with a fix instead of returning a diagram the host would truncate) and the view export used by the CLI view/export command."
 state: mirror
-shipped_at: 2026-10-20T13:04:11.004Z
+shipped_at: 2026-10-20T15:10:03.542Z
 created_at: 2026-07-19T18:33:36.804Z
-updated_at: 2026-10-20T13:35:52.211Z
+updated_at: 2026-10-20T15:10:03.542Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -21,7 +21,7 @@ implements:
 
 ## Purpose
 
-Export a deterministic Mermaid or DOT projection of the territory graph for PRs and docs, optionally labeled with each node's active decision count so a reviewer sees where the recorded reasoning lives. Also provides the view-export entry used by the CLI `view` / `export` commands.
+Export a deterministic Mermaid or DOT projection of the territory graph for PRs and docs, optionally labeled with each node's active decision count so a reviewer sees where the recorded reasoning lives. Also provides the view-export entry used by the CLI `view` / `export` commands. Over MCP the diagram goes back as one result, and a host truncates a result over its size limit silently: a truncated Mermaid file is unusable and the agent does not learn that it was cut. So the MCP handler refuses a diagram over its character budget with the two fixes (`focus` for a neighborhood, `output` to write the whole diagram to a file the way the CLI does) instead of returning something the host would damage.
 
 ## Actor & Trigger
 
@@ -38,6 +38,8 @@ Package: `src/interactions/i-export-map/`
 - Optional focus validation via `f-compiler-rules` `findNode`
 - `decisions` (boolean, default false) is passed to the projection, which then labels each node with its active decision count; `runViewExport` accepts it too
 - Automatic `mindplan/map.md` refresh after mutations is owned by `i-steer-plan` (calls `f-view-projection` directly)
+- **`output`.** The MCP handler takes `output` (repo-relative path, resolved under the project root; a path outside the root or under `mindplan/` is Blocked) and then reuses `runViewExport`'s file write: the result is `{ format, node_count, edge_count, written_to }` with no `diagram`
+- **Size budget.** `EXPORT_RESULT_BUDGET` = 80,000 characters, exported from this package (under Claude Code's 25,000-token result limit and claude.ai's 150,000 characters). Without `output`, a diagram longer than the budget is not returned: the handler throws `Blocked: the diagram is <n> characters, over the <budget> MCP result budget. Pass focus for one node's neighborhood, or output to write it to a file.` The CLI path never applies the budget (stdout and files have no such limit)
 
 Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
 
@@ -48,6 +50,9 @@ Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belong
 - Handler lives under this package; Interfaces only wire it
 - `npm test` passes
 - `export_mindplan_view({ decisions: true })` labels nodes with their active decision counts; without it the diagram is unchanged
+- `export_mindplan_view({ output })` writes the diagram to that path and returns `written_to` and the counts with no `diagram`; a path outside the root or under `mindplan/` is Blocked
+- A diagram over `EXPORT_RESULT_BUDGET` without `output` is an `isError` result whose text names the size, the budget, `focus`, and `output`; the same diagram with `output` is written in full; the CLI prints it in full
+- A diagram within the budget is returned unchanged
 
 ## Atomic Ops
 
@@ -56,6 +61,24 @@ Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belong
 - [x] Verify MCP export + CLI view via smoke/tests
 - [x] Pass `decisions` through the handler and `runViewExport`
 - [x] Verified decision counts in the export via `npm test`
+- [x] Add `output` to the MCP handler, reusing `runViewExport`'s file write, with the root and `mindplan/` path guard
+- [x] Add `EXPORT_RESULT_BUDGET` and the over-budget refusal on the MCP path only
+- [x] Test the file write, the path guard, the refusal text, and that the CLI ignores the budget (`f-test-harness`, in place)
+- [x] Verified via `npm test`
+
+## Decisions
+
+### d-export-refuses-over-budget
+
+- Decision: Over MCP, a diagram longer than an 80,000-character budget is refused with the fix (focus or output) instead of returned; output writes it to a file; the CLI never applies the budget.
+- Alternatives:
+  - Return the first N characters with a truncated flag (a cut Mermaid diagram renders nothing, so the partial result has no use)
+  - Page the diagram (a diagram is one document; pages of it cannot be rendered separately)
+  - Apply the budget on the CLI too (stdout and files have no limit, and CI uses the CLI for the full map)
+- Why: The host would truncate the result silently; a refusal that names the two working paths costs the agent one more call, a damaged diagram costs it the task.
+- Consequences: output is restricted to the project root outside mindplan/, since the MCP server is the only writer of that tree.
+- Change: mcp-audit-fixes
+- Date: 2026-10-20
 
 ## Attachments
 

@@ -472,6 +472,90 @@ for (const status of ["ready", "in-progress"]) {
   check("the CLI prints warnings and still exits 0", cli.status === 0 && (cli.stdout + cli.stderr).includes("Warning:"));
 }
 
+// --- get_mindplan_graph pages by offset / limit ---
+{
+  const whole = await call("get_mindplan_graph", {});
+  check(
+    "a graph that fits one page returns totals and no next_offset",
+    whole.next_offset === undefined &&
+      whole.total_nodes === whole.nodes.length &&
+      whole.total_edges === whole.edges.length &&
+      whole.offset === 0 &&
+      whole.limit === 200,
+    JSON.stringify({ n: whole.nodes.length, total: whole.total_nodes, next: whole.next_offset })
+  );
+  const seenNodes = [];
+  const seenEdges = [];
+  let offset = 0;
+  let pages = 0;
+  for (;;) {
+    const page = await call("get_mindplan_graph", { offset, limit: 2 });
+    pages++;
+    seenNodes.push(...page.nodes.map((n) => n.id));
+    seenEdges.push(...page.edges.map((e) => `${e.source}>${e.type}>${e.target}`));
+    if (page.next_offset === undefined) break;
+    check(`page ${pages} names the next offset`, page.next_offset === offset + page.nodes.length);
+    offset = page.next_offset;
+  }
+  const allEdges = whole.edges.map((e) => `${e.source}>${e.type}>${e.target}`);
+  check(
+    "walking every page yields every node and every edge exactly once",
+    pages === Math.ceil(whole.total_nodes / 2) &&
+      new Set(seenNodes).size === seenNodes.length &&
+      seenNodes.length === whole.total_nodes &&
+      [...seenEdges].sort().join("|") === [...allEdges].sort().join("|"),
+    JSON.stringify({ pages, seenNodes, seenEdges: seenEdges.length, allEdges: allEdges.length })
+  );
+  const past = await call("get_mindplan_graph", { offset: whole.total_nodes + 10, limit: 5 });
+  check(
+    "an offset past the end returns an empty page with the totals",
+    past.nodes.length === 0 && past.edges.length === 0 && past.total_nodes === whole.total_nodes && past.next_offset === undefined
+  );
+  const tooBig = await raw("get_mindplan_graph", { limit: 501 });
+  check("limit above 500 is rejected at the schema layer", tooBig.error, tooBig.text.slice(0, 120));
+}
+
+// --- export_mindplan_view: output file and the result budget ---
+{
+  const written = await call("export_mindplan_view", { output: "docs/map.mmd" });
+  const onDisk = fs.readFileSync(path.join(root, "docs", "map.mmd"), "utf-8");
+  const inline = await call("export_mindplan_view", {});
+  check(
+    "output writes the diagram and returns written_to without diagram",
+    written.written_to === "docs/map.mmd" &&
+      written.diagram === undefined &&
+      written.node_count === inline.node_count &&
+      onDisk === inline.diagram,
+    JSON.stringify(written).slice(0, 200)
+  );
+  const outside = await blocked("export_mindplan_view", { output: "../escape.mmd" });
+  const underMindplan = await blocked("export_mindplan_view", { output: "mindplan/view.mmd" });
+  check("output outside the root is Blocked", outside !== null && outside.includes("inside the project root"), outside);
+  check("output under mindplan/ is Blocked", underMindplan !== null && underMindplan.includes("mindplan/"), underMindplan);
+
+  // Grow the graph past the budget: many Journeys with long titles (labels carry the title).
+  const filler = "x".repeat(900);
+  for (let i = 0; i < 120; i++) {
+    await call("create_node", { id: `j-big-${i}`, type: "Journey", title: `Big ${i} ${filler}`, description: `Big ${i}` });
+  }
+  const refused = await blocked("export_mindplan_view", {});
+  check(
+    "a diagram over the budget is Blocked with the size and both fixes",
+    refused !== null &&
+      /is \d+ characters, over the 80000 MCP result budget/.test(refused) &&
+      refused.includes("focus") &&
+      refused.includes("output"),
+    refused
+  );
+  const focused = await call("export_mindplan_view", { focus: "i-feature" });
+  check("focus still returns a diagram inline", typeof focused.diagram === "string" && focused.diagram.length > 0);
+  const big = await call("export_mindplan_view", { output: "docs/big.mmd" });
+  const bigOnDisk = fs.readFileSync(path.join(root, "docs", "big.mmd"), "utf-8");
+  check("output writes the over-budget diagram in full", big.written_to === "docs/big.mmd" && bigOnDisk.length > 80000);
+  const cliView = runCli(["view"]);
+  check("the CLI prints the over-budget diagram without the budget", cliView.status === 0 && cliView.stdout.length > 80000);
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 

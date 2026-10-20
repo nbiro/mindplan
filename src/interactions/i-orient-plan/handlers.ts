@@ -316,8 +316,44 @@ export function buildNodeContextPayload(
   return payload;
 }
 
-export function getMindPlanGraph(): MindPlanGraph {
-  return loadGraph();
+/** Default and maximum node count per `get_mindplan_graph` page. */
+export const GRAPH_PAGE_DEFAULT = 200;
+export const GRAPH_PAGE_MAX = 500;
+
+export type GraphPage = MindPlanGraph & {
+  total_nodes: number;
+  total_edges: number;
+  offset: number;
+  limit: number;
+  /** Present only when nodes remain after this page. */
+  next_offset?: number;
+};
+
+/**
+ * One page of the graph: nodes sorted by id and sliced by offset/limit, plus every edge whose
+ * source is in the page, so a walk over all pages sees each node and each edge exactly once.
+ * The default page keeps one result under a host's size limit; a graph that fits returns the
+ * whole graph plus the totals.
+ */
+export function getMindPlanGraph(args: { offset?: number; limit?: number } = {}): GraphPage {
+  const graph = loadGraph();
+  const offset = Math.max(0, Math.floor(args.offset ?? 0));
+  const limit = Math.min(GRAPH_PAGE_MAX, Math.max(1, Math.floor(args.limit ?? GRAPH_PAGE_DEFAULT)));
+  const sorted = [...graph.nodes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const nodes = sorted.slice(offset, offset + limit);
+  const inPage = new Set(nodes.map((n) => n.id));
+  const edges = graph.edges.filter((e) => inPage.has(e.source));
+  const page: GraphPage = {
+    version: graph.version,
+    nodes,
+    edges,
+    total_nodes: sorted.length,
+    total_edges: graph.edges.length,
+    offset,
+    limit,
+  };
+  if (offset + nodes.length < sorted.length) page.next_offset = offset + nodes.length;
+  return page;
 }
 
 export function findRelatedNodesHandler(args: {

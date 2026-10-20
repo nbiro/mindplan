@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-seven tools with when-to-call hints, returns small write results unless verbose, scopes drift to the touched node on reads, exposes run_check, get_rules, patch_node_rules, record_decision, and list_decisions, and takes change ids on open_next, create_node, update_node_status, get_blast_radius, and run_check."
+description: "MCP stdio Interface that registers twenty-seven tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, and takes change ids on open_next, create_node, update_node_status, get_blast_radius, and run_check."
 state: mirror
-shipped_at: 2026-10-20T13:57:05.425Z
+shipped_at: 2026-10-20T15:10:03.746Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-20T13:57:05.425Z
+updated_at: 2026-10-20T15:10:03.746Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -30,6 +30,8 @@ implements:
 ## Purpose
 
 MCP stdio Interface that registers twenty-seven tools. Each description leads with when to call the tool. A write returns a small result by default (`{ node_id, state, next_state, changed_files }` plus the tool's own fields) and the record, neighborhood, and drift only with `verbose: true`, so a long session of writes does not drown in repeated context. Read results attach a drift report scoped to the node they are about via `withDrift` from `f-mcp-runtime`, except `get_project`, `get_rules`, and `run_check`: `get_rules` runs before every action and would repeat the same report next to `orient_for_work`. `run_check` is the agent's door to the integrity check. `patch_node_rules` is the only way to write a node's rules, and its description must say when to prefer it over `patch_project_rules`, otherwise area-specific rules keep piling into the global list that `get_rules` returns before every action. Without the when-hints, a long session would treat tools as one-shot session-start helpers. `record_decision` and `list_decisions` lead with their when-clauses too: record when you choose between viable designs; list before reshaping a design someone else chose.
+
+Every tool carries MCP annotations, because the host decides from them which calls need a per-call confirmation: without `readOnlyHint`, `get_rules` and `orient_for_work` (called before every action) prompt like writes, and without `destructiveHint` a `discard_next` prompts like a `patch`. The annotations come from the same `read` / `write` / `destructive` kind that already drives the drift and verbose behavior, so a tool cannot be registered with a kind and no hint. Results are compact JSON text plus a `structuredContent` mirror: pretty-printing cost about a third more tokens on every result and bought nothing a client parses. Per-tool descriptions describe the tool; the routing to the plan-project skill lives once in the server `instructions` (owned by `f-mcp-runtime`), not in fourteen descriptions, which is also what the Claude connector review criteria require.
 
 ## Kind
 
@@ -57,6 +59,10 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - App Router / MCP mounts Interaction packages; Interface does not own core domain logic
 - **Schemas for the honesty fixes.** `create_node`, `open_next`, and `patch_node_territory` take `change` / `change_ref`; `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; `update_node_status` takes `scope: "change"` with `change`, and `skip_review`; `get_blast_radius` takes `node_id` or `change`; `run_check` takes `change`. Hints name which writes send a `ready` revision back to `draft`.
 - **Decision tools.** Register `record_decision` (a write tool: `verbose`, no default drift) with `node_id`, `decision`, `alternatives` (non-empty array), `why`, and optional `consequences`, `supersedes`, `change`, `id`; register `list_decisions` (a read tool, drift attached) with optional `node_id`, `change`, and `include_superseded`. `record_decision`'s description leads with: call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact). `export_mindplan_view` takes `decisions`; `patch_config` takes `decisions: { blast_radius?, schema_files? }` as a strict object (an unknown key is rejected, not stripped); the `record_decision` id schema uses `DECISION_ID_PATTERN`. `orient_for_work` and `get_node_context` take `include_superseded` (the same flag as `list_decisions`) and their descriptions name the `decisions` block; `get_blast_radius` names `decisions`, and `update_node_status` names `Blocked: Decision` at in-review. Twenty-seven tools
+- **Tool kinds and annotations.** One registration helper takes `kind: "read" | "write" | "destructive"` and derives both the `guarded` options (`drift` / `write`) and the MCP `annotations`: `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`: every tool acts on the local `mindplan/` tree and the repo, never on an external system. Read tools: `run_check`, `get_mindplan_graph`, `export_mindplan_view`, `find_related_nodes`, `get_node_implementation`, `get_node_context`, `orient_for_work`, `get_project`, `get_rules`, `list_decisions`, `get_blast_radius`. Destructive tools (they remove data or edges that no undo restores): `unlink_nodes`, `remove_attachment`, `discard_next`, `force_unship`. Every other tool is `write`. `run_check` keeps `drift: false` on top of `read`. Every tool keeps its `title`
+- **Result envelope.** `ok(payload)` returns `content: [{ type: "text", text: JSON.stringify(payload) }]` (compact, no indentation) and, when the payload is a plain object, `structuredContent: payload` as well. String payloads stay text-only. Error results are unchanged (`isError: true`, message text). No `outputSchema` is declared: twenty-seven schemas would double the tool list the host loads, and `structuredContent` is useful without one
+- **Descriptions describe the tool.** No per-tool description names the plan-project skill or tells the agent to follow a skill; the routing sentence stays in `SERVER_INSTRUCTIONS` (`f-mcp-runtime`). `force_unship` keeps the `confirm` token contract and the sentence "Do not invent the confirm token", and drops the DANGEROUS / ask-the-user prose: `destructiveHint` tells the host to prompt
+- Register `get_mindplan_graph` with `offset` and `limit` (integers, `limit` 1..500, default 200) and a description that names paging and the `next_offset` field; register `export_mindplan_view` with `output` (repo-relative path) and a description that says a diagram over the size budget is refused with the fix (pass `focus` or `output`)
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
@@ -72,6 +78,11 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - `run_check` output equals the CLI check output
 - Verified via `npm test`
 - The new fields reach their handlers; `get_blast_radius` without `node_id` or `change` is Blocked
+- `tools/list` shows `annotations` on all twenty-seven tools: the eleven read tools carry `readOnlyHint: true`, the four destructive tools carry `destructiveHint: true`, no tool carries `openWorldHint: true`, and every tool still has a `title`
+- No tool description contains the words `plan-project`, `skill`, or `DANGEROUS`; the `force_unship` description still names the `confirm` token format
+- A successful object result carries `structuredContent` equal to the parsed `content[0].text`, and that text contains no newline (compact JSON); an error result carries `isError: true` and no `structuredContent`
+- `get_mindplan_graph` accepts `offset` / `limit` and `export_mindplan_view` accepts `output`, and both reach their handlers
+- The smoke test asserts the annotation table, the description bans, and the envelope shape
 
 ## Atomic Ops
 
@@ -95,6 +106,47 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Make the `decisions` config schema strict and reuse `DECISION_ID_PATTERN` (review fixes)
 - [x] Add `include_superseded` to the `get_node_context` schema and hint
 - [x] Verified the schema via `npm test`
+- [x] Add the `kind`-driven registration helper that derives `annotations` and the `guarded` options, and register every tool through it with the read / write / destructive table
+- [x] Switch `ok()` to compact JSON text plus `structuredContent` for object payloads
+- [x] Remove skill routing and the DANGEROUS prose from the descriptions; keep the `force_unship` confirm-token sentence
+- [x] Add `offset` / `limit` to `get_mindplan_graph` and `output` to `export_mindplan_view`, with hints that name paging and the size refusal
+- [x] Extend the smoke test (`f-test-harness`, in place) with the annotation table, description bans, and envelope assertions
+- [x] Update the MCP Tools section of README and SPEC §5.1 for annotations, the envelope, paging, and `output` (`f-framework-docs`, in place); add a CHANGELOG entry
+- [x] Verified via `npm test`
+
+## Decisions
+
+### d-annotations-from-tool-kind
+
+- Decision: MCP annotations are derived from one read / write / destructive kind per tool, the same kind that drives drift and verbose, and openWorldHint is always false.
+- Alternatives:
+  - Hand-write an annotations object on each of the twenty-seven registrations (a new tool can be added with a kind and no hint, and two tables drift)
+  - Mark every write destructiveHint: true to be safe (every patch would prompt like a delete, and the host could not tell discard_next from patch_node_territory)
+- Why: The host decides from the hints which calls need a per-call confirmation; one kind keeps the hint and the envelope behavior in one place so they cannot disagree.
+- Consequences: A destructive tool is one that removes data or edges no undo restores (unlink_nodes, remove_attachment, discard_next, force_unship); a replace-with-empty write stays write. Adding a tool means naming its kind.
+- Change: mcp-audit-fixes
+- Date: 2026-10-20
+
+### d-compact-json-with-structured-content
+
+- Decision: Successful object results are compact JSON text plus a structuredContent mirror, with no outputSchema declared.
+- Alternatives:
+  - Keep pretty-printed text only (about a third more tokens on every result, and a client has to parse prose)
+  - Declare an outputSchema per tool as well (twenty-seven more schemas in tools/list, which the host loads into context, for validation no client asked for)
+- Why: structuredContent lets a client read the result without parsing and costs nothing, while the text copy stays for hosts that ignore it; the schema would cost context on every session.
+- Consequences: A test that compares result text byte for byte must parse it instead; string payloads and error results stay text-only.
+- Change: mcp-audit-fixes
+- Date: 2026-10-20
+
+### d-skill-routing-in-instructions-only
+
+- Decision: Tool descriptions describe their tool only; the routing to the plan-project skill lives once in the server instructions.
+- Alternatives:
+  - Keep 'Follow the plan-project skill' in each graph-write description (fourteen copies of one sentence, and a pattern the connector review criteria reject as pulling behavior from an external source)
+- Why: The instructions pointer already carries the routing and is read on initialize; repeating it per tool adds context on every session and fails directory review for no gain.
+- Consequences: The instructions sentence must name the graph writes the skill covers, since no description will.
+- Change: mcp-audit-fixes
+- Date: 2026-10-20
 
 ## Attachments
 
