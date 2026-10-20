@@ -2,11 +2,11 @@
 id: f-graph-search
 type: Foundation
 title: "Graph search"
-description: "Infra — ranks and expands graph neighborhoods, and resolves which nodes' rules apply to a node (and which nodes a node's rules reach)."
+description: "Infra — ranks and expands graph neighborhoods, resolves which nodes' rules and decisions apply to a node (and which nodes a node's rules reach), computes whether a decision is superseded, and lists decisions by node, change, or graph."
 state: stable
-shipped_at: 2026-10-15T11:45:44.467Z
+shipped_at: 2026-10-20T13:04:10.266Z
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-10-15T11:45:44.467Z
+updated_at: 2026-10-20T13:04:10.266Z
 depends_on:
   - f-domain-model
 implements:
@@ -16,11 +16,21 @@ role: infra
 
 
 
+
+
+
+
+
+
+
+
+
+
 # Graph search
 
 ## Purpose
 
-Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`, plus the pure graph queries that say whose rules apply to a node and whose work a node's rules reach. Keeps retired nodes out of default ranking so agents focus on the live architecture. Rules flow only toward the work that needs them: up `belongs_to`, along `depends_on`, and from affected nodes into Bugs — never downward and never across siblings, otherwise a Journey's local rule would constrain unrelated Interactions. Finished work does not count: a resolved Bug must not pad the list of whose work a Foundation's rules reach.
+Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`, plus the pure graph queries that say whose rules apply to a node and whose work a node's rules reach. Keeps retired nodes out of default ranking so agents focus on the live architecture. Rules flow only toward the work that needs them: up `belongs_to`, along `depends_on`, and from affected nodes into Bugs — never downward and never across siblings, otherwise a Journey's local rule would constrain unrelated Interactions. Finished work does not count: a resolved Bug must not pad the list of whose work a Foundation's rules reach. Decisions reach a node along exactly the same walk, so an agent about to reshape an Interaction sees why its Foundation's contract looks the way it does before it simplifies it back; one walk serves both, so rules and decisions can never disagree about who inherits from whom. Whether a decision is superseded is computed here from the decisions of active nodes, never stored.
 
 ## Shared Substrate Spec
 
@@ -40,6 +50,14 @@ Package: `src/foundations/f-graph-search/`
 - `rulesAudience(graph, nodeId): RulesImpactEntry[]` — exactly the other active nodes whose `resolveNodeRules` includes an entry from `nodeId`, with the `via` and `distance` of that entry; empty when `nodeId` has no rules
 - `rulesImpact(graph, node)` → `{ has_rules, inherited_by }`: the one builder of the `rules_impact` payload used by `get_blast_radius` and `patch_node_rules`
 - All three are pure and read `node.rules` already loaded in the graph; no file I/O. The node index is built once per call, not once per node
+- **Shared inheritance walk.** `inheritanceSources(graph, nodeId)` → `{ node, via, distance }[]`: the walk above without the rules filter (same order, live edges only, smallest distance kept, inactive nodes skipped except the focus itself). `resolveNodeRules` is that walk filtered to nodes with rules, so its results do not change
+- `decisions.ts` — pure, over `activeDecisions` already loaded in the graph:
+  - `supersessionIndex(graph)` — decision id → id of the decision that supersedes it, built from every active node's decisions (only a cancelled node's decisions supersede nothing; a deprecated node's replacement still stands, or retiring it would bring back the design it replaced). A decision is `superseded` (with `superseded_by`) when the index has it, else `active`
+  - `resolveNodeDecisions(graph, nodeId, { include_superseded? })` → `DecisionEntry[]` over `inheritanceSources`: each source node's decisions in recorded order, labeled with `node_id`, `node_type`, `via`, `distance`, and `status`; superseded entries left out unless asked for
+  - `listDecisions(graph, { node_id?, change?, include_superseded? })` → `DecisionEntry[]`: one node's own decisions, every decision recorded under a change, or every decision in the graph. Change and whole-graph listings skip inactive nodes; the filters combine
+  - `nodeDecisions(graph, node, opts, index?)` (one node's own decisions with status), `slotDecisions(graph, node, slot)` (one file's entries, for node context), and `decisionIds(graph)` (every id in live and next files plus every id a `supersedes` still names, so an id freed by a discarded revision is not reused while a decision points at it)
+  - `findDecision(graph, id)` — the node holding a decision id in its live or open next file. Ids are unique across the graph
+  - `generateDecisionId(graph, text)` — `d-` plus a slug of the decision's first words, with a numeric suffix when taken
 
 Depends on: `f-domain-model`.
 
@@ -55,6 +73,11 @@ Depends on: `f-domain-model`.
 - A Bug resolves the full resolution of every node it `affects`
 - `rulesAudience` of a Foundation lists its transitive dependents; of a Journey lists its Interactions; both agree with `resolveNodeRules`
 - Resolved and wontfix Bugs appear in no audience and contribute no rules
+- An Interaction resolves its own, its Journey's, and its Foundations' (transitive) decisions, each labeled with its source node; a Bug resolves the decisions of the nodes it affects; siblings never see each other's
+- A decision named in another active node's `supersedes` is `superseded` and left out unless `include_superseded`; once the superseding decision is gone (its revision discarded) it is active again
+- A decision superseded only by a cancelled node's decision stays active; one superseded by a deprecated node's decision stays superseded
+- `listDecisions` by change returns the decisions of every node recorded under that change id
+- `resolveNodeRules` and `rulesAudience` results are unchanged by the shared walk
 - Verified via `npm test` (`search.test.mjs`)
 
 ## Atomic Ops
@@ -71,6 +94,21 @@ Depends on: `f-domain-model`.
 - [x] Treat closed Bugs as inactive in both rules queries and test it
 - [x] Build the node index once per call and add `rulesImpact`
 - [x] Verified the inactive-node and `rulesImpact` changes via `npm test`
+- [x] Extract `inheritanceSources` from the rules walk
+- [x] Add `decisions.ts`: supersession index, resolve, list, find, and id generation
+- [x] Verified decision inheritance and supersession via `npm test`
+- [x] Keep deprecated superseders and reserve ids named by `supersedes` (review fixes)
+
+## Decisions
+
+### d-supersede-reach-follows-inheritance
+
+- Decision: A decision may supersede one held by the node itself or by any node it inherits decisions from, Journeys included.
+- Alternatives:
+  - Only the node and its Foundations, as the brief words it (a Journey decision that orient_for_work shows could not be replaced from the work that outgrew it)
+- Why: Whatever reaches the agent through orient_for_work should be replaceable by that agent.
+- Change: decision-records
+- Date: 2026-10-20
 
 ## Attachments
 

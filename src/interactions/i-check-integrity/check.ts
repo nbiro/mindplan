@@ -25,6 +25,11 @@ import {
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { changeMembers } from "../../foundations/f-compiler-rules/rules.js";
 import {
+  createDecisionContext,
+  decisionWarnings,
+  type DecisionContext,
+} from "../../foundations/f-compiler-rules/decisions.js";
+import {
   buildOwnershipIndex,
   claimantsOf,
   exclusiveOwner,
@@ -38,6 +43,7 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
+import { defaultBaseRef } from "../../foundations/f-source-index/git.js";
 import {
   drainRemovedLegacyFiles,
   loadGraph,
@@ -97,7 +103,12 @@ export interface CheckResult {
  * The in-review gate on every open revision in a change: import and ownership violations on
  * each member's active-slot files (Blocked), and every stale-text signal (warnings).
  */
-function checkChange(graph: MindPlanGraph, root: string, change: string): ChangeCheck {
+function checkChange(
+  graph: MindPlanGraph,
+  root: string,
+  change: string,
+  decisionCtx: DecisionContext
+): ChangeCheck {
   const members = changeMembers(graph, change);
   const failures: string[] = [];
   const warnings: string[] = [];
@@ -114,6 +125,7 @@ function checkChange(graph: MindPlanGraph, root: string, change: string): Change
       failures.push(`Blocked: change "${change}": ${conflict}`);
     }
     warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_ALL));
+    warnings.push(...decisionWarnings(graph, node, decisionCtx));
   }
   return {
     id: change,
@@ -171,16 +183,6 @@ function git(args: string[], cwd: string, required: boolean): string {
   }
 }
 
-function resolveDefaultBase(cwd: string): string | null {
-  for (const branch of ["main", "master"]) {
-    const mb = git(["merge-base", "HEAD", branch], cwd, false);
-    if (mb) return mb;
-    const remote = git(["merge-base", "HEAD", `origin/${branch}`], cwd, false);
-    if (remote) return remote;
-  }
-  return null;
-}
-
 function parsePorcelainSrcPaths(porcelain: string): string[] {
   const paths: string[] = [];
   for (const line of porcelain.split("\n")) {
@@ -213,7 +215,7 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
   );
 
   const commits = new Set<string>();
-  const baseRef = base ?? resolveDefaultBase(cwd);
+  const baseRef = base ?? defaultBaseRef(cwd);
   if (baseRef) {
     const diff = git(["diff", "--name-only", `${baseRef}...HEAD`], cwd, explicitBase);
     for (const line of diff.split("\n")) {
@@ -429,6 +431,16 @@ function collectWarnings(graph: MindPlanGraph, root: string): string[] {
       warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_PATHS_ONLY));
     }
   }
+  return warnings;
+}
+
+/**
+ * Decision warnings: every open revision (any pre-ship state, or a shipped node's open next) that
+ * is decision-worthy and has no decision yet. Moving it to in-review Blocks until one is recorded.
+ */
+function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): string[] {
+  const warnings: string[] = [];
+  for (const node of graph.nodes) warnings.push(...decisionWarnings(graph, node, ctx));
   return warnings;
 }
 
@@ -760,11 +772,13 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     checkImports(graph, buckets, root, universe, failures, warnings);
     warnings.push(...collectWarnings(graph, root));
     warnings.push(...routeFamilySplits(graph, buckets, universe));
+    const decisionCtx = createDecisionContext(root);
+    warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, options.base, failures);
     }
     if (options.change !== undefined) {
-      changeReport = checkChange(graph, root, options.change);
+      changeReport = checkChange(graph, root, options.change, decisionCtx);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

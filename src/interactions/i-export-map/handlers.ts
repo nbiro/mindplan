@@ -19,6 +19,7 @@ export function exportMindPlanViewHandler(args: {
   format?: ViewFormat;
   focus?: string;
   include_retired?: boolean;
+  decisions?: boolean;
 }): ExportMindPlanViewResult {
   const graph = loadGraph();
   if (args.focus) {
@@ -28,6 +29,7 @@ export function exportMindPlanViewHandler(args: {
     format: args.format ?? "mermaid",
     focus: args.focus,
     include_retired: args.include_retired ?? false,
+    decisions: args.decisions ?? false,
   });
 }
 
@@ -35,6 +37,8 @@ export type RunViewExportOptions = {
   format?: ViewFormat;
   focus?: string;
   include_retired?: boolean;
+  /** Label each node with its active decision count. */
+  decisions?: boolean;
   /** When set, write the diagram to this path instead of returning it for stdout. */
   output?: string;
 };
@@ -56,6 +60,7 @@ export function runViewExport(opts: RunViewExportOptions): RunViewExportResult {
       format: opts.format,
       focus: opts.focus,
       include_retired: opts.include_retired,
+      decisions: opts.decisions,
     });
     const removed_legacy_files = drainRemovedLegacyFiles();
     if (opts.output) {

@@ -452,6 +452,13 @@ for (const status of ["ready", "in-progress"]) {
     section: "## Purpose",
     text: "Core substrate. Lives in `src/foundations/f-core/gone-file.ts` Also see `../elsewhere/notes.md`.",
   });
+  // A shipped Foundation's revision is decision-worthy: record one before review.
+  await call("record_decision", {
+    node_id: "f-core",
+    decision: "Core keeps one exported constant.",
+    alternatives: ["Export a config object (more surface than any caller needs)"],
+    why: "Every dependent reads a single value.",
+  });
   await call("update_node_status", { node_id: "f-core", new_status: "in-review" });
   const result = await call("run_check", {});
   check(

@@ -6,6 +6,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { nodeDecisions, supersessionIndex } from "../f-graph-search/decisions.js";
 import { expandNeighborhood } from "../f-graph-search/search.js";
 import { mindplanRoot } from "../f-territory-store/store.js";
 import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "../f-domain-model/types.js";
@@ -22,12 +23,15 @@ export interface ViewOptions {
   focus?: string;
   /** Include deprecated/cancelled nodes and closed bugs (`resolved` / `wontfix`). Default false. */
   include_retired?: boolean;
+  /** Label each node that has active decisions with their count. Default false. */
+  decisions?: boolean;
 }
 
 export interface ExportMindPlanViewResult {
   format: ViewFormat;
   focus: string | null;
   include_retired: boolean;
+  decisions: boolean;
   node_count: number;
   edge_count: number;
   diagram: string;
@@ -82,8 +86,28 @@ function escapeLabel(text: string): string {
   return text.replace(/\\/g, "\\\\").replace(/"/g, "'");
 }
 
-function nodeLabel(node: MindPlanNode): string {
-  return escapeLabel(`${node.id} · ${node.title} · ${node.state}`);
+/** Active decision count per node id when `decisions` is on; null when off. */
+type DecisionCounts = Map<string, number> | null;
+
+function decisionCounts(graph: MindPlanGraph, options: ViewOptions): DecisionCounts {
+  if (!options.decisions) return null;
+  const index = supersessionIndex(graph);
+  const counts = new Map<string, number>();
+  for (const node of graph.nodes) {
+    const n = nodeDecisions(graph, node, {}, index).length;
+    if (n > 0) counts.set(node.id, n);
+  }
+  return counts;
+}
+
+/** ` · N decision(s)` for a node with active decisions when counts are on; otherwise empty. */
+function decisionSuffix(node: MindPlanNode, counts: DecisionCounts): string {
+  const n = counts?.get(node.id) ?? 0;
+  return n > 0 ? ` · ${n} decision${n === 1 ? "" : "s"}` : "";
+}
+
+function nodeLabel(node: MindPlanNode, counts: DecisionCounts = null): string {
+  return escapeLabel(`${node.id} · ${node.title} · ${node.state}${decisionSuffix(node, counts)}`);
 }
 
 function belongsToJourneys(node: MindPlanNode, edges: MindPlanEdge[]): string[] {
@@ -130,6 +154,7 @@ function resolveEndpointId(
 export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}): string {
   const view = prepareViewGraph(graph, options);
   const byId = new Map(view.nodes.map((n) => [n.id, n]));
+  const counts = decisionCounts(graph, options);
   const lines: string[] = ["flowchart TB"];
 
   const journeys = view.nodes.filter((n) => n.type === "Journey").sort((a, b) => a.id.localeCompare(b.id));
@@ -150,7 +175,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
   if (foundations.length > 0) {
     lines.push(`  subgraph foundations["Foundations"]`);
     for (const f of foundations) {
-      lines.push(`    ${mermaidSafeId(f.id)}["${nodeLabel(f)}"]`);
+      lines.push(`    ${mermaidSafeId(f.id)}["${nodeLabel(f, counts)}"]`);
     }
     lines.push(`  end`);
   }
@@ -158,7 +183,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
   if (interfaces.length > 0) {
     lines.push(`  subgraph interfaces["Interfaces"]`);
     for (const iface of interfaces) {
-      lines.push(`    ${mermaidSafeId(iface.id)}{{"${nodeLabel(iface)}"}}`);
+      lines.push(`    ${mermaidSafeId(iface.id)}{{"${nodeLabel(iface, counts)}"}}`);
     }
     lines.push(`  end`);
   }
@@ -168,7 +193,9 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
 
   for (const j of journeys) {
     const sgId = mermaidSafeId(`journey_${j.id}`);
-    lines.push(`  subgraph ${sgId}["${escapeLabel(`${j.id} · ${j.title} · ${j.state}`)}"]`);
+    lines.push(
+      `  subgraph ${sgId}["${escapeLabel(`${j.id} · ${j.title} · ${j.state}${decisionSuffix(j, counts)}`)}"]`
+    );
     for (const ix of interactions) {
       const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
       if (!owners.includes(j.id)) continue;
@@ -176,7 +203,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
       const list = instanceMap.get(ix.id) ?? [];
       list.push(inst);
       instanceMap.set(ix.id, list);
-      lines.push(`    ${inst}["${nodeLabel(ix)}"]`);
+      lines.push(`    ${inst}["${nodeLabel(ix, counts)}"]`);
     }
     lines.push(`  end`);
   }
@@ -193,13 +220,13 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
   if (unassigned.length > 0) {
     lines.push(`  subgraph unassigned["Unassigned interactions"]`);
     for (const ix of unassigned) {
-      lines.push(`    ${interactionCanonicalId(ix.id)}["${nodeLabel(ix)}"]`);
+      lines.push(`    ${interactionCanonicalId(ix.id)}["${nodeLabel(ix, counts)}"]`);
     }
     lines.push(`  end`);
   }
 
   for (const bug of bugs) {
-    lines.push(`  ${mermaidSafeId(bug.id)}["${nodeLabel(bug)}"]`);
+    lines.push(`  ${mermaidSafeId(bug.id)}["${nodeLabel(bug, counts)}"]`);
   }
 
   // Edges: omit belongs_to (encoded by clustering); style depends_on / exposes / mounts / leads_to / affects
@@ -262,8 +289,10 @@ function dotSafeId(id: string): string {
   return `"${id.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-function dotLabel(node: MindPlanNode): string {
-  return `${node.id}\\n${node.title}\\n(${node.state})`.replace(/"/g, '\\"');
+function dotLabel(node: MindPlanNode, counts: DecisionCounts = null): string {
+  const n = counts?.get(node.id) ?? 0;
+  const suffix = n > 0 ? `\\n${n} decision${n === 1 ? "" : "s"}` : "";
+  return `${node.id}\\n${node.title}\\n(${node.state})${suffix}`.replace(/"/g, '\\"');
 }
 
 function shapeFor(type: NodeType): string {
@@ -285,6 +314,7 @@ function shapeFor(type: NodeType): string {
 
 export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): string {
   const view = prepareViewGraph(graph, options);
+  const counts = decisionCounts(graph, options);
   const lines: string[] = [
     "digraph MindPlan {",
     '  rankdir=TB;',
@@ -311,7 +341,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     lines.push("    style=rounded;");
     for (const f of foundations) {
       lines.push(
-        `    ${dotSafeId(f.id)} [label="${dotLabel(f)}", shape=${shapeFor("Foundation")}];`
+        `    ${dotSafeId(f.id)} [label="${dotLabel(f, counts)}", shape=${shapeFor("Foundation")}];`
       );
     }
     lines.push("  }");
@@ -323,7 +353,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     lines.push("    style=rounded;");
     for (const iface of interfaces) {
       lines.push(
-        `    ${dotSafeId(iface.id)} [label="${dotLabel(iface)}", shape=${shapeFor("Interface")}];`
+        `    ${dotSafeId(iface.id)} [label="${dotLabel(iface, counts)}", shape=${shapeFor("Interface")}];`
       );
     }
     lines.push("  }");
@@ -336,7 +366,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     lines.push(`    label="${clusterLabel}";`);
     lines.push("    style=rounded;");
     lines.push(
-      `    ${dotSafeId(j.id)} [label="${dotLabel(j)}", shape=${shapeFor("Journey")}, style=dashed];`
+      `    ${dotSafeId(j.id)} [label="${dotLabel(j, counts)}", shape=${shapeFor("Journey")}, style=dashed];`
     );
     for (const ix of interactions) {
       const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
@@ -347,7 +377,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
       const multi =
         owners.length > 1 ? `\\n[also: ${owners.slice(1).join(", ")}]` : "";
       lines.push(
-        `    ${dotSafeId(ix.id)} [label="${dotLabel(ix)}${multi}", shape=${shapeFor("Interaction")}];`
+        `    ${dotSafeId(ix.id)} [label="${dotLabel(ix, counts)}${multi}", shape=${shapeFor("Interaction")}];`
       );
     }
     lines.push("  }");
@@ -364,13 +394,13 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
   for (const ix of interactions) {
     if (assigned.has(ix.id)) continue;
     lines.push(
-      `  ${dotSafeId(ix.id)} [label="${dotLabel(ix)}", shape=${shapeFor("Interaction")}];`
+      `  ${dotSafeId(ix.id)} [label="${dotLabel(ix, counts)}", shape=${shapeFor("Interaction")}];`
     );
   }
 
   for (const bug of bugs) {
     lines.push(
-      `  ${dotSafeId(bug.id)} [label="${dotLabel(bug)}", shape=${shapeFor("Bug")}];`
+      `  ${dotSafeId(bug.id)} [label="${dotLabel(bug, counts)}", shape=${shapeFor("Bug")}];`
     );
   }
 
@@ -413,10 +443,12 @@ export function exportMindPlanView(
 ): ExportMindPlanViewResult {
   const format: ViewFormat = args.format ?? "mermaid";
   const include_retired = args.include_retired === true;
+  const decisions = args.decisions === true;
   const focus = args.focus ?? null;
   const options: ViewOptions = {
     focus: focus ?? undefined,
     include_retired,
+    decisions,
   };
   const view = prepareViewGraph(graph, options);
   const diagram = format === "dot" ? graphToDot(graph, options) : graphToMermaid(graph, options);
@@ -425,6 +457,7 @@ export function exportMindPlanView(
     format,
     focus,
     include_retired,
+    decisions,
     node_count: view.nodes.length,
     edge_count: view.edges.length,
     diagram,

@@ -40,6 +40,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 - **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id and a standing `<id>.next.mdx` twin (`state: mirror`); `open_next` flips it to `draft` → build → `ship` promotes over `<id>.mdx` and restores the twin
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
 - **Ship after green check** — the implementer `ship`s when `run_check` (the CLI `mindplan-mcp check`) is green and legal transitions allow; moves to `in-review` and `ship` also run its import and ownership rules on the node's files, and `update_node_status` with `scope` walks every open update (or one change's revisions) through in-review to ship in one call — jumping past in-review needs `skip_review: true`, which is reported
+- **Decide on the record** — when an agent chooses between viable designs, `record_decision` keeps the choice, the rejected alternative, and the reason on the node; the next agent gets it from `orient_for_work` before touching that design. A shipped Foundation's revision, a new migration, a wide blast radius, or a `depends_on` change cannot reach `in-review` without one
 - **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
 
 ## See what the agent sees
@@ -177,20 +178,22 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); `depth: rules\|body\|full` trims it |
+| `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); the `rules` and `decisions` that apply to the focus; `depth: rules\|body\|full` trims it |
 | `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every revision in a change |
 | `find_related_nodes` | read | Rank by query; focus + 1-hop |
 | `get_mindplan_graph` | read | Assembled nodes/edges (`version: 1`) |
-| `export_mindplan_view` | read | Mermaid or DOT |
+| `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts |
+| `list_decisions` | read | Decision records of a node, a change, or the graph; superseded ones on request |
 | `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired` |
 | `get_node_context` | read | `record` + `body` (+ `next.record`/`next.body` when evolving) |
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |
 | `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |
 | `patch_node_rules` | mutation | Write one node's `## Rules`; `orient_for_work` delivers them to the node and everything that inherits from it |
+| `record_decision` | mutation | Append a decision record (what was chosen, the alternatives, why) to the node it shapes; supersede instead of editing |
 | `patch_project_description` | mutation | Write the `mindplan/project.md` description |
 | `patch_project_rules` | mutation | Write the `mindplan/project.md` rules |
-| `patch_config` | mutation | Write `mindplan/config.json` sources/exclude |
+| `patch_config` | mutation | Write `mindplan/config.json` sources/exclude and decision-gate settings |
 | `put_attachment` / `remove_attachment` | mutation | Node attachment files |
 | `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold) |
 | `open_next` / `discard_next` | mutation | Flip mirror→draft / restore mirror twin |

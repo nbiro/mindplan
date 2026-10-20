@@ -202,10 +202,18 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  if (names.size !== 25 || !names.has("get_rules") || !names.has("patch_node_rules") || !names.has("run_check")) {
+  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions"];
+  if (names.size !== 27 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 25 tools including get_rules, patch_node_rules, and run_check (got ${names.size})`);
-  } else console.log("ok   twenty-five tools registered including get_rules, patch_node_rules, and run_check");
+    console.log(`FAIL expected 27 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   twenty-seven tools registered including ${required.join(", ")}`);
+  for (const name of ["record_decision", "list_decisions"]) {
+    const tool = (listed.tools ?? []).find((t) => t.name === name);
+    if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {
+      failures++;
+      console.log(`FAIL ${name} description must lead with when to call it`);
+    }
+  }
   const nodeRulesTool = (listed.tools ?? []).find((t) => t.name === "patch_node_rules");
   if (!nodeRulesTool?.description?.startsWith("Call when")) {
     failures++;
@@ -594,6 +602,7 @@ await expectBlockedContaining(
 const fPath = path.join(root, "mindplan", "foundations", "f-db", "f-db.mdx");
 fillMinimumTerritoryShape(fPath);
 fs.writeFileSync(fPath, fs.readFileSync(fPath, "utf-8").replaceAll("[ ]", "[x]"));
+// schema.ts is a TypeScript module, not a database schema file: the first build is not decision-gated.
 for (const s of ["ready", "in-progress", "in-review"]) {
   await expectOk(`foundation -> ${s}`, "update_node_status", { node_id: "f-db", new_status: s });
 }
@@ -2505,6 +2514,13 @@ Legacy substrate.
           });
           await expectOk("legacy next ready", "update_node_status", { node_id: "f-legacy", new_status: "ready" });
           await expectOk("legacy next in-progress", "update_node_status", { node_id: "f-legacy", new_status: "in-progress" });
+          // A shipped Foundation's revision is decision-worthy; legacy next.mdx takes the entry.
+          await expectOk("record decision on legacy next", "record_decision", {
+            node_id: "f-legacy",
+            decision: "Legacy files keep their names until init renames them.",
+            alternatives: ["Rename on every write (churns history)"],
+            why: "Review diffs stay readable.",
+          });
           await expectOk("legacy next in-review", "update_node_status", { node_id: "f-legacy", new_status: "in-review" });
           await expectOk("legacy next ship", "update_node_status", { node_id: "f-legacy", new_status: "ship" });
           const promoted = fs.readFileSync(path.join(legacyFoundation, "current.mdx"), "utf-8");
@@ -2794,6 +2810,13 @@ role: infra
   await expectOk("patch_node_rules during evolution", "patch_node_rules", {
     node_id: "f-rules-base", rules: "- Shipped rule.",
   });
+  // A Foundation revision needs a decision; it must sit beside the Rules section through promote.
+  await expectOk("record decision during evolution", "record_decision", {
+    node_id: "f-rules-base",
+    decision: "Rules stay prose, not checks.",
+    alternatives: ["Compile rules into gates (too rigid for area guidance)"],
+    why: "Areas need judgment the compiler cannot encode.",
+  });
   for (const status of ["ready", "in-progress", "in-review", "ship"]) {
     await expectOk(`f-rules-base evolution -> ${status}`, "update_node_status", {
       node_id: "f-rules-base", new_status: status,
@@ -2804,6 +2827,9 @@ role: infra
   const shippedCtx = await json("get_node_context", { node_id: "f-rules-base" });
   if (
     (shippedLive.match(/^## Rules$/gm) ?? []).length !== 1 ||
+    (shippedLive.match(/^## Decisions$/gm) ?? []).length !== 1 ||
+    shippedLive.indexOf("## Decisions") > shippedLive.indexOf("## Rules") ||
+    shippedCtx.decisions?.[0]?.decision !== "Rules stay prose, not checks." ||
     !shippedLive.includes("- Shipped rule.") ||
     shippedCtx.rules !== "- Shipped rule." ||
     shippedCtx.record.state !== "stable" ||

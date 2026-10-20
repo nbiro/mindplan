@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — decision records
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **Decision records.** A node carries decisions in a `## Decisions` section: id, the decision, the alternatives considered, why, optional consequences and `supersedes`, and the change id and date. `record_decision` is the only writer and only appends; body writes keep the section and Block a body that contains one. Decisions belong to a slot: while a shipped node evolves they go to its next file, ship with it, and are dropped by `discard_next`. Recording never resets readiness. [§6.1.2, §8.1]
+- **Superseding, not editing.** A new decision with `supersedes` replaces an active one held by the same node, its Journeys, or its Foundations. Status is computed, not written into the old entry, so discarding the superseding revision makes the old decision active again; deprecating the superseding node does not. An id that a `supersedes` still names stays taken. `list_decisions` returns a node's, a change's, or the graph's decisions; superseded ones with `include_superseded`. [§6.1.2, §8.1]
+- **Decisions reach the agent.** `orient_for_work` returns a `decisions` block next to `rules`, at every depth, inherited like rules and labeled by source; `get_node_context` returns `decisions` (and `next.decisions`) and its `body` no longer contains the section; `get_blast_radius` lists the active decisions of the focus and its dependents; `export_mindplan_view` takes `decisions: true` for per-node counts. [§8.1]
+- **Decision gate (Rule 12).** An open revision is decision-worthy when it changes a shipped Foundation's contract, claims a new migration or schema file (including one the branch adds inside an already-claimed folder), has more dependents than `decisions.blast_radius`, or adds or removes a `depends_on` edge of a shipped node. Without a decision under its change id (recorded since the revision opened; `open_next` now writes `opened_at`) or on the node, `run_check` warns from draft on and a move to `in-review` is `Blocked: Decision` with the `record_decision` call. One decision under a change clears every member. A first build's initial edges are never gated, and inside git a first build's schema file counts only when the branch adds it. **Breaking:** a shipped Foundation's revision, or a first build that claims a schema file, now needs a recorded decision before `in-review`. [§5.13, §9.6]
+- **Gate settings.** `mindplan/config.json` takes an optional `decisions: { blast_radius, schema_files }` (defaults `5` and database migration/schema globs); `patch_config` writes it and rejects an unknown key. [§1.2.1, §8.2]
+- **Shared branch base.** The dirty-src check and the decision gate measure "this branch" from the same merge base (`main`, `origin/main`, `master`, `origin/master`). [§9.6]
+- **Twenty-seven tools.** `record_decision` and `list_decisions` are new. The playbook gains one line on recording decisions. [§8]
+
 ## Unreleased — graph honesty
 
 Every behavior change in this release. SPEC sections in brackets.

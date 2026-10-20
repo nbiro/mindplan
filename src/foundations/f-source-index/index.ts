@@ -4,13 +4,18 @@
 
 export {
   CONFIG_FILENAME,
+  DEFAULT_DECISION_SETTINGS,
+  decisionGateSettings,
   loadProjectConfig,
   projectConfigPath,
   projectConfigRelativePath,
   writeProjectConfig,
+  type DecisionGateSettings,
   type MindPlanProjectConfig,
   type WriteProjectConfigResult,
 } from "./config.js";
+
+export { defaultBaseRef, matchesSchemaFile, newFilesSinceBase } from "./git.js";
 
 export {
   claimCoversPath,

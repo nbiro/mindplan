@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups, glob claims, shared-route ownership, and host install docs for Cursor and Claude Code."
+description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups, glob claims, shared-route ownership, decision records and the decision gate, and host install docs for Cursor and Claude Code."
 state: stable
-shipped_at: 2026-10-19T12:09:47.974Z
+shipped_at: 2026-10-20T13:04:10.178Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-19T12:09:47.974Z
+updated_at: 2026-10-20T13:04:10.178Z
 depends_on:
   - f-domain-model
 implements:
@@ -23,17 +23,27 @@ role: infra
 
 
 
+
+
+
+
+
+
+
+
+
+
 # Framework docs
 
 ## Purpose
 
-Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action, and node rules are mandatory via the `rules` block of `orient_for_work`. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Host install docs cover Cursor and Claude Code. Agents must be told the two rule scopes and which tool writes each, or area rules will keep landing in the global list. The check must be impossible to miss: the playbook and `get_project` name `run_check` (CLI `mindplan-mcp check`), because an agent that only ever saw the CLI never ran it and shipped nodes that failed it.
+Infra — SPEC, playbook, and skills. Project rules are mandatory via `get_rules` before each action, and node rules are mandatory via the `rules` block of `orient_for_work`. Tool descriptions carry when-to-call hints. New-feature code waits until nodes are updated or created through the plan-project skill. Host install docs cover Cursor and Claude Code. Agents must be told the two rule scopes and which tool writes each, or area rules will keep landing in the global list. The check must be impossible to miss: the playbook and `get_project` name `run_check` (CLI `mindplan-mcp check`), because an agent that only ever saw the CLI never ran it and shipped nodes that failed it. Decision records need the same treatment: agents must be told to record a decision when they choose between viable designs, and that MindPlan blocks `in-review` on shared-contract, schema, or wide-radius changes without one, or the gate reads as an arbitrary obstacle.
 
 ## Shared Substrate Spec
 
 Claims: `SPEC.md`, `README.md`, `templates/`
 
-- SPEC §1.1.1 / §8: short instructions; `get_rules`; when-clause on every tool; twenty-five tools
+- SPEC §1.1.1 / §8: short instructions; `get_rules`; when-clause on every tool; twenty-seven tools
 - SPEC node rules: the `## Rules` territory section (§6.1.1), inheritance (own, up `belongs_to`, along transitive `depends_on`, Bugs from affected nodes; never downward or across siblings), the `orient_for_work` `rules` block, `get_blast_radius` `rules_impact`, `get_node_context` `rules`, `patch_node_rules`, and that enforcement is prose only
 - SPEC check and gate: `run_check` (§8.1), the in-review / ship gate and import fixes (§5.10, §9.6), stale-text warnings (§9.6)
 - SPEC small writes: `verbose`, the default write result, one line per node for a batch, scoped drift and its classes (§8 preamble), orient `depth`, `patch_node_territory` `section` / `replace`, `update_node_status` `scope` / `dry_run` (§8.2)
@@ -46,6 +56,7 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 - plan-project skill description: load when creating or patching the graph, including before new-feature code
 - Never paste rules, playbook, or description into MCP instructions
 - **Honesty behavior in SPEC and the playbook.** SPEC documents: which writes reset a `ready` revision to `draft` (and which never do); `Blocked: Coverage` with its probable owner and fix; the import rule over next-slot and released claims (warnings for one release); `skip_review` and the per-step dry run; unambiguous `toggle_checkboxes` with `all`, `note`, and `not_applicable`; change ids (`change`, `change_ref`, `scope: "change"`, change blast radius, change check); glob claims; and the shared-route rule (the Assembler owns routes that dispatch to the active template; a template's entry point owns only its own routes) with its split-family warning. The bundled playbook names readiness reset, skip_review, notes, and change ids
+- **Decision records.** SPEC documents the `## Decisions` section and its entry format with adoption and fence notes (§6.1.2), computed status and supersession, inheritance into the `orient_for_work` `decisions` block, `record_decision` and `list_decisions` (§8), the `decisions` additions to `get_blast_radius`, `get_node_context`, `export_mindplan_view`, and `patch_config`, the `decisions` config settings and their database-only defaults (§1.2.1), `opened_at` on an open next (§6.1, §6.2), and the decision gate as Rule 12 (§5.13, enforcement ordering moves to §5.14) with its four triggers (a first build's schema files count only when the branch adds them), its warning, and `Blocked: Decision` (§9.6, Appendix A). The bundled playbook gains one line: "Record a decision when you choose between viable designs; MindPlan blocks in-review on shared-contract, schema, or wide-radius changes without one." The plan-project skill names `record_decision`; README lists the two tools
 - **Changelog.** `CHANGELOG.md` lists every behavior change per release
 
 Depends on: `f-domain-model`.
@@ -60,6 +71,8 @@ Depends on: `f-domain-model`.
 - Tool when-clauses documented in SPEC §8
 - Verified via `npm test`
 - SPEC, the playbook, and the changelog describe every behavior change in this revision
+- SPEC §8 lists `record_decision` and `list_decisions` and the changed outputs of `orient_for_work`, `get_blast_radius`, `get_node_context`, `export_mindplan_view`, and `patch_config`; the tool count reads twenty-seven
+- The playbook carries the decision line and stays one screen
 
 ## Atomic Ops
 
@@ -79,6 +92,11 @@ Depends on: `f-domain-model`.
 - [x] Document readiness reset, coverage, next-slot imports, skip_review, toggles and notes, change ids, glob claims, and shared-route ownership in SPEC
 - [x] Update the bundled playbook and skills
 - [x] Add `CHANGELOG.md`
+- [x] Document decision records, the decision gate, the config settings, and twenty-seven tools in SPEC
+- [x] Add the decision line to the playbook and `record_decision` to the plan-project skill
+- [x] Add the decision records entry to `CHANGELOG.md` and the two tools to README
+- [x] Verified the docs via `npm test`
+- [x] Document the review fixes in SPEC and the changelog
 
 ## Attachments
 

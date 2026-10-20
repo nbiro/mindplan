@@ -24,7 +24,7 @@ import {
   markdownRelativePath,
   readMarkdown,
   splitContext,
-  splitNodeRules,
+  withoutOwnedSections,
 } from "../f-territory-store/store.js";
 import {
   assertAcyclicDependsOn,
@@ -491,7 +491,8 @@ export function staleTextWarnings(
   let body = "";
   try {
     const split = splitContext(readMarkdown(node, slot));
-    body = splitNodeRules(split?.body ?? "").body;
+    // Recorded decisions may name paths a later revision removed; they are history, not stale text.
+    body = withoutOwnedSections(split?.body ?? "");
   } catch {
     return warnings;
   }

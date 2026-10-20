@@ -1,5 +1,6 @@
 /**
- * Node-rules inheritance over the live graph — pure queries, no file I/O.
+ * Node-rules inheritance over the live graph — pure queries, no file I/O. Decisions reach a node
+ * along the same walk (`inheritanceSources`).
  * Rules flow up `belongs_to`, along transitive `depends_on`, and from affected nodes into Bugs.
  * Nothing flows downward, across siblings, or through `exposes` / `leads_to`.
  * Inactive nodes (retired, or Bugs that are resolved/wontfix) neither give nor receive rules.
@@ -47,49 +48,69 @@ function closure(
   return out;
 }
 
-function entry(node: MindPlanNode, via: RuleVia, distance: number): RuleEntry | null {
-  if (!node.rules) return null;
-  return { node_id: node.id, node_type: node.type, via, distance, rules: node.rules };
-}
+/** A node whose rules and decisions reach the focus, and how. */
+export type InheritanceSource = { node: MindPlanNode; via: RuleVia; distance: number };
 
-/** Own rules plus `belongs_to` and transitive `depends_on` rules of one node. */
-function baseEntries(byId: NodeIndex, node: MindPlanNode): RuleEntry[] {
-  const out: RuleEntry[] = [];
-  const own = entry(node, "self", 0);
-  if (own) out.push(own);
+/** The node itself plus its `belongs_to` and transitive `depends_on` closures (active nodes only). */
+function baseSources(byId: NodeIndex, node: MindPlanNode): InheritanceSource[] {
+  const out: InheritanceSource[] = [{ node, via: "self", distance: 0 }];
   for (const field of ["belongs_to", "depends_on"] as const) {
     for (const { node: reached, distance } of closure(byId, node, field)) {
       if (isInactiveNode(reached)) continue;
-      const e = entry(reached, field, distance);
-      if (e) out.push(e);
+      out.push({ node: reached, via: field, distance });
     }
   }
   return out;
 }
 
-function resolveIn(byId: NodeIndex, focus: MindPlanNode): RuleEntry[] {
-  const collected = baseEntries(byId, focus);
+/** The inheritance walk shared by rules and decisions, ordered self, belongs_to, depends_on, affects. */
+function sourcesIn(byId: NodeIndex, focus: MindPlanNode): InheritanceSource[] {
+  const collected = baseSources(byId, focus);
   if (focus.type === "Bug") {
     for (const targetId of focus.affects ?? []) {
       const target = byId.get(targetId);
       if (!target || isInactiveNode(target)) continue;
-      for (const e of baseEntries(byId, target)) {
-        collected.push({ ...e, via: "affects", distance: e.distance + 1 });
+      for (const s of baseSources(byId, target)) {
+        collected.push({ ...s, via: "affects", distance: s.distance + 1 });
       }
     }
   }
 
-  const best = new Map<string, RuleEntry>();
-  for (const e of collected) {
-    const prior = best.get(e.node_id);
-    if (!prior || e.distance < prior.distance) best.set(e.node_id, e);
+  const best = new Map<string, InheritanceSource>();
+  for (const s of collected) {
+    const prior = best.get(s.node.id);
+    if (!prior || s.distance < prior.distance) best.set(s.node.id, s);
   }
   return [...best.values()].sort(
     (a, b) =>
       VIA_RANK[a.via] - VIA_RANK[b.via] ||
       a.distance - b.distance ||
-      a.node_id.localeCompare(b.node_id)
+      a.node.id.localeCompare(b.node.id)
   );
+}
+
+function resolveIn(byId: NodeIndex, focus: MindPlanNode): RuleEntry[] {
+  return sourcesIn(byId, focus)
+    .filter((s) => s.node.rules)
+    .map((s) => ({
+      node_id: s.node.id,
+      node_type: s.node.type,
+      via: s.via,
+      distance: s.distance,
+      rules: s.node.rules!,
+    }));
+}
+
+/**
+ * Every node whose rules and decisions reach `nodeId`, labeled with how: the node itself
+ * (`self`, 0), up `belongs_to`, along transitive `depends_on`, and for a Bug everything each node it
+ * `affects` would resolve (`affects`, distance + 1). Live edges only; a node reached twice keeps its
+ * smallest distance; inactive nodes are skipped except the focus itself. Empty for an unknown id.
+ */
+export function inheritanceSources(graph: MindPlanGraph, nodeId: string): InheritanceSource[] {
+  const byId = indexNodes(graph);
+  const focus = byId.get(nodeId);
+  return focus ? sourcesIn(byId, focus) : [];
 }
 
 /**

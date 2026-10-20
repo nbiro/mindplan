@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship), links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, per-node rules writes, separate project description and rules writes, config, and attachments; small results unless verbose."
+description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate settings, and attachments; small results unless verbose."
 state: mirror
-shipped_at: 2026-10-19T12:09:48.856Z
+shipped_at: 2026-10-20T13:04:11.241Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-19T12:09:48.856Z
+updated_at: 2026-10-20T13:04:11.241Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -33,11 +33,21 @@ implements:
 
 
 
+
+
+
+
+
+
+
+
+
+
 # Steer the plan
 
 ## Purpose
 
-Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_node_rules`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, ordered revisions, and scoped status walks. `patch_node_rules` is the single writer of a node's rules so a territory rewrite can never silently drop them, and a rules edit never needs a contract evolution because rules are standing constraints, not behavior. Writes are cheap to read and cheap to repeat: a default result is the touched node's state and the changed files, a one-line fix does not resend a body, and a whole open set ships in one call. Claiming files and moving toward review run the same import rules as the check, so an illegal import is caught when it is written, with its fix, not after the node merged.
+Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_node_rules`, `record_decision`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, ordered revisions, and scoped status walks. `patch_node_rules` is the single writer of a node's rules so a territory rewrite can never silently drop them, and a rules edit never needs a contract evolution because rules are standing constraints, not behavior. Writes are cheap to read and cheap to repeat: a default result is the touched node's state and the changed files, a one-line fix does not resend a body, and a whole open set ships in one call. Claiming files and moving toward review run the same import rules as the check, so an illegal import is caught when it is written, with its fix, not after the node merged. `record_decision` is the single writer of decision records. A record is never rewritten: changing a decision means recording a new one that supersedes it, so the reasoning trail survives and an agent asking why the old design was dropped finds the answer without git archaeology. Moving a decision-worthy revision to `in-review` with no decision is Blocked with the exact `record_decision` call, so the reason is captured while the agent that made the choice still knows it.
 
 ## Actor & Trigger
 
@@ -61,10 +71,15 @@ Intended files: `src/interactions/i-steer-plan/`
 - **Status gate.** A move to `in-review` or `ship` runs `assertCheckCleanForNode` (import and ownership violations on the node's active-slot files) after the transition's own rules and before any write; Blocked with every violation and its fix. `staleTextWarnings` for the node return as `warnings` and never block
 - **Links.** `link_nodes` / `unlink_nodes` handle `mounts` (Foundation → Interface) like `exposes`: written to the next slot while a node evolves, promoted on ship
 - **Scoped status.** `update_node_status` takes `scope` (`all_open_updates` | `node_and_dependents` with `node_id`) and `new_status` as the target. It selects the open updates (`all_open_updates`: shipped nodes with an open next and pre-ship nodes that are in-progress or in-review, never draft or ready plans; `node_and_dependents`: the named node plus the nodes that depend on or expose it, including edges proposed on a next slot, at any pre-ship state), orders them Foundations, Interactions, Interfaces (dependency order within a tier), walks each from its active state through `draft → ready → in-progress → in-review → ship`, and first validates the whole walk in memory, writing nothing when any step would be Blocked. `dry_run` returns `{ dry_run, plan, blocked, warnings? }` for any form (single, revisions, scope) without writing
-- **Readiness reset.** A contract write to a slot whose state is `ready` moves that slot back to `draft`: `patch_node_territory` (title, description, role, body, section, replace, toggle_checkboxes), `set_implementation_files` (when the list changes), and `link_nodes` / `unlink_nodes` on the source node. The territory store's writers make the reset (`demoteReadySlot`) and report it; the handlers only turn that into the result, which carries the new `state` / `next_state` and `readiness_reset: { slot, from: "ready", to: "draft", note }`. Writes that never reset: `patch_node_rules`, `change` / `change_ref` writes, attachments, and any write to a slot in `draft`, `in-progress`, or `in-review` (ticking finished work is how a revision completes)
+- **Readiness reset.** A contract write to a slot whose state is `ready` moves that slot back to `draft`: `patch_node_territory` (title, description, role, body, section, replace, toggle_checkboxes), `set_implementation_files` (when the list changes), and `link_nodes` / `unlink_nodes` on the source node. The territory store's writers make the reset (`demoteReadySlot`) and report it; the handlers only turn that into the result, which carries the new `state` / `next_state` and `readiness_reset: { slot, from: "ready", to: "draft", note }`. Writes that never reset: `patch_node_rules`, `record_decision`, `change` / `change_ref` writes, attachments, and any write to a slot in `draft`, `in-progress`, or `in-review` (ticking finished work is how a revision completes)
 - **Review is not skipped silently.** A scoped walk to `ship` that would move a node whose active state is before `in-review` is Blocked unless `skip_review: true`. With it each node still walks `in-progress → in-review → ship`, runs the in-review gate at that step, and the result lists `skipped_review`. `dry_run` lists every transition, one `id: from -> to` line per step
 - **Change groups.** `create_node` and `open_next` take `change` / `change_ref`; `patch_node_territory` sets or clears them on the active slot. `update_node_status` with `scope: "change"` and `change` walks every open revision in that change, including draft and ready ones
 - **Checkbox results.** `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; the result returns `toggled`, the lines as written
+- **`record_decision({ node_id, decision, alternatives, why, consequences?, supersedes?, change?, id? })`** appends one entry with `appendDecision` to the node's active slot: the open next file while a shipped node evolves, else the live file (re-syncing the mirror twin). `decision`, `why`, and `consequences` are trimmed and collapsed to one line; `alternatives` needs at least one non-empty item, each collapsed to one line. `id` defaults to `generateDecisionId`; a given id must match `DECISION_ID_PATTERN` and be unused anywhere in the graph. `change` defaults to the node's active change (`activeChange`) and is omitted when there is none; `date` is today in UTC. `supersedes` must name a decision that is active and is held by the node itself or by a node it inherits decisions from (its Journeys, its transitive Foundations); the old entry is left exactly as written and its status becomes `superseded`
+  - Blocked: unknown node; inactive node; a Bug (record the decision on the node the fix shapes); empty `decision` or `why`; no alternative; a bad or taken id (an id a `supersedes` still names is taken); an invalid change id; `supersedes` that is unknown, already superseded, or held by a node outside that reach
+  - Output: `{ node_id, slot, decision: DecisionEntry, supersedes?: { id, node_id }, changed_files, state, next_state }` (`anchor` with `verbose`). Never resets readiness and does not rewrite `mindplan/map.md`; listed in `MUTATE_TOOLS`
+- **Decision gate.** A move to `in-review` (single, batch, scoped walk, and the dry run of each) runs `assertDecisionForReview` after the transition's own rules and the check gate, before any write. Moves to other states, and Bugs, are never decision-gated. The in-memory walk promotes a node field for field as `promoteNextSlot` does (scalars, edges, claims, role, decisions; the change id dropped) and rebuilds its edges with the same helper as the real walk, so every later gate sees what the real walk will see. One `DecisionContext` serves a call's validation and every step
+- `patch_config` takes `decisions: { blast_radius?, schema_files? }`; a field it does not pass keeps its stored value, and `sources` / `exclude` are unchanged unless passed
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
@@ -88,6 +103,12 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - A scoped walk to `ship` from `ready` is Blocked without `skip_review`; with it the result lists `skipped_review` and every node passed the in-review gate
 - `dry_run` of a scoped walk lists one line per transition
 - `scope: "change"` walks exactly the change's open revisions
+- `record_decision` writes a structured entry that `list_decisions` returns; on a node with an open evolution it lands in the next file only
+- Superseding marks the old decision superseded (listable with `include_superseded`); superseding an unknown, already-superseded, or out-of-reach decision is Blocked, and so is a taken id
+- A decision-worthy revision is Blocked at `in-review` with the `record_decision` call; after recording, the same move passes; the dry run of a scoped walk reports the same Blocked
+- A revision that is not decision-worthy moves to `in-review` with no decision
+- `record_decision` on a `ready` revision does not reset readiness
+- `patch_config` with `decisions` writes them and leaves `sources` and `exclude` unchanged
 
 ## Atomic Ops
 
@@ -120,6 +141,32 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - [x] Add `change` / `change_ref` to create, open_next, and territory patches, and `scope: "change"`
 - [x] Pass `all`, `note`, and `not_applicable` through and return `toggled`
 - [x] Verified readiness reset, skip_review, change walks, and toggles via `npm test`
+- [x] Add the `recordDecision` handler and list it in MUTATE_TOOLS
+- [x] Run the decision gate on moves to in-review (single, batch, scope, and dry runs)
+- [x] Add `decisions` to `patch_config`
+- [x] Verified record_decision, supersession, and the gate via `npm test`
+- [x] Promote in memory field for field, share one decision context per call, and validate change ids with `validateChangeInput` (review fixes)
+
+## Decisions
+
+### d-bugs-hold-no-decisions
+
+- Decision: record_decision refuses Bugs; the decision goes on the node the fix shapes.
+- Alternatives:
+  - Allow decisions on Bugs (nothing inherits from a Bug, so the reasoning would never reach the next agent)
+- Why: Decisions are only useful where inheritance delivers them.
+- Change: decision-records
+- Date: 2026-10-20
+
+### d-optional-decision-id
+
+- Decision: record_decision takes an optional id and otherwise generates one from the decision's first words.
+- Alternatives:
+  - Require an id (more friction for every record)
+  - Always generate (no stable, readable names like d-capacity-on-booking)
+- Why: Readable ids matter for supersedes, but a missing id should not block recording the reason.
+- Change: decision-records
+- Date: 2026-10-20
 
 ## Attachments
 
