@@ -105,8 +105,14 @@ import {
 } from "../../foundations/f-graph-search/decisions.js";
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
 
-export function syncNodes(nodes: MindPlanNode[]): void {
-  for (const n of nodes) patchFrontmatter(n);
+/** Persist recomputed states. Returns each node's live path plus any mirror twin re-synced. */
+export function syncNodes(nodes: MindPlanNode[]): string[] {
+  const paths: string[] = [];
+  for (const n of nodes) {
+    const twin = patchFrontmatter(n);
+    paths.push(territoryPath(n), ...(twin ? [twin] : []));
+  }
+  return paths;
 }
 
 /**
@@ -144,9 +150,9 @@ export function territoryPath(
   return markdownRelativePath(node, slot);
 }
 
-/** Deduplicate changed paths, optionally appending the map snapshot. */
-export function changedFiles(paths: string[], includeMap = false): string[] {
-  const out = [...new Set(paths.filter(Boolean))];
+/** Deduplicate changed paths (null: nothing written), optionally appending the map snapshot. */
+export function changedFiles(paths: (string | null)[], includeMap = false): string[] {
+  const out = [...new Set(paths.filter((p): p is string => Boolean(p)))];
   if (includeMap && !out.includes(MAP_REL)) out.push(MAP_REL);
   return out;
 }
@@ -424,10 +430,10 @@ export function setImplementationFiles(args: {
     }
   }
 
-  const demoted = writeImplementsFrontmatter(node, normalized, slot);
+  const claimWrite = writeImplementsFrontmatter(node, normalized, slot);
   refreshPersistedMap();
   const pathWritten = territoryPath(node, slot);
-  const readiness = readinessResult(node, slot, demoted);
+  const readiness = readinessResult(node, slot, claimWrite.readinessReset);
   // Scan the claimed files now, so a missing edge is reported with the exact call that fixes it.
   const claimedGraph = loadGraph();
   const claimedNode = findNode(claimedGraph, node.id);
@@ -447,7 +453,7 @@ export function setImplementationFiles(args: {
     implements: normalized,
     ...(importViolations.length ? { import_violations: importViolations } : {}),
     ...readinessFields(readiness.reset),
-    changed_files: changedFiles([pathWritten, ...readiness.files], true),
+    changed_files: changedFiles([pathWritten, claimWrite.twin, ...readiness.files], true),
     ...mutationTail(loadGraph(), node.id, args.verbose),
   };
 }
@@ -505,19 +511,14 @@ export function linkNodes(args: {
       source.next.mounts = [...(source.next.mounts ?? []), target_id];
     }
   }
-  const demoted = addEdgeToFrontmatter(source, edge_type, target_id);
+  const edgeWrite = addEdgeToFrontmatter(source, edge_type, target_id);
 
   const changedJourneys = recomputeJourneyStates(graph);
   const changedStability = recomputeStability(graph);
-  syncNodes([...changedJourneys, ...changedStability]);
+  const synced = syncNodes([...changedJourneys, ...changedStability]);
   refreshPersistedMap();
-  const readiness = readinessResult(source, writeSlot, demoted);
-  const files = [
-    territoryPath(source, writeSlot),
-    ...changedJourneys.map((j) => territoryPath(j)),
-    ...changedStability.map((n) => territoryPath(n)),
-    ...readiness.files,
-  ];
+  const readiness = readinessResult(source, writeSlot, edgeWrite.readinessReset);
+  const files = [territoryPath(source, writeSlot), edgeWrite.twin, ...synced, ...readiness.files];
   return {
     linked: { source: source_id, target: target_id, type: edge_type },
     slot: writeSlot,
@@ -574,20 +575,15 @@ export function unlinkNodes(args: {
   if (removed === 0) {
     throw blocked(`no edge exists between "${source_id}" and "${target_id}".`);
   }
-  const demoted = removeEdgesFromFrontmatter(source, target_id);
+  const edgeWrite = removeEdgesFromFrontmatter(source, target_id);
   const changedJourneys = recomputeJourneyStates(graph);
   const changedStability = recomputeStability(graph);
-  syncNodes([...changedJourneys, ...changedStability]);
+  const synced = syncNodes([...changedJourneys, ...changedStability]);
   refreshPersistedMap();
-  const sourceFiles = [territoryPath(source, "current")];
+  const sourceFiles = [territoryPath(source, "current"), edgeWrite.twin];
   if (source.next) sourceFiles.push(territoryPath(source, "next"));
-  const readiness = readinessResult(source, source.next ? "next" : "current", demoted);
-  const files = [
-    ...sourceFiles,
-    ...changedJourneys.map((j) => territoryPath(j)),
-    ...changedStability.map((n) => territoryPath(n)),
-    ...readiness.files,
-  ];
+  const readiness = readinessResult(source, source.next ? "next" : "current", edgeWrite.readinessReset);
+  const files = [...sourceFiles, ...synced, ...readiness.files];
   return {
     removed,
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
@@ -1106,6 +1102,7 @@ function applyOneStatus(args: {
   let promoted = false;
   let promoteSlotFiles: string[] = [];
   let removedTwin: string[] = [];
+  let syncedTwin: string | null = null;
 
   if (resolved.promote_next) {
     promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
@@ -1140,7 +1137,7 @@ function applyOneStatus(args: {
       resolved.state === "deprecated" || resolved.state === "cancelled";
     node.state = resolved.state;
     node.updated_at = now;
-    patchFrontmatter(node);
+    syncedTwin = patchFrontmatter(node);
     if (retiring && isPipelineNodeType(node.type)) {
       removedTwin = deleteNextSlotFiles(node);
     }
@@ -1148,7 +1145,7 @@ function applyOneStatus(args: {
 
   const changedStability = recomputeStability(graph);
   const changedJourneys = recomputeJourneyStates(graph);
-  syncNodes([...changedStability, ...changedJourneys]);
+  const synced = syncNodes([...changedStability, ...changedJourneys]);
   refreshPersistedMap();
 
   const primaryPaths: string[] = [];
@@ -1163,13 +1160,10 @@ function applyOneStatus(args: {
     primaryPaths.push(territoryPath(node, "next"));
   } else {
     primaryPaths.push(territoryPath(node, "current"));
+    if (syncedTwin) primaryPaths.push(syncedTwin);
     primaryPaths.push(...removedTwin);
   }
-  const files = [
-    ...primaryPaths,
-    ...changedJourneys.map((j) => territoryPath(j)),
-    ...changedStability.map((n) => territoryPath(n)),
-  ];
+  const files = [...primaryPaths, ...synced];
 
   return {
     node_id,
@@ -1209,15 +1203,10 @@ export function forceUnship(args: {
 
   const changedStability = recomputeStability(graph);
   const changedJourneys = recomputeJourneyStates(graph);
-  syncNodes([...changedStability, ...changedJourneys]);
+  const synced = syncNodes([...changedStability, ...changedJourneys]);
   refreshPersistedMap();
 
-  const files = [
-    territoryPath(node),
-    ...removedTwin,
-    ...changedJourneys.map((j) => territoryPath(j)),
-    ...changedStability.map((n) => territoryPath(n)),
-  ];
+  const files = [territoryPath(node), ...removedTwin, ...synced];
 
   return {
     node_id,
@@ -1311,14 +1300,14 @@ export function patchNodeTerritory(args: {
     slot: resolvedSlot,
   });
   const pathWritten = territoryPath(node, result.slot);
-  const { readinessReset, ...written } = result;
+  const { readinessReset, twin, ...written } = result;
   const readiness = readinessResult(node, result.slot, readinessReset);
   return {
     node_id,
     ...written,
     path: pathWritten,
     ...readinessFields(readiness.reset),
-    changed_files: changedFiles([pathWritten, ...readiness.files], readiness.reset !== null),
+    changed_files: changedFiles([pathWritten, twin, ...readiness.files], readiness.reset !== null),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }

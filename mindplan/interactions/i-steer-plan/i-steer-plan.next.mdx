@@ -6,7 +6,7 @@ description: "Compiler-gated mutate tools: status (single, ordered, scoped, or b
 state: mirror
 shipped_at: 2026-10-20T13:04:11.241Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-20T13:04:11.241Z
+updated_at: 2026-10-20T13:29:54.018Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -21,6 +21,8 @@ leads_to:
 implements:
   - src/interactions/i-steer-plan/
 ---
+
+
 
 
 
@@ -67,6 +69,7 @@ Intended files: `src/interactions/i-steer-plan/`
 - `patch_config`, `put_attachment`, `remove_attachment`
 - First ship and promote restore/create the mirror twin; retire/unship delete it
 - **Small results.** Each single-node write returns its own fields plus `state` and `next_state` and `changed_files`; the record and 1-hop neighborhood (`anchor`) only with `verbose: true`. A batch returns `lines`, one `id: from -> to` per node
+- **Twins in `changed_files`.** A write lists every mirror twin it re-synced: the stability and Journey recompute after links, unlinks, and status moves (`syncNodes` returns each node's live path plus its twin), live edge writes on a shipped source, and `patch_node_territory` on a shipped node's live slot
 - **Claim-time import scan.** `set_implementation_files` writes the claim, then scans the claimed files with `findImportViolationsForClaim` and returns `import_violations: [{ file, imports, fix | not_allowed }]`; `fix` is the exact `link_nodes` call (`depends_on`, `exposes`, or `mounts`)
 - **Status gate.** A move to `in-review` or `ship` runs `assertCheckCleanForNode` (import and ownership violations on the node's active-slot files) after the transition's own rules and before any write; Blocked with every violation and its fix. `staleTextWarnings` for the node return as `warnings` and never block
 - **Links.** `link_nodes` / `unlink_nodes` handle `mounts` (Foundation → Interface) like `exposes`: written to the next slot while a node evolves, promoted on ship
@@ -91,6 +94,7 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - With an open evolution the rules appear in both `<id>.mdx` and `<id>.next.mdx`
 - Blocked on unknown id, retired node, closed Bug, or a heading line inside the rules
 - Twin lifecycle wired through status / open_next / discard
+- Every write's `changed_files` covers the mirror twins it re-synced, including those of nodes whose stability it recomputed
 - A default write result has no `anchor`; a single write is under about 1k tokens and a batch of many nodes returns one line per node
 - Claiming a file that imports from an unlinked node returns the `link_nodes` call; a registry importing Interfaces gets one `mounts` fix per Interface
 - Moving a node whose file has an import violation to `in-review` or `ship` is Blocked, and the Blocked text names the fix

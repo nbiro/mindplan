@@ -1,0 +1,47 @@
+---
+id: bug-changed-files-omit-mirror-twin
+type: Bug
+title: "changed_files omits a mirror twin the write re-synced"
+description: "Writes that re-sync a shipped node's <id>.next.mdx mirror twin (stability recompute on link_nodes, unlink_nodes, and status moves; patch_node_territory on a live shipped node; live edge writes) leave the twin out of changed_files."
+state: resolved
+created_at: 2026-10-20T13:21:30.338Z
+updated_at: 2026-10-20T13:29:54.015Z
+affects:
+  - f-territory-store
+  - i-steer-plan
+---
+
+
+# changed_files omits a mirror twin the write re-synced
+
+## Summary
+
+A shipped node with no open evolution keeps `<id>.next.mdx` as a `state: mirror` byte copy of its live file, and every live write re-syncs it: `patchFrontmatter` calls `writeMirrorTwin`, and the edge, claim, and territory writers call `syncMirrorAfterLiveWrite`. Those store functions do not hand the twin path back, so the handlers in `src/interactions/i-steer-plan/handlers.ts` list only the live file. `record_decision` and `patch_node_rules` already list the twin, because `appendDecision` and `writeNodeRules` return it.
+
+Affected results: `link_nodes`, `unlink_nodes`, `update_node_status` (single, batch, and scoped walks), and `force_unship`, whenever the stability recompute moves a shipped node between stable and unstable; `patch_node_territory` on the live slot of a shipped node; and `link_nodes` / `unlink_nodes` writing a shipped source node's live edges.
+
+## Repro Steps
+
+1. Ship a Foundation (its `<id>.next.mdx` mirror twin exists)
+2. Create a Bug and `link_nodes` it to the Foundation with `edge_type: affects`
+3. The result's `stability_recomputed` shows the Foundation `unstable`, and both `<id>.mdx` and `<id>.next.mdx` changed on disk, but `changed_files` lists only `<id>.mdx`
+4. Walk the Bug to `resolved`: the Foundation goes back to `stable`, and again only `<id>.mdx` is listed
+5. `patch_node_territory` the Foundation's live slot (`slot: current`): the result lists `<id>.mdx` but not the re-synced twin
+
+Evidence: filing this Bug reproduced it. Linking `affects` to `f-territory-store` and `i-steer-plan` rewrote both `.next.mdx` twins, and neither result listed them. PR #45's cleanup commit re-synced 17 twins through `patch_node_territory` that its results did not list.
+
+## Expected / Actual
+
+**Expected:** every `mindplan/` path a write touches is in that call's `changed_files`, including a mirror twin re-synced after a live write (project rule; SPEC §5.1).
+
+**Actual:** the twin is rewritten on disk but missing from `changed_files`, so an agent that lists the files it changed from the result misses it.
+
+## Fix Checklist
+
+- [x] Root cause identified — note: `patchFrontmatter`, the edge and claim writers, and `patchNodeTerritory` re-synced the twin through `writeMirrorTwin` / `syncMirrorAfterLiveWrite` but dropped the returned path, so `syncNodes` and the link, unlink, status, force_unship, territory, and claim handlers listed only the live file. `record_decision` and `patch_node_rules` were right because `appendDecision` and `writeNodeRules` return it
+- [x] Fix implemented — note: `patchFrontmatter` returns the twin path; `addEdgeToFrontmatter`, `removeEdgesFromFrontmatter`, and `writeImplementsFrontmatter` return `{ readinessReset, twin }`; `patchNodeTerritory` returns `twin`. `syncNodes` returns each recomputed node's live path plus its twin, and every handler adds the twin to `changed_files` (decision `d-writers-return-twin-path`; SPEC §8.1 `patch_node_territory` and §8.2 `changed_files` name the twin)
+- [x] Regression test added — note: `twins.test.mjs` covers link affects, Bug resolved (single and batch), unlink, a live territory patch, and live leads_to link/unlink on shipped nodes, and diffs every one of its writes against disk; 17 checks fail on origin/main and all pass with the fix
+
+## Attachments
+
+_None._
