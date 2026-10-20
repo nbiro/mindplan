@@ -6,7 +6,7 @@ description: "Infra — persist territory through the store only, including each
 state: stable
 shipped_at: 2026-10-20T13:04:10.474Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-20T13:04:10.474Z
+updated_at: 2026-10-20T13:29:54.018Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -14,6 +14,8 @@ implements:
   - src/foundations/f-territory-store/
 role: infra
 ---
+
+
 
 
 
@@ -47,6 +49,7 @@ Intended files: `src/foundations/f-territory-store/`
 
 - Discover: `mirror` does not set `node.next`; pipeline states do
 - `writeMirrorTwin` / `syncMirrorAfterLiveWrite` / `deleteNextSlotFiles` / `mirrorDriftReason`
+- Every live writer that re-syncs the twin returns its path (`patchFrontmatter`, `addEdgeToFrontmatter` / `removeEdgesFromFrontmatter` / `writeImplementsFrontmatter` as `{ readinessReset, twin }`, `patchNodeTerritory`'s `twin`, and the `paths` of `writeNodeRules` / `appendDecision`), so the tool that called it can list the twin in `changed_files`
 - `openNextSlot` flips mirror→draft (creates twin from live when missing); does not reset checkboxes
 - `discardNextSlot` / `promoteNextSlot` restore the mirror twin (do not delete the next file)
 - Reject writes aimed at a mirror file
@@ -83,7 +86,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 ## Acceptance Criteria
 
 - Standing twin after first ship; open_next is a state flip
-- Live MCP writes keep the twin true when no evolution is open
+- Live MCP writes keep the twin true when no evolution is open, and the writer hands back the twin path it re-synced
 - Ship/discard restore mirror; retire/unship delete it
 - `writeNodeRules` then a `patch_node_territory` body write leaves the rules text unchanged
 - A body containing `## Rules` is rejected; an empty rules string removes the section
@@ -154,6 +157,16 @@ Depends on: `f-domain-model`, `f-source-index`.
   - Treat it as a contract write (every reason written down after review would undo the review)
 - Why: A decision explains the contract; it does not change it, and the gate asks for one late in the pipeline.
 - Change: decision-records
+- Date: 2026-10-20
+
+### d-writers-return-twin-path
+
+- Decision: Each store writer that re-syncs a mirror twin returns the twin path it wrote, and the tool handler adds it to changed_files.
+- Alternatives:
+  - Collect re-synced twins in a store-level log that the MCP wrapper drains into every result, as it does for removed legacy files
+  - Have handlers infer the twin from node state (shipped, no open evolution) instead of the store reporting it
+- Why: The store already reports what it wrote (writeMirrorTwin, writeNodeRules, appendDecision); a return value keeps the report beside the write and in the types, with no module state a failed call could leak into the next result, and inferring from state can list a twin no write touched.
+- Consequences: A new live writer must hand its twin path to its caller; twins.test.mjs diffs every write against disk so a missed twin fails npm test.
 - Date: 2026-10-20
 
 ## Attachments

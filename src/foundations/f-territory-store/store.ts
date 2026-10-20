@@ -857,12 +857,15 @@ function requireMutableFrontmatter(
   return { file, raw, fence: match[0], inner: match[1] };
 }
 
-/** Patches server-owned state fields in `<id>.mdx` or `<id>.next.mdx` frontmatter. */
+/**
+ * Patches server-owned state fields in `<id>.mdx` or `<id>.next.mdx` frontmatter.
+ * Returns the mirror twin path when a live write on a shipped node re-synced it, else null.
+ */
 export function patchFrontmatter(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">,
   slot: TerritorySlot = "current",
   opts?: { clearShippedAt?: boolean }
-): void {
+): string | null {
   const { file, raw, fence } = requireMutableFrontmatter(node, slot);
 
   let patched = fence
@@ -887,9 +890,10 @@ export function patchFrontmatter(
   if (slot === "current" && "state" in node && isProductionState(String(node.state))) {
     const full = node as MindPlanNode;
     if (isPipelineNodeType(full.type) && !full.next) {
-      writeMirrorTwin(node);
+      return writeMirrorTwin(node);
     }
   }
+  return null;
 }
 
 /** Patches MCP-owned outgoing edge arrays in `<id>.mdx` or `<id>.next.mdx` frontmatter. */
@@ -945,14 +949,17 @@ export function edgeWriteSlot(node: MindPlanNode, edgeType: EdgeType): Territory
 }
 
 /**
- * Appends a target id to the source node's outgoing edge array for edge_type.
- * Returns true when the write sent a `ready` slot back to `draft`.
+ * What a contract write to one node's frontmatter reports: whether it sent a `ready` slot back to
+ * `draft`, and the mirror twin path it re-synced after a live write on a shipped node (else null).
  */
+export type FrontmatterWrite = { readinessReset: boolean; twin: string | null };
+
+/** Appends a target id to the source node's outgoing edge array for edge_type. */
 export function addEdgeToFrontmatter(
   node: MindPlanNode,
   edgeType: EdgeType,
   targetId: string
-): boolean {
+): FrontmatterWrite {
   const slot = edgeWriteSlot(node, edgeType);
   const raw = readMarkdown(node, slot);
   const parsed = parseFrontmatter(raw);
@@ -967,16 +974,17 @@ export function addEdgeToFrontmatter(
   if (!current.includes(targetId)) current.push(targetId);
   const now = new Date().toISOString();
   patchFrontmatterEdges(node, { [field]: current }, now, slot);
-  if (slot === "current") syncMirrorAfterLiveWrite(node);
-  return demoteReadySlot(node, slot);
+  const twin = slot === "current" ? syncMirrorAfterLiveWrite(node) : null;
+  return { readinessReset: demoteReadySlot(node, slot), twin };
 }
 
 /** Removes target_id from all outgoing edge arrays on the source node (current and open evolution). */
 export function removeEdgesFromFrontmatter(
   node: MindPlanNode,
   targetId: string
-): boolean {
+): FrontmatterWrite {
   const now = new Date().toISOString();
+  let twin: string | null = null;
   for (const slot of ["current", "next"] as const) {
     // Mirror twins are not evolutions — only patch next when node.next is set.
     if (slot === "next" && !node.next) continue;
@@ -1000,9 +1008,9 @@ export function removeEdgesFromFrontmatter(
       now,
       slot
     );
-    if (slot === "current") syncMirrorAfterLiveWrite(node);
+    if (slot === "current") twin = syncMirrorAfterLiveWrite(node);
   }
-  return demoteReadySlot(node, node.next ? "next" : "current");
+  return { readinessReset: demoteReadySlot(node, node.next ? "next" : "current"), twin };
 }
 
 /** Scaffolds an entity folder: `<id>.mdx` + empty attachments/ directory. */
@@ -1843,11 +1851,18 @@ function patchTerritoryScalars(
 /**
  * Patches territory-owned content (body and title/description scalars).
  * Server-owned frontmatter fields (except updated_at on territory edits) are never modified here.
+ * `twin` is the mirror twin path a live write on a shipped node re-synced, else null.
  */
 export function patchNodeTerritory(
   node: MindPlanNode,
   input: PatchNodeTerritoryInput
-): { patched_fields: string[]; slot: TerritorySlot; readinessReset: boolean; toggled?: string[] } {
+): {
+  patched_fields: string[];
+  slot: TerritorySlot;
+  readinessReset: boolean;
+  twin: string | null;
+  toggled?: string[];
+} {
   const slot = resolveTerritorySlot(node, input.slot);
   const raw = readMarkdown(node, slot);
   const split = splitContext(raw);
@@ -1962,11 +1977,11 @@ export function patchNodeTerritory(
     `${frontmatter}\n\n${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
     slot
   );
-  if (slot === "current") syncMirrorAfterLiveWrite(node);
+  const twin = slot === "current" ? syncMirrorAfterLiveWrite(node) : null;
   // Change ids are grouping metadata; every other field is the contract readiness was judged on.
   const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref");
   const readinessReset = contractWrite && demoteReadySlot(node, slot);
-  return { patched_fields, slot, readinessReset, ...(toggled ? { toggled } : {}) };
+  return { patched_fields, slot, readinessReset, twin, ...(toggled ? { toggled } : {}) };
 }
 
 /**
@@ -2298,13 +2313,13 @@ export function promoteNextSlot(
 /**
  * Write (replace) the `implements` list on current or next frontmatter.
  * Updates the in-memory node accordingly. Used by set_implementation_files and init migration.
- * Returns true when a changed list sent a `ready` slot back to `draft`; an identical list does not.
+ * Only a changed list sends a `ready` slot back to `draft`; an identical list does not.
  */
 export function writeImplementsFrontmatter(
   node: MindPlanNode,
   files: string[],
   slot: TerritorySlot = "current"
-): boolean {
+): FrontmatterWrite {
   const normalized = normalizeClaimList(files);
   const { file, raw, fence, inner: rawInner } = requireMutableFrontmatter(node, slot);
   const parsed = parseFrontmatter(raw);
@@ -2324,6 +2339,7 @@ export function writeImplementsFrontmatter(
   const rebuilt = `---\n${rebuiltInner}\n---`;
   fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
 
+  let twin: string | null = null;
   if (slot === "next") {
     if (!node.next) {
       throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")}.`);
@@ -2334,9 +2350,9 @@ export function writeImplementsFrontmatter(
     if (normalized.length > 0) node.implements = normalized;
     else delete node.implements;
     node.updated_at = now;
-    syncMirrorAfterLiveWrite(node);
+    twin = syncMirrorAfterLiveWrite(node);
   }
-  return !unchanged && demoteReadySlot(node, slot);
+  return { readinessReset: !unchanged && demoteReadySlot(node, slot), twin };
 }
 
 /**
