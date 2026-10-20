@@ -355,6 +355,24 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     !orientNow.decisions.entries.some((e) => e.id === "d-capacity-on-booking") &&
       orientAll.decisions.entries.some((e) => e.id === "d-capacity-on-booking" && e.status === "superseded")
   );
+  const ctxNow = await call("get_node_context", { node_id: "f-bookings" });
+  const ctxAll = await call("get_node_context", { node_id: "f-bookings", include_superseded: true });
+  const ctxOld = ctxAll.decisions.find((d) => d.id === "d-capacity-on-booking");
+  check(
+    "get_node_context leaves the superseded decision out unless asked, like list_decisions",
+    !ctxNow.decisions.some((d) => d.id === "d-capacity-on-booking") &&
+      ctxNow.next.decisions.map((d) => d.id).join() === "d-evening-capacity-table" &&
+      ctxOld?.status === "superseded" &&
+      ctxOld?.superseded_by === "d-evening-capacity-table",
+    JSON.stringify({ now: ctxNow.decisions, all: ctxAll.decisions })
+  );
+  const orientCtx = await call("orient_for_work", { node_id: "f-bookings", depth: "body" });
+  const orientCtxAll = await call("orient_for_work", { node_id: "f-bookings", depth: "body", include_superseded: true });
+  check(
+    "orient_for_work passes include_superseded into the context it embeds",
+    !orientCtx.context.decisions.some((d) => d.id === "d-capacity-on-booking") &&
+      orientCtxAll.context.decisions.some((d) => d.id === "d-capacity-on-booking" && d.status === "superseded")
+  );
   const twice = await blocked("record_decision", {
     node_id: "f-bookings",
     decision: "Again.",

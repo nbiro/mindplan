@@ -264,13 +264,18 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Get node context",
       description:
         "Call when you are about to read or edit one node's territory. " +
-        "Returns authoritative record (graph slice), editable body (without the ## Rules section), the node's own rules, attachment paths, and filenames. " +
-        "Includes next slot when an evolution is in progress (`next.record` + `next.body`).",
+        "Returns authoritative record (graph slice), editable body (without the ## Rules and ## Decisions sections), the node's own rules, " +
+        "its decisions (active ones; superseded only with include_superseded, as in list_decisions), attachment paths, and filenames. " +
+        "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
+        include_superseded: z
+          .boolean()
+          .optional()
+          .describe("Also return superseded decisions (each names superseded_by). Default false."),
       },
     },
-    guarded(({ node_id }) => getNodeContext({ node_id }))
+    guarded(({ node_id, include_superseded }) => getNodeContext({ node_id, include_superseded }))
   );
 
   server.registerTool(

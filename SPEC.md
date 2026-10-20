@@ -1153,7 +1153,7 @@ Where:
 
 #### `get_node_context`
 
-- **Input:** `node_id` (slug).
+- **Input:** `node_id` (slug), `include_superseded` (boolean, default `false`: superseded decisions are left out of `decisions` and `next.decisions`, the same default and flag as `list_decisions` and `orient_for_work`; with it, each superseded entry names `superseded_by`).
 - **Output:** always includes the live `<id>.mdx` slice; when the node has an open `<id>.next.mdx` (Foundation/Interaction/Interface only), also includes a `next` object with that slot's record, body, and paths:
 
 ```jsonc
@@ -1176,7 +1176,7 @@ Where:
   },
   "body": "# Split & pay checkout\n\n...",   // never includes the `## Rules` section
   "rules": "- Money is integer cents.",       // the node's own rules; "" when none
-  "decisions": [                              // the live file's decision records (§6.1.2), each with status
+  "decisions": [                              // the live file's decision records (§6.1.2), each with status; superseded ones only with include_superseded
     { "id": "d-split-by-seat", "decision": "...", "alternatives": ["..."], "why": "...", "node_id": "i-checkout-split", "node_type": "Interaction", "status": "active" }
   ],
   "next": null
@@ -1194,7 +1194,7 @@ Where:
 Composite orientation for agents: `find_related_nodes` plus full territory for the focus node and `get_blast_radius` when the focus is a Foundation, Interaction, or Interface.
 
 - **Input:** same as `find_related_nodes` (`query`, `node_id`, `type`, `limit`) plus `depth` (`rules` \| `body` \| `full`, default `full`) and `include_superseded` (boolean, default `false`). `rules`: the focus node's `rules` block and `context.record` (and `context.next.record`) only. `body`: also the full `context` (body, attachments). `full`: everything below.
-- **Output (`full`):** `{ query, matches, focus, nodes, edges, context, blast_radius, rules, decisions }` where `decisions` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` are the decision records (§6.1.2) that reach the focus through the node-rules inheritance, each a record plus `{ node_id, node_type, via, distance, status }` and ordered like rules, superseded entries left out unless `include_superseded` (then each names `superseded_by`). `decisions` is present at every depth; at `depth: "rules"` each entry is compact (`id`, `decision`, `why`, and its labels), because orientation runs before every action; `list_decisions` and the other depths return whole records. `rules` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` is the focus node's resolved node rules (§6.1.1), each `{ node_id, node_type, via, distance, rules }` labeled with the node it came from and ordered self, `belongs_to`, `depends_on`, `affects`; `[]` when nothing applies. `rules` does not repeat the project brief rules (`get_rules`). And where `context` matches `get_node_context` when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
+- **Output (`full`):** `{ query, matches, focus, nodes, edges, context, blast_radius, rules, decisions }` where `decisions` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` are the decision records (§6.1.2) that reach the focus through the node-rules inheritance, each a record plus `{ node_id, node_type, via, distance, status }` and ordered like rules, superseded entries left out unless `include_superseded` (then each names `superseded_by`). `decisions` is present at every depth; at `depth: "rules"` each entry is compact (`id`, `decision`, `why`, and its labels), because orientation runs before every action; `list_decisions` and the other depths return whole records. `rules` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` is the focus node's resolved node rules (§6.1.1), each `{ node_id, node_type, via, distance, rules }` labeled with the node it came from and ordered self, `belongs_to`, `depends_on`, `affects`; `[]` when nothing applies. `rules` does not repeat the project brief rules (`get_rules`). And where `context` matches `get_node_context` (with the same `include_superseded`) when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
 - **Output (`rules` / `body`):** `{ query, matches, focus, context, rules, decisions }` — no `nodes`, `edges`, or `blast_radius`.
 - **Errors:** same as `find_related_nodes`; an unknown `depth`.
 

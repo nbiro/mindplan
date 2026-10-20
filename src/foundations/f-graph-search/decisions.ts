@@ -65,15 +65,21 @@ export function nodeDecisions(
     .filter((e) => opts.include_superseded || e.status === "active");
 }
 
-/** Decision entries of a node's live file (`slot: "current"`) or open next file, with status. */
+/**
+ * Decision entries of a node's live file (`slot: "current"`) or open next file, with status.
+ * Superseded entries are left out unless `include_superseded`, the same default as `nodeDecisions`.
+ */
 export function slotDecisions(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  slot: "current" | "next"
+  slot: "current" | "next",
+  opts: DecisionQueryOptions = {}
 ): DecisionEntry[] {
   const index = supersessionIndex(graph);
   const records = slot === "next" ? node.next?.decisions ?? [] : node.decisions ?? [];
-  return records.map((d) => toEntry(node, d, index));
+  return records
+    .map((d) => toEntry(node, d, index))
+    .filter((e) => opts.include_superseded || e.status === "active");
 }
 
 /**

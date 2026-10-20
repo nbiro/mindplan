@@ -3,16 +3,22 @@ id: f-graph-search
 type: Foundation
 title: "Graph search"
 description: "Infra — ranks and expands graph neighborhoods, resolves which nodes' rules and decisions apply to a node (and which nodes a node's rules reach), computes whether a decision is superseded, and lists decisions by node, change, or graph."
-state: mirror
+state: in-progress
 shipped_at: 2026-10-20T13:04:10.266Z
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-10-20T13:35:39.905Z
+updated_at: 2026-10-20T13:56:50.439Z
 depends_on:
   - f-domain-model
 implements:
   - src/foundations/f-graph-search/
 role: infra
+opened_at: 2026-10-20T13:49:57.885Z
+change: "node-context-superseded"
+change_ref: "fix/node-context-superseded"
 ---
+
+
+
 
 # Graph search
 
@@ -43,7 +49,7 @@ Package: `src/foundations/f-graph-search/`
   - `supersessionIndex(graph)` — decision id → id of the decision that supersedes it, built from every active node's decisions (only a cancelled node's decisions supersede nothing; a deprecated node's replacement still stands, or retiring it would bring back the design it replaced). A decision is `superseded` (with `superseded_by`) when the index has it, else `active`
   - `resolveNodeDecisions(graph, nodeId, { include_superseded? })` → `DecisionEntry[]` over `inheritanceSources`: each source node's decisions in recorded order, labeled with `node_id`, `node_type`, `via`, `distance`, and `status`; superseded entries left out unless asked for
   - `listDecisions(graph, { node_id?, change?, include_superseded? })` → `DecisionEntry[]`: one node's own decisions, every decision recorded under a change, or every decision in the graph. Change and whole-graph listings skip inactive nodes; the filters combine
-  - `nodeDecisions(graph, node, opts, index?)` (one node's own decisions with status), `slotDecisions(graph, node, slot)` (one file's entries, for node context), and `decisionIds(graph)` (every id in live and next files plus every id a `supersedes` still names, so an id freed by a discarded revision is not reused while a decision points at it)
+  - `nodeDecisions(graph, node, opts, index?)` (one node's own decisions with status), `slotDecisions(graph, node, slot, opts?)` (one file's entries, for node context; superseded entries left out unless `include_superseded`), and `decisionIds(graph)` (every id in live and next files plus every id a `supersedes` still names, so an id freed by a discarded revision is not reused while a decision points at it)
   - `findDecision(graph, id)` — the node holding a decision id in its live or open next file. Ids are unique across the graph
   - `generateDecisionId(graph, text)` — `d-` plus a slug of the decision's first words, with a numeric suffix when taken
 
@@ -86,6 +92,8 @@ Depends on: `f-domain-model`.
 - [x] Add `decisions.ts`: supersession index, resolve, list, find, and id generation
 - [x] Verified decision inheritance and supersession via `npm test`
 - [x] Keep deprecated superseders and reserve ids named by `supersedes` (review fixes)
+- [x] Give `slotDecisions` the `include_superseded` option with the same default as `nodeDecisions`
+- [x] Verified the slot filter via `npm test`
 
 ## Decisions
 
