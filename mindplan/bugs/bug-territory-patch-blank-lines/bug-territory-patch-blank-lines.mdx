@@ -1,0 +1,42 @@
+---
+id: bug-territory-patch-blank-lines
+type: Bug
+title: "Territory patches add a blank line after the frontmatter"
+description: "Every patch_node_territory write, and every ship, adds one LF blank line between a node's frontmatter and its body, so leading blank lines pile up and CRLF territory gets mixed line endings."
+state: resolved
+created_at: 2026-10-20T11:52:16.896Z
+updated_at: 2026-10-20T12:02:37.265Z
+affects:
+  - f-territory-store
+---
+
+# Territory patches add a blank line after the frontmatter
+
+## Summary
+
+`patchNodeTerritory` and `promoteNextSlot` in `src/foundations/f-territory-store/store.ts` rebuild a territory file as `${frontmatter}\n\n${body}`. `splitContext` removes only the newline right after the closing `---`, so the body they get back still starts with the file's own blank line, and the hard-coded `\n\n` adds one more on every write. Leading blank lines pile up after the frontmatter, and because the added line is LF, CRLF territory ends up with mixed line endings. `promoteNextSlot` also joins the rebuilt frontmatter with LF.
+
+## Repro Steps
+
+1. Take a node whose `<id>.mdx` has one blank line after its frontmatter and CRLF line endings (any Windows checkout)
+2. Call `patch_node_territory` on it three times with `replace`, `section`, or `toggle_checkboxes`
+3. Read the file: four blank lines now follow the closing `---`, and the three added ones are LF
+4. Open an evolution, patch it, and ship it: the shipped `<id>.mdx` gains one more blank line and its frontmatter is LF
+
+Evidence: in a working copy with open evolutions, `i-export-map.next.mdx` went from three to six blank lines after three patches; on `main`, 21 of 60 live node files under `mindplan/` (and their mirror twins) start with runs of 2 to 14 blank lines. Those existing runs are left as they are; collapsing them is a separate cleanup.
+
+## Expected / Actual
+
+**Expected:** a patch that does not replace the whole body leaves every byte before the body unchanged, and CRLF territory stays CRLF. A whole-body write puts one blank line between the frontmatter and a body that starts with text, and keeps the blank lines a body already starts with. Shipping keeps the next file's layout and line endings.
+
+**Actual:** every patch adds one LF blank line after the frontmatter; every ship adds another and writes the rebuilt frontmatter with LF line endings.
+
+## Fix Checklist
+
+- [x] Root cause identified — note: `splitContext` removes only the newline after the closing `---`, so the body keeps the file's blank line, and `patchNodeTerritory` / `promoteNextSlot` joined it back with two hard-coded LF characters. `writeNodeRules`, `openNextSlot`, the mirror twin, and the frontmatter-only writers keep the original bytes; `scaffoldEntity` writes one blank line once, on a new file
+- [x] Fix implemented — note: `splitContext` also returns `separator`; `patchNodeTerritory` writes it back (a whole-body write gets one blank line unless the new body starts with its own) and `promoteNextSlot` keeps the next file's separator and joins the rebuilt frontmatter with its line endings
+- [x] Regression test added — note: `honesty.test.mjs` runs replace, section, toggle, and description patches, whole-body writes, a `get_node_context` round trip, and an open_next + ship on CRLF territory, and fails on the old code; `npm test` passes
+
+## Attachments
+
+_None._
