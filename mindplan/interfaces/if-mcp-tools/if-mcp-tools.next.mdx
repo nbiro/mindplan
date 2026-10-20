@@ -3,10 +3,10 @@ id: if-mcp-tools
 type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-seven tools with when-to-call hints, returns small write results unless verbose, scopes drift to the touched node on reads, exposes run_check, get_rules, patch_node_rules, record_decision, and list_decisions, and takes change ids on open_next, create_node, update_node_status, get_blast_radius, and run_check."
-state: in-progress
-shipped_at: 2026-10-20T13:04:11.362Z
+state: mirror
+shipped_at: 2026-10-20T13:57:05.425Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-20T13:56:50.676Z
+updated_at: 2026-10-20T13:57:05.425Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -19,10 +19,8 @@ exposes:
   - i-check-integrity
 implements:
   - src/interfaces/if-mcp-tools/
-opened_at: 2026-10-20T13:49:58.213Z
-change: "node-context-superseded"
-change_ref: "fix/node-context-superseded"
 ---
+
 
 
 
