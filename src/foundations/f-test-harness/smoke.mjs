@@ -36,7 +36,9 @@ let failures = 0;
     "Before answering any questions or writing any code for this project, call get_project and read the response. " +
     "Follow the playbook (systems dialect) and the project description and rules it returns. " +
     "Project rules are mandatory: before each action, call get_rules then orient_for_work. " +
-    "Before any new-feature code change, update or create the matching nodes using the plan-project skill.";
+    "Before any new-feature code change, update or create the matching nodes using the plan-project skill: " +
+    "it covers every graph write (create_node, open_next, discard_next, link_nodes, unlink_nodes, patch_node_territory, " +
+    "patch_node_rules, patch_project_description, patch_project_rules, patch_config, and attachments).";
   const instructions = client.getInstructions();
   if (instructions !== expectedInstructions) {
     failures++;
@@ -44,6 +46,21 @@ let failures = 0;
       `FAIL MCP initialize instructions must be the short reanchor pointer (got ${instructions === undefined ? "undefined" : `${instructions.length} chars`})`
     );
   } else console.log("ok   MCP initialize instructions are the short reanchor pointer");
+  // --- serverInfo.version comes from package.json, never a literal in server.ts ---
+  const pkgVersion = JSON.parse(fs.readFileSync(path.join(toolRoot, "package.json"), "utf-8")).version;
+  const serverVersion = client.getServerVersion()?.version;
+  if (serverVersion !== pkgVersion) {
+    failures++;
+    console.log(`FAIL initialize must report the package.json version ${pkgVersion} (got ${serverVersion})`);
+  } else console.log("ok   initialize reports the package.json version");
+  const serverSource = fs.readFileSync(
+    path.join(toolRoot, "src", "foundations", "f-mcp-runtime", "server.ts"),
+    "utf-8"
+  );
+  if (/version:\s*"\d+\.\d+\.\d+"/.test(serverSource)) {
+    failures++;
+    console.log("FAIL server.ts must not contain a literal version string");
+  } else console.log("ok   server.ts carries no literal version");
   const bundledPlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
   if (
     !bundledPlaybook.includes("get_project.playbook") ||
@@ -224,6 +241,52 @@ function nextTerritoryPath(...parts) {
     failures++;
     console.log("FAIL orient_for_work description must lead with when to call it");
   } else console.log("ok   orient_for_work description has when-hint");
+
+  // --- annotations: derived from each tool's kind ---
+  const READ = [
+    "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
+    "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
+  ];
+  const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
+  const annotationProblems = [];
+  for (const t of listed.tools ?? []) {
+    const a = t.annotations;
+    if (!t.title) annotationProblems.push(`${t.name}: no title`);
+    if (!a) { annotationProblems.push(`${t.name}: no annotations`); continue; }
+    if (a.openWorldHint !== false) annotationProblems.push(`${t.name}: openWorldHint must be false`);
+    const read = READ.includes(t.name);
+    const destructive = DESTRUCTIVE.includes(t.name);
+    if (a.readOnlyHint !== read) annotationProblems.push(`${t.name}: readOnlyHint should be ${read}`);
+    if (a.destructiveHint !== destructive) annotationProblems.push(`${t.name}: destructiveHint should be ${destructive}`);
+    if (read && a.idempotentHint !== true) annotationProblems.push(`${t.name}: read tools are idempotent`);
+    if (/plan-project|skill|DANGEROUS/.test(t.description ?? "")) {
+      annotationProblems.push(`${t.name}: description must not route to a skill or shout`);
+    }
+  }
+  const unship = (listed.tools ?? []).find((t) => t.name === "force_unship");
+  if (!unship?.description?.includes('"unship:<node_id>"')) annotationProblems.push("force_unship: confirm token format missing");
+  if (annotationProblems.length > 0) {
+    failures++;
+    console.log(`FAIL tool annotations:\n  ${annotationProblems.join("\n  ")}`);
+  } else console.log("ok   every tool carries kind-derived annotations and a plain description");
+
+  // --- envelope: compact JSON text + structuredContent on object results; errors text-only ---
+  const envelope = await client.callTool({ name: "get_rules", arguments: {} });
+  const text = envelope.content?.[0]?.text ?? "";
+  if (
+    envelope.isError ||
+    text.includes("\n") ||
+    !envelope.structuredContent ||
+    JSON.stringify(envelope.structuredContent) !== text
+  ) {
+    failures++;
+    console.log(`FAIL success envelope must be compact JSON text mirrored in structuredContent: ${text.slice(0, 120)}`);
+  } else console.log("ok   success envelope is compact JSON plus structuredContent");
+  const errEnvelope = await client.callTool({ name: "get_node_context", arguments: { node_id: "nope-missing" } });
+  if (!errEnvelope.isError || errEnvelope.structuredContent !== undefined) {
+    failures++;
+    console.log("FAIL error envelope must be isError with no structuredContent");
+  } else console.log("ok   error envelope is text-only");
 }
 
 {

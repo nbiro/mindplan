@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — MCP audit fixes
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **Tool annotations.** Every tool now carries MCP `annotations` derived from one kind: read tools `readOnlyHint: true` (and `idempotentHint: true`), `unlink_nodes` / `remove_attachment` / `discard_next` / `force_unship` `destructiveHint: true`, every other tool a plain write; `openWorldHint` is always `false`. Hosts that auto-approve read-only tools stop prompting on `get_rules` and `orient_for_work`, and prompt on the destructive four. [§8]
+- **Result envelope.** Successful results are compact JSON text (no indentation) plus a `structuredContent` mirror for object payloads; error results are unchanged. No `outputSchema` is declared. **Breaking** only for a client that compared the pretty-printed text byte for byte: parse it instead. [§8]
+- **Descriptions describe the tool.** The "Follow the plan-project skill" routing left the fourteen graph-write descriptions and lives once in the server `instructions`, which now names the graph writes the skill covers. `force_unship` keeps its `confirm` token contract and drops the DANGEROUS prose; `destructiveHint` tells the host to prompt. [§8]
+- **Version from package.json.** `initialize` reports the package's `version` field; `server.ts` holds no literal. An unreadable package.json yields `0.0.0` with a stderr note. [§8]
+- **Paged graph.** `get_mindplan_graph` takes `offset` and `limit` (default 200, max 500) and returns `total_nodes`, `total_edges`, `offset`, `limit`, and `next_offset` while nodes remain; `edges` holds the edges whose source is in the page. A graph that fits one page returns the whole graph plus the totals. [§8.1]
+- **Bounded export.** `export_mindplan_view` takes `output` (repo-relative, inside the root, outside `mindplan/`) and then returns `written_to` instead of `diagram`; without `output`, a diagram over 80,000 characters is `Blocked:` with its size and the two fixes (`focus`, `output`). The CLI never applies the budget. [§8.1]
+
 ## Unreleased — decision records
 
 Every behavior change in this release. SPEC sections in brackets.

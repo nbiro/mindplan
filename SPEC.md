@@ -1023,15 +1023,23 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes twenty-seven tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful read results (except `get_project`, `get_rules`, and `run_check`) MAY include `drift` when uncommitted source files exist (envelope below), scoped to the node the result is about; `get_project` and `get_rules` MUST NOT include it, because `get_rules` runs before every action and `orient_for_work` already carries the report. A write tool returns a **small result by default** and includes `drift` and the neighborhood only with `verbose: true` (below).
+The server exposes twenty-seven tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. A successful result is **compact JSON text** (no indentation) in `content[0].text`; when the payload is an object the same payload is also returned as `structuredContent`. No tool declares an `outputSchema`. Error results are text-only. Each tool description MUST lead with when to call the tool, then what it returns, and MUST describe only that tool: it MUST NOT route the agent to a skill or another tool's behavior (the server `instructions` string carries the plan-project routing once).
+
+**Annotations.** Every tool carries a `title` and MCP `annotations` derived from one of three kinds, so the host can decide which calls need a per-call confirmation: `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`: every tool acts on the local `mindplan/` tree and the repository. The read tools are `run_check`, `get_mindplan_graph`, `export_mindplan_view`, `find_related_nodes`, `get_node_implementation`, `get_node_context`, `orient_for_work`, `get_project`, `get_rules`, `list_decisions`, and `get_blast_radius`. The destructive tools, which remove data or edges no undo restores, are `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`. Every other tool is `write`. The same kind drives the envelope: a `read` tool MAY carry `drift`, a `write` or `destructive` tool only with `verbose: true`.
+
+**Result size.** A host truncates a result over its limit silently (Claude Code: 25,000 tokens; claude.ai: about 150,000 characters). The two tools whose result grows with the graph bound it: `get_mindplan_graph` pages, and `export_mindplan_view` refuses an over-budget diagram with the fix (below). Successful read results (except `get_project`, `get_rules`, and `run_check`) MAY include `drift` when uncommitted source files exist (envelope below), scoped to the node the result is about; `get_project` and `get_rules` MUST NOT include it, because `get_rules` runs before every action and `orient_for_work` already carries the report. A write tool returns a **small result by default** and includes `drift` and the neighborhood only with `verbose: true` (below).
 
 ### 8.1 Read tools
 
 #### `get_mindplan_graph`
 
-- **Input:** none.
-- **Output:** `{ version, nodes, edges }` assembled from territory frontmatter (§6.1, §7).
-- **Errors:** none beyond I/O failures.
+Returns one page of the graph assembled from territory frontmatter (§6.1, §7).
+
+- **Input:**
+  - `offset` (integer ≥ 0, optional, default `0`) — index of the first node, in id order
+  - `limit` (integer 1..500, optional, default `200`) — nodes per page
+- **Output:** `{ version, nodes, edges, total_nodes, total_edges, offset, limit, next_offset? }`. `nodes` is sorted by id and sliced by `offset` / `limit`; `edges` holds every edge whose **source** is in the page, so a walk over every page sees each node and each edge exactly once; `next_offset` is present only while nodes remain. A graph that fits in one page returns the whole graph plus the totals. An `offset` past the end returns an empty page with the totals.
+- **Errors:** `limit` above 500 is rejected at the schema layer; none beyond I/O failures otherwise.
 
 #### `export_mindplan_view`
 
@@ -1042,6 +1050,8 @@ Exports a deterministic typed-graph projection (§7.4) as Mermaid or DOT. Prefer
   - `focus` (slug, optional) — when set, export focus + 1-hop neighborhood only
   - `include_retired` (boolean, optional, default `false`) — include deprecated/cancelled nodes and closed bugs
   - `decisions` (boolean, optional, default `false`) — label each node that has active decisions (§6.1.2) with their count (` · 2 decisions` in Mermaid, a label line in DOT). `mindplan/map.md` never carries the counts
+  - `output` (string, optional) — repo-relative path to write the diagram to. MUST resolve inside the project root and outside `mindplan/` (the server is the only writer of that tree); the result then carries `written_to` (the repo-relative POSIX path) and no `diagram`
+- **Result budget:** without `output`, a diagram longer than 80,000 characters is `Blocked:` with its size, the budget, and the two fixes (`focus`, `output`); a host would otherwise truncate it silently and a cut diagram renders nothing. The CLI `view` / `export` path never applies the budget
 - **Output:**
 
 ```jsonc
@@ -1056,7 +1066,7 @@ Exports a deterministic typed-graph projection (§7.4) as Mermaid or DOT. Prefer
 }
 ```
 
-- **Errors:** unknown `focus` node_id.
+- **Errors:** unknown `focus` node_id; `output` outside the root or under `mindplan/`; a diagram over the budget without `output`.
 
 #### `find_related_nodes`
 

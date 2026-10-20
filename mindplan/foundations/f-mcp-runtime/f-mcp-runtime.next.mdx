@@ -2,11 +2,11 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime"
-description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature code; scopes the drift report to the node a result is about."
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version on initialize; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature graph work; scopes the drift report to the node a result is about."
 state: mirror
-shipped_at: 2026-10-15T15:52:09.548Z
+shipped_at: 2026-10-20T15:10:03.442Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-20T13:35:41.201Z
+updated_at: 2026-10-20T15:10:03.442Z
 depends_on:
   - f-territory-store
   - f-framework-docs
@@ -22,16 +22,20 @@ role: assembler
 
 Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change; before each action call `get_rules` then `orient_for_work`; before any new-feature code change, update or create nodes using the plan-project skill. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session. It also keeps the drift report small: a result carries drift for the node it is about, plus a count of the rest, never the whole tree's dirty files.
 
+The version the server reports on `initialize` is read from the package's own `package.json`, never typed into source: a second copy of the version string drifts the first time the package is bumped, and a host that logs `serverInfo.version` would then name a release that does not exist. The instructions pointer is the one place that routes the agent to the plan-project skill; the per-tool descriptions (`if-mcp-tools`) describe their tool only, so the routing must be complete here.
+
 ## Shared Substrate Spec
 
 Package: `src/foundations/f-mcp-runtime/`
 
 - `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
-- Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and plan-project before new-feature code
+- Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and the plan-project skill before new-feature graph work (`create_node`, `open_next`, links, territory, brief, config). This sentence is the only skill routing the server sends; tool descriptions carry none
+- Export `readPackageVersion()` — reads `version` from the package's `package.json` (resolved relative to the compiled module, so it works from `dist/` in a consumer's `node_modules`), and `McpServer` is constructed with `{ name: "mindplan", version: readPackageVersion() }`. Falls back to `"0.0.0"` with a stderr note if the file is unreadable; boot never fails over it
 - `with-drift.ts` — Assembler helper that calls `buildDriftReport` from `i-check-integrity` (legal because check depends_on this Assembler) so `if-mcp-tools` can attach drift without importing a non-exposed Interaction. It reads the node ids a payload is about (`node_id`, orient `focus`, link ends, created node) and passes them as `nodeIds`, so the report lists that node's files and only counts other owners' (`other_count`); a payload about no node gets the capped whole-tree report
 - Always pass `{ instructions: SERVER_INSTRUCTIONS }`
 - MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
 - MUST NOT load or append `mindplan/project.md` or the playbook body into instructions
+- MUST NOT write to stdout in MCP mode (stdio transport); diagnostics go to stderr
 
 Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
 
@@ -41,6 +45,9 @@ Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `dep
 - Instructions contain neither the playbook body nor `mindplan/project.md` content
 - Boot never fails over a missing brief or playbook file
 - Drift on a result about one node lists that node's files and counts the others
+- `initialize` reports `serverInfo.version` equal to the `version` field of the repo's `package.json`, and `server.ts` contains no literal version string
+- The instructions pointer names `get_project`, `get_rules`, `orient_for_work`, and the plan-project skill
+- The smoke test asserts the version match
 
 ## Atomic Ops
 
@@ -49,6 +56,23 @@ Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `dep
 - [x] Verified via `npm test`
 - [x] Scope `withDrift` to the node a payload is about
 - [x] Verified the scoped drift via `npm test`
+- [x] Add `readPackageVersion()` and construct `McpServer` with it; remove the literal version from `server.ts`
+- [x] Make the instructions pointer name the graph writes the plan-project skill covers
+- [x] Assert `serverInfo.version` equals `package.json` in the smoke test (`f-test-harness`, in place)
+- [x] Verified via `npm test`
+
+## Decisions
+
+### d-version-from-package-json
+
+- Decision: The server version on initialize is read from package.json at boot, never typed into source.
+- Alternatives:
+  - Keep a literal in server.ts and bump both on release (already 0.1.0 in two places; the first bump that forgets one makes initialize name a release that does not exist)
+  - Inject it at build time with a generated module (a build step for one string, and tsc has none)
+- Why: There is one source of truth for the version and it is the file npm publishes.
+- Consequences: The read is relative to the compiled module so it works from dist/ inside node_modules; an unreadable file falls back to 0.0.0 with a stderr note rather than failing boot.
+- Change: mcp-audit-fixes
+- Date: 2026-10-20
 
 ## Attachments
 

@@ -174,15 +174,15 @@ No Dependency Closure / `link_dependent`.
 
 ## MCP Tools
 
-The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are registered in [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract).
+The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are registered in [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract). Every tool carries MCP annotations derived from its kind (`readOnlyHint` on read tools, `destructiveHint` on `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`; `openWorldHint` always false), so a host can auto-approve reads and prompt on destructive calls. Results are compact JSON text plus `structuredContent`. Results that grow with the graph stay under the host's size limit: `get_mindplan_graph` pages (`offset` / `limit`, `next_offset`), and `export_mindplan_view` refuses a diagram over 80,000 characters unless you pass `focus` or `output`.
 
 | Tool | Kind | Description |
 |------|------|-------------|
 | `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); the `rules` and `decisions` that apply to the focus; `depth: rules\|body\|full` trims it |
 | `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every revision in a change |
 | `find_related_nodes` | read | Rank by query; focus + 1-hop |
-| `get_mindplan_graph` | read | Assembled nodes/edges (`version: 1`) |
-| `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts |
+| `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset` |
+| `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts; `output` writes to a file; over-budget diagrams are Blocked with the fix |
 | `list_decisions` | read | Decision records of a node, a change, or the graph; superseded ones on request |
 | `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired` |
 | `get_node_context` | read | `record` + `body` + `decisions` (superseded only with `include_superseded`; + `next.record`/`next.body`/`next.decisions` when evolving) |
@@ -199,7 +199,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `open_next` / `discard_next` | mutation | Flip mirror→draft / restore mirror twin |
 | `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent` |
 | `update_node_status` | mutation | One node, or a `revisions` list ordered Foundation → Interaction → Interface → Bug; stops on the first `Blocked:` |
-| `force_unship` | mutation | Mistaken-ship recovery (`confirm: "unship:<id>"`) |
+| `force_unship` | mutation, destructive | Mistaken-ship recovery (`confirm: "unship:<id>"`) |
 
 ## CLI
 

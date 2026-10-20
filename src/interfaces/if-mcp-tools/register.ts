@@ -1,9 +1,11 @@
 /**
- * MCP tools Interface — registers orient, steer, and export handlers with schemas
- * and the ok/guarded envelope. Does not own domain logic.
+ * MCP tools Interface — registers orient, steer, and export handlers with schemas,
+ * annotations derived from each tool's kind, and the ok/guarded envelope. Does not own domain logic.
  */
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ShapeOutput, ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import {
@@ -14,6 +16,8 @@ import {
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT } from "../../foundations/f-graph-search/search.js";
 import { VIEW_FORMATS } from "../../foundations/f-view-projection/view.js";
 import {
+  GRAPH_PAGE_DEFAULT,
+  GRAPH_PAGE_MAX,
   ORIENT_DEPTHS,
   findRelatedNodesHandler,
   getBlastRadius,
@@ -46,17 +50,27 @@ import {
   updateNodeStatus,
 } from "../../interactions/i-steer-plan/handlers.js";
 import { runCheckHandler } from "../../interactions/i-check-integrity/check.js";
-import { exportMindPlanViewHandler } from "../../interactions/i-export-map/handlers.js";
+import { EXPORT_RESULT_BUDGET, exportMindPlanViewHandler } from "../../interactions/i-export-map/handlers.js";
 import { FOUNDATION_ROLES } from "../../foundations/f-domain-model/types.js";
 import { drainRemovedLegacyFiles } from "../../foundations/f-territory-store/store.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
+  structuredContent?: Record<string, unknown>;
   isError?: boolean;
 };
 
+/**
+ * Success envelope: compact JSON text (pretty-printing cost about a third more tokens on every
+ * result) plus a `structuredContent` mirror for object payloads so a client can read the result
+ * without parsing. String payloads stay text-only. No `outputSchema` is declared.
+ */
 function ok(payload: unknown): ToolResult {
-  const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  if (typeof payload === "string") return { content: [{ type: "text", text: payload }] };
+  const text = JSON.stringify(payload);
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return { content: [{ type: "text", text }], structuredContent: payload as Record<string, unknown> };
+  }
   return { content: [{ type: "text", text }] };
 }
 
@@ -73,6 +87,44 @@ function withRemovedLegacyFiles(payload: unknown): unknown {
     return obj;
   }
   return { result: payload, removed_legacy_files: froms };
+}
+
+/**
+ * What a tool does to the graph. One kind per tool derives both its MCP annotations and its
+ * envelope behavior (drift, verbose), so the hint the host prompts from and the result shape
+ * cannot disagree. `destructive` removes data or edges that no undo restores.
+ */
+type ToolKind = "read" | "write" | "destructive";
+
+/** Every tool acts on the local mindplan/ tree and the repo, never an external system. */
+const ANNOTATIONS: Record<ToolKind, ToolAnnotations> = {
+  read: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  write: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  destructive: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+};
+
+type ToolConfig<Args extends ZodRawShapeCompat> = {
+  kind: ToolKind;
+  title: string;
+  description: string;
+  inputSchema: Args;
+  /** `false` for read tools that must never carry drift (get_project, get_rules, run_check). */
+  drift?: boolean;
+};
+
+/** Registers one tool: annotations from its kind, handler wrapped in the guarded envelope. */
+function tool<Args extends ZodRawShapeCompat>(
+  server: McpServer,
+  name: string,
+  config: ToolConfig<Args>,
+  handler: (args: ShapeOutput<Args>) => unknown
+): void {
+  const { kind, drift, ...rest } = config;
+  // ToolCallback<Args> is a conditional type over a generic Args, which TypeScript cannot resolve
+  // inside this helper; each concrete registration resolves it to (args: ShapeOutput<Args>) => result,
+  // which is exactly what guarded() returns.
+  const callback = guarded(handler, { write: kind !== "read", drift }) as unknown as ToolCallback<Args>;
+  server.registerTool(name, { ...rest, annotations: ANNOTATIONS[kind] }, callback);
 }
 
 /**
@@ -129,9 +181,12 @@ const READINESS_HINT =
 
 /** Register every MindPlan MCP tool onto the given server. */
 export function registerMindPlanTools(server: McpServer): void {
-  server.registerTool(
+  tool(
+    server,
     "run_check",
     {
+      kind: "read",
+      drift: false,
       title: "Run the integrity check",
       description:
         "Call before in-review, before ship, and before telling the user the work is done. " +
@@ -151,30 +206,46 @@ export function registerMindPlanTools(server: McpServer): void {
         ),
       },
     },
-    guarded(({ base, change }) => runCheckHandler({ base, change }), { drift: false })
+    ({ base, change }) => runCheckHandler({ base, change })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "get_mindplan_graph",
     {
+      kind: "read",
       title: "Get MindPlan graph",
       description:
         "Call when you need every node and edge. Prefer orient_for_work for one piece of work. " +
-        "Returns the full MindPlan graph — nodes and edges assembled from <id>.mdx frontmatter.",
-      inputSchema: {},
+        "Returns one page of the MindPlan graph assembled from <id>.mdx frontmatter: nodes sorted by id, " +
+        "the edges whose source is in the page, total_nodes, total_edges, and next_offset while nodes remain. " +
+        `A graph of up to ${GRAPH_PAGE_DEFAULT} nodes fits one page; walk offset = next_offset for the rest.`,
+      inputSchema: {
+        offset: z.number().int().min(0).optional().describe("First node index (default 0)."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(GRAPH_PAGE_MAX)
+          .optional()
+          .describe(`Nodes per page (default ${GRAPH_PAGE_DEFAULT}, max ${GRAPH_PAGE_MAX}).`),
+      },
     },
-    guarded(() => getMindPlanGraph())
+    ({ offset, limit }) => getMindPlanGraph({ offset, limit })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "export_mindplan_view",
     {
+      kind: "read",
       title: "Export MindPlan view",
       description:
         "Call when a human wants a map for a PR or a doc. " +
         "Exports a deterministic typed-DAG projection as Mermaid or DOT. " +
         "Omit focus for the full filtered map; pass focus for that node plus its 1-hop neighborhood. " +
-        "By default hides deprecated/cancelled nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON.",
+        "By default hides deprecated/cancelled nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON. " +
+        `A diagram over ${EXPORT_RESULT_BUDGET} characters is Blocked unless you pass focus or output (a repo-relative file path, outside mindplan/).`,
       inputSchema: {
         format: z
           .enum(VIEW_FORMATS)
@@ -193,16 +264,24 @@ export function registerMindPlanTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Label each node that has active decisions with their count. Default false."),
+        output: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Repo-relative file path to write the diagram to (outside mindplan/). The result then carries written_to and no diagram."
+          ),
       },
     },
-    guarded(({ format, focus, include_retired, decisions }) =>
-      exportMindPlanViewHandler({ format, focus, include_retired, decisions })
-    )
+    ({ format, focus, include_retired, decisions, output }) =>
+      exportMindPlanViewHandler({ format, focus, include_retired, decisions, output })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "find_related_nodes",
     {
+      kind: "read",
       title: "Find related nodes",
       description:
         "Call before creating a node, to reuse one that already exists. " +
@@ -230,14 +309,15 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe(`Max ranked matches to return (default ${DEFAULT_FIND_LIMIT}, max ${MAX_FIND_LIMIT}).`),
       },
     },
-    guarded(({ query, node_id, type, limit }) =>
+    ({ query, node_id, type, limit }) =>
       findRelatedNodesHandler({ query, node_id, type, limit })
-    )
   );
 
-  server.registerTool(
+  tool(
+    server,
     "get_node_implementation",
     {
+      kind: "read",
       title: "Get node implementation",
       description:
         "Call before editing a file, to see who owns it, or when you need a node's claimed files. " +
@@ -255,12 +335,14 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Repo-relative path to look up owner for."),
       },
     },
-    guarded(({ node_id, path }) => getNodeImplementationHandler({ node_id, path }))
+    ({ node_id, path }) => getNodeImplementationHandler({ node_id, path })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "get_node_context",
     {
+      kind: "read",
       title: "Get node context",
       description:
         "Call when you are about to read or edit one node's territory. " +
@@ -275,12 +357,14 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Also return superseded decisions (each names superseded_by). Default false."),
       },
     },
-    guarded(({ node_id, include_superseded }) => getNodeContext({ node_id, include_superseded }))
+    ({ node_id, include_superseded }) => getNodeContext({ node_id, include_superseded })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "orient_for_work",
     {
+      kind: "read",
       title: "Orient for work",
       description:
         "Call before each action, after get_rules. Not only at session start. " +
@@ -318,14 +402,16 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Also return superseded decisions in the decisions block (each names superseded_by). Default false."),
       },
     },
-    guarded(({ query, node_id, type, limit, depth, include_superseded }) =>
+    ({ query, node_id, type, limit, depth, include_superseded }) =>
       orientForWork({ query, node_id, type, limit, depth, include_superseded })
-    )
   );
 
-  server.registerTool(
+  tool(
+    server,
     "get_project",
     {
+      kind: "read",
+      drift: false,
       title: "Get project brief",
       description:
         "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
@@ -333,12 +419,15 @@ export function registerMindPlanTools(server: McpServer): void {
         "({ path, description, rules, playbook }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md.",
       inputSchema: {},
     },
-    guarded(() => getProject(), { drift: false })
+    () => getProject()
   );
 
-  server.registerTool(
+  tool(
+    server,
     "get_rules",
     {
+      kind: "read",
+      drift: false,
       title: "Get project rules",
       description:
         "Call before each action, before orient_for_work. Returns the mandatory project rules " +
@@ -347,15 +436,17 @@ export function registerMindPlanTools(server: McpServer): void {
         "Does not return the playbook or description.",
       inputSchema: {},
     },
-    guarded(() => getRules(), { drift: false })
+    () => getRules()
   );
 
-  server.registerTool(
+  tool(
+    server,
     "patch_node_territory",
     {
+      kind: "write",
       title: "Patch node territory",
       description:
-        "Call when a node's title, description, or body should match the work, before the feature code. Follow the plan-project skill. " +
+        "Call when a node's title, description, or body should match the work, before the feature code. " +
         "Required writer for territory prose: body (whole body), section + text (rewrite one ## section), " +
         "replace { find, with } (one exact edit), toggle_checkboxes, optional title/description/role " +
         "(pre-ship or open evolution). Prefer section/replace for small fixes: they do not resend the body. " +
@@ -436,7 +527,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Territory slot to patch. Defaults to next when an open evolution exists."),
       },
     },
-    guarded(
+    
       ({
         node_id,
         title,
@@ -466,18 +557,18 @@ export function registerMindPlanTools(server: McpServer): void {
           change_ref,
           slot,
           verbose,
-        }),
-      { write: true }
-    )
+        })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "patch_node_rules",
     {
+      kind: "write",
       title: "Patch node rules",
       description:
         "Call when a rule applies to one node and the work that inherits from it, not everywhere " +
-        "(use patch_project_rules for rules that apply everywhere). Follow the plan-project skill. " +
+        "(use patch_project_rules for rules that apply everywhere). " +
         "Replaces the ## Rules section of that node; an empty string clears it. Works on any non-retired node, " +
         "including shipped ones, without open_next. Returns rules_impact: the nodes whose work the rules reach.",
       inputSchema: {
@@ -489,12 +580,14 @@ export function registerMindPlanTools(server: McpServer): void {
           ),
       },
     },
-    guarded(({ node_id, rules }) => patchNodeRules({ node_id, rules }), { write: true })
+    ({ node_id, rules }) => patchNodeRules({ node_id, rules })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "record_decision",
     {
+      kind: "write",
       title: "Record a decision",
       description:
         "Call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact), " +
@@ -524,16 +617,16 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Stable id, e.g. d-capacity-on-booking. Generated from the decision when omitted."),
       },
     },
-    guarded(
+    
       ({ node_id, decision, alternatives, why, consequences, supersedes, change, id, verbose }) =>
-        recordDecision({ node_id, decision, alternatives, why, consequences, supersedes, change, id, verbose }),
-      { write: true }
-    )
+        recordDecision({ node_id, decision, alternatives, why, consequences, supersedes, change, id, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "list_decisions",
     {
+      kind: "read",
       title: "List decisions",
       description:
         "Call before reshaping a design someone else chose, or to read the reasoning trail of a node or change. " +
@@ -548,17 +641,18 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Also return superseded decisions. Default false."),
       },
     },
-    guarded(({ node_id, change, include_superseded }) =>
+    ({ node_id, change, include_superseded }) =>
       listDecisionsHandler({ node_id, change, include_superseded })
-    )
   );
 
-  server.registerTool(
+  tool(
+    server,
     "patch_project_description",
     {
+      kind: "write",
       title: "Patch project description",
       description:
-        "Call when the product summary changes, through the plan-project skill. The next session start calls get_project again. " +
+        "Call when the product summary changes. The next session start calls get_project again. " +
         "Writes the ## Description section of mindplan/project.md via the territory store. " +
         "Leaves ## Rules unchanged. Do not hand-edit project.md.",
       inputSchema: {
@@ -567,15 +661,17 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Replace the ## Description section body. Empty string clears it."),
       },
     },
-    guarded(({ description }) => patchProjectDescription({ description }), { write: true })
+    ({ description }) => patchProjectDescription({ description })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "patch_project_rules",
     {
+      kind: "write",
       title: "Patch project rules",
       description:
-        "Call when standing rules change, through the plan-project skill. The next action calls get_rules again. " +
+        "Call when standing rules change. The next action calls get_rules again. " +
         "Writes the ## Rules section of mindplan/project.md via the territory store. " +
         "Leaves ## Description unchanged. Do not hand-edit project.md.",
       inputSchema: {
@@ -584,15 +680,17 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Replace the ## Rules section body. Empty string clears it."),
       },
     },
-    guarded(({ rules }) => patchProjectRules({ rules }), { write: true })
+    ({ rules }) => patchProjectRules({ rules })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "patch_config",
     {
+      kind: "write",
       title: "Patch project config",
       description:
-        "Call when source roots, exclude paths, or decision-gate settings change, through the plan-project skill. " +
+        "Call when source roots, exclude paths, or decision-gate settings change. " +
         "Writes mindplan/config.json sources, exclude, and/or decisions via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
@@ -622,17 +720,17 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Decision-gate settings. A field not passed keeps its stored value."),
       },
     },
-    guarded(({ sources, exclude, decisions }) => patchConfig({ sources, exclude, decisions }), {
-      write: true,
-    })
+    ({ sources, exclude, decisions }) => patchConfig({ sources, exclude, decisions })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "put_attachment",
     {
+      kind: "write",
       title: "Put node attachment",
       description:
-        "Call when a supporting file should sit beside a node, through the plan-project skill. " +
+        "Call when a supporting file should sit beside a node. " +
         "Writes a file under attachments/ (or next-attachments/ while evolving) as base64. " +
         "Slot defaults to next when an open evolution exists.",
       inputSchema: {
@@ -643,19 +741,19 @@ export function registerMindPlanTools(server: McpServer): void {
         slot: z.enum(["current", "next"]).optional().describe("Attachment slot override."),
       },
     },
-    guarded(
+    
       ({ node_id, filename, content_base64, slot, verbose }) =>
-        putAttachment({ node_id, filename, content_base64, slot, verbose }),
-      { write: true }
-    )
+        putAttachment({ node_id, filename, content_base64, slot, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "remove_attachment",
     {
+      kind: "destructive",
       title: "Remove node attachment",
       description:
-        "Call when a supporting file should leave a node, through the plan-project skill. " +
+        "Call when a supporting file should leave a node. " +
         "Deletes a file under attachments/ (or next-attachments/ while evolving). " +
         "Slot defaults to next when an open evolution exists.",
       inputSchema: {
@@ -665,16 +763,16 @@ export function registerMindPlanTools(server: McpServer): void {
         slot: z.enum(["current", "next"]).optional().describe("Attachment slot override."),
       },
     },
-    guarded(
+    
       ({ node_id, filename, slot, verbose }) =>
-        removeAttachment({ node_id, filename, slot, verbose }),
-      { write: true }
-    )
+        removeAttachment({ node_id, filename, slot, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "set_implementation_files",
     {
+      kind: "write",
       title: "Set implementation files",
       description:
         "Call before writing a file the node does not yet claim. " +
@@ -697,19 +795,19 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Optional slot override. Defaults by lifecycle."),
       },
     },
-    guarded(
+    
       ({ node_id, files, slot, verbose }) =>
-        setImplementationFiles({ node_id, files, slot, verbose }),
-      { write: true }
-    )
+        setImplementationFiles({ node_id, files, slot, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "create_node",
     {
+      kind: "write",
       title: "Create node",
       description:
-        "Call when reuse found no node, before any new-feature code. Follow the plan-project skill. " +
+        "Call when reuse found no node, before any new-feature code. " +
         "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
         "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold).",
       inputSchema: {
@@ -728,19 +826,19 @@ export function registerMindPlanTools(server: McpServer): void {
         change_ref: CHANGE_REF,
       },
     },
-    guarded(
+    
       ({ id, type, title, description, role, change, change_ref, verbose }) =>
-        createNode({ id, type, title, description, role, change, change_ref, verbose }),
-      { write: true }
-    )
+        createNode({ id, type, title, description, role, change, change_ref, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "link_nodes",
     {
+      kind: "write",
       title: "Link nodes",
       description:
-        "Call when two existing nodes should be connected, as part of the plan-project skill. " +
+        "Call when two existing nodes should be connected. " +
         "Adds an edge to the DAG. Legal shapes: Interaction -belongs_to-> Journey, " +
         "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
         "Interface -exposes-> Interaction, Foundation -mounts-> Interface (a composition root that imports Interfaces), Interaction -leads_to-> Interaction, " +
@@ -756,19 +854,19 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("belongs_to | depends_on | exposes | leads_to | affects | mounts"),
       },
     },
-    guarded(
+    
       ({ source_id, target_id, edge_type, verbose }) =>
-        linkNodes({ source_id, target_id, edge_type, verbose }),
-      { write: true }
-    )
+        linkNodes({ source_id, target_id, edge_type, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "open_next",
     {
+      kind: "write",
       title: "Open next evolution",
       description:
-        "Call when a shipped node's contract changes, before editing that contract. Follow the plan-project skill. " +
+        "Call when a shipped node's contract changes, before editing that contract. " +
         "Flips a shipped node's standing <id>.next.mdx twin from state mirror to draft (creates the twin from live if missing). " +
         "Optional title/description overrides. Does not reset checkboxes. The live node keeps serving. " +
         "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror. " +
@@ -784,19 +882,19 @@ export function registerMindPlanTools(server: McpServer): void {
         change_ref: CHANGE_REF,
       },
     },
-    guarded(
+    
       ({ node_id, title, description, change, change_ref, verbose }) =>
-        openNext({ node_id, title, description, change, change_ref, verbose }),
-      { write: true }
-    )
+        openNext({ node_id, title, description, change, change_ref, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "discard_next",
     {
+      kind: "destructive",
       title: "Discard next evolution",
       description:
-        "Call when an open evolution should be abandoned. Follow the plan-project skill. " +
+        "Call when an open evolution should be abandoned. " +
         "Abandons an in-flight evolution and restores <id>.next.mdx as a state: mirror twin of the live file. " +
         "Clears next-attachments/. The live <id>.mdx is unchanged.",
       inputSchema: {
@@ -804,12 +902,14 @@ export function registerMindPlanTools(server: McpServer): void {
         node_id: NODE_ID.describe("Id of the node whose open evolution to discard."),
       },
     },
-    guarded(({ node_id, verbose }) => discardNext({ node_id, verbose }), { write: true })
+    ({ node_id, verbose }) => discardNext({ node_id, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "get_blast_radius",
     {
+      kind: "read",
       title: "Get blast radius",
       description:
         "Call before changing a shipped node. " +
@@ -830,17 +930,18 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Include cancelled/deprecated nodes (default false)."),
       },
     },
-    guarded(({ node_id, change, include_retired }) =>
+    ({ node_id, change, include_retired }) =>
       getBlastRadius({ node_id, change, include_retired })
-    )
   );
 
-  server.registerTool(
+  tool(
+    server,
     "unlink_nodes",
     {
+      kind: "destructive",
       title: "Unlink nodes",
       description:
-        "Call when an existing edge should go away, as part of the plan-project skill. " +
+        "Call when an existing edge should go away. " +
         "Removes edge(s) between two nodes from the source node's frontmatter. " +
         READINESS_HINT,
       inputSchema: {
@@ -849,15 +950,15 @@ export function registerMindPlanTools(server: McpServer): void {
         target_id: NODE_ID.describe("The id of the edge target node."),
       },
     },
-    guarded(
-      ({ source_id, target_id, verbose }) => unlinkNodes({ source_id, target_id, verbose }),
-      { write: true }
-    )
+    
+      ({ source_id, target_id, verbose }) => unlinkNodes({ source_id, target_id, verbose })
   );
 
-  server.registerTool(
+  tool(
+    server,
     "update_node_status",
     {
+      kind: "write",
       title: "Update node status",
       description:
         "Call when a node should move along the build or bug pipeline, including ship or resolved at handoff. " +
@@ -923,18 +1024,19 @@ export function registerMindPlanTools(server: McpServer): void {
           ),
       },
     },
-    guarded((args) => updateNodeStatus(args), { write: true })
+    (args) => updateNodeStatus(args)
   );
 
-  server.registerTool(
+  tool(
+    server,
     "force_unship",
     {
+      kind: "destructive",
       title: "Force unship (mistaken ship recovery)",
       description:
-        "Call only after the user explicitly confirms a mistaken ship. " +
-        "DANGEROUS recovery only. Ask the user first and wait for an explicit yes — never invent confirmation. " +
+        "Call only after the user confirms a mistaken ship; recovery only. " +
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
-        'Requires confirm exactly equal to "unship:<node_id>". Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin.',
+        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin.',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(
@@ -949,10 +1051,8 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Pre-ship target state (default ready)."),
       },
     },
-    guarded(
+    
       ({ node_id, confirm, new_status, verbose }) =>
-        forceUnship({ node_id, confirm, new_status, verbose }),
-      { write: true }
-    )
+        forceUnship({ node_id, confirm, new_status, verbose })
   );
 }
