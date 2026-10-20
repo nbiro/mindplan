@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Default check Blocks unclaimed source files (with the probable owner and the claim call), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text and split route families; checks one change's members on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
+description: "Default check Blocks unclaimed source files (with the probable owner and the claim call), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text, split route families, and decision-worthy revisions with no decision; checks one change's members on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
 state: stable
-shipped_at: 2026-10-19T12:09:48.407Z
+shipped_at: 2026-10-20T13:04:10.898Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-19T12:09:48.407Z
+updated_at: 2026-10-20T13:04:10.898Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -26,11 +26,18 @@ implements:
 
 
 
+
+
+
+
+
+
+
 # Check integrity
 
 ## Purpose
 
-Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`), and an illegal import with the exact fix. It prints non-blocking warnings when a node's text no longer matches the repo. The same check is reachable by agents as `run_check`, because a check only the CLI exposes is never run. Also builds a read-only drift report of uncommitted source files and their owners, classified so the actionable files are not buried under expected edits. A later session that only grepped `src/` would miss those owners.
+Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`), and an illegal import with the exact fix. It prints non-blocking warnings when a node's text no longer matches the repo. The same check is reachable by agents as `run_check`, because a check only the CLI exposes is never run. Also builds a read-only drift report of uncommitted source files and their owners, classified so the actionable files are not buried under expected edits. A later session that only grepped `src/` would miss those owners. The check also warns about every decision-worthy open revision that has no decision yet, from draft on, so the `Blocked: Decision` at `in-review` is never the first the agent hears of it.
 
 ## Actor & Trigger
 
@@ -53,6 +60,8 @@ Intended files: `src/interactions/i-check-integrity/`
 - **Next-slot imports.** The import rule runs over every claimant of a file (live, next-slot, released). Violations the check did not scan before (advisory) print as `Warning: imports (next slot): …` for one release, then Block
 - **Route families.** Split ownership of one route family is a warning
 - **Changes.** `runCheckHandler({ base?, change? })` adds `change: { id, members, failures, warnings }`: each member's active-slot import and ownership violations (Blocked lines that make `ok` false) and its stale-text warnings; a member violation the global import rule already reported is not repeated. An unknown change id with no open members is Blocked
+- **Decisions.** For every open revision (a shipped node with an open next; a pre-ship, non-retired pipeline node at any pre-ship state), `decisionWarnings` (`f-compiler-rules`) adds `Warning: decision: …` lines naming the triggers. One `DecisionContext` (config plus the lazy git probe) serves the whole run. Decision warnings never change `ok`; with `change`, the members' decision warnings are part of the change's warnings
+- The dirty-src base is `defaultBaseRef` (`f-source-index`), the same merge base the decision gate uses
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
@@ -69,6 +78,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - An illegal import in a file claimed only on a next slot warns with `imports (next slot)` and does not fail
 - `run_check` with `change` reports the members and fails when a member has an import violation
 - `run_check` on this repository's graph reports no new failures
+- A Foundation `open_next` revision with no decision prints a `decision:` warning and `ok` stays true; recording a decision under its change removes the warning
+- A revision that is not decision-worthy never prints a `decision:` warning
 
 ## Atomic Ops
 
@@ -85,6 +96,9 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Warn on split route families
 - [x] Add `change` to `runCheckHandler`
 - [x] Verified coverage, next-slot imports, route families, and the change check via `npm test`
+- [x] Add decision warnings to the check and to the change check
+- [x] Verified the decision warnings via `npm test`
+- [x] Use the shared `defaultBaseRef` for dirty-src (review fix)
 
 ## Attachments
 

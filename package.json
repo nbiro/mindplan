@@ -18,7 +18,7 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "start": "node dist/index.js",
-    "test": "npm run build && node src/foundations/f-test-harness/view.test.mjs && node src/foundations/f-test-harness/search.test.mjs && node src/foundations/f-test-harness/check.test.mjs && node src/foundations/f-test-harness/ergonomics.test.mjs && node src/foundations/f-test-harness/honesty.test.mjs && node src/foundations/f-test-harness/smoke.mjs",
+    "test": "npm run build && node src/foundations/f-test-harness/view.test.mjs && node src/foundations/f-test-harness/search.test.mjs && node src/foundations/f-test-harness/check.test.mjs && node src/foundations/f-test-harness/ergonomics.test.mjs && node src/foundations/f-test-harness/honesty.test.mjs && node src/foundations/f-test-harness/decisions.test.mjs && node src/foundations/f-test-harness/smoke.mjs",
     "dev": "tsc --watch"
   },
   "engines": {

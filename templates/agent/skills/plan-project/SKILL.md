@@ -56,6 +56,8 @@ Run the **breakdown recipe** from `define-entities` Step 0 before inventing node
 5. Missing area → polite refuse: "This needs an area first; is it part of Billing or something new?" Do not silently mint a Journey.
 6. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call when it applies everywhere, or a `patch_node_rules` call on the node when it is about one area (it reaches that node, its dependents, and its Journey's Interactions; check `rules_impact`). Neither is a new Journey. Call `get_project` again to re-read the brief.
 
+7. A **choice between viable designs** (a data shape, an ordering guarantee, which system owns a fact) is a `record_decision` call on the node it shapes: the decision, the alternative you rejected, and why. Changing an earlier decision is a new record with `supersedes`, never an edit. A shipped Foundation's revision, a new migration or schema file, a wide blast radius, or a `depends_on` change is Blocked at `in-review` without one, and `run_check` warns from draft on.
+
 Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project_description` and `patch_project_rules`, node rules via `patch_node_rules`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
 
 ### 3. Define and link entities

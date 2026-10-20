@@ -2,11 +2,11 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs), Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, and the optional change id and change ref that group revisions."
+description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs), Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, decision records with their computed status and the active-slot reader, and the optional change id and change ref that group revisions."
 state: stable
-shipped_at: 2026-10-19T12:09:47.041Z
+shipped_at: 2026-10-20T13:04:10.091Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-19T12:09:47.041Z
+updated_at: 2026-10-20T13:04:10.091Z
 implements:
   - src/foundations/f-domain-model/
 role: infra
@@ -18,11 +18,17 @@ role: infra
 
 
 
+
+
+
+
+
+
 # Domain model
 
 ## Purpose
 
-Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, open evolutions, and per-node rules. `node.next` means an open evolution only; a standing twin does not populate it. Rules are prose attached to a node but are not frontmatter: they live in the node's `## Rules` body section (owned by `f-territory-store`), so the §9 frontmatter schema and `GRAPH_VERSION` (`1`) do not change. One shared predicate says which nodes no longer carry live work, so the store and the rules queries cannot disagree about it. A sixth edge, `mounts` (Foundation → Interface), names a composition root: the one module that has to import several Interface entry points (a template registry, a route dispatcher) and has no legal home on `depends_on` alone.
+Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, open evolutions, per-node rules, and decision records. `node.next` means an open evolution only; a standing twin does not populate it. Rules are prose attached to a node but are not frontmatter: they live in the node's `## Rules` body section (owned by `f-territory-store`), so the §9 frontmatter schema and `GRAPH_VERSION` (`1`) do not change. Decision records use the same storage idea in a `## Decisions` section, but they belong to a slot: a revision records why its design looks the way it does on its own file, and the record ships or is discarded with it. A record's status is never stored: it is computed from whether another active decision supersedes it, so abandoning the revision that superseded a decision makes it active again instead of leaving a stale mark on another node's file. One shared predicate says which nodes no longer carry live work, so the store and the rules queries cannot disagree about it. A sixth edge, `mounts` (Foundation → Interface), names a composition root: the one module that has to import several Interface entry points (a template registry, a route dispatcher) and has no legal home on `depends_on` alone.
 
 ## Shared Substrate Spec
 
@@ -39,13 +45,19 @@ Intended files: `src/foundations/f-domain-model/`
 - `RulesImpactEntry` — `{ id, type, state, via: RuleVia, distance }`: a node that inherits some other node's rules
 - `isInactiveNode(node)` — true for `cancelled`, `deprecated`, and closed Bugs (`resolved`, `wontfix`): such nodes neither take nor give rules
 - **Change groups.** `MindPlanNode.change?` / `change_ref?` and `NextSlot.change?` / `change_ref?`: a change id (`CHANGE_ID_PATTERN`, a slug) that ties revisions into one change, and an optional branch or PR reference. `activeChange(node)` is the open revision's change: `next.change` while a shipped node evolves, the live `change` before first ship, and nothing for a shipped node with no open next
+- **Decision records.** `DecisionRecord` — `{ id, decision, alternatives: string[], why, consequences?, supersedes?, change?, date? }`: what was chosen (one sentence), what else was considered (one line each), the constraint or trade-off that decided it, what it makes harder or forbids, the id of the decision it replaces, and the change id and date (`YYYY-MM-DD`) it was recorded under. `DECISION_ID_PATTERN` is `d-` followed by a slug
+  - `MindPlanNode.decisions?` (from the live `<id>.mdx`) and `NextSlot.decisions?` (from an open `<id>.next.mdx`), in recorded order; omitted when empty
+  - `activeDecisions(node)` — a node's decisions: the open next slot's while a shipped node evolves (that file starts as a copy of live), else the live ones
+  - `DECISION_STATUSES` / `DecisionStatus` — `active | superseded`, computed and never stored
+  - `DecisionEntry` — a record plus `node_id`, `node_type`, `status`, `superseded_by?`, and, when it reached a node through inheritance, `via` / `distance` (the `RuleVia` labels)
+- `NextSlot.opened_at?` — when open_next opened the revision; promotion and discard drop it. The decision gate dates a revision's start from it
 
 Depends on: none.
 
 ## Acceptance Criteria
 
 - `mirror` is a typed next-file state distinct from pipeline states
-- Open-evolution types unchanged apart from the proposed `mounts` array
+- Open-evolution types unchanged apart from the proposed `mounts` array and the next slot's `decisions`
 - `mounts` is an `EdgeType`; a graph with no `mounts` edges loads exactly as before
 - `MindPlanNode.rules` is optional; a graph with no rules sections loads exactly as before
 - `RuleEntry` always names its source node and `via`
@@ -53,6 +65,9 @@ Depends on: none.
 - `GRAPH_VERSION` remains `1`
 - Verified via `npm test`
 - `activeChange` returns the next slot's change while evolving, the live change before first ship, and nothing for a shipped node with no open next
+- `MindPlanNode.decisions` is optional; a graph with no `## Decisions` sections loads exactly as before
+- `activeDecisions` returns the next slot's decisions while a node evolves and the live ones otherwise
+- No stored decision field carries a status
 
 ## Atomic Ops
 
@@ -68,6 +83,22 @@ Depends on: none.
 - [x] Verified `mounts` via `npm test`
 - [x] Add `change` / `change_ref` to nodes and next slots, `CHANGE_ID_PATTERN`, and `activeChange`
 - [x] Verified the change fields via `npm test`
+- [x] Add `DecisionRecord`, `DECISION_ID_PATTERN`, `DECISION_STATUSES`, and `DecisionEntry`
+- [x] Add `decisions` to `MindPlanNode` and `NextSlot`, and `activeDecisions`
+- [x] Verified the decision types via `npm test`
+- [x] Add `NextSlot.opened_at` for the decision gate's revision start (review fix)
+
+## Decisions
+
+### d-computed-decision-status
+
+- Decision: A decision's status is computed from whether an active decision supersedes it, never written into the old entry.
+- Alternatives:
+  - Write superseded into the old entry (cross-node writes into shipped files, and a stale mark when the superseding revision is discarded)
+- Why: Supersession often crosses nodes (an Interaction replacing its Foundation's decision), and the superseding record can still be discarded with its revision.
+- Consequences: Readers of a raw .mdx do not see that an entry is superseded; list_decisions and orient_for_work do.
+- Change: decision-records
+- Date: 2026-10-20
 
 ## Attachments
 

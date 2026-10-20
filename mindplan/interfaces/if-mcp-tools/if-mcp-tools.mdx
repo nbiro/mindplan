@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-five tools with when-to-call hints, returns small write results unless verbose, scopes drift to the touched node on reads, exposes run_check, get_rules, and patch_node_rules, and takes change ids on open_next, create_node, update_node_status, get_blast_radius, and run_check."
+description: "MCP stdio Interface that registers twenty-seven tools with when-to-call hints, returns small write results unless verbose, scopes drift to the touched node on reads, exposes run_check, get_rules, patch_node_rules, record_decision, and list_decisions, and takes change ids on open_next, create_node, update_node_status, get_blast_radius, and run_check."
 state: stable
-shipped_at: 2026-10-19T12:09:49.107Z
+shipped_at: 2026-10-20T13:04:11.362Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-19T12:09:49.107Z
+updated_at: 2026-10-20T13:04:11.362Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -27,11 +27,20 @@ implements:
 
 
 
+
+
+
+
+
+
+
+
+
 # MCP tools
 
 ## Purpose
 
-MCP stdio Interface that registers twenty-five tools. Each description leads with when to call the tool. A write returns a small result by default (`{ node_id, state, next_state, changed_files }` plus the tool's own fields) and the record, neighborhood, and drift only with `verbose: true`, so a long session of writes does not drown in repeated context. Read results attach a drift report scoped to the node they are about via `withDrift` from `f-mcp-runtime`, except `get_project`, `get_rules`, and `run_check`: `get_rules` runs before every action and would repeat the same report next to `orient_for_work`. `run_check` is the agent's door to the integrity check. `patch_node_rules` is the only way to write a node's rules, and its description must say when to prefer it over `patch_project_rules`, otherwise area-specific rules keep piling into the global list that `get_rules` returns before every action. Without the when-hints, a long session would treat tools as one-shot session-start helpers.
+MCP stdio Interface that registers twenty-seven tools. Each description leads with when to call the tool. A write returns a small result by default (`{ node_id, state, next_state, changed_files }` plus the tool's own fields) and the record, neighborhood, and drift only with `verbose: true`, so a long session of writes does not drown in repeated context. Read results attach a drift report scoped to the node they are about via `withDrift` from `f-mcp-runtime`, except `get_project`, `get_rules`, and `run_check`: `get_rules` runs before every action and would repeat the same report next to `orient_for_work`. `run_check` is the agent's door to the integrity check. `patch_node_rules` is the only way to write a node's rules, and its description must say when to prefer it over `patch_project_rules`, otherwise area-specific rules keep piling into the global list that `get_rules` returns before every action. Without the when-hints, a long session would treat tools as one-shot session-start helpers. `record_decision` and `list_decisions` lead with their when-clauses too: record when you choose between viable designs; list before reshaping a design someone else chose.
 
 ## Kind
 
@@ -39,8 +48,8 @@ MCP tool surface (stdio).
 
 ## Exposed Interactions
 
-- `i-orient-plan` — read/orient tools including `get_project` and `get_rules`
-- `i-steer-plan` — mutate tools including territory, node rules, project description, project rules, config, attachments
+- `i-orient-plan` — read/orient tools including `get_project`, `get_rules`, and `list_decisions`
+- `i-steer-plan` — mutate tools including territory, node rules, decision records, project description, project rules, config, attachments
 - `i-export-map` — `export_mindplan_view`
 - `i-check-integrity` — `run_check`
 
@@ -57,13 +66,16 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - `patch_node_territory` takes `section` + `text` and `replace { find, with, all? }` besides `body`; `update_node_status` takes `scope` and `dry_run`; `link_nodes` accepts the `mounts` edge type
 - Read results attach a non-empty drift report (`paths` with `class`, `unowned`, `expected`, `other_count`, `reminder`) scoped to the node; `get_project`, `get_rules`, and `run_check` never carry `drift`
 - App Router / MCP mounts Interaction packages; Interface does not own core domain logic
-- **Schemas for the honesty fixes.** `create_node`, `open_next`, and `patch_node_territory` take `change` / `change_ref`; `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; `update_node_status` takes `scope: "change"` with `change`, and `skip_review`; `get_blast_radius` takes `node_id` or `change`; `run_check` takes `change`. Hints name which writes send a `ready` revision back to `draft`. The tool count stays twenty-five
+- **Schemas for the honesty fixes.** `create_node`, `open_next`, and `patch_node_territory` take `change` / `change_ref`; `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; `update_node_status` takes `scope: "change"` with `change`, and `skip_review`; `get_blast_radius` takes `node_id` or `change`; `run_check` takes `change`. Hints name which writes send a `ready` revision back to `draft`.
+- **Decision tools.** Register `record_decision` (a write tool: `verbose`, no default drift) with `node_id`, `decision`, `alternatives` (non-empty array), `why`, and optional `consequences`, `supersedes`, `change`, `id`; register `list_decisions` (a read tool, drift attached) with optional `node_id`, `change`, and `include_superseded`. `record_decision`'s description leads with: call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact). `export_mindplan_view` takes `decisions`; `patch_config` takes `decisions: { blast_radius?, schema_files? }` as a strict object (an unknown key is rejected, not stripped); the `record_decision` id schema uses `DECISION_ID_PATTERN`. `orient_for_work` takes `include_superseded` and its description names the `decisions` block; `get_blast_radius` names `decisions`, and `update_node_status` names `Blocked: Decision` at in-review. Twenty-seven tools
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
 ## Acceptance Criteria
 
-- Twenty-five tools registered, including `patch_node_rules` and `run_check`
+- Twenty-seven tools registered, including `patch_node_rules`, `run_check`, `record_decision`, and `list_decisions`
+- `record_decision` rejects an empty `alternatives` list and a non-slug `node_id` at the zod layer
+- The `decisions` fields of `export_mindplan_view` and `patch_config`, and every decision tool field, reach their handlers
 - Every tool description starts with when to call it
 - `patch_node_rules` rejects a missing `rules` and a non-slug `node_id` at the zod layer
 - A default write result has no `anchor` and no `drift`; `verbose: true` adds both
@@ -88,6 +100,10 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Verified the new tools and parameters via `npm test`
 - [x] Add the change, skip_review, and toggle fields to the tool schemas and hints
 - [x] Verified the schemas via `npm test`
+- [x] Register `record_decision` and `list_decisions` and update the tool count to twenty-seven
+- [x] Add `decisions` to the `export_mindplan_view` and `patch_config` schemas and update the orient, blast-radius, and status hints
+- [x] Verified the decision tools via `npm test`
+- [x] Make the `decisions` config schema strict and reuse `DECISION_ID_PATTERN` (review fixes)
 
 ## Attachments
 

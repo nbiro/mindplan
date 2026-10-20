@@ -2,11 +2,11 @@
 id: f-source-index
 type: Foundation
 title: "Source index"
-description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, and MCP write of mindplan/config.json."
+description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, the decision-gate settings in mindplan/config.json and its MCP write, and a read-only git probe for the files a branch adds."
 state: mirror
-shipped_at: 2026-10-19T12:09:47.275Z
+shipped_at: 2026-10-20T13:04:10.364Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-10-19T12:09:47.275Z
+updated_at: 2026-10-20T13:04:10.364Z
 depends_on:
   - f-domain-model
 implements:
@@ -22,11 +22,21 @@ role: infra
 
 
 
+
+
+
+
+
+
+
+
+
+
 # Source index
 
 ## Purpose
 
-Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`).
+Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`). The same file holds the decision-gate settings, so a project tunes when a decision is required without a code change. A read-only git probe lists the files a branch adds, because a new migration usually lands inside a folder its owner already claims, and the claims alone cannot tell that it is new.
 
 ## Shared Substrate Spec
 
@@ -37,6 +47,9 @@ Intended files: `src/foundations/f-source-index/`
 - Claim expansion / ownership unchanged
 - **Glob claims.** An `implements` entry with `*`, `**`, or `?` is a glob claim (`isGlobClaim`); `[` and `]` stay literal so route folders such as `[slug]` are plain paths. `validateClaimPath` accepts globs; `expandClaims` walks from the glob's static prefix and keeps matching files (a trailing `/` matches every file beneath each matching directory, e.g. `src/templates/*/actions/i-read-post/`); `claimEntryExists` is true for a glob that matches at least one file; `claimCoversPath(claim, path)` answers for files, directories, and globs. Exclusivity stays per expanded file, so two nodes whose claims overlap on a file still conflict. Directory and glob expansion skip `.git/` and `node_modules/`. Glob expansions are cached until the event loop turns, so one tool call walks each glob once
 - **Claimants.** `claimantsOf(buckets, file)` lists every non-retired claim on a file: its live owner, its next-slot owner, and a released current-slot owner
+- **Decision-gate settings.** `mindplan/config.json` may carry `decisions: { blast_radius?, schema_files? }`. `loadProjectConfig` validates it (`blast_radius` a non-negative integer, `schema_files` an array of non-empty glob strings, unknown keys Blocked) and keeps it as stored; `decisionGateSettings(config)` fills the defaults: `blast_radius: 5`; `schema_files`: `**/migrations/**`, `**/migration/**`, `**/*.prisma`, `**/schema.sql`, `**/structure.sql`, `**/db/schema.rb` (database migrations and schema dumps only: a generic `schema.*` would also match JSON Schema, zod, and GraphQL modules). `writeProjectConfig` writes `decisions` only when the config it is given has them, so a config without them loads and writes exactly as before
+- `matchesSchemaFile(path, globs)` — whether a repo path is a migration or schema file under those globs (the universe glob syntax)
+- **Files a branch adds.** `newFilesSinceBase(root)` — files that are untracked, staged as added, or added (`--diff-filter=A`) since `defaultBaseRef(cwd)` (the merge base of `HEAD` with `main`, `origin/main`, `master`, then `origin/master`; the dirty-src check uses the same helper), or only untracked and staged ones when no base resolves; paths are read with `-z`, so non-ASCII names come back unquoted; `null` when the root is not a git repository. Read-only; the caller decides when to probe
 
 Depends on: `f-domain-model`.
 
@@ -47,6 +60,9 @@ Depends on: `f-domain-model`.
 - `src/templates/*/actions/i-read-post/` expands to the files under that folder in every template, and a glob that matches nothing is missing on disk
 - `[slug]` in a claim is a literal folder name
 - Two nodes whose claims (glob or not) cover the same file conflict
+- A config without `decisions` loads with the defaults, and a `patch_config` of `sources` rewrites it without adding `decisions`
+- A negative or non-integer `blast_radius`, or a non-string schema glob, is Blocked as invalid config
+- `newFilesSinceBase` lists an untracked file and a file added on the branch, not a file only modified on the branch, and returns `null` outside git
 
 ## Atomic Ops
 
@@ -55,6 +71,22 @@ Depends on: `f-domain-model`.
 - [x] Accept and expand glob claims (`isGlobClaim`, `expandClaims`, `claimEntryExists`, `claimCoversPath`)
 - [x] Add `claimantsOf`
 - [x] Verified glob claims via `npm test`
+- [x] Parse, validate, default, and write the `decisions` settings
+- [x] Add `matchesSchemaFile` and `newFilesSinceBase`
+- [x] Verified the settings and the git probe via `npm test`
+- [x] Narrow the default schema globs, read git paths with `-z`, and share `defaultBaseRef` with the dirty-src check (review fixes)
+
+## Decisions
+
+### d-git-finds-new-migrations
+
+- Decision: A new migration is detected from git (untracked, staged, or added on the branch) as well as from claims.
+- Alternatives:
+  - Claims only (misses a migration added inside a folder the node already claims)
+  - File modification times (a fresh checkout makes every file look new)
+- Why: Migrations usually land in an already-claimed migrations folder, so the claim list does not change.
+- Change: decision-records
+- Date: 2026-10-20
 
 ## Attachments
 

@@ -11,4 +11,5 @@ export const QUERY_TOOLS = [
   "get_node_implementation",
   "get_project",
   "get_rules",
+  "list_decisions",
 ] as const;

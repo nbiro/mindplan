@@ -7,12 +7,16 @@
 import * as fs from "fs";
 import * as path from "path";
 import {
+  DECISION_ID_PATTERN,
   EDGE_TYPES,
+  activeChange,
   initialStateForType,
   isFoundationRole,
+  isInactiveNode,
   isNextPipelineState,
   isPipelineNodeType,
   isProductionState,
+  type DecisionRecord,
   type FoundationRole,
   type MindPlanGraph,
   type MindPlanNode,
@@ -22,6 +26,7 @@ import {
   ATTACHMENTS_DIR,
   NEXT_ATTACHMENTS_DIR,
   addEdgeToFrontmatter,
+  appendDecision,
   attachmentsDir,
   deleteNextSlotFiles,
   discardNextSlot,
@@ -84,8 +89,20 @@ import {
   findImportViolationsForClaim,
   staleTextWarnings,
 } from "../../foundations/f-compiler-rules/integrity.js";
+import {
+  assertDecisionForReview,
+  createDecisionContext,
+  type DecisionContext,
+} from "../../foundations/f-compiler-rules/decisions.js";
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
-import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
+import { inheritanceSources, rulesImpact } from "../../foundations/f-graph-search/rules.js";
+import {
+  decisionIds,
+  findDecision,
+  generateDecisionId,
+  listDecisions,
+  supersessionIndex,
+} from "../../foundations/f-graph-search/decisions.js";
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
 
 export function syncNodes(nodes: MindPlanNode[]): void {
@@ -795,11 +812,59 @@ function stepsToTarget(node: MindPlanNode, target: string): string[] {
   return WALK_PIPELINE.slice(from + 1, to + 1);
 }
 
+/** Replace a node's outgoing edges in the in-memory graph with its current edge fields. */
+function rebuildOutgoingEdges(graph: MindPlanGraph, node: MindPlanNode): void {
+  graph.edges = graph.edges.filter((e) => e.source !== node.id);
+  for (const type of ["belongs_to", "depends_on", "exposes", "leads_to", "mounts", "affects"] as const) {
+    for (const target of node[type] ?? []) graph.edges.push({ source: node.id, target, type });
+  }
+}
+
+/**
+ * The in-memory effect of promoting next over live, field for field as promoteNextSlot writes it
+ * (contract scalars, edges, claims, role, decisions; the change id is dropped), so a validated walk
+ * sees at every later step what the real walk will see.
+ */
+function promoteInMemory(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  state: MindPlanNode["state"],
+  shippedAt: string
+): void {
+  const next = node.next;
+  if (!next) return;
+  node.title = next.title;
+  node.description = next.description;
+  node.state = state;
+  node.shipped_at = shippedAt;
+  node.updated_at = shippedAt;
+  const assign = <K extends "belongs_to" | "depends_on" | "exposes" | "leads_to" | "mounts" | "implements">(
+    key: K
+  ) => {
+    const value = next[key];
+    if (value && value.length > 0) node[key] = [...value];
+    else delete node[key];
+  };
+  for (const key of ["belongs_to", "depends_on", "exposes", "leads_to", "mounts", "implements"] as const) {
+    assign(key);
+  }
+  if (next.decisions?.length) node.decisions = [...next.decisions];
+  else delete node.decisions;
+  if (next.role) node.role = next.role;
+  delete node.change;
+  delete node.change_ref;
+  delete node.next;
+  rebuildOutgoingEdges(graph, node);
+}
+
 /**
  * Validates every step of a plan in memory against a loaded graph, writing nothing.
  * Returns the first Blocked reason (naming the node and step), or null.
  */
-function simulateWalk(plan: WalkPlan[]): { blocked: string | null; warnings: string[] } {
+function simulateWalk(
+  plan: WalkPlan[],
+  decisionCtx: DecisionContext = createDecisionContext(projectRoot())
+): { blocked: string | null; warnings: string[] } {
   const graph = loadGraph();
   const root = projectRoot();
   const now = new Date().toISOString();
@@ -811,12 +876,11 @@ function simulateWalk(plan: WalkPlan[]): { blocked: string | null; warnings: str
         const resolved = resolveStatusChange(graph, node, step);
         if (step === "in-review" || step === "ship") {
           assertCheckCleanForNode(graph, root, node, step);
+          if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx);
           for (const w of staleTextWarnings(graph, root, node)) warnings.add(w);
         }
         if (resolved.promote_next) {
-          node.state = resolved.state;
-          node.shipped_at = node.shipped_at ?? now;
-          delete node.next;
+          promoteInMemory(graph, node, resolved.state, now);
         } else if (resolved.ship) {
           node.state = resolved.state;
           node.shipped_at = now;
@@ -894,7 +958,9 @@ export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
     const skipping = nodesSkippingReview(plan, graph);
     const reviewBlock =
       skipping.length > 0 && args.skip_review !== true ? skipReviewBlocked(skipping) : null;
-    const sim = simulateWalk(plan);
+    // One decision context (config + git probe) serves the validation and every step.
+    const decisionCtx = createDecisionContext(projectRoot());
+    const sim = simulateWalk(plan, decisionCtx);
     const skipped = args.skip_review === true && skipping.length > 0 ? { skipped_review: skipping } : {};
     if (args.dry_run) {
       return {
@@ -922,7 +988,7 @@ export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
     for (const row of plan) {
       let first: Record<string, unknown> | null = null;
       for (const step of row.steps) {
-        last = applyOneStatus({ node_id: row.node_id, new_status: step });
+        last = applyOneStatus({ node_id: row.node_id, new_status: step, decisionCtx });
         first = first ?? last;
         for (const f of (last.changed_files as string[] | undefined) ?? []) changed.add(f);
       }
@@ -965,9 +1031,10 @@ export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
 
   const ordered = orderStatusRevisions(normalized.items);
   const applied: Record<string, unknown>[] = [];
+  const decisionCtx = createDecisionContext(projectRoot());
   for (const rev of ordered) {
     try {
-      applied.push(applyOneStatus(rev));
+      applied.push(applyOneStatus({ ...rev, decisionCtx }));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const reason = message.replace(/^Blocked:\s*/, "");
@@ -1015,6 +1082,8 @@ function applyOneStatus(args: {
   verbose?: boolean;
   node_id: string;
   new_status: string;
+  /** Shared by the steps of one call so config and the git probe are read once. */
+  decisionCtx?: DecisionContext;
 }): Record<string, unknown> {
   const { node_id, new_status } = args;
   const graph = loadGraph();
@@ -1025,6 +1094,10 @@ function applyOneStatus(args: {
   let warnings: string[] = [];
   if (new_status === "in-review" || new_status === "ship") {
     assertCheckCleanForNode(graph, projectRoot(), node, new_status);
+    // A decision-worthy revision needs its decision recorded before review.
+    if (new_status === "in-review") {
+      assertDecisionForReview(graph, projectRoot(), node, args.decisionCtx);
+    }
     warnings = staleTextWarnings(graph, projectRoot(), node);
   }
 
@@ -1038,32 +1111,7 @@ function applyOneStatus(args: {
     promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
     promoteNextSlot(node, resolved.state, now);
     promoted = true;
-    graph.edges = graph.edges.filter((e) => e.source !== node_id);
-    if (node.belongs_to) {
-      for (const t of node.belongs_to) {
-        graph.edges.push({ source: node_id, target: t, type: "belongs_to" });
-      }
-    }
-    if (node.depends_on) {
-      for (const t of node.depends_on) {
-        graph.edges.push({ source: node_id, target: t, type: "depends_on" });
-      }
-    }
-    if (node.exposes) {
-      for (const t of node.exposes) {
-        graph.edges.push({ source: node_id, target: t, type: "exposes" });
-      }
-    }
-    if (node.leads_to) {
-      for (const t of node.leads_to) {
-        graph.edges.push({ source: node_id, target: t, type: "leads_to" });
-      }
-    }
-    if (node.mounts) {
-      for (const t of node.mounts) {
-        graph.edges.push({ source: node_id, target: t, type: "mounts" });
-      }
-    }
+    rebuildOutgoingEdges(graph, node);
   } else if (resolved.ship) {
     // A shipped node is no longer an open revision: its change membership ends here.
     writeChangeFrontmatter(node, {
@@ -1299,6 +1347,117 @@ export function patchNodeRules(args: {
   };
 }
 
+/** Trims a value and collapses its line breaks: decision fields are single lines. */
+function oneLine(value: string | undefined): string {
+  return (value ?? "").replace(/\s*\r?\n\s*/g, " ").trim();
+}
+
+/**
+ * Append one decision record to a node's active slot. Records are never rewritten: changing a
+ * decision means recording a new one that supersedes it; the old one's status becomes superseded.
+ * Never resets readiness and does not rewrite the map.
+ */
+export function recordDecision(args: {
+  verbose?: boolean;
+  node_id: string;
+  decision: string;
+  alternatives: string[];
+  why: string;
+  consequences?: string;
+  supersedes?: string;
+  change?: string;
+  id?: string;
+}): Record<string, unknown> {
+  const graph = loadGraph();
+  const node = findNode(graph, args.node_id);
+  if (node.type === "Bug") {
+    const targets = node.affects ?? [];
+    throw blocked(
+      `"${node.id}" is a Bug; record the decision on the node the fix shapes` +
+        (targets.length ? ` (it affects ${targets.map((t) => `"${t}"`).join(", ")}).` : ".")
+    );
+  }
+  if (isInactiveNode(node)) {
+    throw blocked(`"${node.id}" is ${node.state}; decisions cannot be recorded on a retired node.`);
+  }
+  const decision = oneLine(args.decision);
+  if (!decision) throw blocked("record_decision needs decision: one sentence saying what was chosen.");
+  const why = oneLine(args.why);
+  if (!why) throw blocked("record_decision needs why: the constraint or trade-off that decided it.");
+  const alternatives = (args.alternatives ?? []).map(oneLine).filter(Boolean);
+  if (alternatives.length === 0) {
+    throw blocked("record_decision needs at least one alternative: what else was considered, one line each.");
+  }
+  const consequences = oneLine(args.consequences);
+  validateChangeInput({ change: args.change });
+  const change = args.change || activeChange(node);
+
+  let id: string;
+  if (args.id !== undefined) {
+    if (!DECISION_ID_PATTERN.test(args.id)) {
+      throw blocked(`decision id "${args.id}" must be "d-" followed by a slug, e.g. d-capacity-on-booking.`);
+    }
+    if (decisionIds(graph).has(args.id)) {
+      const holder = findDecision(graph, args.id);
+      throw blocked(
+        `decision id "${args.id}" is already used ` +
+          (holder ? `by "${holder.node.id}"` : "(a recorded decision still names it in supersedes)") +
+          `. Pick another id, or omit id.`
+      );
+    }
+    id = args.id;
+  } else {
+    id = generateDecisionId(graph, decision);
+  }
+
+  let superseded: { id: string; node_id: string } | undefined;
+  if (args.supersedes !== undefined && args.supersedes !== "") {
+    const target = findDecision(graph, args.supersedes);
+    if (!target) throw blocked(`supersedes names "${args.supersedes}", which is not a recorded decision.`);
+    const by = supersessionIndex(graph).get(args.supersedes);
+    if (by) {
+      throw blocked(
+        `"${args.supersedes}" is already superseded by "${by}". Supersede "${by}" instead if it no longer holds.`
+      );
+    }
+    // Reach: the node itself and the nodes it inherits decisions from (its Journeys and Foundations).
+    const reach = inheritanceSources(graph, node.id)
+      .filter((s) => s.via !== "affects")
+      .map((s) => s.node.id);
+    if (!reach.includes(target.node.id)) {
+      throw blocked(
+        `"${args.supersedes}" is held by "${target.node.id}", which "${node.id}" does not inherit decisions from. ` +
+          `A decision may supersede only one on the same node, its Journeys, or its Foundations.`
+      );
+    }
+    superseded = { id: args.supersedes, node_id: target.node.id };
+  }
+
+  const record: DecisionRecord = {
+    id,
+    decision,
+    alternatives,
+    why,
+    ...(consequences ? { consequences } : {}),
+    ...(superseded ? { supersedes: superseded.id } : {}),
+    ...(change ? { change } : {}),
+    date: new Date().toISOString().slice(0, 10),
+  };
+  const written = appendDecision(node, record);
+  const after = loadGraph();
+  const entry = listDecisions(after, { node_id: node.id, include_superseded: true }).find(
+    (d) => d.id === id
+  );
+  return {
+    node_id: node.id,
+    slot: written.slot,
+    decision: entry ?? record,
+    ...(superseded ? { supersedes: superseded } : {}),
+    changed_files: changedFiles(written.paths),
+    ...mutationTail(after, node.id, args.verbose),
+  };
+}
+
 export function openNext(args: {
   verbose?: boolean;
   node_id: string;
@@ -1389,14 +1548,21 @@ export function patchProjectRules(args: { rules: string }): Record<string, unkno
 export function patchConfig(args: {
   sources?: string[];
   exclude?: string[];
+  decisions?: { blast_radius?: number; schema_files?: string[] };
 }): Record<string, unknown> {
-  if (args.sources === undefined && args.exclude === undefined) {
-    throw blocked("patch_config requires sources and/or exclude.");
+  if (args.sources === undefined && args.exclude === undefined && args.decisions === undefined) {
+    throw blocked("patch_config requires sources, exclude, and/or decisions.");
   }
   const current = loadProjectConfig();
+  // A decision setting that is not passed keeps its stored value.
+  const passed = Object.fromEntries(
+    Object.entries(args.decisions ?? {}).filter(([, v]) => v !== undefined)
+  );
+  const decisions = { ...(current.decisions ?? {}), ...passed };
   const next = {
     sources: args.sources ?? current.sources,
     exclude: args.exclude ?? current.exclude,
+    ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
   };
   const written = writeProjectConfig(next, { force: true });
   return {

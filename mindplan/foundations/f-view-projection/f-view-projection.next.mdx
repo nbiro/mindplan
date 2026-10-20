@@ -2,11 +2,11 @@
 id: f-view-projection
 type: Foundation
 title: "View projection"
-description: "Infra — Mermaid/DOT projection (including the mounts edge) and the auto-generated mindplan/map.md snapshot."
+description: "Infra — Mermaid/DOT projection (including the mounts edge and optional per-node decision counts) and the auto-generated mindplan/map.md snapshot."
 state: mirror
-shipped_at: 2026-10-15T15:52:10.954Z
+shipped_at: 2026-10-20T13:04:10.795Z
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-10-15T15:52:10.954Z
+updated_at: 2026-10-20T13:04:10.795Z
 depends_on:
   - f-domain-model
   - f-graph-search
@@ -17,11 +17,16 @@ role: infra
 ---
 
 
+
+
+
+
+
 # View projection
 
 ## Purpose
 
-Infra — deterministic Mermaid/DOT projection of the territory graph, plus `persistMindPlanMap` for the auto-refreshed `mindplan/map.md` snapshot after mutations. The projection draws every edge type, so a composition root's `mounts` edges are visible next to `exposes` and `depends_on`.
+Infra — deterministic Mermaid/DOT projection of the territory graph, plus `persistMindPlanMap` for the auto-refreshed `mindplan/map.md` snapshot after mutations. The projection draws every edge type, so a composition root's `mounts` edges are visible next to `exposes` and `depends_on`. On request it labels each node with its count of active decisions, so a reviewer sees where the recorded reasoning lives; the persisted map never carries the counts, so recording a decision does not rewrite it.
 
 ## Shared Substrate Spec
 
@@ -32,6 +37,7 @@ Package: `src/foundations/f-view-projection/`
 - Interaction-centric styling: Interaction clusters, `exposes` + `leads_to` edge styles; a `mounts` edge is a bold labeled arrow (Mermaid `==>|mounts|`, DOT `style=bold, label="mounts"`)
 - `persistMindPlanMap` writes `# MindPlan map`, auto-generated note, **How to read this** legend line, then the mermaid fence
 - MUST NOT own MCP tool handlers; `i-export-map` and `i-steer-plan` call into this package
+- **Decision counts.** `ViewOptions.decisions?: boolean`: when true, Mermaid and DOT labels add ` · N decision(s)` to every node with at least one active decision (its active slot's decisions minus superseded ones, from `f-graph-search`); nodes with none are unchanged. Default false; `persistMindPlanMap` never sets it
 
 Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 
@@ -41,6 +47,7 @@ Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 - A graph with a `mounts` edge renders it in Mermaid and DOT
 - Mermaid/DOT export APIs unchanged for callers
 - Smoke / view tests that assert on `map.md` still pass
+- With `decisions: true`, a node with two active decisions and one superseded shows `2 decisions` in Mermaid and DOT; without it, and in `map.md`, labels are unchanged
 
 ## Atomic Ops
 
@@ -49,6 +56,8 @@ Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 - [x] Stable title and H1; description is current purpose (no changelog parentheticals)
 - [x] Render the `mounts` edge in Mermaid and DOT
 - [x] Verified the `mounts` rendering via `npm test`
+- [x] Add the `decisions` label option to Mermaid and DOT
+- [x] Verified decision counts via `npm test`
 
 ## Attachments
 

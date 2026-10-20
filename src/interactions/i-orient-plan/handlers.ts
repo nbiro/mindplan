@@ -7,7 +7,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import {
+  isInactiveNode,
   isPipelineNodeType,
+  type DecisionEntry,
   type MindPlanGraph,
   type MindPlanNode,
   type NodeType,
@@ -25,8 +27,8 @@ import {
   projectRoot,
   readMarkdown,
   splitContext,
-  splitNodeRules,
   summarizeGraphNode,
+  withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
 import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
@@ -46,6 +48,13 @@ import {
 } from "../../foundations/f-compiler-rules/rules.js";
 import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
 import { resolveNodeRules, rulesImpact } from "../../foundations/f-graph-search/rules.js";
+import {
+  listDecisions,
+  nodeDecisions,
+  resolveNodeDecisions,
+  slotDecisions,
+  supersessionIndex,
+} from "../../foundations/f-graph-search/decisions.js";
 
 export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
 
@@ -198,6 +207,7 @@ export function buildBlastRadiusPayload(
     journeys_at_risk: [...journeysAtRisk].sort(),
     affected_files,
     rules_impact: rulesImpact(graph, node),
+    decisions: blastRadiusDecisions(graph, node, visibleEntries),
   };
   if (node.type === "Interaction") {
     const reach = interactionReachability(graph, node.id);
@@ -220,7 +230,43 @@ export function buildBlastRadiusPayload(
   return payload;
 }
 
-export function buildNodeContextPayload(node: MindPlanNode): Record<string, unknown> {
+/** One active decision a change to the focus would reach. */
+export type BlastRadiusDecision = {
+  id: string;
+  node_id: string;
+  via: "focus" | "dependent";
+  distance: number;
+  decision: string;
+};
+
+/** Active decisions held by the focus (`focus`, 0) and by each visible dependent (`dependent`). */
+function blastRadiusDecisions(
+  graph: MindPlanGraph,
+  focus: MindPlanNode,
+  dependents: { node: MindPlanNode; distance: number }[]
+): BlastRadiusDecision[] {
+  const index = supersessionIndex(graph);
+  const rows: BlastRadiusDecision[] = [];
+  const push = (n: MindPlanNode, via: "focus" | "dependent", distance: number) => {
+    // A retired node's decisions constrain no live code, even when include_retired shows the node.
+    if (isInactiveNode(n)) return;
+    for (const d of nodeDecisions(graph, n, {}, index)) {
+      rows.push({ id: d.id, node_id: n.id, via, distance, decision: d.decision });
+    }
+  };
+  push(focus, "focus", 0);
+  for (const { node: n, distance } of dependents) push(n, "dependent", distance);
+  return rows;
+}
+
+/**
+ * Territory context of one node: the live body and the open next body without the Rules and
+ * Decisions sections, which come back separately (`rules`, `decisions`, `next.decisions`).
+ */
+export function buildNodeContextPayload(
+  graph: MindPlanGraph,
+  node: MindPlanNode
+): Record<string, unknown> {
   const rel = entityRelativePath(node);
   const currentRaw = readMarkdown(node, "current");
   const currentSplit = splitContext(currentRaw);
@@ -230,9 +276,10 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
     attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
     attachments: listAttachments(node),
     record: nodeToRecord(node),
-    // The Rules section is returned separately; it has its own writer (patch_node_rules).
-    body: splitNodeRules(currentSplit?.body ?? "").body,
+    // The Rules and Decisions sections are returned separately; each has its own writer.
+    body: withoutOwnedSections(currentSplit?.body ?? ""),
     rules: node.rules ?? "",
+    decisions: slotDecisions(graph, node, "current"),
     next: null,
   };
   if (node.next) {
@@ -246,6 +293,7 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
         title: node.next.title,
         description: node.next.description,
         updated_at: node.next.updated_at,
+        ...(node.next.opened_at ? { opened_at: node.next.opened_at } : {}),
         ...(node.next.belongs_to?.length ? { belongs_to: node.next.belongs_to } : {}),
         ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
         ...(node.next.exposes?.length ? { exposes: node.next.exposes } : {}),
@@ -255,7 +303,8 @@ export function buildNodeContextPayload(node: MindPlanNode): Record<string, unkn
         ...(node.next.change ? { change: node.next.change } : {}),
         ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
       },
-      body: splitNodeRules(nextSplit?.body ?? "").body,
+      body: withoutOwnedSections(nextSplit?.body ?? ""),
+      decisions: slotDecisions(graph, node, "next"),
     };
   }
   return payload;
@@ -327,6 +376,7 @@ export function buildChangeBlastRadiusPayload(
   const journeys = new Set<string>();
   const files = new Map<string, { owner_id: string; owner_type: string; via: Set<string>; files: Set<string> }>();
   const rulesReach = new Map<string, unknown>();
+  const decisions = new Map<string, BlastRadiusDecision>();
   for (const member of members) {
     const one = buildBlastRadiusPayload(graph, member, opts);
     for (const row of one.affected as { id: string; type: string; state: string; distance: number }[]) {
@@ -350,6 +400,12 @@ export function buildChangeBlastRadiusPayload(
       for (const f of group.files) merged.files.add(f);
     }
     rulesReach.set(member.id, one.rules_impact);
+    for (const row of one.decisions as BlastRadiusDecision[]) {
+      // A member's own decisions are "focus"; otherwise keep the smallest distance.
+      const asFocus = memberIds.has(row.node_id) ? { ...row, via: "focus" as const, distance: 0 } : row;
+      const prev = decisions.get(row.id);
+      if (!prev || asFocus.distance < prev.distance) decisions.set(row.id, asFocus);
+    }
   }
   return {
     change,
@@ -372,13 +428,36 @@ export function buildChangeBlastRadiusPayload(
       }))
       .sort((a, b) => a.owner_id.localeCompare(b.owner_id)),
     rules_impact: Object.fromEntries(rulesReach),
+    decisions: [...decisions.values()].sort(
+      (a, b) => a.distance - b.distance || a.node_id.localeCompare(b.node_id)
+    ),
   };
 }
 
 export function getNodeContext(args: { node_id: string }): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  return buildNodeContextPayload(node);
+  return buildNodeContextPayload(graph, node);
+}
+
+/**
+ * Decision entries for orient_for_work. Orientation runs before every action, so `depth: "rules"`
+ * keeps each entry to what stops a simplification (the decision and why) and its label; `body`
+ * and `full` carry the whole record. `list_decisions` always returns whole records.
+ */
+function orientDecisionEntries(entries: DecisionEntry[], depth: OrientDepth): unknown[] {
+  if (depth !== "rules") return entries;
+  return entries.map((e) => ({
+    id: e.id,
+    decision: e.decision,
+    why: e.why,
+    node_id: e.node_id,
+    node_type: e.node_type,
+    via: e.via,
+    distance: e.distance,
+    status: e.status,
+    ...(e.superseded_by ? { superseded_by: e.superseded_by } : {}),
+  }));
 }
 
 /** How much orient_for_work returns: rules + record, plus the body, or everything. */
@@ -391,6 +470,7 @@ export function orientForWork(args: {
   type?: NodeType;
   limit?: number;
   depth?: OrientDepth;
+  include_superseded?: boolean;
 }): Record<string, unknown> {
   const depth: OrientDepth = args.depth ?? "full";
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
@@ -413,18 +493,26 @@ export function orientForWork(args: {
   let context: Record<string, unknown> | null = null;
   let blast_radius: Record<string, unknown> | null = null;
   let rules: Record<string, unknown> | null = null;
+  let decisions: Record<string, unknown> | null = null;
 
   if (related.focus) {
     const node = findNode(graph, related.focus);
-    context = buildNodeContextPayload(node);
+    context = buildNodeContextPayload(graph, node);
     rules = { node_id: node.id, entries: resolveNodeRules(graph, node.id) };
+    decisions = {
+      node_id: node.id,
+      entries: orientDecisionEntries(
+        resolveNodeDecisions(graph, node.id, { include_superseded: args.include_superseded }),
+        depth
+      ),
+    };
     if (depth === "full" && isPipelineNodeType(node.type)) {
       blast_radius = buildBlastRadiusPayload(graph, node);
     }
   }
 
   if (depth === "full") {
-    return { ...related, context, blast_radius, rules };
+    return { ...related, context, blast_radius, rules, decisions };
   }
   // Lighter depths keep the ranked matches and the focus, not the neighborhood or blast radius.
   const slim: Record<string, unknown> = {
@@ -432,6 +520,7 @@ export function orientForWork(args: {
     matches: related.matches,
     focus: related.focus,
     rules,
+    decisions,
   };
   if (context) {
     if (depth === "body") {
@@ -444,6 +533,30 @@ export function orientForWork(args: {
     slim.context = null;
   }
   return slim;
+}
+
+/**
+ * Decision records by node (its own, active slot), by change, or for the whole graph.
+ * Superseded entries only with `include_superseded`, each naming `superseded_by`.
+ */
+export function listDecisionsHandler(args: {
+  node_id?: string;
+  change?: string;
+  include_superseded?: boolean;
+}): Record<string, unknown> {
+  const graph = loadGraph();
+  if (args.node_id) findNode(graph, args.node_id);
+  const decisions = listDecisions(graph, {
+    node_id: args.node_id,
+    change: args.change,
+    include_superseded: args.include_superseded,
+  });
+  return {
+    ...(args.node_id ? { node_id: args.node_id } : {}),
+    ...(args.change ? { change: args.change } : {}),
+    decisions,
+    count: decisions.length,
+  };
 }
 
 /**

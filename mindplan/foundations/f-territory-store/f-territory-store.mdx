@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section, the `mounts` edge field, the change id and ref, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin."
+description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin."
 state: stable
-shipped_at: 2026-10-19T12:09:47.534Z
+shipped_at: 2026-10-20T13:04:10.474Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-19T12:09:47.534Z
+updated_at: 2026-10-20T13:04:10.474Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -27,11 +27,19 @@ role: infra
 
 
 
+
+
+
+
+
+
+
+
 # Territory store
 
 ## Purpose
 
-Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer. Small body fixes (one section, one phrase) are first-class writes so an agent does not resend a whole body to change a line.
+Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer. Small body fixes (one section, one phrase) are first-class writes so an agent does not resend a whole body to change a line. The store also owns each node's `## Decisions` section: decision records written only by `appendDecision`, one entry per decision and never rewritten, so the reasoning trail cannot be edited away by a body rewrite. Unlike rules, decisions are slot-bound: while a shipped node evolves they are recorded on its next file, they ship with the revision, and a discarded revision takes its decisions with it. Recording a decision never resets readiness: it explains the contract, it does not change it.
 
 ## Shared Substrate Spec
 
@@ -58,7 +66,13 @@ Intended files: `src/foundations/f-territory-store/`
   - Territory reads for tools split the body from the rules with `splitNodeRules` (`get_node_context` returns the body without the section plus `rules` separately)
   - **Adoption.** A `## Rules` section already in a body is read as that node's rules on the next load; nothing migrates it and nothing warns. SPEC §6.1.1 documents this so authors rename such a heading first
   - **Fences.** Parsing is line-based and ignores code fences; a heading-like line inside a fence counts as a heading (documented in SPEC §6.1.1)
-- Checkbox counting and label comparison ignore the Rules section, so it does not affect Minimum Territory Shape, Atomic Op counting, or mirror-twin equality (the twin is a byte copy, section included)
+- Checkbox counting and label comparison ignore the Rules and Decisions sections, so neither affects Minimum Territory Shape, Atomic Op counting, or mirror-twin equality (the twin is a byte copy, sections included)
+- **Decisions section.** A node's decisions are the `## Decisions` section of a territory file (live or open next): from a line that is exactly `## Decisions` to the next level-1/2 heading or end of file; at most one per file. Each entry is a `### <id>` heading (`DECISION_ID_PATTERN`) followed by `- Decision: …`, `- Alternatives:` with one indented `  - …` line per alternative, `- Why: …`, and optional `- Consequences: …`, `- Supersedes: <id>`, `- Change: <id>`, `- Date: YYYY-MM-DD`. Values are single lines. Lines that are not part of an entry are kept as written and not parsed
+  - `splitNodeDecisions(text)` → `{ body, section }`; `joinNodeDecisions(body, section)` inserts it before `## Rules` when present, else before `## Attachments`, else at the end, so a file reads Decisions, Rules, Attachments; `parseDecisions(section)` → `DecisionRecord[]`; `formatDecisionEntry(record)`; `withoutOwnedSections(text)` is the body without the Rules and Decisions sections, the one helper that node context, stale text, and checkbox counting read
+  - `appendDecision(node, record)` — the only writer. Appends one entry to the active slot (the open next file while a shipped node evolves, else the live file, then re-syncs the mirror twin) and keeps the file's line endings. Frontmatter, state, and readiness are untouched. Blocked on an inactive node. Returns the slot and the paths written
+  - Discover sets `node.decisions` from the live file and `node.next.decisions` from an open next file
+  - Body writes (`patch_node_territory` body, section, replace, toggles) keep the section unchanged; a body, section text, or replacement containing a `## Decisions` heading, or `section: "## Decisions"`, is Blocked naming `record_decision`. `open_next` copies the section with the body (and writes `opened_at` on the next file; promote and discard drop it), promote ships the next file's section, discard drops what the revision recorded
+  - **Adoption.** A `## Decisions` heading already in a body becomes the decisions section on the next load; only its `### d-…` entries are parsed. SPEC documents this
 - **Checkbox toggles.** `toggleCheckboxesInBody` returns `{ body, toggled }`. A `contains` that matches more than one checkbox line is Blocked with the matching lines unless the toggle passes `all: true`; zero matches stay Blocked. `note` ticks the line and appends ` — note: <text>`; `not_applicable` ticks it and appends ` — n/a: <reason>`; unticking strips an annotation and re-toggling replaces it, so the item's own wording never changes
 - **Readiness demotion.** `demoteReadySlot(node, slot)` sends a `ready` slot to `draft`. The contract writers call it after writing and return whether they did: `patchNodeTerritory` (any field but `change` / `change_ref`, as `readinessReset`), `writeImplementsFrontmatter` (only when the list changes), `addEdgeToFrontmatter`, and `removeEdgesFromFrontmatter`. `validateChangeInput` is the one change-id validator
 - **Annotated completion.** `countCheckboxesInText` counts an `— n/a:` line with an empty reason as unchecked; `checkboxLabels` strips annotations
@@ -83,6 +97,12 @@ Depends on: `f-domain-model`, `f-source-index`.
 - A `contains` matching two checkbox lines is Blocked and the Blocked text lists both lines; with `all: true` both toggle
 - A note or not-applicable reason is appended to the line without rewording it; unticking removes it
 - `change` / `change_ref` round-trip through the live and next files and are gone after ship
+- `appendDecision` then a `patch_node_territory` body write leaves the decisions section unchanged; a body containing `## Decisions` is Blocked
+- On a shipped node with an open evolution the entry lands in `<id>.next.mdx` only; promote keeps it in `<id>.mdx` and discard drops it
+- On a shipped node with no open evolution the entry lands in `<id>.mdx` and the mirror twin still passes `check`
+- Recording on a `ready` revision does not reset readiness
+- A file with both sections keeps the order Decisions, Rules, Attachments, and CRLF territory stays CRLF
+- A parsed entry round-trips through `formatDecisionEntry`; an alternative that reads like a checkbox is not counted as one
 
 ## Atomic Ops
 
@@ -109,6 +129,32 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Write notes and not-applicable reasons; count an empty reason as unchecked
 - [x] Read and write `change` / `change_ref`; drop them on ship
 - [x] Verified toggles, notes, and change frontmatter via `npm test`
+- [x] Add split, join, parse, and format for the `## Decisions` section
+- [x] Add `appendDecision` and set `node.decisions` / `node.next.decisions` in discover
+- [x] Keep the section through body writes, open_next, and promote; Block `## Decisions` in body writes
+- [x] Ignore the section in checkbox counting and labels
+- [x] Verified the decisions section via `npm test`
+- [x] Write `opened_at` on open_next and export `withoutOwnedSections` (review fixes)
+
+## Decisions
+
+### d-decisions-slot-bound
+
+- Decision: Decisions belong to a slot: a revision records them on its next file and they ship or are discarded with it.
+- Alternatives:
+  - Write them to live and next like node rules (a discarded revision would leave its reasoning on the live node)
+- Why: A decision explains one revision's design; if the revision never ships, neither does its reasoning.
+- Change: decision-records
+- Date: 2026-10-20
+
+### d-decisions-keep-readiness
+
+- Decision: Recording a decision never resets a ready revision to draft.
+- Alternatives:
+  - Treat it as a contract write (every reason written down after review would undo the review)
+- Why: A decision explains the contract; it does not change it, and the gate asks for one late in the pipeline.
+- Change: decision-records
+- Date: 2026-10-20
 
 ## Attachments
 

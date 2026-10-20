@@ -6,7 +6,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { EDGE_TYPES, NODE_TYPES } from "../../foundations/f-domain-model/types.js";
+import {
+  DECISION_ID_PATTERN,
+  EDGE_TYPES,
+  NODE_TYPES,
+} from "../../foundations/f-domain-model/types.js";
 import { DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT } from "../../foundations/f-graph-search/search.js";
 import { VIEW_FORMATS } from "../../foundations/f-view-projection/view.js";
 import {
@@ -18,6 +22,7 @@ import {
   getNodeImplementationHandler,
   getProject,
   getRules,
+  listDecisionsHandler,
   orientForWork,
 } from "../../interactions/i-orient-plan/handlers.js";
 import { withDrift } from "../../foundations/f-mcp-runtime/with-drift.js";
@@ -34,6 +39,7 @@ import {
   patchProjectDescription,
   patchProjectRules,
   putAttachment,
+  recordDecision,
   removeAttachment,
   setImplementationFiles,
   unlinkNodes,
@@ -183,10 +189,14 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe(
             "Include deprecated/cancelled nodes and closed bugs (resolved/wontfix). Default false."
           ),
+        decisions: z
+          .boolean()
+          .optional()
+          .describe("Label each node that has active decisions with their count. Default false."),
       },
     },
-    guarded(({ format, focus, include_retired }) =>
-      exportMindPlanViewHandler({ format, focus, include_retired })
+    guarded(({ format, focus, include_retired, decisions }) =>
+      exportMindPlanViewHandler({ format, focus, include_retired, decisions })
     )
   );
 
@@ -273,6 +283,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
         "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
         "or an affected node's for a Bug), each labeled with the node it came from. Those rules are mandatory. " +
+        "And a decisions block, at every depth: the recorded design decisions that apply to the focus through the same inheritance, " +
+        "each labeled with the node it came from; read them before reshaping that design. Superseded ones only with include_superseded. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
         "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream).",
       inputSchema: {
@@ -295,10 +307,14 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe(
             "rules: the node's rules and record only. body: also its body. full (default): also the neighborhood and blast radius."
           ),
+        include_superseded: z
+          .boolean()
+          .optional()
+          .describe("Also return superseded decisions in the decisions block (each names superseded_by). Default false."),
       },
     },
-    guarded(({ query, node_id, type, limit, depth }) =>
-      orientForWork({ query, node_id, type, limit, depth })
+    guarded(({ query, node_id, type, limit, depth, include_superseded }) =>
+      orientForWork({ query, node_id, type, limit, depth, include_superseded })
     )
   );
 
@@ -472,6 +488,67 @@ export function registerMindPlanTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "record_decision",
+    {
+      title: "Record a decision",
+      description:
+        "Call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact), " +
+        "on the node the choice shapes. Appends a structured entry to that node's ## Decisions section: on its next slot while a revision is open, else live. " +
+        "Records are never rewritten: to change a decision, record a new one with supersedes (the old one stays listable as superseded). " +
+        "A decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, a depends_on change) " +
+        "is Blocked at in-review until a decision is recorded under its change id or on the node. Never resets readiness.",
+      inputSchema: {
+        verbose: VERBOSE,
+        node_id: NODE_ID.describe("Node the decision shapes (not a Bug)."),
+        decision: z.string().min(1).describe("One sentence: what was chosen."),
+        alternatives: z
+          .array(z.string().min(1))
+          .min(1)
+          .describe("What else was considered, one line each (the alternative you rejected, and why it lost)."),
+        why: z.string().min(1).describe("The constraint or trade-off that decided it."),
+        consequences: z.string().optional().describe("What this makes harder or forbids."),
+        supersedes: z
+          .string()
+          .optional()
+          .describe("Id of an active decision on this node, its Journey, or its Foundations that this one replaces."),
+        change: CHANGE_ID.optional().describe("Change id to record it under (default: the node's open revision's change)."),
+        id: z
+          .string()
+          .regex(DECISION_ID_PATTERN, 'decision ids are "d-" followed by a slug')
+          .optional()
+          .describe("Stable id, e.g. d-capacity-on-booking. Generated from the decision when omitted."),
+      },
+    },
+    guarded(
+      ({ node_id, decision, alternatives, why, consequences, supersedes, change, id, verbose }) =>
+        recordDecision({ node_id, decision, alternatives, why, consequences, supersedes, change, id, verbose }),
+      { write: true }
+    )
+  );
+
+  server.registerTool(
+    "list_decisions",
+    {
+      title: "List decisions",
+      description:
+        "Call before reshaping a design someone else chose, or to read the reasoning trail of a node or change. " +
+        "Returns { decisions, count }: one node's own decisions, every decision recorded under a change, or the whole graph's, " +
+        "each with its node, status (active or superseded), and superseded_by. Superseded entries only with include_superseded.",
+      inputSchema: {
+        node_id: NODE_ID.optional().describe("List this node's own decisions."),
+        change: CHANGE_ID.optional().describe("List decisions recorded under this change id."),
+        include_superseded: z
+          .boolean()
+          .optional()
+          .describe("Also return superseded decisions. Default false."),
+      },
+    },
+    guarded(({ node_id, change, include_superseded }) =>
+      listDecisionsHandler({ node_id, change, include_superseded })
+    )
+  );
+
+  server.registerTool(
     "patch_project_description",
     {
       title: "Patch project description",
@@ -510,8 +587,8 @@ export function registerMindPlanTools(server: McpServer): void {
     {
       title: "Patch project config",
       description:
-        "Call when source roots or exclude paths change, through the plan-project skill. " +
-        "Writes mindplan/config.json sources and/or exclude via the territory store. " +
+        "Call when source roots, exclude paths, or decision-gate settings change, through the plan-project skill. " +
+        "Writes mindplan/config.json sources, exclude, and/or decisions via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -522,9 +599,27 @@ export function registerMindPlanTools(server: McpServer): void {
           .array(z.string())
           .optional()
           .describe("Glob list excluded from the universe (replaces exclude when set)."),
+        // Strict: an unknown (mistyped) key is rejected instead of stripped into a silent no-op.
+        decisions: z
+          .strictObject({
+            blast_radius: z
+              .number()
+              .int()
+              .min(0)
+              .optional()
+              .describe("A revision with more dependents than this is decision-worthy (default 5)."),
+            schema_files: z
+              .array(z.string().min(1))
+              .optional()
+              .describe("Globs of migration and schema files; claiming a new one is decision-worthy."),
+          })
+          .optional()
+          .describe("Decision-gate settings. A field not passed keeps its stored value."),
       },
     },
-    guarded(({ sources, exclude }) => patchConfig({ sources, exclude }), { write: true })
+    guarded(({ sources, exclude, decisions }) => patchConfig({ sources, exclude, decisions }), {
+      write: true,
+    })
   );
 
   server.registerTool(
@@ -719,6 +814,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Cancelled and deprecated nodes are omitted by default; set include_retired to see them " +
         "(BFS still traverses through retired nodes so live dependents keep true distances). " +
         "When the focus is an Interaction, also returns reachability. " +
+        "decisions lists the active decisions held by the focus and its dependents: the reasoning a change would reach. " +
         "Pass change instead of node_id for the merged radius of every open revision in a change.",
       inputSchema: {
         node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),
@@ -768,6 +864,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
         "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +
         "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
+        "A move to in-review of a decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, or a depends_on change) with no decision recorded is Blocked: Decision with the record_decision call. " +
         "A batch returns one line per node. " +
         "Journey and production stable/unstable are computed automatically.",
       inputSchema: {

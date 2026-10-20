@@ -23,6 +23,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type {
   BugSeverity,
+  DecisionRecord,
   EdgeType,
   FoundationRole,
   MindPlanEdge,
@@ -35,6 +36,7 @@ import type {
 import {
   BUG_SEVERITIES,
   CHANGE_ID_PATTERN,
+  DECISION_ID_PATTERN,
   GRAPH_VERSION,
   isFoundationRole,
   isInactiveNode,
@@ -607,6 +609,8 @@ function parseNodeFromFrontmatter(
   };
   const ownRules = splitNodeRules(raw).rules;
   if (ownRules) node.rules = ownRules;
+  const ownDecisions = parseDecisions(splitNodeDecisions(raw).section);
+  if (ownDecisions.length > 0) node.decisions = ownDecisions;
   if (fm.shipped_at) node.shipped_at = fm.shipped_at;
   if (fm.change) node.change = fm.change;
   if (fm.change_ref) node.change_ref = fm.change_ref;
@@ -667,6 +671,9 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
   };
   if (fm.change) slot.change = fm.change;
   if (fm.change_ref) slot.change_ref = fm.change_ref;
+  if (fm.opened_at) slot.opened_at = fm.opened_at;
+  const nextDecisions = parseDecisions(splitNodeDecisions(raw).section);
+  if (nextDecisions.length > 0) slot.decisions = nextDecisions;
   if (parsed.arrays.belongs_to.length > 0) slot.belongs_to = [...parsed.arrays.belongs_to];
   if (parsed.arrays.depends_on.length > 0) slot.depends_on = [...parsed.arrays.depends_on];
   if (parsed.arrays.exposes.length > 0) slot.exposes = [...parsed.arrays.exposes];
@@ -1225,7 +1232,7 @@ export function countCheckboxesInText(text: string): {
   unchecked: number;
   checked: number;
 } {
-  const normalized = splitNodeRules(normalizeNewlines(text)).body;
+  const normalized = withoutOwnedSections(normalizeNewlines(text));
   // A not-applicable tick with no reason is not done.
   const emptyNa = normalized.match(/^[ \t]*[-*+][ \t]+\[[xX]\].*[ \t]—[ \t]+n\/a:[ \t]*$/gm)?.length ?? 0;
   const unchecked = (normalized.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0) + emptyNa;
@@ -1242,7 +1249,7 @@ export function isChecklistComplete(text: string): boolean {
 /** Sorted task-list labels, ignoring checked state. */
 export function checkboxLabels(text: string): string[] {
   const labels: string[] = [];
-  for (const line of splitNodeRules(normalizeNewlines(text)).body.split("\n")) {
+  for (const line of withoutOwnedSections(normalizeNewlines(text)).split("\n")) {
     const match = line.match(/^\s*[-*+]\s+\[[ xX]\]\s+(.*)$/);
     if (match) labels.push(match[1].replace(/\s+—\s+(?:note|n\/a):.*$/, "").trim());
   }
@@ -1356,6 +1363,189 @@ export function writeNodeRules(
   return { slots, paths };
 }
 
+// ---------------------------------------------------------------------------
+// Decisions section
+// ---------------------------------------------------------------------------
+
+const NODE_DECISIONS_HEADING = "## Decisions";
+const NODE_DECISIONS_HEADING_LINE = /^## Decisions[ \t]*$/;
+
+/**
+ * A body with the Rules and Decisions sections removed: the editable body that checkbox counting,
+ * labels, stale-text warnings, and node context read.
+ */
+export function withoutOwnedSections(text: string): string {
+  return splitNodeDecisions(splitNodeRules(text).body).body;
+}
+
+/**
+ * Splits a territory body (or full MDX) into the body without the `## Decisions` section and the
+ * section's text (heading excluded, surrounding blank lines trimmed, CR removed). The section runs
+ * from a `## Decisions` line to the next level-1/2 heading or EOF. Only the first section is read.
+ */
+export function splitNodeDecisions(text: string): { body: string; section: string } {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => NODE_DECISIONS_HEADING_LINE.test(line.replace(/\r$/, "")));
+  if (start === -1) return { body: text, section: "" };
+  let end = start + 1;
+  while (end < lines.length && !SECTION_BREAK_LINE.test(lines[end])) end++;
+  const section = lines
+    .slice(start + 1, end)
+    .join("\n")
+    .replace(/\r/g, "")
+    .replace(/^\n+/, "")
+    .replace(/\s+$/, "");
+  return { body: [...lines.slice(0, start), ...lines.slice(end)].join("\n"), section };
+}
+
+/** True when `text` contains a `## Decisions` heading line. */
+export function hasNodeDecisionsHeading(text: string): boolean {
+  return text.split("\n").some((line) => NODE_DECISIONS_HEADING_LINE.test(line.replace(/\r$/, "")));
+}
+
+/**
+ * Inserts the `## Decisions` section before `## Rules` when present, else before `## Attachments`,
+ * else at the end, in the body's own line endings. An empty section returns the body unchanged.
+ * `body` must not already contain a Decisions section.
+ */
+export function joinNodeDecisions(body: string, section: string): string {
+  const text = section.replace(/\r\n/g, "\n").replace(/^\n+/, "").replace(/\s+$/, "");
+  if (!text) return body;
+  const nl = body.includes("\r\n") ? "\r\n" : "\n";
+  const block = `${NODE_DECISIONS_HEADING}\n\n${text}\n`.replace(/\n/g, nl);
+  const lines = body.split("\n");
+  let at = lines.findIndex((line) => NODE_RULES_HEADING_LINE.test(line.replace(/\r$/, "")));
+  if (at === -1) at = lines.findIndex((line) => ATTACHMENTS_HEADING_LINE.test(line.replace(/\r$/, "")));
+  if (at === -1) return `${body.replace(/\s+$/, "")}${nl}${nl}${block}`;
+  const before = lines.slice(0, at).join("\n").replace(/\s+$/, "");
+  const after = lines.slice(at).join("\n");
+  return `${before}${nl}${nl}${block}${nl}${after}`;
+}
+
+const DECISION_ENTRY_HEADING = /^###[ \t]+(\S+)[ \t]*$/;
+const DECISION_FIELD_LINE = /^[-*][ \t]+([A-Za-z]+):[ \t]*(.*)$/;
+const DECISION_ALTERNATIVE_LINE = /^[ \t]+[-*][ \t]+(.+)$/;
+
+/**
+ * Parses the `### <id>` entries of a Decisions section. Lines outside an entry, entries whose id
+ * is not a decision id, and entries with no `Decision:` value are skipped.
+ */
+export function parseDecisions(section: string): DecisionRecord[] {
+  const out: DecisionRecord[] = [];
+  let current: DecisionRecord | null = null;
+  let inAlternatives = false;
+  for (const raw of section.replace(/\r/g, "").split("\n")) {
+    const heading = raw.match(DECISION_ENTRY_HEADING);
+    if (heading) {
+      if (current?.decision) out.push(current);
+      inAlternatives = false;
+      current = DECISION_ID_PATTERN.test(heading[1])
+        ? { id: heading[1], decision: "", alternatives: [], why: "" }
+        : null;
+      continue;
+    }
+    if (!current) continue;
+    const alternative = raw.match(DECISION_ALTERNATIVE_LINE);
+    if (inAlternatives && alternative) {
+      current.alternatives.push(alternative[1].trim());
+      continue;
+    }
+    const field = raw.match(DECISION_FIELD_LINE);
+    if (!field) {
+      if (raw.trim()) inAlternatives = false;
+      continue;
+    }
+    inAlternatives = false;
+    const value = field[2].trim();
+    switch (field[1].toLowerCase()) {
+      case "decision":
+        current.decision = value;
+        break;
+      case "alternatives":
+        inAlternatives = true;
+        if (value) current.alternatives.push(value);
+        break;
+      case "why":
+        current.why = value;
+        break;
+      case "consequences":
+        if (value) current.consequences = value;
+        break;
+      case "supersedes":
+        if (value) current.supersedes = value;
+        break;
+      case "change":
+        if (value) current.change = value;
+        break;
+      case "date":
+        if (value) current.date = value;
+        break;
+    }
+  }
+  if (current?.decision) out.push(current);
+  return out;
+}
+
+function oneLineValue(value: string): string {
+  return value.replace(/\s*\r?\n\s*/g, " ").trim();
+}
+
+/** One `### <id>` entry with LF line endings and no trailing newline. */
+export function formatDecisionEntry(record: DecisionRecord): string {
+  const lines = [
+    `### ${record.id}`,
+    "",
+    `- Decision: ${oneLineValue(record.decision)}`,
+    "- Alternatives:",
+    ...record.alternatives.map((a) => `  - ${oneLineValue(a)}`),
+    `- Why: ${oneLineValue(record.why)}`,
+  ];
+  if (record.consequences) lines.push(`- Consequences: ${oneLineValue(record.consequences)}`);
+  if (record.supersedes) lines.push(`- Supersedes: ${record.supersedes}`);
+  if (record.change) lines.push(`- Change: ${record.change}`);
+  if (record.date) lines.push(`- Date: ${record.date}`);
+  return lines.join("\n");
+}
+
+/**
+ * The only writer of the `## Decisions` section. Appends one entry to the active slot (the open
+ * next file while a shipped node evolves, else the live file, then re-syncs the mirror twin).
+ * Frontmatter, state, and readiness are untouched: a decision explains the contract, it does not
+ * change it. Returns the slot and repo-relative paths written.
+ */
+export function appendDecision(
+  node: MindPlanNode,
+  record: DecisionRecord
+): { slot: TerritorySlot; paths: string[] } {
+  if (isInactiveNode(node)) {
+    throw new Error(
+      `Blocked: "${node.id}" is ${node.state}; decisions cannot be recorded on a retired or closed node.`
+    );
+  }
+  const slot: TerritorySlot = node.next ? "next" : "current";
+  const raw = readMarkdown(node, slot);
+  const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n?)([\s\S]*)$/);
+  if (!match) {
+    throw new Error(`Blocked: ${slot} file for "${node.id}" has no YAML frontmatter.`);
+  }
+  const { body: withoutRules, rules } = splitNodeRules(match[2]);
+  const { body, section } = splitNodeDecisions(withoutRules);
+  const entry = formatDecisionEntry(record);
+  const nextSection = section ? `${section}\n\n${entry}` : entry;
+  // joinNodeDecisions writes the section in the body's own line endings.
+  const written = joinNodeRules(joinNodeDecisions(body, nextSection), rules);
+  writeMarkdown(node, `${match[1]}${written}`, slot);
+  const paths = [markdownRelativePath(node, slot)];
+  if (slot === "next" && node.next) {
+    node.next.decisions = [...(node.next.decisions ?? []), record];
+  } else {
+    node.decisions = [...(node.decisions ?? []), record];
+    const twin = syncMirrorAfterLiveWrite(node);
+    if (twin) paths.push(twin);
+  }
+  return { slot, paths };
+}
+
 /** Splits raw territory MDX into YAML frontmatter block and body. */
 export function splitContext(raw: string): { frontmatter: string; body: string } | null {
   const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---)(\r?\n?)([\s\S]*)$/);
@@ -1402,6 +1592,7 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
       title: node.next.title,
       description: node.next.description,
       updated_at: node.next.updated_at,
+      ...(node.next.opened_at ? { opened_at: node.next.opened_at } : {}),
       ...(node.next.belongs_to?.length ? { belongs_to: [...node.next.belongs_to] } : {}),
       ...(node.next.depends_on?.length ? { depends_on: [...node.next.depends_on] } : {}),
       ...(node.next.exposes?.length ? { exposes: [...node.next.exposes] } : {}),
@@ -1667,9 +1858,11 @@ export function patchNodeTerritory(
   const patched_fields: string[] = [];
   const now = new Date().toISOString();
   let { frontmatter, body } = split;
-  // The Rules section has its own writer; body edits and checkbox toggles never see or drop it.
+  // The Rules and Decisions sections have their own writers; body edits and checkbox toggles
+  // never see or drop them.
   const { body: bodyWithoutRules, rules: existingRules } = splitNodeRules(body);
-  body = bodyWithoutRules;
+  const { body: bodyWithoutOwned, section: existingDecisions } = splitNodeDecisions(bodyWithoutRules);
+  body = bodyWithoutOwned;
 
   if (input.title !== undefined) {
     frontmatter = patchTerritoryScalars(frontmatter, { title: input.title }, now);
@@ -1692,6 +1885,12 @@ export function patchNodeTerritory(
           `Node rules are written only by patch_node_rules; remove the section from the body.`
       );
     }
+    if (hasNodeDecisionsHeading(input.body)) {
+      throw new Error(
+        `Blocked: body contains a "${NODE_DECISIONS_HEADING}" heading. ` +
+          `Decisions are written only by record_decision; remove the section from the body.`
+      );
+    }
     // Keep the file's own line endings so a rewritten body does not mix LF into CRLF territory.
     body = input.body.replace(/\r?\n/g, detectEol(raw));
     patched_fields.push("body");
@@ -1708,6 +1907,16 @@ export function patchNodeTerritory(
         `Blocked: section text contains a "${NODE_RULES_HEADING}" heading. Node rules are written only by patch_node_rules.`
       );
     }
+    if (normalizeHeadingName(input.section.heading).toLowerCase() === "decisions") {
+      throw new Error(
+        `Blocked: "${NODE_DECISIONS_HEADING}" is written only by record_decision; it cannot be patched as a section.`
+      );
+    }
+    if (hasNodeDecisionsHeading(input.section.text)) {
+      throw new Error(
+        `Blocked: section text contains a "${NODE_DECISIONS_HEADING}" heading. Decisions are written only by record_decision.`
+      );
+    }
     body = replaceSectionInBody(body, input.section.heading, input.section.text);
     patched_fields.push("section");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
@@ -1716,6 +1925,11 @@ export function patchNodeTerritory(
     if (hasNodeRulesHeading(input.replace.with)) {
       throw new Error(
         `Blocked: replace.with contains a "${NODE_RULES_HEADING}" heading. Node rules are written only by patch_node_rules.`
+      );
+    }
+    if (hasNodeDecisionsHeading(input.replace.with)) {
+      throw new Error(
+        `Blocked: replace.with contains a "${NODE_DECISIONS_HEADING}" heading. Decisions are written only by record_decision.`
       );
     }
     body = replaceTextInBody(body, input.replace.find, input.replace.with, input.replace.all);
@@ -1743,7 +1957,11 @@ export function patchNodeTerritory(
     );
   }
 
-  writeMarkdown(node, `${frontmatter}\n\n${joinNodeRules(body, existingRules)}`, slot);
+  writeMarkdown(
+    node,
+    `${frontmatter}\n\n${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
+    slot
+  );
   if (slot === "current") syncMirrorAfterLiveWrite(node);
   // Change ids are grouping metadata; every other field is the contract readiness was judged on.
   const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref");
@@ -1889,6 +2107,11 @@ export function openNextSlot(
     const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
     inner = `${inner}${nl}updated_at: ${now}`;
   }
+  // When this revision opened: the decision gate only counts change-id decisions from then on.
+  {
+    const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+    inner = `${inner.replace(/\r?\nopened_at:.*$/m, "")}${nl}opened_at: ${now}`;
+  }
   const title = meta?.title;
   const description = meta?.description;
   if (title !== undefined) {
@@ -1923,6 +2146,7 @@ export function openNextSlot(
     title: parsed.scalars.title ?? node.title,
     description: parsed.scalars.description ?? node.description,
     updated_at: now,
+    opened_at: now,
   };
   if (parsed.arrays.belongs_to.length) slot.belongs_to = [...parsed.arrays.belongs_to];
   if (parsed.arrays.depends_on.length) slot.depends_on = [...parsed.arrays.depends_on];

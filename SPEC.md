@@ -136,6 +136,7 @@ Rules:
 - A config that still has `implementation_packages` MUST hard-fail with `Blocked:` pointing at `mindplan-mcp init` (migration). Invalid JSON / shape also hard-fails.
 - `create_node` does **not** scaffold `src/<type>/<id>/`. Declare files with `set_implementation_files`.
 - Default `mindplan-mcp check` enforces exclusivity, coverage, presence, leftovers, and the import matrix over the universe. Opt-in `--base` applies dirty-src lifecycle using the implements index.
+- **Decision-gate settings (optional).** `decisions: { blast_radius?, schema_files? }` tunes when a revision is decision-worthy (§5.13). `blast_radius` is a non-negative integer (default `5`); `schema_files` is a glob list (default `**/migrations/**`, `**/migration/**`, `**/*.prisma`, `**/schema.sql`, `**/structure.sql`, `**/db/schema.rb`: database migrations and schema dumps only, so JSON Schema, zod, or GraphQL modules named `schema` do not gate a change; widen the list to include them). Absent fields take the defaults, and a config without `decisions` is written back without it. Unknown keys, a negative or non-integer `blast_radius`, or an empty glob hard-fail like any invalid config, and `patch_config` rejects an unknown `decisions` key rather than ignoring it (§8.2).
 - **Coverage.** Every file in the universe (`sources` minus `exclude`, git-visible including untracked) MUST be claimed in the current or `next` slot of a non-retired node. An unclaimed file is `Blocked: Coverage: …` naming the probable owner (the node whose claim shares the longest directory prefix with the file; a file two or more folders deep needs at least two shared folders, so sharing only `src/` names no owner) and the exact fix: `set_implementation_files` with that node's active-slot list plus the file, preceded by `open_next` when the owner is shipped with no open evolution. A retired node's claim does not cover a file; such a file is reported once, by the leftovers rule, not again as Coverage.
 
 #### 1.2.2 Ownership split (Interaction owns the body; Interface mounts)
@@ -511,11 +512,12 @@ One feature often touches several nodes. A **change id** (a slug, optional `chan
 - **Members** of a change are its open revisions: shipped nodes with an open `next` carrying the id, and pre-ship, non-retired nodes carrying it, at any state including `draft` and `ready`.
 - `update_node_status` with `scope: "change"` and `change` walks every member (same ordering, validation, and `skip_review` rule as the other scopes).
 - `get_blast_radius` with `change` returns the members' merged radius; `run_check` with `change` also runs the in-review gate on every member (§8.1).
+- A decision recorded under a change id (§6.1.2) counts for every member of that change at the decision gate (§5.13), so one decision can clear a whole change.
 - Shipping ends membership: promotion drops the id with the rest of the next slot, and first ship clears it from `<id>.mdx`. A change with no members is `Blocked:` where a change is required.
 
 #### Check before handoff
 
-Before the agent stops owning the work, it MUST update the graph so it matches the implementation. Default `mindplan-mcp check` MUST exit 0 before self-`ready`, entering `in-review`, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. When the implementation is done and a merge is requested, the agent MUST `ship` the node (Bug: `resolved`). Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). It does not invoke a host typechecker; host typecheck is not a MindPlan gate. Agents run it with the `run_check` tool (§8.1), which returns the same output as the CLI. The server also runs the check's import-matrix and exclusivity rules on a node's active-slot files at every move to `in-review` and `ship` (§5.13); a violation is a `Blocked:` that names the fix. Stale-text warnings (§9.6) ride along and never block.
+Before the agent stops owning the work, it MUST update the graph so it matches the implementation. Default `mindplan-mcp check` MUST exit 0 before self-`ready`, entering `in-review`, `ship` / Bug `resolved`, or claiming the session is done. Fix every `Blocked:` first. When the implementation is done and a merge is requested, the agent MUST `ship` the node (Bug: `resolved`). Default check covers graph load, file ownership (exclusivity, coverage, presence, leftovers), and the import matrix for the set (§9.6). It does not invoke a host typechecker; host typecheck is not a MindPlan gate. Agents run it with the `run_check` tool (§8.1), which returns the same output as the CLI. The server also runs the check's import-matrix and exclusivity rules on a node's active-slot files at every move to `in-review` and `ship` (§5.14); a violation is a `Blocked:` that names the fix. A move to `in-review` of a decision-worthy revision also needs a recorded decision (§5.13). Stale-text warnings (§9.6) ride along and never block.
 
 ---
 
@@ -674,11 +676,29 @@ Rationale: versioning models replacement without downtime during the build, with
 
 Agents MUST obtain an explicit human yes in the conversation before calling `force_unship`. Agents MUST NOT invent or “helpfully” supply `confirm`. Journeys and Bugs MUST be rejected. Manual `stable`/`unstable` remains forbidden (§5.9).
 
-### 5.13 Enforcement ordering
+### 5.13 Rule 12 — Decision gate
+
+MindPlan records decisions (§6.1.2); it never makes, ranks, or judges them. It asks for one only where a missing one is costly. An **open revision** (a shipped Foundation, Interaction, or Interface with an open `next`, or a pre-ship, non-retired one at any pre-ship state) is **decision-worthy** when any of these hold:
+
+| Trigger | Holds when |
+|---|---|
+| Shared contract | the revision is an open `next` of a shipped **Foundation** |
+| Schema | its active-slot claims cover a migration or schema file (config `decisions.schema_files`, §1.2.1) that is new in this revision. For a shipped node's revision: a file its live claims do not cover, or one the branch adds (untracked, staged as added, or added since the merge base of `HEAD` with `main` / `master`). For a first build: a file the branch adds, so a node modeling a file the repository already had is not gated; outside a git repository every claimed one counts |
+| Blast radius | it has more non-retired dependents (transitive reverse `depends_on`) than config `decisions.blast_radius` |
+| Edges | a shipped node's `next` adds or removes a `depends_on` target. A first build's initial edges never count |
+
+Journeys and Bugs are never revisions. A revision that is not decision-worthy is never gated.
+
+A decision-worthy revision **has a decision** when an active node holds a decision whose `change` is the revision's change id (§3.7) and whose `date` is on or after the day the change started (the earliest start among its open revisions: `opened_at` of an open `next`, `created_at` before first ship), or the node's own active slot holds a decision new in this revision: before first ship any of its decisions; with an open `next`, an id its live file does not hold. The date bound keeps a reused change id from being satisfied by an earlier change's decisions, while a member added to a change later still gets credit for its earlier decisions; a change with a `next` opened before `opened_at` existed has no bound.
+
+- **While draft, ready, or in progress:** the default check (§9.6) prints `Warning: decision: "<id>" <triggers>; record the choice and the alternative you rejected with record_decision before in-review.`
+- **Moving to `in-review`:** `Blocked: Decision. "<id>" <triggers>, and no decision is recorded for this revision (under change "<change>" or on the node). Record the choice and the alternative you rejected. Fix: record_decision({...}).` The gate runs after the transition's own rules and the check gate (§5.10), before any write, for single moves, revisions, scoped walks, and their dry runs. Moves to other states are not decision-gated.
+
+### 5.14 Enforcement ordering
 
 For a status mutation the compiler MUST evaluate, in order:
 
-1. node exists → 2. node is not a Journey → 3. resolve the active slot (`<id>.next.mdx` if open, else `<id>.mdx`) → 4. target state is valid for that slot → 5. transition is legal per §3 (or §3.6 next-pipeline transitions) → 6. Rules 1–6 (type-specific, evaluated against the active slot) → **write** → 7. on `ship` from `next` in-review, promote `next` over `current` per Rule 10 (§5.11) → 8. recompute stability (§3.5) → 9. recompute Journey states (§4) → 10. synchronize frontmatter.
+1. node exists → 2. node is not a Journey → 3. resolve the active slot (`<id>.next.mdx` if open, else `<id>.mdx`) → 4. target state is valid for that slot → 5. transition is legal per §3 (or §3.6 next-pipeline transitions) → 6. Rules 1–6 (type-specific, evaluated against the active slot), then the check gate on `in-review` / `ship` (§5.10) and the decision gate on `in-review` (§5.13) → **write** → 7. on `ship` from `next` in-review, promote `next` over `current` per Rule 10 (§5.11) → 8. recompute stability (§3.5) → 9. recompute Journey states (§4) → 10. synchronize frontmatter.
 
 For `force_unship`: validate Rule 11 (§5.12), clear `shipped_at`, write pre-ship `state`, recompute Journey states, synchronize frontmatter.
 
@@ -749,6 +769,7 @@ Frontmatter fields:
 | `created_at` | ISO-8601 | server, at creation | Immutable; present only on `<id>.mdx` and never rewritten by an evolution. |
 | `updated_at` | ISO-8601 | **server only** | Touched on every accepted state or edge mutation to that slot. Also on `<id>.next.mdx`. |
 | `shipped_at` | ISO-8601 | **server only** | `<id>.mdx` only. Optional; set on `ship` (first build or promotion of `next`, §3.6). |
+| `opened_at` | ISO-8601 | **server only** | `<id>.next.mdx` only. Set by `open_next`; gone after promotion or discard (the twin is a copy of live). The decision gate dates a revision's start from it (§5.13). |
 | `severity` | `low \| medium \| high \| critical` | optional | Bug nodes only; informational in v1. |
 | `belongs_to` | string[] | **server only** | Interaction only. Target Journey ids. Omitted when empty. On `<id>.next.mdx`: proposed edges, applied to `<id>.mdx` on ship. |
 | `depends_on` | string[] | **server only** | Interaction, Interface, or Foundation. Target Foundation ids only (never Interaction). Omitted when empty. On `<id>.next.mdx`: proposed edges. |
@@ -756,7 +777,7 @@ Frontmatter fields:
 | `leads_to` | string[] | **server only** | Interaction only. Target Interaction ids (navigation). Omitted when empty. On `<id>.next.mdx`: proposed edges. |
 | `affects` | string[] | **server only** | Bug only. Target Interaction, Interface, or Foundation ids. Omitted when empty. |
 
-The body is free-form and owned by humans and agents, except the optional `## Rules` section (§6.1.1), which has its own writer. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `<id>.mdx` pre-ship, or on `<id>.next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) MUST be written only via MCP tools.
+The body is free-form and owned by humans and agents, except the optional `## Rules` (§6.1.1) and `## Decisions` (§6.1.2) sections, which have their own writers. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `<id>.mdx` pre-ship, or on `<id>.next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays) MUST be written only via MCP tools.
 
 **Shipped scope freeze:** `patch_node_territory` of `title`/`description` on the `current` slot of a shipped Interaction or Interface MUST be rejected — call `open_next` first. (Same freeze applies to shipped Foundations for material scope changes via playbook; Interaction/Interface freeze is the hard gate.) Host file tools MUST NOT write territory (§8.2).
 
@@ -780,13 +801,50 @@ Any node (Journey, Interaction, Interface, Foundation, Bug) MAY carry **node rul
 - **Adoption.** The heading is the storage format, so a `## Rules` section already present in a node body (written before this feature) is read as that node's rules on the next load, removed from `get_node_context` `body`, and inherited like any other. Rename such a heading (for example `## Constraints`) before upgrading when it is not meant as node rules.
 - **Fences.** Detection is line-based and does not understand fenced code blocks: a `## Rules` line, or a level-1/2 heading line, inside a fence counts as a heading. Keep such lines out of node rules and out of bodies that show a Rules template.
 
+#### 6.1.2 Decision records
+
+A node MAY carry **decision records**: why its design looks the way it does, so a later agent does not "simplify" it back into the problem it avoided. They live in a `## Decisions` section of a territory file. The section runs from a line that is exactly `## Decisions` to the next level-1 or level-2 heading, or end of file; at most one per file. It is placed before `## Rules` when that exists, otherwise before `## Attachments`, otherwise at the end. Like rules, decisions are not frontmatter, so §9 and `GRAPH_VERSION` (`1`) are unchanged.
+
+```md
+## Decisions
+
+### d-invoice-numbers-at-finalize
+
+- Decision: Invoice numbers are assigned when an invoice is finalized, not when the draft is created.
+- Alternatives:
+  - Assign on draft creation (simple, but leaves gaps when drafts are deleted)
+  - Assign on payment (too late: customers need the number on the PDF)
+- Why: Tax law in the target markets requires gapless sequential numbering of issued invoices.
+- Consequences: Drafts have no number; anything showing a draft must handle that.
+- Change: invoice-finalize
+- Date: 2026-03-02
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | The `### ` heading: `d-` followed by a slug, unique across the graph |
+| `Decision` | One sentence: what was chosen |
+| `Alternatives` | What else was considered, one indented line each (at least one) |
+| `Why` | The constraint or trade-off that decided it |
+| `Consequences` | Optional: what it makes harder or forbids |
+| `Supersedes` | Optional: id of the decision it replaces |
+| `Change` / `Date` | The change id (§3.7) and date it was recorded under |
+
+- **Single writer.** Only `record_decision` (§8.2) writes the section, and it only appends. `patch_node_territory` MUST keep the section unchanged and MUST reject a body, section text, or replacement containing a `## Decisions` heading, and `section: "## Decisions"` (the error names `record_decision`). Checkbox counting ignores the section, so an alternative that reads like `[ ]` is not an Atomic Op; stale-text warnings ignore it, because a recorded decision may name a path a later revision removed.
+- **Slot-bound.** Unlike rules, decisions belong to a slot. While a shipped node evolves, `record_decision` writes the open `<id>.next.mdx`; the entry ships with the revision on promote, and `discard_next` drops it. With no open evolution it writes `<id>.mdx` and refreshes the mirror twin. A node's decisions are those of its **active slot** (the open next file, which starts as a copy of live, else the live file). Recording never changes state or readiness: a decision explains a contract, it does not change it.
+- **Status is computed.** A decision is `superseded` while a decision held by a node that is not `cancelled` names it in `Supersedes`, and `active` otherwise. A `deprecated` node's replacement still stands (retiring it does not bring back the design it replaced); a cancelled node's work never shipped, so its decisions supersede nothing. No status is written into the old entry, so abandoning the revision that superseded a decision makes it active again. Changing a decision means recording a new one that supersedes it; the old one stays listable.
+- **Ids.** An id is taken while any live or open next file holds it or any recorded `Supersedes` still names it, so an id freed by a discarded revision is not reused while a decision still points at it.
+- **Inheritance.** Decisions reach a node along exactly the node-rules walk (§6.1.1): its own, its Journeys', its transitive Foundations', and for a Bug those of the nodes it affects, each labeled with the node it came from. Superseded entries are left out unless asked for.
+- **Where they show up.** `orient_for_work` (`decisions` block), `list_decisions`, `get_node_context` (`decisions`), `get_blast_radius` (`decisions`), and `export_mindplan_view` (`decisions: true`) (§8.1). The decision gate (§5.13) reads them.
+- **Adoption and fences.** A `## Decisions` heading already in a body becomes the decisions section on the next load; only its `### d-…` entries are parsed, and other lines are kept as written. Detection is line-based like §6.1.1: a heading line inside a fenced code block counts as a heading.
+
 ### 6.2 Frontmatter mirroring
 
 After any accepted mutation, the server MUST rewrite server-owned fields in each affected node's territory frontmatter:
 
 - **Status mutations:** `state:` and `updated_at:` on the transitioned node's active slot (`<id>.mdx`, or `<id>.next.mdx` while an evolution is open) plus every Journey whose computed state changed; `shipped_at:` on `<id>.mdx` when a first build or a `next` promotion ships.
 - **Link/unlink:** the appropriate outgoing edge array (`belongs_to`, `depends_on`, `exposes`, `leads_to`, or `affects`) on the source node's active slot, plus `updated_at:`.
-- **Opening an evolution (`open_next`):** creates `<id>.next.mdx` with `state: draft`, copied/overridden `title:`/`description:`, and proposed edge arrays from `<id>.mdx` at open time.
+- **Opening an evolution (`open_next`):** creates `<id>.next.mdx` with `state: draft`, `opened_at:`, copied/overridden `title:`/`description:`, and proposed edge arrays from `<id>.mdx` at open time.
 - **Discarding an evolution (`discard_next`):** restores `<id>.next.mdx` as a `mirror` twin of live and clears `next-attachments/`; `<id>.mdx` is untouched.
 - **Ship / promotion (`update_node_status(..., "ship")`):** on a first build, writes `state:`, `updated_at:`, and `shipped_at:` on `<id>.mdx`, removes `change:` / `change_ref:`, and creates the standing `mirror` twin. When promoting an open evolution, copies next onto live (without `change:` / `change_ref:`), sets computed `stable`/`unstable`, refreshes timestamps, and restores the `mirror` twin. There is no other node's frontmatter to update — the `id` never changes.
 - **Readiness reset (§3.1):** a contract write to a `ready` slot sets `state: draft` and `updated_at:` on that slot.
@@ -965,7 +1023,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes twenty-five tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful read results (except `get_project`, `get_rules`, and `run_check`) MAY include `drift` when uncommitted source files exist (envelope below), scoped to the node the result is about; `get_project` and `get_rules` MUST NOT include it, because `get_rules` runs before every action and `orient_for_work` already carries the report. A write tool returns a **small result by default** and includes `drift` and the neighborhood only with `verbose: true` (below).
+The server exposes twenty-seven tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. Responses are JSON text payloads. Each tool description MUST lead with when to call the tool, then what it returns. Successful read results (except `get_project`, `get_rules`, and `run_check`) MAY include `drift` when uncommitted source files exist (envelope below), scoped to the node the result is about; `get_project` and `get_rules` MUST NOT include it, because `get_rules` runs before every action and `orient_for_work` already carries the report. A write tool returns a **small result by default** and includes `drift` and the neighborhood only with `verbose: true` (below).
 
 ### 8.1 Read tools
 
@@ -983,6 +1041,7 @@ Exports a deterministic typed-graph projection (§7.4) as Mermaid or DOT. Prefer
   - `format` (`mermaid` \| `dot`, optional, default `mermaid`)
   - `focus` (slug, optional) — when set, export focus + 1-hop neighborhood only
   - `include_retired` (boolean, optional, default `false`) — include deprecated/cancelled nodes and closed bugs
+  - `decisions` (boolean, optional, default `false`) — label each node that has active decisions (§6.1.2) with their count (` · 2 decisions` in Mermaid, a label line in DOT). `mindplan/map.md` never carries the counts
 - **Output:**
 
 ```jsonc
@@ -990,6 +1049,7 @@ Exports a deterministic typed-graph projection (§7.4) as Mermaid or DOT. Prefer
   "format": "mermaid",
   "focus": null,           // or node id when focus was requested
   "include_retired": false,
+  "decisions": false,
   "node_count": 12,
   "edge_count": 15,
   "diagram": "flowchart TB\n..."
@@ -1030,7 +1090,7 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 #### `get_blast_radius`
 
 - **Input:** exactly one of `node_id` (slug) or `change` (change id, §3.7); optional `include_retired` (boolean, default `false`).
-- **Output (change):** `{ change, members: [{ id, type, state, next_state }], affected, journeys_at_risk, affected_files, rules_impact }` — the members' radii merged: `affected` keeps each node's smallest distance and leaves out the members themselves; `affected_files` merges groups per owner; `rules_impact` is keyed by member id. `Blocked:` when the change has no open revisions.
+- **Output (change):** `{ change, members: [{ id, type, state, next_state }], affected, journeys_at_risk, affected_files, rules_impact, decisions }` — the members' radii merged: `affected` keeps each node's smallest distance and leaves out the members themselves; `affected_files` merges groups per owner; `rules_impact` is keyed by member id; `decisions` merges per decision id (a member's own decisions are `focus`). `Blocked:` when the change has no open revisions.
 - **Output:**
 
 ```jsonc
@@ -1047,6 +1107,10 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
       "via": ["exposing", "importer"],
       "files": ["src/interfaces/if-checkout-page/page.tsx"]
     }
+  ],
+  // always present: the active decisions a change to the focus would reach (§6.1.2)
+  "decisions": [
+    { "id": "d-split-by-seat", "node_id": "i-checkout-split", "via": "focus", "distance": 0, "decision": "Bills split by seat, not by item." }
   ],
   // always present:
   "rules_impact": {
@@ -1082,6 +1146,8 @@ Where:
 
 - `rules_impact` is always present: `has_rules` says whether the focus carries node rules (§6.1.1) and `inherited_by` is its rules audience, each `{ id, type, state, via, distance }`, empty when `has_rules` is false or nobody inherits. It is independent of `affected`: a Journey's `inherited_by` lists its Interactions even though no one `depends_on` a Journey. Inactive nodes (retired, or closed Bugs) are never listed, whatever `include_retired` says.
 
+- `decisions` is always present: the active decisions (§6.1.2) held by the focus (`via: focus`, distance 0) and by each visible `affected` node (`via: dependent`, its distance), each `{ id, node_id, via, distance, decision }`, in that order. Superseded decisions and decisions of inactive nodes are not listed, even with `include_retired`.
+
 - **Errors:** unknown `node_id`.
 - **Rationale:** calling this before substantial implementation or `open_next` surfaces both substrate dependents and Interaction-centric reachability (who exposes this behaviour, which Journeys contain it, where navigation flows next). The stable-id model means an evolution never changes what depends on the node. Grouping and the retired filter keep the payload usable for agents.
 
@@ -1110,10 +1176,13 @@ Where:
   },
   "body": "# Split & pay checkout\n\n...",   // never includes the `## Rules` section
   "rules": "- Money is integer cents.",       // the node's own rules; "" when none
+  "decisions": [                              // the live file's decision records (§6.1.2), each with status
+    { "id": "d-split-by-seat", "decision": "...", "alternatives": ["..."], "why": "...", "node_id": "i-checkout-split", "node_type": "Interaction", "status": "active" }
+  ],
   "next": null
   // when <id>.next.mdx exists, the payload also carries:
   //   "next_path": ".../<id>.next.mdx", "next_attachments_path": ".../next-attachments",
-  //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, "body": "..." }  // body without the Rules section; rules are slot-independent
+  //   "next": { "record": { state, title, description, updated_at, belongs_to?, depends_on?, exposes?, leads_to? }, "body": "...", "decisions": [...] }  // body without the Rules and Decisions sections; rules are slot-independent, decisions are per slot
 }
 ```
 
@@ -1124,9 +1193,9 @@ Where:
 
 Composite orientation for agents: `find_related_nodes` plus full territory for the focus node and `get_blast_radius` when the focus is a Foundation, Interaction, or Interface.
 
-- **Input:** same as `find_related_nodes` (`query`, `node_id`, `type`, `limit`) plus `depth` (`rules` \| `body` \| `full`, default `full`). `rules`: the focus node's `rules` block and `context.record` (and `context.next.record`) only. `body`: also the full `context` (body, attachments). `full`: everything below.
-- **Output (`full`):** `{ query, matches, focus, nodes, edges, context, blast_radius, rules }` where `rules` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` is the focus node's resolved node rules (§6.1.1), each `{ node_id, node_type, via, distance, rules }` labeled with the node it came from and ordered self, `belongs_to`, `depends_on`, `affects`; `[]` when nothing applies. `rules` does not repeat the project brief rules (`get_rules`). And where `context` matches `get_node_context` when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
-- **Output (`rules` / `body`):** `{ query, matches, focus, context, rules }` — no `nodes`, `edges`, or `blast_radius`.
+- **Input:** same as `find_related_nodes` (`query`, `node_id`, `type`, `limit`) plus `depth` (`rules` \| `body` \| `full`, default `full`) and `include_superseded` (boolean, default `false`). `rules`: the focus node's `rules` block and `context.record` (and `context.next.record`) only. `body`: also the full `context` (body, attachments). `full`: everything below.
+- **Output (`full`):** `{ query, matches, focus, nodes, edges, context, blast_radius, rules, decisions }` where `decisions` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` are the decision records (§6.1.2) that reach the focus through the node-rules inheritance, each a record plus `{ node_id, node_type, via, distance, status }` and ordered like rules, superseded entries left out unless `include_superseded` (then each names `superseded_by`). `decisions` is present at every depth; at `depth: "rules"` each entry is compact (`id`, `decision`, `why`, and its labels), because orientation runs before every action; `list_decisions` and the other depths return whole records. `rules` is `{ node_id, entries }` when `focus` is set, else `null`; `entries` is the focus node's resolved node rules (§6.1.1), each `{ node_id, node_type, via, distance, rules }` labeled with the node it came from and ordered self, `belongs_to`, `depends_on`, `affects`; `[]` when nothing applies. `rules` does not repeat the project brief rules (`get_rules`). And where `context` matches `get_node_context` when `focus` is set, else `null`; `blast_radius` matches `get_blast_radius` (default `include_retired: false`, grouped `affected_files`) for Foundation/Interaction/Interface focus (including `reachability` when focus is an Interaction), else `null`.
+- **Output (`rules` / `body`):** `{ query, matches, focus, context, rules, decisions }` — no `nodes`, `edges`, or `blast_radius`.
 - **Errors:** same as `find_related_nodes`; an unknown `depth`.
 
 #### `run_check`
@@ -1135,7 +1204,7 @@ Runs the same check as `mindplan-mcp check` (§9.6), so agents cannot miss it.
 
 - **Input:** `base` (git ref, optional) — opt-in dirty-src, as `--base`; `change` (change id, optional).
 - **Output:** `{ ok: boolean, output: string, failures: string[], warnings: string[], change?, removed_legacy_files? }`. `output` is exactly what the CLI prints: `mindplan-mcp check: ok`, or one `Blocked:` line per failure, then `Warning:` lines. An illegal import failure names the fix (§9.6).
-- **Change:** with `change`, the check also runs the in-review gate on every open revision in the change: import and ownership violations on each member's active-slot files are added to `failures` as `Blocked: change "<id>": …` (so `ok` is false), except a violation the global import rule already reported, which is not repeated, and every stale-text signal for the members is added to `warnings`. The output adds `change: { id, members: [{ id, type, state, next_state }] }`. A change with no open revisions is a `Blocked:` failure.
+- **Change:** with `change`, the check also runs the in-review gate on every open revision in the change: import and ownership violations on each member's active-slot files are added to `failures` as `Blocked: change "<id>": …` (so `ok` is false), except a violation the global import rule already reported, which is not repeated, and every stale-text signal and decision warning (§5.13) for the members is added to `warnings`. The output adds `change: { id, members: [{ id, type, state, next_state }] }`. A change with no open revisions is a `Blocked:` failure.
 - **Errors:** a failed check is a successful call with `ok: false`, including a git failure with `base` set or an invalid config (reported as a `Blocked:` failure).
 - **Playbook:** call it before self-`ready`, `in-review`, `ship` / `resolved`, and before saying the work is done.
 
@@ -1167,6 +1236,14 @@ Mandatory project rules only (§1.1.1). Call before each action, before `orient_
 - **Input:** none.
 - **Output:** `{ path, rules }` from `loadProjectBrief()`. `rules` is an empty string when the section is empty. Does not return the playbook or description. These are the **global** rules only; node rules arrive through `orient_for_work` (§6.1.1).
 - **Errors:** none (`loadProjectBrief` MUST NOT throw).
+
+#### `list_decisions`
+
+Reads the decision trail (§6.1.2). Call before reshaping a design someone else chose.
+
+- **Input:** `node_id` (slug, optional), `change` (change id, optional), `include_superseded` (boolean, default `false`).
+- **Output:** `{ node_id?, change?, decisions: DecisionEntry[], count }`. With `node_id`: that node's own decisions (its active slot), whatever its state. Otherwise every non-inactive node's. `change` keeps decisions recorded under that change id; the filters combine. Each entry is the record plus `{ node_id, node_type, status }` and, when superseded, `superseded_by`. Superseded entries only with `include_superseded`.
+- **Errors:** unknown `node_id`.
 
 #### `get_node_implementation`
 
@@ -1209,8 +1286,8 @@ Patches territory-owned content on `<id>.mdx` or `<id>.next.mdx`. Server-owned f
 - **Slot resolution:** when `slot` is omitted, the server patches `<id>.next.mdx` if the node is a shipped (`stable`/`unstable`) Foundation/Interaction/Interface with an open evolution, otherwise `<id>.mdx`.
 - **Effect:** writes territory body and/or `title`/`description` scalars on the resolved slot; touches `updated_at` in that slot's frontmatter.
 - **Output:** `{ node_id, patched_fields: ["description", ...], slot: "current" | "next", path, toggled?, readiness_reset?, changed_files: string[], state, next_state }` — `path` is the repo-relative MDX written; `toggled` lists the checkbox lines as written; `readiness_reset` is present when the write moved a `ready` slot back to `draft` (§3.1); `changed_files` lists that path. This is the required writer for territory prose.
-- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; a `contains` matching several checkbox lines without `all` (lists the lines); `note` together with `not_applicable`, or either with `checked: false`; an empty note or reason; an invalid change id; `section` heading not found (the error lists the sections); `section` without `text`; `replace.find` not found, or found more than once without `all`; `section: "## Rules"` (use `patch_node_rules`); explicit `slot: "next"` with no open evolution; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`); write aimed at a `mirror` twin; a `body` containing a `## Rules` heading (use `patch_node_rules`).
-- **Rules section:** a body replace preserves the node's existing `## Rules` section (§6.1.1).
+- **Errors:** unknown `node_id`; empty patch; no matching checkbox line; a `contains` matching several checkbox lines without `all` (lists the lines); `note` together with `not_applicable`, or either with `checked: false`; an empty note or reason; an invalid change id; `section` heading not found (the error lists the sections); `section` without `text`; `replace.find` not found, or found more than once without `all`; `section: "## Rules"` (use `patch_node_rules`); explicit `slot: "next"` with no open evolution; shipped Interaction/Interface `title`/`description` change on `current` (`Use open_next for material scope changes on live work.`); write aimed at a `mirror` twin; a `body` containing a `## Rules` heading (use `patch_node_rules`); `section: "## Decisions"`, or a body, section text, or replacement containing a `## Decisions` heading (use `record_decision`).
+- **Rules and Decisions sections:** a body replace preserves the node's existing `## Rules` (§6.1.1) and `## Decisions` (§6.1.2) sections.
 
 #### `patch_node_rules`
 
@@ -1220,6 +1297,15 @@ Writes one node's rules (§6.1.1). Use it for a rule about one area; use `patch_
 - **Effect:** replaces the `## Rules` section of `<id>.mdx` and, when an evolution is open, of `<id>.next.mdx` with the same text; re-syncs the mirror twin when no evolution is open. Valid for every node type in any state except inactive ones (`cancelled`, `deprecated`, closed Bugs), including `stable` / `unstable` nodes with no open evolution. Does not change `state`, edges, checkboxes, or `shipped_at`, and does not require `open_next`.
 - **Output:** `{ node_id, rules, slots: ["current"] | ["current", "next"], rules_impact, changed_files }` where `rules_impact` is the node's rules audience (`{ has_rules, inherited_by }`, same shape as `get_blast_radius`) and `changed_files` lists the live file and the open next file or refreshed twin (`mindplan/map.md` does not change: rules are not graph structure).
 - **Errors:** unknown `node_id`; an inactive node (`cancelled`, `deprecated`, or a Bug that is `resolved` or `wontfix`); `rules` containing a level-1 or level-2 heading line.
+
+#### `record_decision`
+
+Appends one decision record (§6.1.2). Call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact).
+
+- **Input:** `node_id` (slug, required); `decision` (string, required; one sentence); `alternatives` (non-empty string array, required); `why` (string, required); `consequences` (string, optional); `supersedes` (decision id, optional); `change` (change id, optional; defaults to the active revision's change, omitted when there is none); `id` (optional; `d-` plus a slug; generated from the decision's first words when omitted); `verbose`.
+- **Effect:** appends the entry to the node's active slot — `<id>.next.mdx` while a shipped node evolves, else `<id>.mdx` with the mirror twin refreshed. Values are collapsed to one line; `date` is today (UTC). Never changes state or readiness and does not rewrite `mindplan/map.md`. A `supersedes` target becomes `superseded` by computation; its entry is not rewritten.
+- **Output:** `{ node_id, slot, decision: DecisionEntry, supersedes?: { id, node_id }, changed_files, state, next_state }` (`anchor` with `verbose`).
+- **Errors:** unknown node; an inactive node; a Bug (record the decision on the node the fix shapes); empty `decision` or `why`; no alternative; an invalid or taken id; an invalid change id; `supersedes` that is not a recorded decision, is already superseded, or is held by a node outside the recorder's reach (itself, its Journeys, its transitive Foundations).
 
 ### 8.2 Mutation tools
 
@@ -1232,6 +1318,7 @@ Any change under `mindplan/` goes through the territory store. Agents reach the 
 | Create node, edges, pipeline/Bug state, `open_next` / `discard_next` / `ship` / `force_unship`, `implements`, Foundation `role` | **MCP only** |
 | `title`, `description`, body (PRD / Atomic Ops), checkbox toggles | **MCP only** (`patch_node_territory`) |
 | A node's `## Rules` section (§6.1.1) | **MCP only** (`patch_node_rules`) |
+| A node's `## Decisions` section (§6.1.2) | **MCP only** (`record_decision`, append only) |
 | Attachments | **MCP only** (`put_attachment` / `remove_attachment`) |
 | `mindplan/project.md` | **MCP only** (`patch_project_description`, `patch_project_rules`) |
 | `mindplan/config.json` | **MCP only** (`patch_config`) |
@@ -1301,8 +1388,8 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 
 #### `patch_config`
 
-- **Input:** `sources?`, `exclude?` (at least one required).
-- **Effect:** writes `mindplan/config.json` via the store.
+- **Input:** `sources?`, `exclude?`, `decisions?: { blast_radius?, schema_files? }` (at least one required).
+- **Effect:** writes `mindplan/config.json` via the store. A decision setting not passed keeps its stored value (§1.2.1); an unknown key inside `decisions` is rejected.
 - **Output:** `{ path, config, changed_files }`.
 
 #### `put_attachment` / `remove_attachment`
@@ -1335,15 +1422,16 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 - **Input (one revision):** `revisions` — a non-empty array of `{ node_id, new_status }`. Mutually exclusive with `node_id` / `new_status`. Duplicate `node_id` values are rejected.
 - **Input (scope):** `scope` (`all_open_updates` \| `node_and_dependents` \| `change`) with `new_status` as the target (`ready` \| `in-progress` \| `in-review` \| `ship`); `node_and_dependents` also takes `node_id`; `change` takes `change` (the change id) and walks every member of that change (§3.7), including `draft` and `ready` ones; `skip_review` (boolean) lets a walk to `ship` move nodes that are not yet `in-review` (see below). Mutually exclusive with `revisions`. `all_open_updates` selects every shipped Foundation/Interaction/Interface with an open `next`, and every pre-ship one that is being built (`in-progress` or `in-review`); a `draft` or `ready` node is a plan, not an update, and is never walked by `all_open_updates`; `node_and_dependents` selects `node_id` plus the nodes that `depends_on` it or `exposes` it, transitively (including their proposed `next` edges), and walks those that are open updates or pre-ship at any state, because the caller named the seed.
 - **Input (any form):** `dry_run` (boolean) — validate and return the plan without writing; `verbose` (boolean).
-- **Effect (one node):** runs the full §5.13 pipeline. When the node has no open evolution, mutations apply to `<id>.mdx` exactly as in a first build (first `ship` also creates the standing `mirror` twin). When an evolution is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies next onto live, merges non-`.gitkeep` files from `next-attachments/` into `attachments/`, computes `stable`/`unstable`, sets `shipped_at`, and restores the `mirror` twin (§3.6, §5.11). Recomputes stability and Journey states, persists, mirrors frontmatter.
+- **Effect (one node):** runs the full §5.14 pipeline. When the node has no open evolution, mutations apply to `<id>.mdx` exactly as in a first build (first `ship` also creates the standing `mirror` twin). When an evolution is open, `draft`/`ready`/`in-progress`/`in-review` transitions apply to the `next` slot only; `ship` (only legal from `next` in-review) **promotes**: copies next onto live, merges non-`.gitkeep` files from `next-attachments/` into `attachments/`, computes `stable`/`unstable`, sets `shipped_at`, and restores the `mirror` twin (§3.6, §5.11). Recomputes stability and Journey states, persists, mirrors frontmatter.
 - **Effect (revision):** orders the list **Foundations, then Interactions, then Interfaces, then Bugs** (caller order within a tier) and applies the one-node effect to each, reloading the graph between nodes so later gates see earlier writes (§3.7). Stops on the first `Blocked:`. Earlier nodes stay transitioned.
 - **Effect (scope):** orders the selected nodes Foundations, Interactions, Interfaces (dependency order within a tier), then walks each from its active state through `draft → ready → in-progress → in-review → ship` to the target, skipping nodes already there. Every intermediate stage runs: a node never jumps from `ready` to `stable`, and the in-review check gate runs at the `in-review` step. The whole walk is validated in memory first — every transition rule plus the check gate (§5.10) — and **nothing is written** if any step would be `Blocked:`.
 - **Effect (scope to `ship`):** when any selected node's active state is not `in-review`, the walk is `Blocked:` (nothing written) unless `skip_review: true`. With it, those nodes still walk through `in-progress` and `in-review` (gate included) in this call, and the result lists them in `skipped_review`.
 - **Effect (check gate):** a move to `in-review` or `ship` runs the check's import and exclusivity rules on the node's active-slot files and is `Blocked:` on a violation (§5.10). Stale-text warnings (§9.6) for the node are returned as `warnings` and never block.
+- **Effect (decision gate):** a move to `in-review` of a decision-worthy revision with no decision recorded is `Blocked: Decision` with the `record_decision` call (§5.13), in every form including a scoped walk's validation and `dry_run`.
 - **Output (one node):** `{ node_id, previous_state, new_state, state, next_state, shipped_at, promoted_next: boolean, warnings?, journeys_recomputed: [...], stability_recomputed: [...], changed_files }` (`anchor` with `verbose`). `state` is the live state. On promote, `changed_files` includes `<id>.mdx`, the restored `<id>.next.mdx` mirror twin, cleared `next-attachments/` paths, and any `attachments/<file>` copies from the next slot.
 - **Output (revision / scope):** `{ ordered: true, scope?, change?, lines: ["<id>: <from> -> <to>", ...], skipped_review?, changed_files, warnings? }` — one line per node (`to` is the `next` state while evolving). `changed_files` is the union of every applied transition, including `mindplan/map.md`. With `verbose`: also `applied` (the one-node outputs) and the recomputed Journey/stability lists.
 - **Output (dry_run):** `{ dry_run: true, scope?, change?, plan: ["<id>: <from> -> <to>", ...], blocked: string | null, skipped_review?, warnings? }`; `plan` lists **every transition**, one line per step (a node walking `ready → ship` contributes three lines); `blocked` names the first failing node and step, or the review skip.
-- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–6 violations; manual `stable`/`unstable` attempt; `ship` attempted while `<id>.next.mdx` is not in-review; `deprecated` attempted while `<id>.next.mdx` is open; both input forms at once; empty or duplicate `revisions`; `scope` with `revisions`, without a forward `new_status`, or `node_and_dependents` without `node_id`; `scope: "change"` without `change`, or a change with no open revisions; `change` or `skip_review` outside a scoped walk; a scoped walk to `ship` past nodes not yet `in-review` without `skip_review`; a check-gate violation (`Blocked: Check failed for "<id>" …`). A scope walk that is `Blocked:` writes nothing. Illegal production retreats SHOULD mention `force_unship` and the `unship:<node_id>` confirm shape. A revision that stops names the blocked node and the nodes already applied, and still begins with `Blocked: `.
+- **Errors:** unknown id; Journey target; invalid state name; illegal transition (on the active slot); Rule 1–6 violations; manual `stable`/`unstable` attempt; `ship` attempted while `<id>.next.mdx` is not in-review; `deprecated` attempted while `<id>.next.mdx` is open; both input forms at once; empty or duplicate `revisions`; `scope` with `revisions`, without a forward `new_status`, or `node_and_dependents` without `node_id`; `scope: "change"` without `change`, or a change with no open revisions; `change` or `skip_review` outside a scoped walk; a scoped walk to `ship` past nodes not yet `in-review` without `skip_review`; a check-gate violation (`Blocked: Check failed for "<id>" …`); a missing decision (`Blocked: Decision. …`). A scope walk that is `Blocked:` writes nothing. Illegal production retreats SHOULD mention `force_unship` and the `unship:<node_id>` confirm shape. A revision that stops names the blocked node and the nodes already applied, and still begins with `Blocked: `.
 
 #### `force_unship`
 
@@ -1396,7 +1484,7 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 **Imports over every claim.** The import matrix scans each universe file as every node that claims it — its live owner, its `next`-slot owner, and a **released** current-slot owner (a file the open `next` dropped) — and resolves import targets through released claims too. A violation that only this wider scan finds (a released file, a target that is only released, or a file's second claimant) is reported as `Warning: imports (next slot): …` in this release so existing graphs keep passing; it becomes `Blocked:` in the next release.
 
-**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`. The check also warns about next-slot imports (above) and about a **route family split** between owners (§1.2.3): `Warning: routes: route family "<dir>/" is split: "<id>" (Assembler) owns …; "<id>" (entry point) owns …`.
+**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`. The check also warns about every decision-worthy open revision with no decision yet, at any pre-ship state (`Warning: decision: …`, §5.13), about next-slot imports (above), and about a **route family split** between owners (§1.2.3): `Warning: routes: route family "<dir>/" is split: "<id>" (Assembler) owns …; "<id>" (entry point) owns …`.
 
 The `run_check` tool (§8.1) returns this same output to agents. Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
 
@@ -1458,7 +1546,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `<id>.mdx`/`<id>.next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node `<id>.mdx` frontmatter and assemble at runtime per §7; `<id>.next.mdx` proposed edges are not live graph edges.
-- [ ] The twenty-five-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient, orient `depth`, `get_project` (with `check`), `get_rules`, `run_check`, node `rules` on orient and context, `rules_impact` on blast radius, `patch_node_rules`, small writes with `verbose`, section/`replace` patches, and scoped `update_node_status` with `dry_run`.
+- [ ] The twenty-seven-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient, orient `depth`, `get_project` (with `check`), `get_rules`, `run_check`, node `rules` on orient and context, `rules_impact` on blast radius, `patch_node_rules`, `record_decision` / `list_decisions` and the `decisions` outputs, small writes with `verbose`, section/`replace` patches, and scoped `update_node_status` with `dry_run`.
 - [ ] Mutations are deterministic and atomic per §9.
 - [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
 
@@ -1500,6 +1588,9 @@ An implementation is MindPlan-compliant if and only if:
 | Ambiguous checkbox | `Blocked: "Write" matches 2 checkbox lines; make it unique or pass all: true. Matches:` followed by one `- <line>` per match |
 | Review skip | `Blocked: this walk would take "f-quick" to ship without a review stop (not in-review yet). Walk to in-review first and review, or pass skip_review: true …` |
 | Empty change | `Blocked: change "feat-x" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).` |
+| Rule 12 (Decision) | `Blocked: Decision. "f-payments" contract changes (an open revision of a shipped Foundation), and no decision is recorded for this revision (under change "pay-v2" or on the node). Record the choice and the alternative you rejected. Fix: record_decision({"node_id":"f-payments",…,"change":"pay-v2"}).` |
+| Decision on a Bug | `Blocked: "bug-race" is a Bug; record the decision on the node the fix shapes (it affects "i-checkout").` |
+| Supersede out of reach | `Blocked: "d-soft-delete" is held by "i-cancel", which "i-reschedule" does not inherit decisions from. …` |
 
 ## Appendix B — Reference lifecycle walkthrough
 

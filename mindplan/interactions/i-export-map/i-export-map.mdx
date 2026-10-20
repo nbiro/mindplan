@@ -2,11 +2,11 @@
 id: i-export-map
 type: Interaction
 title: "See the map"
-description: "Owns export_mindplan_view MCP handler and the view export used by the CLI view/export command."
+description: "Owns the export_mindplan_view MCP handler (optionally with per-node decision counts) and the view export used by the CLI view/export command."
 state: stable
-shipped_at: 2026-09-23T13:27:24.596Z
+shipped_at: 2026-10-20T13:04:11.004Z
 created_at: 2026-07-19T18:33:36.804Z
-updated_at: 2026-09-23T13:54:16.370Z
+updated_at: 2026-10-20T13:04:11.004Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -19,11 +19,17 @@ implements:
 
 
 
+
+
+
+
+
+
 # See the map
 
 ## Purpose
 
-Export a deterministic Mermaid or DOT projection of the territory graph for PRs and docs. Also provides the view-export entry used by the CLI `view` / `export` commands.
+Export a deterministic Mermaid or DOT projection of the territory graph for PRs and docs, optionally labeled with each node's active decision count so a reviewer sees where the recorded reasoning lives. Also provides the view-export entry used by the CLI `view` / `export` commands.
 
 ## Actor & Trigger
 
@@ -38,6 +44,7 @@ Package: `src/interactions/i-export-map/`
 - Export function callable by `if-cli` for `view` / `export` (format, focus, include_retired, output file)
 - Projection substrate: `f-view-projection`
 - Optional focus validation via `f-compiler-rules` `findNode`
+- `decisions` (boolean, default false) is passed to the projection, which then labels each node with its active decision count; `runViewExport` accepts it too
 - Automatic `mindplan/map.md` refresh after mutations is owned by `i-steer-plan` (calls `f-view-projection` directly)
 
 Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
@@ -48,12 +55,15 @@ Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belong
 - CLI `view` / `export` produce the same diagram output as before
 - Handler lives under this package; Interfaces only wire it
 - `npm test` passes
+- `export_mindplan_view({ decisions: true })` labels nodes with their active decision counts; without it the diagram is unchanged
 
 ## Atomic Ops
 
 - [x] Move `export_mindplan_view` handler + CLI-callable export into this package
 - [x] Export functions for `if-mcp-tools` and `if-cli`
 - [x] Verify MCP export + CLI view via smoke/tests
+- [x] Pass `decisions` through the handler and `runViewExport`
+- [x] Verified decision counts in the export via `npm test`
 
 ## Attachments
 

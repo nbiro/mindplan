@@ -75,6 +75,8 @@ export interface NextSlot {
   title: string;
   description: string;
   updated_at: string;
+  /** When open_next opened this revision (dropped on ship and discard). */
+  opened_at?: string;
   /** Proposed Interaction → Journey ids; applied to current on ship. */
   belongs_to?: string[];
   /** Proposed depends_on targets; applied to current on ship. */
@@ -93,6 +95,8 @@ export interface NextSlot {
   change?: string;
   /** Branch or PR reference for the change. */
   change_ref?: string;
+  /** Decision records of the open next file (its `## Decisions` section), in recorded order. */
+  decisions?: DecisionRecord[];
 }
 
 export interface MindPlanNode {
@@ -138,10 +142,61 @@ export interface MindPlanNode {
   change?: string;
   /** Branch or PR reference for the change. */
   change_ref?: string;
+  /** Decision records of the live `<id>.mdx` (its `## Decisions` section), in recorded order. */
+  decisions?: DecisionRecord[];
 }
 
 /** A change id: a slug like a node id. */
 export const CHANGE_ID_PATTERN = /^[a-z0-9][a-z0-9-_]*$/;
+
+/** A decision id: `d-` followed by a slug. */
+export const DECISION_ID_PATTERN = /^d-[a-z0-9][a-z0-9-_]*$/;
+
+/**
+ * Why a design looks the way it does. Stored as one entry of a node's `## Decisions` section;
+ * never rewritten. Status is not stored: see `DecisionStatus`.
+ */
+export interface DecisionRecord {
+  id: string;
+  /** One sentence: what was chosen. */
+  decision: string;
+  /** What else was considered, one line each. */
+  alternatives: string[];
+  /** The constraint or trade-off that decided it. */
+  why: string;
+  /** What this makes harder or forbids. */
+  consequences?: string;
+  /** Id of the decision this one replaces. */
+  supersedes?: string;
+  /** Change id the decision was recorded under. */
+  change?: string;
+  /** Date it was recorded (`YYYY-MM-DD`). */
+  date?: string;
+}
+
+/** Computed from supersession, never stored. */
+export const DECISION_STATUSES = ["active", "superseded"] as const;
+export type DecisionStatus = (typeof DECISION_STATUSES)[number];
+
+/** A decision record with its holder and computed status; `via` / `distance` when inherited. */
+export interface DecisionEntry extends DecisionRecord {
+  node_id: string;
+  node_type: NodeType;
+  status: DecisionStatus;
+  /** Id of the active decision that supersedes this one. */
+  superseded_by?: string;
+  via?: RuleVia;
+  distance?: number;
+}
+
+/**
+ * A node's decisions: the open next slot's while a shipped node evolves (that file starts as a
+ * copy of live), else the live file's.
+ */
+export function activeDecisions(node: MindPlanNode): DecisionRecord[] {
+  if (node.next) return node.next.decisions ?? [];
+  return node.decisions ?? [];
+}
 
 /**
  * The change an open revision belongs to: the next slot's while a shipped node evolves,

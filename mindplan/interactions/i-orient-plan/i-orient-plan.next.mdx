@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules, report blast radius for a node or a whole change with rules impact, expand glob claims to concrete files, expose get_project (naming the check), and expose get_rules for global project rules before each action."
+description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change with rules impact and the decisions it reaches, expand glob claims to concrete files, expose get_project (naming the check), and expose get_rules for global project rules before each action."
 state: mirror
-shipped_at: 2026-10-19T12:09:48.636Z
+shipped_at: 2026-10-20T13:04:11.120Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-19T12:09:48.636Z
+updated_at: 2026-10-20T13:04:11.120Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -26,11 +26,22 @@ implements:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 # Orient on the plan
 
 ## Purpose
 
-Read-path orientation. `get_rules` returns only the mandatory project-wide rules so each action can re-load them without the full playbook; `orient_for_work` returns the rules that apply to the focus node, each labeled with the node it came from. A later session that skipped either would treat rules as optional after the first `get_project`, and a rule written on a Foundation would stop protecting the code that depends on it. Because orientation runs before every action, it can be asked for less: a `depth` says whether the agent needs only the rules and record, also the body, or the full neighborhood and blast radius. `get_project` names the check so the first read tells the agent how to verify its work.
+Read-path orientation. `get_rules` returns only the mandatory project-wide rules so each action can re-load them without the full playbook; `orient_for_work` returns the rules that apply to the focus node, each labeled with the node it came from. A later session that skipped either would treat rules as optional after the first `get_project`, and a rule written on a Foundation would stop protecting the code that depends on it. Because orientation runs before every action, it can be asked for less: a `depth` says whether the agent needs only the rules and record, also the body, or the full neighborhood and blast radius. `get_project` names the check so the first read tells the agent how to verify its work. Next to the rules, `orient_for_work` returns the decisions that apply to the focus, labeled by source the same way and at every depth: the reasoning behind a shared design reaches the agent before it touches anything, which is the moment it would otherwise simplify the design back into the problem it avoided. Superseded decisions stay out of that block; `list_decisions` reads the full trail on request, and `get_blast_radius` names the decisions a change would reach.
 
 ## Actor & Trigger
 
@@ -52,6 +63,10 @@ Intended files: `src/interactions/i-orient-plan/`
 - **Change blast radius.** `get_blast_radius` takes `node_id` or `change`. For a change it merges the members' radii: `{ change, members, affected, journeys_at_risk, affected_files, rules_impact }` where `affected` keeps the smallest distance and leaves out the members themselves
 - **Glob claims.** `get_node_implementation` expands glob claims to concrete files (`files` / `next_files`); path lookup finds the owner through a glob claim
 - Node context shows `change` / `change_ref` on the live record and the next record
+- **Decisions block.** `orient_for_work` returns `decisions` next to `rules` at every depth: `{ node_id, entries: DecisionEntry[] }` from `resolveNodeDecisions` (own, `belongs_to`, `depends_on`, and for a Bug `affects`), each entry carrying its record, `node_id`, `node_type`, `via`, `distance`, and `status`; superseded entries are left out unless `include_superseded: true` (then each names `superseded_by`); at `depth: "rules"` each entry is compact (`id`, `decision`, `why`, and its labels) because orientation runs before every action, while `body` / `full` and `list_decisions` return whole records; `null` without a focus
+- **`list_decisions({ node_id?, change?, include_superseded? })`** → `{ decisions: DecisionEntry[], count }` from `listDecisions`: one node's own decisions (its active slot), every decision recorded under a change, or every decision in the graph; superseded entries only with `include_superseded`, each then naming `superseded_by`. Blocked on an unknown node. Listed in `QUERY_TOOLS`
+- `get_node_context` returns `body` without the `## Decisions` section too, plus `decisions` (the live file's entries, each with `status`) and `next.decisions` for an open next, whose record also shows `opened_at`
+- `get_blast_radius` adds `decisions`: the active decisions held by the focus (`via: focus`, distance 0) and by each visible affected node (`via: dependent`, its distance), each `{ id, node_id, via, distance, decision }`; inactive nodes' decisions are left out, even with `include_retired`. The change radius merges them across members (a member's own decisions are `focus`)
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
 
@@ -69,6 +84,11 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - Verified via `npm test`
 - Change blast radius lists the union of the members' dependents without the members
 - A glob claim expands to concrete files in `get_node_implementation`, and a path under it resolves to its owner
+- `orient_for_work` on an Interaction returns its Foundation's decision labeled with the Foundation's id, at every depth; a superseded one is left out unless `include_superseded`
+- `orient_for_work` on a Bug returns the decisions of the nodes it affects
+- `list_decisions` returns a node's, a change's, and the graph's decisions; with `include_superseded` the superseded entry carries `superseded_by`
+- `get_blast_radius` on a Foundation lists its own and its dependents' active decisions
+- `get_node_context` `body` excludes the Decisions section and `decisions` carries it
 
 ## Atomic Ops
 
@@ -84,6 +104,11 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Add change blast radius
 - [x] Show `change` / `change_ref` in node context
 - [x] Verified change blast radius and glob expansion via `npm test`
+- [x] Add the `decisions` block to `orient_for_work`
+- [x] Add the `listDecisions` handler and list it in QUERY_TOOLS
+- [x] Add `decisions` to `get_blast_radius` (node and change) and to `get_node_context`
+- [x] Verified decision orientation via `npm test`
+- [x] Compact decisions at depth rules, leave retired decisions out of the blast radius, and show `opened_at` (review fixes)
 
 ## Attachments
 
