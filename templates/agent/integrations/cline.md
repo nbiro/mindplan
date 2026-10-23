@@ -5,8 +5,8 @@
 | Field | Value |
 |-------|-------|
 | Name | `mindplan` |
-| Command | `node` |
-| Args | `/absolute/path/to/mindplan/dist/index.js` |
+| Command | `npx` |
+| Args | `mindplan-mcp` (or `-y mindplan-mcp@0.1` without a `package.json` dev dependency) |
 
 Or merge the JSON from `mindplan/agent/mcp.json.example` into Cline's MCP settings file.
 

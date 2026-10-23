@@ -52,6 +52,7 @@ import {
   projectRoot,
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
+import { projectVersionStatus } from "../../foundations/f-territory-store/version.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 const MID_PIPELINE = new Set(["in-progress", "in-review"]);
@@ -774,6 +775,8 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...routeFamilySplits(graph, buckets, universe));
     const decisionCtx = createDecisionContext(root);
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
+    const version = projectVersionStatus();
+    if (version.warning) warnings.push(`version: ${version.warning}`);
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, options.base, failures);
     }

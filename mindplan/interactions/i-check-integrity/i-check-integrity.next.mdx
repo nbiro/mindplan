@@ -3,10 +3,10 @@ id: i-check-integrity
 type: Interaction
 title: "Check integrity"
 description: "Default check Blocks unclaimed source files (with the probable owner and the claim call), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text, split route families, and decision-worthy revisions with no decision; checks one change's members on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
-state: mirror
+state: in-review
 shipped_at: 2026-10-20T13:04:10.898Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-20T13:35:50.890Z
+updated_at: 2026-10-23T14:31:44.990Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,6 +16,8 @@ depends_on:
   - f-source-index
 implements:
   - src/interactions/i-check-integrity/
+opened_at: 2026-10-23T14:24:04.169Z
+change: "project-version-stamp"
 ---
 
 # Check integrity
@@ -47,6 +49,7 @@ Intended files: `src/interactions/i-check-integrity/`
 - **Changes.** `runCheckHandler({ base?, change? })` adds `change: { id, members, failures, warnings }`: each member's active-slot import and ownership violations (Blocked lines that make `ok` false) and its stale-text warnings; a member violation the global import rule already reported is not repeated. An unknown change id with no open members is Blocked
 - **Decisions.** For every open revision (a shipped node with an open next; a pre-ship, non-retired pipeline node at any pre-ship state), `decisionWarnings` (`f-compiler-rules`) adds `Warning: decision: …` lines naming the triggers. One `DecisionContext` (config plus the lazy git probe) serves the whole run. Decision warnings never change `ok`; with `change`, the members' decision warnings are part of the change's warnings
 - The dirty-src base is `defaultBaseRef` (`f-source-index`), the same merge base the decision gate uses
+- **Version.** When `projectVersionStatus()` (`f-territory-store`) is not `current`, its warning prints as `Warning: version: …`. It never changes `ok`, so CI keeps passing while a project catches up
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
@@ -65,6 +68,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - `run_check` on this repository's graph reports no new failures
 - A Foundation `open_next` revision with no decision prints a `decision:` warning and `ok` stays true; recording a decision under its change removes the warning
 - A revision that is not decision-worthy never prints a `decision:` warning
+- A missing or older `mindplan/version.json` prints a `version:` warning and `ok` stays true; a current stamp prints none
 
 ## Atomic Ops
 
@@ -84,6 +88,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Add decision warnings to the check and to the change check
 - [x] Verified the decision warnings via `npm test`
 - [x] Use the shared `defaultBaseRef` for dirty-src (review fix)
+- [x] Warn when `mindplan/version.json` is not current
+- [x] Verified the version warning via `npm test`
 
 ## Attachments
 

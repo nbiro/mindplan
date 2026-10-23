@@ -3,14 +3,17 @@ id: i-npm-tag-publish
 type: Interaction
 title: "Tag-driven npm publish"
 description: "On v* git tag push, GitHub Actions runs the same publish script and releases to npm via OIDC Trusted Publishing."
-state: ready
+state: in-progress
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-07-19T20:26:46.980Z
+updated_at: 2026-10-23T14:25:32.436Z
+change: "npm-release"
 belongs_to:
   - j-npm-publish
 depends_on:
   - f-npm-registry
   - f-github-actions
+implements:
+  - .github/workflows/publish.yml
 ---
 
 # Tag-driven npm publish
@@ -19,7 +22,12 @@ depends_on:
 
 Automate npm releases: when a maintainer pushes a version git tag, GitHub Actions runs the **same publish script** owned by `i-npm-publish` and publishes via npm Trusted Publishing (OIDC). No long-lived `NPM_TOKEN`.
 
-This Interaction **solely owns** `.github/interactions/publish.yml` (repo-root interaction path is an intentional exception to the prescribed package, like CI YAML).
+This Interaction **solely owns** `.github/workflows/publish.yml` (repo-root interaction path is an intentional exception to the prescribed package, like CI YAML).
+
+## Actor & Trigger
+
+- **Actor:** maintainer pushing a release tag; GitHub Actions runs the job
+- **Trigger:** push of a tag matching `v[0-9]+.[0-9]+.[0-9]+*`
 
 ## Goal
 
@@ -57,8 +65,8 @@ Package: `src/interactions/i-npm-tag-publish/` (helpers/docs if needed). Belongs
 
 ### Owns
 
-- `.github/interactions/publish.yml` — full job definition
-- Live npm Trusted Publisher binding for `mindplan-mcp` → this interaction file
+- `.github/workflows/publish.yml` — full job definition
+- Live npm Trusted Publisher binding for `mindplan-mcp` → this workflow file
 - Tag / main / environment guards below
 
 ### Trigger
@@ -104,7 +112,7 @@ Update `CONTRIBUTING.md` Publishing:
 
 - Automated changelog / GitHub Release notes
 - Publishing from forks
-- `interaction_dispatch` dry-run UI (nice-to-have later)
+- `workflow_dispatch` dry-run UI (nice-to-have later)
 
 ## Failure / recovery
 
@@ -112,9 +120,9 @@ Update `CONTRIBUTING.md` Publishing:
 - **OIDC / Trusted Publisher misconfigured:** fix npm UI binding; do not add `NPM_TOKEN` without a product decision
 - **Broken published version:** bump patch, new tag, re-run automation
 
-## Checklist
+## Atomic Ops
 
-- [ ] Author `.github/interactions/publish.yml` (this Interaction owns the file)
+- [ ] Author `.github/workflows/publish.yml` (this Interaction owns the file)
 - [ ] SemVer-oriented tag trigger + tag/`package.json` version guard
 - [ ] Guard: tagged commit is on `main` ancestry
 - [ ] GitHub Environment `npm-publish` with protection / required reviewers

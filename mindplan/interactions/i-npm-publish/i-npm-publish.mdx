@@ -3,15 +3,18 @@ id: i-npm-publish
 type: Interaction
 title: "Publish to npm"
 description: "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs under tag-driven CI."
-state: ready
+state: in-progress
 created_at: 2026-07-15T18:51:52.964Z
-updated_at: 2026-07-19T20:26:45.448Z
+updated_at: 2026-10-23T14:25:32.401Z
+change: "npm-release"
 belongs_to:
   - j-agent-onboarding
   - j-npm-publish
 depends_on:
   - f-mcp-runtime
   - f-npm-registry
+implements:
+  - src/interactions/i-npm-publish/
 ---
 
 # Publish to npm
@@ -19,6 +22,11 @@ depends_on:
 ## Purpose
 
 Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning from source. Own a **single reusable publish script** that maintainers run for the first claim and that `i-npm-tag-publish` invokes non-interactively on version tags.
+
+## Actor & Trigger
+
+- **Actor:** maintainer on their machine (first claim, break-glass), or `i-npm-tag-publish` in CI
+- **Trigger:** `npm run publish:release` (maintainer mode) or `npm run publish:release -- --ci` (CI mode)
 
 ## Goal
 
@@ -58,7 +66,7 @@ Handoff: once the script works and the package is claimed, live Trusted Publishi
 
 Out of scope for this node:
 
-- `.github/interactions/publish.yml` (owned by `i-npm-tag-publish`)
+- `.github/workflows/publish.yml` (owned by `i-npm-tag-publish`)
 - Live npm Trusted Publishing UI binding
 - Automated changelog generation
 
@@ -89,7 +97,9 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 
 ### Docs sync
 
-- README Quick start: npm / `npx` primary.
+- README Quick start: npm / `npx` primary. Two consumer paths: a project with a `package.json` adds `mindplan-mcp` as a devDependency (version pinned by its lockfile, upgraded with `npm update`) and registers `npx mindplan-mcp`; any other project registers `npx -y mindplan-mcp@<range>`.
+- README upgrade section: after a version bump, rerun `npx mindplan-mcp init` (the `mindplan/version.json` stamp makes `get_project` and `check` warn until it runs).
+- `templates/agent/mcp.json.example` and `templates/agent/integrations/*.md` register `npx mindplan-mcp`, not a local `dist/index.js` path.
 - CONTRIBUTING: first publish = run the script after `npm login`; later = bump on main, tag, push (automation lands with `i-npm-tag-publish`).
 
 ## Failure / recovery
@@ -98,7 +108,7 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 - **`0.1.0` already published by us:** bump patch/minor and publish; update docs.
 - **Broken publish after install check:** ship a patch via the same script; never leave README advertising a broken path.
 
-## Checklist
+## Atomic Ops
 
 - [ ] Publish script lives under `src/interactions/i-npm-publish/` with maintainer + CI modes (CI mode includes `npm test`)
 - [ ] Optional root `package.json` script wrapper points at that implementation

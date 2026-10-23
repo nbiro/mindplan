@@ -3,7 +3,17 @@
 1. **Register MCP** (from your project root):
 
 ```bash
-claude mcp add mindplan -- node /absolute/path/to/mindplan/dist/index.js
+claude mcp add mindplan -- npx mindplan-mcp
+```
+
+`npx mindplan-mcp` runs the copy pinned in your dev dependencies (`npm install -D mindplan-mcp`); without a `package.json`, use `npx -y mindplan-mcp@0.1`. To share the server with everyone who opens the repo (including cloud containers), commit it to `.mcp.json` instead:
+
+```json
+{
+  "mcpServers": {
+    "mindplan": { "type": "stdio", "command": "npx", "args": ["mindplan-mcp"] }
+  }
+}
 ```
 
 Or add to the project MCP config (see [Claude Code MCP docs](https://docs.anthropic.com/en/docs/claude-code/mcp)) using the snippet in `mindplan/agent/mcp.json.example`.

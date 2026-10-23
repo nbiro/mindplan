@@ -113,6 +113,8 @@ Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth i
 
 **Assembler linking:** Interactions/Interfaces that run on a given backbone SHOULD `depends_on` that Assembler Foundation (e.g. page Interfaces → `f-nextjs`; cron Interfaces → `f-vercel-cron`). This is guidance, not a compiler gate — Ghost Interactions still only require any Foundation `depends_on`. A Journey's assembler(s) are derived from member Interactions' and Interfaces' `depends_on` — never give Journeys outgoing edges. Different Journeys MAY use different assemblers. Assemblers may import Interfaces/Interactions that depend_on them.
 
+**Shared routes (multi-template apps):** a route that exists for every template and dispatches to whichever template is active (e.g. `app/sites/[site]/[lang]/blog/*`) belongs to the **Assembler**; a template's entry point (its Interface) owns only routes that exist for that template alone. Keep one owner per route family — the check warns when one is split. An action whose views live in every template may claim them with one glob: `src/templates/*/actions/i-read-post/`.
+
 **Reuse rule:** Before inventing shared UI or shared state inside an Interaction, find or create the right Foundation and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node. Cross-Interaction flow uses `leads_to`, never `depends_on` (Interaction Independence).
 
 **Anti-patterns:**
@@ -205,6 +207,8 @@ patch_node_territory({ node_id, body: "…" })                    // fallback �
 patch_node_territory({ node_id, title?, description? })         // fallback — territory scalars
 patch_node_territory({ node_id, toggle_checkboxes: [...] })     // fallback — check off Atomic Ops
 ```
+
+`toggle_checkboxes` matches item text by substring and is `Blocked:` when the substring matches several items (pass `all: true` to tick them all). Close an item that was done differently with `{ contains, checked: true, note: "…" }`, or one that does not apply with `{ contains, not_applicable: "<reason>" }` — never reword the item to make it tickable. Editing a `ready` node's text, claims, or links sends it back to `draft` (`readiness_reset` in the result).
 
 Replace scaffold placeholders with real content. Section guidance:
 

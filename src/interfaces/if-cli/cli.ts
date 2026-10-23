@@ -224,6 +224,15 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
       printInstall("Claude skill", claudeSkill);
     }
   }
+  const version = report.version;
+  if (version.from === version.to) {
+    console.log(`Stamped mindplan/version.json at ${version.to}`);
+  } else {
+    console.log(
+      `Stamped mindplan/version.json ${version.from ?? "(none)"} → ${version.to}` +
+        (version.refreshed ? " and refreshed the package-owned agent files" : "")
+    );
+  }
   for (const twin of report.mirrorTwins) {
     console.log(`Wrote mirror twin ${twin.path} (${twin.node_id})`);
   }
@@ -248,6 +257,7 @@ function printHelp(): void {
   mindplan-mcp              Start the MCP server (stdio)
   mindplan-mcp init         Scaffold mindplan/, config, agent playbook, skills, integrations, and host copies (--host).
                             Also renames legacy current.mdx / next.mdx to <id>.mdx / <id>.next.mdx.
+                            Stamps mindplan/version.json; rerun after upgrading mindplan-mcp.
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
   mindplan-mcp check        Offline integrity: graph + file ownership (default CI mode)
@@ -259,6 +269,9 @@ Init options:
   -f, --force               Overwrite existing agent assets (playbook, skills, host copies,
                             AGENTS.md, CLAUDE.md, .cursorignore, permissions, etc.) from package templates.
                             Also migrates legacy implementation_packages → { sources, exclude }.
+                            Without --force, the package-owned files (playbook, skills, integrations,
+                            MCP example, host skill copies, Cursor rule) are still rewritten when
+                            mindplan/version.json is missing or older than this package.
 
 View options:
   --format, -f mermaid|dot  Diagram format (default: mermaid)

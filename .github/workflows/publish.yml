@@ -1,0 +1,51 @@
+# Tag-driven npm release (owned by Interaction i-npm-tag-publish).
+# Push a tag vX.Y.Z that equals package.json "version" on a commit reachable from main.
+# Auth is npm Trusted Publishing (OIDC): no NPM_TOKEN secret. Bind the trusted publisher on
+# npmjs.com to nbiro/mindplan + this file (publish.yml) + environment npm-publish.
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse tags off main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Tag $GITHUB_REF_NAME ($GITHUB_SHA) is not on main; retag a commit on main." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted Publishing needs npm 11.5.1 or later; setup-node ships an older npm.
+      - name: Upgrade npm
+        run: npm install -g npm@^11.5.1
+
+      - run: npm ci
+
+      # Preflight (tag = v<version>, clean tree) → npm test → tarball allowlist → publish → registry check.
+      - name: Publish
+        run: npm run publish:release -- --ci

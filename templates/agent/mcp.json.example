@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "mindplan": {
-      "command": "node",
-      "args": ["/absolute/path/to/mindplan/dist/index.js"]
+      "command": "npx",
+      "args": ["mindplan-mcp"]
     }
   }
 }

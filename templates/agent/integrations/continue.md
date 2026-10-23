@@ -5,10 +5,12 @@
 ```yaml
 mcpServers:
   - name: mindplan
-    command: node
+    command: npx
     args:
-      - /absolute/path/to/mindplan/dist/index.js
+      - mindplan-mcp
 ```
+
+`npx mindplan-mcp` runs the copy pinned in your `package.json` dev dependencies (`npm install -D mindplan-mcp`). In a project without a `package.json`, use `args: ["-y", "mindplan-mcp@0.1"]`.
 
 See [Continue MCP docs](https://docs.continue.dev/customization/mcp) for the current schema.
 

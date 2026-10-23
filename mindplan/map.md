@@ -17,7 +17,7 @@ flowchart TB
     f_graph_search["f-graph-search · Graph search · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
-    f_npm_registry["f-npm-registry · npm registry adapter · ready"]
+    f_npm_registry["f-npm-registry · npm registry adapter · in-progress"]
     f_source_index["f-source-index · Source index · stable"]
     f_territory_store["f-territory-store · Territory store · stable"]
     f_test_harness["f-test-harness · Test harness · stable"]
@@ -32,13 +32,13 @@ flowchart TB
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Release tag trigger · ready"}}
   end
-  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
+  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
     i_init_project__in__j_agent_onboarding["i-init-project · Init project · stable"]
-    i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · ready"]
+    i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · in-progress"]
   end
-  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · draft"]
-    i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · ready"]
-    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Tag-driven npm publish · ready"]
+  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · incubation"]
+    i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · in-progress"]
+    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Tag-driven npm publish · in-progress"]
   end
   subgraph journey_j_plan_console["j-plan-console · See and steer the plan · stable"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]
@@ -47,7 +47,7 @@ flowchart TB
     i_steer_plan__in__j_plan_console["i-steer-plan · Steer the plan · stable"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
     i_check_integrity__in__j_territory_sdlc["i-check-integrity · Check integrity · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient on the plan · stable"]
