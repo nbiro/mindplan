@@ -101,27 +101,58 @@ Built for people who ship **with AI agents** and need a living product architect
 
 ## Quick start
 
-**Not yet published to npm — install from source.**
+Requires Node.js 18 or later. No clone or build step: the package ships `dist/` and the agent templates.
 
-1. Clone and build:
+1. Install it.
+
+   - **A project with a `package.json`:** add it as a dev dependency so the lockfile pins the version for everyone, CI, and containers:
+
+     ```bash
+     npm install -D mindplan-mcp
+     ```
+
+   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.1` (a version range) in the commands below.
+
+2. From your project root, scaffold:
+
+```bash
+npx mindplan-mcp init --host claude   # or cursor (default) / all
+```
+
+`init` installs `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` when missing. Host copies depend on `--host cursor|claude|all` (default `cursor`): Cursor gets `.cursorignore`, `.cursor/permissions.json`, `.cursor/rules/mindplan.mdc` and `.cursor/skills/`; Claude Code gets `CLAUDE.md` (an `@AGENTS.md` import) and `.claude/skills/`. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`, and stamps `mindplan/version.json` with the package version. The stub requires `get_project` before planning or code, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work; when tools are hidden, use the init-installed host copies under `.cursor/` or `.claude/` and `AGENTS.md`.
+
+3. Register the MCP server. It runs over stdio, so the host starts it from the project root. For Claude Code, commit a `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mindplan": { "type": "stdio", "command": "npx", "args": ["mindplan-mcp"] }
+  }
+}
+```
+
+With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.1"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
+
+4. Reload MCP servers after config changes.
+
+### Upgrading
+
+Bump the package (`npm update mindplan-mcp`, Dependabot, or a new `npx` range), then rerun init with the same `--host`:
+
+```bash
+npx mindplan-mcp init --host claude
+```
+
+`mindplan/version.json` records the package version that last ran init. When it is missing or older than the running server, `get_project` returns a `version` warning and `mindplan-mcp check` prints `Warning: version: …` until init runs. Init then rewrites the package-owned files (playbook, skills, integrations, MCP example, host skill copies, Cursor rule) and applies graph migrations; it leaves `AGENTS.md`, `CLAUDE.md`, `.cursorignore`, `.cursor/permissions.json`, and `mindplan/project.md` alone unless `--force`. Read [CHANGELOG.md](CHANGELOG.md) for breaking changes before upgrading across a minor version while on 0.x. A stamp newer than the server (a teammate upgraded, you did not) warns too, and init refuses it until you upgrade or pass `--force`.
+
+### From source (contributors)
 
 ```bash
 git clone https://github.com/nbiro/mindplan.git
 cd mindplan
 npm install && npm run build
+node /absolute/path/to/mindplan/dist/index.js init   # from your project root
 ```
-
-2. From your project root, scaffold with the built server:
-
-```bash
-node /absolute/path/to/mindplan/dist/index.js init
-```
-
-`init` installs `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` when missing. Host copies depend on `--host cursor|claude|all` (default `cursor`): Cursor gets `.cursorignore`, `.cursor/permissions.json`, `.cursor/rules/mindplan.mdc` and `.cursor/skills/`; Claude Code gets `CLAUDE.md` (an `@AGENTS.md` import) and `.claude/skills/`. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`. The stub requires `get_project` before planning or code, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work; when tools are hidden, use the init-installed host copies under `.cursor/` or `.claude/` and `AGENTS.md`.
-
-3. Register the MCP server — see `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
-
-4. Reload MCP servers after config changes.
 
 ## File system layout (consumer project)
 
@@ -130,6 +161,7 @@ node /absolute/path/to/mindplan/dist/index.js init
 ├── mindplan/
 │   ├── config.json                # { sources, exclude } — coverage universe
 │   ├── project.md                 # description + rules only (playbook via get_project)
+│   ├── version.json               # { package, graph } — written by init; drives the upgrade warning
 │   ├── agent/                     # playbook + skills (installed by init)
 │   ├── journeys/<id>/<id>.mdx
 │   ├── foundations/<id>/<id>.mdx  # + optional <id>.next.mdx
@@ -206,7 +238,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | Command | Description |
 |---------|-------------|
 | `mindplan-mcp` | Start MCP server (stdio) |
-| `mindplan-mcp init` | Scaffold territory + agent assets |
+| `mindplan-mcp init` | Scaffold territory + agent assets; stamp `mindplan/version.json`; rerun after upgrading |
 | `mindplan-mcp view` | Print Mermaid/DOT (`export` alias) |
 | `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src; also the `run_check` MCP tool |
 | `mindplan-mcp help` | Usage |

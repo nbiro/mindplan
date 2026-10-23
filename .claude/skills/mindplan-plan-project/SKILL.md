@@ -56,6 +56,8 @@ Run the **breakdown recipe** from `define-entities` Step 0 before inventing node
 5. Missing area → polite refuse: "This needs an area first; is it part of Billing or something new?" Do not silently mint a Journey.
 6. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call when it applies everywhere, or a `patch_node_rules` call on the node when it is about one area (it reaches that node, its dependents, and its Journey's Interactions; check `rules_impact`). Neither is a new Journey. Call `get_project` again to re-read the brief.
 
+7. A **choice between viable designs** (a data shape, an ordering guarantee, which system owns a fact) is a `record_decision` call on the node it shapes: the decision, the alternative you rejected, and why. Changing an earlier decision is a new record with `supersedes`, never an edit. A shipped Foundation's revision, a new migration or schema file, a wide blast radius, or a `depends_on` change is Blocked at `in-review` without one, and `run_check` warns from draft on.
+
 Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project_description` and `patch_project_rules`, node rules via `patch_node_rules`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
 
 ### 3. Define and link entities
@@ -101,8 +103,9 @@ On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. 
 When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
 1. `run_check` (CLI `mindplan-mcp check`) returns ok. Fix every `Blocked:` first.
-2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces).
-3. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
+2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). When the revision spans several nodes, give them one change id (`change` on `open_next` / `create_node`, or `patch_node_territory({ node_id, change })`) and use `scope: "change"` instead.
+3. Any later edit to a `ready` node's text, claims, or links sends it back to `draft` (`readiness_reset`); self-ready it again.
+4. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
 
 ## Shipping a plan (self-ready)
 

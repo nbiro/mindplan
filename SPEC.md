@@ -39,6 +39,7 @@ MindPlan prescribes the **planning tree** under `mindplan/`. Implementation code
 ├── mindplan/
 │   ├── config.json                    # { sources, exclude } — coverage universe (§1.2)
 │   ├── project.md                     # Project brief — description + rules (§1.1.1)
+│   ├── version.json                   # { package, graph } — written by init (§1.1.2)
 │   ├── components/                    # Project-specific MDX components (§6.4) — opaque to the compiler
 │   ├── journeys/
 │   │   └── <id>/
@@ -97,9 +98,19 @@ Rules:
 - Brief rules are **mandatory** for agents. Call `get_rules` before each action. They MUST NOT override a compiler `Blocked:`. The description is the product summary, not a rule.
 - Do **not** paste the systems dialect into `project.md`. The playbook stays in the package (`templates/agent/playbook.md`); `get_project` composes it with the brief at read time.
 - **Primary channel:** on every MCP connect, server `instructions` MUST be a short pointer that requires `get_project` before the first answer or code change; `get_rules` then `orient_for_work` before each action; and the plan-project skill before any new-feature code change when nodes must be updated or created. Instructions MUST NOT embed the playbook body, the project description, or the rules body.
-- **Live read:** MCP tool `get_project` (§8.1) returns `{ path, description, rules, playbook }`. `get_rules` returns `{ path, rules }` only. `description` / `rules` come from `loadProjectBrief()`; `playbook` is always the bundled dialect. Missing playbook → `Blocked:`. Call `get_project` again after a description change; call `get_rules` after a rules change.
+- **Live read:** MCP tool `get_project` (§8.1) returns `{ path, description, rules, playbook, check, version? }` (`version` only when the stamp of §1.1.2 is not current). `get_rules` returns `{ path, rules }` only. `description` / `rules` come from `loadProjectBrief()`; `playbook` is always the bundled dialect. Missing playbook → `Blocked:`. Call `get_project` again after a description change; call `get_rules` after a rules change.
 - **Redundancy:** the `AGENTS.md` / Cursor stub tells agents to call `get_project` first and `get_rules` / `orient_for_work` before each action; when tools are hidden, read the init-installed copies under `.cursor/` (rule + skills) or `.claude/` (skills, plus `CLAUDE.md`) and, if present, `AGENTS.md` — not `mindplan/**` (ignored by the host so agents do not hand-edit territory).
 - **Storage seam:** the brief loads through `loadProjectBrief` (today `mindplan/project.md`). A later remote store MAY replace that read; `get_project` and `get_rules` keep the same contract. This specification does not define a cloud backend.
+
+#### 1.1.2 Version stamp (`mindplan/version.json`)
+
+Consumers install `mindplan-mcp` from npm and upgrade it like any dependency. The playbook, skills, and host copies that init installs, and the graph format itself, change between releases, so the tree records which package version last brought it up to date: `{ "package": "<semver>", "graph": <GRAPH_VERSION> }`.
+
+- Only `mindplan-mcp init` writes the stamp, after its migrations and installers succeed, with the running package version and graph format. No MCP tool writes it.
+- Init MUST rewrite the **package-owned** files (`mindplan/agent/playbook.md`, `mindplan/agent/skills/`, `mindplan/agent/mcp.json.example`, `mindplan/agent/integrations/`, the host skill copies, and `.cursor/rules/mindplan.mdc`) when the stamp is missing, unreadable, or older than the package, as if `--force` were passed for those files only. **Repo-owned** files (`AGENTS.md`, `CLAUDE.md`, `.cursorignore`, `.cursor/permissions.json`) still change only with `--force`; `mindplan/project.md` never. The report carries `version: { from, to, refreshed }`.
+- A stamp newer than the running package MUST stop init with `Blocked:` before any write, naming the upgrade; `--force` rewrites the tree with the running version.
+- Status compares the graph format first, then the package version by SemVer precedence (a pre-release sorts before its release; build metadata is ignored): `current`, `missing`, `invalid`, `behind`, `ahead`. Every status but `current` has one warning sentence naming the fix: rerun init with the running version (`missing`, `invalid`, `behind`) or upgrade `mindplan-mcp` (`ahead`).
+- The warning reaches the agent through `get_project` (`version`, §8.1) and the check (`Warning: version: …`, §9.6). It never Blocks a tool or fails the check.
 
 ### 1.2 Declared file ownership
 
@@ -1231,11 +1242,12 @@ Live read of the systems dialect and the project brief (§1.1.1). Call before th
   "description": "What this product is…",
   "rules": "- Standing constraint…",
   "playbook": "# MindPlan — think in systems\n…",  // always the bundled systems dialect
-  "check": "Run the check with the run_check tool (CLI: mindplan-mcp check) before …"  // names the integrity check
+  "check": "Run the check with the run_check tool (CLI: mindplan-mcp check) before …",  // names the integrity check
+  "version": "This project was last initialized with mindplan-mcp 0.1.0 …"  // only when the stamp is not current (§1.1.2)
 }
 ```
 
-When the brief is missing or unreadable, `description` and `rules` are empty strings and `path` remains the local relative path while territory is file-backed. `playbook` is always loaded from the package’s `templates/agent/playbook.md`. `check` is a fixed sentence naming the `run_check` tool and the CLI `mindplan-mcp check`.
+When the brief is missing or unreadable, `description` and `rules` are empty strings and `path` remains the local relative path while territory is file-backed. `playbook` is always loaded from the package’s `templates/agent/playbook.md`. `check` is a fixed sentence naming the `run_check` tool and the CLI `mindplan-mcp check`. `version` is present only when the version stamp is not `current` (§1.1.2), and is its warning sentence.
 
 - **Errors:** missing or unreadable bundled playbook → `Blocked:` (agents MUST NOT invent the dialect). Brief I/O failures surface as empty `description` / `rules` (`loadProjectBrief` MUST NOT throw).
 
@@ -1494,7 +1506,7 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 **Imports over every claim.** The import matrix scans each universe file as every node that claims it — its live owner, its `next`-slot owner, and a **released** current-slot owner (a file the open `next` dropped) — and resolves import targets through released claims too. A violation that only this wider scan finds (a released file, a target that is only released, or a file's second claimant) is reported as `Warning: imports (next slot): …` in this release so existing graphs keep passing; it becomes `Blocked:` in the next release.
 
-**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`. The check also warns about every decision-worthy open revision with no decision yet, at any pre-ship state (`Warning: decision: …`, §5.13), about next-slot imports (above), and about a **route family split** between owners (§1.2.3): `Warning: routes: route family "<dir>/" is split: "<id>" (Assembler) owns …; "<id>" (entry point) owns …`.
+**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`. The check also warns about every decision-worthy open revision with no decision yet, at any pre-ship state (`Warning: decision: …`, §5.13), about next-slot imports (above), about a version stamp that is not current (`Warning: version: …`, §1.1.2), and about a **route family split** between owners (§1.2.3): `Warning: routes: route family "<dir>/" is split: "<id>" (Assembler) owns …; "<id>" (entry point) owns …`.
 
 The `run_check` tool (§8.1) returns this same output to agents. Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
 

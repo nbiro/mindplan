@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — npm release and version stamp
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **Install from npm.** `mindplan-mcp` publishes to the public registry. A project with a `package.json` adds it as a dev dependency and registers `npx mindplan-mcp`; any other project registers `npx -y mindplan-mcp@<range>`. `mcp.json.example` and every integration guide now use `npx`. `npm run publish:release` (by hand, first claim) and `.github/workflows/publish.yml` (every merge to `main` that bumps `package.json` `version`, OIDC Trusted Publishing, then a `vX.Y.Z` tag) share one publish script.
+- **Version stamp.** `mindplan-mcp init` writes `mindplan/version.json` (`{ package, graph }`). When the stamp is missing, unreadable, or older than the running server, `get_project` returns a `version` warning and `check` prints `Warning: version: …`; neither fails. Rerunning init rewrites the package-owned agent files (playbook, skills, integrations, MCP example, host skill copies, Cursor rule) without `--force` and leaves `AGENTS.md`, `CLAUDE.md`, `.cursorignore`, `.cursor/permissions.json`, and `project.md` alone. A stamp newer than the server warns too, and init refuses it without `--force`. **Upgrade step:** existing projects have no stamp, so they see the warning until they rerun `mindplan-mcp init` once. [§1.1.2, §8.1, §9.6]
+
 ## Unreleased — MCP audit fixes
 
 Every behavior change in this release. SPEC sections in brackets.

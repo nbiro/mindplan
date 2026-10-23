@@ -5,13 +5,11 @@
  * Tool registration: if-mcp-tools. Handlers live in Interactions.
  */
 
-import * as fs from "fs";
-import * as path from "path";
-import { fileURLToPath } from "url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { ensureDirectories } from "../f-territory-store/store.js";
+import { packageVersion } from "../f-territory-store/version.js";
 import { registerMindPlanTools } from "../../interfaces/if-mcp-tools/register.js";
 import { runCli } from "../../interfaces/if-cli/cli.js";
 
@@ -27,25 +25,12 @@ export const SERVER_INSTRUCTIONS =
   "it covers every graph write (create_node, open_next, discard_next, link_nodes, unlink_nodes, patch_node_territory, " +
   "patch_node_rules, patch_project_description, patch_project_rules, patch_config, and attachments).";
 
-/** Version reported on `initialize` when package.json cannot be read. */
-const FALLBACK_VERSION = "0.0.0";
-
 /**
- * Reads `version` from this package's own package.json, resolved relative to the compiled
- * module (dist/foundations/f-mcp-runtime/server.js -> ../../../package.json), so it works from
- * a consumer's node_modules. Never throws: an unreadable file yields the fallback and a stderr note.
+ * The package version reported on `initialize`, read from this package's own package.json
+ * (works from a consumer's node_modules). Never throws: an unreadable file yields 0.0.0 and a stderr note.
  */
 export function readPackageVersion(): string {
-  try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const manifest = path.resolve(here, "..", "..", "..", "package.json");
-    const parsed = JSON.parse(fs.readFileSync(manifest, "utf-8")) as { version?: unknown };
-    return typeof parsed.version === "string" && parsed.version ? parsed.version : FALLBACK_VERSION;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    console.error(`MindPlan: could not read package.json version (${reason}); reporting ${FALLBACK_VERSION}`);
-    return FALLBACK_VERSION;
-  }
+  return packageVersion();
 }
 
 async function runMcpServer(): Promise<void> {

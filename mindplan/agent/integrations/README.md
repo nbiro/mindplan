@@ -18,7 +18,8 @@ MindPlan works with any coding agent that supports **Model Context Protocol (MCP
 - MCP `instructions` — short pointer: call `get_project` before answering or writing code
 - `get_project.playbook` — bundled dialect (also installed under `mindplan/agent/` for packaging; host offline copies live under `.cursor/`)
 - Host skill copies — `define-entities`, `plan-project` (Cursor: `.cursor/skills/…`)
-- `mindplan/agent/mcp.json.example` — MCP server snippet (adjust the path)
+- `mindplan/agent/mcp.json.example` — MCP server snippet (`npx mindplan-mcp`)
+- `mindplan/version.json` — the package version that last ran init; rerun `mindplan-mcp init` after upgrading (`get_project` and `check` warn until you do)
 
 If your agent reads root **`AGENTS.md`**, `init` creates the stub when missing. Otherwise add `templates/agent/agents-stub.md` yourself.
 

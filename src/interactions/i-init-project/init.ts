@@ -1,5 +1,6 @@
 /**
  * Consumer project init — scaffolds mindplan/ and installs agent assets.
+ * Stamps mindplan/version.json; a missing or older stamp refreshes the package-owned agent files.
  * Migrates legacy implementation_packages → { sources, exclude } and seeds implements/role.
  * Renames legacy current.mdx / next.mdx to <id>.mdx / <id>.next.mdx before graph load.
  * Owned by Interaction i-init-project.
@@ -42,6 +43,10 @@ import {
   writeMirrorTwin,
   writeRoleFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
+import {
+  projectVersionStatus,
+  writeProjectVersion,
+} from "../../foundations/f-territory-store/version.js";
 
 export type InitResult = {
   root: string;
@@ -723,6 +728,8 @@ export type RunInitReport = {
     claudeMd: InstallAgentRuleResult;
     skills: InstallSkillResult[];
   };
+  /** The stamp before (null when absent or unreadable) and after this run; refreshed when package-owned files were rewritten. */
+  version: { from: string | null; to: string; refreshed: boolean };
   /** Standing next twins written for shipped pipeline nodes that lacked a mirror or had drifted. */
   mirrorTwins: MirrorBackfill[];
   /** Shipped nodes whose twin could not be written (live unreadable, etc.). */
@@ -770,33 +777,44 @@ export function backfillMirrorTwins(): MirrorBackfillResult {
  */
 export function runInit(opts: RunInitOptions): RunInitReport {
   const installOpts = { force: opts.force };
+  const status = projectVersionStatus();
+  if (status.state === "ahead" && !opts.force) {
+    throw new Error(
+      `Blocked: ${status.warning} Or pass --force to rewrite this project with ${status.running.package}.`
+    );
+  }
+  // Package-owned files follow the package: rewrite them when the stamp is not current.
+  // Repo-owned files (AGENTS.md, CLAUDE.md, .cursorignore, permissions, project.md) keep installOpts.
+  const refreshed = opts.force || status.state !== "current";
+  const packageOpts = { force: refreshed };
   try {
   const territoryFilenames = migrateLegacyTerritoryFilenames();
   const { root, created } = initProject();
   const projectConfig = installProjectConfig();
   const projectBrief = installProjectBrief(opts.packageRoot);
-  const playbook = installAgentPlaybook(opts.packageRoot, installOpts);
-  const skill = installDefineEntitiesSkill(opts.packageRoot, installOpts);
-  const planSkill = installPlanProjectSkill(opts.packageRoot, installOpts);
-  const mcpExample = installMcpExample(opts.packageRoot, installOpts);
-  const integrations = installAgentIntegrations(opts.packageRoot, installOpts);
+  const playbook = installAgentPlaybook(opts.packageRoot, packageOpts);
+  const skill = installDefineEntitiesSkill(opts.packageRoot, packageOpts);
+  const planSkill = installPlanProjectSkill(opts.packageRoot, packageOpts);
+  const mcpExample = installMcpExample(opts.packageRoot, packageOpts);
+  const integrations = installAgentIntegrations(opts.packageRoot, packageOpts);
   const agentsMd = installRootAgentsMd(opts.packageRoot, installOpts);
   const hosts = opts.hosts ?? ["cursor"];
   const cursor = hosts.includes("cursor")
     ? {
         ignore: installCursorIgnore(opts.packageRoot, installOpts),
-        skills: installCursorSkills(opts.packageRoot, installOpts),
-        rule: installCursorRule(opts.packageRoot, installOpts),
+        skills: installCursorSkills(opts.packageRoot, packageOpts),
+        rule: installCursorRule(opts.packageRoot, packageOpts),
         permissions: installCursorPermissions(opts.packageRoot, installOpts),
       }
     : undefined;
   const claude = hosts.includes("claude")
     ? {
         claudeMd: installClaudeMd(installOpts),
-        skills: installClaudeSkills(opts.packageRoot, installOpts),
+        skills: installClaudeSkills(opts.packageRoot, packageOpts),
       }
     : undefined;
   const mirrorBackfill = backfillMirrorTwins();
+  writeProjectVersion(status.running);
 
   return {
     root,
@@ -812,6 +830,11 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     agentsMd,
     cursor,
     claude,
+    version: {
+      from: status.project?.package ?? null,
+      to: status.running.package,
+      refreshed,
+    },
     mirrorTwins: mirrorBackfill.written,
     mirrorTwinSkips: mirrorBackfill.skipped,
     removedLegacyFiles: drainRemovedLegacyFiles(),

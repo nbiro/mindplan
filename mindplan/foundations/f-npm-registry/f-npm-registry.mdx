@@ -4,9 +4,12 @@ type: Foundation
 role: adapter
 title: "npm registry adapter"
 description: "Adapter — npm registry + Trusted Publishing (OIDC) for mindplan-mcp releases without long-lived NPM_TOKEN."
-state: ready
+state: in-review
 created_at: 2026-07-19T20:19:03.811Z
-updated_at: 2026-09-23T13:54:16.358Z
+updated_at: 2026-10-23T14:42:38.770Z
+change: "npm-release"
+implements:
+  - src/foundations/f-npm-registry/
 ---
 
 # npm registry adapter
@@ -25,7 +28,7 @@ npm Trusted Publishing is normally configured on an **already-published** packag
 | Manual / break-glass OTP path is documented | Package already claimed on the registry |
 | Downstream Interactions know `id-token: write` + `registry-url` rules | Release interaction YAML exists |
 
-**Live binding** (npm UI: Trusted Publisher → GitHub Actions → `nbiro/mindplan` + publish interaction file) is an Atomic Op on **`i-npm-tag-publish`**, performed **after** `i-npm-publish` has claimed the package. Do not block first publish on a live Trusted Publisher.
+**Live binding** (npm UI: Trusted Publisher → GitHub Actions → `nbiro/mindplan` + publish workflow file) is an Atomic Op on **`i-npm-tag-publish`**, performed **after** `i-npm-publish` has claimed the package. Do not block first publish on a live Trusted Publisher.
 
 `i-npm-publish` depends on this Foundation for registry identity and the documented OIDC contract — not for a completed npm UI binding.
 
@@ -40,7 +43,8 @@ npm Trusted Publishing is normally configured on an **already-published** packag
 ### Trusted Publishing (OIDC) contract
 
 - Target binding (after first claim): npmjs.com package `mindplan-mcp` → Trusted Publisher → GitHub Actions
-- Bind to repo `nbiro/mindplan` and the **release interaction file owned by `i-npm-tag-publish`** (`.github/interactions/publish.yml`)
+- Bind to repo `nbiro/mindplan` and the **release workflow file owned by `i-npm-tag-publish`** (`.github/workflows/publish.yml`)
+- Trusted Publishing needs npm CLI 11.5.1 or later in the publishing job; the job upgrades npm before publishing because `actions/setup-node` ships an older npm
 - CI jobs that publish MUST request `permissions: id-token: write` and use `actions/setup-node` with `registry-url: https://registry.npmjs.org`
 - **No** repository secret `NPM_TOKEN` for the automated path
 - This Foundation documents the contract; `f-github-actions` documents how Assembler jobs apply it; `i-npm-tag-publish` performs the live npm UI bind
@@ -48,7 +52,7 @@ npm Trusted Publishing is normally configured on an **already-published** packag
 ### Manual publish (first claim / emergency)
 
 - Maintainer interactive `npm login` + OTP remains valid for the first claim and break-glass publishes (`i-npm-publish`)
-- After live Trusted Publishing is bound, prefer tag-driven OIDC for routine releases
+- After live Trusted Publishing is bound, routine releases publish over OIDC when a version bump merges to `main`
 
 ### Provenance
 
@@ -71,12 +75,12 @@ Package: `src/foundations/f-npm-registry/`. Docs + contract only for ship; no ru
 - Manual OTP path remains documented for first publish
 - Ship does **not** require a live Trusted Publisher on npmjs.com
 
-## Checklist
+## Atomic Ops
 
-- [ ] Package identity + OIDC contract documented (`id-token: write`, `registry-url`, no `NPM_TOKEN`)
-- [ ] Documented that live Trusted Publisher binding happens after first claim on `i-npm-tag-publish`
-- [ ] Break-glass / first-publish interactive login path documented
-- [ ] Ship gate explicitly does not require live npm UI binding
+- [x] Package identity + OIDC contract documented (`id-token: write`, `registry-url`, no `NPM_TOKEN`) — note: src/foundations/f-npm-registry/README.md, including npm 11.5.1+ for Trusted Publishing
+- [x] Documented that live Trusted Publisher binding happens after first claim on `i-npm-tag-publish`
+- [x] Break-glass / first-publish interactive login path documented
+- [x] Ship gate explicitly does not require live npm UI binding
 
 ## Attachments
 

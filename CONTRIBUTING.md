@@ -42,12 +42,26 @@ Planning data (`mindplan/`) lives in **consumer projects**, not in this repo. Co
 
 ## Publishing (maintainers)
 
+One script publishes, by hand or from CI: `src/interactions/i-npm-publish/publish.mjs` (`npm run publish:release`). It checks the package and a clean tree, runs `npm test`, asserts the tarball holds only `dist/`, `templates/`, `README.md`, `SPEC.md`, `LICENSE`, and `package.json`, publishes, and verifies the registry (and, by hand, a fresh `npx mindplan-mcp init`). Add `-- --dry-run` to run everything but the publish. Do not commit `dist/` to git.
+
+**First publish (claims the name).** From a clean checkout of `main`:
+
 ```bash
-npm version patch   # or minor / major
-npm publish
+npm login
+npm run publish:release
 ```
 
-`prepublishOnly` builds `dist/` automatically. Do not commit `dist/` to git.
+Then bind npm Trusted Publishing on npmjs.com (package settings → Trusted Publisher → GitHub Actions): owner `nbiro`, repository `mindplan`, workflow `publish.yml`, environment `npm-publish`. Create the `npm-publish` environment in the GitHub repository settings, with required reviewers if you want an approval step. See `src/foundations/f-npm-registry/README.md`.
+
+**Every later release: bump the version in the PR, then merge.**
+
+```bash
+npm version minor --no-git-tag-version   # or patch / major; 0.x: minor for breaking changes
+```
+
+On every push to `main`, `.github/workflows/publish.yml` checks whether `package.json`'s version is on npm. When it is not, it runs `npm run publish:release -- --ci` with OIDC (no `NPM_TOKEN`) and pushes the tag `vX.Y.Z`. A merge without a bump publishes nothing and never waits on the `npm-publish` environment. If a release fails after the merge, fix the cause and re-run the workflow (or run it by hand on `main`): the version is still unpublished, so it publishes then. A broken release is fixed by a new patch version, never by moving a tag.
+
+**Versioning.** Until 1.0.0, a minor bump may break: list it in `CHANGELOG.md` with **Breaking** and what a project must do. Any change to the playbook, the skills, or the graph format reaches a project when it reruns `mindplan-mcp init`; `mindplan/version.json` makes `get_project` and `check` remind it.
 
 ## Reporting issues
 

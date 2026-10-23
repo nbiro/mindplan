@@ -15,6 +15,7 @@ import {
   type NodeType,
 } from "../../foundations/f-domain-model/types.js";
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
+import { projectVersionStatus } from "../../foundations/f-territory-store/version.js";
 import {
   ATTACHMENTS_DIR,
   NEXT_ATTACHMENTS_DIR,
@@ -730,16 +731,19 @@ export const CHECK_HINT =
 
 /**
  * Project brief (description + rules) plus the bundled systems dialect (playbook).
+ * `version` is the stamp warning, present only when mindplan/version.json is not current.
  * Call before the first answer or code change; call again after description/rules change.
  */
 export function getProject(): Record<string, unknown> {
   const brief = loadProjectBrief();
+  const version = projectVersionStatus();
   return {
     path: brief.path,
     description: brief.description,
     rules: brief.rules,
     playbook: loadBundledPlaybook(),
     check: CHECK_HINT,
+    ...(version.warning ? { version: version.warning } : {}),
   };
 }
 

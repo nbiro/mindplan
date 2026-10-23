@@ -6,12 +6,14 @@
 {
   "mcpServers": {
     "mindplan": {
-      "command": "node",
-      "args": ["/absolute/path/to/mindplan/dist/index.js"]
+      "command": "npx",
+      "args": ["mindplan-mcp"]
     }
   }
 }
 ```
+
+`npx mindplan-mcp` runs the copy pinned in your `package.json` dev dependencies (`npm install -D mindplan-mcp`). In a project without a `package.json`, use `"args": ["-y", "mindplan-mcp@0.1"]`.
 
 Use `mindplan/agent/mcp.json.example` as the starting point.
 

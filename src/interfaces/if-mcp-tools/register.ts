@@ -416,7 +416,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
         "Returns the systems dialect and this product's description and standing rules " +
-        "({ path, description, rules, playbook }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md.",
+        "({ path, description, rules, playbook, check, version? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
+        "version appears only when mindplan/version.json is missing or does not match this server, and names the fix.",
       inputSchema: {},
     },
     () => getProject()

@@ -2,23 +2,31 @@
 id: i-npm-publish
 type: Interaction
 title: "Publish to npm"
-description: "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs under tag-driven CI."
-state: ready
+description: "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs in CI on every merge to main that bumps the version."
+state: in-progress
 created_at: 2026-07-15T18:51:52.964Z
-updated_at: 2026-07-19T20:26:45.448Z
+updated_at: 2026-10-23T14:42:38.745Z
+change: "npm-release"
 belongs_to:
   - j-agent-onboarding
   - j-npm-publish
 depends_on:
   - f-mcp-runtime
   - f-npm-registry
+implements:
+  - src/interactions/i-npm-publish/
 ---
 
 # Publish to npm
 
 ## Purpose
 
-Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning from source. Own a **single reusable publish script** that maintainers run for the first claim and that `i-npm-tag-publish` invokes non-interactively on version tags.
+Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning from source. Own a **single reusable publish script** that maintainers run for the first claim and that `i-npm-tag-publish` invokes non-interactively when a merge to `main` carries an unpublished version.
+
+## Actor & Trigger
+
+- **Actor:** maintainer on their machine (first claim, break-glass), or `i-npm-tag-publish` in CI
+- **Trigger:** `npm run publish:release` (maintainer mode) or `npm run publish:release -- --ci` (CI mode)
 
 ## Goal
 
@@ -34,19 +42,20 @@ and get a working CLI + MCP server whose `templates/` and `dist/` match this rep
 
 ## Acceptance Criteria
 
-- [ ] Publish script under the prescribed package encodes dry-run → test → publish → verify; CI can call non-interactive mode of the **same** script.
+- [x] Publish script under the prescribed package encodes dry-run → test → publish → verify; CI can call non-interactive mode of the **same** script.
 - [ ] Package name `mindplan-mcp` is claimed on the public registry at version `0.1.0` (or the next SemVer if already taken by us).
-- [ ] Dry-run / pack listing asserts tarball contents: `dist/`, `templates/`, `README.md`, `SPEC.md`, `LICENSE` — not `src/`, tests, or local `mindplan/` territory.
-- [ ] `npx mindplan-mcp --help` (or `mindplan-mcp help` after global install) shows init/view/help usage.
-- [ ] README Quick start leads with npm / `npx`; clone+build remains a contributor path.
-- [ ] `CONTRIBUTING.md` Publishing documents the script for first/manual publish and points later releases to `i-npm-tag-publish`.
+- [x] Dry-run / pack listing asserts tarball contents: `dist/`, `templates/`, `README.md`, `SPEC.md`, `LICENSE` — not `src/`, tests, or local `mindplan/` territory.
+- [x] `npx mindplan-mcp --help` (or `mindplan-mcp help` after global install) shows init/view/help usage. — note: verified from the built package (`mindplan-mcp --help`); the script re-runs `npx mindplan-mcp help` after the first publish
+- [x] README Quick start leads with npm / `npx`; clone+build remains a contributor path.
+- [x] `CONTRIBUTING.md` Publishing documents the script for first/manual publish and points later releases to `i-npm-tag-publish`.
 
 ## Versioning policy
 
 - **Scheme:** SemVer starting at current `package.json` version **`0.1.0`**.
 - **Until 1.0.0:** treat the public API as evolving; prefer `minor` for additive changes, `patch` for fixes; document breakage in changelog/SPEC when not bumping major on 0.x.
 - **First publish:** publish whatever is currently in `package.json` (expected `0.1.0`).
-- **Later releases:** bump version on **main**, push matching `vX.Y.Z` tag; automation is `i-npm-tag-publish`.
+- **Later releases:** bump the version in a PR and merge it to **main**; `i-npm-tag-publish` publishes it and tags `vX.Y.Z`.
+- **CI mode** (`--ci`) runs only on `refs/heads/main` and exits 0 without publishing when the registry already lists the version.
 
 ## Release style (this Interaction)
 
@@ -54,11 +63,11 @@ and get a working CLI + MCP server whose `templates/` and `dist/` match this rep
 
 Depends on `f-npm-registry` for **package identity + OIDC contract docs** — not for a live Trusted Publisher binding (that binding is `i-npm-tag-publish` after this Interaction claims the package).
 
-Handoff: once the script works and the package is claimed, live Trusted Publishing + tag automation is `i-npm-tag-publish` (using conventions from `f-npm-registry` / `f-github-actions`).
+Handoff: once the script works and the package is claimed, live Trusted Publishing + merge-to-main automation is `i-npm-tag-publish` (using conventions from `f-npm-registry` / `f-github-actions`).
 
 Out of scope for this node:
 
-- `.github/interactions/publish.yml` (owned by `i-npm-tag-publish`)
+- `.github/workflows/publish.yml` (owned by `i-npm-tag-publish`)
 - Live npm Trusted Publishing UI binding
 - Automated changelog generation
 
@@ -89,8 +98,10 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 
 ### Docs sync
 
-- README Quick start: npm / `npx` primary.
-- CONTRIBUTING: first publish = run the script after `npm login`; later = bump on main, tag, push (automation lands with `i-npm-tag-publish`).
+- README Quick start: npm / `npx` primary. Two consumer paths: a project with a `package.json` adds `mindplan-mcp` as a devDependency (version pinned by its lockfile, upgraded with `npm update`) and registers `npx mindplan-mcp`; any other project registers `npx -y mindplan-mcp@<range>`.
+- README upgrade section: after a version bump, rerun `npx mindplan-mcp init` (the `mindplan/version.json` stamp makes `get_project` and `check` warn until it runs).
+- `templates/agent/mcp.json.example` and `templates/agent/integrations/*.md` register `npx mindplan-mcp`, not a local `dist/index.js` path.
+- CONTRIBUTING: first publish = run the script after `npm login`; later = bump the version in a PR and merge to main (`i-npm-tag-publish` publishes and tags).
 
 ## Failure / recovery
 
@@ -98,16 +109,16 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 - **`0.1.0` already published by us:** bump patch/minor and publish; update docs.
 - **Broken publish after install check:** ship a patch via the same script; never leave README advertising a broken path.
 
-## Checklist
+## Atomic Ops
 
-- [ ] Publish script lives under `src/interactions/i-npm-publish/` with maintainer + CI modes (CI mode includes `npm test`)
-- [ ] Optional root `package.json` script wrapper points at that implementation
-- [ ] Pack/dry-run asserts tarball allowlist (`dist/`, `templates/`, docs, LICENSE)
-- [ ] `npm test` green on the release commit
+- [x] Publish script lives under `src/interactions/i-npm-publish/` with maintainer + CI modes (CI mode includes `npm test`)
+- [x] Optional root `package.json` script wrapper points at that implementation — note: `npm run publish:release`
+- [x] Pack/dry-run asserts tarball allowlist (`dist/`, `templates/`, docs, LICENSE)
+- [x] `npm test` green on the release commit — note: `npm run publish:release -- --dry-run` passed on a clean worktree of the branch head
 - [ ] `mindplan-mcp@0.1.0` (or next SemVer) published to the public registry
 - [ ] Fresh-install verification (`help` + `init`) passed
-- [ ] README Quick start updated for npm / `npx` primary install
-- [ ] `CONTRIBUTING.md` Publishing section matches this runbook and points to tag-driven follow-up
+- [x] README Quick start updated for npm / `npx` primary install
+- [x] `CONTRIBUTING.md` Publishing section matches this runbook and points to merge-to-main releases
 
 ## Attachments
 

@@ -6,14 +6,16 @@
 {
   "mcpServers": {
     "mindplan": {
-      "command": "node",
-      "args": ["/absolute/path/to/mindplan/dist/index.js"]
+      "command": "npx",
+      "args": ["mindplan-mcp"]
     }
   }
 }
 ```
 
-2. **Always-on stub** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + a short stub) when missing. The stub requires `get_project` (dialect + project brief), `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work. MCP `instructions` are the same short pointer (no rules body). If tools are hidden, use `.cursor/rules` + `.cursor/skills` + root `AGENTS.md` — not `mindplan/**`. After upgrading MindPlan, re-run `mindplan-mcp init -f` (or `--force`) to refresh the stub, playbook, skills, and Cursor copies. If the rule was deleted, recreate it with:
+`npx mindplan-mcp` runs the copy pinned in your `package.json` dev dependencies (`npm install -D mindplan-mcp`). In a project without a `package.json`, use `"args": ["-y", "mindplan-mcp@0.1"]`.
+
+2. **Always-on stub** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + a short stub) when missing. The stub requires `get_project` (dialect + project brief), `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work. MCP `instructions` are the same short pointer (no rules body). If tools are hidden, use `.cursor/rules` + `.cursor/skills` + root `AGENTS.md` — not `mindplan/**`. After upgrading MindPlan, re-run `mindplan-mcp init`: `mindplan/version.json` is older than the package, so init refreshes the playbook, skills, and Cursor copies (`get_project` and `check` warn until it runs). Add `-f` (or `--force`) only to also overwrite `AGENTS.md`, `.cursorignore`, and `.cursor/permissions.json`. If the rule was deleted, recreate it with:
 
 ```yaml
 ---
@@ -28,7 +30,7 @@ Paste the contents of `templates/agent/agents-stub.md` below the frontmatter. Ro
    - `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Interaction, Interface, Bug nodes)
    - `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
 
-   Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories, or re-run `mindplan-mcp init -f` after a MindPlan upgrade / if the `.cursor/skills/` trees were removed.
+   Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories, or re-run `mindplan-mcp init` (it reinstalls missing trees, and refreshes them after a MindPlan upgrade).
 
 4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It ignores the entire `mindplan/**` tree so Cursor will not edit or index territory (MCP is the only writer). Offline fallback is `get_project` plus copies under `.cursor/rules` and `.cursor/skills`:
 
