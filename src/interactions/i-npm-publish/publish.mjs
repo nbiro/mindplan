@@ -39,12 +39,12 @@ function step(title) {
   console.log(`\n== ${title}`);
 }
 
-/** Runs a command in the repo root; exits on failure unless `allowFailure`. */
-function run(cmd, cmdArgs, { capture = false, cwd = repoRoot, allowFailure = false } = {}) {
+/** Runs a command in the repo root; exits on failure unless `allowFailure`. `quiet` drops stderr of a captured run. */
+function run(cmd, cmdArgs, { capture = false, quiet = false, cwd = repoRoot, allowFailure = false } = {}) {
   const res = spawnSync(cmd, cmdArgs, {
     cwd,
     encoding: "utf-8",
-    stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit",
+    stdio: capture ? ["ignore", "pipe", quiet ? "ignore" : "inherit"] : "inherit",
     shell: process.platform === "win32",
   });
   if (res.status !== 0 && !allowFailure) {
@@ -57,6 +57,7 @@ function run(cmd, cmdArgs, { capture = false, cwd = repoRoot, allowFailure = fal
 function registryVersion() {
   const res = run("npm", ["view", `${PACKAGE_NAME}@${readManifest().version}`, "version"], {
     capture: true,
+    quiet: true,
     allowFailure: true,
   });
   return res.status === 0 ? res.stdout.trim() : "";

@@ -5,7 +5,7 @@ title: "Publish on merge to main"
 description: "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing."
 state: in-progress
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-10-23T14:42:21.038Z
+updated_at: 2026-10-23T14:44:08.974Z
 change: "npm-release"
 belongs_to:
   - j-npm-publish
@@ -44,13 +44,13 @@ CI publishes `mindplan-mcp@X.Y.Z` using OIDC and pushes tag `vX.Y.Z`.
 
 - [ ] A push to `main` whose `package.json` version is not on npm publishes that version and pushes tag `vX.Y.Z` on the pushed commit.
 - [ ] A push to `main` whose version is already on npm publishes nothing and does not wait for an environment approval.
-- [ ] Auth is npm Trusted Publishing only — no `NPM_TOKEN` repository secret.
-- [ ] Only the publish job uses GitHub Environment `npm-publish` (where maintainers may require reviewers), so skipped pushes never wait for approval.
-- [ ] Release job invokes the shared publish script in CI mode (must include `npm test` — not a bare `npm publish`).
-- [ ] CI mode refuses any ref other than `refs/heads/main`, and exits 0 without publishing when the version is already on npm.
-- [ ] Two pushes in quick succession never publish concurrently.
+- [x] Auth is npm Trusted Publishing only — no `NPM_TOKEN` repository secret.
+- [x] Only the publish job uses GitHub Environment `npm-publish` (where maintainers may require reviewers), so skipped pushes never wait for approval.
+- [x] Release job invokes the shared publish script in CI mode (must include `npm test` — not a bare `npm publish`).
+- [x] CI mode refuses any ref other than `refs/heads/main`, and exits 0 without publishing when the version is already on npm.
+- [x] Two pushes in quick succession never publish concurrently. — note: workflow-level concurrency group `publish`, cancel-in-progress false
 - [ ] Live Trusted Publisher on npmjs.com is bound to this workflow **after** first claim.
-- [ ] `CONTRIBUTING.md` documents: bump the version in a PR → merge to main.
+- [x] `CONTRIBUTING.md` documents: bump the version in a PR → merge to main.
 
 ## Prerequisites (Infrastructure First)
 
@@ -100,10 +100,10 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 
 ## Atomic Ops
 
-- [ ] Rewrite `.github/workflows/publish.yml`: push-to-main trigger, `version` gate job, `publish` job with environment, tag push, concurrency
-- [ ] Publish script CI mode: require `refs/heads/main`, skip when the version is already on npm
-- [ ] OIDC permissions + `registry-url` per `f-npm-registry` / `f-github-actions`
-- [ ] `CONTRIBUTING.md` and `f-npm-registry` docs describe merge-to-main releases
+- [x] Rewrite `.github/workflows/publish.yml`: push-to-main trigger, `version` gate job, `publish` job with environment, tag push, concurrency
+- [x] Publish script CI mode: require `refs/heads/main`, skip when the version is already on npm
+- [x] OIDC permissions + `registry-url` per `f-npm-registry` / `f-github-actions`
+- [x] `CONTRIBUTING.md` and `f-npm-registry` docs describe merge-to-main releases
 - [ ] GitHub Environment `npm-publish` created (reviewers optional)
 - [ ] Live Trusted Publisher bound on npmjs.com after first claim
 - [ ] End-to-end verify: a version-bump merge publishes and tags; a merge without a bump skips
