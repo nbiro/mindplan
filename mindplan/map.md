@@ -17,7 +17,7 @@ flowchart TB
     f_graph_search["f-graph-search · Graph search · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
-    f_npm_registry["f-npm-registry · npm registry adapter · in-progress"]
+    f_npm_registry["f-npm-registry · npm registry adapter · in-review"]
     f_source_index["f-source-index · Source index · stable"]
     f_territory_store["f-territory-store · Territory store · stable"]
     f_test_harness["f-test-harness · Test harness · stable"]

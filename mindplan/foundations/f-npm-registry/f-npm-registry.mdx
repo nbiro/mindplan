@@ -4,9 +4,9 @@ type: Foundation
 role: adapter
 title: "npm registry adapter"
 description: "Adapter — npm registry + Trusted Publishing (OIDC) for mindplan-mcp releases without long-lived NPM_TOKEN."
-state: in-progress
+state: in-review
 created_at: 2026-07-19T20:19:03.811Z
-updated_at: 2026-10-23T14:25:32.472Z
+updated_at: 2026-10-23T14:32:53.410Z
 change: "npm-release"
 implements:
   - src/foundations/f-npm-registry/
@@ -77,10 +77,10 @@ Package: `src/foundations/f-npm-registry/`. Docs + contract only for ship; no ru
 
 ## Atomic Ops
 
-- [ ] Package identity + OIDC contract documented (`id-token: write`, `registry-url`, no `NPM_TOKEN`)
-- [ ] Documented that live Trusted Publisher binding happens after first claim on `i-npm-tag-publish`
-- [ ] Break-glass / first-publish interactive login path documented
-- [ ] Ship gate explicitly does not require live npm UI binding
+- [x] Package identity + OIDC contract documented (`id-token: write`, `registry-url`, no `NPM_TOKEN`) — note: src/foundations/f-npm-registry/README.md, including npm 11.5.1+ for Trusted Publishing
+- [x] Documented that live Trusted Publisher binding happens after first claim on `i-npm-tag-publish`
+- [x] Break-glass / first-publish interactive login path documented
+- [x] Ship gate explicitly does not require live npm UI binding
 
 ## Attachments
 

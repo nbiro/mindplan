@@ -5,7 +5,7 @@ title: "Tag-driven npm publish"
 description: "On v* git tag push, GitHub Actions runs the same publish script and releases to npm via OIDC Trusted Publishing."
 state: in-progress
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-10-23T14:25:32.436Z
+updated_at: 2026-10-23T14:32:46.890Z
 change: "npm-release"
 belongs_to:
   - j-npm-publish
@@ -44,12 +44,12 @@ CI publishes `mindplan-mcp@X.Y.Z` using OIDC.
 ## Acceptance Criteria
 
 - [ ] Pushing tag `vX.Y.Z` (SemVer; equals `package.json` version) on a commit reachable from `main` triggers publish.
-- [ ] Auth is npm Trusted Publishing only — no `NPM_TOKEN` repository secret.
+- [x] Auth is npm Trusted Publishing only — no `NPM_TOKEN` repository secret.
 - [ ] Job uses GitHub Environment `npm-publish` (or equivalent) with required reviewers / protection rules appropriate for maintainers.
-- [ ] Release job invokes the shared publish script in CI mode (must include `npm test` — not a bare `npm publish`).
-- [ ] Mismatched tag vs `package.json` version fails before publish.
+- [x] Release job invokes the shared publish script in CI mode (must include `npm test` — not a bare `npm publish`).
+- [x] Mismatched tag vs `package.json` version fails before publish.
 - [ ] Live Trusted Publisher on npmjs.com is bound to this interaction **after** first claim.
-- [ ] `CONTRIBUTING.md` documents: bump on main → tag `vX.Y.Z` → push tag.
+- [x] `CONTRIBUTING.md` documents: bump on main → tag `vX.Y.Z` → push tag.
 
 ## Prerequisites (Infrastructure First)
 
@@ -122,14 +122,14 @@ Update `CONTRIBUTING.md` Publishing:
 
 ## Atomic Ops
 
-- [ ] Author `.github/workflows/publish.yml` (this Interaction owns the file)
-- [ ] SemVer-oriented tag trigger + tag/`package.json` version guard
-- [ ] Guard: tagged commit is on `main` ancestry
+- [x] Author `.github/workflows/publish.yml` (this Interaction owns the file)
+- [x] SemVer-oriented tag trigger + tag/`package.json` version guard
+- [x] Guard: tagged commit is on `main` ancestry
 - [ ] GitHub Environment `npm-publish` with protection / required reviewers
-- [ ] OIDC permissions + `registry-url` per `f-npm-registry` / `f-github-actions`
-- [ ] Job calls shared publish script CI mode (includes `npm test`)
+- [x] OIDC permissions + `registry-url` per `f-npm-registry` / `f-github-actions`
+- [x] Job calls shared publish script CI mode (includes `npm test`)
 - [ ] Live Trusted Publisher bound on npmjs.com after first claim
-- [ ] `CONTRIBUTING.md` documents tag-driven release on main
+- [x] `CONTRIBUTING.md` documents tag-driven release on main
 - [ ] End-to-end verify: protected tag publish releases expected version
 
 ## Attachments
