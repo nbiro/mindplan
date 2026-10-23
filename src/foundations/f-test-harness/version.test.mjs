@@ -7,7 +7,7 @@ import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -15,7 +15,7 @@ const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)
 const serverEntry = path.join(toolRoot, "dist/index.js");
 const pkgVersion = JSON.parse(fs.readFileSync(path.join(toolRoot, "package.json"), "utf-8")).version;
 const { compareVersions } = await import(
-  path.join(toolRoot, "dist/foundations/f-territory-store/version.js")
+  pathToFileURL(path.join(toolRoot, "dist/foundations/f-territory-store/version.js")).href
 );
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-version-"));
