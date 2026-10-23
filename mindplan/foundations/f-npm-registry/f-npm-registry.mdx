@@ -6,7 +6,7 @@ title: "npm registry adapter"
 description: "Adapter — npm registry + Trusted Publishing (OIDC) for mindplan-mcp releases without long-lived NPM_TOKEN."
 state: in-review
 created_at: 2026-07-19T20:19:03.811Z
-updated_at: 2026-10-23T14:32:53.410Z
+updated_at: 2026-10-23T14:42:38.770Z
 change: "npm-release"
 implements:
   - src/foundations/f-npm-registry/
@@ -52,7 +52,7 @@ npm Trusted Publishing is normally configured on an **already-published** packag
 ### Manual publish (first claim / emergency)
 
 - Maintainer interactive `npm login` + OTP remains valid for the first claim and break-glass publishes (`i-npm-publish`)
-- After live Trusted Publishing is bound, prefer tag-driven OIDC for routine releases
+- After live Trusted Publishing is bound, routine releases publish over OIDC when a version bump merges to `main`
 
 ### Provenance
 

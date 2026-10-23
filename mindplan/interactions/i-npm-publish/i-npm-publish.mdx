@@ -2,10 +2,10 @@
 id: i-npm-publish
 type: Interaction
 title: "Publish to npm"
-description: "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs under tag-driven CI."
+description: "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs in CI on every merge to main that bumps the version."
 state: in-progress
 created_at: 2026-07-15T18:51:52.964Z
-updated_at: 2026-10-23T14:32:53.449Z
+updated_at: 2026-10-23T14:42:38.745Z
 change: "npm-release"
 belongs_to:
   - j-agent-onboarding
@@ -21,7 +21,7 @@ implements:
 
 ## Purpose
 
-Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning from source. Own a **single reusable publish script** that maintainers run for the first claim and that `i-npm-tag-publish` invokes non-interactively on version tags.
+Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning from source. Own a **single reusable publish script** that maintainers run for the first claim and that `i-npm-tag-publish` invokes non-interactively when a merge to `main` carries an unpublished version.
 
 ## Actor & Trigger
 
@@ -54,7 +54,8 @@ and get a working CLI + MCP server whose `templates/` and `dist/` match this rep
 - **Scheme:** SemVer starting at current `package.json` version **`0.1.0`**.
 - **Until 1.0.0:** treat the public API as evolving; prefer `minor` for additive changes, `patch` for fixes; document breakage in changelog/SPEC when not bumping major on 0.x.
 - **First publish:** publish whatever is currently in `package.json` (expected `0.1.0`).
-- **Later releases:** bump version on **main**, push matching `vX.Y.Z` tag; automation is `i-npm-tag-publish`.
+- **Later releases:** bump the version in a PR and merge it to **main**; `i-npm-tag-publish` publishes it and tags `vX.Y.Z`.
+- **CI mode** (`--ci`) runs only on `refs/heads/main` and exits 0 without publishing when the registry already lists the version.
 
 ## Release style (this Interaction)
 
@@ -62,7 +63,7 @@ and get a working CLI + MCP server whose `templates/` and `dist/` match this rep
 
 Depends on `f-npm-registry` for **package identity + OIDC contract docs** — not for a live Trusted Publisher binding (that binding is `i-npm-tag-publish` after this Interaction claims the package).
 
-Handoff: once the script works and the package is claimed, live Trusted Publishing + tag automation is `i-npm-tag-publish` (using conventions from `f-npm-registry` / `f-github-actions`).
+Handoff: once the script works and the package is claimed, live Trusted Publishing + merge-to-main automation is `i-npm-tag-publish` (using conventions from `f-npm-registry` / `f-github-actions`).
 
 Out of scope for this node:
 
@@ -100,7 +101,7 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 - README Quick start: npm / `npx` primary. Two consumer paths: a project with a `package.json` adds `mindplan-mcp` as a devDependency (version pinned by its lockfile, upgraded with `npm update`) and registers `npx mindplan-mcp`; any other project registers `npx -y mindplan-mcp@<range>`.
 - README upgrade section: after a version bump, rerun `npx mindplan-mcp init` (the `mindplan/version.json` stamp makes `get_project` and `check` warn until it runs).
 - `templates/agent/mcp.json.example` and `templates/agent/integrations/*.md` register `npx mindplan-mcp`, not a local `dist/index.js` path.
-- CONTRIBUTING: first publish = run the script after `npm login`; later = bump on main, tag, push (automation lands with `i-npm-tag-publish`).
+- CONTRIBUTING: first publish = run the script after `npm login`; later = bump the version in a PR and merge to main (`i-npm-tag-publish` publishes and tags).
 
 ## Failure / recovery
 
@@ -117,7 +118,7 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 - [ ] `mindplan-mcp@0.1.0` (or next SemVer) published to the public registry
 - [ ] Fresh-install verification (`help` + `init`) passed
 - [x] README Quick start updated for npm / `npx` primary install
-- [x] `CONTRIBUTING.md` Publishing section matches this runbook and points to tag-driven follow-up
+- [x] `CONTRIBUTING.md` Publishing section matches this runbook and points to merge-to-main releases
 
 ## Attachments
 

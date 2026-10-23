@@ -53,15 +53,13 @@ npm run publish:release
 
 Then bind npm Trusted Publishing on npmjs.com (package settings → Trusted Publisher → GitHub Actions): owner `nbiro`, repository `mindplan`, workflow `publish.yml`, environment `npm-publish`. Create the `npm-publish` environment in the GitHub repository settings, with required reviewers if you want an approval step. See `src/foundations/f-npm-registry/README.md`.
 
-**Every later release.** Bump the version on `main`, then push a matching tag:
+**Every later release: bump the version in the PR, then merge.**
 
 ```bash
 npm version minor --no-git-tag-version   # or patch / major; 0.x: minor for breaking changes
-git commit -am "Release vX.Y.Z" && git push
-git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-`.github/workflows/publish.yml` refuses a tag that is not on `main` or does not equal `package.json` `version`, then runs `npm run publish:release -- --ci` with OIDC (no `NPM_TOKEN`). A broken release is fixed by a new patch version, never by moving a tag.
+On every push to `main`, `.github/workflows/publish.yml` checks whether `package.json`'s version is on npm. When it is not, it runs `npm run publish:release -- --ci` with OIDC (no `NPM_TOKEN`) and pushes the tag `vX.Y.Z`. A merge without a bump publishes nothing and never waits on the `npm-publish` environment. If a release fails after the merge, fix the cause and re-run the workflow (or run it by hand on `main`): the version is still unpublished, so it publishes then. A broken release is fixed by a new patch version, never by moving a tag.
 
 **Versioning.** Until 1.0.0, a minor bump may break: list it in `CHANGELOG.md` with **Breaking** and what a project must do. Any change to the playbook, the skills, or the graph format reaches a project when it reruns `mindplan-mcp init`; `mindplan/version.json` makes `get_project` and `check` remind it.
 

@@ -30,7 +30,7 @@ flowchart TB
     if_console_api{{"if-console-api · Console API · ready"}}
     if_mcp_tools{{"if-mcp-tools · MCP tools · stable"}}
     if_publish_script{{"if-publish-script · Publish script · ready"}}
-    if_release_tag{{"if-release-tag · Release tag trigger · ready"}}
+    if_release_tag{{"if-release-tag · Main-branch release trigger · draft"}}
   end
   subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
     i_init_project__in__j_agent_onboarding["i-init-project · Init project · stable"]
@@ -38,7 +38,7 @@ flowchart TB
   end
   subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · incubation"]
     i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · in-progress"]
-    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Tag-driven npm publish · in-progress"]
+    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · in-progress"]
   end
   subgraph journey_j_plan_console["j-plan-console · See and steer the plan · stable"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]
