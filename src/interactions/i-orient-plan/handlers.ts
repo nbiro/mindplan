@@ -43,6 +43,7 @@ import {
   blocked,
   blastRadiusDependents,
   changeMembers,
+  changeNeighbors,
   findNode,
   interactionReachability,
   interfacesExposing,
@@ -400,20 +401,24 @@ export function getBlastRadius(args: {
 }
 
 /**
- * Blast radius of a whole change: the members' radii merged. `affected` keeps each node's
- * smallest distance and leaves out the members themselves; files group by owner.
+ * Blast radius of a whole change: the radii of its members (open revisions and neighbors, the
+ * shipped nodes it edits in place) merged. `affected` keeps each node's smallest distance and
+ * leaves out the members themselves; files group by owner.
  */
 export function buildChangeBlastRadiusPayload(
   graph: MindPlanGraph,
   change: string,
   opts: { include_retired?: boolean } = {}
 ): Record<string, unknown> {
-  const members = changeMembers(graph, change);
+  const revisions = changeMembers(graph, change);
+  const neighbors = changeNeighbors(graph, change);
+  const members = [...revisions, ...neighbors];
   if (members.length === 0) {
     throw blocked(
-      `change "${change}" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).`
+      `change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
   }
+  const neighborIds = new Set(neighbors.map((n) => n.id));
   const memberIds = new Set(members.map((m) => m.id));
   const affected = new Map<string, { id: string; type: string; state: string; distance: number }>();
   const journeys = new Set<string>();
@@ -455,6 +460,7 @@ export function buildChangeBlastRadiusPayload(
     members: members.map((m) => ({
       id: m.id,
       type: m.type,
+      kind: neighborIds.has(m.id) ? "neighbor" : "revision",
       state: m.state,
       next_state: m.next?.state ?? null,
     })),

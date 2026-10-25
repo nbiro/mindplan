@@ -2,11 +2,11 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import and ownership gate for in-review and ship, the decision gate on decision-worthy revisions, annotated checklist completion, stale-text warnings, and split route-family warnings. A next file in state mirror is not an open evolution."
-state: mirror
+description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import and ownership gate for in-review and ship, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates, and split route-family warnings. A next file in state mirror is not an open evolution."
+state: in-review
 shipped_at: 2026-10-20T13:04:10.578Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-20T13:35:31.714Z
+updated_at: 2026-10-25T19:02:47.724Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -14,13 +14,16 @@ depends_on:
 implements:
   - src/foundations/f-compiler-rules/
 role: infra
+opened_at: 2026-10-23T18:35:46.132Z
+change: "shipped-claims-and-neighbors"
+change_ref: "feat/shipped-claims-and-change-neighbours"
 ---
 
 # Compiler rules
 
 ## Purpose
 
-Infra — validation-at-transition rules. A next file in state `mirror` is not an open evolution: `open_next`, cancel, deprecate, and `force_unship` key off `node.next`, not path existence. The same module owns the import matrix, so the check, the claim step, and the ship gate cannot disagree about which imports are legal, and it names the exact graph edit that would make an illegal one legal. It also owns the decision gate. MindPlan never makes or judges a decision; it asks for one only where a missing one is costly. A revision is decision-worthy when it changes a shipped Foundation's contract, claims a new migration or schema file, has more dependents than the configured blast radius, or adds or removes a `depends_on` edge of a shipped node. Such a revision warns while no decision is recorded for it and is `Blocked: Decision` on its move to `in-review`; any other revision is never gated, so small single-area changes stay cheap. A node's first build is not gated on its initial edges, because every new Interaction has to add them.
+Infra — validation-at-transition rules. A next file in state `mirror` is not an open evolution: `open_next`, cancel, deprecate, and `force_unship` key off `node.next`, not path existence. The same module owns the import matrix, so the check, the claim step, and the ship gate cannot disagree about which imports are legal, and it names the exact graph edit that would make an illegal one legal. It also owns the decision gate. MindPlan never makes or judges a decision; it asks for one only where a missing one is costly. A revision is decision-worthy when it changes a shipped Foundation's contract, claims a new migration or schema file, has more dependents than the configured blast radius, or adds or removes a `depends_on` edge of a shipped node. Such a revision warns while no decision is recorded for it and is `Blocked: Decision` on its move to `in-review`; any other revision is never gated, so small single-area changes stay cheap. A node's first build is not gated on its initial edges, because every new Interaction has to add them. A change also has neighbors, the shipped nodes it edits in place, labeled through their live change id; the change check and the change blast radius read them, and the change walk never transitions them.
 
 ## Shared Substrate Spec
 
@@ -35,11 +38,12 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `findAllImportViolations` (whole universe, for the check), `findImportViolationsForClaim` (files being claimed), `findImportViolationsForNode` (a node's active-slot files)
   - Each `ImportViolation` carries the fix: `{ tool: "link_nodes", args }` with `depends_on`, `exposes`, or `mounts`, or `not_allowed` text when no edge can make the import legal (an Interaction importing an Interface, a `depends_on` that would cycle)
   - `assertCheckCleanForNode` — the gate for moves to `in-review` and `ship`: import and exclusivity violations on the node's active-slot files become one `Blocked: Check failed …`
-  - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked; relative references (`./`, `../`) are skipped; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
+  - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked, a live `added_claims` entry the body does not name yet (`stale: "<id>" claims … added in place without a revision`, only while no next is open); relative references (`./`, `../`) are skipped; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
   - `findAllImportViolations` scans every claimant of a file (live, next-slot, and released current-slot owners) and resolves import targets through every claim. A violation found only through a next-slot or released claim, which the check did not scan before, is marked `advisory`; the check reports it as a warning for one release before it Blocks
-  - `probableOwner(graph, file)` — the non-retired pipeline node whose claim shares the longest directory prefix with an unclaimed file (a file two or more folders deep needs at least two shared folders), and `coverageFix` — the exact call that claims it (`set_implementation_files` with the active-slot list plus the file, preceded by `open_next` for a shipped owner with no open evolution)
+  - `probableOwner(graph, file)` — the non-retired pipeline node whose claim shares the longest directory prefix with an unclaimed file (a file two or more folders deep needs at least two shared folders), and `coverageFix` — the exact call that claims it (`set_implementation_files` with the active-slot list plus the file, preceded by `open_next` for a shipped owner with no open evolution, unless that owner dominates the file's folder (`isDominatedFolder` with the file as a probe), where the claim is added in place; `coverageFix(graph, root, owner, file)`)
   - `routeFamilySplits(graph, buckets, universe)` — warnings when the route files (`page`, `route`, `layout`, `template`, `loading`, `error`, `not-found`, `default`) of one route family are owned by more than one node. Only router roots count (`appRouterRoots`: an `app/` folder with a root `layout`, directly or in a route group). `findAllImportViolations` also takes the universe so the check lists it once. A route family is the route folder cut after its last static segment, so `app/sites/[site]/[lang]/blog/[slug]/page.tsx` belongs to `app/sites/[site]/[lang]/blog/`. Rule (SPEC): the Assembler owns routes that dispatch to whichever template is active; a template's entry point owns only routes that exist for that template alone
 - `changeMembers(graph, change)` (`rules.ts`) — the open revisions of a change: pipeline nodes whose `activeChange` is the id, shipped with an open next or pre-ship and not retired; shared by the change walk, the change check, and the change blast radius
+- `changeNeighbors(graph, change)` (`rules.ts`) — the neighbors of a change: shipped, non-retired Foundations, Interactions, and Interfaces with no open next whose live `change` is the id. `activeChange` ignores that label, so no node is both a member and a neighbor. The change check and the change blast radius read both; the change walk reads members only
 - Completion Check counts `- [x] … — note: …` and `- [x] … — n/a: <reason>` as done; a `— n/a:` with no reason counts as unchecked
 - **Decision gate** (`decisions.ts`):
   - An **open revision** is a shipped Foundation/Interaction/Interface with an open next, or a pre-ship, non-retired one at any pre-ship state. Nothing else is ever decision-worthy (Journeys and Bugs are not revisions)
@@ -70,7 +74,7 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Cancelling an Interface is Blocked while an active Foundation mounts it
 - Verified via `npm test`
 - An illegal import in a file claimed only by an open next slot (or a released file) is found and marked advisory
-- `probableOwner` picks the node with the longest shared claim prefix; the fix opens the evolution first for a shipped owner
+- `probableOwner` picks the node with the longest shared claim prefix; the fix opens the evolution first for a shipped owner that does not dominate the file's folder
 - A route family owned by an Assembler and a template entry point yields one warning; a family with one owner yields none
 - An annotated tick passes the Completion Check; an `— n/a:` with no reason does not
 - A Foundation `open_next` revision with no decision warns and is `Blocked: Decision` at in-review; recording a decision under its change clears both
@@ -82,6 +86,9 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - One decision under a change clears every member of the change
 - A revision that reuses a change id is not cleared by that change's older decisions
 - A decision's text naming a missing path does not warn as stale
+- `changeNeighbors` returns a labeled shipped node with no open next, and never a retired node or one with an open next
+- A live `added_claims` entry the body does not name warns `stale:`; once the body names it, it does not
+- The Coverage fix for a file in a folder its shipped owner dominates is `set_implementation_files` alone, with no `open_next`
 
 ## Atomic Ops
 
@@ -102,6 +109,10 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - [x] Read the body without the Decisions section in `staleTextWarnings`
 - [x] Verified the decision gate via `npm test`
 - [x] Bound change-id decisions by the revision's start day and read the body through `withoutOwnedSections` (review fixes)
+- [x] Add `changeNeighbors`
+- [x] Warn on `added_claims` entries the body does not name
+- [x] Leave `open_next` out of the Coverage fix when the owner dominates the file's folder
+- [x] Verified neighbors, the in-place claim warning, and the Coverage fix via `npm test`
 
 ## Decisions
 

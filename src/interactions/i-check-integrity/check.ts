@@ -23,7 +23,7 @@ import {
   routeFamilySplits,
   staleTextWarnings,
 } from "../../foundations/f-compiler-rules/integrity.js";
-import { changeMembers } from "../../foundations/f-compiler-rules/rules.js";
+import { changeMembers, changeNeighbors } from "../../foundations/f-compiler-rules/rules.js";
 import {
   createDecisionContext,
   decisionWarnings,
@@ -81,10 +81,19 @@ export interface CheckOptions {
   change?: string;
 }
 
-/** One change's members and what the in-review gate finds on them. */
+/**
+ * One change's members and what the in-review gate finds on them. A member is a revision (an open
+ * revision under the change) or a neighbor (a shipped node the change edits in place).
+ */
 export interface ChangeCheck {
   id: string;
-  members: { id: string; type: string; state: string; next_state: string | null }[];
+  members: {
+    id: string;
+    type: string;
+    kind: "revision" | "neighbor";
+    state: string;
+    next_state: string | null;
+  }[];
   failures: string[];
   warnings: string[];
 }
@@ -101,8 +110,9 @@ export interface CheckResult {
 }
 
 /**
- * The in-review gate on every open revision in a change: import and ownership violations on
- * each member's active-slot files (Blocked), and every stale-text signal (warnings).
+ * The in-review gate on every member of a change: import and ownership violations on each
+ * revision's active-slot files and each neighbor's live files (Blocked), and every stale-text
+ * signal (warnings). Decision warnings apply to revisions only.
  */
 function checkChange(
   graph: MindPlanGraph,
@@ -110,15 +120,16 @@ function checkChange(
   change: string,
   decisionCtx: DecisionContext
 ): ChangeCheck {
-  const members = changeMembers(graph, change);
+  const revisions = changeMembers(graph, change);
+  const neighbors = changeNeighbors(graph, change);
   const failures: string[] = [];
   const warnings: string[] = [];
-  if (members.length === 0) {
+  if (revisions.length === 0 && neighbors.length === 0) {
     failures.push(
-      `Blocked: change "${change}" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).`
+      `Blocked: change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
   }
-  for (const node of members) {
+  for (const node of [...revisions, ...neighbors]) {
     for (const v of findImportViolationsForNode(graph, root, node)) {
       failures.push(`Blocked: change "${change}": ${v.message}`);
     }
@@ -126,16 +137,18 @@ function checkChange(
       failures.push(`Blocked: change "${change}": ${conflict}`);
     }
     warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_ALL));
-    warnings.push(...decisionWarnings(graph, node, decisionCtx));
   }
+  for (const node of revisions) warnings.push(...decisionWarnings(graph, node, decisionCtx));
+  const member = (kind: "revision" | "neighbor") => (n: MindPlanNode) => ({
+    id: n.id,
+    type: n.type,
+    kind,
+    state: n.state,
+    next_state: n.next?.state ?? null,
+  });
   return {
     id: change,
-    members: members.map((n) => ({
-      id: n.id,
-      type: n.type,
-      state: n.state,
-      next_state: n.next?.state ?? null,
-    })),
+    members: [...revisions.map(member("revision")), ...neighbors.map(member("neighbor"))],
     failures,
     warnings: [...new Set(warnings)],
   };
@@ -288,6 +301,7 @@ function checkExclusivity(
  */
 function checkCoverage(
   graph: MindPlanGraph,
+  root: string,
   buckets: OwnershipBuckets,
   universe: string[],
   failures: string[]
@@ -298,7 +312,7 @@ function checkCoverage(
     if (buckets.retired.has(file)) continue;
     const owner = probableOwner(graph, file);
     const hint = owner
-      ? ` Probable owner by path: "${owner.id}". ${formatCoverageFix(coverageFix(owner, file))}`
+      ? ` Probable owner by path: "${owner.id}". ${formatCoverageFix(coverageFix(graph, root, owner, file))}`
       : " No node claims a nearby path: create or pick the owning node, then claim the file with set_implementation_files.";
     fail(
       failures,
@@ -766,7 +780,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   try {
     const buckets = checkExclusivity(graph, root, failures);
     const universe = listUniverseFiles(root);
-    checkCoverage(graph, buckets, universe, failures);
+    checkCoverage(graph, root, buckets, universe, failures);
     checkPresence(graph, root, failures);
     checkMirrorTwins(graph, failures);
     checkLeftovers(graph, buckets, root, failures);

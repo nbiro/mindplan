@@ -194,7 +194,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Returns { ok, output, failures, warnings }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import). " +
         "Warnings flag stale territory text, next-slot imports (one release before they Block), and split route families, and never fail the check. " +
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
-        "Pass change to also run the in-review gate on every open revision in that change. " +
+        "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only). " +
         "Moves to in-review and ship run this check on the node's files themselves.",
       inputSchema: {
         base: z
@@ -202,7 +202,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .optional()
           .describe("Opt-in: also enforce dirty-src ownership against this git ref (not used by CI)."),
         change: CHANGE_ID.optional().describe(
-          "Also check every open revision in this change (imports, ownership, stale text) and list its members."
+          "Also check every member of this change (imports, ownership, stale text) and list its members, each with kind revision | neighbor."
         ),
       },
     },
@@ -454,7 +454,9 @@ export function registerMindPlanTools(server: McpServer): void {
         "Do not edit mindplan/ MDX with host file tools. " +
         "When a shipped node has an open evolution (not a mirror twin), patches default to next. Optional slot: current|next. " +
         READINESS_HINT +
-        " change / change_ref set the revision's change id (grouping only: never resets readiness).",
+        " change / change_ref set the revision's change id (grouping only: never resets readiness); moving the last revision off a change clears its neighbor labels (cleared_neighbors). " +
+        "On a shipped node with no open next, change labels it a neighbor of that change (edited in place; returns neighbor_of, " +
+        "and replaced_change when it had another label); change_ref is Blocked there.",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node whose territory to patch."),
@@ -520,7 +522,9 @@ export function registerMindPlanTools(server: McpServer): void {
         change: z
           .string()
           .optional()
-          .describe("Set this revision's change id (a slug); empty string clears it."),
+          .describe(
+            "Set this revision's change id (a slug), or label a shipped node with no open next a neighbor; empty string clears it."
+          ),
         change_ref: CHANGE_REF,
         slot: z
           .enum(["current", "next"])
@@ -610,7 +614,9 @@ export function registerMindPlanTools(server: McpServer): void {
           .string()
           .optional()
           .describe("Id of an active decision on this node, its Journey, or its Foundations that this one replaces."),
-        change: CHANGE_ID.optional().describe("Change id to record it under (default: the node's open revision's change)."),
+        change: CHANGE_ID.optional().describe(
+          "Change id to record it under (default: the node's open revision's change). On a shipped node with no open next it also labels the node a neighbor of that change."
+        ),
         id: z
           .string()
           .regex(DECISION_ID_PATTERN, 'decision ids are "d-" followed by a slug')
@@ -778,8 +784,13 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call before writing a file the node does not yet claim. " +
         "Replaces the server-owned implements list for an Interaction, Interface, or Foundation. " +
-        "Pre-ship writes current; shipped writes only an open next (else Blocked → open_next); " +
+        "Pre-ship writes current; shipped with an open next writes next; " +
+        "shipped with no open next writes live in place, additive only: every old entry kept (or under a new dir entry), " +
+        "each new entry an exact file (or F/) in a folder F the node dominates (it already claims a file directly in F, no other node claims under F); " +
+        "removing, moving, globbing, or claiming elsewhere is Blocked → open_next. " +
+        "In-place results list added_in_place; name each in the body with patch_node_territory (run_check warns until then). " +
         "retired nodes may only shrink. Rejects bad paths and ownership conflicts. " +
+        "Results may carry folder_claims: a folder/ entry that would replace several per-file entries. " +
         "Entries are files, directories ending in /, or globs (* ** ?; [ ] stay literal), e.g. src/templates/*/actions/i-read-post/. " +
         READINESS_HINT,
       inputSchema: {
@@ -794,11 +805,16 @@ export function registerMindPlanTools(server: McpServer): void {
           .enum(["current", "next"])
           .optional()
           .describe("Optional slot override. Defaults by lifecycle."),
+        change: CHANGE_ID.or(z.literal(""))
+          .optional()
+          .describe(
+            "Change id for the written slot; on a shipped node with no open next it labels the node a neighbor (returns neighbor_of). Empty string clears it."
+          ),
       },
     },
     
-      ({ node_id, files, slot, verbose }) =>
-        setImplementationFiles({ node_id, files, slot, verbose })
+      ({ node_id, files, slot, change, verbose }) =>
+        setImplementationFiles({ node_id, files, slot, change, verbose })
   );
 
   tool(
@@ -871,7 +887,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Flips a shipped node's standing <id>.next.mdx twin from state mirror to draft (creates the twin from live if missing). " +
         "Optional title/description overrides. Does not reset checkboxes. The live node keeps serving. " +
         "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror. " +
-        "Pass change to tie this revision to the others of one change (update_node_status scope change, get_blast_radius change, run_check change act on the group).",
+        "Pass change to tie this revision to the others of one change (update_node_status scope change, get_blast_radius change, run_check change act on the group). " +
+        "A neighbor label is inherited as the revision's change unless change names another, which clears it (replaced_change).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(
@@ -897,7 +914,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call when an open evolution should be abandoned. " +
         "Abandons an in-flight evolution and restores <id>.next.mdx as a state: mirror twin of the live file. " +
-        "Clears next-attachments/. The live <id>.mdx is unchanged.",
+        "Clears next-attachments/. The live <id>.mdx is unchanged. " +
+        "When it was its change's last open revision, the change's neighbor labels are cleared (cleared_neighbors).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Id of the node whose open evolution to discard."),
@@ -921,10 +939,10 @@ export function registerMindPlanTools(server: McpServer): void {
         "(BFS still traverses through retired nodes so live dependents keep true distances). " +
         "When the focus is an Interaction, also returns reachability. " +
         "decisions lists the active decisions held by the focus and its dependents: the reasoning a change would reach. " +
-        "Pass change instead of node_id for the merged radius of every open revision in a change.",
+        "Pass change instead of node_id for the merged radius of every member of a change (open revisions and neighbors; members carry kind).",
       inputSchema: {
         node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),
-        change: CHANGE_ID.optional().describe("A change id: merge the blast radius of all its open revisions."),
+        change: CHANGE_ID.optional().describe("A change id: merge the blast radius of all its open revisions and neighbors."),
         include_retired: z
           .boolean()
           .optional()
@@ -973,6 +991,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
         "A move to in-review of a decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, or a depends_on change) with no decision recorded is Blocked: Decision with the record_decision call. " +
         "A batch returns one line per node. " +
+        "When a ship or cancel leaves a change with no open revisions, its neighbor labels are cleared (cleared_neighbors); " +
+        "scope change walks revisions only, and a walk of it to ship clears its labels. " +
         "Journey and production stable/unstable are computed automatically.",
       inputSchema: {
         verbose: VERBOSE,
@@ -1037,7 +1057,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call only after the user confirms a mistaken ship; recovery only. " +
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
-        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin.',
+        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin and clears a neighbor label (cleared_change) and added_claims.',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(

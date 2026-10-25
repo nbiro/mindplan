@@ -3,10 +3,10 @@ id: i-init-project
 type: Interaction
 title: "Init project"
 description: "Init installs the playbook, project brief, and host copies for the chosen host (Cursor, Claude Code, or both), ignores the mindplan/ tree in Cursor, writes a missing mirror for each already-shipped pipeline node, and stamps mindplan/version.json; when the stamp is older than the package it refreshes the package-owned agent files."
-state: in-review
-shipped_at: 2026-10-15T08:56:01.599Z
+state: mirror
+shipped_at: 2026-10-23T19:24:57.495Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-23T14:31:45.011Z
+updated_at: 2026-10-23T19:24:57.495Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -16,8 +16,6 @@ leads_to:
   - i-orient-plan
 implements:
   - src/interactions/i-init-project/
-opened_at: 2026-10-23T14:24:04.098Z
-change: "project-version-stamp"
 ---
 
 # Init project

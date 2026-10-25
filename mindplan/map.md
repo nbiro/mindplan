@@ -40,7 +40,7 @@ flowchart TB
     i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · in-progress"]
     i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · in-progress"]
   end
-  subgraph journey_j_plan_console["j-plan-console · See and steer the plan · stable"]
+  subgraph journey_j_plan_console["j-plan-console · See and steer the plan · evolving"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]
     i_explore_graph__in__j_plan_console["i-explore-graph · Explore the graph · ready"]
     i_model_plan__in__j_plan_console["i-model-plan · Model the plan · ready"]

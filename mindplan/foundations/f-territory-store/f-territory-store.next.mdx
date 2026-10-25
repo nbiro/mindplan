@@ -2,26 +2,27 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
+description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
 state: in-review
-shipped_at: 2026-10-20T13:04:10.474Z
+shipped_at: 2026-10-23T19:24:57.250Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-23T14:31:44.959Z
+updated_at: 2026-10-25T19:02:46.942Z
 depends_on:
   - f-domain-model
   - f-source-index
 implements:
   - src/foundations/f-territory-store/
 role: infra
-opened_at: 2026-10-23T14:24:04.051Z
-change: "project-version-stamp"
+opened_at: 2026-10-23T19:25:03.722Z
+change: "shipped-claims-and-neighbors"
+change_ref: "feat/shipped-claims-and-change-neighbours"
 ---
 
 # Territory store
 
 ## Purpose
 
-Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer. Small body fixes (one section, one phrase) are first-class writes so an agent does not resend a whole body to change a line. The store also owns each node's `## Decisions` section: decision records written only by `appendDecision`, one entry per decision and never rewritten, so the reasoning trail cannot be edited away by a body rewrite. Unlike rules, decisions are slot-bound: while a shipped node evolves they are recorded on its next file, they ship with the revision, and a discarded revision takes its decisions with it. Recording a decision never resets readiness: it explains the contract, it does not change it.
+Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer. Small body fixes (one section, one phrase) are first-class writes so an agent does not resend a whole body to change a line. The store also owns each node's `## Decisions` section: decision records written only by `appendDecision`, one entry per decision and never rewritten, so the reasoning trail cannot be edited away by a body rewrite. Unlike rules, decisions are slot-bound: while a shipped node evolves they are recorded on its next file, they ship with the revision, and a discarded revision takes its decisions with it. Recording a decision never resets readiness: it explains the contract, it does not change it. A shipped node's live `change` scalar also serves as its neighbor label, written by one helper that keeps the mirror twin in step. The live `added_claims` list marks claims added in place; the store drops each entry once the body names it, so the marker clears itself through ordinary territory writes.
 
 ## Shared Substrate Spec
 
@@ -60,6 +61,9 @@ Intended files: `src/foundations/f-territory-store/`
 - **Readiness demotion.** `demoteReadySlot(node, slot)` sends a `ready` slot to `draft`. The contract writers call it after writing and return whether they did: `patchNodeTerritory` (any field but `change` / `change_ref`, as `readinessReset`), `writeImplementsFrontmatter` (only when the list changes), `addEdgeToFrontmatter`, and `removeEdgesFromFrontmatter`. `validateChangeInput` is the one change-id validator
 - **Annotated completion.** `countCheckboxesInText` counts an `— n/a:` line with an empty reason as unchecked; `checkboxLabels` strips annotations
 - **Change frontmatter.** `change` / `change_ref` scalars are read from the live file and the open next file; `writeChangeFrontmatter(node, { change, change_ref }, slot)` sets or clears them (empty string clears) without touching state or `updated_at`; `patchNodeTerritory` takes them as patch fields (validated slug / one-line ref); `create_node`, `open_next`, and first ship call the writer; `promoteNextSlot` drops them because it rebuilds the live frontmatter
+- **Neighbor label.** `writeNeighborLabel(node, change)` sets (or with `""` clears) the live `change` scalar of a shipped node with no open next and re-syncs its mirror twin. It returns `{ twin, replaced? }`: `twin` is null when the label already had that value, `replaced` is the previous id when a different one was set. Any other node is Blocked
+- **In-place claim marker.** `added_claims` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.added_claims`, `nodeToRecord`). `writeImplementsFrontmatter(node, files, slot, addedInPlace?)` on the live slot merges `addedInPlace` into the stored list and keeps, sorted and deduped, only the entries still claimed (verbatim, or a file under a non-glob directory entry) that the body (owned sections excluded) does not yet name verbatim; an empty list removes the field. A live `patchNodeTerritory` write prunes the entries its new body names. `clearAddedClaims(node)` removes the list and leaves the twin re-sync to its caller. `promoteNextSlot` rebuilds the live frontmatter and drops it
+- **Deleted next-slot files.** `deleteNextSlotFiles` lists every file it deletes under `next-attachments/` (e.g. `.gitkeep`) as well as the folder
 
 Depends on: `f-domain-model`, `f-source-index`.
 
@@ -93,6 +97,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 - Recording on a `ready` revision does not reset readiness
 - A file with both sections keeps the order Decisions, Rules, Attachments, and CRLF territory stays CRLF
 - A parsed entry round-trips through `formatDecisionEntry`; an alternative that reads like a checkbox is not counted as one
+- `writeNeighborLabel` on a shipped node with no open next writes the live `change` and the twin and reports the replaced id; on a node with an open next, or one not shipped, it is Blocked
+- An `added_claims` entry stays through claim writes until the body names it; a body patch that names it removes it, and removing the last entry removes the field
+- `deleteNextSlotFiles` lists `next-attachments/.gitkeep`
 
 ## Atomic Ops
 
@@ -127,6 +134,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Write `opened_at` on open_next and export `withoutOwnedSections` (review fixes)
 - [x] Add `version.ts`: `packageVersion`, `readProjectVersion`, `writeProjectVersion`, `projectVersionStatus`
 - [x] Verified the version stamp and status via `npm test`
+- [x] Add `writeNeighborLabel`
+- [x] Parse, write, and prune `added_claims` (`writeImplementsFrontmatter`, `patchNodeTerritory`) and add `clearAddedClaims`
+- [x] List each deleted file in `deleteNextSlotFiles`
+- [x] Verified the neighbor label, `added_claims`, and the deleted-file list via `npm test`
 
 ## Decisions
 

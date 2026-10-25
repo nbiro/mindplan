@@ -129,6 +129,12 @@ export interface MindPlanNode {
    * Files or directories ending in `/`. Authority for ownership — not prescribed folders.
    */
   implements?: string[];
+  /**
+   * MCP-only. Claim entries a shipped node added in place, without a revision (review marker).
+   * Each stays until the live body names it verbatim or the entry is no longer claimed; a
+   * promotion rebuilds the live frontmatter and drops the list.
+   */
+  added_claims?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
   /** Present when `<id>.next.mdx` is an open evolution (not a `mirror` twin). */
@@ -138,7 +144,10 @@ export interface MindPlanNode {
    * Omitted when empty. Slot-independent: `next` carries no separate rules.
    */
   rules?: string;
-  /** Change id grouping this pre-ship revision with others (cleared on first ship). */
+  /**
+   * Change id grouping this pre-ship revision with others (cleared on first ship). On a shipped
+   * node with no open next it is a neighbor label instead: the change edits this node in place.
+   */
   change?: string;
   /** Branch or PR reference for the change. */
   change_ref?: string;
@@ -200,7 +209,8 @@ export function activeDecisions(node: MindPlanNode): DecisionRecord[] {
 
 /**
  * The change an open revision belongs to: the next slot's while a shipped node evolves,
- * the live one before first ship, and none for a shipped node with no open next.
+ * the live one before first ship, and none for a shipped node with no open next (its live
+ * `change` is a neighbor label, not a revision: see `changeNeighbors`).
  */
 export function activeChange(node: MindPlanNode): string | undefined {
   if (node.next) return node.next.change;

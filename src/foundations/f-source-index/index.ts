@@ -26,6 +26,14 @@ export {
   validateClaimPath,
 } from "./claims.js";
 
+export {
+  collectOtherClaims,
+  folderClaimSuggestions,
+  isDominatedFolder,
+  type FolderClaimSuggestion,
+  type OtherClaims,
+} from "./dominance.js";
+
 export { isInUniverse, listUniverseFiles, matchGlob } from "./universe.js";
 
 export {

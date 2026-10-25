@@ -211,7 +211,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | Tool | Kind | Description |
 |------|------|-------------|
 | `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); the `rules` and `decisions` that apply to the focus; `depth: rules\|body\|full` trims it |
-| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every revision in a change |
+| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every member of a change (revisions and labeled neighbors) |
 | `find_related_nodes` | read | Rank by query; focus + 1-hop |
 | `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset` |
 | `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts; `output` writes to a file; over-budget diagrams are Blocked with the fix |
@@ -219,7 +219,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired` |
 | `get_node_context` | read | `record` + `body` + `decisions` (superseded only with `include_superseded`; + `next.record`/`next.body`/`next.decisions` when evolving) |
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
-| `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`) |
+| `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`); on a shipped node, adds a claim in place when it only grows into folders the node alone owns; `change` labels a neighbor |
 | `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |
 | `patch_node_rules` | mutation | Write one node's `## Rules`; `orient_for_work` delivers them to the node and everything that inherits from it |
 | `record_decision` | mutation | Append a decision record (what was chosen, the alternatives, why) to the node it shapes; supersede instead of editing |

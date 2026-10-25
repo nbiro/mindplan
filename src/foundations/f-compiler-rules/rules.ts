@@ -268,6 +268,23 @@ export function changeMembers(graph: MindPlanGraph, change: string): MindPlanNod
   });
 }
 
+/**
+ * Neighbors of a change: shipped Foundations, Interactions, and Interfaces with no open next that
+ * the change edits in place (no contract change). The label is the live file's `change` scalar,
+ * which `activeChange` ignores, so neighbors are never members.
+ */
+export function changeNeighbors(graph: MindPlanGraph, change: string): MindPlanNode[] {
+  return graph.nodes.filter(
+    (n) =>
+      isPipelineNodeType(n.type) &&
+      Boolean(n.shipped_at) &&
+      !n.next &&
+      n.state !== "cancelled" &&
+      n.state !== "deprecated" &&
+      n.change === change
+  );
+}
+
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {
   const node = graph.nodes.find((n) => n.id === id);
   if (!node) {
