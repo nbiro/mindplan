@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — publish waits for the registry
+
+- **Registry check.** After `npm publish`, the release script now waits up to 10 minutes (polling every 15 seconds) for npm to list the new version, instead of about one minute. npm accepts a publish before it lists it, and the 0.2.0 release job failed its check after a successful publish, which skipped the `v0.2.0` tag. CONTRIBUTING documents pushing the tag by hand when that happens.
+
 ## 0.2.0 — shipped claims and change neighbors
 
 Every behavior change in this release. SPEC sections in brackets.
