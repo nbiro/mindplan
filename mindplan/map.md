@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (38 nodes, 101 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (39 nodes, 106 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -18,6 +18,7 @@ flowchart TB
     f_mcp_runtime["f-mcp-runtime · MCP runtime · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
     f_npm_registry["f-npm-registry · npm registry adapter · stable"]
+    f_orientation_ledger["f-orientation-ledger · Orientation ledger · stable"]
     f_search_index["f-search-index · Search index · stable"]
     f_source_index["f-source-index · Source index · stable"]
     f_territory_store["f-territory-store · Territory store · stable"]
@@ -66,7 +67,10 @@ flowchart TB
   f_graph_search --> f_search_index
   f_mcp_runtime --> f_framework_docs
   f_mcp_runtime --> f_graph_search
+  f_mcp_runtime --> f_orientation_ledger
   f_mcp_runtime --> f_territory_store
+  f_orientation_ledger --> f_domain_model
+  f_orientation_ledger --> f_graph_search
   f_search_index --> f_source_index
   f_source_index --> f_domain_model
   f_territory_store --> f_domain_model
@@ -104,6 +108,7 @@ flowchart TB
   i_npm_tag_publish__in__j_npm_publish --> f_npm_registry
   i_orient_plan__in__j_territory_sdlc --> f_compiler_rules
   i_orient_plan__in__j_territory_sdlc --> f_graph_search
+  i_orient_plan__in__j_territory_sdlc --> f_orientation_ledger
   i_orient_plan__in__j_territory_sdlc --> f_source_index
   i_orient_plan__in__j_territory_sdlc --> f_territory_store
   i_orient_plan__in__j_territory_sdlc -.->|leads_to| i_steer_plan__in__j_plan_console
@@ -111,6 +116,8 @@ flowchart TB
   i_steer_plan__in__j_territory_sdlc --> f_compiler_rules
   i_steer_plan__in__j_plan_console --> f_graph_search
   i_steer_plan__in__j_territory_sdlc --> f_graph_search
+  i_steer_plan__in__j_plan_console --> f_orientation_ledger
+  i_steer_plan__in__j_territory_sdlc --> f_orientation_ledger
   i_steer_plan__in__j_plan_console --> f_source_index
   i_steer_plan__in__j_territory_sdlc --> f_source_index
   i_steer_plan__in__j_plan_console --> f_territory_store

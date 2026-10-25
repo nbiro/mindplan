@@ -124,6 +124,35 @@ import {
   supersessionIndex,
 } from "../../foundations/f-graph-search/decisions.js";
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
+import {
+  assertOriented,
+  orientationGateEnabled,
+  reachingRules,
+  recordOriented,
+  rulesFingerprint,
+} from "../../foundations/f-orientation-ledger/ledger.js";
+
+/**
+ * Blocked: Orientation unless every node was oriented on in this session with the rules that apply
+ * to it now (`f-orientation-ledger`). Free when the gate is off (the CLI, or MINDPLAN_ORIENT_GATE=off).
+ */
+function gateWrite(graph: MindPlanGraph | null, ids: string[], tool: string): void {
+  if (!orientationGateEnabled()) return;
+  assertOriented(graph ?? loadGraph(), ids, tool);
+}
+
+/**
+ * After a write that can change which rules reach `id` (a link, a new node): when they changed,
+ * return them as a `rules` block and count the node as oriented, since the rules reached the agent
+ * in this result.
+ */
+function rulesReachingAfterWrite(id: string, before: string | null): Record<string, unknown> {
+  if (!orientationGateEnabled()) return {};
+  const graph = loadGraph();
+  if (before !== null && rulesFingerprint(graph, id) === before) return {};
+  recordOriented(graph, [id]);
+  return { rules: { node_id: id, entries: reachingRules(graph, id) } };
+}
 
 /** Persist recomputed states. Returns each node's live path plus any mirror twin re-synced. */
 export function syncNodes(nodes: MindPlanNode[]): string[] {
@@ -450,6 +479,8 @@ export function createNode(args: {
     current,
     context: current,
     attachments,
+    // create_node is never gated: the new node counts as oriented, with the rules that reach it.
+    ...rulesReachingAfterWrite(id, null),
     changed_files: changedFiles(files, true),
     ...mutationTail(graph, id, args.verbose),
   };
@@ -532,6 +563,7 @@ type SetImplementationArgs = {
  * A shipped node with no open next writes its live slot in place, additive only.
  */
 export function setImplementationFiles(args: SetImplementationArgs): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "set_implementation_files");
   // A change id moved off a revision may leave its old change with no revisions.
   return args.change === undefined
     ? writeImplementationFiles(args)
@@ -686,6 +718,7 @@ type SetTestFilesArgs = {
  * open next, a shipped node needs no `open_next`, and readiness is never reset.
  */
 export function setTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "set_test_files");
   // A change id moved off a revision may leave its old change with no revisions.
   return args.change === undefined
     ? writeTestFiles(args)
@@ -736,6 +769,8 @@ export function linkNodes(args: {
   if (edge_type === "depends_on") {
     assertAcyclicDependsOn(graph, source_id, target_id);
   }
+  gateWrite(graph, [source_id], "link_nodes");
+  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source_id) : null;
 
   const writeSlot = edgeWriteSlot(source, edge_type);
   const existingOnSlot =
@@ -788,6 +823,7 @@ export function linkNodes(args: {
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     ...readinessFields(readiness.reset),
+    ...rulesReachingAfterWrite(source_id, rulesBefore),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), source_id, args.verbose),
   };
@@ -802,6 +838,8 @@ export function unlinkNodes(args: {
   const graph = loadGraph();
   const source = findNode(graph, source_id);
   findNode(graph, target_id);
+  gateWrite(graph, [source_id], "unlink_nodes");
+  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source_id) : null;
   const before = graph.edges.length;
   graph.edges = graph.edges.filter(
     (e) => !(e.source === source_id && e.target === target_id)
@@ -852,6 +890,7 @@ export function unlinkNodes(args: {
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     ...readinessFields(readiness.reset),
+    ...rulesReachingAfterWrite(source_id, rulesBefore),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), source_id, args.verbose),
   };
@@ -1246,6 +1285,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
         `${sim.blocked}. Nothing was written: the whole walk is validated before the first transition.`
       );
     }
+    gateWrite(graph, plan.map((row) => row.node_id), "update_node_status");
     const lines: string[] = [];
     const changed = new Set<string>();
     const cleared = new Set<string>();
@@ -1298,6 +1338,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
     };
   }
+  gateWrite(null, normalized.items.map((i) => i.node_id), "update_node_status");
 
   if (normalized.mode === "single") {
     return applyOneStatus({ ...normalized.items[0], verbose: args.verbose });
@@ -1474,6 +1515,7 @@ export function forceUnship(args: {
   const { node_id, confirm, new_status } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  gateWrite(graph, [node_id], "force_unship");
   const target = new_status ?? "ready";
   const previous = node.state;
 
@@ -1531,6 +1573,7 @@ type PatchTerritoryArgs = {
 };
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "patch_node_territory");
   // A revision moved off (or cleared from) its change may leave that change with no revisions.
   return args.change === undefined
     ? writeNodeTerritory(args)
@@ -1638,6 +1681,7 @@ export function patchNodeRules(args: {
   node_id: string;
   rules: string;
 }): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "patch_node_rules");
   const { node_id, rules } = args;
   if (rules === undefined) {
     throw blocked("patch_node_rules requires rules.");
@@ -1645,6 +1689,9 @@ export function patchNodeRules(args: {
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   const written = writeNodeRules(node, rules);
+  // The author holds the rules it just wrote; its orientation stays current. Nodes that inherit
+  // them now need a fresh orientation before their next write.
+  if (orientationGateEnabled()) recordOriented(loadGraph(), [node_id]);
   return {
     node_id,
     rules: node.rules ?? "",
@@ -1675,6 +1722,7 @@ export function recordDecision(args: {
   change?: string;
   id?: string;
 }): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "record_decision");
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
   if (node.type === "Bug") {
@@ -1780,6 +1828,7 @@ export function openNext(args: {
   change?: string;
   change_ref?: string;
 }): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "open_next");
   const { node_id, title, description } = args;
   validateChangeInput(args);
   const graph = loadGraph();
@@ -1921,6 +1970,7 @@ export function putAttachment(args: {
   const { node_id } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  gateWrite(graph, [node_id], "put_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
   const slot: TerritorySlot =
@@ -1962,6 +2012,7 @@ export function removeAttachment(args: {
   const { node_id } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  gateWrite(graph, [node_id], "remove_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
   const slot: TerritorySlot =

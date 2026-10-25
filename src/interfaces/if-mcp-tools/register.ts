@@ -383,7 +383,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call when you are about to read or edit one node's territory. " +
         "Returns authoritative record (graph slice), editable body (without the ## Rules and ## Decisions sections), the node's own rules, " +
         "its own decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), " +
-        "inherited_decisions ({ count, nodes }, plus entries with include_inherited_decisions), attachment paths, and filenames. " +
+        "inherited_decisions ({ count, nodes }, plus entries with include_inherited_decisions), resolved_rules (every node rule that reaches it: it counts as orienting on the node), attachment paths, and filenames. " +
         "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
@@ -405,9 +405,13 @@ export function registerMindPlanTools(server: McpServer): void {
       kind: "read",
       title: "Orient for work",
       description:
-        "Call before each action, after get_rules. Not only at session start. " +
-        "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
-        "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
+        "Call before each action, after get_rules. Not only at session start. Summary first: " +
+        "with only a query it returns ranked rows ({ id, type, state, title, description, area?, score }, default 8, no body, rules, or decisions); " +
+        "pick one and call again with node_id. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
+        "With node_id it returns the full node at depth: record and body (get_node_context), owned files, " +
+        "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface. " +
+        "Writes that act on a node (set_implementation_files, set_test_files, update_node_status, patch_node_territory, patch_node_rules, open_next, record_decision, attachments, force_unship, link_nodes / unlink_nodes on the source) " +
+        "are Blocked: Orientation until that node had a full reply in this session (or get_node_context), and again after the rules that reach it changed; create_node is never blocked. " +
         "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
         "or an affected node's for a Bug), each labeled with the node it came from and tagged with a version; pass known_rules_versions ({ node_id: version }) only for entries whose text you still hold, to leave that text out (they come back with unchanged: true). Those rules are mandatory. " +
         "And a decisions block, at every depth: the focus node's own recorded design decisions (a Bug: those of the nodes it affects); read them before reshaping that design. " +
@@ -427,7 +431,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .min(1)
           .max(MAX_FIND_LIMIT)
           .optional()
-          .describe(`Max ranked matches (default ${DEFAULT_FIND_LIMIT}).`),
+          .describe(`Max ranked rows (default 8 for a query alone, ${DEFAULT_FIND_LIMIT} with node_id).`),
         depth: z
           .enum(ORIENT_DEPTHS)
           .optional()

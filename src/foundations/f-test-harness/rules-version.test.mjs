@@ -76,6 +76,8 @@ await call("create_node", { id: "j-shop", type: "Journey", title: "Shop", descri
 await call("create_node", { id: "i-pay", type: "Interaction", title: "Pay", description: "Shopper pays." });
 await call("link_nodes", { source_id: "i-pay", target_id: "j-shop", edge_type: "belongs_to" });
 await call("patch_node_rules", { node_id: "j-shop", rules: "- Prices include VAT." });
+// The Journey's new rules reach i-pay, so the orientation gate asks to orient on it again.
+await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
 await call("patch_node_rules", { node_id: "i-pay", rules: "- Never store card numbers." });
 const oriented = await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
 const versions = Object.fromEntries(oriented.rules.entries.map((e) => [e.node_id, e.version]));
@@ -91,6 +93,7 @@ check(
   journey.unchanged === true && !("rules" in journey) && journey.via === "belongs_to" && own.rules.includes("card numbers") && !own.unchanged,
   JSON.stringify(known.rules)
 );
+await call("orient_for_work", { node_id: "j-shop", depth: "rules" });
 await call("patch_node_rules", { node_id: "j-shop", rules: "- Prices include VAT.\n- Show the currency." });
 const changed = await call("orient_for_work", { node_id: "i-pay", depth: "rules", known_rules_versions: versions });
 const journeyAfter = changed.rules.entries.find((e) => e.node_id === "j-shop");

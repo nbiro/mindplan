@@ -17,6 +17,7 @@ import {
   territoryBodyReader,
 } from "../f-territory-store/store.js";
 import { warmSearchIndex } from "../f-graph-search/search.js";
+import { enableOrientationGate } from "../f-orientation-ledger/ledger.js";
 import { packageVersion } from "../f-territory-store/version.js";
 import { registerMindPlanTools } from "../../interfaces/if-mcp-tools/register.js";
 import { runCli } from "../../interfaces/if-cli/cli.js";
@@ -55,6 +56,8 @@ export function guardStdout(): void {
 
 async function runMcpServer(): Promise<void> {
   guardStdout();
+  // One server process is one agent session: writes on a node wait for its orientation.
+  enableOrientationGate();
   ensureDirectories();
   const server = new McpServer(
     {

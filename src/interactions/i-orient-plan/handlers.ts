@@ -52,9 +52,11 @@ import {
 } from "../../foundations/f-compiler-rules/rules.js";
 import {
   DEFAULT_FIND_LIMIT,
+  expandNeighborhood,
   findRelatedNodes,
   searchNodes,
 } from "../../foundations/f-graph-search/search.js";
+import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
 import { resolveNodeRules, rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import {
   listDecisions,
@@ -607,11 +609,15 @@ export function getNodeContext(args: {
 }): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  return buildNodeContextPayload(graph, node, {
+  const payload = buildNodeContextPayload(graph, node, {
     include_superseded: args.include_superseded,
     inherited: true,
     include_inherited_decisions: args.include_inherited_decisions,
   });
+  // It counts as orienting on the node, so it carries every rule that reaches it, not only its own.
+  payload.resolved_rules = { node_id: node.id, entries: reachingRules(graph, node.id) };
+  recordOriented(graph, [node.id]);
+  return payload;
 }
 
 /**
@@ -638,6 +644,57 @@ function orientDecisionEntries(entries: DecisionEntry[], depth: OrientDepth): un
 export const ORIENT_DEPTHS = ["rules", "body", "full"] as const;
 export type OrientDepth = (typeof ORIENT_DEPTHS)[number];
 
+/** Rows a query-only orient_for_work returns by default. */
+export const ORIENT_SUMMARY_LIMIT = 8;
+/** A summary row's description is cut to this many characters (descriptions are search rows). */
+export const ROW_DESCRIPTION_CHARS = 70;
+
+/** One ranked row of a query-only orient_for_work: enough to pick the node to open. */
+export type OrientRow = {
+  id: string;
+  type: string;
+  state: string;
+  title: string;
+  description: string;
+  /** Journey titles; omitted when the node belongs to none. */
+  area?: string[];
+  score: number;
+};
+
+function orientRow(match: Awaited<ReturnType<typeof searchNodes>>[number]): OrientRow {
+  const description =
+    match.description.length > ROW_DESCRIPTION_CHARS
+      ? `${match.description.slice(0, ROW_DESCRIPTION_CHARS - 1).trimEnd()}…`
+      : match.description;
+  return {
+    id: match.id,
+    type: match.type,
+    state: match.state,
+    title: match.title,
+    description,
+    ...(match.area?.length ? { area: match.area } : {}),
+    score: match.score,
+  };
+}
+
+/**
+ * Whether the top match is clearly the node the query means: the query is its exact id, it is the
+ * only match, or its fused score is at least twice the next one's.
+ */
+function clearWinner(matches: Awaited<ReturnType<typeof searchNodes>>, query: string): boolean {
+  if (matches.length === 0) return false;
+  if (matches[0].id === query.trim().toLowerCase() || matches.length === 1) return true;
+  return matches[0].score >= 2 * matches[1].score;
+}
+
+/**
+ * Summary first. With only a `query`, orient_for_work returns ranked rows (`OrientRow`, no body,
+ * neighborhood, blast radius, rules, or decisions) and the agent picks one; when the top row is a
+ * clear winner the full node comes back with them (`auto_focus: true`). With `node_id` it returns
+ * that node in full at `depth`: record, body, its rules, its own decisions, owned files, and at
+ * `full` the neighborhood and blast radius. Every full reply records the node in the orientation
+ * ledger, which is what lets writes on it through.
+ */
 export async function orientForWork(args: {
   query?: string;
   node_id?: string;
@@ -660,54 +717,59 @@ export async function orientForWork(args: {
   if (args.node_id) {
     findNode(graph, args.node_id);
   }
-  const related = findRelatedNodes(graph, {
-    query: q,
-    node_id: args.node_id,
-    type: args.type,
-    limit: args.limit ?? DEFAULT_FIND_LIMIT,
-    matches: await rankedMatches(graph, q, args),
-  });
-  let context: Record<string, unknown> | null = null;
-  let blast_radius: Record<string, unknown> | null = null;
-  let rules: Record<string, unknown> | null = null;
-  let decisions: Record<string, unknown> | null = null;
+  const limit = args.limit ?? (args.node_id ? DEFAULT_FIND_LIMIT : ORIENT_SUMMARY_LIMIT);
+  // One extra match decides "the only match" and "twice the next" whatever the row limit.
+  const ranked = await rankedMatches(graph, q, { type: args.type, limit: limit + 1 });
+  const matches = ranked.slice(0, limit);
+  const rows = matches.map(orientRow);
 
-  if (related.focus) {
-    const node = findNode(graph, related.focus);
-    context = buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
-    rules = {
-      node_id: node.id,
-      entries: versionedRuleEntries(resolveNodeRules(graph, node.id), args.known_rules_versions),
+  let focus = args.node_id ?? null;
+  const autoFocus = !focus && clearWinner(ranked, q);
+  if (autoFocus) focus = matches[0].id;
+  if (!focus) {
+    return {
+      query: q,
+      matches: rows,
+      focus: null,
+      next: rows.length ? 'orient_for_work({ node_id: "<row id>" })' : "No match: refine the query, or create_node.",
     };
-    const split = splitNodeDecisions(graph, node, args, depth);
-    decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
-    if (depth === "full" && isPipelineNodeType(node.type)) {
-      blast_radius = buildBlastRadiusPayload(graph, node);
-    }
   }
 
-  if (depth === "full") {
-    return { ...related, context, blast_radius, rules, decisions };
-  }
-  // Lighter depths keep the ranked matches and the focus, not the neighborhood or blast radius.
-  const slim: Record<string, unknown> = {
-    query: related.query,
-    matches: related.matches,
-    focus: related.focus,
+  const node = findNode(graph, focus);
+  const context = buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
+  const rules = {
+    node_id: node.id,
+    entries: versionedRuleEntries(reachingRules(graph, node.id), args.known_rules_versions),
+  };
+  const split = splitNodeDecisions(graph, node, args, depth);
+  const decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
+  recordOriented(graph, [node.id]);
+
+  const reply: Record<string, unknown> = {
+    query: q,
+    matches: rows,
+    focus: node.id,
+    ...(autoFocus ? { auto_focus: true } : {}),
     rules,
     decisions,
   };
-  if (context) {
-    if (depth === "body") {
-      slim.context = context;
-    } else {
-      const next = context.next as { record?: unknown } | null;
-      slim.context = { record: context.record, next: next ? { record: next.record } : null };
-    }
-  } else {
-    slim.context = null;
+  if (depth === "rules") {
+    const next = context.next as { record?: unknown } | null;
+    reply.context = { record: context.record, next: next ? { record: next.record } : null };
+    return reply;
   }
-  return slim;
+  reply.context = context;
+  if (isPipelineNodeType(node.type)) {
+    const owned = nodeOwnedFiles(node, projectRoot());
+    reply.files = { files: owned.files, ...(owned.next_files ? { next_files: owned.next_files } : {}) };
+  }
+  if (depth === "full") {
+    const { nodes, edges } = expandNeighborhood(graph, node.id);
+    reply.nodes = nodes;
+    reply.edges = edges;
+    reply.blast_radius = isPipelineNodeType(node.type) ? buildBlastRadiusPayload(graph, node) : null;
+  }
+  return reply;
 }
 
 /**

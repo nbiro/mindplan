@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 — summary-first orientation and the write gate
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **`orient_for_work` returns summaries first.** A query alone returns ranked rows: `{ id, type, state, title, description (70 characters), area?, score }`, 8 by default. There is no body, neighborhood, blast radius, rules, or decisions, and 10 rows stay under 2 KB. When the top row is a clear winner (the query is its exact id, it is the only match, or it scores at least twice the next row), the full node comes back with the rows, marked `auto_focus: true`. `orient_for_work({ node_id })` returns the full node: record, body, rules, own decisions, owned files (`files`), and the blast radius at `depth: "full"`. **Breaking:** a client that read `context`, `rules`, or `blast_radius` from a query-only reply must pass `node_id` or check `auto_focus`. [§8.1]
+- **Write gate.** A write that acts on a node is `Blocked: Orientation` until that node got a full reply in this MCP session, and again after the rules that reach it change. A full reply comes from `orient_for_work` with `node_id` or `auto_focus`, `get_node_context`, the node's own `create_node`, or a link that changed its rules. The block names the fixing call. Gated tools: `set_implementation_files`, `set_test_files`, `update_node_status`, `patch_node_territory`, `patch_node_rules`, `open_next`, `record_decision`, `link_nodes` / `unlink_nodes` (on the source). `put_attachment`, `remove_attachment`, and `force_unship` are gated too. `create_node` is never blocked, and while the gate is on its result carries `rules`. `get_node_context` now returns `resolved_rules` (every rule that reaches the node). The rules shown and fingerprinted include those that an open revision's proposed edges bring. The CLI is never gated, and `MINDPLAN_ORIENT_GATE=off` turns the gate off for a server process. [§8.1.2]
+- **`find_related_nodes`** matches gain an `area` field (Journey titles).
+- **New Foundation `f-orientation-ledger`** holds the per-session record and its rules fingerprints.
+- **Docs.** Playbook step 1 is now orient with a query, pick a row, `orient_for_work({ node_id })`, act. The plan-project skill, SPEC, and README match, and the `npx` examples use `mindplan-mcp@0.7`.
+
 ## 0.6.0 — rules version tags
 
 Every behavior change in this release. SPEC sections in brackets.

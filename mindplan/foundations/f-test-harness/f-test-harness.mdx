@@ -6,7 +6,7 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: stable
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-25T23:05:03.555Z
+updated_at: 2026-10-25T23:31:18.939Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -60,6 +60,7 @@ Depends on: `f-mcp-runtime`.
 - `npm test` runs `shipped-claims.test.mjs` and `change-neighbors.test.mjs` and both pass
 - `npm test` runs `node-tests.test.mjs` and it passes, and smoke counts twenty-eight tools
 - `npm test` runs `search-index.test.mjs` and `search-eval.test.mjs` without network access and both pass
+- `npm test` runs `orient-gate.test.mjs` (rows only for a query, under 2 KB for 10; auto-focus on an exact id; the full reply for `node_id`; every gated write Blocked in a fresh session and passing after orienting; a Journey rules change sending its Interaction back to orient; `create_node` never blocked; `get_node_context` carrying `resolved_rules`; `limit: 1` never auto-focusing; attachments gated; proposed next-slot edges changing the rules fingerprint; the CLI never gated) and it passes; the smoke suite runs with `MINDPLAN_ORIENT_GATE=off` because its walks write without orienting
 - `npm test` runs `rules-version.test.mjs` (the `rules_version` tag, the short unchanged `get_rules` reply under 150 bytes, the tag change after `patch_project_rules`, and versioned node-rule entries in `orient_for_work`) and it passes
 - `decisions.test.mjs` asserts the own-decisions default of `orient_for_work`, `get_node_context`, and `get_blast_radius`, the inherited entries' shapes with `include_inherited_decisions`, the one-decision reply on a node shaped like skyloom's `i-contact-platform`, a Bug's context listing the affected node's decisions, and superseded one-line entries
 

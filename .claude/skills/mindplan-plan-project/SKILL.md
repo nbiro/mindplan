@@ -40,8 +40,11 @@ Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity
 ### 1. Orient
 
 ```
-orient_for_work({ query: "<user ask>" })
+orient_for_work({ query: "<user ask>" })   // ranked rows; pick the node you will work on
+orient_for_work({ node_id: "<row id>" })   // its rules, decisions, body, files, blast radius
 ```
+
+A query alone returns summary rows (and the full node only for a clear winner, `auto_focus: true`). A write on an existing node is `Blocked: Orientation` until you oriented on that node with `node_id` in this session, and again after the rules that reach it changed; `create_node` is never blocked.
 
 For empty or unknown graphs, also call `get_mindplan_graph` once. Prefer `export_mindplan_view` when the user wants a diagram.
 

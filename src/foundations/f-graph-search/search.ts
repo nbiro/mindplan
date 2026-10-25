@@ -30,6 +30,8 @@ export interface RankedMatch {
   title: string;
   description: string;
   score: number;
+  /** Journey titles of the node (`searchDocs` area); set by `searchNodes`, absent from `rankNodes`. */
+  area?: string[];
 }
 
 export interface NodeSummary {
@@ -507,7 +509,7 @@ export async function searchNodes(
 
   return fuseRankings([keyword, semantic], { docs: docById, exact, paths })
     .slice(0, limit)
-    .map(({ id, score }) => ({ ...toSummary(byId.get(id)!), score }));
+    .map(({ id, score }) => ({ ...toSummary(byId.get(id)!), score, area: docById.get(id)!.area }));
 }
 
 /** After a graph write: sync the search cache now and embed what changed in the background. */

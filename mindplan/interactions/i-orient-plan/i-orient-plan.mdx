@@ -4,9 +4,9 @@ type: Interaction
 title: "Orient on the plan"
 description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules (each tagged with a version, its text left out when the caller already holds it) and its own decisions (naming the inherited ones, listed on request), list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the focus's decisions and the dependents that hold others, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check and tagging the rules), and expose get_rules for global project rules before each action, with a short unchanged reply for a known version."
 state: stable
-shipped_at: 2026-10-25T23:09:53.577Z
+shipped_at: 2026-10-25T23:35:19.697Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-25T23:09:53.577Z
+updated_at: 2026-10-25T23:35:19.697Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -14,6 +14,7 @@ depends_on:
   - f-territory-store
   - f-compiler-rules
   - f-source-index
+  - f-orientation-ledger
 leads_to:
   - i-steer-plan
 implements:
@@ -55,6 +56,8 @@ Intended files: `src/interactions/i-orient-plan/`
 - `get_project` — `{ path, description, rules, playbook, check, version? }` (first read of dialect + brief); `check` is a fixed sentence naming `run_check` and the CLI `mindplan-mcp check`; `version` is present only when `projectVersionStatus()` is not `current`, and is its warning sentence
 - `get_rules({ known_version? })` — `{ path, rules, rules_version }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description. `rules_version` is `rulesVersion(rules)`: the first 12 hex characters of its SHA-256. When `known_version` equals it the reply is `{ path, rules_version, unchanged: true }` with no text (under 150 bytes), so a re-read before every action costs almost nothing; any other value, or none, returns the full text. `get_project` returns the same `rules_version`. These are the **global** rules only: rules that apply everywhere. Rules about one area of the code live on that area's node
 - `orient_for_work` returns a separate `rules` block next to `context` and `blast_radius`: `{ node_id, entries: RuleEntry[] }` from `resolveNodeRules` (`f-graph-search`), or `null` when there is no focus. Each entry is `{ node_id, node_type, via, distance, rules }`, ordered self, then `belongs_to`, then `depends_on`, then `affects`. `entries` is `[]` when nothing applies. Each entry carries `version` (`rulesVersion` of its text); `known_rules_versions: { node_id: version }` leaves out the `rules` text of an entry whose version matches and marks it `unchanged: true`. It does **not** repeat the project brief rules
+- **Summary first.** `orient_for_work({ query })` without `node_id` returns `{ query, matches: OrientRow[], focus: null, next }`: ranked rows `{ id, type, state, title, description (cut to `ROW_DESCRIPTION_CHARS` = 70), area? (Journey titles, omitted when none), score }`, default `ORIENT_SUMMARY_LIMIT` = 8, and no body, neighborhood, blast radius, rules, or decisions. When the top row is a clear winner (`clearWinner`: the query is its exact id, it is the only match, or its fused score is at least twice the next) the full node comes back with the rows and `auto_focus: true`. `orient_for_work({ node_id })` returns the full node: `rules`, `decisions`, `context`, and from `depth: "body"` on `files` (`nodeOwnedFiles`: `files`, `next_files?`) for a pipeline node; `full` adds `nodes` / `edges` (the 1-hop neighborhood) and `blast_radius`. A query with `node_id` returns the rows too
+- **Orientation ledger.** The `rules` block resolves with `reachingRules` (live edges plus an open revision's proposed ones). `clearWinner` looks at one match past the row limit, so `limit: 1` alone never auto-focuses. `get_node_context` returns `resolved_rules: { node_id, entries }` (every rule that reaches the node) because it counts as orienting. Every full reply (`node_id` or `auto_focus`) and every `get_node_context` records the node with `recordOriented` (`f-orientation-ledger`); that is what lets writes on it through `i-steer-plan`'s gate
 - `orient_for_work` takes `depth`: `full` (default) returns everything; `body` returns `{ query, matches, focus, context, rules }` with the full context; `rules` returns the same keys with `context` cut to the record (and the next record). `body` and `rules` skip the neighborhood and the blast radius, and do not compute the blast radius
 - `get_node_context` returns `body` without the `## Rules` section and a separate `rules` string for that node's own rules (and the same for the `next` slot's body)
 - `get_blast_radius` adds `rules_impact` for every focus type: `{ node_id, has_rules, inherited_by: RulesImpactEntry[] }` from `rulesAudience`. It reports who is reached by the focus's rules, so editing a Foundation's rules shows every dependent; `affected` / `affected_files` / `reachability` are unchanged. When the focus has no rules, `has_rules` is `false` and `inherited_by` is `[]`
@@ -74,6 +77,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 
 ## Acceptance Criteria
 
+- A query-only `orient_for_work` returns rows only, under 2 KB for 10 rows; an exact id query auto-focuses; `orient_for_work({ node_id })` returns record, body, rules, own decisions, owned files, and blast radius
+- A full reply and `get_node_context` count as orienting on the node
 - `get_rules` returns the current project rules string, path, and `rules_version`; with the current tag as `known_version` it returns `unchanged: true` without the text, under 150 bytes; after `patch_project_rules` the tag changes and the old tag gets the new text
 - `get_project` returns `rules_version`
 - Each `orient_for_work` rules entry carries `version`; a known version leaves out that entry's text, and a changed node rules text comes back with a new version
@@ -135,6 +140,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Verified the own-decisions default via `npm test`
 - [x] Tag project rules with `rules_version` in `get_project` / `get_rules`, take `known_version`, and version node rule entries with `known_rules_versions`
 - [x] Verified the rules versions via `npm test`
+- [x] Return summary rows for a query alone, the full node for `node_id` or a clear winner, owned files, and record fetches in the ledger
+- [x] Verified summary-first orientation via `npm test`
 
 ## Decisions
 
@@ -181,6 +188,28 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - Why: The radius answers who a change reaches; the count and node ids say whose reasoning to read, and the list stays one flag away.
 - Consequences: orient_for_work at depth full embeds the default radius, so its reply no longer carries dependents' decisions.
 - Change: own-decisions
+- Date: 2026-10-25
+
+### d-summary-first-orient
+
+- Decision: orient_for_work with only a query returns ranked rows (id, type, state, title, a 70-character description, area, score; default 8) and the full node only for a clear winner (its exact id, the only match, or twice the next score: auto_focus); orient_for_work({ node_id }) returns the full node.
+- Alternatives:
+  - Keep the full payload for the top match (about 22 KB on a 54-node graph, mostly for a node the agent may not work on)
+  - Rows only, never auto-focus (an exact id or an obvious winner would always cost a second call)
+- Why: A summary list costs about 2 KB for 10 rows and lets the agent pick; with hybrid ranking the top row is usually right, and the second call happens only when the choice is unclear.
+- Consequences: A client that read context, rules, or blast_radius from a query-only reply must pass node_id or read auto_focus; row descriptions are cut, so a node's full description comes with its full reply.
+- Change: summary-orient
+- Date: 2026-10-25
+
+### d-orientation-write-gate
+
+- Decision: Writes that act on a node are Blocked: Orientation until the node had a full reply in this MCP session (orient_for_work with node_id or auto_focus, get_node_context, its create_node, or a link result that returned its new rules), and again once the rules that reach it changed; create_node is never blocked; the CLI is never gated.
+- Alternatives:
+  - No gate (summary-first orientation would let an agent write without ever seeing a node's rules, making node rules optional)
+  - Gate create_node too (the owner ruled it out: a new node has no rules yet beyond the ones its result returns)
+- Why: Node rules are mandatory and used to arrive with every orient; once orient returns rows first, only a gate keeps them from being skipped.
+- Consequences: A fresh session must orient on each node before writing it, and a rules change on a Journey or Foundation sends its dependents back to orient; the author of a rules change stays oriented.
+- Change: summary-orient
 - Date: 2026-10-25
 
 ## Attachments

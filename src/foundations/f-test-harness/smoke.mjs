@@ -8,6 +8,8 @@ import * as os from "os";
 import { fileURLToPath } from "url";
 // Spawned servers rank by keyword only: no model download or load during tests.
 process.env.MINDPLAN_SEARCH ??= "keyword";
+// The smoke walks write without orienting first; the orientation gate has its own suite.
+process.env.MINDPLAN_ORIENT_GATE ??= "off";
 
 const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const serverEntry = path.join(toolRoot, "dist/index.js");
@@ -829,7 +831,7 @@ if (
 // --- orient_for_work + reachability ---
 await expectBlocked("orient_for_work requires query or node_id", "orient_for_work", {});
 const oriented = JSON.parse(
-  await expectOk("orient_for_work checkout", "orient_for_work", { query: "checkout" })
+  await expectOk("orient_for_work checkout", "orient_for_work", { query: "checkout", node_id: "i-checkout" })
 );
 if (oriented.focus !== "i-checkout" || !oriented.context?.record?.id || oriented.context.record.id !== "i-checkout") {
   failures++; console.log(`FAIL orient_for_work context: ${JSON.stringify({ focus: oriented.focus, record: oriented.context?.record })}`);
@@ -2803,10 +2805,10 @@ role: infra
     console.log(`FAIL Bug rules from affected nodes: ${JSON.stringify(orientBug.rules.entries)}`);
   } else console.log("ok   Bug inherits the resolved rules of the nodes it affects");
   const orientNone = await json("orient_for_work", { query: "zzzzqqqq" });
-  if (orientNone.rules !== null) {
+  if (orientNone.focus !== null || "rules" in orientNone || "context" in orientNone) {
     failures++;
-    console.log(`FAIL rules must be null without a focus: ${JSON.stringify(orientNone.rules)}`);
-  } else console.log("ok   orient_for_work rules is null without a focus");
+    console.log(`FAIL a query-only orient without a focus returns rows only: ${JSON.stringify(orientNone)}`);
+  } else console.log("ok   orient_for_work without a focus returns rows only, no rules");
 
   // Blast radius reports who the rules reach.
   const blast = await json("get_blast_radius", { node_id: "j-rules" });

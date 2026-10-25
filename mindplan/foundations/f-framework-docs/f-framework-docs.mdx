@@ -6,7 +6,7 @@ description: "Infra — SPEC, playbook, skills, and changelog: mandatory project
 state: stable
 shipped_at: 2026-10-25T21:13:07.168Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-25T23:05:03.484Z
+updated_at: 2026-10-25T23:23:03.916Z
 depends_on:
   - f-domain-model
 implements:
@@ -54,6 +54,8 @@ Depends on: `f-domain-model`.
 - **Own decisions by default.** Playbook rule 10 says `orient_for_work` returns the node's own decisions and names the inherited ones, with `include_inherited_decisions` for a change that reaches a Journey's or Foundation's design; SPEC §8.1 specifies `inherited_decisions`, `dependent_decisions`, and both flags; the README tool table and the `npx` examples (`mindplan-mcp@0.5`) match
 
 - **Rules versions.** Playbook rule 1 and the `AGENTS.md` stub (`templates/agent/agents-stub.md`, which init installs and the host copies repeat) tell the agent to pass the last `rules_version` as `known_version` and to treat `unchanged: true` as the rules it holds; SPEC §8.1 specifies `rules_version`, `known_version`, entry `version`, and `known_rules_versions`; the README lists `get_rules`; the `npx` examples use `mindplan-mcp@0.6`
+
+- **Summary-first orientation.** Playbook step 1 is orient with a query, pick a row, `orient_for_work({ node_id })`, act, and names the write gate; the plan-project skill's orient step shows both calls; SPEC §8.1 specifies the rows, `auto_focus`, the full reply, and §8.1.2 the orientation gate; the README row and the `npx` examples (`mindplan-mcp@0.7`) match
 
 ## Acceptance Criteria
 
