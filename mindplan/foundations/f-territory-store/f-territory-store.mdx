@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin."
+description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
 state: stable
-shipped_at: 2026-10-20T13:04:10.474Z
+shipped_at: 2026-10-23T19:24:57.250Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-20T13:35:46.667Z
+updated_at: 2026-10-23T19:24:57.250Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -60,6 +60,13 @@ Intended files: `src/foundations/f-territory-store/`
 - **Change frontmatter.** `change` / `change_ref` scalars are read from the live file and the open next file; `writeChangeFrontmatter(node, { change, change_ref }, slot)` sets or clears them (empty string clears) without touching state or `updated_at`; `patchNodeTerritory` takes them as patch fields (validated slug / one-line ref); `create_node`, `open_next`, and first ship call the writer; `promoteNextSlot` drops them because it rebuilds the live frontmatter
 
 Depends on: `f-domain-model`, `f-source-index`.
+
+### Project version stamp (`version.ts`)
+
+- `mindplan/version.json` records which package last migrated the tree: `{ "package": "<semver>", "graph": <GRAPH_VERSION> }`. Only `init` writes it (`writeProjectVersion`).
+- `packageVersion()` reads `version` from this package's own `package.json` by walking up from the module (works from `dist/` and from a consumer's `node_modules`); `f-mcp-runtime` reports the same value on `initialize`.
+- `projectVersionStatus()` compares the stamp with the running package and graph format and never throws. Status: `current`, `missing` (no stamp), `invalid` (unreadable stamp), `behind` (stamp older than the package, or older graph format), `ahead` (stamp newer than the package, or newer graph format). Every status but `current` carries one `warning` sentence naming the fix: `behind` / `missing` / `invalid` → run `mindplan-mcp init` with the installed version; `ahead` → upgrade `mindplan-mcp`.
+- Versions compare as SemVer `major.minor.patch`; a pre-release sorts before its release.
 
 ## Acceptance Criteria
 
@@ -116,6 +123,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Ignore the section in checkbox counting and labels
 - [x] Verified the decisions section via `npm test`
 - [x] Write `opened_at` on open_next and export `withoutOwnedSections` (review fixes)
+- [x] Add `version.ts`: `packageVersion`, `readProjectVersion`, `writeProjectVersion`, `projectVersionStatus`
+- [x] Verified the version stamp and status via `npm test`
 
 ## Decisions
 
@@ -156,6 +165,18 @@ Depends on: `f-domain-model`, `f-source-index`.
 - Why: A patch should change only what it names, and a whole-body write should match the scaffold layout without discarding blank lines the caller sent; existing runs are collapsed once, on purpose, not as a side effect.
 - Consequences: Files with long runs keep them until a whole-body write collapses them; get_node_context bodies round-trip byte for byte.
 - Date: 2026-10-20
+
+### d-version-stamp-file
+
+- Decision: The package version that last migrated a project lives in its own file, mindplan/version.json ({ package, graph }), written only by init; a mismatch with the running package warns (get_project, run_check) and never Blocks.
+- Alternatives:
+  - A field in mindplan/config.json (config is user-edited through patch_config, so a stamp there could be changed without running the migrations it claims)
+  - A stamp per agent file, e.g. a version line in playbook.md (does not cover graph-format migrations and makes the copies differ from the templates)
+  - Block every tool on a mismatch (one stale stamp after an npm update would stop all planning until init runs)
+- Why: Init is the only step that both refreshes the package-owned agent files and runs graph migrations, so the stamp must change only when init runs; projects now upgrade the package through npm, and a warning tells the agent to rerun init without stopping work.
+- Consequences: A release that changes the playbook, skills, or graph format is picked up by a project only after it reruns init; a future graph-format bump can turn the ahead/behind graph case into a Block.
+- Change: project-version-stamp
+- Date: 2026-10-23
 
 ## Attachments
 

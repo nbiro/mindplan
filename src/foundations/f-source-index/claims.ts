@@ -116,6 +116,24 @@ export function claimCoversPath(claim: string, rel: string): boolean {
 }
 
 /**
+ * True when a claim list still holds `entry`: verbatim, or a path under one of its non-glob
+ * directory entries (a glob entry never keeps another entry).
+ */
+export function claimListKeeps(list: string[], entry: string): boolean {
+  return list.some((c) => c === entry || (c.endsWith("/") && !isGlobClaim(c) && claimCoversPath(c, entry)));
+}
+
+/**
+ * True when `text` names `entry` as a whole path, not as part of a longer one: `src/a.ts` is not
+ * named by `src/a.tsx`, `src/a.ts.bak`, or `lib/src/a.ts`, and `src/a/` is not named by
+ * `src/a/b.ts`. A sentence-ending period after the path still counts.
+ */
+export function namesPath(text: string, entry: string): boolean {
+  const escaped = entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w./-])${escaped}(?![\\w/-]|\\.[\\w/-])`).test(text);
+}
+
+/**
  * Expand implements entries to exact file paths.
  * Directory claims end with `/` and expand to all non-.gitkeep files beneath.
  * Glob claims expand to the matching files (a trailing `/` matches every file beneath each

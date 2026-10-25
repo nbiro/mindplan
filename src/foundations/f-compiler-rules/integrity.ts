@@ -11,7 +11,14 @@ import type {
   MindPlanNode,
 } from "../f-domain-model/types.js";
 import { isPipelineNodeType } from "../f-domain-model/types.js";
-import { expandClaims, isGlobClaim, validateClaimPath } from "../f-source-index/claims.js";
+import { expandClaims, isGlobClaim, namesPath, validateClaimPath } from "../f-source-index/claims.js";
+import { decisionGateSettings, loadProjectConfig } from "../f-source-index/config.js";
+import {
+  collectOtherClaims,
+  isDominatedFolder,
+  schemaClaimEntries,
+  type OtherClaims,
+} from "../f-source-index/dominance.js";
 import { listResolvedImports } from "../f-source-index/imports.js";
 import {
   buildOwnershipIndex,
@@ -263,9 +270,44 @@ export function probableOwner(graph: MindPlanGraph, file: string): MindPlanNode 
   return best?.node ?? null;
 }
 
-/** The calls that add `file` to the owner's active claim list, opening an evolution first when shipped. */
-export function coverageFix(owner: MindPlanNode, file: string): CoverageFixCall[] {
-  const shippedIdle = Boolean(owner.shipped_at) && !owner.next;
+/**
+ * What one check run shares across its Coverage fixes: the schema globs (config read once) and
+ * each shipped owner's view of the other nodes' claims (expanded once per owner, not per file).
+ */
+export interface CoverageFixContext {
+  schemaGlobs: string[];
+  othersByOwner: Map<string, OtherClaims>;
+}
+
+export function createCoverageFixContext(root: string): CoverageFixContext {
+  return {
+    schemaGlobs: decisionGateSettings(loadProjectConfig(root)).schema_files,
+    othersByOwner: new Map(),
+  };
+}
+
+/**
+ * The calls that add `file` to the owner's active claim list. A shipped owner with no open next
+ * opens an evolution first, unless the file's folder is one it dominates and the file is not a
+ * migration or schema file (then the claim is additive in place).
+ */
+export function coverageFix(
+  graph: MindPlanGraph,
+  root: string,
+  owner: MindPlanNode,
+  file: string,
+  ctx: CoverageFixContext = createCoverageFixContext(root)
+): CoverageFixCall[] {
+  const inPlace = (): boolean => {
+    if (schemaClaimEntries([file], ctx.schemaGlobs, root).length > 0) return false;
+    let others = ctx.othersByOwner.get(owner.id);
+    if (!others) {
+      others = collectOtherClaims(graph, owner.id, root);
+      ctx.othersByOwner.set(owner.id, others);
+    }
+    return isDominatedFolder(graph, owner.id, path.posix.dirname(file), root, [file], others);
+  };
+  const shippedIdle = Boolean(owner.shipped_at) && !owner.next && !inPlace();
   const current = (owner.next ? owner.next.implements : owner.implements) ?? [];
   const files = [...new Set([...current, file])].sort((a, b) => a.localeCompare(b));
   const claim: CoverageFixCall = {
@@ -476,8 +518,9 @@ export const STALE_PATHS_ONLY: StaleTextScope = { paths: true, changed_files: fa
 
 /**
  * Non-blocking warnings that the territory text no longer matches the repo:
- * a body names a path that does not exist, a claimed file changed after the body
- * was last written, or checkboxes are still open.
+ * a body names a path that does not exist, a claim added in place (`added_claims`) is not
+ * named by the body, a claimed file changed after the body was last written, or checkboxes
+ * are still open.
  */
 export function staleTextWarnings(
   graph: MindPlanGraph,
@@ -511,6 +554,16 @@ export function staleTextWarnings(
     if (!fs.existsSync(topAbs) || !fs.statSync(topAbs).isDirectory()) continue;
     if (!fs.existsSync(path.join(root, ...token.replace(/\/$/, "").split("/")))) {
       warnings.push(`stale: "${node.id}" body names \`${token}\` which does not exist.`);
+    }
+  }
+
+  // Claims a shipped node added in place stay flagged until the live body names them.
+  if (scope.paths && !node.next) {
+    for (const entry of node.added_claims ?? []) {
+      if (namesPath(body, entry)) continue;
+      warnings.push(
+        `stale: "${node.id}" claims \`${entry}\` added in place without a revision; name it in the body (patch_node_territory).`
+      );
     }
   }
 

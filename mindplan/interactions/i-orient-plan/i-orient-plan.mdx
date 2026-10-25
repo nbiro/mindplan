@@ -4,9 +4,9 @@ type: Interaction
 title: "Orient on the plan"
 description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change with rules impact and the decisions it reaches, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check), and expose get_rules for global project rules before each action."
 state: stable
-shipped_at: 2026-10-20T15:10:03.645Z
+shipped_at: 2026-10-23T19:24:57.621Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-20T15:10:03.645Z
+updated_at: 2026-10-23T19:24:57.621Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -41,7 +41,7 @@ Read-path orientation. `get_rules` returns only the mandatory project-wide rules
 Intended files: `src/interactions/i-orient-plan/`
 
 - Keep existing query tools
-- `get_project` — `{ path, description, rules, playbook, check }` (first read of dialect + brief); `check` is a fixed sentence naming `run_check` and the CLI `mindplan-mcp check`
+- `get_project` — `{ path, description, rules, playbook, check, version? }` (first read of dialect + brief); `check` is a fixed sentence naming `run_check` and the CLI `mindplan-mcp check`; `version` is present only when `projectVersionStatus()` is not `current`, and is its warning sentence
 - `get_rules` — `{ path, rules }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description. These are the **global** rules only: rules that apply everywhere. Rules about one area of the code live on that area's node
 - `orient_for_work` returns a separate `rules` block next to `context` and `blast_radius`: `{ node_id, entries: RuleEntry[] }` from `resolveNodeRules` (`f-graph-search`), or `null` when there is no focus. Each entry is `{ node_id, node_type, via, distance, rules }`, ordered self, then `belongs_to`, then `depends_on`, then `affects`. `entries` is `[]` when nothing applies. It does **not** repeat the project brief rules
 - `orient_for_work` takes `depth`: `full` (default) returns everything; `body` returns `{ query, matches, focus, context, rules }` with the full context; `rules` returns the same keys with `context` cut to the record (and the next record). `body` and `rules` skip the neighborhood and the blast radius, and do not compute the blast radius
@@ -63,6 +63,7 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 
 - `get_rules` returns the current project rules string and path, unchanged in shape
 - `get_project` still returns playbook + brief, plus a `check` sentence naming `run_check`
+- `get_project` adds a `version` warning sentence when `mindplan/version.json` is missing, unreadable, behind, or ahead of the running package, and omits it when current
 - `orient_for_work` on an Interaction returns its own rules, its Journey's, and its Foundations' (transitive), each entry naming its source node and `via`
 - `orient_for_work` on a Journey returns only the Journey's own rules; on a Bug returns the resolved rules of the nodes it affects
 - Sibling Interactions never appear in each other's `rules`
@@ -105,6 +106,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Page `get_mindplan_graph` by `offset` / `limit` with totals and `next_offset`, exporting the page constants
 - [x] Test the page walk, the single-page shape, and the past-the-end page (`f-test-harness`, in place)
 - [x] Verified via `npm test`
+- [x] Add the `version` warning to `get_project`
+- [x] Verified the `get_project` version warning via `npm test`
 
 ## Decisions
 

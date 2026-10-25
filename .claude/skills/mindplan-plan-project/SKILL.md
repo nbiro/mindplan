@@ -92,7 +92,7 @@ Apply **package ownership** (SPEC §1.2.2) while enriching:
 - One Interface per actor surface, not one Interface per screen/tab.
 - Keep Interaction/Interface Atomic Ops templates from `define-entities`.
 
-Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not plan `next` slots for them. The parent self-readies when the contracts are written.
+Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not plan `next` slots for them. Label each neighbor with the revision's change id (`patch_node_territory({ node_id, change })`) so `get_blast_radius({ change })` and `run_check({ change })` include it; the label clears when the change's last revision ships or is discarded. A neighbor that needs a new file beside its own, in a folder no other node claims into, claims it in place with `set_implementation_files` (no `open_next`); name the file in its body, or `run_check` warns `stale:`. The parent self-readies when the contracts are written.
 
 ### 5. On `Blocked:`
 

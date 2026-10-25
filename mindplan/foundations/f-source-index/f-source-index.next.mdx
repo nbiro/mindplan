@@ -2,23 +2,26 @@
 id: f-source-index
 type: Foundation
 title: "Source index"
-description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, the decision-gate settings in mindplan/config.json and its MCP write, and a read-only git probe for the files a branch adds."
-state: mirror
+description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, folder dominance (where a shipped node may claim a file in place, and which per-file claim lists one folder claim would replace), the decision-gate settings in mindplan/config.json and its MCP write, and a read-only git probe for the files a branch adds."
+state: in-review
 shipped_at: 2026-10-20T13:04:10.364Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-10-20T13:35:45.058Z
+updated_at: 2026-10-25T19:27:39.512Z
 depends_on:
   - f-domain-model
 implements:
   - src/foundations/f-source-index/
 role: infra
+opened_at: 2026-10-23T18:35:45.686Z
+change: "shipped-claims-and-neighbors"
+change_ref: "feat/shipped-claims-and-change-neighbours"
 ---
 
 # Source index
 
 ## Purpose
 
-Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`). The same file holds the decision-gate settings, so a project tunes when a decision is required without a code change. A read-only git probe lists the files a branch adds, because a new migration usually lands inside a folder its owner already claims, and the claims alone cannot tell that it is new.
+Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`). The same file holds the decision-gate settings, so a project tunes when a decision is required without a code change. A read-only git probe lists the files a branch adds, because a new migration usually lands inside a folder its owner already claims, and the claims alone cannot tell that it is new. Folder dominance answers where a shipped node may grow its claims without a revision: a file in a folder no other node can own reaches no dependent's contract.
 
 ## Shared Substrate Spec
 
@@ -29,6 +32,12 @@ Intended files: `src/foundations/f-source-index/`
 - Claim expansion / ownership unchanged
 - **Glob claims.** An `implements` entry with `*`, `**`, or `?` is a glob claim (`isGlobClaim`); `[` and `]` stay literal so route folders such as `[slug]` are plain paths. `validateClaimPath` accepts globs; `expandClaims` walks from the glob's static prefix and keeps matching files (a trailing `/` matches every file beneath each matching directory, e.g. `src/templates/*/actions/i-read-post/`); `claimEntryExists` is true for a glob that matches at least one file; `claimCoversPath(claim, path)` answers for files, directories, and globs. Exclusivity stays per expanded file, so two nodes whose claims overlap on a file still conflict. Directory and glob expansion skip `.git/` and `node_modules/`. Glob expansions are cached until the event loop turns, so one tool call walks each glob once
 - **Claimants.** `claimantsOf(buckets, file)` lists every non-retired claim on a file: its live owner, its next-slot owner, and a released current-slot owner
+- **Folder dominance** (`dominance.ts`, re-exported from `index.ts`):
+  - `isDominatedFolder(graph, nodeId, folder, root?, probes?, others?)` — true when the node's live claims expand to at least one file directly in the folder, and no other non-retired pipeline node (live or open-next claims) claims the folder or anything under it, has a directory or glob entry covering it or one of `probes` (the paths about to be claimed), has a glob whose static prefix is at or under it, has a glob rooted above it that can reach beneath it (conservative: it may match files the folder holds later), or has an expanded file beneath it. The repo root is never dominated
+  - `collectOtherClaims(graph, nodeId, root?)` → `OtherClaims` `{ entries, files }` — every other non-retired pipeline node's claim entries and their expanded files; callers that test several folders compute it once and pass it in
+  - `folderClaimSuggestions(graph, nodeId, entries, root?)` → `FolderClaimSuggestion[]` `{ folder, files, note }` — folders where the list names two or more exact files (not already under a directory or glob entry of the list), every file on disk under the folder is covered by the list, and no other node claims anything under it: one `folder/` entry would claim the same files
+  - `schemaClaimEntries(entries, globs, root?)` — the entries that reach a migration or schema file under the decision gate's `schema_files` globs: an exact file that matches, or `F/` when F is itself a schema folder (a file added to it later would match) or holds a matching file. A shipped node never adds one of these in place
+- **Claim-list helpers** (`claims.ts`): `claimListKeeps(list, entry)` — the list still holds the entry verbatim or under one of its non-glob directory entries (a glob never keeps another entry); `namesPath(text, entry)` — the text names the entry as a whole path, not as part of a longer one (`pkg/a.ts` is not named by `pkg/a.tsx`, `pkg/a.ts.bak`, or `lib/src/a.ts`; `pkg/a/` is not named by `pkg/a/b.ts`; a sentence-ending period still counts)
 - **Decision-gate settings.** `mindplan/config.json` may carry `decisions: { blast_radius?, schema_files? }`. `loadProjectConfig` validates it (`blast_radius` a non-negative integer, `schema_files` an array of non-empty glob strings, unknown keys Blocked) and keeps it as stored; `decisionGateSettings(config)` fills the defaults: `blast_radius: 5`; `schema_files`: `**/migrations/**`, `**/migration/**`, `**/*.prisma`, `**/schema.sql`, `**/structure.sql`, `**/db/schema.rb` (database migrations and schema dumps only: a generic `schema.*` would also match JSON Schema, zod, and GraphQL modules). `writeProjectConfig` writes `decisions` only when the config it is given has them, so a config without them loads and writes exactly as before
 - `matchesSchemaFile(path, globs)` — whether a repo path is a migration or schema file under those globs (the universe glob syntax)
 - **Files a branch adds.** `newFilesSinceBase(root)` — files that are untracked, staged as added, or added (`--diff-filter=A`) since `defaultBaseRef(cwd)` (the merge base of `HEAD` with `main`, `origin/main`, `master`, then `origin/master`; the dirty-src check uses the same helper), or only untracked and staged ones when no base resolves; paths are read with `-z`, so non-ASCII names come back unquoted; `null` when the root is not a git repository. Read-only; the caller decides when to probe
@@ -45,6 +54,11 @@ Depends on: `f-domain-model`.
 - A config without `decisions` loads with the defaults, and a `patch_config` of `sources` rewrites it without adding `decisions`
 - A negative or non-integer `blast_radius`, or a non-string schema glob, is Blocked as invalid config
 - `newFilesSinceBase` lists an untracked file and a file added on the branch, not a file only modified on the branch, and returns `null` outside git
+- A folder where the node owns a file directly and no other node claims anything is dominated; another node's file, directory, or glob claim under it, or a glob above it that can reach beneath it, makes it not dominated, and so does owning files only in its subfolders
+- The repo root is never dominated
+- `folderClaimSuggestions` suggests `F/` only when the list covers every file under F and no other node claims under it
+- `schemaClaimEntries` returns `db/migrations/002.sql`, `db/migrations/`, and `db/` when `db/` holds a migration, and nothing for a plain source file
+- `namesPath` rejects a longer path that contains the entry and accepts the exact path followed by punctuation
 
 ## Atomic Ops
 
@@ -57,6 +71,10 @@ Depends on: `f-domain-model`.
 - [x] Add `matchesSchemaFile` and `newFilesSinceBase`
 - [x] Verified the settings and the git probe via `npm test`
 - [x] Narrow the default schema globs, read git paths with `-z`, and share `defaultBaseRef` with the dirty-src check (review fixes)
+- [x] Add `dominance.ts` (`isDominatedFolder`, `collectOtherClaims`, `folderClaimSuggestions`) and re-export it from `index.ts`
+- [x] Verified folder dominance and folder-claim suggestions via `npm test`
+- [x] Add `schemaClaimEntries`, `claimListKeeps`, and `namesPath` (review fixes)
+- [x] Verified the schema refusal and whole-path matching via `npm test`
 
 ## Decisions
 
@@ -69,6 +87,29 @@ Depends on: `f-domain-model`.
 - Why: Migrations usually land in an already-claimed migrations folder, so the claim list does not change.
 - Change: decision-records
 - Date: 2026-10-20
+
+### d-additive-claims-in-dominated-folders
+
+- Decision: A shipped node with no open next may add claims in place only when no claimed file is lost and each new entry is a file in, or the directory of, a folder it dominates (it owns a file directly there and no other node claims anything under it); globs, removals and moves still need open_next.
+- Alternatives:
+  - Always require open_next for any claim change (agents misplace files into folders the node already claims, splitting code for ownership reasons)
+  - Allow any additive claim on a shipped node (a new file in a shared folder can belong to a dependent's contract)
+- Why: A file in a folder nobody else can own affects no dependent's contract, which is the files-change-behavior-doesn't case the playbook already treats as an in-place edit.
+- Consequences: The live file records added entries in added_claims and run_check warns stale until the body names each one, so the addition stays visible in review without a revision.
+- Change: shipped-claims-and-neighbors
+- Date: 2026-10-23
+
+### d-additive-claims-skip-schema-files
+
+- Decision: A shipped node with no open next may add claims in place only when no claimed file is lost, each new entry is a file in, or the directory of, a folder it dominates, and no new entry reaches a migration or schema file (config decisions.schema_files); globs, removals, moves, and schema claims need open_next.
+- Alternatives:
+  - Allow schema claims in place like any other file (a new migration would never reach the decision gate, since only open revisions are decision-worthy)
+  - Make in-place schema claims decision-worthy without a revision (the gate runs on the move to in-review, which an in-place write never makes)
+- Why: A new migration or schema file is decision-worthy by the gate's own rule, and only a revision reaches the gate; a file in a dominated folder affects no dependent's contract, but a schema change can.
+- Consequences: A node whose only change is a new migration in its own folder still needs open_next and a decision; a folder entry over a schema folder is refused even when the folder is empty today.
+- Supersedes: d-additive-claims-in-dominated-folders
+- Change: shipped-claims-and-neighbors
+- Date: 2026-10-25
 
 ## Attachments
 

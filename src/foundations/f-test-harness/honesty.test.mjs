@@ -263,11 +263,25 @@ fillAndTick("interactions", "i-b");
   r = await call("run_check", {});
   const shippedCov = r.failures.find((f) => f.includes('"src/f-core/extra.ts"'));
   check(
-    "the fix for a shipped owner opens its evolution first",
-    !!shippedCov && shippedCov.includes('open_next({"node_id":"f-core"}) then set_implementation_files'),
+    "the fix for a shipped owner in a folder it dominates is the in-place claim alone",
+    !!shippedCov &&
+      !shippedCov.includes("open_next") &&
+      shippedCov.includes('Fix: set_implementation_files({"node_id":"f-core","files":["src/f-core/extra.ts","src/f-core/index.ts"]})'),
     String(shippedCov)
   );
   remove("src/f-core/extra.ts");
+
+  write("src/f-core/sub/deep.ts", "export const deep = 1;\n");
+  r = await call("run_check", {});
+  const deepCov = r.failures.find((f) => f.includes('"src/f-core/sub/deep.ts"'));
+  check(
+    "the fix for a shipped owner outside a folder it dominates opens its evolution first",
+    !!deepCov &&
+      deepCov.includes('Probable owner by path: "f-core"') &&
+      deepCov.includes('open_next({"node_id":"f-core"}) then set_implementation_files'),
+    String(deepCov)
+  );
+  remove("src/f-core/sub");
 }
 
 // A released file (claimed live, dropped by the open next) that imports an Interaction is scanned.

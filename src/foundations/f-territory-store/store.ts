@@ -41,13 +41,14 @@ import {
   isFoundationRole,
   isInactiveNode,
   isMirrorState,
+  isNeighborNode,
   isNextPipelineState,
   isPipelineNodeType,
   isProductionState,
   MIRROR_STATE,
   NODE_TYPES,
 } from "../f-domain-model/types.js";
-import { normalizeClaimList } from "../f-source-index/claims.js";
+import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { loadProjectConfig } from "../f-source-index/config.js";
 
 export {
@@ -85,8 +86,11 @@ const EDGE_FIELDS = [
 ] as const;
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
-/** Array fields parsed like edges (YAML list or inline). */
-const LIST_FIELDS = [...EDGE_FIELDS, "implements"] as const;
+/**
+ * Array fields parsed like edges (YAML list or inline). `added_claims` is parsed here but is not
+ * stripped by `stripListFieldLines`, so frontmatter rewriters that do not know it keep it verbatim.
+ */
+const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims"] as const;
 type ListField = (typeof LIST_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
@@ -371,8 +375,18 @@ export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): st
   }
   const nextAtt = nextAttachmentsDir(node);
   if (fs.existsSync(nextAtt)) {
+    const dirRel = `${entityRelativePath(node)}/${NEXT_ATTACHMENTS_DIR}`;
+    // List every file the removal deletes (e.g. `.gitkeep`), not only the folder.
+    const walk = (abs: string, rel: string): void => {
+      for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+        const childRel = `${rel}/${entry.name}`;
+        if (entry.isDirectory()) walk(path.join(abs, entry.name), childRel);
+        else removed.push(childRel);
+      }
+    };
+    walk(nextAtt, dirRel);
     fs.rmSync(nextAtt, { recursive: true, force: true });
-    removed.push(`${entityRelativePath(node)}/${NEXT_ATTACHMENTS_DIR}`);
+    removed.push(dirRel);
   }
   return removed;
 }
@@ -451,6 +465,8 @@ export type ParsedFrontmatter = {
   scalars: Record<string, string>;
   arrays: Record<EdgeField, string[]>;
   implements: string[];
+  /** Claim entries a shipped node added in place, still awaiting a body mention. */
+  added_claims: string[];
 };
 
 function isEdgeField(key: string): key is EdgeField {
@@ -476,6 +492,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     mounts: [],
   };
   let implementsList: string[] = [];
+  let addedClaims: string[] = [];
 
   const lines = match[1].split(/\r?\n/);
   let i = 0;
@@ -492,6 +509,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
         i++;
       }
       if (field === "implements") implementsList = items;
+      else if (field === "added_claims") addedClaims = items;
       else arrays[field] = items;
       continue;
     }
@@ -504,6 +522,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
         ? inner.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
         : [];
       if (field === "implements") implementsList = items;
+      else if (field === "added_claims") addedClaims = items;
       else arrays[field] = items;
       i++;
       continue;
@@ -524,7 +543,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     i++;
   }
 
-  return { scalars, arrays, implements: implementsList };
+  return { scalars, arrays, implements: implementsList, added_claims: addedClaims };
 }
 
 function stripListFieldLines(inner: string): string {
@@ -559,6 +578,52 @@ function formatImplementsLines(entries: string[]): string {
   const parts = ["implements:"];
   for (const e of entries) parts.push(`  - ${e}`);
   return parts.join("\n");
+}
+
+function stripAddedClaimsLines(inner: string): string {
+  const lines = inner.split(/\r?\n/);
+  const result: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (/^added_claims:/.test(lines[i])) {
+      i++;
+      while (i < lines.length && /^\s+-\s+/.test(lines[i])) i++;
+      continue;
+    }
+    result.push(lines[i]);
+    i++;
+  }
+  return result.join("\n").replace(/\n+$/, "");
+}
+
+function formatAddedClaimsLines(entries: string[]): string {
+  if (entries.length === 0) return "";
+  return ["added_claims:", ...entries.map((e) => `  - ${e}`)].join("\n");
+}
+
+/**
+ * The in-place claim markers still awaiting review: deduped and sorted, keeping only entries the
+ * claim list still holds (verbatim, or a file under a non-glob directory entry) and the body
+ * (owned sections excluded) does not yet name verbatim.
+ */
+function pendingAddedClaims(entries: string[], claims: string[], body: string): string[] {
+  const text = withoutOwnedSections(body);
+  const kept = new Set<string>();
+  for (const e of entries) {
+    if (claimListKeeps(claims, e) && !namesPath(text, e)) kept.add(e);
+  }
+  return [...kept].sort((a, b) => a.localeCompare(b));
+}
+
+/** Rewrites the `added_claims` list in a `---` fenced frontmatter block (removed when empty). */
+function replaceAddedClaimsInFence(fence: string, entries: string[]): string {
+  const match = fence.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)$/);
+  if (!match) return fence;
+  const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+  const inner = stripAddedClaimsLines(match[2]);
+  const lines = formatAddedClaimsLines(entries);
+  const rebuilt = lines ? `${inner}\n${lines}` : inner;
+  return `${match[1]}${rebuilt.replace(/\r?\n/g, nl)}${match[3]}`;
 }
 
 function stripEdgeFieldLines(inner: string): string {
@@ -624,6 +689,7 @@ function parseNodeFromFrontmatter(
   if (parsed.arrays.mounts.length > 0) node.mounts = [...parsed.arrays.mounts];
   if (parsed.arrays.affects.length > 0) node.affects = [...parsed.arrays.affects];
   if (parsed.implements.length > 0) node.implements = [...parsed.implements];
+  if (parsed.added_claims.length > 0) node.added_claims = [...parsed.added_claims];
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
       throw new Error(
@@ -1598,6 +1664,7 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.mounts?.length) record.mounts = [...node.mounts];
   if (node.affects?.length) record.affects = [...node.affects];
   if (node.implements?.length) record.implements = [...node.implements];
+  if (node.added_claims?.length) record.added_claims = [...node.added_claims];
   if (node.change) record.change = node.change;
   if (node.change_ref) record.change_ref = node.change_ref;
   if (node.next) {
@@ -1868,6 +1935,8 @@ export function patchNodeTerritory(
   readinessReset: boolean;
   twin: string | null;
   toggled?: string[];
+  /** A stale live neighbor label dropped because the next slot's change moved off it. */
+  replaced_change?: string;
 } {
   const slot = resolveTerritorySlot(node, input.slot);
   const raw = readMarkdown(node, slot);
@@ -1981,16 +2050,36 @@ export function patchNodeTerritory(
     );
   }
 
+  // An in-place claim marker clears once the live body names its path verbatim.
+  if (slot === "current" && node.added_claims?.length) {
+    const pending = pendingAddedClaims(node.added_claims, node.implements ?? [], body);
+    if (pending.length !== node.added_claims.length) {
+      frontmatter = replaceAddedClaimsInFence(frontmatter, pending);
+      if (pending.length > 0) node.added_claims = pending;
+      else delete node.added_claims;
+    }
+  }
+
   writeMarkdown(
     node,
     `${frontmatter}${separator}${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
     slot
   );
   const twin = slot === "current" ? syncMirrorAfterLiveWrite(node) : null;
+  // Moving the revision's change id off a live neighbor label leaves that label stale.
+  const replacedLabel =
+    slot === "next" && input.change !== undefined ? dropStaleLiveLabel(node) : undefined;
   // Change ids are grouping metadata; every other field is the contract readiness was judged on.
   const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref");
   const readinessReset = contractWrite && demoteReadySlot(node, slot);
-  return { patched_fields, slot, readinessReset, twin, ...(toggled ? { toggled } : {}) };
+  return {
+    patched_fields,
+    slot,
+    readinessReset,
+    twin,
+    ...(toggled ? { toggled } : {}),
+    ...(replacedLabel ? { replaced_change: replacedLabel } : {}),
+  };
 }
 
 /**
@@ -2066,14 +2155,16 @@ function assignChange(
 
 /**
  * Set or clear (empty string) the change id and ref on one slot's frontmatter.
- * Grouping metadata: never touches state or `updated_at`.
+ * Grouping metadata: never touches state or `updated_at`. A write to the next slot also drops a
+ * live neighbor label that no longer matches the revision's change (`dropStaleLiveLabel`) and
+ * returns the dropped id.
  */
 export function writeChangeFrontmatter(
   node: MindPlanNode,
   input: { change?: string; change_ref?: string },
   slot: TerritorySlot = "current"
-): void {
-  if (input.change === undefined && input.change_ref === undefined) return;
+): string | undefined {
+  if (input.change === undefined && input.change_ref === undefined) return undefined;
   if (slot === "next" && !node.next) {
     throw new Error(`Blocked: node "${node.id}" has no open evolution to carry a change id.`);
   }
@@ -2081,6 +2172,57 @@ export function writeChangeFrontmatter(
   const patched = applyChangeScalars(fence, input);
   if (patched !== fence) fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
   assignChange(slot === "next" && node.next ? node.next : node, input);
+  return slot === "next" ? dropStaleLiveLabel(node) : undefined;
+}
+
+/**
+ * While a shipped node has an open next, its live `change` (the neighbor label it carried before
+ * the revision opened) may only name the revision's own change. Any other id is stale: the node is
+ * that change's revision now, not another change's neighbor, and `discard_next` would restore the
+ * label after its change may have closed. Clears such a label from the live file (no mirror twin
+ * exists while next is open). Returns the cleared id.
+ */
+export function dropStaleLiveLabel(node: MindPlanNode): string | undefined {
+  if (!node.shipped_at || !node.next || !node.change) return undefined;
+  if (node.change === node.next.change) return undefined;
+  const cleared = node.change;
+  writeChangeFrontmatter(node, { change: "" }, "current");
+  return cleared;
+}
+
+/**
+ * Label a neighbor node (`isNeighborNode`: shipped, not retired, no open next) as a neighbor of
+ * `change` (the live `change` scalar; an empty string clears it), then re-sync its mirror twin.
+ * One label per node: a different id replaces the old one, returned as `replaced`. `twin` is null
+ * when nothing was written.
+ */
+export function writeNeighborLabel(
+  node: MindPlanNode,
+  change: string
+): { twin: string | null; replaced?: string } {
+  if (!isNeighborNode(node)) {
+    throw new Error(
+      `Blocked: "${node.id}" is not a shipped, active node with no open next; only those take a neighbor label.`
+    );
+  }
+  const previous = node.change;
+  if ((previous ?? "") === change) return { twin: null };
+  writeChangeFrontmatter(node, { change }, "current");
+  const twin = syncMirrorAfterLiveWrite(node);
+  return { twin, ...(previous && change ? { replaced: previous } : {}) };
+}
+
+/**
+ * Remove the live `added_claims` review marker. Returns true when the file changed. Does not
+ * re-sync a mirror twin: callers that keep the node shipped call `syncMirrorAfterLiveWrite`.
+ */
+export function clearAddedClaims(node: MindPlanNode): boolean {
+  const { file, raw, fence } = requireMutableFrontmatter(node, "current");
+  const patched = replaceAddedClaimsInFence(fence, []);
+  delete node.added_claims;
+  if (patched === fence) return false;
+  fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+  return true;
 }
 
 /**
@@ -2328,11 +2470,14 @@ export function promoteNextSlot(
  * Write (replace) the `implements` list on current or next frontmatter.
  * Updates the in-memory node accordingly. Used by set_implementation_files and init migration.
  * Only a changed list sends a `ready` slot back to `draft`; an identical list does not.
+ * On the live slot, `addedInPlace` entries join the `added_claims` review marker, and markers no
+ * longer claimed (or already named by the body) are dropped.
  */
 export function writeImplementsFrontmatter(
   node: MindPlanNode,
   files: string[],
-  slot: TerritorySlot = "current"
+  slot: TerritorySlot = "current",
+  addedInPlace: string[] = []
 ): FrontmatterWrite {
   const normalized = normalizeClaimList(files);
   const { file, raw, fence, inner: rawInner } = requireMutableFrontmatter(node, slot);
@@ -2348,7 +2493,17 @@ export function writeImplementsFrontmatter(
   inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   const edgeLines = formatEdgeFieldLines(parsed.arrays);
   const implLines = formatImplementsLines(normalized);
-  const extras = [edgeLines, implLines].filter(Boolean).join("\n");
+  let added: string[] = [];
+  if (slot === "current") {
+    added = pendingAddedClaims(
+      [...parsed.added_claims, ...addedInPlace],
+      normalized,
+      splitContext(raw)?.body ?? ""
+    );
+    inner = stripAddedClaimsLines(inner);
+  }
+  const addedLines = formatAddedClaimsLines(added);
+  const extras = [edgeLines, implLines, addedLines].filter(Boolean).join("\n");
   const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
   fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
@@ -2363,6 +2518,8 @@ export function writeImplementsFrontmatter(
   } else {
     if (normalized.length > 0) node.implements = normalized;
     else delete node.implements;
+    if (added.length > 0) node.added_claims = added;
+    else delete node.added_claims;
     node.updated_at = now;
     twin = syncMirrorAfterLiveWrite(node);
   }

@@ -13,6 +13,7 @@ import {
   initialStateForType,
   isFoundationRole,
   isInactiveNode,
+  isNeighborNode,
   isNextPipelineState,
   isPipelineNodeType,
   isProductionState,
@@ -49,9 +50,11 @@ import {
   scaffoldEntity,
   splitContext,
   validateChangeInput,
+  clearAddedClaims,
   writeChangeFrontmatter,
   writeImplementsFrontmatter,
   writeMirrorTwin,
+  writeNeighborLabel,
   type CheckboxToggle,
   writeNodeRules,
   writeProjectConfig,
@@ -63,19 +66,30 @@ import {
 } from "../../foundations/f-territory-store/project.js";
 import {
   claimCoversPath,
+  claimListKeeps,
   expandClaims,
   isGlobClaim,
   normalizeClaimList,
 } from "../../foundations/f-source-index/claims.js";
+import { decisionGateSettings } from "../../foundations/f-source-index/config.js";
 import {
   buildOwnershipIndex,
   exclusiveOwner,
 } from "../../foundations/f-source-index/ownership.js";
 import {
+  collectOtherClaims,
+  folderClaimSuggestions,
+  isDominatedFolder,
+  schemaClaimEntries,
+  type OtherClaims,
+} from "../../foundations/f-source-index/dominance.js";
+import {
   assertAcyclicDependsOn,
   assertPipelineTerritoryScalarsEditable,
   blocked,
   changeMembers,
+  changeNeighbors,
+  changesWithRevisions,
   findNode,
   recomputeJourneyStates,
   recomputeStability,
@@ -279,6 +293,82 @@ function readinessFields(reset: ReadinessReset | null): Record<string, unknown> 
   return reset ? { readiness_reset: reset } : {};
 }
 
+/**
+ * Label a neighbor of `change` (live `change` scalar + mirror twin). Returns the result fields
+ * (`neighbor_of`, `replaced_change`) and the files written.
+ */
+function labelNeighbor(
+  node: MindPlanNode,
+  change: string
+): { fields: Record<string, unknown>; files: string[] } {
+  const label = writeNeighborLabel(node, change);
+  return {
+    fields: {
+      ...(change ? { neighbor_of: change } : {}),
+      ...(label.replaced ? { replaced_change: label.replaced } : {}),
+    },
+    files: label.twin ? [territoryPath(node), label.twin] : [],
+  };
+}
+
+/**
+ * A change with no open revisions left has no neighbors either: clear each of these changes'
+ * labels from every neighbor in `graph` (each twin re-synced). Returns the cleared node ids and
+ * the files.
+ */
+function clearOrphanedNeighbors(
+  graph: MindPlanGraph,
+  changes: string[]
+): { cleared: string[]; files: string[] } {
+  const cleared: string[] = [];
+  const files: string[] = [];
+  for (const change of new Set(changes)) {
+    if (changeMembers(graph, change).length > 0) continue;
+    for (const neighbor of changeNeighbors(graph, change)) {
+      files.push(...labelNeighbor(neighbor, "").files);
+      cleared.push(neighbor.id);
+    }
+  }
+  return { cleared, files };
+}
+
+/**
+ * Run a write that can end change memberships (a status move, a discard, a change id moved or
+ * cleared), then clear the neighbor labels of every change that had an open revision before the
+ * write and has none after. Every such write goes through here, so a new write path cannot forget
+ * the cleanup, and a neighbor-only change (no revisions before either) keeps its labels. The
+ * cleanup also runs when the write throws part-way (a batch keeps its earlier transitions); the
+ * result then carries nothing, as before.
+ */
+function withNeighborCleanup(write: () => Record<string, unknown>): Record<string, unknown> {
+  const before = changesWithRevisions(loadGraph());
+  let result: Record<string, unknown> | undefined;
+  try {
+    result = write();
+  } finally {
+    if (before.size > 0) {
+      const graph = loadGraph();
+      const after = changesWithRevisions(graph);
+      const closed = [...before].filter((c) => !after.has(c));
+      const orphaned = closed.length ? clearOrphanedNeighbors(graph, closed) : { cleared: [], files: [] };
+      if (result && orphaned.cleared.length > 0) {
+        const prior = (result.cleared_neighbors as string[] | undefined) ?? [];
+        const files = (result.changed_files as string[] | undefined) ?? [];
+        result = {
+          ...result,
+          cleared_neighbors: [...new Set([...prior, ...orphaned.cleared])],
+          changed_files: [...new Set([...files, ...orphaned.files])],
+        };
+      }
+    }
+  }
+  return result!;
+}
+
+function clearedFields(cleared: string[]): Record<string, unknown> {
+  return cleared.length ? { cleared_neighbors: cleared } : {};
+}
+
 export function createNode(args: {
   verbose?: boolean;
   id: string;
@@ -354,15 +444,91 @@ export function createNode(args: {
 }
 
 /**
- * Replace the implements list for a pipeline node on the appropriate slot.
+ * Checks an in-place claim write on a shipped node with no open next and returns the new entries.
+ * Additive only: every old entry stays verbatim or under a new non-glob directory entry, and each
+ * new entry is an exact file in a folder the node dominates or `F/` for a dominated folder F. A
+ * migration or schema file (config `decisions.schema_files`) is never added in place: claiming one
+ * is decision-worthy, and only a revision reaches the decision gate.
  */
-export function setImplementationFiles(args: {
+function assertAdditiveInPlace(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  normalized: string[]
+): string[] {
+  const root = projectRoot();
+  const needsRevision =
+    "Removing, moving, globbing, or claiming outside a dominated folder needs a revision: call open_next first.";
+  const old = normalizeClaimList(node.implements ?? []);
+  for (const e of old) {
+    if (!claimListKeeps(normalized, e)) {
+      throw blocked(
+        `shipped "${node.id}" can only add claims in place; the new list drops "${e}". ${needsRevision}`
+      );
+    }
+  }
+  const added = normalized.filter((e) => !old.includes(e));
+  const schema = schemaClaimEntries(
+    added.filter((e) => !isGlobClaim(e)),
+    decisionGateSettings(loadProjectConfig(root)).schema_files,
+    root
+  );
+  if (schema.length > 0) {
+    throw blocked(
+      `shipped "${node.id}" cannot claim ${schema.map((e) => `"${e}"`).join(", ")} in place: a migration or schema file ` +
+        `(config decisions.schema_files) is decision-worthy and needs a revision, so the decision gate sees it: call open_next first.`
+    );
+  }
+  // The other nodes' claims, collected once for every added entry.
+  let others: OtherClaims | undefined;
+  for (const e of added) {
+    if (isGlobClaim(e)) {
+      throw blocked(`shipped "${node.id}" cannot add the glob "${e}" in place. ${needsRevision}`);
+    }
+    let folder: string;
+    if (e.endsWith("/")) {
+      folder = e.slice(0, -1);
+    } else {
+      const abs = path.join(root, ...e.split("/"));
+      if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+        throw blocked(
+          `shipped "${node.id}" can only add an exact file or "<folder>/" in place; "${e}" is a directory (end it in "/"). ${needsRevision}`
+        );
+      }
+      folder = path.posix.dirname(e);
+    }
+    others ??= collectOtherClaims(graph, node.id, root);
+    if (!isDominatedFolder(graph, node.id, folder, root, [e], others)) {
+      throw blocked(
+        `shipped "${node.id}" cannot claim "${e}" in place: "${folder}/" is not a folder it dominates ` +
+          `(it must already claim a file directly in it, and no other node may claim anything under it). ${needsRevision}`
+      );
+    }
+  }
+  return added;
+}
+
+type SetImplementationArgs = {
   verbose?: boolean;
   node_id: string;
   files: string[];
   slot?: TerritorySlot;
-}): Record<string, unknown> {
+  change?: string;
+};
+
+/**
+ * Replace the implements list for a pipeline node on the appropriate slot.
+ * A shipped node with no open next writes its live slot in place, additive only.
+ */
+export function setImplementationFiles(args: SetImplementationArgs): Record<string, unknown> {
+  // A change id moved off a revision may leave its old change with no revisions.
+  return args.change === undefined
+    ? writeImplementationFiles(args)
+    : withNeighborCleanup(() => writeImplementationFiles(args));
+}
+
+function writeImplementationFiles(args: SetImplementationArgs): Record<string, unknown> {
   loadProjectConfig();
+  validateChangeInput({ change: args.change });
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
   if (!isPipelineNodeType(node.type)) {
@@ -370,10 +536,15 @@ export function setImplementationFiles(args: {
       `set_implementation_files only applies to Interaction, Interface, and Foundation; "${node.id}" is a ${node.type}.`
     );
   }
+  if (args.change !== undefined && isInactiveNode(node)) {
+    throw blocked(`"${node.id}" is ${node.state}; a retired node takes no change id.`);
+  }
 
   const normalized = normalizeClaimList(args.files);
   const retired = node.state === "cancelled" || node.state === "deprecated";
   let slot: TerritorySlot;
+  // A shipped node with no open next may only grow its live claims in a folder it dominates.
+  let inPlace = false;
 
   if (args.slot) {
     slot = args.slot;
@@ -381,22 +552,27 @@ export function setImplementationFiles(args: {
       throw blocked(`cannot set implements on next: "${node.id}" has no open evolution.`);
     }
     if (slot === "current" && isProductionState(node.state) && !retired) {
-      throw blocked(
-        `shipped "${node.id}" can only change implements on an open next slot. Call open_next first.`
-      );
+      if (node.next) {
+        throw blocked(
+          `shipped "${node.id}" can only change implements on an open next slot. Call open_next first.`
+        );
+      }
+      inPlace = true;
     }
   } else if (retired) {
     slot = "current";
   } else if (isProductionState(node.state)) {
-    if (!node.next) {
-      throw blocked(
-        `shipped "${node.id}" has no open evolution. Call open_next before set_implementation_files.`
-      );
+    if (node.next) {
+      slot = "next";
+    } else {
+      slot = "current";
+      inPlace = true;
     }
-    slot = "next";
   } else {
     slot = "current";
   }
+
+  const addedInPlace = inPlace ? assertAdditiveInPlace(graph, node, normalized) : [];
 
   if (retired) {
     if (slot !== "current") {
@@ -430,7 +606,7 @@ export function setImplementationFiles(args: {
     }
   }
 
-  const claimWrite = writeImplementsFrontmatter(node, normalized, slot);
+  const claimWrite = writeImplementsFrontmatter(node, normalized, slot, addedInPlace);
   refreshPersistedMap();
   const pathWritten = territoryPath(node, slot);
   const readiness = readinessResult(node, slot, claimWrite.readinessReset);
@@ -447,13 +623,41 @@ export function setImplementationFiles(args: {
     imports: v.imports,
     ...(v.fix ? { fix: v.fix } : { not_allowed: v.not_allowed }),
   }));
+  const folderClaims = folderClaimSuggestions(claimedGraph, node.id, normalized, projectRoot());
+  // A shipped node with no open next is edited in place: change labels it a neighbor.
+  // Otherwise change is the written slot's change id.
+  let changeWrite: { fields: Record<string, unknown>; files: string[] } = { fields: {}, files: [] };
+  if (args.change !== undefined) {
+    if (isNeighborNode(node)) {
+      changeWrite = labelNeighbor(node, args.change);
+    } else {
+      // On the next slot the store also drops a live label the revision's change moved off.
+      const replaced = writeChangeFrontmatter(node, { change: args.change }, slot);
+      if (replaced) {
+        changeWrite = { fields: { replaced_change: replaced }, files: [territoryPath(node, "current")] };
+      }
+    }
+  }
   return {
     node_id: node.id,
     slot,
     implements: normalized,
+    ...changeWrite.fields,
+    ...(inPlace ? { added_in_place: addedInPlace } : {}),
+    ...(addedInPlace.length
+      ? {
+          hint:
+            `Claimed in place without a revision. Name each new path in "${node.id}"'s body ` +
+            `with patch_node_territory; run_check warns until it does.`,
+        }
+      : {}),
+    ...(folderClaims.length ? { folder_claims: folderClaims } : {}),
     ...(importViolations.length ? { import_violations: importViolations } : {}),
     ...readinessFields(readiness.reset),
-    changed_files: changedFiles([pathWritten, claimWrite.twin, ...readiness.files], true),
+    changed_files: changedFiles(
+      [pathWritten, claimWrite.twin, ...readiness.files, ...changeWrite.files],
+      true
+    ),
     ...mutationTail(loadGraph(), node.id, args.verbose),
   };
 }
@@ -735,10 +939,11 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode
   if (args.scope === "all_open_updates") {
     selected = graph.nodes.filter((n) => isOpenUpdate(n));
   } else if (args.scope === "change") {
+    // Revisions only: neighbors have nothing to transition (a walk to ship clears their labels).
     selected = changeMembers(graph, args.change!);
-    if (selected.length === 0) {
+    if (selected.length === 0 && changeNeighbors(graph, args.change!).length === 0) {
       throw blocked(
-        `change "${args.change}" has no open revisions. Set it with open_next, create_node, or patch_node_territory (change).`
+        `change "${args.change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
       );
     }
   } else {
@@ -942,6 +1147,11 @@ function statusLine(row: Record<string, unknown>): string {
 }
 
 export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
+  // A ship, promotion, or retirement ends a revision's membership; a dry run writes nothing.
+  return args.dry_run ? applyStatusUpdate(args) : withNeighborCleanup(() => applyStatusUpdate(args));
+}
+
+function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   const normalized = normalizeStatusArgs(args);
   const verbose = args.verbose === true;
 
@@ -979,6 +1189,7 @@ export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
     }
     const lines: string[] = [];
     const changed = new Set<string>();
+    const cleared = new Set<string>();
     const warnings = new Set<string>(sim.warnings);
     let last: Record<string, unknown> = {};
     for (const row of plan) {
@@ -990,12 +1201,20 @@ export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
       }
       lines.push(statusLine({ ...last, previous_state: first!.previous_state }));
     }
+    // A change walked to ship is done. A change that had revisions is cleaned up by
+    // withNeighborCleanup; a neighbor-only change never had one, so close it here.
+    if (args.scope === "change" && args.new_status === "ship") {
+      const orphaned = clearOrphanedNeighbors(loadGraph(), [args.change!]);
+      for (const f of orphaned.files) changed.add(f);
+      for (const id of orphaned.cleared) cleared.add(id);
+    }
     return {
       ordered: true,
       scope: args.scope,
       ...(args.scope === "change" ? { change: args.change } : {}),
       lines,
       ...skipped,
+      ...clearedFields([...cleared]),
       changed_files: [...changed],
       ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
       ...(verbose
@@ -1103,6 +1322,7 @@ function applyOneStatus(args: {
   let promoteSlotFiles: string[] = [];
   let removedTwin: string[] = [];
   let syncedTwin: string | null = null;
+  let clearedLabel: string | undefined;
 
   if (resolved.promote_next) {
     promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
@@ -1135,6 +1355,11 @@ function applyOneStatus(args: {
   } else {
     const retiring =
       resolved.state === "deprecated" || resolved.state === "cancelled";
+    // A retired shipped node is nobody's neighbor: drop its live label.
+    if (retiring && node.shipped_at && node.change) {
+      clearedLabel = node.change;
+      writeChangeFrontmatter(node, { change: "" }, "current");
+    }
     node.state = resolved.state;
     node.updated_at = now;
     syncedTwin = patchFrontmatter(node);
@@ -1172,6 +1397,7 @@ function applyOneStatus(args: {
     next_state: node.next?.state ?? null,
     shipped_at: node.shipped_at,
     promoted_next: promoted,
+    ...(clearedLabel ? { cleared_change: clearedLabel } : {}),
     ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
@@ -1194,6 +1420,13 @@ export function forceUnship(args: {
 
   resolveForceUnship(graph, node, target, confirm);
 
+  // A pre-ship node's live `change` is a revision's membership: drop the shipped node's neighbor
+  // label so the unshipped node is not silently a revision of that change. The in-place claim
+  // marker belongs to shipped nodes only.
+  const clearedChange = node.change;
+  if (clearedChange) writeChangeFrontmatter(node, { change: "" }, "current");
+  if (node.added_claims?.length) clearAddedClaims(node);
+
   const now = new Date().toISOString();
   delete node.shipped_at;
   node.state = target;
@@ -1214,6 +1447,7 @@ export function forceUnship(args: {
     new_state: node.state,
     shipped_at: null,
     force_unship: true,
+    ...(clearedChange ? { cleared_change: clearedChange } : {}),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     changed_files: changedFiles(files, true),
@@ -1221,7 +1455,7 @@ export function forceUnship(args: {
   };
 }
 
-export function patchNodeTerritory(args: {
+type PatchTerritoryArgs = {
   verbose?: boolean;
   node_id: string;
   title?: string;
@@ -1235,7 +1469,16 @@ export function patchNodeTerritory(args: {
   change?: string;
   change_ref?: string;
   slot?: TerritorySlot;
-}): Record<string, unknown> {
+};
+
+export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
+  // A revision moved off (or cleared from) its change may leave that change with no revisions.
+  return args.change === undefined
+    ? writeNodeTerritory(args)
+    : withNeighborCleanup(() => writeNodeTerritory(args));
+}
+
+function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   const { node_id, title, description, role, body, toggle_checkboxes, slot } = args;
   validateChangeInput(args);
   if ((args.section === undefined) !== (args.text === undefined)) {
@@ -1266,16 +1509,25 @@ export function patchNodeTerritory(args: {
     assertPipelineTerritoryScalarsEditable(node, "role", resolvedSlot);
   }
   const changeWrite = args.change !== undefined || args.change_ref !== undefined;
+  // change on a shipped live slot with no open next labels the node a neighbor of that change.
+  const neighborWrite = resolvedSlot === "current" && isNeighborNode(node);
   if (changeWrite) {
     if (!isPipelineNodeType(node.type)) {
       throw blocked(`change applies to Foundations, Interactions, and Interfaces; "${node_id}" is a ${node.type}.`);
     }
-    if (resolvedSlot === "current" && node.shipped_at) {
+    if (neighborWrite && args.change_ref !== undefined) {
+      throw blocked(
+        `change_ref belongs to a revision; "${node_id}" is shipped with no open next. Pass change alone to label it a neighbor, or open_next (it takes change_ref).`
+      );
+    }
+    if (resolvedSlot === "current" && node.shipped_at && !neighborWrite) {
       throw blocked(
         `"${node_id}" is shipped; a change id belongs to an open revision. Call open_next (it takes change) or patch the next slot.`
       );
     }
   }
+  const replacedChange =
+    neighborWrite && args.change && node.change && node.change !== args.change ? node.change : undefined;
   if (
     body !== undefined ||
     args.section !== undefined ||
@@ -1302,12 +1554,19 @@ export function patchNodeTerritory(args: {
   const pathWritten = territoryPath(node, result.slot);
   const { readinessReset, twin, ...written } = result;
   const readiness = readinessResult(node, result.slot, readinessReset);
+  // The store dropped a stale live label when the revision's change moved off it.
+  const liveLabelFile = written.replaced_change ? territoryPath(node, "current") : null;
   return {
     node_id,
     ...written,
     path: pathWritten,
+    ...(neighborWrite && args.change ? { neighbor_of: args.change } : {}),
+    ...(replacedChange ? { replaced_change: replacedChange } : {}),
     ...readinessFields(readiness.reset),
-    changed_files: changedFiles([pathWritten, twin, ...readiness.files], readiness.reset !== null),
+    changed_files: changedFiles(
+      [pathWritten, twin, liveLabelFile, ...readiness.files],
+      readiness.reset !== null
+    ),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
@@ -1379,7 +1638,8 @@ export function recordDecision(args: {
   }
   const consequences = oneLine(args.consequences);
   validateChangeInput({ change: args.change });
-  const change = args.change || activeChange(node);
+  // A neighbor has no open revision, so its change is the live label it carries.
+  const change = args.change || activeChange(node) || (isNeighborNode(node) ? node.change : undefined);
 
   let id: string;
   if (args.id !== undefined) {
@@ -1433,6 +1693,11 @@ export function recordDecision(args: {
     date: new Date().toISOString().slice(0, 10),
   };
   const written = appendDecision(node, record);
+  // A decision under a change on a shipped node with no open next: the change edits it in place.
+  const neighbor =
+    args.change && isNeighborNode(node)
+      ? labelNeighbor(node, args.change)
+      : { fields: {}, files: [] };
   const after = loadGraph();
   const entry = listDecisions(after, { node_id: node.id, include_superseded: true }).find(
     (d) => d.id === id
@@ -1442,7 +1707,8 @@ export function recordDecision(args: {
     slot: written.slot,
     decision: entry ?? record,
     ...(superseded ? { supersedes: superseded } : {}),
-    changed_files: changedFiles(written.paths),
+    ...neighbor.fields,
+    changed_files: changedFiles([...written.paths, ...neighbor.files]),
     ...mutationTail(after, node.id, args.verbose),
   };
 }
@@ -1462,7 +1728,15 @@ export function openNext(args: {
   validateOpenNext(node);
   const next = openNextSlot(node, { title, description });
   node.next = next;
-  writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref }, "next");
+  // The next slot is a copy of live, so it inherits a neighbor label unless change says otherwise.
+  if (args.change === undefined && node.change) next.change = node.change;
+  // A live neighbor label that differs from the revision's change is stale: the node is now a
+  // revision, not a neighbor. The store clears it so discard_next does not restore it.
+  const replacedChange = writeChangeFrontmatter(
+    node,
+    { change: args.change, change_ref: args.change_ref },
+    "next"
+  );
   const rel = entityRelativePath(node);
   const current = territoryPath(node, "current");
   const next_path = territoryPath(node, "next");
@@ -1474,15 +1748,23 @@ export function openNext(args: {
     folder: rel,
     current,
     next_path,
-    changed_files: changedFiles([next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`], true),
+    ...(replacedChange ? { replaced_change: replacedChange } : {}),
+    changed_files: changedFiles(
+      [next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`, replacedChange ? current : null],
+      true
+    ),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
-export function discardNext(args: {
-  node_id: string;
-  verbose?: boolean;
-}): Record<string, unknown> {
+export function discardNext(args: { node_id: string; verbose?: boolean }): Record<string, unknown> {
+  // Discarding a change's last revision closes it. The live label that comes back with the mirror
+  // twin can only name the revision's own change (the store drops any other), so that closing
+  // clears it too.
+  return withNeighborCleanup(() => discardNextSlotWrite(args));
+}
+
+function discardNextSlotWrite(args: { node_id: string; verbose?: boolean }): Record<string, unknown> {
   const { node_id } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);

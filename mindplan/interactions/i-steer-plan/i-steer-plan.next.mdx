@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate settings, and attachments; small results unless verbose."
-state: mirror
+description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate settings, and attachments; small results unless verbose."
+state: in-review
 shipped_at: 2026-10-20T13:04:11.241Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-20T13:35:56.156Z
+updated_at: 2026-10-25T19:26:25.190Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -20,13 +20,16 @@ leads_to:
   - i-export-map
 implements:
   - src/interactions/i-steer-plan/
+opened_at: 2026-10-23T18:35:44.471Z
+change: "shipped-claims-and-neighbors"
+change_ref: "feat/shipped-claims-and-change-neighbours"
 ---
 
 # Steer the plan
 
 ## Purpose
 
-Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_node_rules`, `record_decision`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, ordered revisions, and scoped status walks. `patch_node_rules` is the single writer of a node's rules so a territory rewrite can never silently drop them, and a rules edit never needs a contract evolution because rules are standing constraints, not behavior. Writes are cheap to read and cheap to repeat: a default result is the touched node's state and the changed files, a one-line fix does not resend a body, and a whole open set ships in one call. Claiming files and moving toward review run the same import rules as the check, so an illegal import is caught when it is written, with its fix, not after the node merged. `record_decision` is the single writer of decision records. A record is never rewritten: changing a decision means recording a new one that supersedes it, so the reasoning trail survives and an agent asking why the old design was dropped finds the answer without git archaeology. Moving a decision-worthy revision to `in-review` with no decision is Blocked with the exact `record_decision` call, so the reason is captured while the agent that made the choice still knows it.
+Compiler-gated mutate tools: status, links, `open_next` (mirror→draft), required `patch_node_territory`, `patch_node_rules`, `record_decision`, `patch_project_description`, `patch_project_rules`, `patch_config`, attachment put/remove, ordered revisions, and scoped status walks. `patch_node_rules` is the single writer of a node's rules so a territory rewrite can never silently drop them, and a rules edit never needs a contract evolution because rules are standing constraints, not behavior. Writes are cheap to read and cheap to repeat: a default result is the touched node's state and the changed files, a one-line fix does not resend a body, and a whole open set ships in one call. Claiming files and moving toward review run the same import rules as the check, so an illegal import is caught when it is written, with its fix, not after the node merged. `record_decision` is the single writer of decision records. A record is never rewritten: changing a decision means recording a new one that supersedes it, so the reasoning trail survives and an agent asking why the old design was dropped finds the answer without git archaeology. Moving a decision-worthy revision to `in-review` with no decision is Blocked with the exact `record_decision` call, so the reason is captured while the agent that made the choice still knows it. A shipped node grows without a revision only where that cannot reach anyone else's contract: `set_implementation_files` adds a file or folder in place when the node dominates the folder, and marks it so review still sees it. A change that edits shipped nodes in place labels them its neighbors, so the change-scoped tools see every node the change touches; the labels go away with the change, so a stale label never pulls a node into the next one.
 
 ## Actor & Trigger
 
@@ -60,6 +63,11 @@ Intended files: `src/interactions/i-steer-plan/`
   - Output: `{ node_id, slot, decision: DecisionEntry, supersedes?: { id, node_id }, changed_files, state, next_state }` (`anchor` with `verbose`). Never resets readiness and does not rewrite `mindplan/map.md`; listed in `MUTATE_TOOLS`
 - **Decision gate.** A move to `in-review` (single, batch, scoped walk, and the dry run of each) runs `assertDecisionForReview` after the transition's own rules and the check gate, before any write. Moves to other states, and Bugs, are never decision-gated. The in-memory walk promotes a node field for field as `promoteNextSlot` does (scalars, edges, claims, role, decisions; the change id dropped) and rebuilds its edges with the same helper as the real walk, so every later gate sees what the real walk will see. One `DecisionContext` serves a call's validation and every step
 - `patch_config` takes `decisions: { blast_radius?, schema_files? }`; a field it does not pass keeps its stored value, and `sources` / `exclude` are unchanged unless passed
+- **In-place claims.** `set_implementation_files` on a shipped node with no open next (no `slot`, or `slot: "current"`) writes the live list in place after `assertAdditiveInPlace`, before any write: every old entry is kept verbatim or under a new non-glob `dir/` entry (`claimListKeeps`), and each new entry is an exact file whose folder the node dominates (`isDominatedFolder`, with the entry as a probe) or `F/` for a dominated folder F. A dropped entry, a glob, an existing directory written without a trailing `/`, a folder the node does not dominate, or an entry that reaches a migration or schema file (`schemaClaimEntries` over config `decisions.schema_files`) is Blocked with `open_next`: a schema claim is decision-worthy, and only a revision reaches the decision gate. With an open next, `slot: "current"` stays Blocked. The new entries join the live `added_claims` marker (`writeImplementsFrontmatter(node, files, "current", added)`). The result carries `added_in_place` (possibly empty) and, when an entry was added, a `hint` to name each one in the body with `patch_node_territory`
+- **Folder suggestions.** A `set_implementation_files` result carries `folder_claims` (`folderClaimSuggestions`) when one `folder/` entry would replace several per-file entries; it is never written
+- **Neighbor labels.** On a shipped, non-retired pipeline node with no open next, `change` on `patch_node_territory` (live slot), `record_decision`, and `set_implementation_files` labels the node a neighbor of that change: `writeNeighborLabel` sets the live `change` scalar and re-syncs the mirror twin, and the result carries `neighbor_of`. One label per node: a different id replaces the old one and the result reports `replaced_change`; `""` clears it. `change_ref` on such a node is Blocked (it belongs to a revision), and a retired node takes no `change` on `set_implementation_files`. On any other node `change` is the written slot's change id, as before; on a next slot the store also drops a live label that no longer matches it (`replaced_change`, the live file listed). `record_decision` without `change` on a neighbor records the decision under its label. The neighbor test everywhere is `isNeighborNode`
+- **Clearing labels.** A change with no open revisions has no neighbors. Every write that can end a membership runs inside `withNeighborCleanup`: `update_node_status` (not a dry run), `discard_next`, and `patch_node_territory` / `set_implementation_files` when they pass `change`. It takes `changesWithRevisions` before the write and after it, and `clearOrphanedNeighbors` clears the labels (each twin re-synced) of every change that had a revision before and has none after; the result lists `cleared_neighbors` and the files. So a ship or promotion, a cancel or deprecation, a discard, or a change id moved or cleared clears its change once per call, a batch or scoped walk included, and a neighbor-only change (no revision before either) keeps its labels. The cleanup also runs when a batch throws part-way, since earlier nodes stay transitioned. A `scope: "change"` walk to `ship` also clears the change's labels after the walk, which closes a neighbor-only change
+- **Labels on lifecycle moves.** `scope: "change"` walks revisions only and is Blocked only when the change has neither revisions nor neighbors. `open_next` without `change` inherits a live label as the revision's change; with a different `change` it clears the live label and returns `replaced_change`, so `discard_next` cannot restore a stale one. Deprecating a shipped node clears its label (`cleared_change`); `force_unship` clears the label (`cleared_change`) and the `added_claims` marker (`clearAddedClaims`)
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
@@ -90,6 +98,16 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - A revision that is not decision-worthy moves to `in-review` with no decision
 - `record_decision` on a `ready` revision does not reset readiness
 - `patch_config` with `decisions` writes them and leaves `sources` and `exclude` unchanged
+- A shipped node with no open next claims a new file beside its own, in a folder no other node claims into, in place: the live list grows, `added_in_place` and `hint` return, and `run_check` warns until the body names the file
+- Dropping an entry, adding a glob, or claiming in a folder another node claims into is Blocked with `open_next`; replacing per-file entries with their folder's `dir/` entry is allowed
+- `change` on a shipped node with no open next returns `neighbor_of`; a second id returns `replaced_change`; `change_ref` there is Blocked
+- Shipping, cancelling, or discarding a change's last revision clears its neighbors' labels and lists `cleared_neighbors`; a `scope: "change"` walk to ship clears a neighbor-only change
+- `open_next` with a different change clears the live label, and a later `discard_next` does not bring it back
+- `force_unship` and deprecation clear the label and report `cleared_change`
+- Claiming a new migration file, or a migrations folder, in place is Blocked with `open_next`; a plain sibling in the same dominated folder is still claimed in place
+- Moving an open revision's change id off its inherited label (`patch_node_territory` or `set_implementation_files`) reports `replaced_change` and leaves live unlabeled
+- `record_decision` on a labeled neighbor without `change` records the decision under the label
+- A batch that ships a change's last two revisions lists each cleared neighbor once
 
 ## Atomic Ops
 
@@ -127,6 +145,14 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - [x] Add `decisions` to `patch_config`
 - [x] Verified record_decision, supersession, and the gate via `npm test`
 - [x] Promote in memory field for field, share one decision context per call, and validate change ids with `validateChangeInput` (review fixes)
+- [x] Write additive claims in place on a shipped node with no open next (`assertAdditiveInPlace`), returning `added_in_place`, `hint`, and `folder_claims`
+- [x] Label neighbors from `patch_node_territory`, `record_decision`, and `set_implementation_files` (`change`), returning `neighbor_of` and `replaced_change`, and Block `change_ref` on a neighbor
+- [x] Clear orphaned neighbor labels on ship, cancel, deprecate, discard, change moves, and change walks to ship, returning `cleared_neighbors`
+- [x] Clear the label on `open_next` with another change, on deprecation, and on `force_unship`, and `added_claims` on `force_unship`
+- [x] Verified in-place claims and neighbor labels via `npm test`
+- [x] Check the node's own live label on `discard_next` (review fix) — note: replaced by the store dropping a stale live label when the revision's change moves, plus the before/after cleanup, so discard_next needs no special case
+- [x] Refuse schema files in place, default a neighbor's decisions to its label, and clear labels through one `withNeighborCleanup` around every membership-ending write (review fixes)
+- [x] Verified the review fixes via `npm test`
 
 ## Decisions
 
@@ -148,6 +174,17 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - Why: Readable ids matter for supersedes, but a missing id should not block recording the reason.
 - Change: decision-records
 - Date: 2026-10-20
+
+### d-neighbor-cleanup-by-before-after
+
+- Decision: Neighbor labels are cleared by one wrapper around every write that can end a change membership, which compares the changes with open revisions before and after the write and clears the labels of each change that lost its last revision.
+- Alternatives:
+  - Call the cleanup from each handler path that ends a membership (eight call sites; a new path that forgets it leaves stale labels, and a scoped walk reloads the graph at every step)
+  - Validate labels when reading neighbors, ignoring those whose change has no revisions (a neighbor-only change has no revisions by design, so it would lose its neighbors)
+- Why: A neighbor-only change is legitimate, so only an event (a change losing its last revision during a call) can tell an orphaned label apart; checking it once per call covers every write path and costs two graph loads instead of one per step.
+- Consequences: A new write tool that can end a membership must run inside withNeighborCleanup; the store keeps the invariant that an open revision's live label names its own change, so discard_next needs no special case.
+- Change: shipped-claims-and-neighbors
+- Date: 2026-10-25
 
 ## Attachments
 
