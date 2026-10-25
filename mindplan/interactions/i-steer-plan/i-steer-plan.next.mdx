@@ -3,10 +3,10 @@ id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
 description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate settings, and attachments; small results unless verbose."
-state: in-review
-shipped_at: 2026-10-20T13:04:11.241Z
+state: mirror
+shipped_at: 2026-10-25T19:59:59.353Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-25T19:26:25.190Z
+updated_at: 2026-10-25T19:59:59.353Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -20,9 +20,6 @@ leads_to:
   - i-export-map
 implements:
   - src/interactions/i-steer-plan/
-opened_at: 2026-10-23T18:35:44.471Z
-change: "shipped-claims-and-neighbors"
-change_ref: "feat/shipped-claims-and-change-neighbours"
 ---
 
 # Steer the plan
