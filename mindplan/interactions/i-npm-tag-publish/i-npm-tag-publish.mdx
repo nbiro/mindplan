@@ -3,9 +3,9 @@ id: i-npm-tag-publish
 type: Interaction
 title: "Publish on merge to main"
 description: "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing."
-state: in-progress
+state: in-review
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-10-25T20:09:10.262Z
+updated_at: 2026-10-25T20:14:44.106Z
 change: "npm-release"
 belongs_to:
   - j-npm-publish
@@ -43,14 +43,14 @@ CI publishes `mindplan-mcp@X.Y.Z` using OIDC and pushes tag `vX.Y.Z`.
 
 ## Acceptance Criteria
 
-- [ ] A push to `main` whose `package.json` version is not on npm publishes that version and pushes tag `vX.Y.Z` on the pushed commit.
-- [ ] A push to `main` whose version is already on npm publishes nothing and does not wait for an environment approval.
+- [x] A push to `main` whose `package.json` version is not on npm publishes that version and pushes tag `vX.Y.Z` on the pushed commit. — note: merge of #52: run 40229545536 published 0.2.1 and pushed v0.2.1 on 71a5875
+- [x] A push to `main` whose version is already on npm publishes nothing and does not wait for an environment approval. — note: merge of #50: run 39977013169 found 0.1.0 on npm and skipped the publish job in 11s
 - [x] Auth is npm Trusted Publishing only — no `NPM_TOKEN` repository secret.
 - [x] Only the publish job uses GitHub Environment `npm-publish` (where maintainers may require reviewers), so skipped pushes never wait for approval.
 - [x] Release job invokes the shared publish script in CI mode (must include `npm test` — not a bare `npm publish`).
 - [x] CI mode refuses any ref other than `refs/heads/main`, and exits 0 without publishing when the version is already on npm.
 - [x] Two pushes in quick succession never publish concurrently. — note: workflow-level concurrency group `publish`, cancel-in-progress false
-- [ ] Live Trusted Publisher on npmjs.com is bound to this workflow **after** first claim.
+- [x] Live Trusted Publisher on npmjs.com is bound to this workflow **after** first claim. — note: 0.2.0 and 0.2.1 published over OIDC
 - [x] `CONTRIBUTING.md` documents: bump the version in a PR → merge to main.
 - [ ] After a release, Dependabot opens a PR repinning the exact `mindplan-mcp` devDependency to it, and opens no version-update PR for any other dependency.
 
@@ -113,7 +113,7 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - [x] `CONTRIBUTING.md` and `f-npm-registry` docs describe merge-to-main releases
 - [x] GitHub Environment `npm-publish` created (reviewers optional) — note: exists in nbiro/mindplan (checked with gh api)
 - [x] Live Trusted Publisher bound on npmjs.com after first claim — note: 0.2.0 published over OIDC on 2026-10-25
-- [ ] End-to-end verify: a version-bump merge publishes and tags; a merge without a bump skips
+- [x] End-to-end verify: a version-bump merge publishes and tags; a merge without a bump skips — note: runs 40229545536 (publish + tag) and 39977013169 (skip)
 - [x] Add `.github/dependabot.yml` scoped to `mindplan-mcp` for the self-dependency repin — note: daily npm entry for /, allow mindplan-mcp only, versioning-strategy increase, open-pull-requests-limit 1
 
 ## Decisions
