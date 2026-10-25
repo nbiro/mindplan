@@ -791,6 +791,7 @@ Frontmatter fields:
 | `leads_to` | string[] | **server only** | Interaction only. Target Interaction ids (navigation). Omitted when empty. On `<id>.next.mdx`: proposed edges. |
 | `affects` | string[] | **server only** | Bug only. Target Interaction, Interface, or Foundation ids. Omitted when empty. |
 | `added_claims` | string[] | **server only** | `<id>.mdx` of a shipped node only. The `implements` entries `set_implementation_files` added in place (§1.2). `run_check` warns `stale:` for each one the body does not name as a whole path (not as part of a longer path: `src/a.ts` is not named by `src/a.tsx`, `src/a/` not by `src/a/b.ts`) (§9.6); a territory patch prunes the entries its body now names; promotion of a `next` drops the list. Omitted when empty. |
+| `tests` | string[] | **server only** | Foundation, Interaction, or Interface. The test files, directories ending in `/`, or globs that verify the node, written by `set_test_files` (§8.2). Not ownership: the files are claimed through some node's `implements` as usual, and several nodes may list one file. Slot-independent like `## Rules`: the same list sits on `<id>.mdx` and on an open `<id>.next.mdx`, promotion keeps it, and discard leaves live as it is. Omitted when empty. |
 
 The body is free-form and owned by humans and agents, except the optional `## Rules` (§6.1.1) and `## Decisions` (§6.1.2) sections, which have their own writers. Frontmatter `title:` and `description:` are territory-owned and MAY be edited after creation (on `<id>.mdx` pre-ship, or on `<id>.next.mdx` at any next-pipeline state). Server-owned frontmatter fields (`state`, `updated_at`, `shipped_at`, edge arrays, `added_claims`) MUST be written only via MCP tools.
 
@@ -865,6 +866,7 @@ After any accepted mutation, the server MUST rewrite server-owned fields in each
 - **Readiness reset (§3.1):** a contract write to a `ready` slot sets `state: draft` and `updated_at:` on that slot.
 - **Change ids (§3.7):** `change:` and `change_ref:` are optional scalars on the revision's file, written by `create_node`, `open_next`, `patch_node_territory`, and (`change:` only) `set_implementation_files`. A neighbor label is `change:` on a shipped node's live `<id>.mdx` with no open `next`, written by `patch_node_territory`, `record_decision`, or `set_implementation_files` and cleared by the server when the change closes; the mirror twin is re-synced.
 - **Additive claims (§1.2):** an in-place `set_implementation_files` on a shipped node writes `implements:` and `added_claims:` on `<id>.mdx` and re-syncs the mirror twin. A territory patch that names an `added_claims` entry in the body removes it from the list.
+- **Linked tests:** `set_test_files` writes `tests:` on `<id>.mdx` and, while a revision is open, the same list on `<id>.next.mdx`; with no open revision it re-syncs the mirror twin. It never touches `state:` or `updated_at:`, so it never resets readiness. Other frontmatter writers keep the list verbatim, and promotion copies it from next.
 
 Edge arrays use YAML block-list syntax. Empty arrays MUST be omitted from the file. If the file is missing or has no frontmatter, mirroring is skipped silently.
 
@@ -1039,7 +1041,7 @@ MDX component rendering (§6.4) and external board sync (§10) remain separate c
 
 ## 8. MCP Tool Contract
 
-The server exposes twenty-seven tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. A successful result is **compact JSON text** (no indentation) in `content[0].text`; when the payload is an object the same payload is also returned as `structuredContent`. No tool declares an `outputSchema`. Error results are text-only. Each tool description MUST lead with when to call the tool, then what it returns, and MUST describe only that tool: it MUST NOT route the agent to a skill or another tool's behavior (the server `instructions` string carries the plan-project routing once).
+The server exposes twenty-eight tools over stdio. All inputs are validated with zod; all failures follow the §5.1 error contract. A successful result is **compact JSON text** (no indentation) in `content[0].text`; when the payload is an object the same payload is also returned as `structuredContent`. No tool declares an `outputSchema`. Error results are text-only. Each tool description MUST lead with when to call the tool, then what it returns, and MUST describe only that tool: it MUST NOT route the agent to a skill or another tool's behavior (the server `instructions` string carries the plan-project routing once).
 
 **Annotations.** Every tool carries a `title` and MCP `annotations` derived from one of three kinds, so the host can decide which calls need a per-call confirmation: `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`: every tool acts on the local `mindplan/` tree and the repository. The read tools are `run_check`, `get_mindplan_graph`, `export_mindplan_view`, `find_related_nodes`, `get_node_implementation`, `get_node_context`, `orient_for_work`, `get_project`, `get_rules`, `list_decisions`, and `get_blast_radius`. The destructive tools, which remove data or edges no undo restores, are `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`. Every other tool is `write`. The same kind drives the envelope: a `read` tool MAY carry `drift`, a `write` or `destructive` tool only with `verbose: true`.
 
@@ -1116,7 +1118,7 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
 #### `get_blast_radius`
 
 - **Input:** exactly one of `node_id` (slug) or `change` (change id, §3.7); optional `include_retired` (boolean, default `false`).
-- **Output (change):** `{ change, members: [{ id, type, state, next_state, kind }], affected, journeys_at_risk, affected_files, rules_impact, decisions }` — the radii of every member (revisions and neighbors, §3.7) merged: `affected` keeps each node's smallest distance and leaves out the members themselves; `affected_files` merges groups per owner, neighbors' own files included; `rules_impact` is keyed by member id; `decisions` merges per decision id (a member's own decisions are `focus`). `Blocked:` when the change has no members.
+- **Output (change):** `{ change, members: [{ id, type, state, next_state, kind }], affected, journeys_at_risk, affected_files, tests, rules_impact, decisions }` — the radii of every member (revisions and neighbors, §3.7) merged: `affected` keeps each node's smallest distance and leaves out the members themselves; `affected_files` merges groups per owner, neighbors' own files included; `tests` is the sorted union of the members' tests; `rules_impact` is keyed by member id; `decisions` merges per decision id (a member's own decisions are `focus`). `Blocked:` when the change has no members.
 - **Output:**
 
 ```jsonc
@@ -1134,6 +1136,8 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
       "files": ["src/interfaces/if-checkout-page/page.tsx"]
     }
   ],
+  // always present: the expanded `tests` (§6.1) of the focus and of every owner in affected_files, sorted: the suites a change should run
+  "tests": ["tests/checkout-split.test.ts"],
   // always present: the active decisions a change to the focus would reach (§6.1.2)
   "decisions": [
     { "id": "d-split-by-seat", "node_id": "i-checkout-split", "via": "focus", "distance": 0, "decision": "Bills split by seat, not by item." }
@@ -1349,7 +1353,7 @@ Any change under `mindplan/` goes through the territory store. Agents reach the 
 | Attachments | **MCP only** (`put_attachment` / `remove_attachment`) |
 | `mindplan/project.md` | **MCP only** (`patch_project_description`, `patch_project_rules`) |
 | `mindplan/config.json` | **MCP only** (`patch_config`) |
-| Server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays, `implements`, `added_claims`, `role`) | **MCP only** |
+| Server-owned frontmatter (`state`, `updated_at`, `shipped_at`, edge arrays, `implements`, `added_claims`, `tests`, `role`) | **MCP only** |
 | `mindplan/map.md` | Server after graph mutations — derived snapshot, not graph authority |
 | `mindplan/agent/` | `init` only (copies into `.cursor/` or `.claude/`) |
 
@@ -1385,6 +1389,14 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 - **Folder claims:** any result (any slot) MAY add `folder_claims: [{ folder, files, note }]`, suggesting one directory claim for `folder` when every file under it is already one of this node's per-file claims and no other node claims under it.
 - **Output:** `{ node_id, slot, implements, added_in_place?, hint?, folder_claims?, neighbor_of?, replaced_change?, cleared_neighbors?, import_violations?, readiness_reset?, changed_files, state, next_state }` — `added_in_place` lists the entries an in-place write added, with a `hint` on naming them in the body; `neighbor_of` / `replaced_change` as in `patch_node_territory`; `changed_files` includes the re-synced mirror twin after an in-place or label write.
 - **Errors:** unknown/wrong type; a non-additive change to a shipped node's live list, or an in-place entry that reaches a migration or schema file (→ `open_next`); retired expand; bad path; exclusivity conflict; an invalid change id.
+
+#### `set_test_files`
+
+- **Input:** `node_id` (Interaction, Interface, or Foundation), `files` (string[] of repo-relative POSIX test paths: files, directories ending in `/`, or globs), optional `change` (change id; empty string clears): on an open revision or a pre-ship node it sets the active slot's change id; on a shipped node with no open `next` it labels the node a neighbor (§3.7).
+- **Effect:** replaces the node's `tests` list (§6.1), deduped and sorted, on `<id>.mdx` and, while a revision is open, on `<id>.next.mdx`; re-syncs the mirror twin when none is open. Linked tests are evidence, not contract: a shipped node needs no `open_next`, a `ready` slot stays `ready`, and the files are not claimed (ownership stays with `set_implementation_files`). An empty list removes the field.
+- **Gate:** entries may name files that do not exist yet while the node is a draft. Once it is in review or shipped, a missing entry fails `run_check` and the move to `in-review` or `ship` (`presence`, §9.6). A revision in review with no linked tests only warns.
+- **Output:** `{ node_id, tests, neighbor_of?, replaced_change?, cleared_neighbors?, changed_files, state, next_state }`.
+- **Errors:** a Journey or Bug; a retired node; a bad path (`..`, absolute, under `mindplan/`); an invalid change id.
 
 #### `open_next`
 
@@ -1505,7 +1517,7 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 | Mode | Command | Checks |
 |------|---------|--------|
-| Default | `mindplan-mcp check` | Graph load; **exclusivity** (each universe file ≤1 owner); **coverage** (every universe file claimed in a current or next slot of a non-retired node; `Blocked: Coverage` names the probable owner and the fix, §1.2.1); **presence** (in-review/shipped live entries exist on disk, except live entries an open `next` has **released** per §1.2; `next` in-review entries exist); **mirror twins** (each shipped Foundation/Interaction/Interface with no open evolution has a `<id>.next.mdx` that is a state-only copy of live — missing or drifted → Block; run `init` to backfill/heal); **leftovers** (retired-node claims until deleted/reassigned); **import matrix** (§1.2, including `mounts`). Does **not** run dirty-src. Does **not** fail because nodes are mid-pipeline. |
+| Default | `mindplan-mcp check` | Graph load; **exclusivity** (each universe file ≤1 owner); **coverage** (every universe file claimed in a current or next slot of a non-retired node; `Blocked: Coverage` names the probable owner and the fix, §1.2.1); **presence** (in-review/shipped live entries exist on disk, except live entries an open `next` has **released** per §1.2; `next` in-review entries exist; every `tests` entry (§6.1) matches a file once its node is in review or shipped, `Blocked: presence: "<id>" tests entry missing on disk: "<entry>".`); **mirror twins** (each shipped Foundation/Interaction/Interface with no open evolution has a `<id>.next.mdx` that is a state-only copy of live — missing or drifted → Block; run `init` to backfill/heal); **leftovers** (retired-node claims until deleted/reassigned); **import matrix** (§1.2, including `mounts`). Does **not** run dirty-src. Does **not** fail because nodes are mid-pipeline. |
 | Dirty-src (opt-in) | `mindplan-mcp check --base <ref>` | Default checks plus dirty universe ownership vs `<ref>` using the implements index: **uncommitted** paths require `in-progress` (or `next` in-progress, or Bug `fixing`/`in-review`), or a shipped (`stable`/`unstable`) owner with no open `next` (neighbors edit in place, §3.7); **committed** paths vs `base...HEAD` allow review/shipped/cancelled/deprecated, but when `<id>.next.mdx` is open only `next` in `in-progress`/`in-review` counts. Changed file with no owner fails. Explicit `--base` fails closed on git errors. |
 | Invalid config | any check mode | Fail immediately if `mindplan/config.json` exists but is invalid (bad JSON / shape / lingering `implementation_packages`) |
 
@@ -1513,7 +1525,7 @@ The package binary exposes an offline CLI (same entry as MCP stdio, no stdio ses
 
 **Imports over every claim.** The import matrix scans each universe file as every node that claims it — its live owner, its `next`-slot owner, and a **released** current-slot owner (a file the open `next` dropped) — and resolves import targets through released claims too. A violation that only this wider scan finds (a released file, a target that is only released, or a file's second claimant) is reported as `Warning: imports (next slot): …` in this release so existing graphs keep passing; it becomes `Blocked:` in the next release.
 
-**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`. For a shipped node with no open evolution, whatever its state, the check warns `stale:` for each `added_claims` entry (§1.2, §6.1) the live body does not name verbatim. The check also warns about every decision-worthy open revision with no decision yet, at any pre-ship state (`Warning: decision: …`, §5.13), about next-slot imports (above), about a version stamp that is not current (`Warning: version: …`, §1.1.2), and about a **route family split** between owners (§1.2.3): `Warning: routes: route family "<dir>/" is split: "<id>" (Assembler) owns …; "<id>" (entry point) owns …`.
+**Warnings.** The check also prints `Warning:` lines that never change the exit code or `ok`. They flag territory text that no longer matches the repo, for nodes with work in flight (`in-progress` / `in-review`, or an open `next` in those states): a body names a repo path in backticks that does not exist; a claimed file changed after the body was last updated; checkboxes are unticked. The same warnings come back on moves to `in-review` and `ship`. For a shipped node with no open evolution, whatever its state, the check warns `stale:` for each `added_claims` entry (§1.2, §6.1) the live body does not name verbatim. The check also warns about every decision-worthy open revision with no decision yet, at any pre-ship state (`Warning: decision: …`, §5.13), about next-slot imports (above), about a version stamp that is not current (`Warning: version: …`, §1.1.2), about a Foundation, Interaction, or Interface in review with no linked tests (`Warning: tests: "<id>" is in review with no linked tests; …`), and about a **route family split** between owners (§1.2.3): `Warning: routes: route family "<dir>/" is split: "<id>" (Assembler) owns …; "<id>" (entry point) owns …`.
 
 The `run_check` tool (§8.1) returns this same output to agents. Exit code `0` on success, `1` with `Blocked: …` lines on failure. This repo’s CI builds from source and runs default `node dist/index.js check` only (graph + file ownership). Consumer repos SHOULD use the published bin after npm release.
 
@@ -1575,7 +1587,7 @@ An implementation is MindPlan-compliant if and only if:
 - [ ] `<id>.mdx`/`<id>.next.mdx` frontmatter is server-mirrored per §6 (state and edge arrays).
 - [ ] The MDX component contract holds per §6.4: reserved names respected, project components opaque, no guardrail parses JSX.
 - [ ] Edges persist in source-node `<id>.mdx` frontmatter and assemble at runtime per §7; `<id>.next.mdx` proposed edges are not live graph edges.
-- [ ] The twenty-seven-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient, orient `depth`, `get_project` (with `check`), `get_rules`, `run_check`, node `rules` on orient and context, `rules_impact` on blast radius, `patch_node_rules`, `record_decision` / `list_decisions` and the `decisions` outputs, small writes with `verbose`, section/`replace` patches, and scoped `update_node_status` with `dry_run`.
+- [ ] The twenty-eight-tool MCP surface matches §8 (names, inputs, outputs, errors), including Interaction `reachability` on blast radius / orient, orient `depth`, `get_project` (with `check`), `get_rules`, `run_check`, node `rules` on orient and context, `rules_impact` on blast radius, `patch_node_rules`, `record_decision` / `list_decisions` and the `decisions` outputs, small writes with `verbose`, section/`replace` patches, and scoped `update_node_status` with `dry_run`.
 - [ ] Mutations are deterministic and atomic per §9.
 - [ ] Symbol-level mapping inside a file is absent (§1.4) — ownership is `implements` claims (files or directories ending in `/`), not a prescribed `src/<type>/<id>/` tree.
 

@@ -23,6 +23,8 @@ import {
   probableOwner,
   routeFamilySplits,
   staleTextWarnings,
+  testPresenceFailures,
+  untestedWarning,
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { changeMembers, changeNeighbors } from "../../foundations/f-compiler-rules/rules.js";
 import {
@@ -137,9 +139,16 @@ function checkChange(
     for (const conflict of findOwnershipConflicts(graph, root, node)) {
       failures.push(`Blocked: change "${change}": ${conflict}`);
     }
+    for (const missing of testPresenceFailures(node, root)) {
+      failures.push(`Blocked: change "${change}": ${missing}`);
+    }
     warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_ALL));
   }
-  for (const node of revisions) warnings.push(...decisionWarnings(graph, node, decisionCtx));
+  for (const node of revisions) {
+    warnings.push(...decisionWarnings(graph, node, decisionCtx));
+    const untested = untestedWarning(node);
+    if (untested) warnings.push(untested);
+  }
   const member = (kind: "revision" | "neighbor") => (n: MindPlanNode) => ({
     id: n.id,
     type: n.type,
@@ -357,6 +366,7 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
     if (node.next && node.next.state === "in-review") {
       checkSlot(node.next.implements, "next", true);
     }
+    for (const missing of testPresenceFailures(node, root)) fail(failures, missing);
   }
 }
 
@@ -447,6 +457,8 @@ function collectWarnings(graph: MindPlanGraph, root: string): string[] {
     } else if (!node.next && isProductionState(node.state)) {
       warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_PATHS_ONLY));
     }
+    const untested = untestedWarning(node);
+    if (untested) warnings.push(untested);
   }
   return warnings;
 }

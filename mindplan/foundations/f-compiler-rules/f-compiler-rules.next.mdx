@@ -2,17 +2,24 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import and ownership gate for in-review and ship, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates (never a migration or schema file), and split route-family warnings. A next file in state mirror is not an open evolution."
+description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import, ownership, and linked-test presence gate for in-review and ship, the untested-revision warning, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates (never a migration or schema file), and split route-family warnings. A next file in state mirror is not an open evolution."
 state: mirror
-shipped_at: 2026-10-25T19:59:58.369Z
+shipped_at: 2026-10-25T21:13:07.453Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-25T19:59:58.369Z
+updated_at: 2026-10-25T21:13:07.453Z
 depends_on:
   - f-domain-model
   - f-territory-store
   - f-source-index
 implements:
   - src/foundations/f-compiler-rules/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/shipped-claims.test.mjs
 role: infra
 ---
 
@@ -57,6 +64,9 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `assertDecisionForReview(graph, root, node, ctx?)` → `Blocked: Decision. "<id>" <trigger messages>, and no decision is recorded for this revision (under change "<change>" or on the node). Record the choice and the alternative you rejected. Fix: record_decision({...}).`
   - `DecisionContext` (`createDecisionContext(root, settings?)`) loads the config once and runs the git probe lazily and at most once: only when a claimed schema file is not already new by its claims
 - `staleTextWarnings` reads the body without the `## Decisions` section: a recorded decision may name a path the revision since removed
+- **Linked tests** (`integrity.ts`):
+  - `testPresenceFailures(node, root)` — each `tests` entry that matches nothing on disk (`claimEntryExists`), once the node's live state is in-review or shipped or its next is in-review; nothing for a draft plan. `assertCheckCleanForNode` adds them to its `Blocked: Check failed …`, so a move to in-review or ship with a broken test link is Blocked
+  - `untestedWarning(node)` — `tests: "<id>" is in review with no linked tests; link the files that verify it with set_test_files.` for a Foundation, Interaction, or Interface whose active slot is in-review and whose `tests` list is empty; null otherwise. It never Blocks
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
@@ -89,6 +99,8 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - The Coverage fix for a file in a folder its shipped owner dominates is `set_implementation_files` alone, with no `open_next`; for a migration or schema file in that folder it opens the evolution first
 - A body naming only a longer path (`pkg/a.tsx` for an entry `pkg/a.ts`) still warns `stale:`
 - `changesWithRevisions` lists a change while it has an open revision and drops it once the last one ships or is cancelled
+- A `tests` entry missing on disk Blocks the move to in-review and ship, and is not reported for a draft
+- An in-review revision with no tests yields one `tests:` warning; a draft one, or one with tests, yields none
 
 ## Atomic Ops
 
@@ -115,6 +127,9 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - [x] Verified neighbors, the in-place claim warning, and the Coverage fix via `npm test`
 - [x] Share a Coverage fix context per check run, refuse schema files in place, match `added_claims` by whole path, and add `changesWithRevisions` (review fixes)
 - [x] Verified the review fixes via `npm test`
+- [x] Add `testPresenceFailures` to the in-review / ship gate
+- [x] Add `untestedWarning`
+- [x] Verified test presence and the untested warning via `npm test`
 
 ## Decisions
 
@@ -144,6 +159,17 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Why: Adopting MindPlan on an existing codebase means creating nodes for files that are not new; the gate is for schema changes, not for modeling.
 - Change: decision-records
 - Date: 2026-10-20
+
+### d-tests-presence-blocks-coverage-warns
+
+- Decision: A `tests` entry that matches nothing on disk is Blocked once the node (live or its next) is in-review or shipped, like implements presence; a pipeline revision reaching in-review with no tests only warns.
+- Alternatives:
+  - Block in-review without at least one linked test (every consumer's existing nodes and every docs-only node would need a test before their next revision)
+  - Only check that entries exist, with no signal for an untested revision
+- Why: A broken link is a lie the graph tells, so it fails like a missing claim; an untested node may be legitimate (docs, workflow files), so the check nudges and never stops work.
+- Consequences: Draft plans may list tests that do not exist yet; the presence rule only bites at in-review and after ship.
+- Change: node-tests
+- Date: 2026-10-25
 
 ## Attachments
 

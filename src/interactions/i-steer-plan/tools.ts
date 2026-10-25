@@ -13,4 +13,5 @@ export const MUTATE_TOOLS = [
   "open_next",
   "discard_next",
   "set_implementation_files",
+  "set_test_files",
 ] as const;

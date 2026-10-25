@@ -2,13 +2,16 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs) and the `added_claims` marker for claims a shipped node added in place, Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, decision records with their computed status and the active-slot reader, and the optional change id and change ref that group revisions, whose live value on a shipped node with no open next is a neighbor label."
+description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs) and the `added_claims` marker for claims a shipped node added in place, the slot-independent `tests` list of files that verify a node, Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, decision records with their computed status and the active-slot reader, and the optional change id and change ref that group revisions, whose live value on a shipped node with no open next is a neighbor label."
 state: mirror
-shipped_at: 2026-10-25T19:59:57.505Z
+shipped_at: 2026-10-25T21:13:07.038Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-25T19:59:57.505Z
+updated_at: 2026-10-25T21:13:07.038Z
 implements:
   - src/foundations/f-domain-model/
+tests:
+  - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
 role: infra
 ---
 
@@ -41,6 +44,7 @@ Intended files: `src/foundations/f-domain-model/`
   - `DECISION_STATUSES` / `DecisionStatus` — `active | superseded`, computed and never stored
   - `DecisionEntry` — a record plus `node_id`, `node_type`, `status`, `superseded_by?`, and, when it reached a node through inheritance, `via` / `distance` (the `RuleVia` labels)
 - `NextSlot.opened_at?` — when open_next opened the revision; promotion and discard drop it. The decision gate dates a revision's start from it
+- **Linked tests.** `MindPlanNode.tests?: string[]` — MCP-only: repo-relative test files, directories ending in `/`, or globs that verify a Foundation, Interaction, or Interface. It is not ownership: a test file is still claimed through some node's `implements`, and several nodes may list the same file. Slot-independent like rules: one list, read from the live `<id>.mdx`; an open next carries the same list, so `NextSlot` has no field of its own. `GRAPH_VERSION` stays `1`: a graph without it loads exactly as before
 
 Depends on: none.
 
@@ -61,6 +65,7 @@ Depends on: none.
 - `activeChange` of a shipped node with no open next is nothing even when its live `change` holds a neighbor label
 - `MindPlanNode.added_claims` is optional; a graph without it loads exactly as before
 - `isNeighborNode` is false for a retired node, a node with an open next, a pre-ship node, and a Journey or Bug
+- `MindPlanNode.tests` is optional; a graph without it loads exactly as before, and `NextSlot` has no `tests`
 
 ## Atomic Ops
 
@@ -84,6 +89,8 @@ Depends on: none.
 - [x] Add `MindPlanNode.added_claims`
 - [x] Verified the neighbor label and `added_claims` via `npm test`
 - [x] Add `isNeighborNode` as the shared neighbor test (review fix)
+- [x] Add `MindPlanNode.tests`
+- [x] Verified `tests` via `npm test`
 
 ## Decisions
 
@@ -107,6 +114,28 @@ Depends on: none.
 - Consequences: A node labeled by a second change silently leaves the first (the result reports replaced_change); open_next on a neighbor inherits its label as the revision's change because the mirror twin copies live.
 - Change: shipped-claims-and-neighbors
 - Date: 2026-10-23
+
+### d-tests-as-file-list
+
+- Decision: A node links its tests through an optional `tests` list of repo-relative test files, directories, or globs on its frontmatter, not through a new node type or edge.
+- Alternatives:
+  - A Test node type with a verifies edge (changes the taxonomy, the SPEC tables, and the lifecycle; every suite becomes a node to create and ship)
+  - Move each suite under the node it tests and rely on implements claims (no many-to-many: a suite covering several nodes can be claimed by only one)
+- Why: Tests are files, and one suite often verifies several nodes; a non-exclusive file list beside implements says exactly that with one optional field, so GRAPH_VERSION stays 1.
+- Consequences: Ownership of a test file stays with whoever claims it in implements; tests only says which nodes it verifies. The graph cannot hold per-case test names, only files.
+- Change: node-tests
+- Date: 2026-10-25
+
+### d-tests-slot-independent-evidence
+
+- Decision: A node's `tests` list is slot-independent evidence, like its rules: one writer sets it on live and on an open next alike, a shipped node changes it in place without open_next, and the write never resets readiness.
+- Alternatives:
+  - Treat tests like implements: a contract write that needs open_next on a shipped node and sends a ready revision back to draft (linking an existing test to a shipped node would cost a full revision)
+  - Keep tests only on the active slot (a discarded revision would drop links that still hold for the live code)
+- Why: Linking a test records how a contract is verified; it does not change the contract, so it should neither cost a revision nor undo a review.
+- Consequences: A revision cannot propose a different tests list from live; promote keeps the list it finds on next, which equals live.
+- Change: node-tests
+- Date: 2026-10-25
 
 ## Attachments
 

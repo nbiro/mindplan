@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-seven tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels and additive in-place claims on shipped nodes."
+description: "MCP stdio Interface that registers twenty-eight tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels, additive in-place claims on shipped nodes, and linked test files."
 state: stable
-shipped_at: 2026-10-25T19:59:59.794Z
+shipped_at: 2026-10-25T21:13:08.165Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-25T19:59:59.794Z
+updated_at: 2026-10-25T21:13:08.165Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -19,6 +19,10 @@ exposes:
   - i-check-integrity
 implements:
   - src/interfaces/if-mcp-tools/
+tests:
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
 ---
 
 
@@ -66,6 +70,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - **Shipped claims and neighbors.** `set_implementation_files` takes `change` (a slug, or `""` to clear) and passes it to the handler; its description names the slot it writes (pre-ship current, open next, or live in place on a shipped node with no open next, additive only in a folder the node dominates, never a migration or schema file; anything else Blocked with `open_next`), `added_in_place`, the body-mention warning, and `folder_claims`. The `change` descriptions of `patch_node_territory`, `record_decision`, and `set_implementation_files` say that on a shipped node with no open next it labels a neighbor (`neighbor_of`, `replaced_change`), and `patch_node_territory` says `change_ref` is Blocked there. `run_check` and `get_blast_radius` say a change's members are its open revisions and its neighbors, each with `kind`; `open_next` says a neighbor label is inherited unless `change` names another (`replaced_change`); `discard_next`, `update_node_status`, and `patch_node_territory` say when `cleared_neighbors` appears and that `scope: "change"` walks revisions only; `force_unship` says it clears the label (`cleared_change`) and `added_claims`. Still twenty-seven tools
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
+- **`set_test_files`** (write) mounts `setTestFiles` (`i-steer-plan`): it replaces a node's linked test files, and its description says the list is evidence, not a claim, so it never needs `open_next` and never resets readiness; it takes `change`. `run_check` names test presence among its checks and `get_blast_radius` names its `tests` list. Twenty-eight tools
 
 ## Acceptance Criteria
 
@@ -86,6 +91,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - The smoke test asserts the annotation table, the description bans, and the envelope shape
 - `set_implementation_files` `change` reaches the handler, and `""` is accepted to clear it
 - The descriptions of the change-scoped and shipped-node tools name neighbors, in-place claims, and the result fields they return
+- The server registers twenty-eight tools, including `set_test_files` as a write tool
 
 ## Atomic Ops
 
@@ -120,6 +126,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Verified the schema and descriptions via `npm test`
 - [x] Name the schema-file refusal in `set_implementation_files` and the neighbor-label default in `record_decision`'s `change` (review fixes)
 - [x] Verified via `npm test`
+- [x] Register `set_test_files` and name tests in the `run_check` and `get_blast_radius` descriptions
+- [x] Verified the tool list via `npm test`
 
 ## Decisions
 

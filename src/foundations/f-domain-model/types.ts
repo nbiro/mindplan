@@ -135,6 +135,12 @@ export interface MindPlanNode {
    * promotion rebuilds the live frontmatter and drops the list.
    */
   added_claims?: string[];
+  /**
+   * MCP-only. Test files, directories ending in `/`, or globs that verify this node. Not
+   * ownership: several nodes may list one file. Slot-independent like `rules`: an open next
+   * carries the same list, so `NextSlot` has none.
+   */
+  tests?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
   /** Present when `<id>.next.mdx` is an open evolution (not a `mirror` twin). */

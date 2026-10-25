@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact and the decisions it reaches, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check), and expose get_rules for global project rules before each action."
+description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the decisions it reaches, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check), and expose get_rules for global project rules before each action."
 state: mirror
-shipped_at: 2026-10-25T19:59:59.090Z
+shipped_at: 2026-10-25T21:13:07.859Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-25T19:59:59.090Z
+updated_at: 2026-10-25T21:13:07.859Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -18,6 +18,13 @@ leads_to:
   - i-steer-plan
 implements:
   - src/interactions/i-orient-plan/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/search.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
 ---
 
 
@@ -56,6 +63,7 @@ Intended files: `src/interactions/i-orient-plan/`
 - `get_node_context` returns `body` without the `## Decisions` section too, plus `decisions` (the live file's entries, each with `status`) and `next.decisions` for an open next, whose record also shows `opened_at`. It takes `include_superseded` (default `false`) like `list_decisions`: superseded entries are left out of both lists unless asked for, so a long trail does not bury the decisions that currently apply. `orient_for_work` passes its own `include_superseded` through to the `context` it embeds
 - `get_blast_radius` adds `decisions`: the active decisions held by the focus (`via: focus`, distance 0) and by each visible affected node (`via: dependent`, its distance), each `{ id, node_id, via, distance, decision }`; inactive nodes' decisions are left out, even with `include_retired`. The change radius merges them across members (a member's own decisions are `focus`)
 - **Paged graph.** `get_mindplan_graph({ offset?, limit? })` returns `{ nodes, edges, total_nodes, total_edges, offset, limit, next_offset? }`. Nodes are sorted by id and sliced by `offset` (default 0) and `limit` (default `GRAPH_PAGE_DEFAULT` = 200, max `GRAPH_PAGE_MAX` = 500, both exported from this package); `edges` holds every edge whose source is in the page, so a client that walks every page sees every edge exactly once; `next_offset` is present only when nodes remain. A graph that fits in one page returns the same `nodes` and `edges` as before plus the totals, so a small project sees no truncation. `offset` past the end returns an empty page with the totals, not Blocked. The default page keeps one result of a typical graph (about 400 characters per node) under Claude Code's 25,000-token result limit; the tool description names `next_offset`
+- **Linked tests.** `buildBlastRadiusPayload` adds `tests`: the sorted files that the `tests` lists of the focus and of every owner in `affected_files` expand to (`expandClaims`, `f-source-index`), so a change knows which suites to run; `buildChangeBlastRadiusPayload` merges them across members. Node records (`get_node_context`, `orient_for_work`, `get_mindplan_graph`) carry the node's `tests` list
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
 
@@ -82,6 +90,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - `get_node_context` `body` excludes the Decisions section and `decisions` carries it
 - `get_node_context` leaves a superseded decision out of `decisions` by default and returns it with `include_superseded`, naming `superseded_by`; `orient_for_work` with `include_superseded` shows it in `context.decisions` too
 - `get_mindplan_graph` on a graph larger than `limit` returns `limit` nodes, only edges from those nodes, the totals, and `next_offset`; walking every page yields every node and every edge exactly once; a graph within one page returns no `next_offset`; `limit` above 500 is rejected at the schema layer
+- `get_blast_radius` lists the expanded tests of the focus and its affected owners, and the change radius merges them
+- `get_node_context` returns a node's `tests` list
 
 ## Atomic Ops
 
@@ -111,6 +121,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Verified the `get_project` version warning via `npm test`
 - [x] Merge a change's neighbors into its blast radius and label each member's `kind`
 - [x] Verified the neighbor blast radius via `npm test`
+- [x] Add `tests` to the node and change blast radius
+- [x] Verified the blast-radius tests via `npm test`
 
 ## Decisions
 
