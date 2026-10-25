@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and its own decisions (naming the inherited ones, listed on request), list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the focus's decisions and the dependents that hold others, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check), and expose get_rules for global project rules before each action."
+description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules (each tagged with a version, its text left out when the caller already holds it) and its own decisions (naming the inherited ones, listed on request), list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the focus's decisions and the dependents that hold others, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check and tagging the rules), and expose get_rules for global project rules before each action, with a short unchanged reply for a known version."
 state: stable
-shipped_at: 2026-10-25T23:01:53.098Z
+shipped_at: 2026-10-25T23:09:53.577Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-25T23:01:53.098Z
+updated_at: 2026-10-25T23:09:53.577Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -23,6 +23,7 @@ tests:
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-eval.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/search.test.mjs
@@ -52,8 +53,8 @@ Intended files: `src/interactions/i-orient-plan/`
 - Keep existing query tools
 - **Hybrid ranking.** `find_related_nodes` and `orient_for_work` rank through `searchNodes` (`f-graph-search`) with the project root and `territoryBodyReader()` (`f-territory-store`) for section headings, and pass the ranked rows to `findRelatedNodes` as `matches`; both handlers are async (the query embedding), and their result shapes are unchanged
 - `get_project` — `{ path, description, rules, playbook, check, version? }` (first read of dialect + brief); `check` is a fixed sentence naming `run_check` and the CLI `mindplan-mcp check`; `version` is present only when `projectVersionStatus()` is not `current`, and is its warning sentence
-- `get_rules` — `{ path, rules }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description. These are the **global** rules only: rules that apply everywhere. Rules about one area of the code live on that area's node
-- `orient_for_work` returns a separate `rules` block next to `context` and `blast_radius`: `{ node_id, entries: RuleEntry[] }` from `resolveNodeRules` (`f-graph-search`), or `null` when there is no focus. Each entry is `{ node_id, node_type, via, distance, rules }`, ordered self, then `belongs_to`, then `depends_on`, then `affects`. `entries` is `[]` when nothing applies. It does **not** repeat the project brief rules
+- `get_rules({ known_version? })` — `{ path, rules, rules_version }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description. `rules_version` is `rulesVersion(rules)`: the first 12 hex characters of its SHA-256. When `known_version` equals it the reply is `{ path, rules_version, unchanged: true }` with no text (under 150 bytes), so a re-read before every action costs almost nothing; any other value, or none, returns the full text. `get_project` returns the same `rules_version`. These are the **global** rules only: rules that apply everywhere. Rules about one area of the code live on that area's node
+- `orient_for_work` returns a separate `rules` block next to `context` and `blast_radius`: `{ node_id, entries: RuleEntry[] }` from `resolveNodeRules` (`f-graph-search`), or `null` when there is no focus. Each entry is `{ node_id, node_type, via, distance, rules }`, ordered self, then `belongs_to`, then `depends_on`, then `affects`. `entries` is `[]` when nothing applies. Each entry carries `version` (`rulesVersion` of its text); `known_rules_versions: { node_id: version }` leaves out the `rules` text of an entry whose version matches and marks it `unchanged: true`. It does **not** repeat the project brief rules
 - `orient_for_work` takes `depth`: `full` (default) returns everything; `body` returns `{ query, matches, focus, context, rules }` with the full context; `rules` returns the same keys with `context` cut to the record (and the next record). `body` and `rules` skip the neighborhood and the blast radius, and do not compute the blast radius
 - `get_node_context` returns `body` without the `## Rules` section and a separate `rules` string for that node's own rules (and the same for the `next` slot's body)
 - `get_blast_radius` adds `rules_impact` for every focus type: `{ node_id, has_rules, inherited_by: RulesImpactEntry[] }` from `rulesAudience`. It reports who is reached by the focus's rules, so editing a Foundation's rules shows every dependent; `affected` / `affected_files` / `reachability` are unchanged. When the focus has no rules, `has_rules` is `false` and `inherited_by` is `[]`
@@ -73,7 +74,9 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 
 ## Acceptance Criteria
 
-- `get_rules` returns the current project rules string and path, unchanged in shape
+- `get_rules` returns the current project rules string, path, and `rules_version`; with the current tag as `known_version` it returns `unchanged: true` without the text, under 150 bytes; after `patch_project_rules` the tag changes and the old tag gets the new text
+- `get_project` returns `rules_version`
+- Each `orient_for_work` rules entry carries `version`; a known version leaves out that entry's text, and a changed node rules text comes back with a new version
 - `get_project` still returns playbook + brief, plus a `check` sentence naming `run_check`
 - `get_project` adds a `version` warning sentence when `mindplan/version.json` is missing, unreadable, behind, or ahead of the running package, and omits it when current
 - `orient_for_work` on an Interaction returns its own rules, its Journey's, and its Foundations' (transitive), each entry naming its source node and `via`
@@ -130,6 +133,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Verified the blast-radius tests via `npm test`
 - [x] Return only the focus's own decisions by default with `inherited_decisions`, and `dependent_decisions` on the blast radius
 - [x] Verified the own-decisions default via `npm test`
+- [x] Tag project rules with `rules_version` in `get_project` / `get_rules`, take `known_version`, and version node rule entries with `known_rules_versions`
+- [x] Verified the rules versions via `npm test`
 
 ## Decisions
 

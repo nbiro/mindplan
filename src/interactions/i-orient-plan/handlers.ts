@@ -3,6 +3,7 @@
  * Return plain payloads; if-mcp-tools wraps with ok/guarded.
  */
 
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -645,6 +646,7 @@ export async function orientForWork(args: {
   depth?: OrientDepth;
   include_superseded?: boolean;
   include_inherited_decisions?: boolean;
+  known_rules_versions?: Record<string, string>;
 }): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
@@ -673,7 +675,10 @@ export async function orientForWork(args: {
   if (related.focus) {
     const node = findNode(graph, related.focus);
     context = buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
-    rules = { node_id: node.id, entries: resolveNodeRules(graph, node.id) };
+    rules = {
+      node_id: node.id,
+      entries: versionedRuleEntries(resolveNodeRules(graph, node.id), args.known_rules_versions),
+    };
     const split = splitNodeDecisions(graph, node, args, depth);
     decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
     if (depth === "full" && isPipelineNodeType(node.type)) {
@@ -854,7 +859,34 @@ export const CHECK_HINT =
   "and before saying the work is done. It must pass; moves to in-review and ship also run its import and ownership rules on the node's files.";
 
 /**
+ * Short tag of a rules text (12 hex chars of its SHA-256): equal tags mean equal text, so a caller
+ * that already holds the text can skip it.
+ */
+export function rulesVersion(text: string): string {
+  return createHash("sha256").update(text, "utf-8").digest("hex").slice(0, 12);
+}
+
+/**
+ * Node rule entries with their `version`; an entry whose version the caller already knows
+ * (`known[node_id]`) leaves its text out and says `unchanged: true`.
+ */
+function versionedRuleEntries(
+  entries: ReturnType<typeof resolveNodeRules>,
+  known: Record<string, string> | undefined
+): Record<string, unknown>[] {
+  return entries.map((entry) => {
+    const version = rulesVersion(entry.rules);
+    if (known?.[entry.node_id] === version) {
+      const { rules: _text, ...rest } = entry;
+      return { ...rest, version, unchanged: true };
+    }
+    return { ...entry, version };
+  });
+}
+
+/**
  * Project brief (description + rules) plus the bundled systems dialect (playbook).
+ * `rules_version` tags the rules, so the first `get_rules` of a session can already pass it.
  * `version` is the stamp warning, present only when mindplan/version.json is not current.
  * Call before the first answer or code change; call again after description/rules change.
  */
@@ -865,6 +897,7 @@ export function getProject(): Record<string, unknown> {
     path: brief.path,
     description: brief.description,
     rules: brief.rules,
+    rules_version: rulesVersion(brief.rules),
     playbook: loadBundledPlaybook(),
     check: CHECK_HINT,
     ...(version.warning ? { version: version.warning } : {}),
@@ -873,11 +906,18 @@ export function getProject(): Record<string, unknown> {
 
 /**
  * Mandatory project rules only — call before each action, before orient_for_work.
+ * `{ path, rules, rules_version }`; with a `known_version` equal to the current tag, the text is
+ * left out: `{ path, rules_version, unchanged: true }`.
  */
-export function getRules(): Record<string, unknown> {
+export function getRules(args: { known_version?: string } = {}): Record<string, unknown> {
   const brief = loadProjectBrief();
+  const rules_version = rulesVersion(brief.rules);
+  if (args.known_version !== undefined && args.known_version === rules_version) {
+    return { path: brief.path, rules_version, unchanged: true };
+  }
   return {
     path: brief.path,
     rules: brief.rules,
+    rules_version,
   };
 }

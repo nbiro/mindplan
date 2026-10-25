@@ -409,7 +409,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
         "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
         "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
-        "or an affected node's for a Bug), each labeled with the node it came from. Those rules are mandatory. " +
+        "or an affected node's for a Bug), each labeled with the node it came from and tagged with a version; pass known_rules_versions ({ node_id: version }) only for entries whose text you still hold, to leave that text out (they come back with unchanged: true). Those rules are mandatory. " +
         "And a decisions block, at every depth: the focus node's own recorded design decisions (a Bug: those of the nodes it affects); read them before reshaping that design. " +
         "inherited_decisions ({ count, nodes }) names the Journeys and Foundations whose decisions also apply; include_inherited_decisions adds them (whole at distance 1, one line beyond). Superseded ones only with include_superseded. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
@@ -439,10 +439,23 @@ export function registerMindPlanTools(server: McpServer): void {
           .optional()
           .describe("Also return superseded decisions in the decisions block (each names superseded_by). Default false."),
         include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
+        known_rules_versions: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Node id → rules version you already hold (from an earlier rules block); those entries come back without their text, with unchanged: true."),
       },
     },
-    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions }) =>
-      orientForWork({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions })
+    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions }) =>
+      orientForWork({
+        query,
+        node_id,
+        type,
+        limit,
+        depth,
+        include_superseded,
+        include_inherited_decisions,
+        known_rules_versions,
+      })
   );
 
   tool(
@@ -455,7 +468,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
         "Returns the systems dialect and this product's description and standing rules " +
-        "({ path, description, rules, playbook, check, version? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
+        "({ path, description, rules, rules_version, playbook, check, version? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
+        "rules_version tags the rules: pass it to get_rules as known_version. " +
         "version appears only when mindplan/version.json is missing or does not match this server, and names the fix.",
       inputSchema: {},
     },
@@ -471,12 +485,19 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Get project rules",
       description:
         "Call before each action, before orient_for_work. Returns the mandatory project rules " +
-        "({ path, rules }) from mindplan/project.md. Empty string when the section is empty. " +
+        "({ path, rules, rules_version }) from mindplan/project.md. Empty string when the section is empty. " +
+        "While you still hold the rules text, pass its rules_version as known_version: when the rules are unchanged the reply is { path, rules_version, unchanged: true } " +
+        "and that text still applies; otherwise it carries the new text and tag. Without the text in context (a new session, a summarized one), pass nothing. " +
         "These are the global rules only; node rules arrive through orient_for_work. " +
         "Does not return the playbook or description.",
-      inputSchema: {},
+      inputSchema: {
+        known_version: z
+          .string()
+          .optional()
+          .describe("The rules_version of rules text you still hold (from get_project or get_rules); the text is left out when it still matches. Omit it when you no longer have the text."),
+      },
     },
-    () => getRules()
+    ({ known_version }) => getRules({ known_version })
   );
 
   tool(

@@ -4,9 +4,9 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-eight tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels, additive in-place claims on shipped nodes, and linked test files."
 state: mirror
-shipped_at: 2026-10-25T23:01:53.215Z
+shipped_at: 2026-10-25T23:09:53.694Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-25T23:01:53.215Z
+updated_at: 2026-10-25T23:09:53.694Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -22,6 +22,7 @@ implements:
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
 ---
@@ -65,6 +66,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - **Schemas for the honesty fixes.** `create_node`, `open_next`, and `patch_node_territory` take `change` / `change_ref`; `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; `update_node_status` takes `scope: "change"` with `change`, and `skip_review`; `get_blast_radius` takes `node_id` or `change`; `run_check` takes `change`. Hints name which writes send a `ready` revision back to `draft`.
 - **Decision tools.** Register `record_decision` (a write tool: `verbose`, no default drift) with `node_id`, `decision`, `alternatives` (non-empty array), `why`, and optional `consequences`, `supersedes`, `change`, `id`; register `list_decisions` (a read tool, drift attached) with optional `node_id`, `change`, and `include_superseded`. `record_decision`'s description leads with: call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact). `export_mindplan_view` takes `decisions`; `patch_config` takes `decisions: { blast_radius?, schema_files? }` as a strict object (an unknown key is rejected, not stripped); the `record_decision` id schema uses `DECISION_ID_PATTERN`. `orient_for_work` and `get_node_context` take `include_superseded` (the same flag as `list_decisions`) and their descriptions name the `decisions` block; `get_blast_radius` names `decisions`, and `update_node_status` names `Blocked: Decision` at in-review. Twenty-seven tools
 - **Async handlers.** `guarded` accepts a handler that returns a promise (`find_related_nodes` and `orient_for_work` await the query embedding): a resolved value takes the same success envelope, and a rejection or a throw takes the same error envelope as a synchronous handler. The legacy files the handler's graph load removed (before its first await) are drained right away and put back when it settles, so a call that runs meanwhile reports only its own. `find_related_nodes` describes hybrid ranking (keyword plus semantic; an exact id first). `patch_config` takes `search: { enabled?, model? }` as a strict object
+- **Rules versions.** `get_rules` takes `known_version` and describes `rules_version` and the `unchanged: true` reply; `get_project` names `rules_version`; `orient_for_work` takes `known_rules_versions` (a string record) and describes the entry `version`
 - **Decision defaults.** `orient_for_work` and `get_node_context` take `include_inherited_decisions` (one shared schema) and describe the own-decisions default and `inherited_decisions`; `get_blast_radius` takes `include_dependent_decisions` and describes `dependent_decisions`
 - **Tool kinds and annotations.** One registration helper takes `kind: "read" | "write" | "destructive"` and derives both the `guarded` options (`drift` / `write`) and the MCP `annotations`: `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`: every tool acts on the local `mindplan/` tree and the repo, never on an external system. Read tools: `run_check`, `get_mindplan_graph`, `export_mindplan_view`, `find_related_nodes`, `get_node_implementation`, `get_node_context`, `orient_for_work`, `get_project`, `get_rules`, `list_decisions`, `get_blast_radius`. Destructive tools (they remove data or edges that no undo restores): `unlink_nodes`, `remove_attachment`, `discard_next`, `force_unship`. Every other tool is `write`. `run_check` keeps `drift: false` on top of `read`. Every tool keeps its `title`
 - **Result envelope.** `ok(payload)` returns `content: [{ type: "text", text: JSON.stringify(payload) }]` (compact, no indentation) and, when the payload is a plain object, `structuredContent: payload` as well. String payloads stay text-only. Error results are unchanged (`isError: true`, message text). No `outputSchema` is declared: twenty-seven schemas would double the tool list the host loads, and `structuredContent` is useful without one
@@ -83,6 +85,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - `patch_config`'s `search` field reaches its handler and an unknown key inside it is rejected
 - An async handler's `Blocked:` comes back as the same error envelope as a synchronous one
 - `include_inherited_decisions` and `include_dependent_decisions` reach their handlers
+- `known_version` and `known_rules_versions` reach their handlers
 - Every tool description starts with when to call it
 - `patch_node_rules` rejects a missing `rules` and a non-slug `node_id` at the zod layer
 - A default write result has no `anchor` and no `drift`; `verbose: true` adds both
@@ -117,6 +120,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Verified the schemas via `npm test`
 - [x] Register `record_decision` and `list_decisions` and update the tool count to twenty-seven
 - [x] Add `decisions` to the `export_mindplan_view` and `patch_config` schemas and update the orient, blast-radius, and status hints
+- [x] Add `known_version` to `get_rules` and `known_rules_versions` to `orient_for_work`
 - [x] Add `include_inherited_decisions` to `orient_for_work` and `get_node_context`, and `include_dependent_decisions` to `get_blast_radius`
 - [x] Let `guarded` await async handlers; add `search` to the `patch_config` schema; describe hybrid ranking on `find_related_nodes`
 - [x] Verified the decision tools via `npm test`

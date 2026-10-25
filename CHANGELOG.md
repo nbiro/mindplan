@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — rules version tags
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **`get_rules` returns `rules_version`.** The tag is the first 12 hex characters of the SHA-256 of the rules. Pass the last tag you saw as `known_version`: when the rules are unchanged, the reply is `{ path, rules_version, unchanged: true }` with no text (78 bytes in the test, against about 1.5k tokens for this repo's rules). Any other value, or none, returns the full text, so a client that passes nothing sees no change. [§8.1]
+- **`get_project` returns `rules_version`** too, so the first `get_rules` of a session can already be the short form. [§8.1]
+- **Node rules in `orient_for_work`.** Each `rules` entry carries `version`. `known_rules_versions` (node id → version) leaves out the text of entries the caller already holds, which come back with `unchanged: true`. [§8.1]
+- **Docs.** Playbook rule 1, the `AGENTS.md` stub that init installs, the tool descriptions, SPEC, and README describe the short form. The `npx` examples use `mindplan-mcp@0.6`.
+
 ## 0.5.0 — own decisions by default
 
 Every behavior change in this release. SPEC sections in brackets.
