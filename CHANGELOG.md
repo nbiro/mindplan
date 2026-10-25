@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 — repin the self-dependency after each release
+
+- **Repin PR from the release workflow.** The Publish workflow has a new `repin` job. It runs right after a successful publish and tag, and opens a PR that pins this repo's exact `mindplan-mcp` devDependency to the new release (bumping no version, so merging it publishes nothing). It then dispatches CI on that branch, because a PR opened by GitHub Actions starts no `pull_request` run. CI gains a `workflow_dispatch` trigger for this. The Dependabot config added in 0.2.1 is removed: it checked at most daily. Needs the repository setting that allows GitHub Actions to create pull requests. Release tooling only; the published package is unchanged.
+
 ## 0.2.1 — publish waits for the registry
 
 - **Registry check.** After `npm publish`, the release script now waits up to 10 minutes (polling every 15 seconds) for npm to list the new version, instead of about one minute. npm accepts a publish before it lists it, and the 0.2.0 release job failed its check after a successful publish, which skipped the `v0.2.0` tag. CONTRIBUTING documents pushing the tag by hand when that happens.

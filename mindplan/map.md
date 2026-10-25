@@ -17,7 +17,7 @@ flowchart TB
     f_graph_search["f-graph-search · Graph search · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
-    f_npm_registry["f-npm-registry · npm registry adapter · in-review"]
+    f_npm_registry["f-npm-registry · npm registry adapter · stable"]
     f_source_index["f-source-index · Source index · stable"]
     f_territory_store["f-territory-store · Territory store · stable"]
     f_test_harness["f-test-harness · Test harness · stable"]
@@ -32,13 +32,13 @@ flowchart TB
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Main-branch release trigger · draft"}}
   end
-  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
+  subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
     i_init_project__in__j_agent_onboarding["i-init-project · Init project · stable"]
-    i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · in-progress"]
+    i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · stable"]
   end
-  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · incubation"]
-    i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · in-progress"]
-    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · in-progress"]
+  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · evolving"]
+    i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · stable"]
+    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · in-review"]
   end
   subgraph journey_j_plan_console["j-plan-console · See and steer the plan · stable"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]

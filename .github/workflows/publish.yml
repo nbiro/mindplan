@@ -2,7 +2,8 @@
 # Every push to main checks whether package.json's version is on npm. When it is not, the
 # publish job releases it with npm Trusted Publishing (OIDC, no NPM_TOKEN) and tags vX.Y.Z.
 # A merge without a version bump publishes nothing. Bind the trusted publisher on npmjs.com to
-# nbiro/mindplan + this file (publish.yml) + environment npm-publish.
+# nbiro/mindplan + this file (publish.yml) + environment npm-publish. After a release, the repin
+# job opens a PR that pins the self devDependency to it.
 name: Publish
 
 on:
@@ -78,3 +79,65 @@ jobs:
             git tag "$TAG" "$GITHUB_SHA"
             git push origin "refs/tags/$TAG"
           fi
+
+  # Repin the exact self devDependency to the release just published. A separate job, so a repin
+  # failure never marks the release failed and re-running failed jobs retries only this. The PR
+  # bumps no version, so merging it publishes nothing. Needs the repository setting that allows
+  # GitHub Actions to create pull requests.
+  repin:
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the repin branch
+      pull-requests: write # open the PR
+      actions: write # dispatch CI (a PR opened with GITHUB_TOKEN starts no pull_request run)
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      BRANCH: repin/mindplan-mcp-${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Open the repin PR
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            echo "$BRANCH already exists on origin; leaving it."
+            exit 0
+          fi
+          pinned=$(node -p "require('./package.json').devDependencies?.['mindplan-mcp'] ?? ''")
+          if [ "$pinned" = "$VERSION" ]; then
+            echo "mindplan-mcp is already pinned to $VERSION."
+            exit 0
+          fi
+          git switch -c "$BRANCH"
+          # npm's listing can lag behind the publish job's registry check.
+          for attempt in 1 2 3 4 5; do
+            if npm install --save-dev --save-exact --ignore-scripts --prefer-online --no-audit --no-fund "mindplan-mcp@$VERSION"; then
+              break
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "npm install mindplan-mcp@$VERSION kept failing."
+              exit 1
+            fi
+            echo "npm install failed (attempt $attempt); retrying in 15s"
+            sleep 15
+          done
+          unexpected=$(git status --porcelain | grep -v -E '^ M (package\.json|package-lock\.json)$' || true)
+          if [ -n "$unexpected" ]; then
+            echo "The repin changed more than package.json and package-lock.json:"
+            echo "$unexpected"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Repin mindplan-mcp to $VERSION" -- package.json package-lock.json
+          git push origin "refs/heads/$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Repin mindplan-mcp to $VERSION" \
+            --body "Pins the self devDependency to mindplan-mcp@$VERSION, released by run ${GITHUB_RUN_ID} and tagged v$VERSION. This PR bumps no package version, so merging it publishes nothing. CI was dispatched on this branch because a PR opened by GitHub Actions starts no pull_request run."
+          gh workflow run ci.yml --ref "$BRANCH"

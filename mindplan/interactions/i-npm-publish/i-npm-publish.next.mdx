@@ -1,0 +1,127 @@
+---
+id: i-npm-publish
+type: Interaction
+title: "Publish to npm"
+description: "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs in CI on every merge to main that bumps the version."
+state: mirror
+shipped_at: 2026-10-25T20:14:46.359Z
+created_at: 2026-07-15T18:51:52.964Z
+updated_at: 2026-10-25T20:14:46.359Z
+belongs_to:
+  - j-agent-onboarding
+  - j-npm-publish
+depends_on:
+  - f-mcp-runtime
+  - f-npm-registry
+implements:
+  - src/interactions/i-npm-publish/
+---
+
+# Publish to npm
+
+## Purpose
+
+Ship `mindplan-mcp` to the public npm registry so consumers can install without cloning from source. Own a **single reusable publish script** that maintainers run for the first claim and that `i-npm-tag-publish` invokes non-interactively when a merge to `main` carries an unpublished version.
+
+## Actor & Trigger
+
+- **Actor:** maintainer on their machine (first claim, break-glass), or `i-npm-tag-publish` in CI
+- **Trigger:** `npm run publish:release` (maintainer mode) or `npm run publish:release -- --ci` (CI mode)
+
+## Goal
+
+A maintainer can run one scripted path; afterward any consumer can:
+
+```bash
+npm install -g mindplan-mcp
+# or
+npx mindplan-mcp init
+```
+
+and get a working CLI + MCP server whose `templates/` and `dist/` match this repo’s contract.
+
+## Acceptance Criteria
+
+- [x] Publish script under the prescribed package encodes dry-run → test → publish → verify; CI can call non-interactive mode of the **same** script.
+- [x] Package name `mindplan-mcp` is claimed on the public registry at version `0.1.0` (or the next SemVer if already taken by us). — note: claimed by the manual 0.1.0 publish; 0.2.0 and 0.2.1 followed from CI
+- [x] Dry-run / pack listing asserts tarball contents: `dist/`, `templates/`, `README.md`, `SPEC.md`, `LICENSE` — not `src/`, tests, or local `mindplan/` territory.
+- [x] `npx mindplan-mcp --help` (or `mindplan-mcp help` after global install) shows init/view/help usage. — note: verified from the built package (`mindplan-mcp --help`); the script re-runs `npx mindplan-mcp help` after the first publish
+- [x] README Quick start leads with npm / `npx`; clone+build remains a contributor path.
+- [x] `CONTRIBUTING.md` Publishing documents the script for first/manual publish and points later releases to `i-npm-tag-publish`.
+- [x] The registry check waits up to 10 minutes (polling every 15 seconds) before failing, so npm's processing delay after a successful publish does not fail the release job. — note: VERIFY_TIMEOUT_MS / VERIFY_POLL_MS in publish.mjs; exercised for real on the next release, since npm test does not run the publish
+
+## Versioning policy
+
+- **Scheme:** SemVer starting at current `package.json` version **`0.1.0`**.
+- **Until 1.0.0:** treat the public API as evolving; prefer `minor` for additive changes, `patch` for fixes; document breakage in changelog/SPEC when not bumping major on 0.x.
+- **First publish:** publish whatever is currently in `package.json` (expected `0.1.0`).
+- **Later releases:** bump the version in a PR and merge it to **main**; `i-npm-tag-publish` publishes it and tags `vX.Y.Z`.
+- **CI mode** (`--ci`) runs only on `refs/heads/main` and exits 0 without publishing when the registry already lists the version.
+
+## Release style (this Interaction)
+
+**Script-first, manual first claim.** Maintainer machine + npm account with publish rights for the initial `npm publish` (OTP / `npm login` as required).
+
+Depends on `f-npm-registry` for **package identity + OIDC contract docs** — not for a live Trusted Publisher binding (that binding is `i-npm-tag-publish` after this Interaction claims the package).
+
+Handoff: once the script works and the package is claimed, live Trusted Publishing + merge-to-main automation is `i-npm-tag-publish` (using conventions from `f-npm-registry` / `f-github-actions`).
+
+Out of scope for this node:
+
+- `.github/workflows/publish.yml` (owned by `i-npm-tag-publish`)
+- Live npm Trusted Publishing UI binding
+- Automated changelog generation
+
+## Execution Logic
+
+Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-registry`. Belongs to: `j-npm-publish`, `j-agent-onboarding`.
+
+### Publish script location
+
+- **Primary:** implement the script inside `src/interactions/i-npm-publish/` (e.g. `publish.mjs` or `publish.sh`).
+- **Optional thin wrapper:** a root `package.json` script (e.g. `"publish:release": "node src/interactions/i-npm-publish/publish.mjs"`) so maintainers and CI share one entrypoint.
+- Do **not** invent a parallel root-only publish script (for example under a top-level scripts folder) that diverges from the package implementation.
+
+### Publish script (source of truth)
+
+1. **Preflight:** assert clean git tree (or documented allowlist); confirm `package.json` name/version/bin/files/engines/repository URLs.
+2. **Dry-run:** `npm pack --dry-run` / `npm publish --dry-run` — assert allowlisted tarball paths; no secrets, no `.cursor/`, no local `mindplan/` territory, no `src/`.
+3. **Test:** `npm test` green (required in both maintainer and CI modes).
+4. **Publish:** `npm publish` (`prepublishOnly` builds `dist/`). Interactive login/OTP only in maintainer mode; CI mode skips login and relies on OIDC.
+5. **Verify:** wait for the registry to list the version, then a fresh install. npm accepts a publish before it lists it ("may take a few minutes to become available"; `0.2.0` took about 2.5 minutes), so the script polls `npm view mindplan-mcp@<version>` every 15 seconds for up to 10 minutes and fails only when the version is still missing then; it does not sleep after the last poll. In CI a too-short wait failed the job after a successful publish and skipped the tag step. Then the fresh install — `mindplan-mcp help` + `mindplan-mcp init` in a temp directory (maintainer mode; CI may use a lighter post-publish check).
+
+### First publish runbook
+
+1. Confirm registry identity aligns with github.com/nbiro/mindplan (`f-npm-registry` docs).
+2. Run the publish script in maintainer mode on the release commit (claims the name).
+3. Sync docs (README + CONTRIBUTING).
+4. Do **not** block on Trusted Publisher UI — that is `i-npm-tag-publish` after claim.
+
+### Docs sync
+
+- README Quick start: npm / `npx` primary. Two consumer paths: a project with a `package.json` adds `mindplan-mcp` as a devDependency (version pinned by its lockfile, upgraded with `npm update`) and registers `npx mindplan-mcp`; any other project registers `npx -y mindplan-mcp@<range>`.
+- README upgrade section: after a version bump, rerun `npx mindplan-mcp init` (the `mindplan/version.json` stamp makes `get_project` and `check` warn until it runs).
+- `templates/agent/mcp.json.example` and `templates/agent/integrations/*.md` register `npx mindplan-mcp`, not a local `dist/index.js` path.
+- CONTRIBUTING: first publish = run the script after `npm login`; later = bump the version in a PR and merge to main (`i-npm-tag-publish` publishes and tags).
+
+## Failure / recovery
+
+- **Name taken by someone else:** stop; escalate — do not rename without a product decision.
+- **`0.1.0` already published by us:** bump patch/minor and publish; update docs.
+- **Broken publish after install check:** ship a patch via the same script; never leave README advertising a broken path.
+
+## Atomic Ops
+
+- [x] Publish script lives under `src/interactions/i-npm-publish/` with maintainer + CI modes (CI mode includes `npm test`)
+- [x] Optional root `package.json` script wrapper points at that implementation — note: `npm run publish:release`
+- [x] Pack/dry-run asserts tarball allowlist (`dist/`, `templates/`, docs, LICENSE)
+- [x] `npm test` green on the release commit — note: `npm run publish:release -- --dry-run` passed on a clean worktree of the branch head
+- [x] `mindplan-mcp@0.1.0` (or next SemVer) published to the public registry — note: 0.1.0 (maintainer), 0.2.0 and 0.2.1 (CI over OIDC)
+- [x] Fresh-install verification (`help` + `init`) passed — note: npx -y mindplan-mcp@0.2.1 help and init --host all in an empty folder on 2026-10-25; init stamped 0.2.1
+- [x] README Quick start updated for npm / `npx` primary install
+- [x] `CONTRIBUTING.md` Publishing section matches this runbook and points to merge-to-main releases
+- [x] Lengthen the Verify step's registry wait to 10 minutes, polling every 15 seconds, with no sleep after the last poll
+
+## Attachments
+
+Optional: dry-run logs under `attachments/`.
