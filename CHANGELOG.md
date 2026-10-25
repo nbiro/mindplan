@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 — repin PR wording
+
+- **Where the repin PR's CI shows.** The 0.2.2 release opened the first repin PR, and the CI dispatched on its branch ran green. That run shows under Actions → CI for the branch, not as checks on the PR. GitHub does create the PR's own `pull_request` run, but it waits for a maintainer's approval. The 0.2.2 notes said a GitHub Actions PR starts no `pull_request` run at all, which was wrong. The repin PR's body, the workflow comments, and CONTRIBUTING now say what actually happens. Release tooling only; the published package is unchanged.
+
 ## 0.2.2 — repin the self-dependency after each release
 
 - **Repin PR from the release workflow.** The Publish workflow has a new `repin` job. It runs right after a successful publish and tag, and opens a PR that pins this repo's exact `mindplan-mcp` devDependency to the new release (bumping no version, so merging it publishes nothing). It then dispatches CI on that branch, because a PR opened by GitHub Actions starts no `pull_request` run. CI gains a `workflow_dispatch` trigger for this. The Dependabot config added in 0.2.1 is removed: it checked at most daily. Needs the repository setting that allows GitHub Actions to create pull requests. Release tooling only; the published package is unchanged.

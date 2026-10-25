@@ -6,13 +6,12 @@ description: "Infra — CI workflow for default mindplan-mcp check."
 state: stable
 shipped_at: 2026-10-09T22:27:39.467Z
 created_at: 2026-07-19T20:19:02.547Z
-updated_at: 2026-10-25T20:18:03.693Z
+updated_at: 2026-10-25T20:27:46.786Z
 depends_on:
   - f-npm-registry
 implements:
   - .github/workflows/ci.yml
 role: infra
-change: "npm-release"
 ---
 
 # GitHub Actions
@@ -31,7 +30,7 @@ Assembler for CI substrate. Default `check` becomes graph + file ownership (excl
 
 ## Shared Substrate Spec
 
-- File: `.github/workflows/ci.yml` — push/PR to main, plus `workflow_dispatch` so the release `repin` job (`i-npm-tag-publish`) can start CI on its branch (a PR opened with `GITHUB_TOKEN` starts no `pull_request` run); Node matrix; `npm ci` → build → test → `node dist/index.js check`
+- File: `.github/workflows/ci.yml` — push/PR to main, plus `workflow_dispatch` so the release `repin` job (`i-npm-tag-publish`) can start CI on its branch (the `pull_request` run of a PR opened with `GITHUB_TOKEN` waits for a maintainer's approval; the dispatched run shows under Actions for the branch, not as PR checks); Node matrix; `npm ci` → build → test → `node dist/index.js check`
 - `check` is default integrity from `i-check-integrity` (graph + ownership). No `--base` in CI.
 - Publish job conventions unchanged (OIDC, registry-url) for `i-npm-tag-publish`
 
