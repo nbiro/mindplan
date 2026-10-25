@@ -19,29 +19,30 @@ function blocked(message: string): Error {
 }
 
 /**
- * Normalize and validate a single implements entry.
- * Rejects `..`, absolute paths, and anything under `mindplan/`.
+ * Normalize and validate a single implements (or `tests`) entry; `field` names the list in the
+ * Blocked text. Rejects `..`, absolute paths, and anything under `mindplan/`.
  */
-export function validateClaimPath(entry: string): string {
+export function validateClaimPath(entry: string, field: "implements" | "tests" = "implements"): string {
   const raw = entry.trim().replace(/\\/g, "/");
   if (!raw) {
-    throw blocked("implements entry must be a non-empty repo-relative path.");
+    throw blocked(`${field} entry must be a non-empty repo-relative path.`);
   }
   if (path.posix.isAbsolute(raw) || /^[a-zA-Z]:\//.test(raw)) {
-    throw blocked(`implements path must be repo-relative (got "${entry}").`);
+    throw blocked(`${field} path must be repo-relative (got "${entry}").`);
   }
   const parts = raw.split("/");
   if (parts.some((p) => p === "..")) {
-    throw blocked(`implements path must not contain ".." (got "${entry}").`);
+    throw blocked(`${field} path must not contain ".." (got "${entry}").`);
   }
   // Collapse "." segments
   const cleaned = parts.filter((p) => p !== ".").join("/");
   if (!cleaned || cleaned === "/") {
-    throw blocked(`implements path must be a non-empty repo-relative path (got "${entry}").`);
+    throw blocked(`${field} path must be a non-empty repo-relative path (got "${entry}").`);
   }
   const normalized = cleaned.startsWith("/") ? cleaned.slice(1) : cleaned;
   if (normalized === "mindplan" || normalized.startsWith("mindplan/")) {
-    throw blocked(`implements path must not claim territory under mindplan/ (got "${entry}").`);
+    const verb = field === "tests" ? "point at" : "claim";
+    throw blocked(`${field} path must not ${verb} territory under mindplan/ (got "${entry}").`);
   }
   return normalized;
 }
@@ -173,12 +174,15 @@ export function claimEntryExists(entry: string, root?: string): boolean {
   return fs.existsSync(abs) && fs.statSync(abs).isFile();
 }
 
-/** Validate a list of claim paths; returns normalized entries. */
-export function normalizeClaimList(entries: string[]): string[] {
+/** Validate a list of claim (or `tests`) paths; returns normalized entries. */
+export function normalizeClaimList(
+  entries: string[],
+  field: "implements" | "tests" = "implements"
+): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const entry of entries) {
-    const n = validateClaimPath(entry);
+    const n = validateClaimPath(entry, field);
     if (seen.has(n)) continue;
     seen.add(n);
     out.push(n);

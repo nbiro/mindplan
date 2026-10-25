@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate settings, and attachments; small results unless verbose."
+description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), linked test files written in place on live and an open next alike without resetting readiness, neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate settings, and attachments; small results unless verbose."
 state: stable
-shipped_at: 2026-10-25T19:59:59.353Z
+shipped_at: 2026-10-25T21:13:08.004Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-25T19:59:59.353Z
+updated_at: 2026-10-25T21:13:08.004Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -20,6 +20,15 @@ leads_to:
   - i-export-map
 implements:
   - src/interactions/i-steer-plan/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/shipped-claims.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/twins.test.mjs
 ---
 
 # Steer the plan
@@ -65,6 +74,7 @@ Intended files: `src/interactions/i-steer-plan/`
 - **Neighbor labels.** On a shipped, non-retired pipeline node with no open next, `change` on `patch_node_territory` (live slot), `record_decision`, and `set_implementation_files` labels the node a neighbor of that change: `writeNeighborLabel` sets the live `change` scalar and re-syncs the mirror twin, and the result carries `neighbor_of`. One label per node: a different id replaces the old one and the result reports `replaced_change`; `""` clears it. `change_ref` on such a node is Blocked (it belongs to a revision), and a retired node takes no `change` on `set_implementation_files`. On any other node `change` is the written slot's change id, as before; on a next slot the store also drops a live label that no longer matches it (`replaced_change`, the live file listed). `record_decision` without `change` on a neighbor records the decision under its label. The neighbor test everywhere is `isNeighborNode`
 - **Clearing labels.** A change with no open revisions has no neighbors. Every write that can end a membership runs inside `withNeighborCleanup`: `update_node_status` (not a dry run), `discard_next`, and `patch_node_territory` / `set_implementation_files` when they pass `change`. It takes `changesWithRevisions` before the write and after it, and `clearOrphanedNeighbors` clears the labels (each twin re-synced) of every change that had a revision before and has none after; the result lists `cleared_neighbors` and the files. So a ship or promotion, a cancel or deprecation, a discard, or a change id moved or cleared clears its change once per call, a batch or scoped walk included, and a neighbor-only change (no revision before either) keeps its labels. The cleanup also runs when a batch throws part-way, since earlier nodes stay transitioned. A `scope: "change"` walk to `ship` also clears the change's labels after the walk, which closes a neighbor-only change
 - **Labels on lifecycle moves.** `scope: "change"` walks revisions only and is Blocked only when the change has neither revisions nor neighbors. `open_next` without `change` inherits a live label as the revision's change; with a different `change` it clears the live label and returns `replaced_change`, so `discard_next` cannot restore a stale one. Deprecating a shipped node clears its label (`cleared_change`); `force_unship` clears the label (`cleared_change`) and the `added_claims` marker (`clearAddedClaims`)
+- **Linked tests.** `setTestFiles({ node_id, files, change?, verbose? })` — the `set_test_files` handler: replaces the node's `tests` list through `writeTestsFrontmatter` (`f-territory-store`) on live and an open next alike; it never needs `open_next` and never resets readiness. `change` on a shipped node with no open next labels it a neighbor, as the other in-place writes do. Returns `{ node_id, tests, changed_files, state, next_state }`; Blocked for a Journey, a Bug, a retired node, or an invalid path
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
@@ -105,6 +115,8 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - Moving an open revision's change id off its inherited label (`patch_node_territory` or `set_implementation_files`) reports `replaced_change` and leaves live unlabeled
 - `record_decision` on a labeled neighbor without `change` records the decision under the label
 - A batch that ships a change's last two revisions lists each cleared neighbor once
+- `set_test_files` on a shipped node writes live and the twin with no `open_next`; on an open revision it writes both files; a `ready` slot stays ready
+- `set_test_files` with an invalid path, or on a Journey, a Bug, or a retired node, is Blocked
 
 ## Atomic Ops
 
@@ -150,6 +162,8 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - [x] Check the node's own live label on `discard_next` (review fix) — note: replaced by the store dropping a stale live label when the revision's change moves, plus the before/after cleanup, so discard_next needs no special case
 - [x] Refuse schema files in place, default a neighbor's decisions to its label, and clear labels through one `withNeighborCleanup` around every membership-ending write (review fixes)
 - [x] Verified the review fixes via `npm test`
+- [x] Add `setTestFiles`
+- [x] Verified `set_test_files` via `npm test`
 
 ## Decisions
 

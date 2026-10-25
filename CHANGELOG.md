@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — linked tests
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **`tests` on nodes.** A Foundation, Interaction, or Interface can list the test files, directories ending in `/`, or globs that verify it, in a new optional `tests` frontmatter list. It is not ownership: the files are still claimed through `implements`, and several nodes may list one suite. The list is slot-independent like `## Rules`: it sits on live and on an open `next` alike, promotion keeps it, and discard leaves live as it is. `GRAPH_VERSION` stays `1`; a graph without it loads as before. [§6.1, §6.2]
+- **`set_test_files`.** A new write tool (twenty-eight in all) replaces a node's `tests` list. It never needs `open_next`, never resets readiness, re-syncs the mirror twin, and takes `change` like the other in-place writes (a neighbor label on a shipped node with no open `next`). Journeys, Bugs, retired nodes, and bad paths are Blocked. [§8.2]
+- **Presence and the untested warning.** A `tests` entry that matches nothing on disk fails the check (`presence`) and the move to `in-review` or `ship` once its node is in review or shipped; a draft plan may link tests it has not written yet. A revision in review with no linked tests prints `Warning: tests: …`, which never fails the check. [§9.6]
+- **Tests to run.** `get_blast_radius` returns `tests`: the expanded linked tests of the focus and every owner in `affected_files`; the change radius merges its members'. Node records carry `tests`. [§8.1]
+- **Docs.** The playbook's handoff step links the tests that verify a node before `in-review`; the README tool table lists `set_test_files`.
+
 ## 0.2.3 — repin PR wording
 
 - **Where the repin PR's CI shows.** The 0.2.2 release opened the first repin PR, and the CI dispatched on its branch ran green. That run shows under Actions → CI for the branch, not as checks on the PR. GitHub does create the PR's own `pull_request` run, but it waits for a maintainer's approval. The 0.2.2 notes said a GitHub Actions PR starts no `pull_request` run at all, which was wrong. The repin PR's body, the workflow comments, and CONTRIBUTING now say what actually happens. Release tooling only; the published package is unchanged.

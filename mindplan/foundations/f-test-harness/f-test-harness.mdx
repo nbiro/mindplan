@@ -2,14 +2,16 @@
 id: f-test-harness
 type: Foundation
 title: "Test harness"
-description: "Infra — smoke, view, search, check, ergonomics, honesty, decisions, shipped-claims, and change-neighbors tests including short instructions, the get_project playbook and check sentence, run_check, mounts, small writes, section patches, scoped status, drift classes, stale-text warnings, readiness reset, coverage fixes, next-slot imports, skip_review, checkbox matching and notes, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, route-family warnings, and decision records with the decision gate."
+description: "Infra — smoke, view, search, check, ergonomics, honesty, decisions, shipped-claims, change-neighbors, and node-tests tests including short instructions, the get_project playbook and check sentence, run_check, mounts, small writes, section patches, scoped status, drift classes, stale-text warnings, readiness reset, coverage fixes, next-slot imports, skip_review, checkbox matching and notes, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked test files, route-family warnings, and decision records with the decision gate."
 state: stable
-shipped_at: 2026-10-25T19:59:58.607Z
+shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-25T19:59:58.607Z
+updated_at: 2026-10-25T21:13:07.604Z
 depends_on:
   - f-mcp-runtime
 implements:
+  - src/foundations/f-test-harness/
+tests:
   - src/foundations/f-test-harness/
 role: infra
 ---
@@ -37,6 +39,9 @@ Intended files: `src/foundations/f-test-harness/`
 - `shipped-claims.test.mjs` (run by `npm test`) covers: a sibling file in a dominated folder is claimed in place on the live slot, listing the live file and its twin, marking `added_claims`, and suggesting `folder_claims`; `run_check` warns until the body names it; Blocked cases (a folder holding another node's file, a removed entry, a glob, a file outside any dominated folder) name `open_next`; `added_claims` accumulates sorted; `F/` replaces per-file entries and keeps the markers it still covers; a body patch clears named markers and the field when none remain; with an open next the write goes to next; another node's glob whose static prefix is an ancestor blocks dominance, a one-level glob above does not; `force_unship` clears the label and `added_claims`; a new migration file, a migrations folder, or a folder holding a migration is not claimed in place while a plain sibling is, and the Coverage fix for an unclaimed migration opens the evolution first; a body naming only longer paths (`.tsx`, `.ts.bak`) keeps the marker and the warning, while the exact path (even before a period) clears them; a file under a folder entry does not name the folder entry; `patch_node_rules`, `record_decision`, and `link_nodes` keep `added_claims`
 - `change-neighbors.test.mjs` (run by `npm test`) covers: `change` on a shipped live slot labels a neighbor and re-syncs the twin; `change_ref` there is Blocked and writes nothing; a second id reports `replaced_change`; `""` clears; a node with an open next stays Blocked; `run_check({ change })` lists members with `kind` and reports a neighbor's import violation; `get_blast_radius({ change })` includes the neighbor and its files; `record_decision` and `set_implementation_files` label neighbors; shipping an earlier revision keeps labels and the last one clears them (twins stay state-only); discarding or cancelling the last revision clears them; a neighbor-only change is checked, has a blast radius, walks to ready keeping its label, dry-runs to ship writing nothing, and walks to ship clearing its labels; `open_next` and `discard_next` do not bring back a stale label; moving an open revision's change off its inherited label (`patch_node_territory` or `set_implementation_files`) reports `replaced_change` and leaves live unlabeled; `record_decision` on a labeled neighbor without `change` records under the label; a batch shipping a change's last two revisions lists the neighbor once in `cleared_neighbors`
 - `honesty.test.mjs`: the Coverage fix for a shipped owner is the claim alone in a folder it dominates and opens the evolution first in a subfolder it does not
+- `node-tests.test.mjs` (run by `npm test`) covers: `set_test_files` on a pre-ship node, on a shipped node in place (live and twin, no `open_next`), and on an open revision (live and next, kept through promote and through discard); a `ready` revision stays ready; an invalid path, a Journey, a Bug, and a retired node are Blocked; an empty list removes the field; body, claim, and edge writes keep the list; a missing test fails the check only once its node is in review or shipped, and Blocks the move to in-review; the untested `tests:` warning for an in-review revision; `get_blast_radius` listing the expanded tests for a node and for a change
+- Smoke: twenty-eight tools including `set_test_files`
+- This repository's own nodes link the suites that verify them with `set_test_files`
 
 Depends on: `f-mcp-runtime`.
 
@@ -50,6 +55,7 @@ Depends on: `f-mcp-runtime`.
 - `npm test` runs `honesty.test.mjs` and it passes
 - `npm test` runs `decisions.test.mjs` and it passes, and smoke counts twenty-seven tools
 - `npm test` runs `shipped-claims.test.mjs` and `change-neighbors.test.mjs` and both pass
+- `npm test` runs `node-tests.test.mjs` and it passes, and smoke counts twenty-eight tools
 
 ## Atomic Ops
 
@@ -71,6 +77,10 @@ Depends on: `f-mcp-runtime`.
 - [x] Verified the shipped-claims and change-neighbors suites via `npm test`
 - [x] Cover the review fixes: schema refusal, whole-path markers, markers kept through other writes, stale labels on change moves, neighbor decision defaults, and one cleanup per batch
 - [x] Verified the review-fix cases via `npm test`
+- [x] Add `node-tests.test.mjs` and run it from `npm test`
+- [x] Update smoke for twenty-eight tools
+- [x] Link this repository's nodes to the suites that verify them — note: fifteen nodes linked with set_test_files; f-test-harness links its own folder
+- [x] Verified the node-tests suite via `npm test`
 
 ## Attachments
 

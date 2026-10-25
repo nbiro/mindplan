@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, shared-route ownership, decision records and the decision gate, and host install docs for Cursor and Claude Code."
+description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check, links the tests that verify a node, and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked tests, shared-route ownership, decision records and the decision gate, and host install docs for Cursor and Claude Code."
 state: stable
-shipped_at: 2026-10-25T19:59:57.694Z
+shipped_at: 2026-10-25T21:13:07.168Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-25T19:59:57.694Z
+updated_at: 2026-10-25T21:13:07.168Z
 depends_on:
   - f-domain-model
 implements:
@@ -14,6 +14,8 @@ implements:
   - README.md
   - SPEC.md
   - templates/
+tests:
+  - src/foundations/f-test-harness/smoke.mjs
 role: infra
 ---
 
@@ -45,6 +47,7 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 - **Changelog.** `CHANGELOG.md` lists every behavior change per release; each PR's section is titled with the version it releases (this change: `0.2.0`; the sections that shipped in the first npm release: `0.1.0`), since every merge to `main` publishes
 
 Depends on: `f-domain-model`.
+- **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section
 
 ## Acceptance Criteria
 
@@ -59,6 +62,7 @@ Depends on: `f-domain-model`.
 - SPEC §8 lists `record_decision` and `list_decisions` and the changed outputs of `orient_for_work`, `get_blast_radius`, `get_node_context`, `export_mindplan_view`, and `patch_config`; the tool count reads twenty-seven
 - The playbook carries the decision line and stays one screen
 - SPEC, the playbook, both skills, README, and the changelog describe in-place claims, `added_claims`, neighbor labels, and when labels clear, in the same terms as the tool descriptions; the playbook stays one screen
+- SPEC, the playbook, and the changelog describe the `tests` list and `set_test_files`
 
 ## Atomic Ops
 
@@ -88,6 +92,7 @@ Depends on: `f-domain-model`.
 - [x] Add the Unreleased entry to `CHANGELOG.md`
 - [x] Verified the shipped-claims and neighbor docs via `npm test`
 - [x] Document the review fixes in SPEC and the changelog
+- [x] Document linked tests in SPEC, the playbook, and the changelog — note: SPEC §6.1, §6.2, §8.1, §8.2, §9.6; playbook handoff step; README tool table; CHANGELOG 0.3.0
 
 ## Attachments
 

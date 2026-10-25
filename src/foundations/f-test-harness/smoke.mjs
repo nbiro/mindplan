@@ -219,11 +219,11 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions"];
-  if (names.size !== 27 || required.some((n) => !names.has(n))) {
+  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files"];
+  if (names.size !== 28 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 27 tools including ${required.join(", ")} (got ${names.size})`);
-  } else console.log(`ok   twenty-seven tools registered including ${required.join(", ")}`);
+    console.log(`FAIL expected 28 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   twenty-eight tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
     if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {

@@ -46,6 +46,7 @@ import {
   recordDecision,
   removeAttachment,
   setImplementationFiles,
+  setTestFiles,
   unlinkNodes,
   updateNodeStatus,
 } from "../../interactions/i-steer-plan/handlers.js";
@@ -190,9 +191,9 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Run the integrity check",
       description:
         "Call before in-review, before ship, and before telling the user the work is done. " +
-        "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence, mirror twins, leftovers, and the import matrix. " +
+        "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence (claims, and linked tests once a node is in review or shipped), mirror twins, leftovers, and the import matrix. " +
         "Returns { ok, output, failures, warnings }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import). " +
-        "Warnings flag stale territory text, next-slot imports (one release before they Block), and split route families, and never fail the check. " +
+        "Warnings flag stale territory text, next-slot imports (one release before they Block), split route families, and revisions in review with no linked tests, and never fail the check. " +
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
         "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only). " +
         "Moves to in-review and ship run this check on the node's files themselves.",
@@ -819,6 +820,37 @@ export function registerMindPlanTools(server: McpServer): void {
 
   tool(
     server,
+    "set_test_files",
+    {
+      kind: "write",
+      title: "Set test files",
+      description:
+        "Call when tests that verify a node exist, before moving it to in-review. " +
+        "Replaces the node's linked tests list for an Interaction, Interface, or Foundation. " +
+        "The list is evidence, not a claim: it does not own the files (claim them with set_implementation_files), several nodes may list one file, " +
+        "and it is written to live and an open next alike, so a shipped node needs no open_next and readiness is never reset. " +
+        "run_check Blocks an entry missing on disk once the node is in review or shipped, and warns about a revision in review with none. " +
+        "get_blast_radius lists the linked tests a change should run. " +
+        "Entries are files, directories ending in /, or globs (* ** ?). An empty list removes it.",
+      inputSchema: {
+        verbose: VERBOSE,
+        node_id: NODE_ID.describe("Pipeline node whose linked tests to replace."),
+        files: z
+          .array(z.string())
+          .describe("Repo-relative POSIX test paths (files, directories ending in /, or globs). Replaces the list."),
+        change: CHANGE_ID.or(z.literal(""))
+          .optional()
+          .describe(
+            "Change id for the active slot; on a shipped node with no open next it labels the node a neighbor (returns neighbor_of). Empty string clears it."
+          ),
+      },
+    },
+    
+      ({ node_id, files, change, verbose }) => setTestFiles({ node_id, files, change, verbose })
+  );
+
+  tool(
+    server,
     "create_node",
     {
       kind: "write",
@@ -939,6 +971,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "(BFS still traverses through retired nodes so live dependents keep true distances). " +
         "When the focus is an Interaction, also returns reachability. " +
         "decisions lists the active decisions held by the focus and its dependents: the reasoning a change would reach. " +
+        "tests lists the linked test files of the focus and every owner in affected_files: the suites to run. " +
         "Pass change instead of node_id for the merged radius of every member of a change (open revisions and neighbors; members carry kind).",
       inputSchema: {
         node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),

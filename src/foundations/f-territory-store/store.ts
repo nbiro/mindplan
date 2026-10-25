@@ -87,10 +87,11 @@ const EDGE_FIELDS = [
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
 /**
- * Array fields parsed like edges (YAML list or inline). `added_claims` is parsed here but is not
- * stripped by `stripListFieldLines`, so frontmatter rewriters that do not know it keep it verbatim.
+ * Array fields parsed like edges (YAML list or inline). `added_claims` and `tests` are parsed here
+ * but are not stripped by `stripListFieldLines`, so frontmatter rewriters that do not know them
+ * keep them verbatim.
  */
-const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims"] as const;
+const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims", "tests"] as const;
 type ListField = (typeof LIST_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
@@ -467,6 +468,8 @@ export type ParsedFrontmatter = {
   implements: string[];
   /** Claim entries a shipped node added in place, still awaiting a body mention. */
   added_claims: string[];
+  /** Test files that verify the node (slot-independent). */
+  tests: string[];
 };
 
 function isEdgeField(key: string): key is EdgeField {
@@ -493,6 +496,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
   };
   let implementsList: string[] = [];
   let addedClaims: string[] = [];
+  let testsList: string[] = [];
 
   const lines = match[1].split(/\r?\n/);
   let i = 0;
@@ -510,6 +514,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
       }
       if (field === "implements") implementsList = items;
       else if (field === "added_claims") addedClaims = items;
+      else if (field === "tests") testsList = items;
       else arrays[field] = items;
       continue;
     }
@@ -523,6 +528,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
         : [];
       if (field === "implements") implementsList = items;
       else if (field === "added_claims") addedClaims = items;
+      else if (field === "tests") testsList = items;
       else arrays[field] = items;
       i++;
       continue;
@@ -543,7 +549,13 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     i++;
   }
 
-  return { scalars, arrays, implements: implementsList, added_claims: addedClaims };
+  return {
+    scalars,
+    arrays,
+    implements: implementsList,
+    added_claims: addedClaims,
+    tests: testsList,
+  };
 }
 
 function stripListFieldLines(inner: string): string {
@@ -580,12 +592,13 @@ function formatImplementsLines(entries: string[]): string {
   return parts.join("\n");
 }
 
-function stripAddedClaimsLines(inner: string): string {
+/** Removes one named list field (`added_claims`, `tests`) and its items from frontmatter lines. */
+function stripNamedListLines(inner: string, field: "added_claims" | "tests"): string {
   const lines = inner.split(/\r?\n/);
   const result: string[] = [];
   let i = 0;
   while (i < lines.length) {
-    if (/^added_claims:/.test(lines[i])) {
+    if (lines[i].startsWith(`${field}:`)) {
       i++;
       while (i < lines.length && /^\s+-\s+/.test(lines[i])) i++;
       continue;
@@ -596,9 +609,9 @@ function stripAddedClaimsLines(inner: string): string {
   return result.join("\n").replace(/\n+$/, "");
 }
 
-function formatAddedClaimsLines(entries: string[]): string {
+function formatNamedListLines(field: "added_claims" | "tests", entries: string[]): string {
   if (entries.length === 0) return "";
-  return ["added_claims:", ...entries.map((e) => `  - ${e}`)].join("\n");
+  return [`${field}:`, ...entries.map((e) => `  - ${e}`)].join("\n");
 }
 
 /**
@@ -615,13 +628,17 @@ function pendingAddedClaims(entries: string[], claims: string[], body: string): 
   return [...kept].sort((a, b) => a.localeCompare(b));
 }
 
-/** Rewrites the `added_claims` list in a `---` fenced frontmatter block (removed when empty). */
-function replaceAddedClaimsInFence(fence: string, entries: string[]): string {
+/** Rewrites one named list in a `---` fenced frontmatter block (removed when empty). */
+function replaceNamedListInFence(
+  fence: string,
+  field: "added_claims" | "tests",
+  entries: string[]
+): string {
   const match = fence.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)$/);
   if (!match) return fence;
   const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-  const inner = stripAddedClaimsLines(match[2]);
-  const lines = formatAddedClaimsLines(entries);
+  const inner = stripNamedListLines(match[2], field);
+  const lines = formatNamedListLines(field, entries);
   const rebuilt = lines ? `${inner}\n${lines}` : inner;
   return `${match[1]}${rebuilt.replace(/\r?\n/g, nl)}${match[3]}`;
 }
@@ -690,6 +707,7 @@ function parseNodeFromFrontmatter(
   if (parsed.arrays.affects.length > 0) node.affects = [...parsed.arrays.affects];
   if (parsed.implements.length > 0) node.implements = [...parsed.implements];
   if (parsed.added_claims.length > 0) node.added_claims = [...parsed.added_claims];
+  if (parsed.tests.length > 0) node.tests = [...parsed.tests];
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
       throw new Error(
@@ -1665,6 +1683,7 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.affects?.length) record.affects = [...node.affects];
   if (node.implements?.length) record.implements = [...node.implements];
   if (node.added_claims?.length) record.added_claims = [...node.added_claims];
+  if (node.tests?.length) record.tests = [...node.tests];
   if (node.change) record.change = node.change;
   if (node.change_ref) record.change_ref = node.change_ref;
   if (node.next) {
@@ -2054,7 +2073,7 @@ export function patchNodeTerritory(
   if (slot === "current" && node.added_claims?.length) {
     const pending = pendingAddedClaims(node.added_claims, node.implements ?? [], body);
     if (pending.length !== node.added_claims.length) {
-      frontmatter = replaceAddedClaimsInFence(frontmatter, pending);
+      frontmatter = replaceNamedListInFence(frontmatter, "added_claims", pending);
       if (pending.length > 0) node.added_claims = pending;
       else delete node.added_claims;
     }
@@ -2218,7 +2237,7 @@ export function writeNeighborLabel(
  */
 export function clearAddedClaims(node: MindPlanNode): boolean {
   const { file, raw, fence } = requireMutableFrontmatter(node, "current");
-  const patched = replaceAddedClaimsInFence(fence, []);
+  const patched = replaceNamedListInFence(fence, "added_claims", []);
   delete node.added_claims;
   if (patched === fence) return false;
   fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
@@ -2377,6 +2396,7 @@ export function promoteNextSlot(
   const leads_to = nextParsed.arrays.leads_to;
   const mounts = nextParsed.arrays.mounts;
   const implementsList = nextParsed.implements;
+  const testsList = nextParsed.tests;
   const role =
     nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
       ? (nextParsed.scalars.role as FoundationRole)
@@ -2416,6 +2436,10 @@ export function promoteNextSlot(
   if (implementsList.length > 0) {
     frontmatterLines.push("implements:");
     for (const p of implementsList) frontmatterLines.push(`  - ${p}`);
+  }
+  if (testsList.length > 0) {
+    frontmatterLines.push("tests:");
+    for (const p of testsList) frontmatterLines.push(`  - ${p}`);
   }
   if (role) {
     frontmatterLines.push(`role: ${role}`);
@@ -2461,6 +2485,8 @@ export function promoteNextSlot(
   else delete node.mounts;
   if (implementsList.length > 0) node.implements = [...implementsList];
   else delete node.implements;
+  if (testsList.length > 0) node.tests = [...testsList];
+  else delete node.tests;
   if (role) node.role = role;
   else delete node.role;
   delete node.next;
@@ -2500,9 +2526,9 @@ export function writeImplementsFrontmatter(
       normalized,
       splitContext(raw)?.body ?? ""
     );
-    inner = stripAddedClaimsLines(inner);
+    inner = stripNamedListLines(inner, "added_claims");
   }
-  const addedLines = formatAddedClaimsLines(added);
+  const addedLines = formatNamedListLines("added_claims", added);
   const extras = [edgeLines, implLines, addedLines].filter(Boolean).join("\n");
   const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
@@ -2524,6 +2550,45 @@ export function writeImplementsFrontmatter(
     twin = syncMirrorAfterLiveWrite(node);
   }
   return { readinessReset: !unchanged && demoteReadySlot(node, slot), twin };
+}
+
+/**
+ * Write (replace) a node's linked `tests` list: the only writer. Slot-independent like rules, so
+ * the same list goes to live and, while a revision is open, to the next file; the mirror twin is
+ * re-synced when none is open. Evidence, not contract: state, `updated_at`, and readiness are
+ * untouched. An empty list removes the field. Returns the paths written and whether live changed.
+ */
+export function writeTestsFrontmatter(
+  node: MindPlanNode,
+  entries: string[]
+): { paths: string[]; changed: boolean } {
+  if (!isPipelineNodeType(node.type)) {
+    throw new Error(
+      `Blocked: "${node.id}" is a ${node.type}; only a Foundation, Interaction, or Interface links tests.`
+    );
+  }
+  if (isInactiveNode(node)) {
+    throw new Error(`Blocked: "${node.id}" is ${node.state}; tests cannot be linked to a retired node.`);
+  }
+  const normalized = normalizeClaimList(entries, "tests");
+  const slots: TerritorySlot[] = node.next ? ["current", "next"] : ["current"];
+  const paths: string[] = [];
+  let changed = false;
+  for (const slot of slots) {
+    const { file, raw, fence } = requireMutableFrontmatter(node, slot);
+    const patched = replaceNamedListInFence(fence, "tests", normalized);
+    if (patched === fence) continue;
+    fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+    paths.push(markdownRelativePath(node, slot));
+    if (slot === "current") changed = true;
+  }
+  if (normalized.length > 0) node.tests = normalized;
+  else delete node.tests;
+  if (changed) {
+    const twin = syncMirrorAfterLiveWrite(node);
+    if (twin) paths.push(twin);
+  }
+  return { paths, changed };
 }
 
 /**

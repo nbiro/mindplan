@@ -2,16 +2,24 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
+description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
 state: mirror
-shipped_at: 2026-10-25T19:59:58.144Z
+shipped_at: 2026-10-25T21:13:07.299Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-25T19:59:58.144Z
+updated_at: 2026-10-25T21:13:07.299Z
 depends_on:
   - f-domain-model
   - f-source-index
 implements:
   - src/foundations/f-territory-store/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/shipped-claims.test.mjs
+  - src/foundations/f-test-harness/twins.test.mjs
+  - src/foundations/f-test-harness/version.test.mjs
 role: infra
 ---
 
@@ -62,6 +70,7 @@ Intended files: `src/foundations/f-territory-store/`
 - **Neighbor label.** `writeNeighborLabel(node, change)` sets (or with `""` clears) the live `change` scalar of a shipped node with no open next and re-syncs its mirror twin. It returns `{ twin, replaced? }`: `twin` is null when the label already had that value, `replaced` is the previous id when a different one was set. A node that fails `isNeighborNode` (`f-domain-model`; a retired node included) is Blocked
 - **In-place claim marker.** `added_claims` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.added_claims`, `nodeToRecord`). `writeImplementsFrontmatter(node, files, slot, addedInPlace?)` on the live slot merges `addedInPlace` into the stored list and keeps, sorted and deduped, only the entries the list still keeps (`claimListKeeps`: verbatim, or under a non-glob directory entry) that the body (owned sections excluded) does not yet name as a whole path (`namesPath`: `pkg/a.ts` is not named by `pkg/a.tsx`, `pkg/a/` not by `pkg/a/b.ts`); an empty list removes the field. A live `patchNodeTerritory` write prunes the entries its new body names. `clearAddedClaims(node)` removes the list and leaves the twin re-sync to its caller. `promoteNextSlot` rebuilds the live frontmatter and drops it
 - **Deleted next-slot files.** `deleteNextSlotFiles` lists every file it deletes under `next-attachments/` (e.g. `.gitkeep`) as well as the folder
+- **Linked tests.** `tests` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.tests`, `nodeToRecord`) and, like `added_claims`, kept verbatim by frontmatter rewriters that do not know it. `writeTestsFrontmatter(node, entries)` is its only writer: it validates each entry as a claim path (`validateClaimPath`: no `..`, no absolute path, nothing under `mindplan/`), dedupes and sorts, writes the same list to the live `<id>.mdx` and, while a revision is open, to `<id>.next.mdx`, re-syncs the mirror twin when none is open, and returns `{ paths, changed }`. An empty list removes the field. It never touches state, `updated_at`, or readiness. Blocked on a Journey, a Bug, or a retired node. `openNextSlot` copies the list with the live file, and `promoteNextSlot` writes the next file's list (equal to live) into the rebuilt live frontmatter
 
 Depends on: `f-domain-model`, `f-source-index`.
 
@@ -100,6 +109,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - `deleteNextSlotFiles` lists `next-attachments/.gitkeep`
 - Moving an open revision's change id off its inherited live label clears the live label and returns the cleared id
 - A body naming only a longer path keeps the `added_claims` entry; naming the exact path (even before a period) removes it
+- `writeTestsFrontmatter` writes the list to live and an open next, re-syncs the twin when no revision is open, and leaves a `ready` revision ready
+- The `tests` list survives `open_next`, body, claim, edge, and change writes, and ship; an empty list removes the field
 
 ## Atomic Ops
 
@@ -140,6 +151,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Verified the neighbor label, `added_claims`, and the deleted-file list via `npm test`
 - [x] Drop stale live labels on next-slot change writes, match `added_claims` by whole path, and guard labels with `isNeighborNode` (review fixes)
 - [x] Verified the review fixes via `npm test`
+- [x] Parse `tests` and add `writeTestsFrontmatter`
+- [x] Carry `tests` through open_next, frontmatter rewrites, and promote
+- [x] Verified the `tests` list via `npm test`
 
 ## Decisions
 

@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder and it is not a migration or schema file), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text (including claims added in place that the body does not name), split route families, and decision-worthy revisions with no decision; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
+description: "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder and it is not a migration or schema file), illegal imports over current and next-slot claims (each with its fix), a shipped pipeline node whose next file is missing or is not a state-only twin, and a linked test missing on disk once its node is in review or shipped; warns about stale territory text (including claims added in place that the body does not name), split route families, decision-worthy revisions with no decision, and revisions in review with no linked tests; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
 state: mirror
-shipped_at: 2026-10-25T19:59:58.840Z
+shipped_at: 2026-10-25T21:13:07.730Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-25T19:59:58.840Z
+updated_at: 2026-10-25T21:13:07.730Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,6 +16,12 @@ depends_on:
   - f-source-index
 implements:
   - src/interactions/i-check-integrity/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/check.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/node-tests.test.mjs
 ---
 
 # Check integrity
@@ -48,6 +54,7 @@ Intended files: `src/interactions/i-check-integrity/`
 - **Decisions.** For every open revision (a shipped node with an open next; a pre-ship, non-retired pipeline node at any pre-ship state), `decisionWarnings` (`f-compiler-rules`) adds `Warning: decision: …` lines naming the triggers. One `DecisionContext` (config plus the lazy git probe) serves the whole run. Decision warnings never change `ok`; with `change`, the members' decision warnings are part of the change's warnings
 - The dirty-src base is `defaultBaseRef` (`f-source-index`), the same merge base the decision gate uses
 - **Version.** When `projectVersionStatus()` (`f-territory-store`) is not `current`, its warning prints as `Warning: version: …`. It never changes `ok`, so CI keeps passing while a project catches up
+- **Linked tests.** `checkPresence` also reports `testPresenceFailures` (`f-compiler-rules`): `Blocked: presence: "<id>" tests entry missing on disk: "<entry>".` for a node in review or shipped. Each in-review revision with no linked tests adds its `untestedWarning` as `Warning: tests: …`; it never changes `ok`. The change check reports both for its members
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
@@ -71,6 +78,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - A change with only neighbors is checked; a change with no members is Blocked
 - A shipped node's `added_claims` entry that its body does not name prints a `stale:` warning and `ok` stays true
 - The Coverage fix for a file beside a shipped owner's own files, in a folder no other node claims into, has no `open_next`; for a migration or schema file there it does
+- A shipped node linking a missing test file fails the check; a draft node linking one does not
+- An in-review revision with no tests prints a `tests:` warning and `ok` stays true
 
 ## Atomic Ops
 
@@ -97,6 +106,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Verified the neighbor check and the in-place Coverage fix via `npm test`
 - [x] Share one Coverage fix context per run and open the evolution for an unclaimed schema file (review fixes)
 - [x] Verified the Coverage fix for schema files via `npm test`
+- [x] Check linked-test presence and warn on untested in-review revisions
+- [x] Verified the linked-test checks via `npm test`
 
 ## Attachments
 

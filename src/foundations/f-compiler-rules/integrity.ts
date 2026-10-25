@@ -10,8 +10,14 @@ import type {
   MindPlanGraph,
   MindPlanNode,
 } from "../f-domain-model/types.js";
-import { isPipelineNodeType } from "../f-domain-model/types.js";
-import { expandClaims, isGlobClaim, namesPath, validateClaimPath } from "../f-source-index/claims.js";
+import { isInactiveNode, isPipelineNodeType, isProductionState } from "../f-domain-model/types.js";
+import {
+  claimEntryExists,
+  expandClaims,
+  isGlobClaim,
+  namesPath,
+  validateClaimPath,
+} from "../f-source-index/claims.js";
 import { decisionGateSettings, loadProjectConfig } from "../f-source-index/config.js";
 import {
   collectOtherClaims,
@@ -496,12 +502,43 @@ export function assertCheckCleanForNode(
   const problems = [
     ...findImportViolationsForNode(graph, root, node).map((v) => v.message),
     ...findOwnershipConflicts(graph, root, node),
+    ...missingTestMessages(node, root),
   ];
   if (problems.length === 0) return;
   throw blocked(
     `Check failed for "${node.id}" before "${targetLabel}" (${problems.length} violation(s)):\n` +
       problems.map((p) => `- ${p}`).join("\n")
   );
+}
+
+// ---------------------------------------------------------------------------
+// Linked tests
+// ---------------------------------------------------------------------------
+
+/** One `presence:` line per `tests` entry that matches nothing on disk, whatever the node's state. */
+function missingTestMessages(node: MindPlanNode, root: string): string[] {
+  return (node.tests ?? [])
+    .filter((entry) => !claimEntryExists(entry, root))
+    .map((entry) => `presence: "${node.id}" tests entry missing on disk: "${entry}".`);
+}
+
+/**
+ * Linked tests missing on disk, once the node is in review or shipped (live in-review or
+ * stable/unstable, or its next in-review). A draft plan may link tests it has not written yet.
+ */
+export function testPresenceFailures(node: MindPlanNode, root: string): string[] {
+  if (!isPipelineNodeType(node.type) || isInactiveNode(node)) return [];
+  const due =
+    node.state === "in-review" || isProductionState(node.state) || node.next?.state === "in-review";
+  return due ? missingTestMessages(node, root) : [];
+}
+
+/** A nudge, never a Block: a Foundation, Interaction, or Interface in review with no linked tests. */
+export function untestedWarning(node: MindPlanNode): string | null {
+  if (!isPipelineNodeType(node.type) || isInactiveNode(node)) return null;
+  const active = node.next ? node.next.state : node.state;
+  if (active !== "in-review" || (node.tests?.length ?? 0) > 0) return null;
+  return `tests: "${node.id}" is in review with no linked tests; link the files that verify it with set_test_files.`;
 }
 
 // ---------------------------------------------------------------------------

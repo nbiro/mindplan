@@ -124,9 +124,12 @@ export function buildBlastRadiusPayload(
     files: Set<string>;
   };
   const groups = new Map<string, Group>();
+  // The linked tests of every owner listed below: the suites a change to the focus should run.
+  const tests = new Set<string>();
 
   const pushFiles = (owner: MindPlanNode, via: AffectedFileVia) => {
     if (!includeRetired && isRetired(owner)) return;
+    for (const p of expandClaims(owner.tests, root)) tests.add(p);
     let group = groups.get(owner.id);
     if (!group) {
       group = {
@@ -209,6 +212,7 @@ export function buildBlastRadiusPayload(
     })),
     journeys_at_risk: [...journeysAtRisk].sort(),
     affected_files,
+    tests: [...tests].sort((a, b) => a.localeCompare(b)),
     rules_impact: rulesImpact(graph, node),
     decisions: blastRadiusDecisions(graph, node, visibleEntries),
   };
@@ -425,6 +429,7 @@ export function buildChangeBlastRadiusPayload(
   const files = new Map<string, { owner_id: string; owner_type: string; via: Set<string>; files: Set<string> }>();
   const rulesReach = new Map<string, unknown>();
   const decisions = new Map<string, BlastRadiusDecision>();
+  const tests = new Set<string>();
   for (const member of members) {
     const one = buildBlastRadiusPayload(graph, member, opts);
     for (const row of one.affected as { id: string; type: string; state: string; distance: number }[]) {
@@ -447,6 +452,7 @@ export function buildChangeBlastRadiusPayload(
       for (const v of group.via) merged.via.add(v);
       for (const f of group.files) merged.files.add(f);
     }
+    for (const t of one.tests as string[]) tests.add(t);
     rulesReach.set(member.id, one.rules_impact);
     for (const row of one.decisions as BlastRadiusDecision[]) {
       // A member's own decisions are "focus"; otherwise keep the smallest distance.
@@ -476,6 +482,7 @@ export function buildChangeBlastRadiusPayload(
         files: [...g.files].sort((a, b) => a.localeCompare(b)),
       }))
       .sort((a, b) => a.owner_id.localeCompare(b.owner_id)),
+    tests: [...tests].sort((a, b) => a.localeCompare(b)),
     rules_impact: Object.fromEntries(rulesReach),
     decisions: [...decisions.values()].sort(
       (a, b) => a.distance - b.distance || a.node_id.localeCompare(b.node_id)

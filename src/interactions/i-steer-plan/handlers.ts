@@ -53,6 +53,7 @@ import {
   clearAddedClaims,
   writeChangeFrontmatter,
   writeImplementsFrontmatter,
+  writeTestsFrontmatter,
   writeMirrorTwin,
   writeNeighborLabel,
   type CheckboxToggle,
@@ -658,6 +659,53 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
       [pathWritten, claimWrite.twin, ...readiness.files, ...changeWrite.files],
       true
     ),
+    ...mutationTail(loadGraph(), node.id, args.verbose),
+  };
+}
+
+type SetTestFilesArgs = {
+  verbose?: boolean;
+  node_id: string;
+  files: string[];
+  change?: string;
+};
+
+/**
+ * Replace a node's linked test files. Evidence, not contract: the same list goes to live and an
+ * open next, a shipped node needs no `open_next`, and readiness is never reset.
+ */
+export function setTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
+  // A change id moved off a revision may leave its old change with no revisions.
+  return args.change === undefined
+    ? writeTestFiles(args)
+    : withNeighborCleanup(() => writeTestFiles(args));
+}
+
+function writeTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
+  validateChangeInput({ change: args.change });
+  const graph = loadGraph();
+  const node = findNode(graph, args.node_id);
+  const testsWrite = writeTestsFrontmatter(node, args.files);
+  // A shipped node with no open next is edited in place: change labels it a neighbor.
+  // Otherwise change is the active slot's change id.
+  let changeWrite: { fields: Record<string, unknown>; files: string[] } = { fields: {}, files: [] };
+  if (args.change !== undefined) {
+    if (isNeighborNode(node)) {
+      changeWrite = labelNeighbor(node, args.change);
+    } else {
+      const slot: TerritorySlot = node.next ? "next" : "current";
+      const replaced = writeChangeFrontmatter(node, { change: args.change }, slot);
+      changeWrite = {
+        fields: replaced ? { replaced_change: replaced } : {},
+        files: [territoryPath(node, slot), ...(replaced ? [territoryPath(node, "current")] : [])],
+      };
+    }
+  }
+  return {
+    node_id: node.id,
+    tests: node.tests ?? [],
+    ...changeWrite.fields,
+    changed_files: changedFiles([...testsWrite.paths, ...changeWrite.files]),
     ...mutationTail(loadGraph(), node.id, args.verbose),
   };
 }
