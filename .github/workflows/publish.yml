@@ -3,7 +3,7 @@
 # publish job releases it with npm Trusted Publishing (OIDC, no NPM_TOKEN) and tags vX.Y.Z.
 # A merge without a version bump publishes nothing. Bind the trusted publisher on npmjs.com to
 # nbiro/mindplan + this file (publish.yml) + environment npm-publish. After a release, the repin
-# job opens a PR that pins the self devDependency to it.
+# job opens a PR that pins the self devDependency to it; ci.yml's merge-repin job merges it.
 name: Publish
 
 on:
@@ -139,5 +139,5 @@ jobs:
           git push origin "refs/heads/$BRANCH"
           gh pr create --base main --head "$BRANCH" \
             --title "Repin mindplan-mcp to $VERSION" \
-            --body "Pins the self devDependency to mindplan-mcp@$VERSION, released by run ${GITHUB_RUN_ID} and tagged v$VERSION. This PR bumps no package version, so merging it publishes nothing. CI was dispatched on this branch: see Actions → CI for $BRANCH. It does not show as checks here, and this PR's own pull_request run waits for a maintainer's approval."
+            --body "Pins the self devDependency to mindplan-mcp@$VERSION, released by run ${GITHUB_RUN_ID} and tagged v$VERSION. This PR bumps no package version, so merging it publishes nothing. CI was dispatched on this branch: see Actions → CI for $BRANCH. It does not show as checks here, and this PR's own pull_request run waits for a maintainer's approval. When the dispatched run is green, its merge-repin job merges this PR."
           gh workflow run ci.yml --ref "$BRANCH"

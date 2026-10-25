@@ -7,8 +7,11 @@ on:
     branches: [main, master]
   # The Publish workflow's repin job starts CI on its branch: the pull_request run of a PR it opens
   # with GITHUB_TOKEN waits for a maintainer's approval. The dispatched run is listed under Actions
-  # for the branch, not as checks on the PR.
+  # for the branch, not as checks on the PR. When it is green, merge-repin merges the PR.
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -29,3 +32,36 @@ jobs:
       - run: npm test
       - name: mindplan check (graph + packages)
         run: node dist/index.js check
+
+  # Merge the repin PR (opened by publish.yml's repin job) once every test leg of the CI run
+  # dispatched on its branch passed. GITHUB_TOKEN's merge starts no CI or Publish run on main; the
+  # repin bumps no version, so Publish would skip anyway. The branch stays, so a re-run of the
+  # repin job opens no second PR.
+  merge-repin:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/repin/mindplan-mcp-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # merge into main
+      pull-requests: write # merge the PR
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: ${{ github.ref_name }}
+    steps:
+      - name: Merge the repin PR
+        run: |
+          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            echo "No open PR from $BRANCH to main; nothing to merge."
+            exit 0
+          fi
+          files=$(gh pr view "$pr" --json files --jq '.files[].path')
+          unexpected=$(printf '%s\n' "$files" | grep -v -x -E 'package\.json|package-lock\.json' || true)
+          if [ -n "$unexpected" ]; then
+            echo "PR #$pr changes more than package.json and package-lock.json; leaving it for a maintainer:"
+            echo "$unexpected"
+            exit 1
+          fi
+          # Merge only the commit this run tested.
+          gh pr merge "$pr" --merge --match-head-commit "$GITHUB_SHA"

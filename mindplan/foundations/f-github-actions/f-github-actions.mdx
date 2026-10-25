@@ -6,12 +6,13 @@ description: "Infra — CI workflow for default mindplan-mcp check."
 state: stable
 shipped_at: 2026-10-09T22:27:39.467Z
 created_at: 2026-07-19T20:19:02.547Z
-updated_at: 2026-10-25T20:27:46.786Z
+updated_at: 2026-10-25T21:32:24.613Z
 depends_on:
   - f-npm-registry
 implements:
   - .github/workflows/ci.yml
 role: infra
+change: "repin-auto-merge"
 ---
 
 # GitHub Actions
@@ -31,6 +32,7 @@ Assembler for CI substrate. Default `check` becomes graph + file ownership (excl
 ## Shared Substrate Spec
 
 - File: `.github/workflows/ci.yml` — push/PR to main, plus `workflow_dispatch` so the release `repin` job (`i-npm-tag-publish`) can start CI on its branch (the `pull_request` run of a PR opened with `GITHUB_TOKEN` waits for a maintainer's approval; the dispatched run shows under Actions for the branch, not as PR checks); Node matrix; `npm ci` → build → test → `node dist/index.js check`
+- Job `merge-repin` (its behavior is owned by `i-npm-tag-publish`): only on a `workflow_dispatch` run of a `repin/mindplan-mcp-*` branch, after every `test` leg passes, it merges that branch's open repin PR with `GITHUB_TOKEN` (`contents: write`, `pull-requests: write`). The workflow default is `contents: read`, so `test` stays read-only
 - `check` is default integrity from `i-check-integrity` (graph + ownership). No `--base` in CI.
 - Publish job conventions unchanged (OIDC, registry-url) for `i-npm-tag-publish`
 
