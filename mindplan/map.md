@@ -40,14 +40,14 @@ flowchart TB
     i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · in-progress"]
     i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · in-progress"]
   end
-  subgraph journey_j_plan_console["j-plan-console · See and steer the plan · evolving"]
+  subgraph journey_j_plan_console["j-plan-console · See and steer the plan · stable"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]
     i_explore_graph__in__j_plan_console["i-explore-graph · Explore the graph · ready"]
     i_model_plan__in__j_plan_console["i-model-plan · Model the plan · ready"]
     i_steer_plan__in__j_plan_console["i-steer-plan · Steer the plan · stable"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
     i_check_integrity__in__j_territory_sdlc["i-check-integrity · Check integrity · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient on the plan · stable"]

@@ -3,10 +3,10 @@ id: i-check-integrity
 type: Interaction
 title: "Check integrity"
 description: "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder and it is not a migration or schema file), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text (including claims added in place that the body does not name), split route families, and decision-worthy revisions with no decision; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
-state: in-review
-shipped_at: 2026-10-23T19:24:57.374Z
+state: mirror
+shipped_at: 2026-10-25T19:59:58.840Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-25T19:26:42.896Z
+updated_at: 2026-10-25T19:59:58.840Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,9 +16,6 @@ depends_on:
   - f-source-index
 implements:
   - src/interactions/i-check-integrity/
-opened_at: 2026-10-23T19:25:03.965Z
-change: "shipped-claims-and-neighbors"
-change_ref: "feat/shipped-claims-and-change-neighbours"
 ---
 
 # Check integrity

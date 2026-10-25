@@ -5,7 +5,7 @@ title: "Publish on merge to main"
 description: "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing."
 state: in-progress
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-10-23T14:44:08.974Z
+updated_at: 2026-10-25T20:09:10.262Z
 change: "npm-release"
 belongs_to:
   - j-npm-publish
@@ -13,6 +13,7 @@ depends_on:
   - f-npm-registry
   - f-github-actions
 implements:
+  - .github/dependabot.yml
   - .github/workflows/publish.yml
 ---
 
@@ -51,6 +52,7 @@ CI publishes `mindplan-mcp@X.Y.Z` using OIDC and pushes tag `vX.Y.Z`.
 - [x] Two pushes in quick succession never publish concurrently. — note: workflow-level concurrency group `publish`, cancel-in-progress false
 - [ ] Live Trusted Publisher on npmjs.com is bound to this workflow **after** first claim.
 - [x] `CONTRIBUTING.md` documents: bump the version in a PR → merge to main.
+- [ ] After a release, Dependabot opens a PR repinning the exact `mindplan-mcp` devDependency to it, and opens no version-update PR for any other dependency.
 
 ## Prerequisites (Infrastructure First)
 
@@ -68,6 +70,11 @@ Belongs to: `j-npm-publish`. Depends on: `f-github-actions`, `f-npm-registry`. R
 
 - `.github/workflows/publish.yml` — full workflow definition
 - Live npm Trusted Publisher binding for `mindplan-mcp` → this workflow file + environment `npm-publish`
+- `.github/dependabot.yml` — the self-dependency repin (below)
+
+### Self-dependency repin (Dependabot)
+
+The repo pins its own package as an exact devDependency (`"mindplan-mcp": "X.Y.Z"`). `.github/dependabot.yml` has one `npm` update entry for `/`, checked daily. Its `allow` list names only `mindplan-mcp`, so Dependabot never opens version-update PRs for any other dependency. After a release is on npm, Dependabot opens a PR that repins the exact version and refreshes `package-lock.json` (`versioning-strategy: increase` keeps the pin exact). That PR bumps no package version, so merging it publishes nothing; the version gate above skips it. At most one such PR is open at a time. A repin lands up to a day after the release, which is acceptable for a dev-only pin
 
 ### Jobs
 
@@ -88,7 +95,7 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 
 ### Out of scope
 
-- Automatic version bumps or changelog generation from commits
+- Automatic version bumps or changelog generation from commits (Dependabot repins only the self devDependency; it never bumps the package version)
 - GitHub Release notes
 - Publishing from forks or branches other than `main`
 
@@ -104,9 +111,10 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - [x] Publish script CI mode: require `refs/heads/main`, skip when the version is already on npm
 - [x] OIDC permissions + `registry-url` per `f-npm-registry` / `f-github-actions`
 - [x] `CONTRIBUTING.md` and `f-npm-registry` docs describe merge-to-main releases
-- [ ] GitHub Environment `npm-publish` created (reviewers optional)
-- [ ] Live Trusted Publisher bound on npmjs.com after first claim
+- [x] GitHub Environment `npm-publish` created (reviewers optional) — note: exists in nbiro/mindplan (checked with gh api)
+- [x] Live Trusted Publisher bound on npmjs.com after first claim — note: 0.2.0 published over OIDC on 2026-10-25
 - [ ] End-to-end verify: a version-bump merge publishes and tags; a merge without a bump skips
+- [x] Add `.github/dependabot.yml` scoped to `mindplan-mcp` for the self-dependency repin — note: daily npm entry for /, allow mindplan-mcp only, versioning-strategy increase, open-pull-requests-limit 1
 
 ## Decisions
 

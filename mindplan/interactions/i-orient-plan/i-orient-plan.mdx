@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change with rules impact and the decisions it reaches, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check), and expose get_rules for global project rules before each action."
+description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact and the decisions it reaches, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check), and expose get_rules for global project rules before each action."
 state: stable
-shipped_at: 2026-10-23T19:24:57.621Z
+shipped_at: 2026-10-25T19:59:59.090Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-23T19:24:57.621Z
+updated_at: 2026-10-25T19:59:59.090Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -48,7 +48,7 @@ Intended files: `src/interactions/i-orient-plan/`
 - `get_node_context` returns `body` without the `## Rules` section and a separate `rules` string for that node's own rules (and the same for the `next` slot's body)
 - `get_blast_radius` adds `rules_impact` for every focus type: `{ node_id, has_rules, inherited_by: RulesImpactEntry[] }` from `rulesAudience`. It reports who is reached by the focus's rules, so editing a Foundation's rules shows every dependent; `affected` / `affected_files` / `reachability` are unchanged. When the focus has no rules, `has_rules` is `false` and `inherited_by` is `[]`
 - Rules are advisory prose: nothing here is a `Blocked:`
-- **Change blast radius.** `get_blast_radius` takes `node_id` or `change`. For a change it merges the members' radii: `{ change, members, affected, journeys_at_risk, affected_files, rules_impact }` where `affected` keeps the smallest distance and leaves out the members themselves
+- **Change blast radius.** `get_blast_radius` takes `node_id` or `change`. For a change it merges the members' radii: `{ change, members, affected, journeys_at_risk, affected_files, rules_impact }` where `affected` keeps the smallest distance and leaves out the members themselves. Members are the change's open revisions (`changeMembers`) and its neighbors (`changeNeighbors`, shipped nodes it edits in place), each listed with `kind: "revision" | "neighbor"`; a change with neither is Blocked (`has no members`)
 - **Glob claims.** `get_node_implementation` expands glob claims to concrete files (`files` / `next_files`); path lookup finds the owner through a glob claim
 - Node context shows `change` / `change_ref` on the live record and the next record
 - **Decisions block.** `orient_for_work` returns `decisions` next to `rules` at every depth: `{ node_id, entries: DecisionEntry[] }` from `resolveNodeDecisions` (own, `belongs_to`, `depends_on`, and for a Bug `affects`), each entry carrying its record, `node_id`, `node_type`, `via`, `distance`, and `status`; superseded entries are left out unless `include_superseded: true` (then each names `superseded_by`); at `depth: "rules"` each entry is compact (`id`, `decision`, `why`, and its labels) because orientation runs before every action, while `body` / `full` and `list_decisions` return whole records; `null` without a focus
@@ -73,6 +73,7 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - `get_node_context` `body` excludes the Rules section and `rules` carries it
 - Verified via `npm test`
 - Change blast radius lists the union of the members' dependents without the members
+- Change blast radius includes a neighbor's dependents and lists the neighbor with `kind: "neighbor"`; a change with only neighbors is not Blocked
 - A glob claim expands to concrete files in `get_node_implementation`, and a path under it resolves to its owner
 - `orient_for_work` on an Interaction returns its Foundation's decision labeled with the Foundation's id, at every depth; a superseded one is left out unless `include_superseded`
 - `orient_for_work` on a Bug returns the decisions of the nodes it affects
@@ -108,6 +109,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Verified via `npm test`
 - [x] Add the `version` warning to `get_project`
 - [x] Verified the `get_project` version warning via `npm test`
+- [x] Merge a change's neighbors into its blast radius and label each member's `kind`
+- [x] Verified the neighbor blast radius via `npm test`
 
 ## Decisions
 

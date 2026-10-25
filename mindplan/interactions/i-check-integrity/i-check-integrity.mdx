@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Default check Blocks unclaimed source files (with the probable owner and the claim call), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text, split route families, and decision-worthy revisions with no decision; checks one change's members on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
+description: "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder and it is not a migration or schema file), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text (including claims added in place that the body does not name), split route families, and decision-worthy revisions with no decision; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
 state: stable
-shipped_at: 2026-10-23T19:24:57.374Z
+shipped_at: 2026-10-25T19:59:58.840Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-23T19:24:57.374Z
+updated_at: 2026-10-25T19:59:58.840Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -22,7 +22,7 @@ implements:
 
 ## Purpose
 
-Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`), and an illegal import with the exact fix. It prints non-blocking warnings when a node's text no longer matches the repo. The same check is reachable by agents as `run_check`, because a check only the CLI exposes is never run. Also builds a read-only drift report of uncommitted source files and their owners, classified so the actionable files are not buried under expected edits. A later session that only grepped `src/` would miss those owners. The check also warns about every decision-worthy open revision that has no decision yet, from draft on, so the `Blocked: Decision` at `in-review` is never the first the agent hears of it.
+Default check Blocks a shipped pipeline node whose next file is missing or is not a state-only twin (`state: mirror`), and an illegal import with the exact fix. It prints non-blocking warnings when a node's text no longer matches the repo. The same check is reachable by agents as `run_check`, because a check only the CLI exposes is never run. Also builds a read-only drift report of uncommitted source files and their owners, classified so the actionable files are not buried under expected edits. A later session that only grepped `src/` would miss those owners. The check also warns about every decision-worthy open revision that has no decision yet, from draft on, so the `Blocked: Decision` at `in-review` is never the first the agent hears of it. A change's check covers its neighbors too, the shipped nodes it edits in place, so a feature that touches a shipped helper without revising it is still checked as one piece.
 
 ## Actor & Trigger
 
@@ -36,15 +36,15 @@ Intended files: `src/interactions/i-check-integrity/`
 - Keep mirror twin and ownership checks
 - Import rule: `findAllImportViolations` (`f-compiler-rules`); each failure ends with `Fix: link_nodes({...})` or `not allowed: ...`; a Foundation importing an Interface it mounts is legal
 - `runIntegrityCheck` returns `{ ok, failures, warnings, removedLegacyFiles }`; `renderCheckOutput` formats it (`mindplan-mcp check: ok`, or one `Blocked:` line per failure, then `Warning:` lines) for both the CLI and `run_check`
-- Warnings never change `ok` or the exit code: a node in review gets every stale-text signal (body names a missing path, a claimed file changed after the body was updated, unticked checkboxes); a shipped node with no open update gets only the missing-path signal; nodes still being built are skipped
+- Warnings never change `ok` or the exit code: a node in review gets every stale-text signal (body names a missing path, a claimed file changed after the body was updated, unticked checkboxes); a shipped node with no open update gets only the path signals (a missing path, and a live `added_claims` entry its body does not name); nodes still being built are skipped
 - `runCheckHandler({ base? })` — the `run_check` handler: `{ ok, output, failures, warnings }`
 - `buildDriftReport({ nodeIds? })` — uncommitted working tree (`git status --porcelain`), including tracked files deleted from disk. Each path is classified: `unowned`; `owner_idle` (shipped owner with no open update, or a pre-ship owner not in-progress); `claimed_missing` (a claimed path gone from disk); or expected (the owner has an open update claiming the file) — expected is only a count. With `nodeIds` it lists those owners' files and counts the rest (`other_count`); lists are capped. Null when there is nothing to act on or git is unread
 - Default `check` still ignores the dirty tree; shipped neighbor edits still pass
 - `if-mcp-tools` imports this package because it exposes it (`run_check`); the Assembler re-exports the drift envelope
-- **Coverage.** An in-universe file (configured `sources` minus `exclude`) that no current or next claim of a non-retired node covers is `Blocked: Coverage: …` with the probable owner (by path) and the exact `set_implementation_files` call, preceded by `open_next` when that owner is shipped with no open evolution. A retired node's claim no longer counts as coverage; such a file is reported once, by the leftovers rule, not again as Coverage. The universe is listed once per run and shared by coverage, imports, and route families
+- **Coverage.** An in-universe file (configured `sources` minus `exclude`) that no current or next claim of a non-retired node covers is `Blocked: Coverage: …` with the probable owner (by path) and the exact `set_implementation_files` call, preceded by `open_next` when that owner is shipped with no open evolution and either does not dominate the file's folder or the file is a migration or schema file. One `createCoverageFixContext(root)` per run is passed to every `coverageFix`, so the schema globs are read once and each owner's view of the other claims is expanded once, not once per unclaimed file. A retired node's claim no longer counts as coverage; such a file is reported once, by the leftovers rule, not again as Coverage. The universe is listed once per run and shared by coverage, imports, and route families
 - **Next-slot imports.** The import rule runs over every claimant of a file (live, next-slot, released). Violations the check did not scan before (advisory) print as `Warning: imports (next slot): …` for one release, then Block
 - **Route families.** Split ownership of one route family is a warning
-- **Changes.** `runCheckHandler({ base?, change? })` adds `change: { id, members, failures, warnings }`: each member's active-slot import and ownership violations (Blocked lines that make `ok` false) and its stale-text warnings; a member violation the global import rule already reported is not repeated. An unknown change id with no open members is Blocked
+- **Changes.** `runCheckHandler({ base?, change? })` adds `change: { id, members, failures, warnings }`: each member's active-slot import and ownership violations (Blocked lines that make `ok` false) and its stale-text warnings; a member violation the global import rule already reported is not repeated. Members are the change's open revisions (`changeMembers`) and its neighbors (`changeNeighbors`), each listed with `kind: "revision" | "neighbor"`; a neighbor is checked on its live files. Decision warnings apply to revisions only. A change with neither revisions nor neighbors is Blocked (`has no members`)
 - **Decisions.** For every open revision (a shipped node with an open next; a pre-ship, non-retired pipeline node at any pre-ship state), `decisionWarnings` (`f-compiler-rules`) adds `Warning: decision: …` lines naming the triggers. One `DecisionContext` (config plus the lazy git probe) serves the whole run. Decision warnings never change `ok`; with `change`, the members' decision warnings are part of the change's warnings
 - The dirty-src base is `defaultBaseRef` (`f-source-index`), the same merge base the decision gate uses
 - **Version.** When `projectVersionStatus()` (`f-territory-store`) is not `current`, its warning prints as `Warning: version: …`. It never changes `ok`, so CI keeps passing while a project catches up
@@ -67,6 +67,10 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - A Foundation `open_next` revision with no decision prints a `decision:` warning and `ok` stays true; recording a decision under its change removes the warning
 - A revision that is not decision-worthy never prints a `decision:` warning
 - A missing or older `mindplan/version.json` prints a `version:` warning and `ok` stays true; a current stamp prints none
+- `run_check` with `change` lists revisions and neighbors with their `kind`, fails on a neighbor's import violation, and gives decision warnings for revisions only
+- A change with only neighbors is checked; a change with no members is Blocked
+- A shipped node's `added_claims` entry that its body does not name prints a `stale:` warning and `ok` stays true
+- The Coverage fix for a file beside a shipped owner's own files, in a folder no other node claims into, has no `open_next`; for a migration or schema file there it does
 
 ## Atomic Ops
 
@@ -88,6 +92,11 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Use the shared `defaultBaseRef` for dirty-src (review fix)
 - [x] Warn when `mindplan/version.json` is not current
 - [x] Verified the version warning via `npm test`
+- [x] Check a change's neighbors with its revisions and list each member's `kind`
+- [x] Pass the graph and root to `coverageFix` so a dominated folder's fix has no `open_next`
+- [x] Verified the neighbor check and the in-place Coverage fix via `npm test`
+- [x] Share one Coverage fix context per run and open the evolution for an unclaimed schema file (review fixes)
+- [x] Verified the Coverage fix for schema files via `npm test`
 
 ## Attachments
 

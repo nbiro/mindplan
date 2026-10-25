@@ -21,6 +21,9 @@ const PACKAGE_NAME = "mindplan-mcp";
 const ALLOWED_PREFIXES = ["dist/", "templates/"];
 const ALLOWED_FILES = new Set(["package.json", "README.md", "SPEC.md", "LICENSE"]);
 const REQUIRED_FILES = ["dist/index.js", "templates/agent/playbook.md", "README.md", "LICENSE"];
+// npm accepts a publish before it lists it ("may take a few minutes"; 0.2.0 took about 2.5).
+const VERIFY_POLL_MS = 15_000;
+const VERIFY_TIMEOUT_MS = 10 * 60_000;
 
 const repoRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const args = new Set(process.argv.slice(2));
@@ -127,15 +130,19 @@ if (dryRun) {
 
 // --- 5. Verify ---
 step("Verify");
-let seen = "";
-for (let attempt = 1; attempt <= 6 && seen !== version; attempt++) {
+const deadline = Date.now() + VERIFY_TIMEOUT_MS;
+let seen = registryVersion();
+for (let attempt = 1; seen !== version && Date.now() + VERIFY_POLL_MS <= deadline; attempt++) {
+  console.log(`registry does not list ${version} yet (check ${attempt}); waiting ${VERIFY_POLL_MS / 1000}s`);
+  spawnSync(process.execPath, ["-e", `setTimeout(() => {}, ${VERIFY_POLL_MS})`]);
   seen = registryVersion();
-  if (seen !== version) {
-    console.log(`registry does not list ${version} yet (attempt ${attempt}); waiting 10s`);
-    spawnSync(process.execPath, ["-e", "setTimeout(() => {}, 10000)"]);
-  }
 }
-if (seen !== version) fail(`the registry does not list ${PACKAGE_NAME}@${version}.`);
+if (seen !== version) {
+  fail(
+    `the registry still does not list ${PACKAGE_NAME}@${version} after ${VERIFY_TIMEOUT_MS / 60_000} minutes. ` +
+      `If \`npm publish\` above succeeded, check again with \`npm view ${PACKAGE_NAME}@${version} version\`.`
+  );
+}
 console.log(`registry lists ${PACKAGE_NAME}@${version}`);
 
 if (!ci) {
