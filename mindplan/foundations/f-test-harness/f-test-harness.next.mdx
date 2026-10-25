@@ -6,7 +6,7 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: mirror
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-25T21:13:07.604Z
+updated_at: 2026-10-25T22:42:43.590Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -42,6 +42,9 @@ Intended files: `src/foundations/f-test-harness/`
 - `node-tests.test.mjs` (run by `npm test`) covers: `set_test_files` on a pre-ship node, on a shipped node in place (live and twin, no `open_next`), and on an open revision (live and next, kept through promote and through discard); a `ready` revision stays ready; an invalid path, a Journey, a Bug, and a retired node are Blocked; an empty list removes the field; body, claim, and edge writes keep the list; a missing test fails the check only once its node is in review or shipped, and Blocks the move to in-review; the untested `tests:` warning for an in-review revision; `get_blast_radius` listing the expanded tests for a node and for a change
 - Smoke: twenty-eight tools including `set_test_files`
 - This repository's own nodes link the suites that verify them with `set_test_files`
+- Server-spawning suites set `MINDPLAN_SEARCH=keyword` (unless already set) so no test server downloads or loads the embedding model
+- `search-index.test.mjs` (run by `npm test`) covers: search docs (headings, area, entry points, next-slot wording); rank fusion (clear winners stay, ties break toward linked nodes, exact id first); the cache (incremental sync, self-ignoring folder, stemming, vectors kept per text and dropped per model, corrupt file rebuilt); `searchNodes` (exact id, file path, type filter, retired nodes, keyword-only); two connections on one file (a reused rowid never loses a row), another connection's write never absorbed by an own commit, the type filter before the row limit, no orphan vectors, vectors from another model re-embedded, offline loading of an already-downloaded model (skipped when it is not cached); timing on 1,000 nodes (incremental update < 200 ms, search < 50 ms); over MCP, an edit made outside MCP (a description, or a heading with the frontmatter untouched) found on the next call, the cache never in `changed_files`, an async handler's Blocked envelope, `patch_config` search settings, init's `.gitignore` entry written once, and calls answering over a clean stdout while the model loads
+- `search-eval.test.mjs` (run by `npm test`) runs the test set `search-eval.json` (48 English queries: synonyms, plain phrasing, exact ids, paths, area words, tool names) over `fixtures/search-skyloom.json` and `fixtures/search-mindplan.json` (snapshots made by `scripts/search-fixture.mjs`) through `search-eval.mjs`, in keyword-only and hybrid mode; hybrid embeds from the committed int8 vectors in `fixtures/search-eval.vectors.json`, so it needs no network. It fails when a metric (top-1, top-5, MRR) drops below `search-eval.metrics.json`, when hybrid does not beat the committed token baseline, or when a text has no committed vector. `--write-vectors`, `--write-metrics`, `--live`, and `--model` refresh or compare with the live model
 
 Depends on: `f-mcp-runtime`.
 
@@ -56,6 +59,7 @@ Depends on: `f-mcp-runtime`.
 - `npm test` runs `decisions.test.mjs` and it passes, and smoke counts twenty-seven tools
 - `npm test` runs `shipped-claims.test.mjs` and `change-neighbors.test.mjs` and both pass
 - `npm test` runs `node-tests.test.mjs` and it passes, and smoke counts twenty-eight tools
+- `npm test` runs `search-index.test.mjs` and `search-eval.test.mjs` without network access and both pass
 
 ## Atomic Ops
 

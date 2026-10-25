@@ -6,6 +6,8 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { fileURLToPath } from "url";
+// Spawned servers rank by keyword only: no model download or load during tests.
+process.env.MINDPLAN_SEARCH ??= "keyword";
 
 const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const serverEntry = path.join(toolRoot, "dist/index.js");

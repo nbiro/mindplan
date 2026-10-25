@@ -1,0 +1,18 @@
+{
+  "about": "Committed search-eval floor. baseline: the token ranking before hybrid search (fixed). keyword: keyword-only mode (no model). hybrid: keyword + semantic with the committed fixture vectors. search-eval.test.mjs fails when a run drops below keyword or hybrid, or hybrid does not beat baseline.",
+  "baseline": {
+    "top1": 0.458,
+    "top5": 0.729,
+    "mrr": 0.578
+  },
+  "keyword": {
+    "top1": 0.688,
+    "top5": 0.875,
+    "mrr": 0.767
+  },
+  "hybrid": {
+    "top1": 0.813,
+    "top5": 0.938,
+    "mrr": 0.868
+  }
+}

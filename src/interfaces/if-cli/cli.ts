@@ -210,6 +210,7 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
   printInstall("MCP example", report.mcpExample);
   printInstall("agent integrations", report.integrations);
   printInstall("AGENTS.md", report.agentsMd);
+  printInstall(".gitignore entry for .mindplan-cache/", report.searchCacheIgnore);
   if (report.cursor) {
     printInstall(".cursorignore", report.cursor.ignore);
     for (const cursorSkill of report.cursor.skills) {

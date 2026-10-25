@@ -46,6 +46,7 @@ import {
   patchNodeTerritory as patchNodeTerritoryStore,
   promoteNextSlot,
   readMarkdown,
+  territoryBodyReader,
   removeEdgesFromFrontmatter,
   scaffoldEntity,
   splitContext,
@@ -109,7 +110,11 @@ import {
   createDecisionContext,
   type DecisionContext,
 } from "../../foundations/f-compiler-rules/decisions.js";
-import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
+import {
+  DEFAULT_FIND_LIMIT,
+  findRelatedNodes,
+  refreshSearchIndex,
+} from "../../foundations/f-graph-search/search.js";
 import { inheritanceSources, rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import {
   decisionIds,
@@ -198,9 +203,15 @@ export function nextSlotFsChangedFiles(
   return files;
 }
 
-/** Reload territory and refresh `mindplan/map.md` after a successful mutation. */
+/**
+ * Reload territory after a successful mutation: refresh `mindplan/map.md`, and sync the search
+ * cache (outside mindplan/, so never in changed_files) with the embeddings of what changed
+ * computed in the background.
+ */
 export function refreshPersistedMap(): void {
-  persistMindPlanMap(loadGraph());
+  const graph = loadGraph();
+  persistMindPlanMap(graph);
+  refreshSearchIndex(graph, projectRoot(), territoryBodyReader());
 }
 
 /**
@@ -1868,20 +1879,29 @@ export function patchConfig(args: {
   sources?: string[];
   exclude?: string[];
   decisions?: { blast_radius?: number; schema_files?: string[] };
+  search?: { enabled?: boolean; model?: string };
 }): Record<string, unknown> {
-  if (args.sources === undefined && args.exclude === undefined && args.decisions === undefined) {
-    throw blocked("patch_config requires sources, exclude, and/or decisions.");
+  if (
+    args.sources === undefined &&
+    args.exclude === undefined &&
+    args.decisions === undefined &&
+    args.search === undefined
+  ) {
+    throw blocked("patch_config requires sources, exclude, decisions, and/or search.");
   }
   const current = loadProjectConfig();
-  // A decision setting that is not passed keeps its stored value.
-  const passed = Object.fromEntries(
-    Object.entries(args.decisions ?? {}).filter(([, v]) => v !== undefined)
-  );
-  const decisions = { ...(current.decisions ?? {}), ...passed };
+  // A decision or search setting that is not passed keeps its stored value.
+  const merged = <T extends object>(stored: T | undefined, passedArgs: T | undefined): Partial<T> => ({
+    ...(stored ?? {}),
+    ...Object.fromEntries(Object.entries(passedArgs ?? {}).filter(([, v]) => v !== undefined)),
+  });
+  const decisions = merged(current.decisions, args.decisions);
+  const search = merged(current.search, args.search);
   const next = {
     sources: args.sources ?? current.sources,
     exclude: args.exclude ?? current.exclude,
     ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
+    ...(Object.keys(search).length > 0 ? { search } : {}),
   };
   const written = writeProjectConfig(next, { force: true });
   return {

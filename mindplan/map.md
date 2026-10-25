@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (37 nodes, 98 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (38 nodes, 101 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -18,6 +18,7 @@ flowchart TB
     f_mcp_runtime["f-mcp-runtime · MCP runtime · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
     f_npm_registry["f-npm-registry · npm registry adapter · stable"]
+    f_search_index["f-search-index · Search index · stable"]
     f_source_index["f-source-index · Source index · stable"]
     f_territory_store["f-territory-store · Territory store · stable"]
     f_test_harness["f-test-harness · Test harness · stable"]
@@ -62,8 +63,11 @@ flowchart TB
   f_framework_docs --> f_domain_model
   f_github_actions --> f_npm_registry
   f_graph_search --> f_domain_model
+  f_graph_search --> f_search_index
   f_mcp_runtime --> f_framework_docs
+  f_mcp_runtime --> f_graph_search
   f_mcp_runtime --> f_territory_store
+  f_search_index --> f_source_index
   f_source_index --> f_domain_model
   f_territory_store --> f_domain_model
   f_territory_store --> f_source_index

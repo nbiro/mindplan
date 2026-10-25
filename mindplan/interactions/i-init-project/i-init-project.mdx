@@ -2,11 +2,11 @@
 id: i-init-project
 type: Interaction
 title: "Init project"
-description: "Init installs the playbook, project brief, and host copies for the chosen host (Cursor, Claude Code, or both), ignores the mindplan/ tree in Cursor, writes a missing mirror for each already-shipped pipeline node, and stamps mindplan/version.json; when the stamp is older than the package it refreshes the package-owned agent files."
+description: "Init installs the playbook, project brief, and host copies for the chosen host (Cursor, Claude Code, or both), ignores the mindplan/ tree in Cursor and the search cache in git, writes a missing mirror for each already-shipped pipeline node, and stamps mindplan/version.json; when the stamp is older than the package it refreshes the package-owned agent files."
 state: stable
-shipped_at: 2026-10-23T19:24:57.495Z
+shipped_at: 2026-10-25T22:42:44.309Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-23T19:24:57.495Z
+updated_at: 2026-10-25T22:42:44.309Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -17,6 +17,7 @@ leads_to:
 implements:
   - src/interactions/i-init-project/
 tests:
+  - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/version.test.mjs
 ---
@@ -38,6 +39,7 @@ Intended files: `src/interactions/i-init-project/`
 
 - `runInit` takes `hosts` (default `["cursor"]`) and installs only the chosen host copies
 - Cursor host: `.cursorignore`, `.cursor/skills/`, `.cursor/rules/mindplan.mdc`, `.cursor/permissions.json`
+- Every host: `installSearchCacheIgnore()` adds `.mindplan-cache/` (the derived search cache, `f-search-index`) to the repo's `.gitignore` under a one-line comment, creating the file when missing and keeping its line endings; an existing entry (`.mindplan-cache`, with or without a leading or trailing `/`) is left alone. The report carries `searchCacheIgnore` (`installed`, `path`)
 - Claude Code host: `CLAUDE.md` containing `@AGENTS.md`, and `.claude/skills/mindplan-*`; an existing `CLAUDE.md` is kept unless `--force`
 - The report carries `cursor` and `claude` groups that are present only when selected
 - `backfillMirrorTwins` after installers
@@ -56,6 +58,7 @@ Depends on: `f-territory-store`, `f-source-index`.
 - Host ignore covers the whole mindplan tree for Cursor
 - Init stamps `mindplan/version.json`; a rerun with an older stamp refreshes package-owned files and leaves repo-owned files alone
 - Init refuses a stamp newer than the package unless `--force`
+- Init adds `.mindplan-cache/` to `.gitignore` once; a rerun does not add it again
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -70,6 +73,8 @@ Depends on: `f-territory-store`, `f-source-index`.
 - [x] Read the stamp, refresh package-owned files when it is missing or behind, Block when it is ahead
 - [x] Write the stamp after a successful init and report `version`
 - [x] Verified the stamp, refresh, and ahead refusal via `npm test`
+- [x] Add `.mindplan-cache/` to the repo's `.gitignore` and report it
+- [x] Verified the `.gitignore` entry via `npm test`
 - [x] Verified via `npm test`
 
 ## Attachments

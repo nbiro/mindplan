@@ -29,6 +29,7 @@ import {
   readMarkdown,
   splitContext,
   summarizeGraphNode,
+  territoryBodyReader,
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
@@ -48,7 +49,11 @@ import {
   interactionReachability,
   interfacesExposing,
 } from "../../foundations/f-compiler-rules/rules.js";
-import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
+import {
+  DEFAULT_FIND_LIMIT,
+  findRelatedNodes,
+  searchNodes,
+} from "../../foundations/f-graph-search/search.js";
 import { resolveNodeRules, rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import {
   listDecisions,
@@ -362,12 +367,27 @@ export function getMindPlanGraph(args: { offset?: number; limit?: number } = {})
   return page;
 }
 
-export function findRelatedNodesHandler(args: {
+/** Hybrid-ranked matches for a query over the loaded graph (`[]` without a query). */
+async function rankedMatches(
+  graph: MindPlanGraph,
+  query: string,
+  args: { type?: NodeType; limit?: number }
+): Promise<Awaited<ReturnType<typeof searchNodes>>> {
+  if (!query) return [];
+  return searchNodes(graph, query, {
+    type: args.type,
+    limit: args.limit ?? DEFAULT_FIND_LIMIT,
+    root: projectRoot(),
+    readBody: territoryBodyReader(),
+  });
+}
+
+export async function findRelatedNodesHandler(args: {
   query?: string;
   node_id?: string;
   type?: NodeType;
   limit?: number;
-}): ReturnType<typeof findRelatedNodes> {
+}): Promise<ReturnType<typeof findRelatedNodes>> {
   const q = (args.query ?? "").trim();
   if (!q && !args.node_id) {
     throw blocked('find_related_nodes requires a non-empty "query" and/or "node_id".');
@@ -381,6 +401,7 @@ export function findRelatedNodesHandler(args: {
     node_id: args.node_id,
     type: args.type,
     limit: args.limit ?? DEFAULT_FIND_LIMIT,
+    matches: await rankedMatches(graph, q, args),
   });
 }
 
@@ -523,14 +544,14 @@ function orientDecisionEntries(entries: DecisionEntry[], depth: OrientDepth): un
 export const ORIENT_DEPTHS = ["rules", "body", "full"] as const;
 export type OrientDepth = (typeof ORIENT_DEPTHS)[number];
 
-export function orientForWork(args: {
+export async function orientForWork(args: {
   query?: string;
   node_id?: string;
   type?: NodeType;
   limit?: number;
   depth?: OrientDepth;
   include_superseded?: boolean;
-}): Record<string, unknown> {
+}): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
     throw blocked(`orient_for_work depth must be one of: ${ORIENT_DEPTHS.join(", ")}.`);
@@ -548,6 +569,7 @@ export function orientForWork(args: {
     node_id: args.node_id,
     type: args.type,
     limit: args.limit ?? DEFAULT_FIND_LIMIT,
+    matches: await rankedMatches(graph, q, args),
   });
   let context: Record<string, unknown> | null = null;
   let blast_radius: Record<string, unknown> | null = null;

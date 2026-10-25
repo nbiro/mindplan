@@ -3,12 +3,20 @@
  * MindPlan MCP runtime — thin process boot only.
  * Mode select: no argv → MCP stdio; else CLI via if-cli.
  * Tool registration: if-mcp-tools. Handlers live in Interactions.
+ * Starts the search warm-up (f-graph-search) in the background once the transport is up.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-import { ensureDirectories } from "../f-territory-store/store.js";
+import {
+  drainRemovedLegacyFiles,
+  ensureDirectories,
+  loadGraph,
+  projectRoot,
+  territoryBodyReader,
+} from "../f-territory-store/store.js";
+import { warmSearchIndex } from "../f-graph-search/search.js";
 import { packageVersion } from "../f-territory-store/version.js";
 import { registerMindPlanTools } from "../../interfaces/if-mcp-tools/register.js";
 import { runCli } from "../../interfaces/if-cli/cli.js";
@@ -33,7 +41,20 @@ export function readPackageVersion(): string {
   return packageVersion();
 }
 
+/**
+ * stdout is the MCP stdio channel: route every console method that would write there to stderr,
+ * so a dependency's log line (the embedding model, a warning) can never corrupt a message.
+ */
+export function guardStdout(): void {
+  const toStderr = (...args: unknown[]) => console.error(...args);
+  console.log = toStderr;
+  console.info = toStderr;
+  console.debug = toStderr;
+  console.warn = toStderr;
+}
+
 async function runMcpServer(): Promise<void> {
+  guardStdout();
   ensureDirectories();
   const server = new McpServer(
     {
@@ -46,6 +67,17 @@ async function runMcpServer(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("MindPlan MCP server running on stdio");
+  // Background: load the search model, then index the graph. Tool calls never wait on it. A legacy
+  // file the warm-up's graph load removes is reported on stderr here, so it never lands in an
+  // unrelated tool call's changed_files.
+  const loadForSearch = () => {
+    const graph = loadGraph();
+    for (const entry of drainRemovedLegacyFiles()) {
+      console.error(`MindPlan: removed ${entry.from} (kept ${entry.to})`);
+    }
+    return graph;
+  };
+  void warmSearchIndex(projectRoot(), loadForSearch, territoryBodyReader());
 }
 
 if (process.argv[2]) {

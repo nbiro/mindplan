@@ -1,7 +1,7 @@
 /**
  * Project-level MindPlan config (`mindplan/config.json`).
  * Declares which repo paths form the ownership universe (`sources` / `exclude`), and optionally
- * when the decision gate asks for a decision (`decisions`).
+ * when the decision gate asks for a decision (`decisions`) and how search ranks (`search`).
  */
 
 import * as fs from "fs";
@@ -16,11 +16,19 @@ export type DecisionGateSettings = {
   schema_files: string[];
 };
 
+/** Search settings: `enabled: false` turns semantic ranking off; `model` names the embedding model. */
+export type SearchConfigSettings = {
+  enabled: boolean;
+  model: string;
+};
+
 export type MindPlanProjectConfig = {
   sources: string[];
   exclude: string[];
   /** Stored decision-gate settings; absent fields take `DEFAULT_DECISION_SETTINGS`. */
   decisions?: Partial<DecisionGateSettings>;
+  /** Stored search settings; absent fields take the search index's defaults. */
+  search?: Partial<SearchConfigSettings>;
 };
 
 /**
@@ -108,6 +116,31 @@ function parseDecisionSettings(value: unknown): Partial<DecisionGateSettings> {
   return out;
 }
 
+/** Validates the optional `search` object; unknown keys are Blocked like `decisions`. */
+function parseSearchSettings(value: unknown): Partial<SearchConfigSettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw blockedConfig('"search" must be an object with optional "enabled" and "model".');
+  }
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (key !== "enabled" && key !== "model") {
+      throw blockedConfig(`"search" has unknown key "${key}" (allowed: enabled, model).`);
+    }
+  }
+  const out: Partial<SearchConfigSettings> = {};
+  if (obj.enabled !== undefined) {
+    if (typeof obj.enabled !== "boolean") throw blockedConfig('"search.enabled" must be true or false.');
+    out.enabled = obj.enabled;
+  }
+  if (obj.model !== undefined) {
+    if (typeof obj.model !== "string" || !obj.model.trim()) {
+      throw blockedConfig('"search.model" must be a non-empty model id, e.g. "Xenova/bge-small-en-v1.5".');
+    }
+    out.model = obj.model.trim();
+  }
+  return out;
+}
+
 /**
  * Load config.
  * - Missing file → sources: ["src/**"], exclude: []
@@ -147,6 +180,7 @@ export function loadProjectConfig(root?: string): MindPlanProjectConfig {
     exclude: parseStringArray(obj.exclude, "exclude"),
   };
   if ("decisions" in obj) config.decisions = parseDecisionSettings(obj.decisions);
+  if ("search" in obj) config.search = parseSearchSettings(obj.search);
   return config;
 }
 
@@ -157,7 +191,8 @@ export type WriteProjectConfigResult = {
 };
 
 /**
- * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions` when the config has them.
+ * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions` and `search` when the
+ * config has them.
  * - When `force` is false: create only if missing.
  * - When `force` is true: always overwrite.
  */
@@ -174,6 +209,10 @@ export function writeProjectConfig(
   if (config.decisions) {
     const decisions = parseDecisionSettings(config.decisions);
     if (Object.keys(decisions).length > 0) next.decisions = decisions;
+  }
+  if (config.search) {
+    const search = parseSearchSettings(config.search);
+    if (Object.keys(search).length > 0) next.search = search;
   }
   const exists = fs.existsSync(abs);
   if (exists && !options.force) {

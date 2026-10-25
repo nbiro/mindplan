@@ -6,7 +6,7 @@ description: "Find focus nodes, load territory context at a chosen depth, return
 state: mirror
 shipped_at: 2026-10-25T21:13:07.859Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-25T21:13:07.859Z
+updated_at: 2026-10-25T22:31:42.857Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -23,6 +23,8 @@ tests:
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/search-eval.test.mjs
+  - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/search.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
 ---
@@ -48,6 +50,7 @@ Read-path orientation. `get_rules` returns only the mandatory project-wide rules
 Intended files: `src/interactions/i-orient-plan/`
 
 - Keep existing query tools
+- **Hybrid ranking.** `find_related_nodes` and `orient_for_work` rank through `searchNodes` (`f-graph-search`) with the project root and `territoryBodyReader()` (`f-territory-store`) for section headings, and pass the ranked rows to `findRelatedNodes` as `matches`; both handlers are async (the query embedding), and their result shapes are unchanged
 - `get_project` — `{ path, description, rules, playbook, check, version? }` (first read of dialect + brief); `check` is a fixed sentence naming `run_check` and the CLI `mindplan-mcp check`; `version` is present only when `projectVersionStatus()` is not `current`, and is its warning sentence
 - `get_rules` — `{ path, rules }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description. These are the **global** rules only: rules that apply everywhere. Rules about one area of the code live on that area's node
 - `orient_for_work` returns a separate `rules` block next to `context` and `blast_radius`: `{ node_id, entries: RuleEntry[] }` from `resolveNodeRules` (`f-graph-search`), or `null` when there is no focus. Each entry is `{ node_id, node_type, via, distance, rules }`, ordered self, then `belongs_to`, then `depends_on`, then `affects`. `entries` is `[]` when nothing applies. It does **not** repeat the project brief rules

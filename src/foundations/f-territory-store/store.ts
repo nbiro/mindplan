@@ -186,6 +186,11 @@ export function drainRemovedLegacyFiles(): RemovedLegacyFile[] {
   return removedLegacyFiles.splice(0, removedLegacyFiles.length);
 }
 
+/** Put drained entries back so the next drain reports them (an async tool result, once it settles). */
+export function restoreRemovedLegacyFiles(entries: RemovedLegacyFile[]): void {
+  removedLegacyFiles.unshift(...entries);
+}
+
 function isRegularFile(filePath: string): boolean {
   try {
     return fs.statSync(filePath).isFile();
@@ -899,6 +904,23 @@ export function readMarkdown(
     );
   }
   return fs.readFileSync(file, "utf-8");
+}
+
+/**
+ * Body reader for search (section headings): `readMarkdown`, plus a `stamp` (size and mtime of the
+ * slot's file) so a search re-reads a body edited outside MCP even when its frontmatter is unchanged.
+ */
+export function territoryBodyReader(): ((
+  node: Pick<MindPlanNode, "id" | "type">,
+  slot: TerritorySlot
+) => string) & { stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => string } {
+  const read = (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => readMarkdown(node, slot);
+  return Object.assign(read, {
+    stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => {
+      const st = fs.statSync(markdownPath(node, slot));
+      return `${st.size}:${st.mtimeMs}`;
+    },
+  });
 }
 
 export function writeMarkdown(

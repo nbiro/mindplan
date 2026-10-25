@@ -36,6 +36,7 @@ MindPlan prescribes the **planning tree** under `mindplan/`. Implementation code
 
 ```
 <project-root>/
+├── .mindplan-cache/                   # Derived search cache, gitignored, safe to delete (§8.1.1)
 ├── mindplan/
 │   ├── config.json                    # { sources, exclude } — coverage universe (§1.2)
 │   ├── project.md                     # Project brief — description + rules (§1.1.1)
@@ -150,6 +151,7 @@ Rules:
 - `create_node` does **not** scaffold `src/<type>/<id>/`. Declare files with `set_implementation_files`.
 - Default `mindplan-mcp check` enforces exclusivity, coverage, presence, leftovers, and the import matrix over the universe. Opt-in `--base` applies dirty-src lifecycle using the implements index.
 - **Decision-gate settings (optional).** `decisions: { blast_radius?, schema_files? }` tunes when a revision is decision-worthy (§5.13). `blast_radius` is a non-negative integer (default `5`); `schema_files` is a glob list (default `**/migrations/**`, `**/migration/**`, `**/*.prisma`, `**/schema.sql`, `**/structure.sql`, `**/db/schema.rb`: database migrations and schema dumps only, so JSON Schema, zod, or GraphQL modules named `schema` do not gate a change; widen the list to include them). Absent fields take the defaults, and a config without `decisions` is written back without it. Unknown keys, a negative or non-integer `blast_radius`, or an empty glob hard-fail like any invalid config, and `patch_config` rejects an unknown `decisions` key rather than ignoring it (§8.2).
+- **Search settings (optional).** `search: { enabled?, model? }` tunes ranking (§8.1.1). `enabled: false` turns semantic ranking off (keyword ranking always runs); `model` names the transformers.js embedding model (default `Xenova/bge-small-en-v1.5`, English). Absent fields take the defaults; unknown keys, a non-boolean `enabled`, or an empty `model` hard-fail like any invalid config, and `patch_config` rejects an unknown `search` key (§8.2).
 - **Coverage.** Every file in the universe (`sources` minus `exclude`, git-visible including untracked) MUST be claimed in the current or `next` slot of a non-retired node. An unclaimed file is `Blocked: Coverage: …` naming the probable owner (the node whose claim shares the longest directory prefix with the file; a file two or more folders deep needs at least two shared folders, so sharing only `src/` names no owner) and the exact fix: `set_implementation_files` with that node's active-slot list plus the file, preceded by `open_next` when the owner is shipped with no open evolution and either does not dominate the file's folder (§1.2) or the file is a migration or schema file; otherwise, in a dominated folder, the claim alone is the fix. A retired node's claim does not cover a file; such a file is reported once, by the leftovers rule, not again as Coverage.
 
 #### 1.2.2 Ownership split (Interaction owns the body; Interface mounts)
@@ -1096,7 +1098,7 @@ Scoped orientation for agents: rank nodes by a text query and return the focus n
   - `type` (`Journey|Foundation|Interaction|Interface|Bug`, optional) — filter candidates before ranking.
   - `limit` (integer 1–20, optional, default `5`) — max ranked matches returned.
   - At least one of non-empty `query` or `node_id` is required.
-- **Ranking:** scan territory via `loadGraph()` each call (no in-memory cache, no embeddings). Tokenize `query` on non-alphanumeric characters (lowercase). Score: exact `id` match ≫ `id` substring ≫ title token hits ≫ description token hits. Sort by score descending, then `id` ascending. Nodes with score `0` are omitted from `matches`.
+- **Ranking:** hybrid search over the search cache (§8.1.1). `loadGraph()` runs each call and the cache is re-synced from it first, so a search never serves a stale graph. The `type` filter applies before ranking; retired nodes (`deprecated`, `cancelled`, closed Bugs) never rank. An exact `id` is always first, then the owners of a claim that matches a path query. `score` is the fused score: higher is better, comparable only within one reply.
 - **Focus selection:** if `node_id` is provided, `focus` is that id (after existence check). Otherwise `focus` is the highest-scoring match, or `null` when there are no matches.
 - **Neighborhood:** all edges where `source` or `target` is `focus` (all five edge types); `nodes` includes the focus and every endpoint of those edges. Summaries only: `id`, `type`, `state`, `title`, `description`.
 - **Output:**
@@ -1218,6 +1220,17 @@ Where:
 
 - **Errors:** unknown `node_id`; missing `<id>.mdx`.
 - The payload MUST NOT include `raw_context`, `context_path`, or top-level `title`/`description` (those live on `record`).
+
+#### 8.1.1 Search
+
+`find_related_nodes` and `orient_for_work` rank through one hybrid search.
+
+- **Source of truth.** The `<id>.mdx` files are the only source of truth. Search runs on a derived SQLite cache, `.mindplan-cache/index.db` at the project root (Node's built-in `node:sqlite`). It is gitignored (the folder carries its own `.gitignore`, and `init` adds `.mindplan-cache/` to the repo's), rebuilt from the files, and safe to delete at any time. It is not a graph file: it is never listed in `changed_files` and never part of the coverage universe.
+- **What is indexed, per node.** The unit of retrieval is a node; bodies are never chunked. The indexed and embedded text is `"{type}: {title}. {description}. Area: {Journey titles}. Entry points: {Interface titles}. Aliases: {aliases}. Sections: {## headings}"`, using the open `next` slot's title, description, and body while a revision is open. Area is the Journeys a node belongs to (an Interface: those of the Interactions it exposes; a Bug: those of the Interactions it affects); entry points are the Interfaces exposing it. Headings leave out scaffold sections and any heading most nodes share. The keyword index also holds the id split into words and the claimed paths split into words.
+- **Keyword half.** FTS5 `bm25` over those columns (porter stemming), top 50. When `node:sqlite` or FTS5 is unavailable, the token scoring of earlier releases is the keyword half.
+- **Semantic half.** Cosine similarity between the query and each node's normalized embedding from a local transformers.js model (`search.model`, default `Xenova/bge-small-en-v1.5`, 384 dimensions), top 50 within 0.12 of the best hit. The model downloads once per machine into `~/.cache/mindplan/models` (override with `MINDPLAN_MODEL_CACHE`) and loads in the background at server start. Until it is ready, when it cannot load (offline, proxy, sandbox, `@huggingface/transformers` not installed), with `search.enabled: false`, or with `MINDPLAN_SEARCH=keyword`, search is keyword-only and never errors; the reason is logged once to stderr. `MINDPLAN_SEARCH_OFFLINE=1` uses only an already-downloaded model.
+- **Fusion.** Reciprocal rank fusion, `score = Σ 1/(60 + rank)`, then a bonus of one rank step for each node one `belongs_to`, `depends_on`, `exposes`, or `mounts` link from a top-3 node (it breaks near-ties and never reorders a clear winner), then the path and exact-id shortcuts.
+- **Keeping it current.** On server start and after every successful graph write, the cache syncs and re-embeds only nodes whose text changed; each search re-syncs from the loaded graph, so edits made outside MCP (`git pull`, a branch switch) are found on the next call. A change of schema version, model, or vector size drops and rebuilds the cache. A call never waits on the model download or on a full re-embed: when more than a few nodes need new vectors, that call is keyword-only and the embedding finishes in the background.
 
 #### `orient_for_work`
 
@@ -1428,8 +1441,8 @@ When scoped, files owned by other nodes are only counted in `other_count`. Each 
 
 #### `patch_config`
 
-- **Input:** `sources?`, `exclude?`, `decisions?: { blast_radius?, schema_files? }` (at least one required).
-- **Effect:** writes `mindplan/config.json` via the store. A decision setting not passed keeps its stored value (§1.2.1); an unknown key inside `decisions` is rejected.
+- **Input:** `sources?`, `exclude?`, `decisions?: { blast_radius?, schema_files? }`, `search?: { enabled?, model? }` (at least one required).
+- **Effect:** writes `mindplan/config.json` via the store. A decision or search setting not passed keeps its stored value (§1.2.1); an unknown key inside `decisions` or `search` is rejected.
 - **Output:** `{ path, config, changed_files }`.
 
 #### `put_attachment` / `remove_attachment`

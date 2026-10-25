@@ -53,7 +53,10 @@ import {
 import { runCheckHandler } from "../../interactions/i-check-integrity/check.js";
 import { EXPORT_RESULT_BUDGET, exportMindPlanViewHandler } from "../../interactions/i-export-map/handlers.js";
 import { FOUNDATION_ROLES } from "../../foundations/f-domain-model/types.js";
-import { drainRemovedLegacyFiles } from "../../foundations/f-territory-store/store.js";
+import {
+  drainRemovedLegacyFiles,
+  restoreRemovedLegacyFiles,
+} from "../../foundations/f-territory-store/store.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -137,21 +140,42 @@ function tool<Args extends ZodRawShapeCompat>(
 function guarded<A>(
   handler: (args: A) => unknown,
   options: { drift?: boolean; write?: boolean } = {}
-): (args: A) => ToolResult {
+): (args: A) => ToolResult | Promise<ToolResult> {
+  const fail = (err: unknown): ToolResult => {
+    const removed = drainRemovedLegacyFiles();
+    const message = err instanceof Error ? err.message : String(err);
+    const note =
+      removed.length === 0
+        ? ""
+        : `\n${removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n")}`;
+    return { content: [{ type: "text", text: `${message}${note}` }], isError: true };
+  };
   return (args: A) => {
     const verbose = (args as { verbose?: boolean } | undefined)?.verbose === true;
     const attachDrift = options.drift !== false && (!options.write || verbose);
-    try {
-      const payload = withRemovedLegacyFiles(handler(args));
+    const succeed = (result: unknown): ToolResult => {
+      const payload = withRemovedLegacyFiles(result);
       return ok(attachDrift ? withDrift(payload) : payload);
+    };
+    try {
+      const result = handler(args);
+      // Search handlers are async (the query embedding); every other handler returns its payload.
+      // They load the graph before their first await, so the legacy files that load removed are
+      // taken now: another call that runs while this one waits keeps its own.
+      if (result instanceof Promise) {
+        const removedBefore = drainRemovedLegacyFiles();
+        const withEarlier = (value: unknown): ToolResult => {
+          restoreRemovedLegacyFiles(removedBefore);
+          return succeed(value);
+        };
+        return result.then(withEarlier).catch((err: unknown) => {
+          restoreRemovedLegacyFiles(removedBefore);
+          return fail(err);
+        });
+      }
+      return succeed(result);
     } catch (err) {
-      const removed = drainRemovedLegacyFiles();
-      const message = err instanceof Error ? err.message : String(err);
-      const note =
-        removed.length === 0
-          ? ""
-          : `\n${removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n")}`;
-      return { content: [{ type: "text", text: `${message}${note}` }], isError: true };
+      return fail(err);
     }
   };
 }
@@ -286,14 +310,16 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Find related nodes",
       description:
         "Call before creating a node, to reuse one that already exists. " +
-        "Ranks nodes by text query (id/title/description) and returns the focus node plus its 1-hop " +
+        "Ranks nodes for a text query (keyword plus semantic search; an exact id ranks first) and returns the focus node plus its 1-hop " +
         "linked neighborhood (summaries only). Prefer this over get_mindplan_graph for orientation. " +
         "Provide query and/or node_id. Use get_node_context for full territory; get_blast_radius for transitive dependents.",
       inputSchema: {
         query: z
           .string()
           .optional()
-          .describe("Free-text query to rank nodes (id, title, description). Required if node_id omitted."),
+          .describe(
+            "Free-text query to rank nodes (keyword and semantic: id, title, description, area, headings, paths). Required if node_id omitted."
+          ),
         node_id: NODE_ID.optional().describe(
           "Force focus to this node when present. Required if query is empty."
         ),
@@ -698,8 +724,8 @@ export function registerMindPlanTools(server: McpServer): void {
       kind: "write",
       title: "Patch project config",
       description:
-        "Call when source roots, exclude paths, or decision-gate settings change. " +
-        "Writes mindplan/config.json sources, exclude, and/or decisions via the territory store. " +
+        "Call when source roots, exclude paths, decision-gate settings, or search settings change. " +
+        "Writes mindplan/config.json sources, exclude, decisions, and/or search via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -726,9 +752,23 @@ export function registerMindPlanTools(server: McpServer): void {
           })
           .optional()
           .describe("Decision-gate settings. A field not passed keeps its stored value."),
+        search: z
+          .strictObject({
+            enabled: z
+              .boolean()
+              .optional()
+              .describe("false turns semantic ranking off (keyword ranking always runs). Default true."),
+            model: z
+              .string()
+              .min(1)
+              .optional()
+              .describe('Embedding model id (default "Xenova/bge-small-en-v1.5"); changing it rebuilds the search cache.'),
+          })
+          .optional()
+          .describe("Search settings. A field not passed keeps its stored value."),
       },
     },
-    ({ sources, exclude, decisions }) => patchConfig({ sources, exclude, decisions })
+    ({ sources, exclude, decisions, search }) => patchConfig({ sources, exclude, decisions, search })
   );
 
   tool(
