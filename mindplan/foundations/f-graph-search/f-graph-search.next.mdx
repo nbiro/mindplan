@@ -4,9 +4,9 @@ type: Foundation
 title: "Graph search"
 description: "Infra — ranks nodes for a query by fusing keyword and semantic results from the search index (reciprocal rank fusion plus a small graph boost, an exact id always first), falls back to token scoring when the index or model is unavailable, expands graph neighborhoods, resolves which nodes' rules and decisions apply to a node (and which nodes a node's rules reach), computes whether a decision is superseded, and lists decisions by node, change, or graph."
 state: mirror
-shipped_at: 2026-10-25T23:35:19.327Z
+shipped_at: 2026-10-25T23:55:51.656Z
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-10-25T23:35:19.327Z
+updated_at: 2026-10-25T23:55:51.656Z
 depends_on:
   - f-domain-model
   - f-search-index
@@ -41,6 +41,8 @@ Package: `src/foundations/f-graph-search/`
   - `fuseRankings(lists, { docs, exact?, paths? })` — reciprocal rank fusion (`Σ 1/(RRF_K + rank)`, `RRF_K` = 60, `FUSION_DEPTH` = 50 per half), then `GRAPH_BOOST` (one rank step at the top) once for each already-found node one `belongs_to` / `depends_on` / `exposes` / `mounts` link from a top-3 node (top-3 nodes linked to each other included), then path matches (a single-word query with a slash or a file extension, matched against claims: exact, directory prefix, or glob) above every fused score, and an exact id above everything
   - `score` is the fused score, comparable only within one reply; each `RankedMatch` from `searchNodes` also carries `area` (the doc's Journey titles), which `rankNodes` leaves out
   - `refreshSearchIndex(graph, root, readBody?)` (after a write) and `warmSearchIndex(root, loadGraph, readBody?)` (server start) — never throw, never block a call
+- `scoreNode` (the token fallback) scores alias hits like title hits
+- `searchDocs` fills `aliases` from the node's `aliases` list: they go into the FTS5 `aliases` column (weight 8) and the embedded text (`Aliases: …`)
 - Ranking covers all node types including Interaction and Interface (no Interaction-specific branches — ranking is type-agnostic aside from retired filters and the type filter)
 - `expandNeighborhood` walks all incident edge types including `exposes` and `leads_to`
 - Tests/fixtures must cover Interaction/Interface nodes and `exposes`/`leads_to` neighborhoods once the domain model ships those types
@@ -112,6 +114,8 @@ Depends on: `f-domain-model`, `f-search-index`.
 - [x] Tune the graph boost and semantic window on the test set; keep bge-small (beat MiniLM on top-1 and MRR)
 - [x] Verified hybrid ranking via `npm test`
 - [x] Add `area` to the ranked matches for orient's summary rows
+
+- [x] Index node aliases
 
 ## Decisions
 

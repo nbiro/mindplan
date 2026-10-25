@@ -111,7 +111,7 @@ Requires Node.js 22.13 or later (the first 22.x release with `node:sqlite` unfla
      npm install -D mindplan-mcp
      ```
 
-   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.7` (a version range) in the commands below.
+   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.8` (a version range) in the commands below.
 
 2. From your project root, scaffold:
 
@@ -131,7 +131,7 @@ npx mindplan-mcp init --host claude   # or cursor (default) / all
 }
 ```
 
-With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.7"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
+With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.8"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
 4. Reload MCP servers after config changes.
 
@@ -232,7 +232,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`); on a shipped node, adds a claim in place when it only grows into folders the node alone owns; `change` labels a neighbor |
 | `set_test_files` | mutation | Link the test files (paths, directories ending in `/`, or globs) that verify a node; evidence, not a claim, written to live and an open `next` alike with no `open_next` and no readiness reset; `get_blast_radius` lists them as the tests to run |
-| `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |
+| `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) and search `aliases` (any node, no `open_next`) |
 | `patch_node_rules` | mutation | Write one node's `## Rules`; `orient_for_work` delivers them to the node and everything that inherits from it |
 | `record_decision` | mutation | Append a decision record (what was chosen, the alternatives, why) to the node it shapes; supersede instead of editing |
 | `patch_project_description` | mutation | Write the `mindplan/project.md` description |

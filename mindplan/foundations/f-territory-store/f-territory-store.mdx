@@ -4,9 +4,9 @@ type: Foundation
 title: "Territory store"
 description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
 state: stable
-shipped_at: 2026-10-25T21:13:07.299Z
+shipped_at: 2026-10-25T23:55:51.799Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-25T22:32:03.516Z
+updated_at: 2026-10-25T23:55:51.799Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -83,6 +83,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 - `projectVersionStatus()` compares the stamp with the running package and graph format and never throws. Status: `current`, `missing` (no stamp), `invalid` (unreadable stamp), `behind` (stamp older than the package, or older graph format), `ahead` (stamp newer than the package, or newer graph format). Every status but `current` carries one `warning` sentence naming the fix: `behind` / `missing` / `invalid` → run `mindplan-mcp init` with the installed version; `ahead` → upgrade `mindplan-mcp`.
 - Versions compare as SemVer `major.minor.patch`; a pre-release sorts before its release.
 
+- **Aliases.** `aliases` is a frontmatter list parsed like `tests` and kept verbatim by rewriters that do not know it; each entry is written as a JSON string (free text: spaces, colons, other scripts) and decoded on parse. `normalizeAliases(id, entries)` trims, collapses whitespace, drops empties, deduplicates ignoring case, and Blocks an entry over `MAX_ALIAS_CHARS` (60) or more than `MAX_ALIASES` (20). `writeAliasesFrontmatter(node, entries)` is the only writer: any node type, not a retired or closed one; the same list on live and an open next, mirror twin re-synced, state / `updated_at` / readiness untouched; an empty list removes the field. `promoteNextSlot` writes the next file's list into the rebuilt live frontmatter; `nodeToRecord` carries it
+- **Literal replacements.** Every frontmatter write that splices free text (aliases, tests, title, description, `change_ref`) passes a replacer function to `String.replace`, so a `$` in the text is written as is and never read as a replacement pattern
+
 ## Acceptance Criteria
 
 - Standing twin after first ship; open_next is a state flip
@@ -113,6 +116,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - A body naming only a longer path keeps the `added_claims` entry; naming the exact path (even before a period) removes it
 - `writeTestsFrontmatter` writes the list to live and an open next, re-syncs the twin when no revision is open, and leaves a `ready` revision ready
 - The `tests` list survives `open_next`, body, claim, edge, and change writes, and ship; an empty list removes the field
+
+- Aliases round-trip JSON-quoted, survive other territory writes and promotion, and `[]` removes them
 
 ## Atomic Ops
 
@@ -156,6 +161,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Parse `tests` and add `writeTestsFrontmatter`
 - [x] Carry `tests` through open_next, frontmatter rewrites, and promote
 - [x] Verified the `tests` list via `npm test`
+- [x] Parse, normalize, write, and promote `aliases`
 
 ## Decisions
 

@@ -200,6 +200,15 @@ const CHANGE_REF = z
   .optional()
   .describe("Optional branch name or PR URL for the change. Empty string clears it.");
 
+/** Search aliases: the words people will use for a node that its text does not contain. */
+const ALIASES = z
+  .array(z.string().min(1).max(60))
+  .max(20)
+  .optional()
+  .describe(
+    "Search aliases: synonyms, the words users will say, other languages (e.g. quote, request a quote, ofertă). Replaces the list; [] clears it. At most 20, each up to 60 characters."
+  );
+
 /** The one flag that adds inherited decisions to orient_for_work and get_node_context. */
 const INCLUDE_INHERITED_DECISIONS = z
   .boolean()
@@ -520,10 +529,12 @@ export function registerMindPlanTools(server: McpServer): void {
         READINESS_HINT +
         " change / change_ref set the revision's change id (grouping only: never resets readiness); moving the last revision off a change clears its neighbor labels (cleared_neighbors). " +
         "On a shipped node with no open next, change labels it a neighbor of that change (edited in place; returns neighbor_of, " +
-        "and replaced_change when it had another label); change_ref is Blocked there.",
+        "and replaced_change when it had another label); change_ref is Blocked there. " +
+        "aliases replaces the node's search aliases on any node, shipped included, live and an open next alike, without open_next or a readiness reset.",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node whose territory to patch."),
+        aliases: ALIASES,
         title: z
           .string()
           .min(1)
@@ -610,6 +621,7 @@ export function registerMindPlanTools(server: McpServer): void {
         change,
         change_ref,
         slot,
+        aliases,
         verbose,
       }) =>
         patchNodeTerritory({
@@ -625,6 +637,7 @@ export function registerMindPlanTools(server: McpServer): void {
           change,
           change_ref,
           slot,
+          aliases,
           verbose,
         })
   );
@@ -950,11 +963,12 @@ export function registerMindPlanTools(server: McpServer): void {
           "Optional change id (a slug) that ties this new Foundation, Interaction, or Interface to other revisions of one change."
         ),
         change_ref: CHANGE_REF,
+        aliases: ALIASES,
       },
     },
-    
-      ({ id, type, title, description, role, change, change_ref, verbose }) =>
-        createNode({ id, type, title, description, role, change, change_ref, verbose })
+
+      ({ id, type, title, description, role, change, change_ref, aliases, verbose }) =>
+        createNode({ id, type, title, description, role, change, change_ref, aliases, verbose })
   );
 
   tool(

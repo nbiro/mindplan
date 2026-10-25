@@ -1146,6 +1146,12 @@
     "src/interactions/i-send-enquiry/",
     "src/templates/skyloom/blocks/Contact/",
     "src/templates/snapsite/blocks/Contact/"
+   ],
+   "aliases": [
+    "quote",
+    "request a quote",
+    "ofertă",
+    "árajánlat"
    ]
   },
   {

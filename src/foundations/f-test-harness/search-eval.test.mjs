@@ -174,9 +174,13 @@ try {
     );
   }
   const idx = (q) => cases.findIndex((c) => c.query === q);
-  // "request a quote skyloom" shares no word with i-send-enquiry and the model does not bridge
-  // quote to enquiry; it is reached through an alias (aliases.test.mjs).
-  assert.equal(hybridRuns[idx("contact form quote request")][0], "i-send-enquiry", "contact form quote request ranks i-send-enquiry first");
+  // The plan's measured misses: both rank i-send-enquiry first in hybrid mode, and in keyword-only
+  // mode through its "quote" alias (the fixture gives it the aliases skyloom's node should carry).
+  const keywordRuns = await runAll(null, "keyword-done");
+  for (const q of ["contact form quote request", "request a quote skyloom"]) {
+    assert.equal(hybridRuns[idx(q)][0], "i-send-enquiry", `hybrid: "${q}" ranks i-send-enquiry first`);
+  }
+  assert.equal(keywordRuns[idx("request a quote skyloom")][0], "i-send-enquiry", 'keyword-only: the "quote" alias ranks i-send-enquiry first');
   console.log("ok   search eval: keyword and hybrid at or above the committed floor; hybrid beats the baseline");
   console.log("SEARCH EVAL PASSED");
 } finally {

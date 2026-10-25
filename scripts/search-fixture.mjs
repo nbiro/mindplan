@@ -37,6 +37,7 @@ const nodes = graph.nodes
     if (n.role) out.role = n.role;
     for (const f of EDGE_FIELDS) if (n[f]?.length) out[f] = n[f];
     if (n.implements?.length) out.implements = n.implements;
+    if (n.aliases?.length) out.aliases = n.aliases;
     if (n.next) out.next = { state: n.next.state, title: n.next.title, description: n.next.description, updated_at: n.next.updated_at };
     return out;
   })

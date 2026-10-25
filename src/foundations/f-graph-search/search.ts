@@ -92,10 +92,13 @@ export function scoreNode(node: MindPlanNode, tokens: string[], queryLower: stri
 
   const titleLower = node.title.toLowerCase();
   const descLower = node.description.toLowerCase();
+  // Aliases weigh like the title: they are other names for the node.
+  const aliasesLower = (node.aliases ?? []).join(" | ").toLowerCase();
 
   for (const token of tokens) {
     if (id.includes(token)) score += SCORE_ID_SUBSTRING;
     if (titleLower.includes(token)) score += SCORE_TITLE_TOKEN;
+    if (aliasesLower.includes(token)) score += SCORE_TITLE_TOKEN;
     if (descLower.includes(token)) score += SCORE_DESCRIPTION_TOKEN;
   }
 
@@ -330,7 +333,7 @@ export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchD
       description: n.next?.description ?? n.description,
       area: areaOf(n),
       entry: entries.get(n.id) ?? [],
-      aliases: [],
+      aliases: [...(n.aliases ?? [])],
       headings: (headings.get(n.id) ?? []).filter((h) => (seen.get(h.toLowerCase()) ?? 0) <= common),
       paths: [...new Set([...(n.implements ?? []), ...(n.next?.implements ?? [])])],
       retired: isRetired(n),

@@ -88,8 +88,11 @@ const STOPWORDS = new Set(
 
 /** FTS5 MATCH expression: the query's words OR'd, each quoted so no word is read as syntax. */
 export function ftsQuery(query: string): string | null {
-  const words = splitWords(query)
-    .split(" ")
+  // Letters of any script count (an alias like "ofertă"); FTS5's unicode61 folds the diacritics.
+  const words = query
+    .normalize("NFC")
+    .toLowerCase()
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
     .filter((w) => w && !STOPWORDS.has(w));
   if (words.length === 0) return null;
   return [...new Set(words)].map((w) => `"${w}"`).join(" OR ");

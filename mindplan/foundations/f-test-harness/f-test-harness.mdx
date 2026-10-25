@@ -6,7 +6,7 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: stable
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-25T23:31:18.939Z
+updated_at: 2026-10-25T23:42:34.862Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -47,6 +47,8 @@ Intended files: `src/foundations/f-test-harness/`
 - `search-eval.test.mjs` (run by `npm test`) runs the test set `search-eval.json` (48 English queries: synonyms, plain phrasing, exact ids, paths, area words, tool names) over `fixtures/search-skyloom.json` and `fixtures/search-mindplan.json` (snapshots made by `scripts/search-fixture.mjs`) through `search-eval.mjs`, in keyword-only and hybrid mode; hybrid embeds from the committed int8 vectors in `fixtures/search-eval.vectors.json`, so it needs no network. It fails when a metric (top-1, top-5, MRR) drops below `search-eval.metrics.json`, when hybrid does not beat the committed token baseline, or when a text has no committed vector. `--write-vectors`, `--write-metrics`, `--live`, and `--model` refresh or compare with the live model
 
 Depends on: `f-mcp-runtime`.
+
+- `aliases.test.mjs` (run by `npm test`) covers aliases through `create_node` and `patch_node_territory` (JSON-quoted, kept by other writes, replaced, cleared, length-limited), keyword-only search by an alias and by an alias in another language with or without diacritics, and each description warning without a failure; the skyloom fixture's `i-send-enquiry` carries the plan's aliases, so `search-eval.test.mjs` asserts both "quote" queries rank it first (keyword-only for the alias)
 
 ## Acceptance Criteria
 

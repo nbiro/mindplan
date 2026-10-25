@@ -47,6 +47,8 @@ import {
   promoteNextSlot,
   readMarkdown,
   territoryBodyReader,
+  normalizeAliases,
+  writeAliasesFrontmatter,
   removeEdgesFromFrontmatter,
   scaffoldEntity,
   splitContext,
@@ -419,10 +421,12 @@ export function createNode(args: {
   role?: FoundationRole;
   change?: string;
   change_ref?: string;
+  aliases?: string[];
 }): Record<string, unknown> {
   const { id, type, title, description } = args;
   // Validate config before writing territory.
   loadProjectConfig();
+  if (args.aliases !== undefined) normalizeAliases(id, args.aliases);
   if (nodeExists(id)) {
     throw blocked(`node "${id}" already exists.`);
   }
@@ -467,6 +471,7 @@ export function createNode(args: {
   ensureDirectories();
   scaffoldEntity(node, { title, description: desc });
   writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref });
+  if (args.aliases?.length) writeAliasesFrontmatter(node, args.aliases);
   const rel = entityRelativePath(node);
   const current = territoryPath(node, "current");
   const attachments = `${rel}/${ATTACHMENTS_DIR}`;
@@ -1570,14 +1575,59 @@ type PatchTerritoryArgs = {
   change?: string;
   change_ref?: string;
   slot?: TerritorySlot;
+  /** Replace the node's search aliases (slot-independent; never resets readiness). */
+  aliases?: string[];
 };
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   gateWrite(null, [args.node_id], "patch_node_territory");
-  // A revision moved off (or cleared from) its change may leave that change with no revisions.
-  return args.change === undefined
-    ? writeNodeTerritory(args)
-    : withNeighborCleanup(() => writeNodeTerritory(args));
+  const { aliases, ...territory } = args;
+  if (aliases !== undefined) {
+    // Validate the alias write in full before any territory write, so a Blocked writes nothing.
+    normalizeAliases(args.node_id, aliases);
+    const target = findNode(loadGraph(), args.node_id);
+    if (isInactiveNode(target)) {
+      throw blocked(`"${args.node_id}" is ${target.state}; aliases cannot be set on a retired or closed node.`);
+    }
+  }
+  const territoryFields = Object.entries(territory).some(
+    ([key, value]) =>
+      value !== undefined &&
+      !(Array.isArray(value) && value.length === 0) &&
+      key !== "node_id" &&
+      key !== "verbose" &&
+      key !== "slot"
+  );
+  let result: Record<string, unknown> | null = null;
+  if (territoryFields || aliases === undefined) {
+    // A revision moved off (or cleared from) its change may leave that change with no revisions.
+    result =
+      territory.change === undefined
+        ? writeNodeTerritory(territory)
+        : withNeighborCleanup(() => writeNodeTerritory(territory));
+  }
+  if (aliases === undefined) return result!;
+  // Aliases are search words, not contract: written to live and an open next alike, on any node,
+  // shipped ones included, without open_next or a readiness reset.
+  const written = writeAliasesFrontmatter(findNode(loadGraph(), args.node_id), aliases);
+  if (written.paths.length > 0) refreshPersistedMap();
+  if (result) {
+    return {
+      ...result,
+      // The anchor reflects the node after both writes.
+      ...mutationTail(loadGraph(), args.node_id, args.verbose),
+      patched_fields: [...((result.patched_fields as string[] | undefined) ?? []), "aliases"],
+      aliases: written.aliases,
+      changed_files: changedFiles([...((result.changed_files as string[]) ?? []), ...written.paths]),
+    };
+  }
+  return {
+    node_id: args.node_id,
+    patched_fields: ["aliases"],
+    aliases: written.aliases,
+    changed_files: changedFiles(written.paths),
+    ...mutationTail(loadGraph(), args.node_id, args.verbose),
+  };
 }
 
 function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {

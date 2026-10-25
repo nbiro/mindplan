@@ -4,9 +4,9 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-eight tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels, additive in-place claims on shipped nodes, and linked test files."
 state: stable
-shipped_at: 2026-10-25T23:35:19.951Z
+shipped_at: 2026-10-25T23:55:52.364Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-25T23:35:19.951Z
+updated_at: 2026-10-25T23:55:52.364Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -66,6 +66,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - **Schemas for the honesty fixes.** `create_node`, `open_next`, and `patch_node_territory` take `change` / `change_ref`; `toggle_checkboxes` items take `all`, `note`, and `not_applicable`; `update_node_status` takes `scope: "change"` with `change`, and `skip_review`; `get_blast_radius` takes `node_id` or `change`; `run_check` takes `change`. Hints name which writes send a `ready` revision back to `draft`.
 - **Decision tools.** Register `record_decision` (a write tool: `verbose`, no default drift) with `node_id`, `decision`, `alternatives` (non-empty array), `why`, and optional `consequences`, `supersedes`, `change`, `id`; register `list_decisions` (a read tool, drift attached) with optional `node_id`, `change`, and `include_superseded`. `record_decision`'s description leads with: call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact). `export_mindplan_view` takes `decisions`; `patch_config` takes `decisions: { blast_radius?, schema_files? }` as a strict object (an unknown key is rejected, not stripped); the `record_decision` id schema uses `DECISION_ID_PATTERN`. `orient_for_work` and `get_node_context` take `include_superseded` (the same flag as `list_decisions`) and their descriptions name the `decisions` block; `get_blast_radius` names `decisions`, and `update_node_status` names `Blocked: Decision` at in-review. Twenty-seven tools
 - **Async handlers.** `guarded` accepts a handler that returns a promise (`find_related_nodes` and `orient_for_work` await the query embedding): a resolved value takes the same success envelope, and a rejection or a throw takes the same error envelope as a synchronous handler. The legacy files the handler's graph load removed (before its first await) are drained right away and put back when it settles, so a call that runs meanwhile reports only its own. `find_related_nodes` describes hybrid ranking (keyword plus semantic; an exact id first). `patch_config` takes `search: { enabled?, model? }` as a strict object
+- **Aliases.** `create_node` and `patch_node_territory` take `aliases` (one shared schema: up to 20 strings of 1–60 characters, with examples in the description); `patch_node_territory` describes it
 - **Summary-first orient.** `orient_for_work` describes the rows, `auto_focus`, the full reply for `node_id`, and the write gate (`Blocked: Orientation`, `create_node` never blocked); its `limit` defaults to 8 for a query alone
 - **Rules versions.** `get_rules` takes `known_version` and describes `rules_version` and the `unchanged: true` reply; `get_project` names `rules_version`; `orient_for_work` takes `known_rules_versions` (a string record) and describes the entry `version`
 - **Decision defaults.** `orient_for_work` and `get_node_context` take `include_inherited_decisions` (one shared schema) and describe the own-decisions default and `inherited_decisions`; `get_blast_radius` takes `include_dependent_decisions` and describes `dependent_decisions`
@@ -142,6 +143,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Verified via `npm test`
 - [x] Register `set_test_files` and name tests in the `run_check` and `get_blast_radius` descriptions
 - [x] Verified the tool list via `npm test`
+
+- [x] Add the `aliases` schema to `create_node` and `patch_node_territory`
 
 ## Decisions
 

@@ -87,11 +87,11 @@ const EDGE_FIELDS = [
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
 /**
- * Array fields parsed like edges (YAML list or inline). `added_claims` and `tests` are parsed here
+ * Array fields parsed like edges (YAML list or inline). `added_claims`, `tests`, and `aliases` are parsed here
  * but are not stripped by `stripListFieldLines`, so frontmatter rewriters that do not know them
  * keep them verbatim.
  */
-const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims", "tests"] as const;
+const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims", "tests", "aliases"] as const;
 type ListField = (typeof LIST_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
@@ -475,6 +475,8 @@ export type ParsedFrontmatter = {
   added_claims: string[];
   /** Test files that verify the node (slot-independent). */
   tests: string[];
+  /** Search aliases (slot-independent); stored JSON-quoted, decoded here. */
+  aliases: string[];
 };
 
 function isEdgeField(key: string): key is EdgeField {
@@ -502,6 +504,15 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
   let implementsList: string[] = [];
   let addedClaims: string[] = [];
   let testsList: string[] = [];
+  let aliasesList: string[] = [];
+  const unquote = (item: string) => {
+    if (!item.startsWith('"')) return item;
+    try {
+      return JSON.parse(item) as string;
+    } catch {
+      return item;
+    }
+  };
 
   const lines = match[1].split(/\r?\n/);
   let i = 0;
@@ -520,6 +531,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
       if (field === "implements") implementsList = items;
       else if (field === "added_claims") addedClaims = items;
       else if (field === "tests") testsList = items;
+      else if (field === "aliases") aliasesList = items.map(unquote);
       else arrays[field] = items;
       continue;
     }
@@ -534,6 +546,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
       if (field === "implements") implementsList = items;
       else if (field === "added_claims") addedClaims = items;
       else if (field === "tests") testsList = items;
+      else if (field === "aliases") aliasesList = items.map(unquote);
       else arrays[field] = items;
       i++;
       continue;
@@ -560,6 +573,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     implements: implementsList,
     added_claims: addedClaims,
     tests: testsList,
+    aliases: aliasesList,
   };
 }
 
@@ -597,8 +611,11 @@ function formatImplementsLines(entries: string[]): string {
   return parts.join("\n");
 }
 
-/** Removes one named list field (`added_claims`, `tests`) and its items from frontmatter lines. */
-function stripNamedListLines(inner: string, field: "added_claims" | "tests"): string {
+/** A list field written by name and kept verbatim by rewriters that do not know it. */
+type NamedListField = "added_claims" | "tests" | "aliases";
+
+/** Removes one named list field (`added_claims`, `tests`, `aliases`) and its items from frontmatter lines. */
+function stripNamedListLines(inner: string, field: NamedListField): string {
   const lines = inner.split(/\r?\n/);
   const result: string[] = [];
   let i = 0;
@@ -614,9 +631,11 @@ function stripNamedListLines(inner: string, field: "added_claims" | "tests"): st
   return result.join("\n").replace(/\n+$/, "");
 }
 
-function formatNamedListLines(field: "added_claims" | "tests", entries: string[]): string {
+function formatNamedListLines(field: NamedListField, entries: string[]): string {
   if (entries.length === 0) return "";
-  return [`${field}:`, ...entries.map((e) => `  - ${e}`)].join("\n");
+  // Aliases are free text (spaces, colons, other scripts), so each is a JSON string.
+  const item = (e: string) => (field === "aliases" ? JSON.stringify(e) : e);
+  return [`${field}:`, ...entries.map((e) => `  - ${item(e)}`)].join("\n");
 }
 
 /**
@@ -636,7 +655,7 @@ function pendingAddedClaims(entries: string[], claims: string[], body: string): 
 /** Rewrites one named list in a `---` fenced frontmatter block (removed when empty). */
 function replaceNamedListInFence(
   fence: string,
-  field: "added_claims" | "tests",
+  field: NamedListField,
   entries: string[]
 ): string {
   const match = fence.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)$/);
@@ -713,6 +732,7 @@ function parseNodeFromFrontmatter(
   if (parsed.implements.length > 0) node.implements = [...parsed.implements];
   if (parsed.added_claims.length > 0) node.added_claims = [...parsed.added_claims];
   if (parsed.tests.length > 0) node.tests = [...parsed.tests];
+  if (parsed.aliases.length > 0) node.aliases = [...parsed.aliases];
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
       throw new Error(
@@ -991,7 +1011,7 @@ export function patchFrontmatter(
   }
 
   if (patched !== fence) {
-    fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+    fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
   }
   if (slot === "current" && "state" in node && isProductionState(String(node.state))) {
     const full = node as MindPlanNode;
@@ -1035,7 +1055,7 @@ export function patchFrontmatterEdges(
   const extras = [edgeLines, implLines].filter(Boolean).join("\n");
   const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
-  fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
+  fs.writeFileSync(file, raw.replace(fence, () => rebuilt), "utf-8");
 }
 
 /** Resolves which territory slot receives edge mutations for pipeline nodes. */
@@ -1706,6 +1726,7 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.implements?.length) record.implements = [...node.implements];
   if (node.added_claims?.length) record.added_claims = [...node.added_claims];
   if (node.tests?.length) record.tests = [...node.tests];
+  if (node.aliases?.length) record.aliases = [...node.aliases];
   if (node.change) record.change = node.change;
   if (node.change_ref) record.change_ref = node.change_ref;
   if (node.next) {
@@ -1944,12 +1965,12 @@ function patchTerritoryScalars(
 ): string {
   let patched = frontmatter;
   if (scalars.title !== undefined) {
-    patched = patched.replace(/^title:.*$/m, `title: ${JSON.stringify(scalars.title)}`);
+    patched = patched.replace(/^title:.*$/m, () => `title: ${JSON.stringify(scalars.title)}`);
   }
   if (scalars.description !== undefined) {
     patched = patched.replace(
       /^description:.*$/m,
-      `description: ${JSON.stringify(scalars.description)}`
+      () => `description: ${JSON.stringify(scalars.description)}`
     );
   }
   if (scalars.role !== undefined) {
@@ -2172,9 +2193,9 @@ function applyChangeScalars(
     if (value === "") {
       out = out.replace(new RegExp(`\\r?\\n${key}:.*$`, "m"), "");
     } else if (line.test(out)) {
-      out = out.replace(line, `${key}: ${JSON.stringify(value)}`);
+      out = out.replace(line, () => `${key}: ${JSON.stringify(value)}`);
     } else {
-      out = out.replace(/(\r?\n---)$/, `${nl}${key}: ${JSON.stringify(value)}$1`);
+      out = out.replace(/(\r?\n---)$/, (_m, fenceEnd: string) => `${nl}${key}: ${JSON.stringify(value)}${fenceEnd}`);
     }
   }
   return out;
@@ -2211,7 +2232,7 @@ export function writeChangeFrontmatter(
   }
   const { file, raw, fence } = requireMutableFrontmatter(node, slot);
   const patched = applyChangeScalars(fence, input);
-  if (patched !== fence) fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+  if (patched !== fence) fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
   assignChange(slot === "next" && node.next ? node.next : node, input);
   return slot === "next" ? dropStaleLiveLabel(node) : undefined;
 }
@@ -2262,7 +2283,7 @@ export function clearAddedClaims(node: MindPlanNode): boolean {
   const patched = replaceNamedListInFence(fence, "added_claims", []);
   delete node.added_claims;
   if (patched === fence) return false;
-  fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+  fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
   return true;
 }
 
@@ -2323,7 +2344,7 @@ export function openNextSlot(
   const description = meta?.description;
   if (title !== undefined) {
     if (/^title:/m.test(inner)) {
-      inner = inner.replace(/^title:.*$/m, `title: ${JSON.stringify(title)}`);
+      inner = inner.replace(/^title:.*$/m, () => `title: ${JSON.stringify(title)}`);
     } else {
       const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
       inner = `${inner}${nl}title: ${JSON.stringify(title)}`;
@@ -2331,7 +2352,7 @@ export function openNextSlot(
   }
   if (description !== undefined) {
     if (/^description:/m.test(inner)) {
-      inner = inner.replace(/^description:.*$/m, `description: ${JSON.stringify(description)}`);
+      inner = inner.replace(/^description:.*$/m, () => `description: ${JSON.stringify(description)}`);
     } else {
       const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
       inner = `${inner}${nl}description: ${JSON.stringify(description)}`;
@@ -2419,6 +2440,7 @@ export function promoteNextSlot(
   const mounts = nextParsed.arrays.mounts;
   const implementsList = nextParsed.implements;
   const testsList = nextParsed.tests;
+  const aliasesList = nextParsed.aliases;
   const role =
     nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
       ? (nextParsed.scalars.role as FoundationRole)
@@ -2462,6 +2484,10 @@ export function promoteNextSlot(
   if (testsList.length > 0) {
     frontmatterLines.push("tests:");
     for (const p of testsList) frontmatterLines.push(`  - ${p}`);
+  }
+  if (aliasesList.length > 0) {
+    frontmatterLines.push("aliases:");
+    for (const a of aliasesList) frontmatterLines.push(`  - ${JSON.stringify(a)}`);
   }
   if (role) {
     frontmatterLines.push(`role: ${role}`);
@@ -2509,6 +2535,8 @@ export function promoteNextSlot(
   else delete node.implements;
   if (testsList.length > 0) node.tests = [...testsList];
   else delete node.tests;
+  if (aliasesList.length > 0) node.aliases = [...aliasesList];
+  else delete node.aliases;
   if (role) node.role = role;
   else delete node.role;
   delete node.next;
@@ -2554,7 +2582,7 @@ export function writeImplementsFrontmatter(
   const extras = [edgeLines, implLines, addedLines].filter(Boolean).join("\n");
   const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
-  fs.writeFileSync(file, raw.replace(fence, rebuilt), "utf-8");
+  fs.writeFileSync(file, raw.replace(fence, () => rebuilt), "utf-8");
 
   let twin: string | null = null;
   if (slot === "next") {
@@ -2600,7 +2628,7 @@ export function writeTestsFrontmatter(
     const { file, raw, fence } = requireMutableFrontmatter(node, slot);
     const patched = replaceNamedListInFence(fence, "tests", normalized);
     if (patched === fence) continue;
-    fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+    fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
     paths.push(markdownRelativePath(node, slot));
     if (slot === "current") changed = true;
   }
@@ -2611,6 +2639,65 @@ export function writeTestsFrontmatter(
     if (twin) paths.push(twin);
   }
   return { paths, changed };
+}
+
+/** At most this many aliases per node, each at most `MAX_ALIAS_CHARS` characters. */
+export const MAX_ALIASES = 20;
+export const MAX_ALIAS_CHARS = 60;
+
+/** Trimmed, one-line, deduplicated (ignoring case) aliases; Blocked when one is too long or there are too many. */
+export function normalizeAliases(id: string, entries: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of entries) {
+    const alias = raw.replace(/\s+/g, " ").trim();
+    if (!alias) continue;
+    if (alias.length > MAX_ALIAS_CHARS) {
+      throw new Error(`Blocked: alias "${alias.slice(0, 40)}…" is longer than ${MAX_ALIAS_CHARS} characters; aliases are search words, not descriptions.`);
+    }
+    const key = alias.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(alias);
+  }
+  if (normalized.length > MAX_ALIASES) {
+    throw new Error(`Blocked: ${normalized.length} aliases for "${id}"; keep at most ${MAX_ALIASES}.`);
+  }
+  return normalized;
+}
+
+/**
+ * Write (replace) a node's search `aliases`: the only writer. Any node type; slot-independent like
+ * `tests` (live and an open next alike, mirror twin re-synced when none is open). Search words, not
+ * contract: state, `updated_at`, and readiness are untouched. Entries are trimmed, one line each,
+ * deduplicated ignoring case; an empty list removes the field.
+ */
+export function writeAliasesFrontmatter(
+  node: MindPlanNode,
+  entries: string[]
+): { paths: string[]; changed: boolean; aliases: string[] } {
+  if (isInactiveNode(node)) {
+    throw new Error(`Blocked: "${node.id}" is ${node.state}; aliases cannot be set on a retired or closed node.`);
+  }
+  const normalized = normalizeAliases(node.id, entries);
+  const slots: TerritorySlot[] = node.next ? ["current", "next"] : ["current"];
+  const paths: string[] = [];
+  let changed = false;
+  for (const slot of slots) {
+    const { file, raw, fence } = requireMutableFrontmatter(node, slot);
+    const patched = replaceNamedListInFence(fence, "aliases", normalized);
+    if (patched === fence) continue;
+    fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
+    paths.push(markdownRelativePath(node, slot));
+    if (slot === "current") changed = true;
+  }
+  if (normalized.length > 0) node.aliases = normalized;
+  else delete node.aliases;
+  if (changed) {
+    const twin = syncMirrorAfterLiveWrite(node);
+    if (twin) paths.push(twin);
+  }
+  return { paths, changed, aliases: normalized };
 }
 
 /**
@@ -2630,7 +2717,7 @@ export function writeRoleFrontmatter(
     patched = patched.replace(/^(type:.*)$/m, `$1\nrole: ${role}`);
   }
   patched = patched.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
-  fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
+  fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
   if (slot === "next" && node.next) {
     node.next.role = role;
     node.next.updated_at = now;

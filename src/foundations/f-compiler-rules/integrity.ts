@@ -637,3 +637,69 @@ export function staleTextWarnings(
   }
   return warnings;
 }
+
+/** A description longer than this warns: descriptions are search rows; detail belongs in the body. */
+export const DESCRIPTION_MAX_CHARS = 300;
+
+/**
+ * Words that name who acts. Loose on purpose: an Interaction description that names none of them
+ * only warns, and a project can always phrase around it.
+ */
+const ACTOR_WORDS = new Set(
+  (
+    "visitor visitors user users customer customers client clients editor editors owner owners admin admins " +
+    "administrator operator operators agent agents human humans developer developers maintainer maintainers " +
+    "guest guests shopper shoppers buyer buyers seller sellers member members reader readers author authors " +
+    "staff team teams manager managers employee employees student students teacher teachers patient patients " +
+    "player players subscriber subscribers merchant merchants host hosts driver drivers rider riders anyone someone " +
+    "people person viewer viewers caller callers reviewer reviewers contributor contributors"
+  ).split(" ")
+);
+
+/** Revision wording that belongs in a revision's body, not in what the node does now. */
+const REVISION_WORDING = /\b(now|no longer|was changed to|used to be|previously|anymore|instead of the old)\b/i;
+
+const comparable = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")
+    .trim();
+
+/**
+ * Description quality warnings (never failures) for one node's active slot: empty or a repeat of
+ * the title, longer than `DESCRIPTION_MAX_CHARS`, an Interaction that names no actor, or revision
+ * wording ("now", "no longer", "was changed to", …) that belongs in the revision's body.
+ */
+export function descriptionWarnings(node: MindPlanNode): string[] {
+  if (isInactiveNode(node)) return [];
+  const title = node.next?.title ?? node.title;
+  const description = (node.next?.description ?? node.description ?? "").trim();
+  const where = node.next ? `"${node.id}" (next)` : `"${node.id}"`;
+  const out: string[] = [];
+  if (!description) {
+    out.push(`description: ${where} has no description; say what the node does in one sentence (search ranks it).`);
+    return out;
+  }
+  if (comparable(description) === comparable(title)) {
+    out.push(`description: ${where} repeats its title; say what the node does, not its name again.`);
+  }
+  if (description.length > DESCRIPTION_MAX_CHARS) {
+    out.push(
+      `description: ${where} is ${description.length} characters (over ${DESCRIPTION_MAX_CHARS}); descriptions are search rows, so move the detail into the body.`
+    );
+  }
+  if (node.type === "Interaction") {
+    const words = comparable(description).split(" ");
+    if (!words.some((w) => ACTOR_WORDS.has(w))) {
+      out.push(`description: ${where} names no actor; say who does what (for example "Visitor sends …").`);
+    }
+  }
+  // A Bug's description describes a regression ("no longer shows the total"): that is its job.
+  const revision = node.type === "Bug" ? null : REVISION_WORDING.exec(description);
+  if (revision) {
+    out.push(
+      `description: ${where} says "${revision[0]}"; a description says what the node does, and the change history belongs in the revision's body.`
+    );
+  }
+  return out;
+}

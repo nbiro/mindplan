@@ -4,10 +4,9 @@ type: Foundation
 title: "Search index"
 description: "Adapter — the derived search cache in .mindplan-cache/index.db (node:sqlite): node rows, an FTS5 keyword index, one normalized embedding vector per node from a local transformers.js model, and edges; synced incrementally from the graph, rebuilt when its schema or model changes, and safe to delete."
 state: mirror
-shipped_at: 2026-10-25T22:42:44.186Z
+shipped_at: 2026-10-25T23:55:51.511Z
 created_at: 2026-10-25T21:51:39.591Z
-updated_at: 2026-10-25T22:42:44.186Z
-role: adapter
+updated_at: 2026-10-25T23:56:05.624Z
 depends_on:
   - f-source-index
 implements:
@@ -15,6 +14,7 @@ implements:
 tests:
   - src/foundations/f-test-harness/search-eval.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
+role: adapter
 ---
 
 # Search index
@@ -48,6 +48,8 @@ Package: `src/foundations/f-search-index/`
   - `warmSearch(root, docs)` (server start) and `refreshSearch(root, docs)` (after a write): never throw, never block a tool call
 - Nothing here writes to stdout; diagnostics go to stderr
 
+- `ftsQuery` normalizes the query to NFC and splits it on letters and marks of any script (`\p{L}`, `\p{M}`), so an alias like `ofertă` reaches FTS5, whose unicode61 tokenizer folds diacritics on both sides
+
 Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
 
 ## Acceptance Criteria
@@ -69,6 +71,8 @@ Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
 - [x] Add `service.ts`: settings, registry, `prepareSearch` with the inline embed limit, warm-up and post-write refresh
 - [x] Review fixes: rowids at write time and a reload on `data_version`, filters in SQL, identity by model, corrupt-only delete, offline local path, orphan vectors dropped
 - [x] Verified via `npm test`
+
+- [x] Split FTS queries on letters of any script
 
 ## Decisions
 

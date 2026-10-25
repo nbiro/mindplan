@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 — aliases and the description check
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **`aliases` on any node.** This is a new optional frontmatter list for synonyms, the words users will say, and other languages, such as `quote`, `request a quote`, or `ofertă` on an enquiry form. `create_node` and `patch_node_territory` take `aliases`. Up to 20 are allowed, each up to 60 characters; they are deduplicated ignoring case, stored as JSON strings, and `[]` clears them. The list is slot-independent like `tests`: writing it never needs `open_next` or resets readiness, and promotion keeps it. [§6.1, §8.2]
+- **Search uses aliases.** Aliases go into the FTS5 index and the embedded text. The keyword half now splits queries on letters of any script, and FTS5 folds diacritics, so `ofertă` and `oferta` both match. With the plan's aliases on the fixture's `i-send-enquiry`, keyword-only search ranks it first for "request a quote skyloom". The search test set moves to keyword 0.708 / 0.896 / 0.787 and hybrid 0.833 / 0.958 / 0.887 (top-1 / top-5 / MRR), and the committed floor rises with it. [§8.1.1]
+- **Description warnings.** `run_check` prints `Warning: description: …` when a description is empty, repeats the title, runs over 300 characters, belongs to an Interaction that names no actor, or uses revision wording ("now", "no longer", "was changed to", "used to be", …; not checked on Bugs). These never fail the check. [§9.6]
+- **Fix: `$` in free text.** A title, description, `change_ref`, `tests` entry, or alias containing `$&`, `$$`, `` $` `` or `$'` was read as a `String.replace` pattern and could garble the frontmatter. It is now written as is.
+- **Docs.** The playbook breakdown rule 4 and the define-entities skill cover descriptions and aliases. The `npx` examples use `mindplan-mcp@0.8`.
+
 ## 0.7.0 — summary-first orientation and the write gate
 
 Every behavior change in this release. SPEC sections in brackets.
