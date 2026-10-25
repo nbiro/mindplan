@@ -432,21 +432,41 @@ await newRevision("i-new2", "feat");
     JSON.stringify(dropped)
   );
 
-  // An inherited label stays on live while the next slot moves to another change; if the label's
-  // change closes meanwhile, discarding must not bring the node back into it.
+  // Moving the revision's change off an inherited label drops that label from live at once, so a
+  // later close of the label's change and a discard cannot bring the node back into it.
   await call("create_node", { id: "i-m1r", type: "Interaction", title: "M1 R", description: "Keeps m2 open", change: "m2" });
   await call("patch_node_territory", { node_id: "f-util", change: "m2" });
   await call("open_next", { node_id: "f-util" });
-  await call("patch_node_territory", { node_id: "f-util", change: "m2c" });
+  const movedOff = await call("patch_node_territory", { node_id: "f-util", change: "m2c" });
+  check(
+    "moving the revision's change off an inherited label drops the live label and reports it",
+    movedOff.replaced_change === "m2" &&
+      movedOff.changed_files.includes(liveOf("foundations", "f-util")) &&
+      !/^change:/m.test(readRel(liveOf("foundations", "f-util"))),
+    JSON.stringify(movedOff)
+  );
   await call("update_node_status", { node_id: "i-m1r", new_status: "cancelled" });
   const moved = await call("discard_next", { node_id: "f-util" });
   check(
-    "discard_next clears an inherited live label whose change closed while the next slot was elsewhere",
-    moved.cleared_neighbors?.includes("f-util") &&
-      (await labelOf("f-util")) === undefined &&
-      twinInSync("foundations", "f-util"),
+    "discard_next after the label's change closed restores no label",
+    (await labelOf("f-util")) === undefined && twinInSync("foundations", "f-util"),
     JSON.stringify(moved)
   );
+  await call("patch_node_territory", { node_id: "f-util", change: "m3" });
+  const reopened = await call("open_next", { node_id: "f-util" });
+  const movedSet = await call("set_implementation_files", {
+    node_id: "f-util",
+    files: reopened.next.implements ?? [],
+    change: "m3b",
+  });
+  check(
+    "set_implementation_files moving the next slot's change off the label drops it and reports it",
+    movedSet.replaced_change === "m3" &&
+      movedSet.changed_files.includes(liveOf("foundations", "f-util")) &&
+      (await labelOf("f-util")) === undefined,
+    JSON.stringify(movedSet)
+  );
+  await call("discard_next", { node_id: "f-util" });
 }
 
 // --- moving a revision off its change clears the labels it leaves behind ---
@@ -489,6 +509,49 @@ await newRevision("i-new2", "feat");
       deprecated.changed_files.includes(liveOf("foundations", "f-util")) &&
       !/^change:/m.test(readRel(liveOf("foundations", "f-util"))),
     JSON.stringify(deprecated)
+  );
+}
+
+// --- record_decision on a labeled neighbor defaults to its label ---
+{
+  await call("create_node", { id: "i-rd", type: "Interaction", title: "RD", description: "Keeps rd open", change: "rd" });
+  await call("patch_node_territory", { node_id: "f-core", change: "rd" });
+  const decided = await call("record_decision", {
+    node_id: "f-core",
+    decision: "Core keeps a single export.",
+    alternatives: ["Split core into several modules (more churn for dependents)"],
+    why: "Dependents import one name.",
+  });
+  const listed = await call("list_decisions", { change: "rd" });
+  check(
+    "record_decision on a labeled neighbor without change records it under the label",
+    decided.decision.change === "rd" &&
+      listed.decisions.some((d) => d.node_id === "f-core" && d.decision === "Core keeps a single export.") &&
+      (await labelOf("f-core")) === "rd" &&
+      twinInSync("foundations", "f-core"),
+    `${JSON.stringify(decided)} | ${JSON.stringify(listed)}`
+  );
+}
+
+// --- a revisions batch that ships a change's last revisions clears its labels once ---
+{
+  await newRevision("i-b1", "bt");
+  await newRevision("i-b2", "bt");
+  await call("patch_node_territory", { node_id: "f-core", change: "bt" });
+  for (const id of ["i-b1", "i-b2"]) await walk(id, ["ready", "in-progress", "in-review"]);
+  const batch = await call("update_node_status", {
+    revisions: [
+      { node_id: "i-b1", new_status: "ship" },
+      { node_id: "i-b2", new_status: "ship" },
+    ],
+  });
+  check(
+    "a batch shipping both revisions lists the neighbor once in cleared_neighbors",
+    JSON.stringify(batch.cleared_neighbors) === JSON.stringify(["f-core"]) &&
+      batch.changed_files.includes(liveOf("foundations", "f-core")) &&
+      (await labelOf("f-core")) === undefined &&
+      twinInSync("foundations", "f-core"),
+    JSON.stringify(batch)
   );
 }
 

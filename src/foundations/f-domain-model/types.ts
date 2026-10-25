@@ -319,6 +319,15 @@ export function isPipelineNodeType(type: NodeType): boolean {
  * Nodes that no longer carry live work: retired (`cancelled`, `deprecated`) or closed Bugs
  * (`resolved`, `wontfix`). Their rules are neither written, inherited, nor reported.
  */
+/**
+ * A shipped Foundation, Interaction, or Interface with no open next that is not retired: the kind
+ * of node a change edits in place, labeled its neighbor through the live `change`. The one test
+ * the store, the rules, and the handlers share.
+ */
+export function isNeighborNode(node: MindPlanNode): boolean {
+  return isPipelineNodeType(node.type) && Boolean(node.shipped_at) && !node.next && !isInactiveNode(node);
+}
+
 export function isInactiveNode(node: Pick<MindPlanNode, "state">): boolean {
   return (
     node.state === "cancelled" ||

@@ -6,7 +6,7 @@ description: "Infra — persist territory through the store only, including each
 state: in-review
 shipped_at: 2026-10-23T19:24:57.250Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-25T19:02:46.942Z
+updated_at: 2026-10-25T19:27:39.651Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -61,8 +61,9 @@ Intended files: `src/foundations/f-territory-store/`
 - **Readiness demotion.** `demoteReadySlot(node, slot)` sends a `ready` slot to `draft`. The contract writers call it after writing and return whether they did: `patchNodeTerritory` (any field but `change` / `change_ref`, as `readinessReset`), `writeImplementsFrontmatter` (only when the list changes), `addEdgeToFrontmatter`, and `removeEdgesFromFrontmatter`. `validateChangeInput` is the one change-id validator
 - **Annotated completion.** `countCheckboxesInText` counts an `— n/a:` line with an empty reason as unchecked; `checkboxLabels` strips annotations
 - **Change frontmatter.** `change` / `change_ref` scalars are read from the live file and the open next file; `writeChangeFrontmatter(node, { change, change_ref }, slot)` sets or clears them (empty string clears) without touching state or `updated_at`; `patchNodeTerritory` takes them as patch fields (validated slug / one-line ref); `create_node`, `open_next`, and first ship call the writer; `promoteNextSlot` drops them because it rebuilds the live frontmatter
-- **Neighbor label.** `writeNeighborLabel(node, change)` sets (or with `""` clears) the live `change` scalar of a shipped node with no open next and re-syncs its mirror twin. It returns `{ twin, replaced? }`: `twin` is null when the label already had that value, `replaced` is the previous id when a different one was set. Any other node is Blocked
-- **In-place claim marker.** `added_claims` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.added_claims`, `nodeToRecord`). `writeImplementsFrontmatter(node, files, slot, addedInPlace?)` on the live slot merges `addedInPlace` into the stored list and keeps, sorted and deduped, only the entries still claimed (verbatim, or a file under a non-glob directory entry) that the body (owned sections excluded) does not yet name verbatim; an empty list removes the field. A live `patchNodeTerritory` write prunes the entries its new body names. `clearAddedClaims(node)` removes the list and leaves the twin re-sync to its caller. `promoteNextSlot` rebuilds the live frontmatter and drops it
+- **Stale live labels.** While a shipped node has an open next, its live label is absent or names the revision's own change. `writeChangeFrontmatter` on the next slot ends with `dropStaleLiveLabel(node)`, which clears a live label that differs from the next slot's change, and returns the cleared id (`undefined` otherwise); `patchNodeTerritory` on the next slot does the same after a `change` write and returns it as `replaced_change`. `open_next`, `patch_node_territory`, and `set_implementation_files` report it, so `discard_next` can only restore a label of the revision's own change
+- **Neighbor label.** `writeNeighborLabel(node, change)` sets (or with `""` clears) the live `change` scalar of a shipped node with no open next and re-syncs its mirror twin. It returns `{ twin, replaced? }`: `twin` is null when the label already had that value, `replaced` is the previous id when a different one was set. A node that fails `isNeighborNode` (`f-domain-model`; a retired node included) is Blocked
+- **In-place claim marker.** `added_claims` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.added_claims`, `nodeToRecord`). `writeImplementsFrontmatter(node, files, slot, addedInPlace?)` on the live slot merges `addedInPlace` into the stored list and keeps, sorted and deduped, only the entries the list still keeps (`claimListKeeps`: verbatim, or under a non-glob directory entry) that the body (owned sections excluded) does not yet name as a whole path (`namesPath`: `pkg/a.ts` is not named by `pkg/a.tsx`, `pkg/a/` not by `pkg/a/b.ts`); an empty list removes the field. A live `patchNodeTerritory` write prunes the entries its new body names. `clearAddedClaims(node)` removes the list and leaves the twin re-sync to its caller. `promoteNextSlot` rebuilds the live frontmatter and drops it
 - **Deleted next-slot files.** `deleteNextSlotFiles` lists every file it deletes under `next-attachments/` (e.g. `.gitkeep`) as well as the folder
 
 Depends on: `f-domain-model`, `f-source-index`.
@@ -100,6 +101,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - `writeNeighborLabel` on a shipped node with no open next writes the live `change` and the twin and reports the replaced id; on a node with an open next, or one not shipped, it is Blocked
 - An `added_claims` entry stays through claim writes until the body names it; a body patch that names it removes it, and removing the last entry removes the field
 - `deleteNextSlotFiles` lists `next-attachments/.gitkeep`
+- Moving an open revision's change id off its inherited live label clears the live label and returns the cleared id
+- A body naming only a longer path keeps the `added_claims` entry; naming the exact path (even before a period) removes it
 
 ## Atomic Ops
 
@@ -138,6 +141,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Parse, write, and prune `added_claims` (`writeImplementsFrontmatter`, `patchNodeTerritory`) and add `clearAddedClaims`
 - [x] List each deleted file in `deleteNextSlotFiles`
 - [x] Verified the neighbor label, `added_claims`, and the deleted-file list via `npm test`
+- [x] Drop stale live labels on next-slot change writes, match `added_claims` by whole path, and guard labels with `isNeighborNode` (review fixes)
+- [x] Verified the review fixes via `npm test`
 
 ## Decisions
 

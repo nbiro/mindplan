@@ -287,12 +287,17 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     "a named marker clears; an unnamed one still warns",
     !claimWarning(midCheck.warnings, "f-core", "src/core/new.ts") &&
       claimWarning(midCheck.warnings, "f-core", "src/core/third.ts") &&
-      JSON.stringify(addedClaims("foundations", "f-core")) === JSON.stringify(["src/core/third.ts"]),
+      JSON.stringify(addedClaims("foundations", "f-core")) === JSON.stringify(["src/core/", "src/core/third.ts"]),
     `${JSON.stringify(midCheck.warnings)} | ${JSON.stringify(addedClaims("foundations", "f-core"))}`
+  );
+  check(
+    "a file under a folder entry does not name the folder entry",
+    claimWarning(midCheck.warnings, "f-core", "src/core/"),
+    JSON.stringify(midCheck.warnings)
   );
   await call("patch_node_territory", {
     node_id: "f-core",
-    replace: { find: "# Core", with: "# Core\n\nHelpers in `src/core/third.ts`." },
+    replace: { find: "# Core", with: "# Core\n\nEverything under `src/core/`; helpers in `src/core/third.ts`." },
   });
   const cleared = await call("run_check", {});
   check(
@@ -402,6 +407,143 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     record.change === undefined && record.added_claims === undefined,
     JSON.stringify(record)
   );
+}
+
+// --- migration and schema files are never claimed in place ---
+{
+  await call("create_node", { id: "f-db", type: "Foundation", title: "Db", description: "Infra — database", role: "infra" });
+  write("src/db/client.ts", "export const db = 1;\n");
+  write("src/db/migrations/001.sql", "create table t (id int);\n");
+  await call("set_implementation_files", { node_id: "f-db", files: ["src/db/client.ts", "src/db/migrations/001.sql"] });
+  fillAndTick("foundations", "f-db");
+  // Outside git a first build's schema file is decision-worthy: record one before in-review.
+  await call("record_decision", {
+    node_id: "f-db",
+    decision: "Migrations are plain SQL files.",
+    alternatives: ["An ORM migration DSL (another dependency)"],
+    why: "The schema stays readable without tooling.",
+  });
+  await walk("f-db", ["ready", "in-progress", "in-review", "ship"]);
+  const base = ["src/db/client.ts", "src/db/migrations/001.sql"];
+
+  write("src/db/migrations/002.sql", "alter table t add column n int;\n");
+  const exact = await blocked("set_implementation_files", { node_id: "f-db", files: [...base, "src/db/migrations/002.sql"] });
+  check(
+    "a new migration file in a dominated folder is not claimed in place: Blocked → open_next",
+    exact?.startsWith("Blocked:") &&
+      exact.includes("src/db/migrations/002.sql") &&
+      exact.includes("open_next") &&
+      /schema|decision/i.test(exact),
+    exact ?? "accepted"
+  );
+  const folder = await blocked("set_implementation_files", { node_id: "f-db", files: [...base, "src/db/migrations/"] });
+  check(
+    "a migrations folder entry is not claimed in place",
+    folder?.startsWith("Blocked:") && folder.includes("src/db/migrations/") && folder.includes("open_next"),
+    folder ?? "accepted"
+  );
+  const parent = await blocked("set_implementation_files", { node_id: "f-db", files: ["src/db/", ...base] });
+  check(
+    "a folder entry that holds a migration file is not claimed in place",
+    parent?.startsWith("Blocked:") && parent.includes("src/db/") && parent.includes("open_next"),
+    parent ?? "accepted"
+  );
+
+  write("src/db/extra.ts", "export const extra = 1;\n");
+  const coverage = await call("run_check", {});
+  const schemaCov = coverage.failures.find((f) => f.includes('"src/db/migrations/002.sql"'));
+  const plainCov = coverage.failures.find((f) => f.includes('"src/db/extra.ts"'));
+  check(
+    "the Coverage fix for an unclaimed migration in a dominated folder opens the evolution first",
+    !!schemaCov &&
+      schemaCov.includes('Probable owner by path: "f-db"') &&
+      schemaCov.includes('open_next({"node_id":"f-db"}) then set_implementation_files'),
+    String(schemaCov)
+  );
+  check(
+    "the Coverage fix for a plain sibling in the same node's folder stays in place",
+    !!plainCov && plainCov.includes('Probable owner by path: "f-db"') && !plainCov.includes("open_next"),
+    String(plainCov)
+  );
+  fs.rmSync(path.join(root, "src", "db", "migrations", "002.sql"));
+  fs.rmSync(path.join(root, "src", "db", "extra.ts"));
+
+  write("src/db/pool.ts", "export const pool = 1;\n");
+  const sibling = await call("set_implementation_files", { node_id: "f-db", files: [...base, "src/db/pool.ts"] });
+  check(
+    "a non-schema sibling in a dominated folder is still claimed in place",
+    sibling.slot === "current" && JSON.stringify(sibling.added_in_place) === JSON.stringify(["src/db/pool.ts"]),
+    JSON.stringify(sibling)
+  );
+}
+
+// --- added_claims markers clear only when the body names the whole path ---
+{
+  check(
+    "f-app still carries its in-place marker",
+    JSON.stringify(addedClaims("foundations", "f-app")) === JSON.stringify(["src/conf/app/extra.ts"]),
+    JSON.stringify(addedClaims("foundations", "f-app"))
+  );
+  await call("patch_node_territory", {
+    node_id: "f-app",
+    replace: { find: "# App", with: "# App\n\nNot `src/conf/app/extra.tsx`, nor src/conf/app/extra.ts.bak either." },
+  });
+  const longer = await call("run_check", {});
+  check(
+    "a body naming only longer paths keeps the marker and the warning",
+    JSON.stringify(addedClaims("foundations", "f-app")) === JSON.stringify(["src/conf/app/extra.ts"]) &&
+      claimWarning(longer.warnings, "f-app", "src/conf/app/extra.ts"),
+    `${JSON.stringify(addedClaims("foundations", "f-app"))} | ${JSON.stringify(longer.warnings)}`
+  );
+  await call("patch_node_territory", {
+    node_id: "f-app",
+    replace: { find: "# App", with: "# App\n\nExtra settings live in src/conf/app/extra.ts." },
+  });
+  const named = await call("run_check", {});
+  check(
+    "naming the exact path (sentence-ending period included) clears the marker and the warning",
+    addedClaims("foundations", "f-app").length === 0 && !claimWarning(named.warnings, "f-app", "src/conf/app/extra.ts"),
+    `${JSON.stringify(addedClaims("foundations", "f-app"))} | ${JSON.stringify(named.warnings)}`
+  );
+  check("the f-app twin matches its live file", twinInSync("foundations", "f-app"));
+}
+
+// --- other live writes on a shipped node keep its added_claims ---
+{
+  await call("create_node", { id: "f-keep", type: "Foundation", title: "Keep", description: "Infra — keep", role: "infra" });
+  write("src/keep/a.ts", "export const a = 1;\n");
+  await call("set_implementation_files", { node_id: "f-keep", files: ["src/keep/a.ts"] });
+  fillAndTick("foundations", "f-keep");
+  await walk("f-keep", ["ready", "in-progress", "in-review", "ship"]);
+  write("src/keep/b.ts", "export const b = 1;\n");
+  await call("set_implementation_files", { node_id: "f-keep", files: ["src/keep/a.ts", "src/keep/b.ts"] });
+  const kept = () =>
+    JSON.stringify(addedClaims("foundations", "f-keep")) === JSON.stringify(["src/keep/b.ts"]) &&
+    twinInSync("foundations", "f-keep");
+  check("f-keep starts with an in-place marker", kept(), JSON.stringify(addedClaims("foundations", "f-keep")));
+
+  await call("patch_node_rules", { node_id: "f-keep", rules: "- Keep helpers small." });
+  check("patch_node_rules keeps added_claims", kept(), JSON.stringify(addedClaims("foundations", "f-keep")));
+
+  await call("record_decision", {
+    node_id: "f-keep",
+    decision: "Keep exports one constant per file.",
+    alternatives: ["A barrel module (hides ownership)"],
+    why: "Each file stays claimable on its own.",
+  });
+  check("record_decision keeps added_claims", kept(), JSON.stringify(addedClaims("foundations", "f-keep")));
+
+  // A live edge write with f-keep as the source, when the server allows one on a shipped node with
+  // no open next; otherwise f-keep is the target of another node's depends_on (which recomputes
+  // f-keep's stability and rewrites its state line).
+  const asSource = await blocked("link_nodes", { source_id: "f-keep", target_id: "f-core", edge_type: "depends_on" });
+  if (asSource === null) {
+    check("link_nodes with f-keep as the source keeps added_claims", kept(), JSON.stringify(addedClaims("foundations", "f-keep")));
+  } else {
+    await call("create_node", { id: "f-user", type: "Foundation", title: "User", description: "Infra — user", role: "infra" });
+    await call("link_nodes", { source_id: "f-user", target_id: "f-keep", edge_type: "depends_on" });
+    check("link_nodes with f-keep as the target keeps added_claims", kept(), JSON.stringify(addedClaims("foundations", "f-keep")));
+  }
 }
 
 check("every write listed every mindplan/ file it touched", diffMisses === 0, `${diffMisses} write(s) missed files`);

@@ -20,8 +20,10 @@ export { defaultBaseRef, matchesSchemaFile, newFilesSinceBase } from "./git.js";
 export {
   claimCoversPath,
   claimEntryExists,
+  claimListKeeps,
   expandClaims,
   isGlobClaim,
+  namesPath,
   normalizeClaimList,
   validateClaimPath,
 } from "./claims.js";
@@ -30,6 +32,7 @@ export {
   collectOtherClaims,
   folderClaimSuggestions,
   isDominatedFolder,
+  schemaClaimEntries,
   type FolderClaimSuggestion,
   type OtherClaims,
 } from "./dominance.js";

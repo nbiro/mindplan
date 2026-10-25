@@ -6,7 +6,7 @@ description: "Infra — SPEC, playbook, skills, and changelog: mandatory project
 state: in-review
 shipped_at: 2026-10-20T13:04:10.178Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-25T19:02:45.724Z
+updated_at: 2026-10-25T19:32:44.272Z
 depends_on:
   - f-domain-model
 implements:
@@ -44,8 +44,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 - Never paste rules, playbook, or description into MCP instructions
 - **Honesty behavior in SPEC and the playbook.** SPEC documents: which writes reset a `ready` revision to `draft` (and which never do); `Blocked: Coverage` with its probable owner and fix; the import rule over next-slot and released claims (warnings for one release); `skip_review` and the per-step dry run; unambiguous `toggle_checkboxes` with `all`, `note`, and `not_applicable`; change ids (`change`, `change_ref`, `scope: "change"`, change blast radius, change check); glob claims; and the shared-route rule (the Assembler owns routes that dispatch to the active template; a template's entry point owns only its own routes) with its split-family warning. The bundled playbook names readiness reset, skip_review, notes, and change ids
 - **Decision records.** SPEC documents the `## Decisions` section and its entry format with adoption and fence notes (§6.1.2), computed status and supersession, inheritance into the `orient_for_work` `decisions` block, `record_decision` and `list_decisions` (§8), the `decisions` additions to `get_blast_radius`, `get_node_context`, `export_mindplan_view`, and `patch_config`, the `decisions` config settings and their database-only defaults (§1.2.1), `opened_at` on an open next (§6.1, §6.2), and the decision gate as Rule 12 (§5.13, enforcement ordering moves to §5.14) with its four triggers (a first build's schema files count only when the branch adds them), its warning, and `Blocked: Decision` (§9.6, Appendix A). The bundled playbook gains one line: "Record a decision when you choose between viable designs; MindPlan blocks in-review on shared-contract, schema, or wide-radius changes without one." The plan-project skill names `record_decision`; README lists the two tools
-- **Shipped claims and neighbors.** SPEC documents additive in-place claims on a shipped node with no open next and folder dominance (§1.2, §1.2.1), the live `added_claims` frontmatter and its stale warning (§6.1, §6.2, §9.6), neighbor labels in the live `change`, change members as revisions plus neighbors, and when labels clear (§3.7), and the new parameters and result fields of `set_implementation_files`, `patch_node_territory`, `record_decision`, `open_next`, `discard_next`, `force_unship`, `update_node_status`, `run_check`, and `get_blast_radius` (§8.1, §8.2, Appendix A). The bundled playbook's rule 3 tells agents to pass `change` on a neighbor's in-place writes and rule 6 that a new file beside a neighbor's own, in a folder no other node claims into, is claimed in place; the plan-project and define-entities skills say the same; README's tool table and the `CHANGELOG.md` Unreleased section list the changes
-- **Changelog.** `CHANGELOG.md` lists every behavior change per release
+- **Shipped claims and neighbors.** SPEC documents additive in-place claims on a shipped node with no open next and folder dominance (§1.2, §1.2.1), the live `added_claims` frontmatter and its stale warning (§6.1, §6.2, §9.6), neighbor labels in the live `change`, change members as revisions plus neighbors, and when labels clear (§3.7), and the new parameters and result fields of `set_implementation_files`, `patch_node_territory`, `record_decision`, `open_next`, `discard_next`, `force_unship`, `update_node_status`, `run_check`, and `get_blast_radius` (§8.1, §8.2, Appendix A). The bundled playbook's rule 3 tells agents to pass `change` on a neighbor's in-place writes and rule 6 that a new file beside a neighbor's own, in a folder no other node claims into, is claimed in place; the plan-project and define-entities skills say the same; README's tool table and the `CHANGELOG.md` Unreleased section list the changes. SPEC and the changelog also state that a migration or schema file is never claimed in place (§1.2, the Coverage fix, §8.2 errors), that `added_claims` entries are matched as whole paths, that moving an open revision's change id drops a stale live label, that `record_decision` on a neighbor defaults to its label, and that labels clear once per call when a write closes a change
+- **Changelog.** `CHANGELOG.md` lists every behavior change per release; each PR's section is titled with the version it releases (this change: `0.2.0`; the sections that shipped in the first npm release: `0.1.0`), since every merge to `main` publishes
 
 Depends on: `f-domain-model`.
 
@@ -90,6 +90,7 @@ Depends on: `f-domain-model`.
 - [x] Update the playbook, the plan-project and define-entities skills, and README for neighbors and in-place claims, and refresh the init-installed host copies
 - [x] Add the Unreleased entry to `CHANGELOG.md`
 - [x] Verified the shipped-claims and neighbor docs via `npm test`
+- [x] Document the review fixes in SPEC and the changelog
 
 ## Attachments
 

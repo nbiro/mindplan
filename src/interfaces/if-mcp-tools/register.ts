@@ -615,7 +615,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .optional()
           .describe("Id of an active decision on this node, its Journey, or its Foundations that this one replaces."),
         change: CHANGE_ID.optional().describe(
-          "Change id to record it under (default: the node's open revision's change). On a shipped node with no open next it also labels the node a neighbor of that change."
+          "Change id to record it under (default: the node's open revision's change, or a neighbor's label). On a shipped node with no open next it also labels the node a neighbor of that change."
         ),
         id: z
           .string()
@@ -787,7 +787,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Pre-ship writes current; shipped with an open next writes next; " +
         "shipped with no open next writes live in place, additive only: every old entry kept (or under a new dir entry), " +
         "each new entry an exact file (or F/) in a folder F the node dominates (it already claims a file directly in F, no other node claims under F); " +
-        "removing, moving, globbing, or claiming elsewhere is Blocked → open_next. " +
+        "removing, moving, globbing, claiming elsewhere, or claiming a migration or schema file (config decisions.schema_files) is Blocked → open_next. " +
         "In-place results list added_in_place; name each in the body with patch_node_territory (run_check warns until then). " +
         "retired nodes may only shrink. Rejects bad paths and ownership conflicts. " +
         "Results may carry folder_claims: a folder/ entry that would replace several per-file entries. " +

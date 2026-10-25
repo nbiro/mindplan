@@ -6,7 +6,7 @@ description: "MCP stdio Interface that registers twenty-seven tools with when-to
 state: in-review
 shipped_at: 2026-10-20T15:10:03.746Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-25T19:02:50.942Z
+updated_at: 2026-10-25T19:26:55.705Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -66,7 +66,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - **Result envelope.** `ok(payload)` returns `content: [{ type: "text", text: JSON.stringify(payload) }]` (compact, no indentation) and, when the payload is a plain object, `structuredContent: payload` as well. String payloads stay text-only. Error results are unchanged (`isError: true`, message text). No `outputSchema` is declared: twenty-seven schemas would double the tool list the host loads, and `structuredContent` is useful without one
 - **Descriptions describe the tool.** No per-tool description names the plan-project skill or tells the agent to follow a skill; the routing sentence stays in `SERVER_INSTRUCTIONS` (`f-mcp-runtime`). `force_unship` keeps the `confirm` token contract and the sentence "Do not invent the confirm token", and drops the DANGEROUS / ask-the-user prose: `destructiveHint` tells the host to prompt
 - Register `get_mindplan_graph` with `offset` and `limit` (integers, `limit` 1..500, default 200) and a description that names paging and the `next_offset` field; register `export_mindplan_view` with `output` (repo-relative path) and a description that says a diagram over the size budget is refused with the fix (pass `focus` or `output`)
-- **Shipped claims and neighbors.** `set_implementation_files` takes `change` (a slug, or `""` to clear) and passes it to the handler; its description names the slot it writes (pre-ship current, open next, or live in place on a shipped node with no open next, additive only in a folder the node dominates; anything else Blocked with `open_next`), `added_in_place`, the body-mention warning, and `folder_claims`. The `change` descriptions of `patch_node_territory`, `record_decision`, and `set_implementation_files` say that on a shipped node with no open next it labels a neighbor (`neighbor_of`, `replaced_change`), and `patch_node_territory` says `change_ref` is Blocked there. `run_check` and `get_blast_radius` say a change's members are its open revisions and its neighbors, each with `kind`; `open_next` says a neighbor label is inherited unless `change` names another (`replaced_change`); `discard_next`, `update_node_status`, and `patch_node_territory` say when `cleared_neighbors` appears and that `scope: "change"` walks revisions only; `force_unship` says it clears the label (`cleared_change`) and `added_claims`. Still twenty-seven tools
+- **Shipped claims and neighbors.** `set_implementation_files` takes `change` (a slug, or `""` to clear) and passes it to the handler; its description names the slot it writes (pre-ship current, open next, or live in place on a shipped node with no open next, additive only in a folder the node dominates, never a migration or schema file; anything else Blocked with `open_next`), `added_in_place`, the body-mention warning, and `folder_claims`. The `change` descriptions of `patch_node_territory`, `record_decision`, and `set_implementation_files` say that on a shipped node with no open next it labels a neighbor (`neighbor_of`, `replaced_change`), and `patch_node_territory` says `change_ref` is Blocked there. `run_check` and `get_blast_radius` say a change's members are its open revisions and its neighbors, each with `kind`; `open_next` says a neighbor label is inherited unless `change` names another (`replaced_change`); `discard_next`, `update_node_status`, and `patch_node_territory` say when `cleared_neighbors` appears and that `scope: "change"` walks revisions only; `force_unship` says it clears the label (`cleared_change`) and `added_claims`. Still twenty-seven tools
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 
@@ -121,6 +121,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Add `change` to the `set_implementation_files` schema and describe in-place claims, `added_in_place`, and `folder_claims`
 - [x] Describe neighbor labels, members with `kind`, and cleared labels in the change-taking and lifecycle tool descriptions
 - [x] Verified the schema and descriptions via `npm test`
+- [x] Name the schema-file refusal in `set_implementation_files` and the neighbor-label default in `record_decision`'s `change` (review fixes)
 - [x] Verified via `npm test`
 
 ## Decisions

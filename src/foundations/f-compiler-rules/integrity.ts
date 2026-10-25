@@ -11,8 +11,14 @@ import type {
   MindPlanNode,
 } from "../f-domain-model/types.js";
 import { isPipelineNodeType } from "../f-domain-model/types.js";
-import { expandClaims, isGlobClaim, validateClaimPath } from "../f-source-index/claims.js";
-import { isDominatedFolder } from "../f-source-index/dominance.js";
+import { expandClaims, isGlobClaim, namesPath, validateClaimPath } from "../f-source-index/claims.js";
+import { decisionGateSettings, loadProjectConfig } from "../f-source-index/config.js";
+import {
+  collectOtherClaims,
+  isDominatedFolder,
+  schemaClaimEntries,
+  type OtherClaims,
+} from "../f-source-index/dominance.js";
 import { listResolvedImports } from "../f-source-index/imports.js";
 import {
   buildOwnershipIndex,
@@ -265,20 +271,43 @@ export function probableOwner(graph: MindPlanGraph, file: string): MindPlanNode 
 }
 
 /**
+ * What one check run shares across its Coverage fixes: the schema globs (config read once) and
+ * each shipped owner's view of the other nodes' claims (expanded once per owner, not per file).
+ */
+export interface CoverageFixContext {
+  schemaGlobs: string[];
+  othersByOwner: Map<string, OtherClaims>;
+}
+
+export function createCoverageFixContext(root: string): CoverageFixContext {
+  return {
+    schemaGlobs: decisionGateSettings(loadProjectConfig(root)).schema_files,
+    othersByOwner: new Map(),
+  };
+}
+
+/**
  * The calls that add `file` to the owner's active claim list. A shipped owner with no open next
- * opens an evolution first, unless the file's folder is one it dominates (then the claim is
- * additive in place).
+ * opens an evolution first, unless the file's folder is one it dominates and the file is not a
+ * migration or schema file (then the claim is additive in place).
  */
 export function coverageFix(
   graph: MindPlanGraph,
   root: string,
   owner: MindPlanNode,
-  file: string
+  file: string,
+  ctx: CoverageFixContext = createCoverageFixContext(root)
 ): CoverageFixCall[] {
-  const shippedIdle =
-    Boolean(owner.shipped_at) &&
-    !owner.next &&
-    !isDominatedFolder(graph, owner.id, path.posix.dirname(file), root, [file]);
+  const inPlace = (): boolean => {
+    if (schemaClaimEntries([file], ctx.schemaGlobs, root).length > 0) return false;
+    let others = ctx.othersByOwner.get(owner.id);
+    if (!others) {
+      others = collectOtherClaims(graph, owner.id, root);
+      ctx.othersByOwner.set(owner.id, others);
+    }
+    return isDominatedFolder(graph, owner.id, path.posix.dirname(file), root, [file], others);
+  };
+  const shippedIdle = Boolean(owner.shipped_at) && !owner.next && !inPlace();
   const current = (owner.next ? owner.next.implements : owner.implements) ?? [];
   const files = [...new Set([...current, file])].sort((a, b) => a.localeCompare(b));
   const claim: CoverageFixCall = {
@@ -531,7 +560,7 @@ export function staleTextWarnings(
   // Claims a shipped node added in place stay flagged until the live body names them.
   if (scope.paths && !node.next) {
     for (const entry of node.added_claims ?? []) {
-      if (body.includes(entry)) continue;
+      if (namesPath(body, entry)) continue;
       warnings.push(
         `stale: "${node.id}" claims \`${entry}\` added in place without a revision; name it in the body (patch_node_territory).`
       );

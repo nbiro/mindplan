@@ -1,25 +1,25 @@
 # Changelog
 
-## Unreleased — shipped claims and change neighbors
+## 0.2.0 — shipped claims and change neighbors
 
 Every behavior change in this release. SPEC sections in brackets.
 
-- **Additive claims on shipped nodes.** `set_implementation_files` on a shipped node with no open `next` (with or without `slot: "current"`) now writes the live list in place when the change is additive: every old entry is kept or covered by a new directory entry, and each new entry is a file whose parent folder the node dominates (it already claims a file there and no other non-retired node claims or covers anything under it) or a directory over such a folder. Removing, moving, globs, and claims outside a dominated folder still need `open_next`. The write re-syncs the mirror twin and returns `added_in_place` and a `hint`. A new file that belongs beside a neighbor's own files no longer has to go into some other folder the node claims as a directory. The Coverage fix for a file in a folder its shipped owner dominates is the claim alone, without `open_next`. [§1.2, §1.2.1, §3.7, §8.2]
-- **`added_claims`.** Entries added in place are listed in the live file's `added_claims` frontmatter. `run_check` warns `stale:` for each one the body does not name verbatim, a territory patch that names it removes it, and promotion of a `next` drops the list. [§6.1, §6.2, §9.6]
+- **Additive claims on shipped nodes.** `set_implementation_files` on a shipped node with no open `next` (with or without `slot: "current"`) now writes the live list in place when the change is additive: every old entry is kept or covered by a new directory entry, and each new entry is a file whose parent folder the node dominates (it already claims a file there and no other non-retired node claims or covers anything under it) or a directory over such a folder. Removing, moving, globs, and claims outside a dominated folder still need `open_next`, and so does any migration or schema file (config `decisions.schema_files`): an exact file that matches, or a folder entry over a schema folder or holding a matching file. Such a claim is decision-worthy, and only a revision reaches the decision gate. The write re-syncs the mirror twin and returns `added_in_place` and a `hint`. A new file that belongs beside a neighbor's own files no longer has to go into some other folder the node claims as a directory. The Coverage fix for a file in a folder its shipped owner dominates is the claim alone, without `open_next`, unless the file is a migration or schema file. [§1.2, §1.2.1, §3.7, §8.2]
+- **`added_claims`.** Entries added in place are listed in the live file's `added_claims` frontmatter. `run_check` warns `stale:` for each one the body does not name as a whole path (`src/a.ts` is not named by `src/a.tsx`, and `src/a/` is not named by `src/a/b.ts`), a territory patch that names it removes it, and promotion of a `next` drops the list. [§6.1, §6.2, §9.6]
 - **Folder-claim hint.** Any `set_implementation_files` result may carry `folder_claims: [{ folder, files, note }]` when every file under a folder is already one of the node's per-file claims and nobody else claims under it. [§8.2]
-- **Neighbors join a change.** On a shipped node with no open `next`, `patch_node_territory`, `record_decision`, and `set_implementation_files` (new `change` param) accept `change` and write it as the node's neighbor label on the live file; results report `neighbor_of`, and `replaced_change` when the label replaces another (`""` clears). `change_ref` on a neighbor is Blocked; title, description, and role on a shipped live slot stay Blocked. On an open revision or pre-ship node, `set_implementation_files`'s `change` sets the slot's change id. `open_next` on a labeled node inherits the label as the revision's change unless it passes another, which clears the live label; `force_unship` and deprecation clear it too. [§3.7, §6.2, §8.1, §8.2]
+- **Neighbors join a change.** On a shipped node with no open `next`, `patch_node_territory`, `record_decision`, and `set_implementation_files` (new `change` param) accept `change` and write it as the node's neighbor label on the live file; results report `neighbor_of`, and `replaced_change` when the label replaces another (`""` clears). `change_ref` on a neighbor is Blocked; title, description, and role on a shipped live slot stay Blocked. On an open revision or pre-ship node, `set_implementation_files`'s `change` sets the slot's change id. `open_next` on a labeled node inherits the label as the revision's change unless it passes another, which clears the live label, and so does moving the open revision's change id later (`patch_node_territory` or `set_implementation_files` on the next slot; result reports `replaced_change`); `force_unship` and deprecation clear it too. `record_decision` on a neighbor without `change` records the decision under the neighbor's label. [§3.7, §6.2, §8.1, §8.2]
 - **Members include neighbors.** A change's members are its revisions plus its labeled neighbors. `run_check({ change })` runs the import, ownership, and stale-text rules on neighbors too and lists members with `kind: "revision" | "neighbor"`; decision warnings stay revision-only. `get_blast_radius({ change })` merges neighbors' radius and files. `update_node_status` `scope: "change"` walks revisions only. A neighbor-only change has members, so it is no longer Blocked as empty. [§3.7, §8.1, §8.2]
-- **Labels clear with the change.** When a change's last revision ships, is discarded (`discard_next`), or is cancelled, the server clears that change's neighbor labels and reports `cleared_neighbors`; so does moving or clearing the change id of its last revision, and a `discard_next` whose node's own live label names a change that closed meanwhile. A neighbor-only change is closed by a `scope: "change"` walk to `ship`. [§3.7, §8.2]
+- **Labels clear with the change.** When a write leaves a change with no revisions that had one before it (its last revision ships, is cancelled, or is discarded with `discard_next`, or has its change id moved or cleared), the server clears that change's neighbor labels once, after the write, and reports `cleared_neighbors`. A batch or scoped walk does this once for the whole call. A neighbor-only change is closed by a `scope: "change"` walk to `ship`. [§3.7, §8.2]
 - **Docs.** The playbook tells agents to pass `change` on a neighbor's in-place writes and that a new file beside a node's own, in a folder nobody else claims into, is claimed in place; the `plan-project` and `define-entities` skills and the README tool table say the same. [§3.7]
 
-## Unreleased — npm release and version stamp
+## 0.1.0 — npm release and version stamp
 
 Every behavior change in this release. SPEC sections in brackets.
 
 - **Install from npm.** `mindplan-mcp` publishes to the public registry. A project with a `package.json` adds it as a dev dependency and registers `npx mindplan-mcp`; any other project registers `npx -y mindplan-mcp@<range>`. `mcp.json.example` and every integration guide now use `npx`. `npm run publish:release` (by hand, first claim) and `.github/workflows/publish.yml` (every merge to `main` that bumps `package.json` `version`, OIDC Trusted Publishing, then a `vX.Y.Z` tag) share one publish script.
 - **Version stamp.** `mindplan-mcp init` writes `mindplan/version.json` (`{ package, graph }`). When the stamp is missing, unreadable, or older than the running server, `get_project` returns a `version` warning and `check` prints `Warning: version: …`; neither fails. Rerunning init rewrites the package-owned agent files (playbook, skills, integrations, MCP example, host skill copies, Cursor rule) without `--force` and leaves `AGENTS.md`, `CLAUDE.md`, `.cursorignore`, `.cursor/permissions.json`, and `project.md` alone. A stamp newer than the server warns too, and init refuses it without `--force`. **Upgrade step:** existing projects have no stamp, so they see the warning until they rerun `mindplan-mcp init` once. [§1.1.2, §8.1, §9.6]
 
-## Unreleased — MCP audit fixes
+## 0.1.0 — MCP audit fixes
 
 Every behavior change in this release. SPEC sections in brackets.
 
@@ -30,7 +30,7 @@ Every behavior change in this release. SPEC sections in brackets.
 - **Paged graph.** `get_mindplan_graph` takes `offset` and `limit` (default 200, max 500) and returns `total_nodes`, `total_edges`, `offset`, `limit`, and `next_offset` while nodes remain; `edges` holds the edges whose source is in the page. A graph that fits one page returns the whole graph plus the totals. [§8.1]
 - **Bounded export.** `export_mindplan_view` takes `output` (repo-relative, inside the root, outside `mindplan/`) and then returns `written_to` instead of `diagram`; without `output`, a diagram over 80,000 characters is `Blocked:` with its size and the two fixes (`focus`, `output`). The CLI never applies the budget. [§8.1]
 
-## Unreleased — decision records
+## 0.1.0 — decision records
 
 Every behavior change in this release. SPEC sections in brackets.
 
@@ -42,7 +42,7 @@ Every behavior change in this release. SPEC sections in brackets.
 - **Shared branch base.** The dirty-src check and the decision gate measure "this branch" from the same merge base (`main`, `origin/main`, `master`, `origin/master`). [§9.6]
 - **Twenty-seven tools.** `record_decision` and `list_decisions` are new. The playbook gains one line on recording decisions. [§8]
 
-## Unreleased — graph honesty
+## 0.1.0 — graph honesty
 
 Every behavior change in this release. SPEC sections in brackets.
 

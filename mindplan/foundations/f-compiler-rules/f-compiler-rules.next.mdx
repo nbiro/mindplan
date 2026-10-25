@@ -2,11 +2,11 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import and ownership gate for in-review and ship, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates, and split route-family warnings. A next file in state mirror is not an open evolution."
+description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import and ownership gate for in-review and ship, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates (never a migration or schema file), and split route-family warnings. A next file in state mirror is not an open evolution."
 state: in-review
 shipped_at: 2026-10-20T13:04:10.578Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-25T19:02:47.724Z
+updated_at: 2026-10-25T19:27:39.377Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -38,12 +38,13 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `findAllImportViolations` (whole universe, for the check), `findImportViolationsForClaim` (files being claimed), `findImportViolationsForNode` (a node's active-slot files)
   - Each `ImportViolation` carries the fix: `{ tool: "link_nodes", args }` with `depends_on`, `exposes`, or `mounts`, or `not_allowed` text when no edge can make the import legal (an Interaction importing an Interface, a `depends_on` that would cycle)
   - `assertCheckCleanForNode` — the gate for moves to `in-review` and `ship`: import and exclusivity violations on the node's active-slot files become one `Blocked: Check failed …`
-  - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked, a live `added_claims` entry the body does not name yet (`stale: "<id>" claims … added in place without a revision`, only while no next is open); relative references (`./`, `../`) are skipped; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
+  - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked, a live `added_claims` entry the body does not name yet as a whole path (`namesPath`; `stale: "<id>" claims … added in place without a revision`, only while no next is open); relative references (`./`, `../`) are skipped; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
   - `findAllImportViolations` scans every claimant of a file (live, next-slot, and released current-slot owners) and resolves import targets through every claim. A violation found only through a next-slot or released claim, which the check did not scan before, is marked `advisory`; the check reports it as a warning for one release before it Blocks
-  - `probableOwner(graph, file)` — the non-retired pipeline node whose claim shares the longest directory prefix with an unclaimed file (a file two or more folders deep needs at least two shared folders), and `coverageFix` — the exact call that claims it (`set_implementation_files` with the active-slot list plus the file, preceded by `open_next` for a shipped owner with no open evolution, unless that owner dominates the file's folder (`isDominatedFolder` with the file as a probe), where the claim is added in place; `coverageFix(graph, root, owner, file)`)
+  - `probableOwner(graph, file)` — the non-retired pipeline node whose claim shares the longest directory prefix with an unclaimed file (a file two or more folders deep needs at least two shared folders), and `coverageFix` — the exact call that claims it (`set_implementation_files` with the active-slot list plus the file, preceded by `open_next` for a shipped owner with no open evolution, unless that owner dominates the file's folder (`isDominatedFolder` with the file as a probe) and the file is not a migration or schema file (`schemaClaimEntries`), where the claim is added in place; `coverageFix(graph, root, owner, file, ctx?)`, where `createCoverageFixContext(root)` holds the schema globs and each owner's `collectOtherClaims`, so one check run expands the other nodes' claims once per owner, not once per unclaimed file)
   - `routeFamilySplits(graph, buckets, universe)` — warnings when the route files (`page`, `route`, `layout`, `template`, `loading`, `error`, `not-found`, `default`) of one route family are owned by more than one node. Only router roots count (`appRouterRoots`: an `app/` folder with a root `layout`, directly or in a route group). `findAllImportViolations` also takes the universe so the check lists it once. A route family is the route folder cut after its last static segment, so `app/sites/[site]/[lang]/blog/[slug]/page.tsx` belongs to `app/sites/[site]/[lang]/blog/`. Rule (SPEC): the Assembler owns routes that dispatch to whichever template is active; a template's entry point owns only routes that exist for that template alone
 - `changeMembers(graph, change)` (`rules.ts`) — the open revisions of a change: pipeline nodes whose `activeChange` is the id, shipped with an open next or pre-ship and not retired; shared by the change walk, the change check, and the change blast radius
-- `changeNeighbors(graph, change)` (`rules.ts`) — the neighbors of a change: shipped, non-retired Foundations, Interactions, and Interfaces with no open next whose live `change` is the id. `activeChange` ignores that label, so no node is both a member and a neighbor. The change check and the change blast radius read both; the change walk reads members only
+- `changeNeighbors(graph, change)` (`rules.ts`) — the neighbors of a change: shipped, non-retired Foundations, Interactions, and Interfaces with no open next whose live `change` is the id. `activeChange` ignores that label, so no node is both a member and a neighbor. The change check and the change blast radius read both; the change walk reads members only. The neighbor test is `isNeighborNode` (`f-domain-model`), shared with the store and the handlers
+- `changesWithRevisions(graph)` (`rules.ts`) — every change id with at least one open revision (the same membership test as `changeMembers`); the steer handlers compare it before and after a write to find the changes that write closed
 - Completion Check counts `- [x] … — note: …` and `- [x] … — n/a: <reason>` as done; a `— n/a:` with no reason counts as unchecked
 - **Decision gate** (`decisions.ts`):
   - An **open revision** is a shipped Foundation/Interaction/Interface with an open next, or a pre-ship, non-retired one at any pre-ship state. Nothing else is ever decision-worthy (Journeys and Bugs are not revisions)
@@ -88,7 +89,9 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - A decision's text naming a missing path does not warn as stale
 - `changeNeighbors` returns a labeled shipped node with no open next, and never a retired node or one with an open next
 - A live `added_claims` entry the body does not name warns `stale:`; once the body names it, it does not
-- The Coverage fix for a file in a folder its shipped owner dominates is `set_implementation_files` alone, with no `open_next`
+- The Coverage fix for a file in a folder its shipped owner dominates is `set_implementation_files` alone, with no `open_next`; for a migration or schema file in that folder it opens the evolution first
+- A body naming only a longer path (`pkg/a.tsx` for an entry `pkg/a.ts`) still warns `stale:`
+- `changesWithRevisions` lists a change while it has an open revision and drops it once the last one ships or is cancelled
 
 ## Atomic Ops
 
@@ -113,6 +116,8 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - [x] Warn on `added_claims` entries the body does not name
 - [x] Leave `open_next` out of the Coverage fix when the owner dominates the file's folder
 - [x] Verified neighbors, the in-place claim warning, and the Coverage fix via `npm test`
+- [x] Share a Coverage fix context per check run, refuse schema files in place, match `added_claims` by whole path, and add `changesWithRevisions` (review fixes)
+- [x] Verified the review fixes via `npm test`
 
 ## Decisions
 

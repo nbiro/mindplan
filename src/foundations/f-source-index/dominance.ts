@@ -7,6 +7,7 @@ import * as path from "path";
 import type { MindPlanGraph } from "../f-domain-model/types.js";
 import { isPipelineNodeType } from "../f-domain-model/types.js";
 import { claimCoversPath, expandClaims, isGlobClaim, validateClaimPath } from "./claims.js";
+import { matchesSchemaFile } from "./git.js";
 import { RETIRED_STATES } from "./ownership.js";
 import { matchGlob } from "./universe.js";
 
@@ -99,6 +100,23 @@ export function isDominatedFolder(
   const own = expandClaims(node.implements, root);
   if (!own.some((file) => path.posix.dirname(file) === f)) return false;
   return !othersClaimUnder(others ?? collectOtherClaims(graph, nodeId, root), f, probes);
+}
+
+/** A file name that stands for "a file added to this folder later" when matching schema globs. */
+const NEW_FILE_PROBE = "new-file";
+
+/**
+ * The claim entries that reach a migration or schema file under `globs` (the decision gate's
+ * `schema_files`): an exact file that matches, or `F/` when a file under F matches or F is itself
+ * a schema folder (a file added to it later would match). Claiming one is decision-worthy, so it
+ * is never added in place.
+ */
+export function schemaClaimEntries(entries: string[], globs: string[], root?: string): string[] {
+  return entries.filter((e) => {
+    if (!e.endsWith("/")) return matchesSchemaFile(e, globs);
+    if (matchesSchemaFile(`${e}${NEW_FILE_PROBE}`, globs)) return true;
+    return expandClaims([e], root).some((f) => matchesSchemaFile(f, globs));
+  });
 }
 
 export type FolderClaimSuggestion = { folder: string; files: string[]; note: string };

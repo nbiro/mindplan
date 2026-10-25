@@ -41,13 +41,14 @@ import {
   isFoundationRole,
   isInactiveNode,
   isMirrorState,
+  isNeighborNode,
   isNextPipelineState,
   isPipelineNodeType,
   isProductionState,
   MIRROR_STATE,
   NODE_TYPES,
 } from "../f-domain-model/types.js";
-import { claimCoversPath, isGlobClaim, normalizeClaimList } from "../f-source-index/claims.js";
+import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { loadProjectConfig } from "../f-source-index/config.js";
 
 export {
@@ -609,10 +610,7 @@ function pendingAddedClaims(entries: string[], claims: string[], body: string): 
   const text = withoutOwnedSections(body);
   const kept = new Set<string>();
   for (const e of entries) {
-    const claimed = claims.some(
-      (c) => c === e || (c.endsWith("/") && !isGlobClaim(c) && claimCoversPath(c, e))
-    );
-    if (claimed && !text.includes(e)) kept.add(e);
+    if (claimListKeeps(claims, e) && !namesPath(text, e)) kept.add(e);
   }
   return [...kept].sort((a, b) => a.localeCompare(b));
 }
@@ -1937,6 +1935,8 @@ export function patchNodeTerritory(
   readinessReset: boolean;
   twin: string | null;
   toggled?: string[];
+  /** A stale live neighbor label dropped because the next slot's change moved off it. */
+  replaced_change?: string;
 } {
   const slot = resolveTerritorySlot(node, input.slot);
   const raw = readMarkdown(node, slot);
@@ -2066,10 +2066,20 @@ export function patchNodeTerritory(
     slot
   );
   const twin = slot === "current" ? syncMirrorAfterLiveWrite(node) : null;
+  // Moving the revision's change id off a live neighbor label leaves that label stale.
+  const replacedLabel =
+    slot === "next" && input.change !== undefined ? dropStaleLiveLabel(node) : undefined;
   // Change ids are grouping metadata; every other field is the contract readiness was judged on.
   const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref");
   const readinessReset = contractWrite && demoteReadySlot(node, slot);
-  return { patched_fields, slot, readinessReset, twin, ...(toggled ? { toggled } : {}) };
+  return {
+    patched_fields,
+    slot,
+    readinessReset,
+    twin,
+    ...(toggled ? { toggled } : {}),
+    ...(replacedLabel ? { replaced_change: replacedLabel } : {}),
+  };
 }
 
 /**
@@ -2145,14 +2155,16 @@ function assignChange(
 
 /**
  * Set or clear (empty string) the change id and ref on one slot's frontmatter.
- * Grouping metadata: never touches state or `updated_at`.
+ * Grouping metadata: never touches state or `updated_at`. A write to the next slot also drops a
+ * live neighbor label that no longer matches the revision's change (`dropStaleLiveLabel`) and
+ * returns the dropped id.
  */
 export function writeChangeFrontmatter(
   node: MindPlanNode,
   input: { change?: string; change_ref?: string },
   slot: TerritorySlot = "current"
-): void {
-  if (input.change === undefined && input.change_ref === undefined) return;
+): string | undefined {
+  if (input.change === undefined && input.change_ref === undefined) return undefined;
   if (slot === "next" && !node.next) {
     throw new Error(`Blocked: node "${node.id}" has no open evolution to carry a change id.`);
   }
@@ -2160,20 +2172,37 @@ export function writeChangeFrontmatter(
   const patched = applyChangeScalars(fence, input);
   if (patched !== fence) fs.writeFileSync(file, raw.replace(fence, patched), "utf-8");
   assignChange(slot === "next" && node.next ? node.next : node, input);
+  return slot === "next" ? dropStaleLiveLabel(node) : undefined;
 }
 
 /**
- * Label a shipped node with no open next as a neighbor of `change` (the live `change` scalar; an
- * empty string clears it), then re-sync its mirror twin. One label per node: a different id
- * replaces the old one, returned as `replaced`. `twin` is null when nothing was written.
+ * While a shipped node has an open next, its live `change` (the neighbor label it carried before
+ * the revision opened) may only name the revision's own change. Any other id is stale: the node is
+ * that change's revision now, not another change's neighbor, and `discard_next` would restore the
+ * label after its change may have closed. Clears such a label from the live file (no mirror twin
+ * exists while next is open). Returns the cleared id.
+ */
+export function dropStaleLiveLabel(node: MindPlanNode): string | undefined {
+  if (!node.shipped_at || !node.next || !node.change) return undefined;
+  if (node.change === node.next.change) return undefined;
+  const cleared = node.change;
+  writeChangeFrontmatter(node, { change: "" }, "current");
+  return cleared;
+}
+
+/**
+ * Label a neighbor node (`isNeighborNode`: shipped, not retired, no open next) as a neighbor of
+ * `change` (the live `change` scalar; an empty string clears it), then re-sync its mirror twin.
+ * One label per node: a different id replaces the old one, returned as `replaced`. `twin` is null
+ * when nothing was written.
  */
 export function writeNeighborLabel(
   node: MindPlanNode,
   change: string
 ): { twin: string | null; replaced?: string } {
-  if (!node.shipped_at || node.next) {
+  if (!isNeighborNode(node)) {
     throw new Error(
-      `Blocked: "${node.id}" is not a shipped node with no open next; only those take a neighbor label.`
+      `Blocked: "${node.id}" is not a shipped, active node with no open next; only those take a neighbor label.`
     );
   }
   const previous = node.change;

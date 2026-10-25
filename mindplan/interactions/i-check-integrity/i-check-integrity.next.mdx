@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text (including claims added in place that the body does not name), split route families, and decision-worthy revisions with no decision; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
+description: "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder and it is not a migration or schema file), illegal imports over current and next-slot claims (each with its fix), and a shipped pipeline node whose next file is missing or is not a state-only twin; warns about stale territory text (including claims added in place that the body does not name), split route families, and decision-worthy revisions with no decision; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
 state: in-review
 shipped_at: 2026-10-23T19:24:57.374Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-25T19:02:48.929Z
+updated_at: 2026-10-25T19:26:42.896Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -44,7 +44,7 @@ Intended files: `src/interactions/i-check-integrity/`
 - `buildDriftReport({ nodeIds? })` — uncommitted working tree (`git status --porcelain`), including tracked files deleted from disk. Each path is classified: `unowned`; `owner_idle` (shipped owner with no open update, or a pre-ship owner not in-progress); `claimed_missing` (a claimed path gone from disk); or expected (the owner has an open update claiming the file) — expected is only a count. With `nodeIds` it lists those owners' files and counts the rest (`other_count`); lists are capped. Null when there is nothing to act on or git is unread
 - Default `check` still ignores the dirty tree; shipped neighbor edits still pass
 - `if-mcp-tools` imports this package because it exposes it (`run_check`); the Assembler re-exports the drift envelope
-- **Coverage.** An in-universe file (configured `sources` minus `exclude`) that no current or next claim of a non-retired node covers is `Blocked: Coverage: …` with the probable owner (by path) and the exact `set_implementation_files` call, preceded by `open_next` when that owner is shipped with no open evolution and does not dominate the file's folder (`coverageFix(graph, root, owner, file)`). A retired node's claim no longer counts as coverage; such a file is reported once, by the leftovers rule, not again as Coverage. The universe is listed once per run and shared by coverage, imports, and route families
+- **Coverage.** An in-universe file (configured `sources` minus `exclude`) that no current or next claim of a non-retired node covers is `Blocked: Coverage: …` with the probable owner (by path) and the exact `set_implementation_files` call, preceded by `open_next` when that owner is shipped with no open evolution and either does not dominate the file's folder or the file is a migration or schema file. One `createCoverageFixContext(root)` per run is passed to every `coverageFix`, so the schema globs are read once and each owner's view of the other claims is expanded once, not once per unclaimed file. A retired node's claim no longer counts as coverage; such a file is reported once, by the leftovers rule, not again as Coverage. The universe is listed once per run and shared by coverage, imports, and route families
 - **Next-slot imports.** The import rule runs over every claimant of a file (live, next-slot, released). Violations the check did not scan before (advisory) print as `Warning: imports (next slot): …` for one release, then Block
 - **Route families.** Split ownership of one route family is a warning
 - **Changes.** `runCheckHandler({ base?, change? })` adds `change: { id, members, failures, warnings }`: each member's active-slot import and ownership violations (Blocked lines that make `ok` false) and its stale-text warnings; a member violation the global import rule already reported is not repeated. Members are the change's open revisions (`changeMembers`) and its neighbors (`changeNeighbors`), each listed with `kind: "revision" | "neighbor"`; a neighbor is checked on its live files. Decision warnings apply to revisions only. A change with neither revisions nor neighbors is Blocked (`has no members`)
@@ -73,7 +73,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - `run_check` with `change` lists revisions and neighbors with their `kind`, fails on a neighbor's import violation, and gives decision warnings for revisions only
 - A change with only neighbors is checked; a change with no members is Blocked
 - A shipped node's `added_claims` entry that its body does not name prints a `stale:` warning and `ok` stays true
-- The Coverage fix for a file beside a shipped owner's own files, in a folder no other node claims into, has no `open_next`
+- The Coverage fix for a file beside a shipped owner's own files, in a folder no other node claims into, has no `open_next`; for a migration or schema file there it does
 
 ## Atomic Ops
 
@@ -98,6 +98,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Check a change's neighbors with its revisions and list each member's `kind`
 - [x] Pass the graph and root to `coverageFix` so a dominated folder's fix has no `open_next`
 - [x] Verified the neighbor check and the in-place Coverage fix via `npm test`
+- [x] Share one Coverage fix context per run and open the evolution for an unclaimed schema file (review fixes)
+- [x] Verified the Coverage fix for schema files via `npm test`
 
 ## Attachments
 

@@ -6,7 +6,7 @@ description: "Infra — node types, edges (including the Foundation → Interfac
 state: in-review
 shipped_at: 2026-10-20T13:04:10.091Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-25T19:02:45.091Z
+updated_at: 2026-10-25T19:25:35.233Z
 implements:
   - src/foundations/f-domain-model/
 role: infra
@@ -36,7 +36,7 @@ Intended files: `src/foundations/f-domain-model/`
 - `RulesImpactEntry` — `{ id, type, state, via: RuleVia, distance }`: a node that inherits some other node's rules
 - `isInactiveNode(node)` — true for `cancelled`, `deprecated`, and closed Bugs (`resolved`, `wontfix`): such nodes neither take nor give rules
 - **Change groups.** `MindPlanNode.change?` / `change_ref?` and `NextSlot.change?` / `change_ref?`: a change id (`CHANGE_ID_PATTERN`, a slug) that ties revisions into one change, and an optional branch or PR reference. `activeChange(node)` is the open revision's change: `next.change` while a shipped node evolves, the live `change` before first ship, and nothing for a shipped node with no open next
-- **Neighbor label.** On a shipped Foundation, Interaction, or Interface with no open next, the live `change` is a neighbor label instead: the change edits that node in place, with no contract change. `activeChange` ignores it, so a neighbor is never a revision of its change. One label per node; a neighbor carries no `change_ref`
+- **Neighbor label.** On a shipped Foundation, Interaction, or Interface with no open next, the live `change` is a neighbor label instead: the change edits that node in place, with no contract change. `activeChange` ignores it, so a neighbor is never a revision of its change. One label per node; a neighbor carries no `change_ref`. `isNeighborNode(node)` is the one test for a node that can carry a label (a shipped, non-retired Foundation, Interaction, or Interface with no open next), shared by the store's label writer, `changeNeighbors`, and the steer handlers. While a revision is open, the live label is absent or names the revision's own change
 - **In-place claims.** `MindPlanNode.added_claims?: string[]` — MCP-only, live slot only: claim entries a shipped node added in place without a revision, kept as a review marker until the live body names each one verbatim or the entry is no longer claimed. A promotion rebuilds the live frontmatter and drops it. `GRAPH_VERSION` stays `1`: a graph without it loads exactly as before
 - **Decision records.** `DecisionRecord` — `{ id, decision, alternatives: string[], why, consequences?, supersedes?, change?, date? }`: what was chosen (one sentence), what else was considered (one line each), the constraint or trade-off that decided it, what it makes harder or forbids, the id of the decision it replaces, and the change id and date (`YYYY-MM-DD`) it was recorded under. `DECISION_ID_PATTERN` is `d-` followed by a slug
   - `MindPlanNode.decisions?` (from the live `<id>.mdx`) and `NextSlot.decisions?` (from an open `<id>.next.mdx`), in recorded order; omitted when empty
@@ -63,6 +63,7 @@ Depends on: none.
 - No stored decision field carries a status
 - `activeChange` of a shipped node with no open next is nothing even when its live `change` holds a neighbor label
 - `MindPlanNode.added_claims` is optional; a graph without it loads exactly as before
+- `isNeighborNode` is false for a retired node, a node with an open next, a pre-ship node, and a Journey or Bug
 
 ## Atomic Ops
 
@@ -85,6 +86,7 @@ Depends on: none.
 - [x] Document the live `change` of a shipped node with no open next as a neighbor label
 - [x] Add `MindPlanNode.added_claims`
 - [x] Verified the neighbor label and `added_claims` via `npm test`
+- [x] Add `isNeighborNode` as the shared neighbor test (review fix)
 
 ## Decisions
 

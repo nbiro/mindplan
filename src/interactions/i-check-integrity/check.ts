@@ -15,6 +15,7 @@ import {
   STALE_ALL,
   STALE_PATHS_ONLY,
   coverageFix,
+  createCoverageFixContext,
   findAllImportViolations,
   findImportViolationsForNode,
   findOwnershipConflicts,
@@ -306,13 +307,14 @@ function checkCoverage(
   universe: string[],
   failures: string[]
 ): void {
+  const fixCtx = createCoverageFixContext(root);
   for (const file of universe) {
     if (claimantsOf(buckets, file).length > 0) continue;
     // A retired claim on a file on disk is the leftovers rule's failure; do not report it twice.
     if (buckets.retired.has(file)) continue;
     const owner = probableOwner(graph, file);
     const hint = owner
-      ? ` Probable owner by path: "${owner.id}". ${formatCoverageFix(coverageFix(graph, root, owner, file))}`
+      ? ` Probable owner by path: "${owner.id}". ${formatCoverageFix(coverageFix(graph, root, owner, file, fixCtx))}`
       : " No node claims a nearby path: create or pick the owning node, then claim the file with set_implementation_files.";
     fail(
       failures,

@@ -23,6 +23,7 @@ import {
   EXECUTION_TRANSITIONS,
   isBugState,
   isExecutionState,
+  isNeighborNode,
   isNextPipelineState,
   isOpenBugState,
   isPipelineNodeType,
@@ -261,11 +262,23 @@ function runMinimumTerritoryShape(
  * ready revisions belong too: the change names them.
  */
 export function changeMembers(graph: MindPlanGraph, change: string): MindPlanNode[] {
-  return graph.nodes.filter((n) => {
-    if (!isPipelineNodeType(n.type) || activeChange(n) !== change) return false;
-    if (n.next) return true;
-    return !n.shipped_at && n.state !== "cancelled" && n.state !== "deprecated";
-  });
+  return graph.nodes.filter((n) => isOpenChangeRevision(n) && activeChange(n) === change);
+}
+
+/** A node that is an open revision of some change (see `changeMembers`). */
+function isOpenChangeRevision(n: MindPlanNode): boolean {
+  if (!isPipelineNodeType(n.type) || !activeChange(n)) return false;
+  if (n.next) return true;
+  return !n.shipped_at && n.state !== "cancelled" && n.state !== "deprecated";
+}
+
+/** Every change id that has at least one open revision. */
+export function changesWithRevisions(graph: MindPlanGraph): Set<string> {
+  const out = new Set<string>();
+  for (const n of graph.nodes) {
+    if (isOpenChangeRevision(n)) out.add(activeChange(n)!);
+  }
+  return out;
 }
 
 /**
@@ -274,15 +287,7 @@ export function changeMembers(graph: MindPlanGraph, change: string): MindPlanNod
  * which `activeChange` ignores, so neighbors are never members.
  */
 export function changeNeighbors(graph: MindPlanGraph, change: string): MindPlanNode[] {
-  return graph.nodes.filter(
-    (n) =>
-      isPipelineNodeType(n.type) &&
-      Boolean(n.shipped_at) &&
-      !n.next &&
-      n.state !== "cancelled" &&
-      n.state !== "deprecated" &&
-      n.change === change
-  );
+  return graph.nodes.filter((n) => isNeighborNode(n) && n.change === change);
 }
 
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {
