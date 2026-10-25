@@ -5,8 +5,9 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
-  # The Publish workflow's repin job starts CI on its branch: a PR it opens with GITHUB_TOKEN
-  # starts no pull_request run.
+  # The Publish workflow's repin job starts CI on its branch: the pull_request run of a PR it opens
+  # with GITHUB_TOKEN waits for a maintainer's approval. The dispatched run is listed under Actions
+  # for the branch, not as checks on the PR.
   workflow_dispatch:
 
 jobs:

@@ -36,9 +36,9 @@ flowchart TB
     i_init_project__in__j_agent_onboarding["i-init-project · Init project · stable"]
     i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · stable"]
   end
-  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · evolving"]
+  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · stable"]
     i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · stable"]
-    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · in-review"]
+    i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · stable"]
   end
   subgraph journey_j_plan_console["j-plan-console · See and steer the plan · stable"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]

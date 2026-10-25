@@ -3,10 +3,10 @@ id: i-npm-tag-publish
 type: Interaction
 title: "Publish on merge to main"
 description: "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing."
-state: in-review
+state: stable
+shipped_at: 2026-10-25T20:27:49.400Z
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-10-25T20:19:46.060Z
-change: "npm-release"
+updated_at: 2026-10-25T20:27:49.400Z
 belongs_to:
   - j-npm-publish
 depends_on:
@@ -52,7 +52,7 @@ CI publishes `mindplan-mcp@X.Y.Z` using OIDC and pushes tag `vX.Y.Z`.
 - [x] Live Trusted Publisher on npmjs.com is bound to this workflow **after** first claim. — note: 0.2.0 and 0.2.1 published over OIDC
 - [x] `CONTRIBUTING.md` documents: bump the version in a PR → merge to main.
 - [x] After a release, Dependabot opens a PR repinning the exact `mindplan-mcp` devDependency to it, and opens no version-update PR for any other dependency. — n/a: Dependabot replaced by the repin job in publish.yml before its first run; see the repin criterion below
-- [ ] After a release, the `repin` job opens a PR that pins the exact `mindplan-mcp` devDependency to it (bumping no version) and dispatches CI on it; a re-run does not open a second PR.
+- [x] After a release, the `repin` job opens a PR that pins the exact `mindplan-mcp` devDependency to it (bumping no version) and dispatches CI on it; a re-run does not open a second PR. — note: 0.2.2 release run 40230396563: repin opened #54 (package.json and lockfile only, 0.2.0 -> 0.2.2) and dispatched CI run 40230576949 (green); re-running the repin job logged that the branch exists and opened no second PR; merging #54 published nothing (run 40230756924 skipped publish and repin)
 
 ## Prerequisites (Infrastructure First)
 
@@ -80,7 +80,7 @@ The repo pins its own package as an exact devDependency (`"mindplan-mcp": "X.Y.Z
 - skip with a log line when the branch `repin/mindplan-mcp-<version>` already exists on origin (a re-run) or the pin is already that version
 - `npm install --save-dev --save-exact --ignore-scripts --prefer-online mindplan-mcp@<version>`, retried a few times because npm's listing can lag behind its registry check; the command changes only `package.json` and `package-lock.json`
 - commit those two files as `github-actions[bot]`, push the branch, and `gh pr create` against `main`. The PR body says it bumps no version, so merging it publishes nothing (the version gate skips it)
-- `gh workflow run ci.yml --ref <branch>`: a PR opened with `GITHUB_TOKEN` starts no `pull_request` workflows, but a dispatch does, and its checks show on the PR's commit
+- `gh workflow run ci.yml --ref <branch>`: the PR's own `pull_request` run waits for a maintainer's approval (a PR opened with `GITHUB_TOKEN`), so the job dispatches CI on the branch. The dispatched run is listed under Actions → CI for the branch, not as checks on the PR, and the PR body says so. Merge the PR once that run is green
 
 The repository must allow GitHub Actions to create pull requests (Settings → Actions → General → Workflow permissions). If the publish job fails after publishing (as the 0.2.0 run did), the repin never runs; open it by hand (CONTRIBUTING)
 
@@ -126,7 +126,7 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - [x] Add `.github/dependabot.yml` scoped to `mindplan-mcp` for the self-dependency repin — note: daily npm entry for /, allow mindplan-mcp only; removed again in favor of the repin job
 - [x] Add the `repin` job to `publish.yml` (branch, exact pin, PR, CI dispatch; skips on re-run) and remove `.github/dependabot.yml` — note: job repin needs version + publish; skips when the branch exists or the pin already matches; Dependabot config removed
 - [x] Add a `workflow_dispatch` trigger to `ci.yml` so the repin job can start CI (`f-github-actions`, in place)
-- [ ] Verify on a real release: the repin PR opens with CI checks on it
+- [x] Verify on a real release: the repin PR opens with CI checks on it — note: done differently: the PR opened and the dispatched CI ran green, but it shows under Actions for the branch, not as PR checks; the PR's own pull_request run waits for approval (documented)
 
 ## Decisions
 

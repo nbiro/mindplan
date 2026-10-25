@@ -90,7 +90,7 @@ jobs:
     permissions:
       contents: write # push the repin branch
       pull-requests: write # open the PR
-      actions: write # dispatch CI (a PR opened with GITHUB_TOKEN starts no pull_request run)
+      actions: write # dispatch CI (the pull_request run of a PR opened with GITHUB_TOKEN waits for approval)
     env:
       VERSION: ${{ needs.version.outputs.version }}
       BRANCH: repin/mindplan-mcp-${{ needs.version.outputs.version }}
@@ -139,5 +139,5 @@ jobs:
           git push origin "refs/heads/$BRANCH"
           gh pr create --base main --head "$BRANCH" \
             --title "Repin mindplan-mcp to $VERSION" \
-            --body "Pins the self devDependency to mindplan-mcp@$VERSION, released by run ${GITHUB_RUN_ID} and tagged v$VERSION. This PR bumps no package version, so merging it publishes nothing. CI was dispatched on this branch because a PR opened by GitHub Actions starts no pull_request run."
+            --body "Pins the self devDependency to mindplan-mcp@$VERSION, released by run ${GITHUB_RUN_ID} and tagged v$VERSION. This PR bumps no package version, so merging it publishes nothing. CI was dispatched on this branch: see Actions → CI for $BRANCH. It does not show as checks here, and this PR's own pull_request run waits for a maintainer's approval."
           gh workflow run ci.yml --ref "$BRANCH"
