@@ -6,7 +6,7 @@ description: "Infra — SPEC, playbook, skills, and changelog: mandatory project
 state: stable
 shipped_at: 2026-10-25T21:13:07.168Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-25T22:20:18.106Z
+updated_at: 2026-10-25T22:54:13.482Z
 depends_on:
   - f-domain-model
 implements:
@@ -50,6 +50,8 @@ Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section
 
 - **Search docs.** SPEC §8.1.1 specifies hybrid search (the derived `.mindplan-cache/index.db`, what is indexed per node, the keyword and semantic halves, fusion, the fallback, and how the cache stays current), §1.2.1 the `search` settings, and §8.2 `patch_config({ search })`; the README has a Search section (cache, model download, `search.*` settings, environment variables, fallback), requires Node.js 22.13, and its `npx` examples (and the integration templates') use `mindplan-mcp@0.4`; CONTRIBUTING requires Node.js 22.13
+
+- **Own decisions by default.** Playbook rule 10 says `orient_for_work` returns the node's own decisions and names the inherited ones, with `include_inherited_decisions` for a change that reaches a Journey's or Foundation's design; SPEC §8.1 specifies `inherited_decisions`, `dependent_decisions`, and both flags; the README tool table and the `npx` examples (`mindplan-mcp@0.5`) match
 
 ## Acceptance Criteria
 

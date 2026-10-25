@@ -103,7 +103,7 @@ function taggedFiles(
 export function buildBlastRadiusPayload(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  opts: { include_retired?: boolean } = {}
+  opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
 ): Record<string, unknown> {
   const includeRetired = opts.include_retired === true;
   const { affected: entries } = blastRadiusDependents(graph, node.id);
@@ -219,7 +219,7 @@ export function buildBlastRadiusPayload(
     affected_files,
     tests: [...tests].sort((a, b) => a.localeCompare(b)),
     rules_impact: rulesImpact(graph, node),
-    decisions: blastRadiusDecisions(graph, node, visibleEntries),
+    ...blastRadiusDecisions(graph, node, visibleEntries, opts.include_dependent_decisions === true),
   };
   if (node.type === "Interaction") {
     const reach = interactionReachability(graph, node.id);
@@ -251,24 +251,83 @@ export type BlastRadiusDecision = {
   decision: string;
 };
 
-/** Active decisions held by the focus (`focus`, 0) and by each visible dependent (`dependent`). */
+/** How many active decisions the dependents hold, and on which nodes (nearest first). */
+export type DependentDecisionsSummary = { count: number; nodes: string[] };
+
+/**
+ * Active decisions held by the focus (`focus`, 0), plus `dependent_decisions` (the count and holding
+ * nodes of every visible dependent's). The dependents' own rows (`dependent`) join `decisions` only
+ * with `includeDependents`: the summary says whose reasoning a change reaches, the rows on request.
+ */
 function blastRadiusDecisions(
   graph: MindPlanGraph,
   focus: MindPlanNode,
-  dependents: { node: MindPlanNode; distance: number }[]
-): BlastRadiusDecision[] {
+  dependents: { node: MindPlanNode; distance: number }[],
+  includeDependents: boolean
+): { decisions: BlastRadiusDecision[]; dependent_decisions: DependentDecisionsSummary } {
   const index = supersessionIndex(graph);
   const rows: BlastRadiusDecision[] = [];
+  const summary: DependentDecisionsSummary = { count: 0, nodes: [] };
   const push = (n: MindPlanNode, via: "focus" | "dependent", distance: number) => {
     // A retired node's decisions constrain no live code, even when include_retired shows the node.
     if (isInactiveNode(n)) return;
-    for (const d of nodeDecisions(graph, n, {}, index)) {
+    const held = nodeDecisions(graph, n, {}, index);
+    if (via === "dependent" && held.length > 0) {
+      summary.count += held.length;
+      summary.nodes.push(n.id);
+      if (!includeDependents) return;
+    }
+    for (const d of held) {
       rows.push({ id: d.id, node_id: n.id, via, distance, decision: d.decision });
     }
   };
   push(focus, "focus", 0);
   for (const { node: n, distance } of dependents) push(n, "dependent", distance);
-  return rows;
+  return { decisions: rows, dependent_decisions: summary };
+}
+
+/** Inherited decisions of a node: how many, on which nodes (nearest first), and the entries on request. */
+export type InheritedDecisionsSummary = { count: number; nodes: string[]; entries?: unknown[] };
+
+/**
+ * A node's decisions split into its own and the inherited ones (`belongs_to` / `depends_on`, and
+ * for a Bug everything past the nodes it affects directly, whose own decisions count as the Bug's).
+ * `selfOnly` keeps a Bug's affected nodes in the inherited side instead: `get_node_context` lists
+ * only the node's own file, so they belong with the inherited decisions there. The inherited
+ * summary lists entries only with `include_inherited_decisions`: whole records at distance 1
+ * (compact at `depth: "rules"`), one line `{ id, node_id, distance, decision }` beyond, which
+ * names `status` and `superseded_by` when the decision is superseded.
+ */
+function splitNodeDecisions(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  opts: DecisionQueryOptions & { include_inherited_decisions?: boolean; selfOnly?: boolean },
+  depth: OrientDepth = "full"
+): { own: unknown[]; inherited_decisions: InheritedDecisionsSummary } {
+  const all = resolveNodeDecisions(graph, node.id, { include_superseded: opts.include_superseded });
+  const isOwn = (e: DecisionEntry) =>
+    e.via === "self" ||
+    (!opts.selfOnly && node.type === "Bug" && e.via === "affects" && e.distance === 1);
+  const own = all.filter(isOwn);
+  const inherited = all.filter((e) => !isOwn(e));
+  const summary: InheritedDecisionsSummary = {
+    count: inherited.length,
+    nodes: [...new Set(inherited.map((e) => e.node_id))],
+  };
+  if (opts.include_inherited_decisions) {
+    summary.entries = inherited.map((e) =>
+      (e.distance ?? 0) <= 1
+        ? orientDecisionEntries([e], depth)[0]
+        : {
+            id: e.id,
+            node_id: e.node_id,
+            distance: e.distance,
+            decision: e.decision,
+            ...(e.status === "superseded" ? { status: e.status, superseded_by: e.superseded_by } : {}),
+          }
+    );
+  }
+  return { own: orientDecisionEntries(own, depth), inherited_decisions: summary };
 }
 
 /**
@@ -280,7 +339,7 @@ function blastRadiusDecisions(
 export function buildNodeContextPayload(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  opts: DecisionQueryOptions = {}
+  opts: DecisionQueryOptions & { inherited?: boolean; include_inherited_decisions?: boolean } = {}
 ): Record<string, unknown> {
   const rel = entityRelativePath(node);
   const currentRaw = readMarkdown(node, "current");
@@ -299,6 +358,10 @@ export function buildNodeContextPayload(
     decisions: slotDecisions(graph, node, "current", opts, index),
     next: null,
   };
+  // get_node_context names the inherited decisions; orient_for_work carries them in its decisions block.
+  if (opts.inherited) {
+    payload.inherited_decisions = splitNodeDecisions(graph, node, { ...opts, selfOnly: true }).inherited_decisions;
+  }
   if (node.next) {
     const nextRaw = readMarkdown(node, "next");
     const nextSplit = splitContext(nextRaw);
@@ -409,6 +472,7 @@ export function getBlastRadius(args: {
   node_id?: string;
   change?: string;
   include_retired?: boolean;
+  include_dependent_decisions?: boolean;
 }): Record<string, unknown> {
   if ((args.node_id === undefined) === (args.change === undefined)) {
     throw blocked('get_blast_radius takes exactly one of "node_id" or "change".');
@@ -417,11 +481,13 @@ export function getBlastRadius(args: {
   if (args.change !== undefined) {
     return buildChangeBlastRadiusPayload(graph, args.change, {
       include_retired: args.include_retired,
+      include_dependent_decisions: args.include_dependent_decisions,
     });
   }
   const node = findNode(graph, args.node_id!);
   return buildBlastRadiusPayload(graph, node, {
     include_retired: args.include_retired,
+    include_dependent_decisions: args.include_dependent_decisions,
   });
 }
 
@@ -433,7 +499,7 @@ export function getBlastRadius(args: {
 export function buildChangeBlastRadiusPayload(
   graph: MindPlanGraph,
   change: string,
-  opts: { include_retired?: boolean } = {}
+  opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
 ): Record<string, unknown> {
   const revisions = changeMembers(graph, change);
   const neighbors = changeNeighbors(graph, change);
@@ -450,6 +516,7 @@ export function buildChangeBlastRadiusPayload(
   const files = new Map<string, { owner_id: string; owner_type: string; via: Set<string>; files: Set<string> }>();
   const rulesReach = new Map<string, unknown>();
   const decisions = new Map<string, BlastRadiusDecision>();
+  const dependentHolders = new Map<string, { count: number; distance: number }>();
   const tests = new Set<string>();
   for (const member of members) {
     const one = buildBlastRadiusPayload(graph, member, opts);
@@ -475,6 +542,21 @@ export function buildChangeBlastRadiusPayload(
     }
     for (const t of one.tests as string[]) tests.add(t);
     rulesReach.set(member.id, one.rules_impact);
+    // Each holder that is not a member counts once, at its smallest distance from any member.
+    const distances = new Map(
+      (one.affected as { id: string; distance: number }[]).map((row) => [row.id, row.distance])
+    );
+    const counts = new Map<string, number>();
+    for (const row of one.decisions as BlastRadiusDecision[]) {
+      if (row.via === "dependent") counts.set(row.node_id, (counts.get(row.node_id) ?? 0) + 1);
+    }
+    for (const id of (one.dependent_decisions as DependentDecisionsSummary).nodes) {
+      if (memberIds.has(id)) continue;
+      const distance = distances.get(id) ?? Number.MAX_SAFE_INTEGER;
+      const prev = dependentHolders.get(id);
+      const count = counts.get(id) ?? prev?.count ?? nodeDecisions(graph, findNode(graph, id)).length;
+      if (!prev || distance < prev.distance) dependentHolders.set(id, { count, distance });
+    }
     for (const row of one.decisions as BlastRadiusDecision[]) {
       // A member's own decisions are "focus"; otherwise keep the smallest distance.
       const asFocus = memberIds.has(row.node_id) ? { ...row, via: "focus" as const, distance: 0 } : row;
@@ -508,16 +590,27 @@ export function buildChangeBlastRadiusPayload(
     decisions: [...decisions.values()].sort(
       (a, b) => a.distance - b.distance || a.node_id.localeCompare(b.node_id)
     ),
+    dependent_decisions: {
+      count: [...dependentHolders.values()].reduce((sum, h) => sum + h.count, 0),
+      nodes: [...dependentHolders.entries()]
+        .sort((a, b) => a[1].distance - b[1].distance || a[0].localeCompare(b[0]))
+        .map(([id]) => id),
+    },
   };
 }
 
 export function getNodeContext(args: {
   node_id: string;
   include_superseded?: boolean;
+  include_inherited_decisions?: boolean;
 }): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  return buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
+  return buildNodeContextPayload(graph, node, {
+    include_superseded: args.include_superseded,
+    inherited: true,
+    include_inherited_decisions: args.include_inherited_decisions,
+  });
 }
 
 /**
@@ -551,6 +644,7 @@ export async function orientForWork(args: {
   limit?: number;
   depth?: OrientDepth;
   include_superseded?: boolean;
+  include_inherited_decisions?: boolean;
 }): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
@@ -580,13 +674,8 @@ export async function orientForWork(args: {
     const node = findNode(graph, related.focus);
     context = buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
     rules = { node_id: node.id, entries: resolveNodeRules(graph, node.id) };
-    decisions = {
-      node_id: node.id,
-      entries: orientDecisionEntries(
-        resolveNodeDecisions(graph, node.id, { include_superseded: args.include_superseded }),
-        depth
-      ),
-    };
+    const split = splitNodeDecisions(graph, node, args, depth);
+    decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
     if (depth === "full" && isPipelineNodeType(node.type)) {
       blast_radius = buildBlastRadiusPayload(graph, node);
     }

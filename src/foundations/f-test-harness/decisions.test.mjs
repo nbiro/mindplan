@@ -244,18 +244,28 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- decisions reach the agent through the rules inheritance ---
 {
-  const oriented = await call("orient_for_work", { node_id: "i-reschedule", depth: "rules" });
-  const labels = oriented.decisions.entries.map((e) => `${e.node_id}:${e.id}:${e.via}`);
+  const plain = await call("orient_for_work", { node_id: "i-reschedule", depth: "rules" });
   check(
-    "orient_for_work returns the Journey's and the Foundation's decisions, labeled by source, at depth rules",
+    "by default orient_for_work returns only the node's own decisions and names the inherited ones",
+    plain.decisions.entries.every((e) => e.via === "self") &&
+      plain.decisions.inherited_decisions.count >= 2 &&
+      plain.decisions.inherited_decisions.nodes.includes("j-book") &&
+      plain.decisions.inherited_decisions.nodes.includes("f-bookings") &&
+      plain.decisions.inherited_decisions.entries === undefined,
+    JSON.stringify(plain.decisions)
+  );
+  const oriented = await call("orient_for_work", { node_id: "i-reschedule", depth: "rules", include_inherited_decisions: true });
+  const labels = oriented.decisions.inherited_decisions.entries.map((e) => `${e.node_id}:${e.id}:${e.via}`);
+  check(
+    "include_inherited_decisions returns the Journey's and the Foundation's decisions, labeled by source, at depth rules",
     labels.includes("j-book:d-evening-bookings:belongs_to") &&
       labels.includes("f-bookings:d-capacity-on-booking:depends_on") &&
       !labels.some((l) => l.startsWith("i-cancel:")),
     JSON.stringify(labels)
   );
-  const capRules = oriented.decisions.entries.find((e) => e.id === "d-capacity-on-booking");
-  const bodyDepth = await call("orient_for_work", { node_id: "i-reschedule", depth: "body" });
-  const capBody = bodyDepth.decisions.entries.find((e) => e.id === "d-capacity-on-booking");
+  const capRules = oriented.decisions.inherited_decisions.entries.find((e) => e.id === "d-capacity-on-booking");
+  const bodyDepth = await call("orient_for_work", { node_id: "i-reschedule", depth: "body", include_inherited_decisions: true });
+  const capBody = bodyDepth.decisions.inherited_decisions.entries.find((e) => e.id === "d-capacity-on-booking");
   check(
     "depth rules carries each decision and why; depth body carries the whole record",
     capRules?.why === "Capacity changes per evening." &&
@@ -264,10 +274,11 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
       capBody.consequences === "Capacity reads join through Booking.",
     JSON.stringify(capRules)
   );
-  const bug = await call("orient_for_work", { node_id: "bug-slot" });
+  const bug = await call("orient_for_work", { node_id: "bug-slot", include_inherited_decisions: true });
+  const bugEntries = [...bug.decisions.entries, ...bug.decisions.inherited_decisions.entries];
   check(
-    "a Bug gets the decisions of the node it affects",
-    bug.decisions.entries.some((e) => e.id === "d-capacity-on-booking" && e.via === "affects"),
+    "a Bug gets the decisions of the node it affects (past distance 1 as one line)",
+    bugEntries.some((e) => e.id === "d-capacity-on-booking" && e.node_id === "f-bookings" && e.decision && !e.alternatives),
     JSON.stringify(bug.decisions)
   );
   const ctx = await call("get_node_context", { node_id: "f-bookings" });
@@ -350,12 +361,17 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
       old?.superseded_by === "d-evening-capacity-table",
     JSON.stringify(trail)
   );
-  const orientNow = await call("orient_for_work", { node_id: "i-reschedule", depth: "rules" });
-  const orientAll = await call("orient_for_work", { node_id: "i-reschedule", depth: "rules", include_superseded: true });
+  const orientNow = await call("orient_for_work", { node_id: "i-reschedule", depth: "rules", include_inherited_decisions: true });
+  const orientAll = await call("orient_for_work", {
+    node_id: "i-reschedule",
+    depth: "rules",
+    include_superseded: true,
+    include_inherited_decisions: true,
+  });
   check(
     "orient_for_work leaves the superseded decision out unless asked",
-    !orientNow.decisions.entries.some((e) => e.id === "d-capacity-on-booking") &&
-      orientAll.decisions.entries.some((e) => e.id === "d-capacity-on-booking" && e.status === "superseded")
+    !orientNow.decisions.inherited_decisions.entries.some((e) => e.id === "d-capacity-on-booking") &&
+      orientAll.decisions.inherited_decisions.entries.some((e) => e.id === "d-capacity-on-booking" && e.status === "superseded")
   );
   const ctxNow = await call("get_node_context", { node_id: "f-bookings" });
   const ctxAll = await call("get_node_context", { node_id: "f-bookings", include_superseded: true });
@@ -680,9 +696,18 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- blast-radius decisions and map counts ---
 {
-  const radius = await call("get_blast_radius", { node_id: "f-bookings" });
+  const own = await call("get_blast_radius", { node_id: "f-bookings" });
   check(
-    "get_blast_radius lists the focus's and its dependents' active decisions",
+    "by default get_blast_radius lists the focus's own decisions and names the dependents that hold others",
+    own.decisions.every((d) => d.via === "focus") &&
+      own.decisions.some((d) => d.id === "d-capacity-in-transaction") &&
+      own.dependent_decisions.count >= 1 &&
+      own.dependent_decisions.nodes.length >= 1,
+    JSON.stringify({ decisions: own.decisions, dependent_decisions: own.dependent_decisions })
+  );
+  const radius = await call("get_blast_radius", { node_id: "f-bookings", include_dependent_decisions: true });
+  check(
+    "include_dependent_decisions lists the focus's and its dependents' active decisions",
     radius.decisions.some((d) => d.id === "d-capacity-in-transaction" && d.via === "focus" && d.distance === 0) &&
       radius.decisions.some((d) => d.id === "d-cancellations-soft-deletes" && d.via === "dependent" && d.distance === 1),
     JSON.stringify(radius.decisions)
@@ -762,11 +787,110 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     evening?.status === "superseded" && evening.superseded_by === "d-reschedule-any-evening",
     JSON.stringify(evening)
   );
-  const radius = await call("get_blast_radius", { node_id: "f-bookings", include_retired: true });
+  const radius = await call("get_blast_radius", { node_id: "f-bookings", include_retired: true, include_dependent_decisions: true });
   check(
     "get_blast_radius leaves out a retired node's decisions, even with include_retired",
     radius.affected.some((a) => a.id === "i-reschedule") && !radius.decisions.some((d) => d.node_id === "i-reschedule"),
     JSON.stringify(radius.decisions)
+  );
+}
+
+// --- a node shaped like skyloom's i-contact-platform: one own decision, twelve inherited ---
+{
+  const decide = (node_id, n) =>
+    call("record_decision", { node_id, id: `d-${node_id}-${n}`, decision: `${node_id} choice ${n}.`, alternatives: ["Other"], why: "Because." });
+  await call("create_node", { id: "j-host", type: "Journey", title: "Hosting", description: "Serve many sites" });
+  await call("create_node", { id: "f-mail", type: "Foundation", title: "Mail", description: "Adapter — mail", role: "adapter" });
+  await call("create_node", { id: "f-build", type: "Foundation", title: "Build", description: "Assembler — build", role: "assembler" });
+  await call("create_node", { id: "f-blob", type: "Foundation", title: "Blob store", description: "Adapter — blob store", role: "adapter" });
+  await call("create_node", { id: "i-contact", type: "Interaction", title: "Contact the platform", description: "Visitor sends the platform a message" });
+  await call("link_nodes", { source_id: "i-contact", target_id: "j-host", edge_type: "belongs_to" });
+  await call("link_nodes", { source_id: "i-contact", target_id: "f-mail", edge_type: "depends_on" });
+  await call("link_nodes", { source_id: "i-contact", target_id: "f-build", edge_type: "depends_on" });
+  await call("link_nodes", { source_id: "f-mail", target_id: "f-blob", edge_type: "depends_on" });
+  await decide("i-contact", 1);
+  for (let n = 1; n <= 3; n++) await decide("j-host", n);
+  for (let n = 1; n <= 3; n++) await decide("f-mail", n);
+  for (let n = 1; n <= 3; n++) await decide("f-build", n);
+  for (let n = 1; n <= 3; n++) await decide("f-blob", n);
+
+  const full = await call("orient_for_work", { node_id: "i-contact" });
+  check(
+    "default orient carries one decision, the node's own, plus inherited_decisions.count",
+    full.decisions.entries.length === 1 &&
+      full.decisions.entries[0].id === "d-i-contact-1" &&
+      full.decisions.inherited_decisions.count === 12 &&
+      full.decisions.inherited_decisions.nodes.join(",") === "j-host,f-build,f-mail,f-blob",
+    JSON.stringify(full.decisions)
+  );
+  check(
+    "the embedded blast radius carries the focus's own decisions only",
+    full.blast_radius.decisions.length === 1 && full.blast_radius.dependent_decisions.count === 0,
+    JSON.stringify(full.blast_radius.decisions)
+  );
+  const deep = await call("orient_for_work", { node_id: "i-contact", depth: "rules", include_inherited_decisions: true });
+  const far = deep.decisions.inherited_decisions.entries.filter((e) => e.node_id === "f-blob");
+  const near = deep.decisions.inherited_decisions.entries.filter((e) => e.node_id === "f-mail");
+  check(
+    "inherited decisions: whole (or compact at depth rules) at distance 1, one line beyond",
+    deep.decisions.inherited_decisions.entries.length === 12 &&
+      near.every((e) => e.why === "Because." && e.via === "depends_on") &&
+      far.every((e) => Object.keys(e).sort().join(",") === "decision,distance,id,node_id" && e.distance === 2),
+    JSON.stringify(far)
+  );
+  const ctx = await call("get_node_context", { node_id: "i-contact" });
+  check(
+    "get_node_context names the inherited decisions without their entries",
+    ctx.decisions.length === 1 && ctx.inherited_decisions.count === 12 && ctx.inherited_decisions.entries === undefined
+  );
+  const ctxAll = await call("get_node_context", { node_id: "i-contact", include_inherited_decisions: true });
+  check("get_node_context include_inherited_decisions lists them", ctxAll.inherited_decisions.entries.length === 12);
+  // A Bug holds no decisions: get_node_context lists the affected node's under inherited_decisions.
+  await call("create_node", { id: "bug-mail", type: "Bug", title: "Mail lost", description: "Mail is dropped" });
+  await call("link_nodes", { source_id: "bug-mail", target_id: "f-mail", edge_type: "affects" });
+  const bugCtx = await call("get_node_context", { node_id: "bug-mail", include_inherited_decisions: true });
+  const bugNear = bugCtx.inherited_decisions.entries.filter((e) => e.node_id === "f-mail");
+  check(
+    "get_node_context on a Bug lists the affected node's decisions, whole at distance 1",
+    bugCtx.decisions.length === 0 &&
+      bugCtx.inherited_decisions.nodes[0] === "f-mail" &&
+      bugNear.length === 3 &&
+      bugNear.every((e) => e.alternatives?.length === 1),
+    JSON.stringify(bugCtx.inherited_decisions)
+  );
+  const bugOrient = await call("orient_for_work", { node_id: "bug-mail", depth: "rules" });
+  check(
+    "orient_for_work on a Bug carries the affected node's decisions as its own",
+    bugOrient.decisions.entries.length === 3 && bugOrient.decisions.entries.every((e) => e.node_id === "f-mail")
+  );
+  // A superseded decision past distance 1 says so in its one-line form.
+  await call("record_decision", {
+    node_id: "f-blob",
+    id: "d-f-blob-new",
+    decision: "Replaces choice 1.",
+    alternatives: ["Keep it"],
+    why: "Better.",
+    supersedes: "d-f-blob-1",
+  });
+  const trail = await call("orient_for_work", {
+    node_id: "i-contact",
+    depth: "rules",
+    include_superseded: true,
+    include_inherited_decisions: true,
+  });
+  const old = trail.decisions.inherited_decisions.entries.find((e) => e.id === "d-f-blob-1");
+  check(
+    "a superseded one-line entry names its status and superseded_by",
+    old?.distance === 2 && old.status === "superseded" && old.superseded_by === "d-f-blob-new",
+    JSON.stringify(old)
+  );
+  const storeRadius = await call("get_blast_radius", { node_id: "f-blob" });
+  check(
+    "a Foundation's radius names the dependents that hold decisions",
+    storeRadius.decisions.length === 3 &&
+      storeRadius.dependent_decisions.count === 4 &&
+      storeRadius.dependent_decisions.nodes.join(",") === "f-mail,i-contact",
+    JSON.stringify(storeRadius.dependent_decisions)
   );
 }
 

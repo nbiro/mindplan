@@ -200,6 +200,14 @@ const CHANGE_REF = z
   .optional()
   .describe("Optional branch name or PR URL for the change. Empty string clears it.");
 
+/** The one flag that adds inherited decisions to orient_for_work and get_node_context. */
+const INCLUDE_INHERITED_DECISIONS = z
+  .boolean()
+  .optional()
+  .describe(
+    "Also return the decisions inherited through belongs_to / depends_on (a Bug: past the nodes it affects): whole at distance 1, one line { id, node_id, distance, decision } beyond. Default false: only their count and nodes."
+  );
+
 /** Which writes send a ready revision back to draft; repeated in the write tools' hints. */
 const READINESS_HINT =
   "A contract write to a slot in state ready (territory text or checkboxes, claims, links) moves that slot back to draft and returns readiness_reset; self-ready it again after review.";
@@ -374,7 +382,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call when you are about to read or edit one node's territory. " +
         "Returns authoritative record (graph slice), editable body (without the ## Rules and ## Decisions sections), the node's own rules, " +
-        "its decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), attachment paths, and filenames. " +
+        "its own decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), " +
+        "inherited_decisions ({ count, nodes }, plus entries with include_inherited_decisions), attachment paths, and filenames. " +
         "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
@@ -382,9 +391,11 @@ export function registerMindPlanTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Also return superseded decisions (each names superseded_by). Default false."),
+        include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
       },
     },
-    ({ node_id, include_superseded }) => getNodeContext({ node_id, include_superseded })
+    ({ node_id, include_superseded, include_inherited_decisions }) =>
+      getNodeContext({ node_id, include_superseded, include_inherited_decisions })
   );
 
   tool(
@@ -399,8 +410,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
         "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
         "or an affected node's for a Bug), each labeled with the node it came from. Those rules are mandatory. " +
-        "And a decisions block, at every depth: the recorded design decisions that apply to the focus through the same inheritance, " +
-        "each labeled with the node it came from; read them before reshaping that design. Superseded ones only with include_superseded. " +
+        "And a decisions block, at every depth: the focus node's own recorded design decisions (a Bug: those of the nodes it affects); read them before reshaping that design. " +
+        "inherited_decisions ({ count, nodes }) names the Journeys and Foundations whose decisions also apply; include_inherited_decisions adds them (whole at distance 1, one line beyond). Superseded ones only with include_superseded. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
         "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream).",
       inputSchema: {
@@ -427,10 +438,11 @@ export function registerMindPlanTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Also return superseded decisions in the decisions block (each names superseded_by). Default false."),
+        include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
       },
     },
-    ({ query, node_id, type, limit, depth, include_superseded }) =>
-      orientForWork({ query, node_id, type, limit, depth, include_superseded })
+    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions }) =>
+      orientForWork({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions })
   );
 
   tool(
@@ -1010,7 +1022,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Cancelled and deprecated nodes are omitted by default; set include_retired to see them " +
         "(BFS still traverses through retired nodes so live dependents keep true distances). " +
         "When the focus is an Interaction, also returns reachability. " +
-        "decisions lists the active decisions held by the focus and its dependents: the reasoning a change would reach. " +
+        "decisions lists the active decisions held by the focus; dependent_decisions ({ count, nodes }) names the dependents that hold decisions a change would reach, and include_dependent_decisions adds their one-line entries to decisions. " +
         "tests lists the linked test files of the focus and every owner in affected_files: the suites to run. " +
         "Pass change instead of node_id for the merged radius of every member of a change (open revisions and neighbors; members carry kind).",
       inputSchema: {
@@ -1020,10 +1032,14 @@ export function registerMindPlanTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Include cancelled/deprecated nodes (default false)."),
+        include_dependent_decisions: z
+          .boolean()
+          .optional()
+          .describe("Also list the dependents' decisions in decisions (default false: only their count and nodes)."),
       },
     },
-    ({ node_id, change, include_retired }) =>
-      getBlastRadius({ node_id, change, include_retired })
+    ({ node_id, change, include_retired, include_dependent_decisions }) =>
+      getBlastRadius({ node_id, change, include_retired, include_dependent_decisions })
   );
 
   tool(

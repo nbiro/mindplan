@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — own decisions by default
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **`orient_for_work` returns the focus node's own decisions.** `decisions.entries` now holds only the decisions recorded on the focus (`via: self`; a Bug: those of the nodes it affects directly). `decisions.inherited_decisions: { count, nodes }` names the Journeys and Foundations whose decisions also reach it. `include_inherited_decisions: true` adds `inherited_decisions.entries`: whole records at distance 1 (compact at `depth: "rules"`) and one line `{ id, node_id, distance, decision }` beyond. On a node shaped like a real 54-node graph's contact form, the default reply carries one decision instead of thirteen. **Breaking:** a client that read inherited decisions from `decisions.entries` must pass the flag and read `inherited_decisions.entries`. [§8.1]
+- **`get_node_context`** adds `inherited_decisions` (the same summary) and takes `include_inherited_decisions`. [§8.1]
+- **`get_blast_radius`** returns the focus's own decisions plus `dependent_decisions: { count, nodes }`; `include_dependent_decisions: true` adds the dependents' one-line rows as before. The radius `orient_for_work` embeds at `depth: "full"` is the default one. The change radius counts each non-member holder once. [§8.1]
+- **Unchanged:** the decision gate at `in-review`, `list_decisions`, and supersession.
+- **Docs.** Playbook rule 10 names `inherited_decisions` and the flag; the README tool table and the `npx` examples (`mindplan-mcp@0.5`) are updated.
+
 ## 0.4.0 — semantic search
 
 Every behavior change in this release. SPEC sections in brackets.
