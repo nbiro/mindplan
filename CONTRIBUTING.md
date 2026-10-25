@@ -61,6 +61,8 @@ npm version minor --no-git-tag-version   # or patch / major; 0.x: minor for brea
 
 On every push to `main`, `.github/workflows/publish.yml` checks whether `package.json`'s version is on npm. When it is not, it runs `npm run publish:release -- --ci` with OIDC (no `NPM_TOKEN`) and pushes the tag `vX.Y.Z`. A merge without a bump publishes nothing and never waits on the `npm-publish` environment. If a release fails after the merge, fix the cause and re-run the workflow (or run it by hand on `main`): the version is still unpublished, so it publishes then. The exception is a run whose `npm publish` succeeded but whose registry check failed (the script waits up to 10 minutes for npm to list the new version): the version is on npm, so a re-run publishes nothing and skips the tag step. Push the tag by hand on the merge commit instead: `git tag vX.Y.Z <merge sha>` and `git push origin refs/tags/vX.Y.Z`. A broken release is fixed by a new patch version, never by moving a tag.
 
+The repo dev-depends on its own latest release (`"mindplan-mcp": "latest"` in `devDependencies`). The lockfile pins the actual version, and `npm ci` keeps it even after `latest` moves on. Each release PR refreshes it with `npm update mindplan-mcp`. It lands on the previous release, because the PR's own version is not on npm until the merge publishes it.
+
 **Versioning.** Until 1.0.0, a minor bump may break: list it in `CHANGELOG.md` with **Breaking** and what a project must do. Any change to the playbook, the skills, or the graph format reaches a project when it reruns `mindplan-mcp init`; `mindplan/version.json` makes `get_project` and `check` remind it.
 
 ## Reporting issues
