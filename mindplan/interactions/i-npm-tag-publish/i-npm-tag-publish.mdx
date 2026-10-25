@@ -5,7 +5,7 @@ title: "Publish on merge to main"
 description: "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing."
 state: in-review
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-10-25T20:14:44.106Z
+updated_at: 2026-10-25T20:19:46.060Z
 change: "npm-release"
 belongs_to:
   - j-npm-publish
@@ -13,7 +13,6 @@ depends_on:
   - f-npm-registry
   - f-github-actions
 implements:
-  - .github/dependabot.yml
   - .github/workflows/publish.yml
 ---
 
@@ -52,7 +51,8 @@ CI publishes `mindplan-mcp@X.Y.Z` using OIDC and pushes tag `vX.Y.Z`.
 - [x] Two pushes in quick succession never publish concurrently. — note: workflow-level concurrency group `publish`, cancel-in-progress false
 - [x] Live Trusted Publisher on npmjs.com is bound to this workflow **after** first claim. — note: 0.2.0 and 0.2.1 published over OIDC
 - [x] `CONTRIBUTING.md` documents: bump the version in a PR → merge to main.
-- [ ] After a release, Dependabot opens a PR repinning the exact `mindplan-mcp` devDependency to it, and opens no version-update PR for any other dependency.
+- [x] After a release, Dependabot opens a PR repinning the exact `mindplan-mcp` devDependency to it, and opens no version-update PR for any other dependency. — n/a: Dependabot replaced by the repin job in publish.yml before its first run; see the repin criterion below
+- [ ] After a release, the `repin` job opens a PR that pins the exact `mindplan-mcp` devDependency to it (bumping no version) and dispatches CI on it; a re-run does not open a second PR.
 
 ## Prerequisites (Infrastructure First)
 
@@ -70,11 +70,19 @@ Belongs to: `j-npm-publish`. Depends on: `f-github-actions`, `f-npm-registry`. R
 
 - `.github/workflows/publish.yml` — full workflow definition
 - Live npm Trusted Publisher binding for `mindplan-mcp` → this workflow file + environment `npm-publish`
-- `.github/dependabot.yml` — the self-dependency repin (below)
+- the `repin` job in `publish.yml` — the self-dependency repin (below)
 
-### Self-dependency repin (Dependabot)
+### Self-dependency repin
 
-The repo pins its own package as an exact devDependency (`"mindplan-mcp": "X.Y.Z"`). `.github/dependabot.yml` has one `npm` update entry for `/`, checked daily. Its `allow` list names only `mindplan-mcp`, so Dependabot never opens version-update PRs for any other dependency. After a release is on npm, Dependabot opens a PR that repins the exact version and refreshes `package-lock.json` (`versioning-strategy: increase` keeps the pin exact). That PR bumps no package version, so merging it publishes nothing; the version gate above skips it. At most one such PR is open at a time. A repin lands up to a day after the release, which is acceptable for a dev-only pin
+The repo pins its own package as an exact devDependency (`"mindplan-mcp": "X.Y.Z"`). Right after a release, the `repin` job opens the PR that repins it, so the pin never waits on a schedule (a Dependabot config did this daily before and is removed). The job runs only after `publish` succeeded, so the version is on npm and tagged. It has no environment, and its permissions are `contents: write` (push the branch), `pull-requests: write` (open the PR), and `actions: write` (dispatch CI). It is a separate job so that a repin failure never marks the release failed, and re-running failed jobs retries only the repin. Steps:
+
+- check out the pushed commit and set up Node 22 with the npm cache
+- skip with a log line when the branch `repin/mindplan-mcp-<version>` already exists on origin (a re-run) or the pin is already that version
+- `npm install --save-dev --save-exact --ignore-scripts --prefer-online mindplan-mcp@<version>`, retried a few times because npm's listing can lag behind its registry check; the command changes only `package.json` and `package-lock.json`
+- commit those two files as `github-actions[bot]`, push the branch, and `gh pr create` against `main`. The PR body says it bumps no version, so merging it publishes nothing (the version gate skips it)
+- `gh workflow run ci.yml --ref <branch>`: a PR opened with `GITHUB_TOKEN` starts no `pull_request` workflows, but a dispatch does, and its checks show on the PR's commit
+
+The repository must allow GitHub Actions to create pull requests (Settings → Actions → General → Workflow permissions). If the publish job fails after publishing (as the 0.2.0 run did), the repin never runs; open it by hand (CONTRIBUTING)
 
 ### Jobs
 
@@ -83,6 +91,7 @@ The repo pins its own package as an exact devDependency (`"mindplan-mcp": "X.Y.Z
    - checkout the pushed commit; setup Node 22 with `registry-url: https://registry.npmjs.org`; upgrade npm to 11.5.1+ (Trusted Publishing); `npm ci`
    - `npm run publish:release -- --ci` (preflight → `npm test` → tarball allowlist → publish → registry check)
    - tag the commit `v<version>` and push the tag; an existing tag on the same commit is not an error
+3. **`repin`** (`needs: [version, publish]`, runs only when `publish` succeeded, no environment, `permissions: contents: write, pull-requests: write, actions: write`): opens the self-dependency repin PR (below)
 
 Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queues pushes instead of running two publishes at once.
 
@@ -95,7 +104,7 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 
 ### Out of scope
 
-- Automatic version bumps or changelog generation from commits (Dependabot repins only the self devDependency; it never bumps the package version)
+- Automatic version bumps or changelog generation from commits (the repin job changes only the self devDependency; it never bumps the package version)
 - GitHub Release notes
 - Publishing from forks or branches other than `main`
 
@@ -114,7 +123,10 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - [x] GitHub Environment `npm-publish` created (reviewers optional) — note: exists in nbiro/mindplan (checked with gh api)
 - [x] Live Trusted Publisher bound on npmjs.com after first claim — note: 0.2.0 published over OIDC on 2026-10-25
 - [x] End-to-end verify: a version-bump merge publishes and tags; a merge without a bump skips — note: runs 40229545536 (publish + tag) and 39977013169 (skip)
-- [x] Add `.github/dependabot.yml` scoped to `mindplan-mcp` for the self-dependency repin — note: daily npm entry for /, allow mindplan-mcp only, versioning-strategy increase, open-pull-requests-limit 1
+- [x] Add `.github/dependabot.yml` scoped to `mindplan-mcp` for the self-dependency repin — note: daily npm entry for /, allow mindplan-mcp only; removed again in favor of the repin job
+- [x] Add the `repin` job to `publish.yml` (branch, exact pin, PR, CI dispatch; skips on re-run) and remove `.github/dependabot.yml` — note: job repin needs version + publish; skips when the branch exists or the pin already matches; Dependabot config removed
+- [x] Add a `workflow_dispatch` trigger to `ci.yml` so the repin job can start CI (`f-github-actions`, in place)
+- [ ] Verify on a real release: the repin PR opens with CI checks on it
 
 ## Decisions
 
@@ -129,6 +141,18 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - Consequences: A PR that should release must bump package.json; forgetting it publishes nothing. The first publish stays manual because Trusted Publishing is bound to an existing package.
 - Change: npm-release
 - Date: 2026-10-23
+
+### d-repin-job-after-tag
+
+- Decision: The Publish workflow repins the exact self devDependency in its own repin job right after a successful publish and tag: it opens a PR with GITHUB_TOKEN that bumps no version and dispatches CI on the branch.
+- Alternatives:
+  - Dependabot scoped to mindplan-mcp (no workflow code, but it checks on a schedule, at most daily, so the pin lags a release by up to a day)
+  - Open the PR with a personal access token or GitHub App so pull_request CI runs by itself (a long-lived secret or an app to maintain, for one lockfile PR)
+  - Repin by hand after each release (easy to forget; the rule alone did not do it for 0.2.1)
+- Why: The workflow knows the exact moment a release succeeded, GITHUB_TOKEN with contents, pull-requests, and actions write can push, open the PR, and dispatch CI, and a separate job keeps a repin failure from marking the release failed.
+- Consequences: The repository must allow GitHub Actions to create pull requests; ci.yml must keep its workflow_dispatch trigger; a publish job that fails after publishing skips the repin, which is then opened by hand.
+- Change: npm-release
+- Date: 2026-10-25
 
 ## Attachments
 
