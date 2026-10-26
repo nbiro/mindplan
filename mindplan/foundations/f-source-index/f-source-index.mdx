@@ -2,17 +2,18 @@
 id: f-source-index
 type: Foundation
 title: "Source index"
-description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, folder dominance (where a shipped node may claim a file in place, and which per-file claim lists one folder claim would replace), the decision-gate and search settings in mindplan/config.json and its MCP write, and a read-only git probe for the files a branch adds."
+description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, folder dominance (where a shipped node may claim a file in place, and which per-file claim lists one folder claim would replace), the decision-gate and search settings in mindplan/config.json and its MCP write, and read-only git probes for the files a branch adds and for the plan's tree id and dirty paths."
 state: stable
-shipped_at: 2026-10-25T22:42:44.071Z
+shipped_at: 2026-10-26T08:38:24.457Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-10-25T22:42:44.071Z
+updated_at: 2026-10-26T08:38:24.457Z
 depends_on:
   - f-domain-model
 implements:
   - src/foundations/f-source-index/
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/graph-cache.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
@@ -23,7 +24,7 @@ role: infra
 
 ## Purpose
 
-Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`). The same file holds the decision-gate settings, so a project tunes when a decision is required without a code change. A read-only git probe lists the files a branch adds, because a new migration usually lands inside a folder its owner already claims, and the claims alone cannot tell that it is new. Folder dominance answers where a shipped node may grow its claims without a revision: a file in a folder no other node can own reaches no dependent's contract.
+Infra — ownership universe (`sources` / `exclude`) and MCP write of `mindplan/config.json` via existing `writeProjectConfig` (force overwrite for `patch_config`). The same file holds the decision-gate settings, so a project tunes when a decision is required without a code change. A read-only git probe lists the files a branch adds, because a new migration usually lands inside a folder its owner already claims, and the claims alone cannot tell that it is new. A second read-only probe reports the plan's own git state (its tree id and the paths git status lists under it), so the graph cache can trust a clean, committed folder without touching its files. Folder dominance answers where a shipped node may grow its claims without a revision: a file in a folder no other node can own reaches no dependent's contract.
 
 ## Shared Substrate Spec
 
@@ -45,6 +46,7 @@ Intended files: `src/foundations/f-source-index/`
 - **Search settings.** `mindplan/config.json` may carry `search: { enabled?, model? }` (`SearchConfigSettings`). `loadProjectConfig` validates it (`enabled` a boolean, `model` a non-empty string, unknown keys Blocked) and keeps it as stored; `f-search-index` fills the defaults. `writeProjectConfig` writes `search` only when the config it is given has it
 - **Search cache.** The no-git walk of the universe skips the top-level `.mindplan-cache/` folder (the derived search cache) as it skips `.git/`; in a git repo the cache's own `.gitignore` keeps it out of `ls-files`
 - **Files a branch adds.** `newFilesSinceBase(root)` — files that are untracked, staged as added, or added (`--diff-filter=A`) since `defaultBaseRef(cwd)` (the merge base of `HEAD` with `main`, `origin/main`, `master`, then `origin/master`; the dirty-src check uses the same helper), or only untracked and staged ones when no base resolves; paths are read with `-z`, so non-ASCII names come back unquoted; `null` when the root is not a git repository. Read-only; the caller decides when to probe
+- **Plan git state.** `dirGitState(dir, ignoredExt, root?)` → `{ tree, dirty }` or `null`. One `git status --porcelain=v2 --branch -z --untracked-files=all --ignored=matching --no-renames` call gives both the dirty paths and the commit they were taken against (`# branch.oid`), so a commit landing between two calls cannot pair an old status with a new tree. `tree` is the id of `<prefix><dir>` in that commit, read with `git ls-tree --full-tree` (null before the first commit or while the directory is untracked); `dirty` is every path under `dir` the status lists, made relative to the project root even when it sits below the repository top (`--show-prefix`, cached per root). `null` outside a work tree, when git fails, or when git ignores a folder under `dir` or an untracked file ending in `ignoredExt` (any case): git cannot vouch for a file it ignores. `treeChanges(fromTree, toTree, root?)` → the paths (relative to `dir`) that differ between two tree ids, from the plumbing `git diff-tree -r`, which porcelain settings such as `diff.relative` cannot filter: empty when they are equal, `null` when git fails (a tree gone after a gc). Both are read-only
 
 Depends on: `f-domain-model`.
 
@@ -65,6 +67,7 @@ Depends on: `f-domain-model`.
 - `folderClaimSuggestions` suggests `F/` only when the list covers every file under F and no other node claims under it
 - `schemaClaimEntries` returns `db/migrations/002.sql`, `db/migrations/`, and `db/` when `db/` holds a migration, and nothing for a plain source file
 - `namesPath` rejects a longer path that contains the entry and accepts the exact path followed by punctuation
+- `dirGitState` gives the plan tree and dirty paths relative to a project root below the repository top, and `null` when git ignores an untracked plan file; `treeChanges` lists the paths that differ between two commits' plan trees
 
 ## Atomic Ops
 
@@ -82,6 +85,9 @@ Depends on: `f-domain-model`.
 - [x] Verified folder dominance and folder-claim suggestions via `npm test`
 - [x] Add `schemaClaimEntries`, `claimListKeeps`, and `namesPath` (review fixes)
 - [x] Verified the schema refusal and whole-path matching via `npm test`
+- [x] Add `dirGitState` and `treeChanges`
+- [x] Take the tree from the status call's own commit and read tree changes with `diff-tree` (review fixes)
+- [x] Verified the plan git state via `npm test` (`graph-cache.test.mjs`)
 
 ## Decisions
 

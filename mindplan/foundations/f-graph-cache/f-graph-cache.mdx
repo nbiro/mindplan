@@ -1,0 +1,97 @@
+---
+id: f-graph-cache
+type: Foundation
+title: "Graph cache"
+description: "Adapter — keeps parsed node records in memory and in .mindplan-cache/graph.db, and decides per node folder whether a record can be reused, from git (clean at the current tree) or from file stamps and hashes, so a load re-parses only changed files."
+state: stable
+shipped_at: 2026-10-26T08:38:24.511Z
+created_at: 2026-10-26T07:49:32.173Z
+updated_at: 2026-10-26T08:38:24.511Z
+role: adapter
+depends_on:
+  - f-source-index
+  - f-domain-model
+implements:
+  - src/foundations/f-graph-cache/
+tests:
+  - src/foundations/f-test-harness/graph-cache.test.mjs
+---
+
+# Graph cache
+
+## Purpose
+
+Adapter — keep parsed node records so a graph load re-parses only the node folders that may have changed, while returning exactly what parsing every file would. A record is reused without touching its files only when git vouches that its folder is clean and unchanged since the record was parsed: a cache that serves one stale record makes every tool wrong, so every other record is checked against its files.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-graph-cache/`
+
+- **Store.** `GraphCache(root, packageVersion, { persist? })` keeps entries in memory keyed by node folder (`mindplan/<type dir>/<id>`), loaded at open from `.mindplan-cache/graph.db` (`node:sqlite`, WAL, `synchronous=NORMAL`, `busy_timeout` 3 s). Without `node:sqlite`, or when the file cannot be opened, it works in memory only. Each row is keyed by folder and the parser version the caller passes (`f-territory-store` passes the package version plus a hash of the built parser modules), and a cache reads only its own version's rows, so servers of two versions, or two builds of one checkout, sharing the file never trade records; opening the file drops other versions' rows. `meta.schema` holds `GRAPH_CACHE_SCHEMA`; a mismatch drops the table. A file SQLite reports as corrupt (not a database, malformed) is deleted and rebuilt once; a lock, a read-only folder, or a file another process holds open only costs persistence. The cache folder carries its own `.gitignore` (`*`)
+- **Entry.** `CacheEntry` `{ record, files, hash, stampedAt, cleanAt }`: `record` is null for a folder with no live file; `files` are the folder's `.mdx` stamps `{ name, size, mtimeMs }` sorted by name; `hash` is a SHA-1 over their names and bytes, taken only when a stamp was within `RACY_MS` (2 s) of its file's mtime (null otherwise, so a cold load does not read every file twice); `cleanAt` is the plan tree id at which the folder was seen clean
+- **Load.** `load(folders, parse, planDir)` decides each folder in order:
+  - *trusted* (git mode): `cleanAt` is set, git status lists nothing under the folder, and `treeChanges(cleanAt, tree)` has nothing under it. No file access
+  - *verified*: the stamps equal the entry's and are settled, or the folder's hash equals the entry's
+  - *parsed* otherwise: stamp, hash when a stamp is racy, parse, stamp (and for a racy folder hash) again; the entry is stored only when the folder held still. A parse that throws forgets the entry and propagates, so a Blocked folder stays Blocked on every load
+  - `cleanAt` is set only for a folder git status left out whose files are all older than the status call by `RACY_MS`, so an edit racing the status call is never marked clean
+  - Folder paths from git and from the file system are compared case-folded and NFC-normalized (`foldKey`): a spelling difference (a case-only rename on Windows or macOS, decomposed Unicode on macOS) can only re-check a folder, never skip one. `.mdx` files are stamped whatever the case of their extension
+  - Folders no longer listed are dropped. Changed entries are written in one transaction after the load, also when a parse throws. The returned records are `structuredClone`s
+- **Mode.** Git when the load has at least `gitModeMinFolders` folders (`GIT_MODE_MIN_FOLDERS` = 1000) and `dirGitState` returns a tree; stamps otherwise (outside a work tree, before the plan's first commit, when git ignores an untracked plan file, or for a small plan, where spawning git costs more than the stats). `lastStats` `{ folders, parsed, verified, trusted, mode }` describes the last load
+- **Content key.** `contentKey(node)` for a node a load returned: its entry's hash, else a key built from its settled stamps; null for any other object. Readers key memos on it without a stat per node
+- **Per process.** `graphCacheFor(root, packageVersion)` keeps one cache per resolved root and version. `MINDPLAN_GRAPH_CACHE=off` returns null; `git` or `stamps` forces that mode. `closeGraphCaches()` closes them (tests). `folderStamps` and `folderHash` are exported
+- **Limits.** Like git's own stat check, a stamp cannot see an edit that keeps a file's size and restores its old mtime (on Windows git status misses it too). Git status does not report files marked `assume-unchanged` or `skip-worktree`, so in git mode their edits are not seen either
+- **Boundaries.** Depends on `f-source-index` (`dirGitState`, `treeChanges`) and `f-domain-model` (`MindPlanNode`). It knows nothing about the territory format: `f-territory-store` lists the folders and passes its parser. SPEC §1.1.3 is the contract
+
+## Acceptance Criteria
+
+- A second load in stamps mode re-parses nothing; in git mode a clean committed plan is reused with no territory file read or stat
+- A same-size edit made within the racy window, with its mtime restored, is re-parsed (by hash)
+- A working-tree edit, a staged edit, an untracked folder, or a new `.mdx` file in a folder re-parses only that folder; a deleted folder drops
+- After a commit the edited folder is trusted again; checking out another commit re-parses exactly the folders that differ
+- An ignored untracked plan folder switches the load to stamps; a tracked file under an ignore pattern keeps git mode
+- The project root may sit at the repository top or below it, also with `diff.relative` set
+- An edit to an upper-case `.MDX` file is seen; a legacy `current.mdx` duplicate is removed and the folder cached on the next load
+- Rows another package version writes into the shared file are never read
+- A second process reuses the records the first parsed, and an edit seen first by another process is seen here too
+- A corrupt `graph.db` is rebuilt; another package version drops every record; `MINDPLAN_GRAPH_CACHE=off` still loads the graph
+- Mutating a loaded record does not change the next load
+- A Blocked parse stays Blocked on every load until the file is fixed
+- At 1,500 nodes a warm load costs under half an uncached one; at 10,000 nodes (Windows) a warm load takes about 0.4 s with git and 1.1 s by stamps, against 9.4 s uncached, and a cold load about 30% more than uncached
+- Verified via `npm test` on Node 24 and Node 22.13
+
+## Atomic Ops
+
+- [x] Add `cache.ts`: `GraphCache`, persistence, the freshness rule, `graphCacheFor`
+- [x] Hash only folders with racy stamps, so a cold load reads each file about once more than an uncached one
+- [x] Add `graph-cache.test.mjs` and run it from `npm test`
+- [x] Key rows by package version, survive a locked corrupt file, fold folder paths, stamp `.MDX`, and re-hash racy folders after the parse (review fixes)
+- [x] Verified via `npm test` on Node 24 and Node 22.13
+
+## Decisions
+
+### d-graph-cache-derived-read-model
+
+- Decision: loadGraph reads parsed node records from a derived cache (in memory, persisted in .mindplan-cache/graph.db) and re-parses only node folders that may have changed; the .mdx files stay the only source of truth.
+- Alternatives:
+  - Parse every file on every call (about 1 ms per node: ~10 s per tool call at 10,000 nodes)
+  - Make the database authoritative and update it from each write tool (every outside change — git pull, checkout, merge, hand edit — would need its own path, and one missed write leaves the graph wrong)
+- Why: Every tool call loads the graph, so its cost is paid everywhere; caching parse results keyed by what changed removes that cost without giving up files as the truth.
+- Consequences: Every tool depends on the cache's freshness rule being sound; the cache is dropped when the package or cache schema version changes, and can be deleted at any time.
+- Change: graph-cache
+- Date: 2026-10-26
+
+### d-graph-cache-freshness-rule
+
+- Decision: Inside git, a cached record is reused without touching its files only when it was parsed while its folder was clean at a tree T, git status does not list the folder now, and the folder did not change between T and the current tree; every other record is checked by file stamps (size and mtime), re-read and hashed when a stamp is too recent to trust, and re-parsed when the content differs. Outside git, or where git ignores plan files, every record is checked by stamp.
+- Alternatives:
+  - One hash of the whole plan written by MCP (hand edits leave it stale and it conflicts on every merge)
+  - A file watcher (can miss events on network drives or buffer overflow, and needs a full scan as a backstop anyway)
+  - Stamps only (1.4 s per call at 10,000 nodes on Windows, against about 0.45 s for git status and the tree id)
+- Why: Git already keeps a content hash of the committed tree and detects working-tree edits through its own stat cache; trusting only records parsed from clean, committed content keeps the rule sound even when several servers write the cache.
+- Consequences: A load inside git spawns git (about 100 ms on Windows), so small plans use stamps; a record parsed from a dirty file is re-verified until its folder is clean again.
+- Change: graph-cache
+- Date: 2026-10-26
+
+## Attachments
+
+_None._

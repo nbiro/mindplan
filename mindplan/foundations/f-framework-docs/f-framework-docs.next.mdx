@@ -6,7 +6,7 @@ description: "Infra — SPEC, playbook, skills, and changelog: mandatory project
 state: mirror
 shipped_at: 2026-10-25T21:13:07.168Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-26T00:00:28.610Z
+updated_at: 2026-10-26T08:15:22.874Z
 depends_on:
   - f-domain-model
 implements:
@@ -49,7 +49,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section
 
-- **Search docs.** SPEC §8.1.1 specifies hybrid search (the derived `.mindplan-cache/index.db`, what is indexed per node, the keyword and semantic halves, fusion, the fallback, and how the cache stays current), §1.2.1 the `search` settings, and §8.2 `patch_config({ search })`; the README has a Search section (cache, model download, `search.*` settings, environment variables, fallback), requires Node.js 22.13, and its `npx` examples (and the integration templates') use `mindplan-mcp@0.4`; CONTRIBUTING requires Node.js 22.13
+- **Search docs.** SPEC §8.1.1 specifies hybrid search (the derived `.mindplan-cache/index.db`, what is indexed per node, the keyword and semantic halves, fusion, the fallback, and how the cache stays current), §1.2.1 the `search` settings, and §8.2 `patch_config({ search })`; the README has a Search section (cache, model download, `search.*` settings, environment variables, fallback), requires Node.js 22.13, and its `npx` examples (and the integration templates') use `mindplan-mcp@0.5`; CONTRIBUTING requires Node.js 22.13
+- **Graph cache docs.** SPEC §1.1.3 specifies the graph cache (`.mindplan-cache/graph.db`, the per-folder freshness rule, when git is used, the stamp limit, invalidation) and the §1.1 tree names both caches; the README has a Graph cache section (timings, `MINDPLAN_GRAPH_CACHE`) and lists the variable with the other environment variables; `CHANGELOG.md` has the 0.5.0 section
 
 - **Own decisions by default.** Playbook rule 10 says `orient_for_work` returns the node's own decisions and names the inherited ones, with `include_inherited_decisions` for a change that reaches a Journey's or Foundation's design; SPEC §8.1 specifies `inherited_decisions`, `dependent_decisions`, and both flags; the README tool table and the `npx` examples (`mindplan-mcp@0.5`) match
 
@@ -104,6 +105,7 @@ Depends on: `f-domain-model`.
 - [x] Add the Unreleased entry to `CHANGELOG.md`
 - [x] Verified the shipped-claims and neighbor docs via `npm test`
 - [x] Document the review fixes in SPEC and the changelog
+- [x] Document the graph cache in SPEC §1.1.3, README, and the 0.5.0 changelog, and move the `npx` examples to `mindplan-mcp@0.5`
 - [x] Document linked tests in SPEC, the playbook, and the changelog — note: SPEC §6.1, §6.2, §8.1, §8.2, §9.6; playbook handoff step; README tool table; CHANGELOG 0.3.0
 
 ## Attachments

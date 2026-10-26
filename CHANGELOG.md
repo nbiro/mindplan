@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 — cached graph loads
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **Graph cache.** Every tool call loads the graph, and parsing every `.mdx` file cost about 1 ms per node (about 10 s per call at 10,000 nodes on Windows). Parsed node records are now kept in memory and in `.mindplan-cache/graph.db`, and a load re-parses only node folders that may have changed. A load returns exactly what parsing every file would. [§1.1.3]
+- **Freshness from git.** In a git repository with 1,000 or more node folders, a record parsed while its folder was clean and committed is reused without touching its files as long as git status lists nothing under the folder and the folder is unchanged between that tree and `HEAD:mindplan`. So a `git pull`, checkout, or merge re-parses exactly the folders that differ. [§1.1.3]
+- **Freshness from file stamps.** Outside git, in smaller plans, and wherever git ignores a plan file, each folder is checked by its files' size and modification time; a file modified within two seconds of being stamped is compared by content hash until it settles. [§1.1.3]
+- **Timings (10,000 nodes, Windows).** A warm load takes 0.4 s with git and 1.1 s by stamps, against 9.4 s uncached. The first load after an upgrade, which drops the cache, takes about 30% longer than an uncached load. At 1,500 nodes: 0.17 s warm against 1.5 s uncached.
+- **Safe to delete.** The cache is derived, gitignored with the search cache, never in `changed_files`, and rebuilt when its file is corrupt. Each record carries the parser that made it (the package version plus a hash of the built parser, so a rebuilt checkout counts as new), and a server reads only its own parser's records. `MINDPLAN_GRAPH_CACHE=off` turns it off for one process; `git` or `stamps` forces one mode. [§1.1.3]
+- **Search reads fewer files.** Search keys each node's section headings on the graph cache's content key, so a search no longer stats every territory file. [§8.1.1]
+
 ## 0.4.0 — semantic search and leaner orientation
 
 Every behavior change in this release. SPEC sections in brackets.
