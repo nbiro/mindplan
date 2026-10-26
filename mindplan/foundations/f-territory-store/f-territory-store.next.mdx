@@ -4,9 +4,9 @@ type: Foundation
 title: "Territory store"
 description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
 state: mirror
-shipped_at: 2026-10-25T21:13:07.299Z
+shipped_at: 2026-10-25T23:55:51.799Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-25T21:13:07.299Z
+updated_at: 2026-10-25T23:55:51.799Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -70,6 +70,8 @@ Intended files: `src/foundations/f-territory-store/`
 - **Neighbor label.** `writeNeighborLabel(node, change)` sets (or with `""` clears) the live `change` scalar of a shipped node with no open next and re-syncs its mirror twin. It returns `{ twin, replaced? }`: `twin` is null when the label already had that value, `replaced` is the previous id when a different one was set. A node that fails `isNeighborNode` (`f-domain-model`; a retired node included) is Blocked
 - **In-place claim marker.** `added_claims` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.added_claims`, `nodeToRecord`). `writeImplementsFrontmatter(node, files, slot, addedInPlace?)` on the live slot merges `addedInPlace` into the stored list and keeps, sorted and deduped, only the entries the list still keeps (`claimListKeeps`: verbatim, or under a non-glob directory entry) that the body (owned sections excluded) does not yet name as a whole path (`namesPath`: `pkg/a.ts` is not named by `pkg/a.tsx`, `pkg/a/` not by `pkg/a/b.ts`); an empty list removes the field. A live `patchNodeTerritory` write prunes the entries its new body names. `clearAddedClaims(node)` removes the list and leaves the twin re-sync to its caller. `promoteNextSlot` rebuilds the live frontmatter and drops it
 - **Deleted next-slot files.** `deleteNextSlotFiles` lists every file it deletes under `next-attachments/` (e.g. `.gitkeep`) as well as the folder
+- **Search body reader.** `territoryBodyReader()` is `readMarkdown` plus a `stamp(node, slot)` (the slot file's size and mtime), the reader `f-graph-search` keys its heading memo on, so a body edited outside MCP is re-read
+- **Legacy removal log.** `restoreRemovedLegacyFiles(entries)` puts drained entries back at the head of the log, so an async tool result reports the legacy files its own graph load removed (`if-mcp-tools`)
 - **Linked tests.** `tests` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.tests`, `nodeToRecord`) and, like `added_claims`, kept verbatim by frontmatter rewriters that do not know it. `writeTestsFrontmatter(node, entries)` is its only writer: it validates each entry as a claim path (`validateClaimPath`: no `..`, no absolute path, nothing under `mindplan/`), dedupes and sorts, writes the same list to the live `<id>.mdx` and, while a revision is open, to `<id>.next.mdx`, re-syncs the mirror twin when none is open, and returns `{ paths, changed }`. An empty list removes the field. It never touches state, `updated_at`, or readiness. Blocked on a Journey, a Bug, or a retired node. `openNextSlot` copies the list with the live file, and `promoteNextSlot` writes the next file's list (equal to live) into the rebuilt live frontmatter
 
 Depends on: `f-domain-model`, `f-source-index`.
@@ -80,6 +82,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 - `packageVersion()` reads `version` from this package's own `package.json` by walking up from the module (works from `dist/` and from a consumer's `node_modules`); `f-mcp-runtime` reports the same value on `initialize`.
 - `projectVersionStatus()` compares the stamp with the running package and graph format and never throws. Status: `current`, `missing` (no stamp), `invalid` (unreadable stamp), `behind` (stamp older than the package, or older graph format), `ahead` (stamp newer than the package, or newer graph format). Every status but `current` carries one `warning` sentence naming the fix: `behind` / `missing` / `invalid` → run `mindplan-mcp init` with the installed version; `ahead` → upgrade `mindplan-mcp`.
 - Versions compare as SemVer `major.minor.patch`; a pre-release sorts before its release.
+
+- **Aliases.** `aliases` is a frontmatter list parsed like `tests` and kept verbatim by rewriters that do not know it; each entry is written as a JSON string (free text: spaces, colons, other scripts) and decoded on parse. `normalizeAliases(id, entries)` trims, collapses whitespace, drops empties, deduplicates ignoring case, and Blocks an entry over `MAX_ALIAS_CHARS` (60) or more than `MAX_ALIASES` (20). `writeAliasesFrontmatter(node, entries)` is the only writer: any node type, not a retired or closed one; the same list on live and an open next, mirror twin re-synced, state / `updated_at` / readiness untouched; an empty list removes the field. `promoteNextSlot` writes the next file's list into the rebuilt live frontmatter; `nodeToRecord` carries it
+- **Literal replacements.** Every frontmatter write that splices free text (aliases, tests, title, description, `change_ref`) passes a replacer function to `String.replace`, so a `$` in the text is written as is and never read as a replacement pattern
 
 ## Acceptance Criteria
 
@@ -111,6 +116,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - A body naming only a longer path keeps the `added_claims` entry; naming the exact path (even before a period) removes it
 - `writeTestsFrontmatter` writes the list to live and an open next, re-syncs the twin when no revision is open, and leaves a `ready` revision ready
 - The `tests` list survives `open_next`, body, claim, edge, and change writes, and ship; an empty list removes the field
+
+- Aliases round-trip JSON-quoted, survive other territory writes and promotion, and `[]` removes them
 
 ## Atomic Ops
 
@@ -154,6 +161,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Parse `tests` and add `writeTestsFrontmatter`
 - [x] Carry `tests` through open_next, frontmatter rewrites, and promote
 - [x] Verified the `tests` list via `npm test`
+- [x] Parse, normalize, write, and promote `aliases`
 
 ## Decisions
 

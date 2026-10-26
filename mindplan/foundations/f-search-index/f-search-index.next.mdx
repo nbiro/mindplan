@@ -1,0 +1,156 @@
+---
+id: f-search-index
+type: Foundation
+title: "Search index"
+description: "Adapter — the derived search cache in .mindplan-cache/index.db (node:sqlite): node rows, an FTS5 keyword index, one normalized embedding vector per node from a local transformers.js model, and edges; synced incrementally from the graph, rebuilt when its schema or model changes, and safe to delete."
+state: mirror
+shipped_at: 2026-10-26T00:04:46.126Z
+created_at: 2026-10-25T21:51:39.591Z
+updated_at: 2026-10-26T00:31:08.600Z
+depends_on:
+  - f-source-index
+implements:
+  - src/foundations/f-search-index/
+tests:
+  - src/foundations/f-test-harness/search-eval.test.mjs
+  - src/foundations/f-test-harness/search-index.test.mjs
+role: adapter
+---
+
+# Search index
+
+## Purpose
+
+Adapter — the derived search cache and the local embedding model behind `find_related_nodes` and `orient_for_work`. The `<id>.mdx` files stay the only source of truth: this cache is rebuilt from them, re-synced on every search, and safe to delete, so git branches, PR diffs, and merges keep describing the plan. A tool call never waits on the model download or on a full re-embed; until the model is ready, or when it cannot load, search is keyword-only and never errors.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-search-index/`
+
+- `index-db.ts` — `SearchIndex` over `<root>/.mindplan-cache/index.db` (Node's `node:sqlite` `DatabaseSync`, loaded with `createRequire` so a runtime without it gets `null` and a once-logged reason):
+  - The cache folder carries its own `.gitignore` (`*`), so git never lists it even before init adds the root entry
+  - Tables: `meta(key, value)` (schema version and model id; a mismatch drops and rebuilds every table), `nodes(rowid INTEGER PRIMARY KEY AUTOINCREMENT, id UNIQUE, type, state, title, description, area, content_hash, retired)`, `nodes_fts` (FTS5, porter + unicode61) over `id_words, title, description, aliases, headings, area, entry, paths` keyed by the `nodes` rowid, `node_vec(id PRIMARY KEY, text_hash, vector BLOB)` (one `Float32Array`, normalized), and `edges(source, target, type)` with indexes on both ends
+  - `SearchIndex.open(root, { model }, { file? })` — WAL and a 3 s busy timeout so two servers on one repo share the file; the meta check, a rebuild, and the table creation run in one `BEGIN IMMEDIATE` transaction so two servers opening a new or outdated file cannot interleave; only a file SQLite reports as corrupt (not a database, malformed) is deleted and created again, and any other open failure (a lock past the timeout, a read-only folder) leaves the file alone and keeps the cache in memory for the process; `fts` is false when FTS5 is missing
+  - `sync(docs)` — one hash per node; writes only changed rows (node, FTS row, edges) and deletes rows for nodes that are gone, in one transaction; returns `{ changed, removed }`. FTS rows are found by the node's rowid at write time, never a remembered one. Before syncing, the in-memory hashes and vectors are reloaded when `PRAGMA data_version` says another connection wrote the file, or after a failed write (a rollback that SQLite already made is tolerated)
+  - `keyword(query, candidates, limit, { type?, ids? })` — the retired, type, and `ids` (an area's members, through `json_each`) filters run in SQL before the row limit; bm25 over the query's words (stopwords dropped, each word quoted so no word is read as FTS syntax), column weights id words 6, title 8, description 3, aliases 8, headings 1.5, area 1, entry points 0.5, paths 1.5; `null` without FTS5
+  - `staleVectors()` / `putVectors(rows)` — vectors are keyed by the hash of the model id and `embedText(doc)` (a vector another process wrote with an older model reads as stale), held in memory and written back, and a stored blob that is not a float vector is skipped; only nodes whose embedded text changed are re-embedded, and a vector for a node the last sync no longer has (removed while it was being embedded) is dropped
+  - `semantic(queryVector, candidates, limit)` — brute-force dot product over unit vectors, best first; a stored vector of another size is skipped
+  - `SearchDoc` — `{ id, type, state, title, description, area, entry, aliases, headings, paths, retired, edges }`; `embedText(doc)` is `"{type}: {title}. {description}. Area: … Entry points: … Aliases: … Sections: …"` (empty parts left out)
+- `embedder.ts` — the transformers.js model (`@huggingface/transformers`, an optional dependency imported dynamically):
+  - `DEFAULT_SEARCH_MODEL` = `Xenova/bge-small-en-v1.5` (CLS pooling, 384 dimensions, the bge query instruction before a query); `Xenova/all-MiniLM-L6-v2` is the known alternative (mean pooling); an unknown model is mean-pooled, and every model's vector size is read on load
+  - `warmModel(model)` starts loading in the background (q8 weights, `env.cacheDir` = `modelCacheDir()` = `MINDPLAN_MODEL_CACHE` or `~/.cache/mindplan/models`, remote downloads off with `MINDPLAN_SEARCH_OFFLINE=1`, which then reads the same folder as the local model path so a downloaded model still loads); a failure is logged once to stderr; `readyEmbedder(model)` is the model once ready, else `null`; calls into the pipeline run one at a time
+  - `Embedder` — `{ model, dims, embed(texts, "query" | "passage") }`; tests pass a fixture-backed one
+- `keyword-js.ts` — `keywordRankDocs(docs, query, candidates, limit)`: the keyword half in plain JS for a runtime whose SQLite has no FTS5 (Node 22.13's bundled build) or no `node:sqlite`. BM25 over the same fields and weights as `nodes_fts`, with FTS5's `bm25()` formula (the weighted frequency across fields, saturated once against the document's length); `keywordTerms` takes Unicode letters, marks, and digits, folds diacritics, drops stopwords, and stems lightly (`enquiries` and `enquiry` meet). On the search test set it ranks as FTS5 does
+- `service.ts` — settings and the per-project registry:
+  - `searchSettings(root)` — `mindplan/config.json` `search` (`enabled`, `model`); `MINDPLAN_SEARCH=keyword` turns semantic ranking off for one process; an unreadable config reads as the defaults
+  - `searchIndexFor(root, model)` — one open `SearchIndex` per project root; a different model closes the old handle first, so two handles never rebuild one file under each other; `closeSearchIndexes()`
+  - `prepareSearch(root, docs, { embedder?, waitForVectors? })` — syncs the cache, starts the model when semantic ranking is on, embeds up to `INLINE_EMBED_LIMIT` (24) changed nodes inline and defers a larger batch to the background (that call is keyword-only); returns `{ index, embedder }`, either of which may be `null`
+  - `embedStale(index, embedder)` — single-flight background embedding per index
+  - `warmSearch(root, docs)` (server start) and `refreshSearch(root, docs)` (after a write): never throw, never block a tool call
+- Nothing here writes to stdout; diagnostics go to stderr
+
+- `ftsQuery` normalizes the query to NFC and splits it on letters and marks of any script (`\p{L}`, `\p{M}`), so an alias like `ofertă` reaches FTS5, whose unicode61 tokenizer folds diacritics on both sides
+
+Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
+
+## Acceptance Criteria
+
+- A second sync of an unchanged graph writes nothing; one edited node rewrites one row and re-embeds one vector; a removed node's rows are deleted
+- Vectors survive a restart; a different model or vector size drops them
+- A corrupt `index.db` is rebuilt, not reported; a locked one is never deleted
+- Two connections on one file never delete each other's rows; the type filter applies before the row limit
+- `MINDPLAN_SEARCH_OFFLINE=1` loads a model that is already downloaded
+- `.mindplan-cache/` ignores itself in git and never appears in `changed_files`
+- Without the model (not installed, offline, still loading) search returns keyword results and no error
+- On 1,000 nodes: an incremental update after one write is under 200 ms and a search under 50 ms; a cold index with the real model is under a minute
+- Verified via `npm test` (`search-index.test.mjs`, `search-eval.test.mjs`)
+
+## Atomic Ops
+
+- [x] Add `index-db.ts`: schema with meta rebuild, incremental sync, FTS5 keyword ranking, vectors, edges
+- [x] Add `embedder.ts`: background model load, once-logged failure, serialized calls, offline and cache-dir settings
+- [x] Add `service.ts`: settings, registry, `prepareSearch` with the inline embed limit, warm-up and post-write refresh
+- [x] Review fixes: rowids at write time and a reload on `data_version`, filters in SQL, identity by model, corrupt-only delete, offline local path, orphan vectors dropped
+- [x] Verified via `npm test`
+
+- [x] Split FTS queries on letters of any script
+- [x] Filter keyword rows to an id list in SQL
+
+## Decisions
+
+### d-mdx-only-source-of-truth
+
+- Decision: The <id>.mdx files stay the only source of truth for the graph; the search index is a derived cache and nothing reads graph facts back from it.
+- Alternatives:
+  - Make a SQLite database authoritative and render the .mdx files from it (git branches, PR diffs, merges and history stop describing the plan)
+- Why: Git branches, PR diffs, merges and history work on files; a database would need its own merge story and would hide plan changes from review.
+- Consequences: Every search re-checks the index against the loaded graph; a lost or corrupt cache is rebuilt, never repaired.
+- Change: semantic-search
+- Date: 2026-10-25
+
+### d-derived-sqlite-cache
+
+- Decision: Search runs on a derived SQLite cache at .mindplan-cache/index.db: gitignored, rebuilt from the files, and safe to delete at any time.
+- Alternatives:
+  - Rank in memory on every call with no cache (embeddings would be recomputed for every node at every server start)
+  - Store vectors next to each node under mindplan/ (graph files would churn with every model change and show up in PR diffs)
+- Why: Embedding every node is the slow step; a cache keyed by content hash re-embeds only what changed, and keeping it outside mindplan/ keeps it out of git and changed_files.
+- Consequences: A schema version, model id, or vector size change drops and rebuilds the whole cache.
+- Change: semantic-search
+- Date: 2026-10-25
+
+### d-local-embedding-model
+
+- Decision: Embeddings come from a small local English model through transformers.js, downloaded once per machine into the user cache folder and warmed up in the background.
+- Alternatives:
+  - A hosted embeddings API (needs a key and the network, and sends plan text off the machine)
+  - Keyword search only (misses synonyms: a query saying quote never finds a node saying enquiry)
+- Why: It runs offline with no API key; a ~30 MB first download is acceptable, and a tool call never waits on it.
+- Consequences: Until the model is ready, or when it cannot load, search is keyword-only and never errors; words in other languages reach search only through aliases.
+- Change: semantic-search
+- Date: 2026-10-25
+
+### d-node-is-retrieval-unit
+
+- Decision: The unit of retrieval is a node: one embedding and one keyword row per node, built from its type, title, description, area, and section headings; bodies are never split into chunks.
+- Alternatives:
+  - Chunk bodies and rank chunks (results would be paragraphs, while every caller orients on nodes)
+- Why: Orientation picks a node; a node's title, description, and headings say what it is, and chunks would add rows without changing what the caller receives.
+- Consequences: Detail that lives only deep in a body paragraph is not searchable; descriptions and headings must name what a node does.
+- Change: semantic-search
+- Date: 2026-10-25
+
+### d-node-sqlite-no-native-modules
+
+- Decision: The cache uses Node's built-in node:sqlite (DatabaseSync) with vectors stored as Float32Array BLOBs and compared by brute force in JS; engines.node rises to >=22.13 and Node 18 and 20 are no longer supported.
+- Alternatives:
+  - better-sqlite3 (a native module that must compile or download a binary per platform)
+  - sqlite-vec for vector search (native extension; brute force over 10k nodes x 384 dimensions is about 15 MB and a few milliseconds)
+- Why: 22.13 is the first 22.x release where node:sqlite works without --experimental-sqlite, so the cache needs no native npm module; graphs are far from the size where brute force is slow.
+- Consequences: node:sqlite may print an ExperimentalWarning to stderr; if node:sqlite or FTS5 is missing, search falls back to token scoring. sqlite-vec can come later behind the same interface if graphs reach six figures.
+- Change: semantic-search
+- Date: 2026-10-25
+
+### d-transformers-optional-dependency
+
+- Decision: @huggingface/transformers is an optionalDependency loaded with a dynamic import; when it is missing or fails to load, search stays keyword-only.
+- Alternatives:
+  - A regular dependency (its onnxruntime-node and sharp prebuilt binaries failing to install on one platform would fail the whole mindplan-mcp install)
+- Why: Semantic search is an improvement, not a requirement; an install on a sandbox or an unsupported platform must still get a working server.
+- Consequences: npm install --omit=optional gives a keyword-only server; the reason is logged once to stderr.
+- Change: semantic-search
+- Date: 2026-10-25
+
+### d-bge-small-default-model
+
+- Decision: The default model is Xenova/bge-small-en-v1.5 (q8, CLS pooling, with the bge query instruction), chosen over Xenova/all-MiniLM-L6-v2 on the search test set.
+- Alternatives:
+  - Xenova/all-MiniLM-L6-v2 (hybrid top-1 0.771 and MRR 0.842 against bge's 0.792 and 0.858 on the same run, top-5 equal)
+- Why: It scored better on every metric that differed, at the same 384 dimensions and a similar download.
+- Consequences: The committed fixture vectors are bge vectors; changing the default means rerunning search-eval.test.mjs --write-vectors and --write-metrics.
+- Change: semantic-search
+- Date: 2026-10-25
+
+## Attachments
+
+_None._

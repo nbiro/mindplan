@@ -6,6 +6,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { fileURLToPath } from "url";
+// Spawned servers rank by keyword only: no model download or load during tests.
+process.env.MINDPLAN_SEARCH ??= "keyword";
+// The smoke walks write without orienting first; the orientation gate has its own suite.
+process.env.MINDPLAN_ORIENT_GATE ??= "off";
 
 const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const serverEntry = path.join(toolRoot, "dist/index.js");
@@ -219,11 +223,11 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files"];
-  if (names.size !== 28 || required.some((n) => !names.has(n))) {
+  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas"];
+  if (names.size !== 29 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 28 tools including ${required.join(", ")} (got ${names.size})`);
-  } else console.log(`ok   twenty-eight tools registered including ${required.join(", ")}`);
+    console.log(`FAIL expected 29 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   twenty-nine tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
     if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {
@@ -246,6 +250,7 @@ function nextTerritoryPath(...parts) {
   const READ = [
     "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
     "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
+    "list_areas",
   ];
   const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
   const annotationProblems = [];
@@ -827,7 +832,7 @@ if (
 // --- orient_for_work + reachability ---
 await expectBlocked("orient_for_work requires query or node_id", "orient_for_work", {});
 const oriented = JSON.parse(
-  await expectOk("orient_for_work checkout", "orient_for_work", { query: "checkout" })
+  await expectOk("orient_for_work checkout", "orient_for_work", { query: "checkout", node_id: "i-checkout" })
 );
 if (oriented.focus !== "i-checkout" || !oriented.context?.record?.id || oriented.context.record.id !== "i-checkout") {
   failures++; console.log(`FAIL orient_for_work context: ${JSON.stringify({ focus: oriented.focus, record: oriented.context?.record })}`);
@@ -2801,10 +2806,10 @@ role: infra
     console.log(`FAIL Bug rules from affected nodes: ${JSON.stringify(orientBug.rules.entries)}`);
   } else console.log("ok   Bug inherits the resolved rules of the nodes it affects");
   const orientNone = await json("orient_for_work", { query: "zzzzqqqq" });
-  if (orientNone.rules !== null) {
+  if (orientNone.focus !== null || "rules" in orientNone || "context" in orientNone) {
     failures++;
-    console.log(`FAIL rules must be null without a focus: ${JSON.stringify(orientNone.rules)}`);
-  } else console.log("ok   orient_for_work rules is null without a focus");
+    console.log(`FAIL a query-only orient without a focus returns rows only: ${JSON.stringify(orientNone)}`);
+  } else console.log("ok   orient_for_work without a focus returns rows only, no rules");
 
   // Blast radius reports who the rules reach.
   const blast = await json("get_blast_radius", { node_id: "j-rules" });

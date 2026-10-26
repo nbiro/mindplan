@@ -96,7 +96,8 @@ function walkFiles(absDir: string, relBase = ""): string[] {
   const out: string[] = [];
   if (!fs.existsSync(absDir)) return out;
   for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
-    if (entry.name === ".git") continue;
+    // .git and the derived search cache are never source files.
+    if (entry.name === ".git" || (!relBase && entry.name === ".mindplan-cache")) continue;
     const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
     const abs = path.join(absDir, entry.name);
     if (entry.isDirectory()) {

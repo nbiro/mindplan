@@ -46,6 +46,9 @@ import {
   patchNodeTerritory as patchNodeTerritoryStore,
   promoteNextSlot,
   readMarkdown,
+  territoryBodyReader,
+  normalizeAliases,
+  writeAliasesFrontmatter,
   removeEdgesFromFrontmatter,
   scaffoldEntity,
   splitContext,
@@ -109,7 +112,11 @@ import {
   createDecisionContext,
   type DecisionContext,
 } from "../../foundations/f-compiler-rules/decisions.js";
-import { DEFAULT_FIND_LIMIT, findRelatedNodes } from "../../foundations/f-graph-search/search.js";
+import {
+  DEFAULT_FIND_LIMIT,
+  findRelatedNodes,
+  refreshSearchIndex,
+} from "../../foundations/f-graph-search/search.js";
 import { inheritanceSources, rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import {
   decisionIds,
@@ -119,6 +126,35 @@ import {
   supersessionIndex,
 } from "../../foundations/f-graph-search/decisions.js";
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
+import {
+  assertOriented,
+  orientationGateEnabled,
+  reachingRules,
+  recordOriented,
+  rulesFingerprint,
+} from "../../foundations/f-orientation-ledger/ledger.js";
+
+/**
+ * Blocked: Orientation unless every node was oriented on in this session with the rules that apply
+ * to it now (`f-orientation-ledger`). Free when the gate is off (the CLI, or MINDPLAN_ORIENT_GATE=off).
+ */
+function gateWrite(graph: MindPlanGraph | null, ids: string[], tool: string): void {
+  if (!orientationGateEnabled()) return;
+  assertOriented(graph ?? loadGraph(), ids, tool);
+}
+
+/**
+ * After a write that can change which rules reach `id` (a link, a new node): when they changed,
+ * return them as a `rules` block and count the node as oriented, since the rules reached the agent
+ * in this result.
+ */
+function rulesReachingAfterWrite(id: string, before: string | null): Record<string, unknown> {
+  if (!orientationGateEnabled()) return {};
+  const graph = loadGraph();
+  if (before !== null && rulesFingerprint(graph, id) === before) return {};
+  recordOriented(graph, [id]);
+  return { rules: { node_id: id, entries: reachingRules(graph, id) } };
+}
 
 /** Persist recomputed states. Returns each node's live path plus any mirror twin re-synced. */
 export function syncNodes(nodes: MindPlanNode[]): string[] {
@@ -198,9 +234,15 @@ export function nextSlotFsChangedFiles(
   return files;
 }
 
-/** Reload territory and refresh `mindplan/map.md` after a successful mutation. */
+/**
+ * Reload territory after a successful mutation: refresh `mindplan/map.md`, and sync the search
+ * cache (outside mindplan/, so never in changed_files) with the embeddings of what changed
+ * computed in the background.
+ */
 export function refreshPersistedMap(): void {
-  persistMindPlanMap(loadGraph());
+  const graph = loadGraph();
+  persistMindPlanMap(graph);
+  refreshSearchIndex(graph, projectRoot(), territoryBodyReader());
 }
 
 /**
@@ -379,10 +421,12 @@ export function createNode(args: {
   role?: FoundationRole;
   change?: string;
   change_ref?: string;
+  aliases?: string[];
 }): Record<string, unknown> {
   const { id, type, title, description } = args;
   // Validate config before writing territory.
   loadProjectConfig();
+  if (args.aliases !== undefined) normalizeAliases(id, args.aliases);
   if (nodeExists(id)) {
     throw blocked(`node "${id}" already exists.`);
   }
@@ -427,6 +471,7 @@ export function createNode(args: {
   ensureDirectories();
   scaffoldEntity(node, { title, description: desc });
   writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref });
+  if (args.aliases?.length) writeAliasesFrontmatter(node, args.aliases);
   const rel = entityRelativePath(node);
   const current = territoryPath(node, "current");
   const attachments = `${rel}/${ATTACHMENTS_DIR}`;
@@ -439,6 +484,8 @@ export function createNode(args: {
     current,
     context: current,
     attachments,
+    // create_node is never gated: the new node counts as oriented, with the rules that reach it.
+    ...rulesReachingAfterWrite(id, null),
     changed_files: changedFiles(files, true),
     ...mutationTail(graph, id, args.verbose),
   };
@@ -521,6 +568,7 @@ type SetImplementationArgs = {
  * A shipped node with no open next writes its live slot in place, additive only.
  */
 export function setImplementationFiles(args: SetImplementationArgs): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "set_implementation_files");
   // A change id moved off a revision may leave its old change with no revisions.
   return args.change === undefined
     ? writeImplementationFiles(args)
@@ -675,6 +723,7 @@ type SetTestFilesArgs = {
  * open next, a shipped node needs no `open_next`, and readiness is never reset.
  */
 export function setTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "set_test_files");
   // A change id moved off a revision may leave its old change with no revisions.
   return args.change === undefined
     ? writeTestFiles(args)
@@ -725,6 +774,8 @@ export function linkNodes(args: {
   if (edge_type === "depends_on") {
     assertAcyclicDependsOn(graph, source_id, target_id);
   }
+  gateWrite(graph, [source_id], "link_nodes");
+  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source_id) : null;
 
   const writeSlot = edgeWriteSlot(source, edge_type);
   const existingOnSlot =
@@ -777,6 +828,7 @@ export function linkNodes(args: {
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     ...readinessFields(readiness.reset),
+    ...rulesReachingAfterWrite(source_id, rulesBefore),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), source_id, args.verbose),
   };
@@ -791,6 +843,8 @@ export function unlinkNodes(args: {
   const graph = loadGraph();
   const source = findNode(graph, source_id);
   findNode(graph, target_id);
+  gateWrite(graph, [source_id], "unlink_nodes");
+  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source_id) : null;
   const before = graph.edges.length;
   graph.edges = graph.edges.filter(
     (e) => !(e.source === source_id && e.target === target_id)
@@ -841,6 +895,7 @@ export function unlinkNodes(args: {
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     ...readinessFields(readiness.reset),
+    ...rulesReachingAfterWrite(source_id, rulesBefore),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), source_id, args.verbose),
   };
@@ -1235,6 +1290,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
         `${sim.blocked}. Nothing was written: the whole walk is validated before the first transition.`
       );
     }
+    gateWrite(graph, plan.map((row) => row.node_id), "update_node_status");
     const lines: string[] = [];
     const changed = new Set<string>();
     const cleared = new Set<string>();
@@ -1287,6 +1343,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
     };
   }
+  gateWrite(null, normalized.items.map((i) => i.node_id), "update_node_status");
 
   if (normalized.mode === "single") {
     return applyOneStatus({ ...normalized.items[0], verbose: args.verbose });
@@ -1463,6 +1520,7 @@ export function forceUnship(args: {
   const { node_id, confirm, new_status } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  gateWrite(graph, [node_id], "force_unship");
   const target = new_status ?? "ready";
   const previous = node.state;
 
@@ -1517,13 +1575,59 @@ type PatchTerritoryArgs = {
   change?: string;
   change_ref?: string;
   slot?: TerritorySlot;
+  /** Replace the node's search aliases (slot-independent; never resets readiness). */
+  aliases?: string[];
 };
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
-  // A revision moved off (or cleared from) its change may leave that change with no revisions.
-  return args.change === undefined
-    ? writeNodeTerritory(args)
-    : withNeighborCleanup(() => writeNodeTerritory(args));
+  gateWrite(null, [args.node_id], "patch_node_territory");
+  const { aliases, ...territory } = args;
+  if (aliases !== undefined) {
+    // Validate the alias write in full before any territory write, so a Blocked writes nothing.
+    normalizeAliases(args.node_id, aliases);
+    const target = findNode(loadGraph(), args.node_id);
+    if (isInactiveNode(target)) {
+      throw blocked(`"${args.node_id}" is ${target.state}; aliases cannot be set on a retired or closed node.`);
+    }
+  }
+  const territoryFields = Object.entries(territory).some(
+    ([key, value]) =>
+      value !== undefined &&
+      !(Array.isArray(value) && value.length === 0) &&
+      key !== "node_id" &&
+      key !== "verbose" &&
+      key !== "slot"
+  );
+  let result: Record<string, unknown> | null = null;
+  if (territoryFields || aliases === undefined) {
+    // A revision moved off (or cleared from) its change may leave that change with no revisions.
+    result =
+      territory.change === undefined
+        ? writeNodeTerritory(territory)
+        : withNeighborCleanup(() => writeNodeTerritory(territory));
+  }
+  if (aliases === undefined) return result!;
+  // Aliases are search words, not contract: written to live and an open next alike, on any node,
+  // shipped ones included, without open_next or a readiness reset.
+  const written = writeAliasesFrontmatter(findNode(loadGraph(), args.node_id), aliases);
+  if (written.paths.length > 0) refreshPersistedMap();
+  if (result) {
+    return {
+      ...result,
+      // The anchor reflects the node after both writes.
+      ...mutationTail(loadGraph(), args.node_id, args.verbose),
+      patched_fields: [...((result.patched_fields as string[] | undefined) ?? []), "aliases"],
+      aliases: written.aliases,
+      changed_files: changedFiles([...((result.changed_files as string[]) ?? []), ...written.paths]),
+    };
+  }
+  return {
+    node_id: args.node_id,
+    patched_fields: ["aliases"],
+    aliases: written.aliases,
+    changed_files: changedFiles(written.paths),
+    ...mutationTail(loadGraph(), args.node_id, args.verbose),
+  };
 }
 
 function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
@@ -1627,6 +1731,7 @@ export function patchNodeRules(args: {
   node_id: string;
   rules: string;
 }): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "patch_node_rules");
   const { node_id, rules } = args;
   if (rules === undefined) {
     throw blocked("patch_node_rules requires rules.");
@@ -1634,6 +1739,9 @@ export function patchNodeRules(args: {
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   const written = writeNodeRules(node, rules);
+  // The author holds the rules it just wrote; its orientation stays current. Nodes that inherit
+  // them now need a fresh orientation before their next write.
+  if (orientationGateEnabled()) recordOriented(loadGraph(), [node_id]);
   return {
     node_id,
     rules: node.rules ?? "",
@@ -1664,6 +1772,7 @@ export function recordDecision(args: {
   change?: string;
   id?: string;
 }): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "record_decision");
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
   if (node.type === "Bug") {
@@ -1769,6 +1878,7 @@ export function openNext(args: {
   change?: string;
   change_ref?: string;
 }): Record<string, unknown> {
+  gateWrite(null, [args.node_id], "open_next");
   const { node_id, title, description } = args;
   validateChangeInput(args);
   const graph = loadGraph();
@@ -1868,20 +1978,29 @@ export function patchConfig(args: {
   sources?: string[];
   exclude?: string[];
   decisions?: { blast_radius?: number; schema_files?: string[] };
+  search?: { enabled?: boolean; model?: string };
 }): Record<string, unknown> {
-  if (args.sources === undefined && args.exclude === undefined && args.decisions === undefined) {
-    throw blocked("patch_config requires sources, exclude, and/or decisions.");
+  if (
+    args.sources === undefined &&
+    args.exclude === undefined &&
+    args.decisions === undefined &&
+    args.search === undefined
+  ) {
+    throw blocked("patch_config requires sources, exclude, decisions, and/or search.");
   }
   const current = loadProjectConfig();
-  // A decision setting that is not passed keeps its stored value.
-  const passed = Object.fromEntries(
-    Object.entries(args.decisions ?? {}).filter(([, v]) => v !== undefined)
-  );
-  const decisions = { ...(current.decisions ?? {}), ...passed };
+  // A decision or search setting that is not passed keeps its stored value.
+  const merged = <T extends object>(stored: T | undefined, passedArgs: T | undefined): Partial<T> => ({
+    ...(stored ?? {}),
+    ...Object.fromEntries(Object.entries(passedArgs ?? {}).filter(([, v]) => v !== undefined)),
+  });
+  const decisions = merged(current.decisions, args.decisions);
+  const search = merged(current.search, args.search);
   const next = {
     sources: args.sources ?? current.sources,
     exclude: args.exclude ?? current.exclude,
     ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
+    ...(Object.keys(search).length > 0 ? { search } : {}),
   };
   const written = writeProjectConfig(next, { force: true });
   return {
@@ -1901,6 +2020,7 @@ export function putAttachment(args: {
   const { node_id } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  gateWrite(graph, [node_id], "put_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
   const slot: TerritorySlot =
@@ -1942,6 +2062,7 @@ export function removeAttachment(args: {
   const { node_id } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  gateWrite(graph, [node_id], "remove_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
   const slot: TerritorySlot =

@@ -10,6 +10,8 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+// Spawned servers rank by keyword only: no model download or load during tests.
+process.env.MINDPLAN_SEARCH ??= "keyword";
 
 const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const serverEntry = path.join(toolRoot, "dist/index.js");

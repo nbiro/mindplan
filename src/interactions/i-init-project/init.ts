@@ -212,6 +212,32 @@ export function installRootAgentsMd(
   return installTemplateFile(templatePath, destPath, "AGENTS.md", options);
 }
 
+/** The search cache directory init keeps out of git (`.mindplan-cache/`, f-search-index). */
+export const SEARCH_CACHE_IGNORE = ".mindplan-cache/";
+
+/**
+ * Add `.mindplan-cache/` to the host repo's `.gitignore` (created when missing), once. The cache
+ * also carries its own `.gitignore`; the root entry keeps it out of tools that do not read nested
+ * ignore files. `installed` is false when the entry was already there.
+ */
+export function installSearchCacheIgnore(): InstallAgentRuleResult {
+  const destPath = path.join(projectRoot(), ".gitignore");
+  const existing = fs.existsSync(destPath) ? fs.readFileSync(destPath, "utf-8") : "";
+  const present = existing
+    .split(/\r?\n/)
+    .map((l) => l.trim().replace(/^\//, "").replace(/\/$/, ""))
+    .includes(".mindplan-cache");
+  if (present) return { installed: false, path: ".gitignore" };
+  const eol = existing.includes("\r\n") ? "\r\n" : "\n";
+  const sep = existing.length === 0 || existing.endsWith("\n") ? "" : eol;
+  fs.writeFileSync(
+    destPath,
+    `${existing}${sep}# MindPlan search cache (derived; safe to delete)${eol}${SEARCH_CACHE_IGNORE}${eol}`,
+    "utf-8"
+  );
+  return { installed: true, path: ".gitignore" };
+}
+
 export function installCursorIgnore(
   packageRoot: string,
   options: InstallOptions = {}
@@ -716,6 +742,8 @@ export type RunInitReport = {
   mcpExample: InstallAgentRuleResult;
   integrations: InstallSkillResult;
   agentsMd: InstallAgentRuleResult;
+  /** The `.mindplan-cache/` entry in the repo's `.gitignore`. */
+  searchCacheIgnore: InstallAgentRuleResult;
   /** Cursor host copies; present only when the cursor host was selected. */
   cursor?: {
     ignore: InstallAgentRuleResult;
@@ -798,6 +826,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
   const mcpExample = installMcpExample(opts.packageRoot, packageOpts);
   const integrations = installAgentIntegrations(opts.packageRoot, packageOpts);
   const agentsMd = installRootAgentsMd(opts.packageRoot, installOpts);
+  const searchCacheIgnore = installSearchCacheIgnore();
   const hosts = opts.hosts ?? ["cursor"];
   const cursor = hosts.includes("cursor")
     ? {
@@ -828,6 +857,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     mcpExample,
     integrations,
     agentsMd,
+    searchCacheIgnore,
     cursor,
     claude,
     version: {

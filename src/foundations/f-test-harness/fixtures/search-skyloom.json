@@ -1,0 +1,1478 @@
+{
+ "source": "skyloom",
+ "nodes": [
+  {
+   "id": "bug-checkbox-hint-layout",
+   "type": "Bug",
+   "title": "Checkbox fields with a hint lay out badly in the editor panel",
+   "description": "A checkbox field with a hint pushes the hint into the checkbox column, which widens it and squeezes the label into a narrow word-per-line column.",
+   "state": "resolved",
+   "created_at": "2026-10-19T15:35:38.130Z",
+   "updated_at": "2026-10-19T15:36:27.068Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Root cause\n## Fix Checklist",
+   "affects": [
+    "i-edit-page"
+   ]
+  },
+  {
+   "id": "bug-draft-story-create-throws",
+   "type": "Bug",
+   "title": "Creating a never-published draft throws in revalidation",
+   "description": "Saving a brand-new page, story or site as a draft fails with Not Found: the revalidate hook reads the published version, which does not exist yet, and the error rolls the save back.",
+   "state": "resolved",
+   "created_at": "2026-10-23T14:15:20.040Z",
+   "updated_at": "2026-10-23T14:21:41.147Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Root cause\n## Fix\n## Fix Checklist",
+   "affects": [
+    "f-payload"
+   ]
+  },
+  {
+   "id": "bug-skyloom-blog-cover-full-height",
+   "type": "Bug",
+   "title": "SkyLoom story covers render at full height",
+   "description": "On SkyLoom's blog index and home-page story carousel a photo cover renders at its intrinsic height (900px for a 1600x900 image), because `.journal-media` sets width but not `height: auto`, so the img height attribute wins over aspect-ratio.",
+   "state": "resolved",
+   "created_at": "2026-10-22T08:16:26.689Z",
+   "updated_at": "2026-10-22T08:19:15.320Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Fix\n## Attachments",
+   "affects": [
+    "i-browse-journal"
+   ]
+  },
+  {
+   "id": "bug-template-css-leaks-across-sites",
+   "type": "Bug",
+   "title": "Every template's stylesheet loads on every site",
+   "description": "The shared site route bundles the global CSS of all templates (SkyLoom, SnapSite, platform) into one layout stylesheet, so SkyLoom's unprefixed body, heading, link, and .btn rules restyle SnapSite and platform pages.",
+   "state": "resolved",
+   "created_at": "2026-10-20T15:45:17.538Z",
+   "updated_at": "2026-10-20T17:08:15.834Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Notes",
+   "affects": [
+    "f-static-build",
+    "f-visual-system",
+    "if-snapsite-site",
+    "if-platform-site"
+   ]
+  },
+  {
+   "id": "f-ai-translate",
+   "type": "Foundation",
+   "title": "AI content translation",
+   "description": "Infra — fills a document's empty text in one language with an AI translation of another language's text, through the OpenRouter adapter: it walks the Payload field config (text, textarea, rich text as Markdown, groups, arrays, blocks), translates only what the target lacks, and saves the result as a draft as the signed-in account. Shared by every dashboard action that offers translation.",
+   "state": "stable",
+   "created_at": "2026-10-25T19:59:36.814Z",
+   "updated_at": "2026-10-25T21:13:37.392Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:37.392Z",
+   "role": "infra",
+   "depends_on": [
+    "f-payload",
+    "f-languages",
+    "f-site-domains",
+    "f-openrouter"
+   ],
+   "implements": [
+    "src/foundations/f-ai-translate/"
+   ]
+  },
+  {
+   "id": "f-dashboard-design",
+   "type": "Foundation",
+   "title": "Dashboard visual system",
+   "description": "Design system — the dashboard's own tokens, base styles, and presentational primitives (buttons, segmented controls, status pills, toolbars, panels, dialogs, skeletons, empty states, form controls), shared by every dashboard action and the dashboard chrome.",
+   "state": "stable",
+   "created_at": "2026-10-23T16:21:40.116Z",
+   "updated_at": "2026-10-23T18:06:15.563Z",
+   "body": "## Purpose\n## Design brief\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-23T18:06:15.563Z",
+   "role": "design-system",
+   "implements": [
+    "src/foundations/f-dashboard-design/"
+   ]
+  },
+  {
+   "id": "f-field-editor",
+   "type": "Foundation",
+   "title": "Dashboard field editor",
+   "description": "Infra — turns a Payload field list into plain editable fields, renders them as the dashboard's form on the dashboard visual system (labels, hints, language markers, dates, arrays, an image picker, a formatted Markdown editor), merges submitted values back into the stored shape, and provides the autosave-draft queue every dashboard editor runs its saves through.",
+   "state": "stable",
+   "created_at": "2026-10-19T17:09:33.364Z",
+   "updated_at": "2026-10-23T18:06:15.845Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-23T18:06:15.845Z",
+   "role": "infra",
+   "depends_on": [
+    "f-dashboard-design"
+   ],
+   "implements": [
+    "src/foundations/f-field-editor/"
+   ]
+  },
+  {
+   "id": "f-journal-posts",
+   "type": "Foundation",
+   "title": "Story catalog",
+   "description": "Infra — a site's stories in Payload: drafts, per-language slug, title, excerpt, and body.",
+   "state": "stable",
+   "created_at": "2026-10-10T06:05:20.530Z",
+   "updated_at": "2026-10-25T21:13:38.352Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Current files",
+   "shipped_at": "2026-10-25T21:13:38.352Z",
+   "role": "infra",
+   "depends_on": [
+    "f-static-build",
+    "f-payload",
+    "f-languages"
+   ],
+   "implements": [
+    "public/assets/images/journal/",
+    "src/foundations/f-journal-posts/cms.test.ts",
+    "src/foundations/f-journal-posts/cms.ts",
+    "src/foundations/f-journal-posts/load.ts",
+    "src/foundations/f-journal-posts/paths.ts",
+    "src/foundations/f-journal-posts/types.ts"
+   ]
+  },
+  {
+   "id": "f-languages",
+   "type": "Foundation",
+   "title": "Language catalog",
+   "description": "Infra — the platform's catalog of languages a site may publish in (ro, en, hu, de, fr, es, it), with native labels and date locales, and the rule that turns a Site record's chosen languages into a clean list with its default first.",
+   "state": "stable",
+   "created_at": "2026-10-25T19:20:49.016Z",
+   "updated_at": "2026-10-25T21:13:34.176Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:34.176Z",
+   "role": "infra",
+   "implements": [
+    "src/foundations/f-languages/"
+   ]
+  },
+  {
+   "id": "f-legal-drafts",
+   "type": "Foundation",
+   "title": "Starting legal drafts",
+   "description": "Infra — the starting privacy policy and terms text for a site, in every catalog language, and the localized layout update that writes one language's text onto an existing legal page without losing the others.",
+   "state": "stable",
+   "created_at": "2026-10-25T19:20:49.245Z",
+   "updated_at": "2026-10-25T21:13:34.494Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:34.494Z",
+   "role": "infra",
+   "depends_on": [
+    "f-languages"
+   ],
+   "implements": [
+    "src/foundations/f-legal-drafts/"
+   ]
+  },
+  {
+   "id": "f-openrouter",
+   "type": "Foundation",
+   "title": "OpenRouter",
+   "description": "Adapter — the OpenRouter chat completions API: one call that sends a system and a user message to the configured model and returns the answer as parsed JSON, with the key and model from the environment and plain errors.",
+   "state": "stable",
+   "created_at": "2026-10-25T20:08:34.545Z",
+   "updated_at": "2026-10-25T21:13:34.827Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:34.827Z",
+   "role": "adapter",
+   "implements": [
+    "src/foundations/f-openrouter/"
+   ]
+  },
+  {
+   "id": "f-page-blocks",
+   "type": "Foundation",
+   "title": "Page block composer",
+   "description": "Assembler — the block contract and the standard block kinds. Every block is defined with defineBlock (template-only) or useKind (a platform kind with a template view), carries the standard anchor, menu, and hidden fields, and renders the anchor it is given. Discovers every template block config and writes the schema barrel, the generated block metadata, and each template's component registry. It is not the Next.js runtime.",
+   "state": "stable",
+   "created_at": "2026-10-12T12:11:17.307Z",
+   "updated_at": "2026-10-20T07:53:18.496Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-20T07:53:18.496Z",
+   "role": "assembler",
+   "depends_on": [
+    "f-site-domains"
+   ],
+   "implements": [
+    "src/foundations/f-page-blocks/"
+   ]
+  },
+  {
+   "id": "f-payload",
+   "type": "Foundation",
+   "title": "Payload CMS",
+   "description": "Adapter — Payload Local API on Supabase Postgres and Storage. Pages use the page-block composer. Payload localizes every language of the f-languages catalog; each Site record names its own languages and default language. Each Site has a fixed platform address and an optional expiry; its canonical address is derived. Access comes from Supabase: an admin sees every site; a user reads and changes only the sites listed on their Supabase account. Server code can read the signed-in account and add a site to a user's account.",
+   "state": "stable",
+   "created_at": "2026-10-12T10:40:28.101Z",
+   "updated_at": "2026-10-25T21:13:36.965Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:36.965Z",
+   "role": "adapter",
+   "depends_on": [
+    "f-template-registry",
+    "f-page-blocks",
+    "f-site-domains",
+    "f-languages"
+   ],
+   "implements": [
+    "app/(payload)/api/[[...slug]]/route.ts",
+    "app/api/exit-preview/route.ts",
+    "app/api/preview/route.ts",
+    "payload.config.ts",
+    "src/foundations/f-payload/",
+    "src/payload/access.test.ts",
+    "src/payload/access.ts",
+    "src/payload/auth/app-metadata.test.ts",
+    "src/payload/auth/app-metadata.ts",
+    "src/payload/auth/grant-site.ts",
+    "src/payload/auth/session.ts",
+    "src/payload/auth/supabase-strategy.ts",
+    "src/payload/collections/Domains.test.ts",
+    "src/payload/collections/Domains.ts",
+    "src/payload/collections/Media.ts",
+    "src/payload/collections/Pages.ts",
+    "src/payload/collections/Series.ts",
+    "src/payload/collections/Sites.ts",
+    "src/payload/collections/Stories.ts",
+    "src/payload/collections/Topics.ts",
+    "src/payload/collections/Users.ts",
+    "src/payload/content/",
+    "src/payload/fields.ts",
+    "src/payload/hooks/revalidate.test.ts",
+    "src/payload/hooks/revalidate.ts",
+    "src/payload/hooks/warm.test.ts",
+    "src/payload/hooks/warm.ts",
+    "src/payload/media/convert-upload.ts",
+    "src/payload/migrations/20261012_104524_initial.json",
+    "src/payload/migrations/20261012_104524_initial.ts",
+    "src/payload/migrations/20261013_150000_editor_fields.ts",
+    "src/payload/migrations/20261013_160500_enquiry_form.ts",
+    "src/payload/migrations/20261013_171000_drop_stored_briefs.ts",
+    "src/payload/migrations/20261014_090000_site_founders.ts",
+    "src/payload/migrations/20261014_100000_enquiry_person_fields.ts",
+    "src/payload/migrations/20261015_170000_domains.ts",
+    "src/payload/migrations/20261016_090000_site_preview_lookup.ts",
+    "src/payload/migrations/20261016_120000_site_address.ts",
+    "src/payload/migrations/20261019_090000_site_slug_lookup.ts",
+    "src/payload/migrations/20261019_120000_site_owners.ts",
+    "src/payload/migrations/20261019_130000_supabase_roles.ts",
+    "src/payload/migrations/20261019_150000_site_chrome.ts",
+    "src/payload/migrations/20261019_160000_story_markdown_bodies.ts",
+    "src/payload/migrations/20261019_170000_block_kinds.ts",
+    "src/payload/migrations/20261019_190000_snapsite_template.ts",
+    "src/payload/migrations/20261020_090000_block_hidden.ts",
+    "src/payload/migrations/20261020_120000_site_brand.ts",
+    "src/payload/migrations/20261021_090000_snapsite_landing.ts",
+    "src/payload/migrations/20261026_090000_site_languages.ts",
+    "src/payload/migrations/20261026_120000_taxonomy_drafts.ts",
+    "src/payload/migrations/index.ts",
+    "src/payload/payload-types.ts",
+    "src/payload/scripts/check-migrations.ts",
+    "src/payload/scripts/grant-access.ts",
+    "src/payload/scripts/set-site-brand.ts",
+    "src/payload/scripts/write-snapsite-landing.ts",
+    "src/payload/seed/seed.ts"
+   ]
+  },
+  {
+   "id": "f-platform-design",
+   "type": "Foundation",
+   "title": "Platform visual system",
+   "description": "Design system — the platform template's tokens and presentational primitives.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:06.306Z",
+   "updated_at": "2026-10-20T17:08:21.509Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-20T17:08:21.509Z",
+   "role": "design-system",
+   "implements": [
+    "public/platform-icon.svg",
+    "src/templates/platform/foundations/visual-system/"
+   ]
+  },
+  {
+   "id": "f-platform-locales",
+   "type": "Foundation",
+   "title": "Platform locales",
+   "description": "Infra — the platform template's locale list, default locale, labels, and date locales. The template registry reads it.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:06.181Z",
+   "updated_at": "2026-10-20T17:08:21.781Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-20T17:08:21.781Z",
+   "role": "infra",
+   "implements": [
+    "src/templates/platform/foundations/locales/"
+   ]
+  },
+  {
+   "id": "f-resend",
+   "type": "Foundation",
+   "title": "Resend mail",
+   "description": "Adapter — Resend SDK wrapper that sends every site's form mail from the platform's own verified sender address.",
+   "state": "stable",
+   "created_at": "2026-10-08T11:44:39.170Z",
+   "updated_at": "2026-10-19T06:52:11.117Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Current files",
+   "shipped_at": "2026-10-19T06:52:11.117Z",
+   "role": "adapter",
+   "implements": [
+    "src/foundations/f-resend/client.test.ts",
+    "src/foundations/f-resend/client.ts"
+   ]
+  },
+  {
+   "id": "f-show-formations",
+   "type": "Foundation",
+   "title": "Show formations",
+   "description": "Infra — SkyLoom template formation layouts and the swarm canvas the hero and the shows preview both mount.",
+   "state": "stable",
+   "created_at": "2026-10-08T09:13:20.107Z",
+   "updated_at": "2026-10-12T19:54:19.989Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-12T19:54:19.989Z",
+   "role": "infra",
+   "implements": [
+    "src/templates/skyloom/foundations/show-formations/formations.js",
+    "src/templates/skyloom/foundations/show-formations/swarm-canvas.js"
+   ]
+  },
+  {
+   "id": "f-site-copy",
+   "type": "Foundation",
+   "title": "Site identity and chrome",
+   "description": "Infra — site identity and the chrome payload every template renders: brand, menu, footer links, legal identity and links, and the platform's own chrome labels. The live sources are the Site record and the page's blocks. /llms.txt is generated from that record and the site's public routes.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:14.815Z",
+   "updated_at": "2026-10-25T21:13:38.750Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Current files",
+   "shipped_at": "2026-10-25T21:13:38.750Z",
+   "role": "infra",
+   "depends_on": [
+    "f-page-blocks",
+    "f-payload",
+    "f-static-build",
+    "f-journal-posts",
+    "f-languages"
+   ],
+   "implements": [
+    "assets/company.mjs",
+    "assets/i18n/translations.mjs",
+    "README.md",
+    "src/foundations/f-site-copy/"
+   ]
+  },
+  {
+   "id": "f-site-domains",
+   "type": "Foundation",
+   "title": "Site domains",
+   "description": "Infra — the hostnames mapped to each site in Payload, and the cached lookup that turns a request's hostname into a site, its template, its primary hostname, and its published languages and default language.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:06.051Z",
+   "updated_at": "2026-10-25T21:13:35.162Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:35.162Z",
+   "role": "infra",
+   "depends_on": [
+    "f-languages"
+   ],
+   "implements": [
+    "src/foundations/f-site-domains/"
+   ]
+  },
+  {
+   "id": "f-skyloom-locales",
+   "type": "Foundation",
+   "title": "SkyLoom locales",
+   "description": "Infra — the SkyLoom template's registry row: its label, the default flag, and the languages (ro default, en, hu) a new SkyLoom site starts with. The template registry reads it.",
+   "state": "stable",
+   "created_at": "2026-10-15T15:21:12.108Z",
+   "updated_at": "2026-10-25T21:13:35.611Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-25T21:13:35.611Z",
+   "role": "infra",
+   "implements": [
+    "src/templates/skyloom/foundations/locales/"
+   ]
+  },
+  {
+   "id": "f-snapsite-design",
+   "type": "Foundation",
+   "title": "SnapSite visual system",
+   "description": "Design system — the snapsite template's tokens, base styles, and presentational primitives: deep green ink on paper, an amber accent for actions, a condensed uppercase display face over a plain sans. Owned by the template; no other template imports it.",
+   "state": "stable",
+   "created_at": "2026-10-19T18:50:05.047Z",
+   "updated_at": "2026-10-20T18:26:50.085Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-20T18:26:50.085Z",
+   "role": "design-system",
+   "implements": [
+    "src/templates/snapsite/foundations/visual-system/"
+   ]
+  },
+  {
+   "id": "f-snapsite-locales",
+   "type": "Foundation",
+   "title": "SnapSite locales",
+   "description": "Infra — the snapsite template's registry row: its label and the languages (ro default, en) a new SnapSite site starts with. The template registry reads it.",
+   "state": "stable",
+   "created_at": "2026-10-19T18:50:04.886Z",
+   "updated_at": "2026-10-25T21:13:36.003Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:36.003Z",
+   "role": "infra",
+   "implements": [
+    "src/templates/snapsite/foundations/locales/"
+   ]
+  },
+  {
+   "id": "f-static-build",
+   "type": "Foundation",
+   "title": "Next.js assembler",
+   "description": "Assembler — Next.js App Router. Mounts a template's entry at each public route of the site its hostname resolves to, builds that site's public routes from the site's own languages, serves every customer site's blog pages with that template's frame and blog views, and revalidates a route when its document is published.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:14.362Z",
+   "updated_at": "2026-10-25T21:13:37.942Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Current files",
+   "shipped_at": "2026-10-25T21:13:37.942Z",
+   "role": "assembler",
+   "depends_on": [
+    "f-template-registry",
+    "f-payload",
+    "f-languages"
+   ],
+   "mounts": [
+    "if-snapsite-site",
+    "if-marketing-site",
+    "if-platform-site"
+   ],
+   "implements": [
+    ".github/workflows/warm-cache.yml",
+    "app/api/warm/",
+    "app/sites/*/[site]/",
+    "middleware.ts",
+    "next-env.d.ts",
+    "next.config.ts",
+    "src/foundations/f-static-build/",
+    "tsconfig.json",
+    "vercel.json"
+   ]
+  },
+  {
+   "id": "f-template-registry",
+   "type": "Foundation",
+   "title": "Template registry",
+   "description": "Infra — site templates. Each template names the languages a new site on it starts with, in a template-owned Foundation; the registry lists them, takes the language catalog from f-languages, and reads a site's own languages from its Site record with languagesOf(site). The blocks a template may render are the configs discovered in that template folder. SkyLoom and SnapSite are the customer templates; platform is the infrastructure template.",
+   "state": "stable",
+   "created_at": "2026-10-12T10:40:28.910Z",
+   "updated_at": "2026-10-25T21:13:36.369Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:36.369Z",
+   "role": "infra",
+   "depends_on": [
+    "f-page-blocks",
+    "f-skyloom-locales",
+    "f-platform-locales",
+    "f-snapsite-locales",
+    "f-languages"
+   ],
+   "implements": [
+    "src/foundations/f-template-registry/"
+   ]
+  },
+  {
+   "id": "f-visual-system",
+   "type": "Foundation",
+   "title": "Night-sky visual system",
+   "description": "Design system — SkyLoom template night-sky tokens and presentational primitives. Shell and interaction composition CSS live with their owners.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:15.307Z",
+   "updated_at": "2026-10-25T21:30:40.833Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Files\n## Attachments",
+   "shipped_at": "2026-10-20T17:08:24.173Z",
+   "role": "design-system",
+   "implements": [
+    "assets/brands/skyloom/",
+    "public/assets/images/og-default.jpg",
+    "public/assets/images/og-default.webp",
+    "public/assets/images/show-wedding.jpg",
+    "public/assets/images/show-wedding.webp",
+    "src/templates/skyloom/foundations/visual-system/"
+   ]
+  },
+  {
+   "id": "i-answer-faq",
+   "type": "Interaction",
+   "title": "Answer questions",
+   "description": "Visitor reads a site's questions and answers from the platform's FAQ kind, with FAQPage structured data, in the template's look.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:08.816Z",
+   "updated_at": "2026-10-19T14:11:45.130Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-19T14:11:45.130Z",
+   "belongs_to": [
+    "j-show-offering"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-payload",
+    "f-page-blocks"
+   ],
+   "implements": [
+    "src/interactions/i-answer-faq/",
+    "src/templates/skyloom/blocks/Faq/"
+   ]
+  },
+  {
+   "id": "i-browse-journal",
+   "type": "Interaction",
+   "title": "Browse stories",
+   "description": "Visitor browses a site's published stories. The listing works the same on every site; the template supplies only the index and home-carousel views.",
+   "state": "stable",
+   "created_at": "2026-10-10T06:05:20.192Z",
+   "updated_at": "2026-10-22T08:19:15.321Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-20T06:03:59.192Z",
+   "belongs_to": [
+    "j-journal"
+   ],
+   "depends_on": [
+    "f-journal-posts",
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-payload",
+    "f-page-blocks",
+    "f-skyloom-locales",
+    "f-snapsite-design"
+   ],
+   "leads_to": [
+    "i-read-post"
+   ],
+   "implements": [
+    "src/interactions/i-browse-journal/",
+    "src/templates/skyloom/actions/i-browse-journal/",
+    "src/templates/skyloom/blocks/StoryTeaser/",
+    "src/templates/snapsite/actions/i-browse-journal/"
+   ]
+  },
+  {
+   "id": "i-choose-language",
+   "type": "Interaction",
+   "title": "Choose a language",
+   "description": "Visitor switches among the site's languages, staying on the equivalent page.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:10.346Z",
+   "updated_at": "2026-10-25T21:13:39.151Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-25T21:13:39.151Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-template-registry",
+    "f-skyloom-locales",
+    "f-languages"
+   ],
+   "implements": [
+    "src/templates/skyloom/actions/i-choose-language/"
+   ]
+  },
+  {
+   "id": "i-compare-packages",
+   "type": "Interaction",
+   "title": "Compare packages",
+   "description": "Visitor compares a site's packages or price tiers from the platform's Pricing kind, with an optional comparison table and Offer structured data, in the template's look.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:09.443Z",
+   "updated_at": "2026-10-19T14:11:45.465Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-19T14:11:45.465Z",
+   "belongs_to": [
+    "j-show-offering"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-payload",
+    "f-page-blocks"
+   ],
+   "leads_to": [
+    "i-send-enquiry"
+   ],
+   "implements": [
+    "src/interactions/i-compare-packages/",
+    "src/templates/skyloom/blocks/Pricing/"
+   ]
+  },
+  {
+   "id": "i-contact-platform",
+   "type": "Interaction",
+   "title": "Contact SnapSite",
+   "description": "Visitor on the platform landing page sends SnapSite a message through a form; the platform emails it to its own contact address.",
+   "state": "stable",
+   "created_at": "2026-10-19T06:48:57.660Z",
+   "updated_at": "2026-10-20T17:08:24.449Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-20T17:08:24.449Z",
+   "belongs_to": [
+    "j-host-sites"
+   ],
+   "depends_on": [
+    "f-resend",
+    "f-platform-design",
+    "f-static-build"
+   ],
+   "implements": [
+    "src/templates/platform/actions/i-contact-platform/"
+   ]
+  },
+  {
+   "id": "i-create-site",
+   "type": "Interaction",
+   "title": "Create a site",
+   "description": "A signed-in customer or the admin creates a site from the dashboard by picking a template and giving a name and contact email; the site starts with published privacy and terms pages, and a customer's Supabase account then lists it.",
+   "state": "stable",
+   "created_at": "2026-10-19T08:08:04.467Z",
+   "updated_at": "2026-10-25T21:13:39.561Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:39.561Z",
+   "belongs_to": [
+    "j-host-sites"
+   ],
+   "depends_on": [
+    "f-payload",
+    "f-template-registry",
+    "f-platform-design",
+    "f-page-blocks",
+    "f-site-domains",
+    "f-dashboard-design",
+    "f-legal-drafts",
+    "f-languages"
+   ],
+   "leads_to": [
+    "i-pick-site"
+   ],
+   "implements": [
+    "src/interactions/i-create-site/"
+   ]
+  },
+  {
+   "id": "i-edit-page",
+   "type": "Interaction",
+   "title": "Edit a page in the dashboard",
+   "description": "The admin or a customer opens a page of their site on an editable canvas, reorders and hides its blocks from a sections list, clicks a block, changes its copy in an inspector panel that autosaves a draft without reloading the rest of the workspace, and publishes the page when ready or discards its unpublished changes. Works from phone width up, with keyboard access.",
+   "state": "stable",
+   "created_at": "2026-10-19T08:30:02.788Z",
+   "updated_at": "2026-10-25T21:13:39.967Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## AI translation\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:39.967Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-payload",
+    "f-page-blocks",
+    "f-template-registry",
+    "f-static-build",
+    "f-platform-design",
+    "f-field-editor",
+    "f-dashboard-design",
+    "f-languages",
+    "f-ai-translate"
+   ],
+   "implements": [
+    "src/interactions/i-edit-page/"
+   ]
+  },
+  {
+   "id": "i-edit-site-settings",
+   "type": "Interaction",
+   "title": "Edit site settings",
+   "description": "The admin or a customer edits their site's company details, team, opening hours, map location, and footer and blog wording from the dashboard, one language at a time; changes save automatically as a draft and go live when they publish.",
+   "state": "stable",
+   "created_at": "2026-10-19T17:09:33.456Z",
+   "updated_at": "2026-10-25T21:13:40.344Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## AI translation\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:40.344Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-payload",
+    "f-platform-design",
+    "f-static-build",
+    "f-field-editor",
+    "f-template-registry",
+    "f-dashboard-design",
+    "f-languages",
+    "f-ai-translate"
+   ],
+   "implements": [
+    "src/interactions/i-edit-site-settings/"
+   ]
+  },
+  {
+   "id": "i-edit-story",
+   "type": "Interaction",
+   "title": "Manage stories in the dashboard",
+   "description": "The admin or a customer manages their site's blog from the dashboard: starts a new story, changes a story's title, slug, excerpt, body, date, topic, series, and cover one language at a time, deletes a story, and adds topics and series; edits save automatically as a draft and go live when they publish.",
+   "state": "stable",
+   "created_at": "2026-10-23T15:29:21.946Z",
+   "updated_at": "2026-10-25T21:13:40.817Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## AI translation\n## Topics and series drafts\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:40.817Z",
+   "belongs_to": [
+    "j-journal"
+   ],
+   "depends_on": [
+    "f-payload",
+    "f-field-editor",
+    "f-platform-design",
+    "f-template-registry",
+    "f-dashboard-design",
+    "f-languages",
+    "f-ai-translate"
+   ],
+   "implements": [
+    "src/interactions/i-edit-story/"
+   ]
+  },
+  {
+   "id": "i-find-location",
+   "type": "Interaction",
+   "title": "Find the business",
+   "description": "Visitor sees where the business is and when it is open, from the platform's Location & hours kind, which reads the Site record and emits LocalBusiness opening-hours data.",
+   "state": "stable",
+   "created_at": "2026-10-19T11:45:51.761Z",
+   "updated_at": "2026-10-19T14:11:46.825Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-19T14:11:46.825Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-page-blocks",
+    "f-payload",
+    "f-visual-system"
+   ],
+   "leads_to": [
+    "i-send-enquiry"
+   ],
+   "implements": [
+    "src/interactions/i-find-location/",
+    "src/templates/skyloom/blocks/Location/"
+   ]
+  },
+  {
+   "id": "i-manage-languages",
+   "type": "Interaction",
+   "title": "Choose a site's languages",
+   "description": "The admin or a customer turns their site's languages on or off and picks its default language from the dashboard's Site settings; changes save as a draft and go live when they publish the settings, and a removed language's content is kept.",
+   "state": "stable",
+   "created_at": "2026-10-25T19:20:49.460Z",
+   "updated_at": "2026-10-25T21:13:41.354Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:41.354Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-languages",
+    "f-legal-drafts",
+    "f-payload",
+    "f-template-registry",
+    "f-dashboard-design",
+    "f-ai-translate"
+   ],
+   "implements": [
+    "src/interactions/i-manage-languages/"
+   ]
+  },
+  {
+   "id": "i-map-domain",
+   "type": "Interaction",
+   "title": "Map a domain to a site",
+   "description": "Editor adds, changes, or removes the hostnames of a site in the admin, and picks the primary one.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:10.997Z",
+   "updated_at": "2026-10-15T19:06:39.714Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-15T19:06:39.714Z",
+   "belongs_to": [
+    "j-host-sites"
+   ],
+   "depends_on": [
+    "f-site-domains",
+    "f-payload"
+   ],
+   "implements": [
+    "src/interactions/i-map-domain/"
+   ]
+  },
+  {
+   "id": "i-meet-team",
+   "type": "Interaction",
+   "title": "Meet the team",
+   "description": "Visitor sees the people behind the business, from the platform's Team kind, which reads the team on the Site record.",
+   "state": "stable",
+   "created_at": "2026-10-19T11:45:52.065Z",
+   "updated_at": "2026-10-19T14:11:47.012Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-19T14:11:47.012Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-page-blocks",
+    "f-payload",
+    "f-visual-system"
+   ],
+   "leads_to": [
+    "i-send-enquiry"
+   ],
+   "implements": [
+    "src/interactions/i-meet-team/",
+    "src/templates/skyloom/blocks/Team/"
+   ]
+  },
+  {
+   "id": "i-pick-site",
+   "type": "Interaction",
+   "title": "Open a site in the dashboard",
+   "description": "The admin or a customer signs in to the dashboard, sees the sites they manage, and opens one in its workspace, whose header names the site, switches between Pages, Blog, and Site settings, and links to the live site.",
+   "state": "stable",
+   "created_at": "2026-10-19T08:08:04.403Z",
+   "updated_at": "2026-10-23T18:06:16.436Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-23T18:06:16.436Z",
+   "belongs_to": [
+    "j-host-sites"
+   ],
+   "depends_on": [
+    "f-payload",
+    "f-site-domains",
+    "f-platform-design",
+    "f-template-registry",
+    "f-dashboard-design"
+   ],
+   "leads_to": [
+    "i-edit-page",
+    "i-edit-site-settings"
+   ],
+   "implements": [
+    "src/interactions/i-pick-site/"
+   ]
+  },
+  {
+   "id": "i-present-offering",
+   "type": "Interaction",
+   "title": "Present the offering",
+   "description": "Visitor reads the site's offering from the platform's Hero, Text & media, Feature cards, Steps, Call-to-action banner, and Logo strip kinds, in the template's look. SkyLoom adds its fleet preview and PIXEL credit as template extras; SnapSite adds the loading race beside the hero, a folded layout for Text & media, a reason under each benefit, and its own Site strip block of example sites.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:07.693Z",
+   "updated_at": "2026-10-20T18:26:50.245Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-20T18:26:50.245Z",
+   "belongs_to": [
+    "j-show-offering"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-show-formations",
+    "f-payload",
+    "f-page-blocks",
+    "f-snapsite-design"
+   ],
+   "leads_to": [
+    "i-send-enquiry"
+   ],
+   "implements": [
+    "src/interactions/i-present-offering/",
+    "src/templates/skyloom/actions/i-present-offering/",
+    "src/templates/skyloom/blocks/CtaBanner/",
+    "src/templates/skyloom/blocks/FeatureCards/",
+    "src/templates/skyloom/blocks/Hero/",
+    "src/templates/skyloom/blocks/LogoStrip/",
+    "src/templates/skyloom/blocks/Steps/",
+    "src/templates/skyloom/blocks/TextMedia/",
+    "src/templates/snapsite/blocks/CtaBanner/",
+    "src/templates/snapsite/blocks/FeatureCards/",
+    "src/templates/snapsite/blocks/Hero/",
+    "src/templates/snapsite/blocks/SiteStrip/",
+    "src/templates/snapsite/blocks/TextMedia/"
+   ]
+  },
+  {
+   "id": "i-present-platform",
+   "type": "Interaction",
+   "title": "Present the platform (fallback)",
+   "description": "Visitor opens a platform hostname while the platform Site cannot be read (missing or the lookup fails) and still reads the code-authored landing page that sells SnapSite by what a site owner gains.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:10.868Z",
+   "updated_at": "2026-10-20T06:03:59.992Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-20T06:03:59.992Z",
+   "belongs_to": [
+    "j-host-sites"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-platform-design",
+    "f-platform-locales"
+   ],
+   "implements": [
+    "src/templates/platform/actions/i-present-platform/"
+   ]
+  },
+  {
+   "id": "i-preview-swarm",
+   "type": "Interaction",
+   "title": "Preview the swarm",
+   "description": "The hero canvas flies a swarm of lights through named formations, and settles when motion is reduced.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:08.250Z",
+   "updated_at": "2026-10-12T19:54:20.655Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Current files",
+   "shipped_at": "2026-10-12T19:54:20.655Z",
+   "belongs_to": [
+    "j-show-offering"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-visual-system",
+    "f-show-formations"
+   ],
+   "implements": [
+    "src/templates/skyloom/actions/i-preview-swarm/"
+   ]
+  },
+  {
+   "id": "i-publish-discovery",
+   "type": "Interaction",
+   "title": "Publish discovery artifacts",
+   "description": "Emits sitemap, structured data, and hreflang from a site's published pages and stories.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:11.597Z",
+   "updated_at": "2026-10-25T21:13:41.837Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Current files",
+   "shipped_at": "2026-10-25T21:13:41.837Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-journal-posts",
+    "f-languages"
+   ],
+   "implements": [
+    "src/interactions/i-publish-discovery/json-ld.tsx",
+    "src/interactions/i-publish-discovery/metadata.ts",
+    "src/interactions/i-publish-discovery/platform-discovery.ts",
+    "src/interactions/i-publish-discovery/site-files.ts"
+   ]
+  },
+  {
+   "id": "i-publish-document",
+   "type": "Interaction",
+   "title": "Publish a document",
+   "description": "The admin signs in on the platform's Payload admin and publishes a page or a story; customers publish from the dashboard instead.",
+   "state": "stable",
+   "created_at": "2026-10-12T12:11:17.346Z",
+   "updated_at": "2026-10-23T16:10:28.489Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-23T16:10:28.489Z",
+   "belongs_to": [
+    "j-company-presence",
+    "j-journal"
+   ],
+   "depends_on": [
+    "f-payload",
+    "f-template-registry",
+    "f-page-blocks"
+   ],
+   "implements": [
+    "src/payload/admin/Login.tsx"
+   ]
+  },
+  {
+   "id": "i-reach-site",
+   "type": "Interaction",
+   "title": "Reach a site by its domain",
+   "description": "Visitor opens a site's platform address, any domain mapped to it, or a platform hostname (which serves the configured platform Site) and gets that site's pages from its own template, served from cache, until the address expires.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:10.725Z",
+   "updated_at": "2026-10-25T21:13:42.186Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:42.186Z",
+   "belongs_to": [
+    "j-host-sites"
+   ],
+   "depends_on": [
+    "f-site-domains",
+    "f-static-build",
+    "f-template-registry",
+    "f-languages"
+   ],
+   "leads_to": [
+    "i-show-expired"
+   ],
+   "implements": [
+    "src/interactions/i-reach-site/"
+   ]
+  },
+  {
+   "id": "i-read-legal",
+   "type": "Interaction",
+   "title": "Read legal identity",
+   "description": "Visitor reads a site's legal and other content pages from the platform's Legal text kind, and the platform-built legal section in the footer: the site identity, including the postal code, the privacy and terms links, and the consumer dispute links.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:10.737Z",
+   "updated_at": "2026-10-20T06:04:00.530Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-20T06:04:00.530Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-payload",
+    "f-page-blocks",
+    "f-skyloom-locales",
+    "f-snapsite-design"
+   ],
+   "implements": [
+    "src/interactions/i-read-legal/",
+    "src/templates/skyloom/actions/i-read-legal/",
+    "src/templates/skyloom/blocks/Legal/",
+    "src/templates/snapsite/blocks/Legal/"
+   ]
+  },
+  {
+   "id": "i-read-post",
+   "type": "Interaction",
+   "title": "Read a story",
+   "description": "Visitor reads one published story. Loading, the body renderer, series navigation, and labels are the same on every site; the template supplies only the post view.",
+   "state": "stable",
+   "created_at": "2026-10-10T06:05:20.493Z",
+   "updated_at": "2026-10-20T06:04:00.813Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-20T06:04:00.813Z",
+   "belongs_to": [
+    "j-journal"
+   ],
+   "depends_on": [
+    "f-journal-posts",
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-skyloom-locales",
+    "f-payload",
+    "f-site-domains",
+    "f-page-blocks",
+    "f-snapsite-design"
+   ],
+   "leads_to": [
+    "i-browse-journal",
+    "i-send-enquiry"
+   ],
+   "implements": [
+    "src/interactions/i-read-post/",
+    "src/templates/skyloom/actions/i-read-post/",
+    "src/templates/snapsite/actions/i-read-post/"
+   ]
+  },
+  {
+   "id": "i-read-testimonials",
+   "type": "Interaction",
+   "title": "Read testimonials",
+   "description": "Visitor reads what customers say about the business, from the platform's Testimonials kind, displayed without rating markup.",
+   "state": "stable",
+   "created_at": "2026-10-19T11:45:51.860Z",
+   "updated_at": "2026-10-19T14:11:47.184Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-19T14:11:47.184Z",
+   "belongs_to": [
+    "j-show-offering"
+   ],
+   "depends_on": [
+    "f-page-blocks",
+    "f-payload",
+    "f-visual-system"
+   ],
+   "implements": [
+    "src/interactions/i-read-testimonials/",
+    "src/templates/skyloom/blocks/Testimonials/"
+   ]
+  },
+  {
+   "id": "i-send-enquiry",
+   "type": "Interaction",
+   "title": "Send an enquiry",
+   "description": "Visitor sends the business a message from the platform's Contact form kind. Recipients, labels, and consent text live on the block; the people shown come from the Site record; the platform sends the mail on the site's behalf.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:09.983Z",
+   "updated_at": "2026-10-20T17:08:25.930Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-20T17:08:25.930Z",
+   "belongs_to": [
+    "j-book-show"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system",
+    "f-resend",
+    "f-payload",
+    "f-page-blocks",
+    "f-snapsite-design"
+   ],
+   "implements": [
+    "src/interactions/i-send-enquiry/",
+    "src/templates/skyloom/blocks/Contact/",
+    "src/templates/snapsite/blocks/Contact/"
+   ],
+   "aliases": [
+    "quote",
+    "request a quote",
+    "ofertă",
+    "árajánlat"
+   ]
+  },
+  {
+   "id": "i-share-page",
+   "type": "Interaction",
+   "title": "Share the page",
+   "description": "Visitor shares the current page using this action's own share payload.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:11.254Z",
+   "updated_at": "2026-10-12T19:54:20.937Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-12T19:54:20.937Z",
+   "belongs_to": [
+    "j-company-presence"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-site-copy",
+    "f-visual-system"
+   ],
+   "implements": [
+    "src/templates/skyloom/actions/i-share-page/"
+   ]
+  },
+  {
+   "id": "i-show-expired",
+   "type": "Interaction",
+   "title": "Show an expired address",
+   "description": "Visitor opens a site's platform address after its expiry and reads that the preview has ended, with a way to contact the platform.",
+   "state": "stable",
+   "created_at": "2026-10-16T10:41:33.358Z",
+   "updated_at": "2026-10-16T11:00:30.998Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Implementation\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-16T11:00:30.998Z",
+   "belongs_to": [
+    "j-host-sites"
+   ],
+   "depends_on": [
+    "f-static-build",
+    "f-platform-design",
+    "f-platform-locales"
+   ],
+   "implements": [
+    "src/templates/platform/actions/i-show-expired/"
+   ]
+  },
+  {
+   "id": "i-view-gallery",
+   "type": "Interaction",
+   "title": "View a gallery",
+   "description": "Visitor browses a set of images from the platform's Gallery kind and opens one larger, with alt text required on every image.",
+   "state": "stable",
+   "created_at": "2026-10-19T11:45:51.967Z",
+   "updated_at": "2026-10-19T14:11:47.354Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Inputs & Outputs\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-19T14:11:47.354Z",
+   "belongs_to": [
+    "j-show-offering"
+   ],
+   "depends_on": [
+    "f-page-blocks",
+    "f-payload",
+    "f-visual-system"
+   ],
+   "implements": [
+    "src/interactions/i-view-gallery/",
+    "src/templates/skyloom/blocks/Gallery/"
+   ]
+  },
+  {
+   "id": "if-dashboard",
+   "type": "Interface",
+   "title": "Dashboard",
+   "description": "Page — /dashboard on the platform host, the site-builder app where customers and the admin pick, create, edit, and preview their sites. One site workspace layout carries the chrome and the site header across Pages, Blog, and Site settings, with client-side navigation and loading states. /dashboard on a site's host redirects there.",
+   "state": "stable",
+   "created_at": "2026-10-19T08:08:04.525Z",
+   "updated_at": "2026-10-25T21:13:42.574Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:42.574Z",
+   "depends_on": [
+    "f-static-build",
+    "f-platform-design",
+    "f-payload",
+    "f-dashboard-design",
+    "f-languages"
+   ],
+   "exposes": [
+    "i-pick-site",
+    "i-create-site",
+    "i-edit-page",
+    "i-edit-site-settings",
+    "i-edit-story",
+    "i-manage-languages"
+   ],
+   "implements": [
+    "app/(canvas)/",
+    "app/(dashboard)/"
+   ]
+  },
+  {
+   "id": "if-marketing-site",
+   "type": "Interface",
+   "title": "SkyLoom template",
+   "description": "The skyloom site template. Renders a page's blocks in the order the editor set, mounts each action from the block registry with that action's payload, and styles the platform-built chrome (menu, footer, legal section) with its own design system. Owns its structured data.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:13.460Z",
+   "updated_at": "2026-10-25T21:13:42.984Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Atomic Ops\n## Files",
+   "shipped_at": "2026-10-25T21:13:42.984Z",
+   "depends_on": [
+    "f-static-build",
+    "f-visual-system",
+    "f-journal-posts",
+    "f-payload",
+    "f-skyloom-locales",
+    "f-site-copy",
+    "f-page-blocks",
+    "f-languages"
+   ],
+   "exposes": [
+    "i-present-offering",
+    "i-preview-swarm",
+    "i-answer-faq",
+    "i-compare-packages",
+    "i-send-enquiry",
+    "i-choose-language",
+    "i-read-legal",
+    "i-share-page",
+    "i-publish-discovery",
+    "i-browse-journal",
+    "i-read-post",
+    "i-find-location",
+    "i-meet-team",
+    "i-read-testimonials",
+    "i-view-gallery"
+   ],
+   "implements": [
+    "app/api/enquiry/route.ts",
+    "src/templates/skyloom/blocks/index.ts",
+    "src/templates/skyloom/document.tsx",
+    "src/templates/skyloom/entry.tsx",
+    "src/templates/skyloom/frame.tsx",
+    "src/templates/skyloom/home-page.tsx",
+    "src/templates/skyloom/host-redirects.ts",
+    "src/templates/skyloom/page-route.tsx",
+    "src/templates/skyloom/render-blocks.tsx",
+    "src/templates/skyloom/required-assets.ts",
+    "src/templates/skyloom/shell.css",
+    "src/templates/skyloom/shell.tsx",
+    "src/templates/skyloom/site-json-ld.tsx"
+   ]
+  },
+  {
+   "id": "if-payload-admin",
+   "type": "Interface",
+   "title": "Payload admin",
+   "description": "Page — /admin on the platform host, where the admin role signs in with Supabase to manage what the dashboard does not cover. A signed-in customer is sent to the dashboard. /admin on a site's host redirects there.",
+   "state": "stable",
+   "created_at": "2026-10-12T10:40:29.750Z",
+   "updated_at": "2026-10-23T16:10:28.626Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-23T16:10:28.626Z",
+   "depends_on": [
+    "f-payload",
+    "f-static-build"
+   ],
+   "exposes": [
+    "i-publish-document",
+    "i-map-domain"
+   ],
+   "implements": [
+    "app/(payload)/admin/",
+    "app/(payload)/custom.css",
+    "app/(payload)/layout.tsx"
+   ]
+  },
+  {
+   "id": "if-platform-site",
+   "type": "Interface",
+   "title": "Platform template",
+   "description": "The platform's infrastructure template, with no Site record. Mounts the expired-address page and the fallback landing page with its contact form, served on a platform hostname only when the platform Site cannot be read, and owns their shell, whose header links customers to the dashboard sign-in.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:06.433Z",
+   "updated_at": "2026-10-20T17:08:26.947Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Implementation\n## Atomic Ops",
+   "shipped_at": "2026-10-20T17:08:26.947Z",
+   "depends_on": [
+    "f-static-build",
+    "f-platform-design",
+    "f-platform-locales",
+    "f-site-domains"
+   ],
+   "exposes": [
+    "i-present-platform",
+    "i-show-expired",
+    "i-contact-platform"
+   ],
+   "implements": [
+    "src/templates/platform/document.tsx",
+    "src/templates/platform/entry.tsx",
+    "src/templates/platform/home-page.tsx",
+    "src/templates/platform/host-redirects.ts",
+    "src/templates/platform/shell.css",
+    "src/templates/platform/shell.tsx"
+   ]
+  },
+  {
+   "id": "if-site-build",
+   "type": "Interface",
+   "title": "Next.js site build",
+   "description": "Script — npm run dev and npm run build run the Next.js app.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:13.827Z",
+   "updated_at": "2026-10-20T17:08:27.214Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Impact\n## Acceptance Criteria\n## Atomic Ops\n## Current files",
+   "shipped_at": "2026-10-20T17:08:27.214Z",
+   "depends_on": [
+    "f-static-build"
+   ],
+   "exposes": [
+    "i-publish-discovery",
+    "i-reach-site"
+   ],
+   "implements": [
+    "package-lock.json",
+    "package.json"
+   ]
+  },
+  {
+   "id": "if-snapsite-site",
+   "type": "Interface",
+   "title": "SnapSite template",
+   "description": "The snapsite customer template, used by the platform's own Site. Renders a page's blocks in the editor's order, mounts each action's view from the block registry, and owns its shell: language links, the dashboard sign-in link, and the footer with the legal links.",
+   "state": "stable",
+   "created_at": "2026-10-19T18:50:05.226Z",
+   "updated_at": "2026-10-25T21:13:43.430Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Implementation\n## Atomic Ops",
+   "shipped_at": "2026-10-25T21:13:43.430Z",
+   "depends_on": [
+    "f-static-build",
+    "f-snapsite-design",
+    "f-snapsite-locales",
+    "f-payload",
+    "f-site-copy",
+    "f-page-blocks",
+    "f-journal-posts",
+    "f-site-domains",
+    "f-languages"
+   ],
+   "exposes": [
+    "i-present-offering",
+    "i-send-enquiry",
+    "i-read-legal",
+    "i-browse-journal",
+    "i-read-post",
+    "i-publish-discovery"
+   ],
+   "implements": [
+    "src/templates/snapsite/blocks/index.ts",
+    "src/templates/snapsite/document.tsx",
+    "src/templates/snapsite/entry.tsx",
+    "src/templates/snapsite/frame.tsx",
+    "src/templates/snapsite/header-menu.tsx",
+    "src/templates/snapsite/home-page.tsx",
+    "src/templates/snapsite/host-redirects.ts",
+    "src/templates/snapsite/page-route.tsx",
+    "src/templates/snapsite/render-blocks.tsx",
+    "src/templates/snapsite/shell.css",
+    "src/templates/snapsite/shell.tsx",
+    "src/templates/snapsite/year.tsx"
+   ]
+  },
+  {
+   "id": "j-book-show",
+   "type": "Journey",
+   "title": "Enquiries",
+   "description": "A visitor sends a form enquiry. The template owns the form.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:04.137Z",
+   "updated_at": "2026-10-20T17:08:25.934Z",
+   "body": "## Overview\n## Linked Interactions"
+  },
+  {
+   "id": "j-company-presence",
+   "type": "Journey",
+   "title": "Sites",
+   "description": "A site has locales, legal pages, a public identity, and pages machines can cite.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:04.651Z",
+   "updated_at": "2026-10-25T21:13:41.844Z",
+   "body": "## Overview\n## Linked Interactions"
+  },
+  {
+   "id": "j-host-sites",
+   "type": "Journey",
+   "title": "Hosting",
+   "description": "The platform serves many sites from one deployment, each on its own domains, and shows its own landing page on the platform domain.",
+   "state": "stable",
+   "created_at": "2026-10-15T16:40:05.916Z",
+   "updated_at": "2026-10-25T21:13:42.193Z",
+   "body": "## Overview\n## Linked Interactions"
+  },
+  {
+   "id": "j-journal",
+   "type": "Journey",
+   "title": "Stories",
+   "description": "A site publishes dated stories a visitor can browse and read.",
+   "state": "stable",
+   "created_at": "2026-10-10T06:05:18.667Z",
+   "updated_at": "2026-10-25T21:13:40.824Z",
+   "body": "## Overview\n## Linked Interactions"
+  },
+  {
+   "id": "j-show-offering",
+   "type": "Journey",
+   "title": "Pages",
+   "description": "A visitor reads the pages a template composes from its blocks.",
+   "state": "stable",
+   "created_at": "2026-10-07T18:24:03.632Z",
+   "updated_at": "2026-10-20T18:26:50.251Z",
+   "body": "## Overview\n## Linked Interactions"
+  }
+ ]
+}

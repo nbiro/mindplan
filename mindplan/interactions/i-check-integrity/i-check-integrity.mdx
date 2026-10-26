@@ -4,9 +4,9 @@ type: Interaction
 title: "Check integrity"
 description: "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder and it is not a migration or schema file), illegal imports over current and next-slot claims (each with its fix), a shipped pipeline node whose next file is missing or is not a state-only twin, and a linked test missing on disk once its node is in review or shipped; warns about stale territory text (including claims added in place that the body does not name), split route families, decision-worthy revisions with no decision, and revisions in review with no linked tests; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files."
 state: stable
-shipped_at: 2026-10-25T21:13:07.730Z
+shipped_at: 2026-10-25T23:55:52.085Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-25T21:13:07.730Z
+updated_at: 2026-10-25T23:55:52.085Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -58,6 +58,8 @@ Intended files: `src/interactions/i-check-integrity/`
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
+- The default check adds `descriptionWarnings` (`f-compiler-rules`) for every node to its warnings; they never change `ok` or the exit code
+
 ## Acceptance Criteria
 
 - `run_check` output equals the CLI check output
@@ -80,6 +82,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - The Coverage fix for a file beside a shipped owner's own files, in a folder no other node claims into, has no `open_next`; for a migration or schema file there it does
 - A shipped node linking a missing test file fails the check; a draft node linking one does not
 - An in-review revision with no tests prints a `tests:` warning and `ok` stays true
+
+- `run_check` stays ok with bad descriptions and lists one `description:` warning per kind
 
 ## Atomic Ops
 
@@ -108,6 +112,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - [x] Verified the Coverage fix for schema files via `npm test`
 - [x] Check linked-test presence and warn on untested in-review revisions
 - [x] Verified the linked-test checks via `npm test`
+
+- [x] Add description warnings to the check
 
 ## Attachments
 

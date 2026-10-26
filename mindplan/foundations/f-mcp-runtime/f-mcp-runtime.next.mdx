@@ -4,19 +4,22 @@ type: Foundation
 title: "MCP runtime"
 description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version on initialize; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature graph work; scopes the drift report to the node a result is about."
 state: mirror
-shipped_at: 2026-10-20T15:10:03.442Z
+shipped_at: 2026-10-25T23:35:19.448Z
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-20T15:10:03.442Z
+updated_at: 2026-10-25T23:35:19.448Z
 depends_on:
   - f-territory-store
   - f-framework-docs
+  - f-graph-search
+  - f-orientation-ledger
 implements:
   - src/foundations/f-mcp-runtime/
   - src/index.ts
-role: assembler
 tests:
+  - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/version.test.mjs
+role: assembler
 ---
 
 # MCP runtime
@@ -38,9 +41,11 @@ Package: `src/foundations/f-mcp-runtime/`
 - Always pass `{ instructions: SERVER_INSTRUCTIONS }`
 - MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
 - MUST NOT load or append `mindplan/project.md` or the playbook body into instructions
-- MUST NOT write to stdout in MCP mode (stdio transport); diagnostics go to stderr
+- MUST NOT write to stdout in MCP mode (stdio transport); diagnostics go to stderr. `guardStdout()` runs first in MCP mode and points `console.log`, `info`, `debug`, and `warn` at stderr, so a dependency's log line (the embedding model) cannot corrupt a message
+- Calls `enableOrientationGate()` (`f-orientation-ledger`) before registering tools: in MCP mode writes on a node wait for its orientation; the CLI never enables it
+- After `server.connect`, starts `warmSearchIndex(projectRoot(), loadForSearch, territoryBodyReader())` (`f-graph-search`) without awaiting it: the search model loads and the graph is indexed in the background, and no tool call waits on it. `loadForSearch` drains the legacy files its graph load removed and reports them on stderr, so they never land in an unrelated tool call's `changed_files`
 
-Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
+Depends on: `f-territory-store`, `f-framework-docs`, `f-graph-search`, `f-orientation-ledger`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
 
 ## Acceptance Criteria
 
@@ -51,6 +56,8 @@ Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `dep
 - `initialize` reports `serverInfo.version` equal to the `version` field of the repo's `package.json`, and `server.ts` contains no literal version string
 - The instructions pointer names `get_project`, `get_rules`, `orient_for_work`, and the plan-project skill
 - The smoke test asserts the version match
+- In MCP mode a console.log from any module reaches stderr, not the stdio channel
+- The server answers tool calls while the search model is still loading (keyword-only until it is ready)
 
 ## Atomic Ops
 
@@ -63,6 +70,9 @@ Depends on: `f-territory-store`, `f-framework-docs`. Mounts Interfaces that `dep
 - [x] Make the instructions pointer name the graph writes the plan-project skill covers
 - [x] Assert `serverInfo.version` equals `package.json` in the smoke test (`f-test-harness`, in place)
 - [x] Verified via `npm test`
+- [x] Add `guardStdout()` and the background search warm-up after connect
+- [x] Enable the orientation gate in MCP mode
+- [x] Verified the warm-up and the stdio guard via `npm test`
 
 ## Decisions
 

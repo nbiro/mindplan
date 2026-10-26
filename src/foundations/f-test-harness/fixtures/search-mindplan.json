@@ -1,0 +1,1059 @@
+{
+ "source": "mp-main-snap",
+ "nodes": [
+  {
+   "id": "bug-changed-files-omit-mirror-twin",
+   "type": "Bug",
+   "title": "changed_files omits a mirror twin the write re-synced",
+   "description": "Writes that re-sync a shipped node's <id>.next.mdx mirror twin (stability recompute on link_nodes, unlink_nodes, and status moves; patch_node_territory on a live shipped node; live edge writes) leave the twin out of changed_files.",
+   "state": "resolved",
+   "created_at": "2026-10-20T13:21:30.338Z",
+   "updated_at": "2026-10-20T13:35:29.078Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "f-territory-store",
+    "i-steer-plan"
+   ]
+  },
+  {
+   "id": "bug-drift-on-rules-reads",
+   "type": "Bug",
+   "title": "Drift repeated on get_project and get_rules",
+   "description": "guarded() attaches the full uncommitted-source drift report to every successful MCP result, so get_project and get_rules (called before every action) repeat it; drift should ride only on orient_for_work and the write tools.",
+   "state": "resolved",
+   "created_at": "2026-10-15T11:01:23.343Z",
+   "updated_at": "2026-10-20T13:35:30.401Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "if-mcp-tools",
+    "f-mcp-runtime"
+   ]
+  },
+  {
+   "id": "bug-github-org-urls",
+   "type": "Bug",
+   "title": "Wrong GitHub org in package and CONTRIBUTING",
+   "description": "package.json and CONTRIBUTING.md still point at github.com/mindplan-io/mindplan instead of github.com/nbiro/mindplan.",
+   "state": "resolved",
+   "created_at": "2026-07-15T19:38:03.341Z",
+   "updated_at": "2026-07-15T19:38:42.221Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "wf-framework-docs-v3",
+    "i-npm-publish"
+   ]
+  },
+  {
+   "id": "bug-init-cursor-skills",
+   "type": "Bug",
+   "title": "Init does not install Cursor skills",
+   "description": "mindplan-mcp init reports skills installed under mindplan/agent/skills, but never copies them to .cursor/skills (or the playbook to .cursor/rules). .cursorignore then hides mindplan/agent/**, so Cursor cannot discover or read the skills.",
+   "state": "resolved",
+   "created_at": "2026-07-23T19:39:51.630Z",
+   "updated_at": "2026-07-23T19:57:10.801Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments\n## Review Notes",
+   "affects": [
+    "i-init-project",
+    "f-test-harness",
+    "f-mcp-runtime"
+   ]
+  },
+  {
+   "id": "bug-next-depends-cycle",
+   "type": "Bug",
+   "title": "Next-slot depends_on cycles not rejected",
+   "description": "assertAcyclicDependsOn and Dependency Closure only walk live edges, so mutual next.depends_on can ship a cyclic graph.",
+   "state": "resolved",
+   "created_at": "2026-07-23T20:53:48.606Z",
+   "updated_at": "2026-07-23T20:59:42.452Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "f-compiler-rules",
+    "i-steer-plan"
+   ]
+  },
+  {
+   "id": "bug-open-next-crlf-checklist",
+   "type": "Bug",
+   "title": "open_next leaves lone CR line breaks in reset checklists",
+   "description": "On CRLF territory, open_next's checkbox reset swallows the LF before each checklist item, so <id>.next.mdx mixes CRLF and lone CR and the checklist renders as one line.",
+   "state": "resolved",
+   "created_at": "2026-10-09T20:08:05.574Z",
+   "updated_at": "2026-10-09T20:31:10.162Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "f-territory-store"
+   ]
+  },
+  {
+   "id": "bug-readme-github-url",
+   "type": "Bug",
+   "title": "Wrong GitHub URL in README",
+   "description": "README quick start clones github.com/mindplan-io/mindplan instead of github.com/nbiro/mindplan.",
+   "state": "resolved",
+   "created_at": "2026-07-15T19:36:55.210Z",
+   "updated_at": "2026-07-15T19:37:28.081Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "wf-framework-docs-v3"
+   ]
+  },
+  {
+   "id": "bug-ready-plan-scaffold-check",
+   "type": "Bug",
+   "title": "Ready plans blocked by scaffold package dirty-src",
+   "description": "mindplan-mcp check treats create_node .gitkeep package scaffolds as dirty src, so draft/ready plan PRs fail CI even though no implementation work started.",
+   "state": "resolved",
+   "created_at": "2026-07-20T21:28:07.130Z",
+   "updated_at": "2026-07-20T21:33:01.750Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "i-check-integrity"
+   ]
+  },
+  {
+   "id": "bug-silent-frontmatter-noop",
+   "type": "Bug",
+   "title": "Frontmatter patches silently no-op",
+   "description": "patchFrontmatter / addEdgeToFrontmatter return without error when frontmatter is missing or malformed, so mutations can report success while disk is unchanged.",
+   "state": "resolved",
+   "created_at": "2026-07-23T20:53:49.128Z",
+   "updated_at": "2026-07-23T20:58:55.428Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "f-territory-store"
+   ]
+  },
+  {
+   "id": "bug-spec-contract-drift",
+   "type": "Bug",
+   "title": "SPEC and README drift from shipped contracts",
+   "description": "SPEC lists fourteen tools, omits Foundation Completion Check, allows fixing→open while code does not; README omits force_unship; SPEC Status still Unreleased.",
+   "state": "resolved",
+   "created_at": "2026-07-23T20:53:53.847Z",
+   "updated_at": "2026-07-23T20:58:24.388Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "f-framework-docs",
+    "f-domain-model"
+   ]
+  },
+  {
+   "id": "bug-territory-patch-blank-lines",
+   "type": "Bug",
+   "title": "Territory patches add a blank line after the frontmatter",
+   "description": "Every patch_node_territory write, and every ship, adds one LF blank line between a node's frontmatter and its body, so leading blank lines pile up and CRLF territory gets mixed line endings.",
+   "state": "resolved",
+   "created_at": "2026-10-20T11:52:16.896Z",
+   "updated_at": "2026-10-20T12:02:37.265Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "f-territory-store"
+   ]
+  },
+  {
+   "id": "bug-version-relink-at-ship",
+   "type": "Bug",
+   "title": "Version dependents relinked while successor is still draft",
+   "description": "create_node_version duplicates incoming depends_on onto the draft successor, so unshipped dependents fail Infrastructure First even though the live predecessor remains valid.",
+   "state": "resolved",
+   "created_at": "2026-07-15T19:53:46.391Z",
+   "updated_at": "2026-07-15T19:56:27.199Z",
+   "body": "## Summary\n## Repro Steps\n## Expected / Actual\n## Fix Checklist\n## Attachments",
+   "affects": [
+    "i-steer-plan"
+   ]
+  },
+  {
+   "id": "f-compiler-rules",
+   "type": "Foundation",
+   "title": "Compiler rules",
+   "description": "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import, ownership, and linked-test presence gate for in-review and ship, the untested-revision warning, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates (never a migration or schema file), and split route-family warnings. A next file in state mirror is not an open evolution.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:13.232Z",
+   "updated_at": "2026-10-25T21:13:07.453Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:07.453Z",
+   "role": "infra",
+   "depends_on": [
+    "f-domain-model",
+    "f-territory-store",
+    "f-source-index"
+   ],
+   "implements": [
+    "src/foundations/f-compiler-rules/"
+   ]
+  },
+  {
+   "id": "f-console-bridge",
+   "type": "Foundation",
+   "title": "Console bridge",
+   "description": "Infra — local HTTP API over MindPlan graph tools; returns Blocked: as structured errors.",
+   "state": "cancelled",
+   "created_at": "2026-07-20T21:15:12.303Z",
+   "updated_at": "2026-09-23T13:54:16.346Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "role": "infra",
+   "depends_on": [
+    "f-territory-store",
+    "f-compiler-rules",
+    "f-graph-search",
+    "f-mcp-runtime"
+   ]
+  },
+  {
+   "id": "f-console-client",
+   "type": "Foundation",
+   "title": "Console client",
+   "description": "Adapter — typed HTTP client for the console API (orient/steer routes).",
+   "state": "ready",
+   "created_at": "2026-09-23T13:28:46.120Z",
+   "updated_at": "2026-09-23T13:55:31.153Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "role": "adapter"
+  },
+  {
+   "id": "f-console-shell",
+   "type": "Foundation",
+   "title": "Console shell",
+   "description": "Assembler — project root selection, layout, and navigation; uses f-console-client for API access.",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:24.459Z",
+   "updated_at": "2026-10-20T13:35:33.985Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "role": "assembler",
+   "depends_on": [
+    "f-nextjs",
+    "f-design-system",
+    "f-console-client"
+   ]
+  },
+  {
+   "id": "f-design-system",
+   "type": "Foundation",
+   "title": "Console design system",
+   "description": "Design system — tokens and dumb presentational UI for the MindPlan console.",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:11.934Z",
+   "updated_at": "2026-09-23T13:54:16.348Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "role": "design-system"
+  },
+  {
+   "id": "f-domain-model",
+   "type": "Foundation",
+   "title": "Domain model",
+   "description": "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs) and the `added_claims` marker for claims a shipped node added in place, the slot-independent `tests` list of files that verify a node, Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, decision records with their computed status and the active-slot reader, and the optional change id and change ref that group revisions, whose live value on a shipped node with no open next is a neighbor label.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:11.938Z",
+   "updated_at": "2026-10-25T21:13:07.038Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:07.038Z",
+   "role": "infra",
+   "implements": [
+    "src/foundations/f-domain-model/"
+   ]
+  },
+  {
+   "id": "f-framework-docs",
+   "type": "Foundation",
+   "title": "Framework docs",
+   "description": "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check, links the tests that verify a node, and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked tests, shared-route ownership, decision records and the decision gate, and host install docs for Cursor and Claude Code.",
+   "state": "stable",
+   "created_at": "2026-07-19T18:33:36.834Z",
+   "updated_at": "2026-10-25T21:13:07.168Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:07.168Z",
+   "role": "infra",
+   "depends_on": [
+    "f-domain-model"
+   ],
+   "implements": [
+    "CHANGELOG.md",
+    "README.md",
+    "SPEC.md",
+    "templates/"
+   ]
+  },
+  {
+   "id": "f-github-actions",
+   "type": "Foundation",
+   "title": "GitHub Actions",
+   "description": "Infra — CI workflow for default mindplan-mcp check.",
+   "state": "stable",
+   "created_at": "2026-07-19T20:19:02.547Z",
+   "updated_at": "2026-10-25T21:32:24.613Z",
+   "body": "## Purpose\n## Ownership split\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-09T22:27:39.467Z",
+   "role": "infra",
+   "depends_on": [
+    "f-npm-registry"
+   ],
+   "implements": [
+    ".github/workflows/ci.yml"
+   ]
+  },
+  {
+   "id": "f-graph-search",
+   "type": "Foundation",
+   "title": "Graph search",
+   "description": "Infra — ranks and expands graph neighborhoods, resolves which nodes' rules and decisions apply to a node (and which nodes a node's rules reach), computes whether a decision is superseded, and lists decisions by node, change, or graph.",
+   "state": "stable",
+   "created_at": "2026-07-19T18:33:36.731Z",
+   "updated_at": "2026-10-20T13:57:05.099Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-20T13:57:05.099Z",
+   "role": "infra",
+   "depends_on": [
+    "f-domain-model"
+   ],
+   "implements": [
+    "src/foundations/f-graph-search/"
+   ]
+  },
+  {
+   "id": "f-mcp-runtime",
+   "type": "Foundation",
+   "title": "MCP runtime",
+   "description": "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version on initialize; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature graph work; scopes the drift report to the node a result is about.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:31.349Z",
+   "updated_at": "2026-10-20T15:10:03.442Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-20T15:10:03.442Z",
+   "role": "assembler",
+   "depends_on": [
+    "f-territory-store",
+    "f-framework-docs"
+   ],
+   "implements": [
+    "src/foundations/f-mcp-runtime/",
+    "src/index.ts"
+   ]
+  },
+  {
+   "id": "f-nextjs",
+   "type": "Foundation",
+   "title": "Next.js assembler",
+   "description": "Assembler — Next.js App Router shell that mounts console Interfaces and if-console-api routes.",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:11.414Z",
+   "updated_at": "2026-10-20T13:35:43.283Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "role": "assembler"
+  },
+  {
+   "id": "f-npm-registry",
+   "type": "Foundation",
+   "title": "npm registry adapter",
+   "description": "Adapter — npm registry + Trusted Publishing (OIDC) for mindplan-mcp releases without long-lived NPM_TOKEN.",
+   "state": "stable",
+   "created_at": "2026-07-19T20:19:03.811Z",
+   "updated_at": "2026-10-25T20:14:43.831Z",
+   "body": "## Purpose\n## Ship gate (avoid chicken-and-egg)\n## Shared Substrate Spec\n## Implementation\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T20:14:43.831Z",
+   "role": "adapter",
+   "implements": [
+    "src/foundations/f-npm-registry/"
+   ]
+  },
+  {
+   "id": "f-source-index",
+   "type": "Foundation",
+   "title": "Source index",
+   "description": "Infra — ownership universe, claim expansion for files, directories, and glob claims, folder dominance (where a shipped node may claim a file in place, and which per-file claim lists one folder claim would replace), the decision-gate settings in mindplan/config.json and its MCP write, and a read-only git probe for the files a branch adds.",
+   "state": "stable",
+   "created_at": "2026-09-23T13:28:44.288Z",
+   "updated_at": "2026-10-25T19:59:57.934Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T19:59:57.934Z",
+   "role": "infra",
+   "depends_on": [
+    "f-domain-model"
+   ],
+   "implements": [
+    "src/foundations/f-source-index/"
+   ]
+  },
+  {
+   "id": "f-territory-store",
+   "type": "Foundation",
+   "title": "Territory store",
+   "description": "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:15.019Z",
+   "updated_at": "2026-10-25T21:13:07.299Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:07.299Z",
+   "role": "infra",
+   "depends_on": [
+    "f-domain-model",
+    "f-source-index"
+   ],
+   "implements": [
+    "src/foundations/f-territory-store/"
+   ]
+  },
+  {
+   "id": "f-test-harness",
+   "type": "Foundation",
+   "title": "Test harness",
+   "description": "Infra — smoke, view, search, check, ergonomics, honesty, decisions, shipped-claims, change-neighbors, and node-tests tests including short instructions, the get_project playbook and check sentence, run_check, mounts, small writes, section patches, scoped status, drift classes, stale-text warnings, readiness reset, coverage fixes, next-slot imports, skip_review, checkbox matching and notes, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked test files, route-family warnings, and decision records with the decision gate.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:38.385Z",
+   "updated_at": "2026-10-25T21:13:07.604Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:07.604Z",
+   "role": "infra",
+   "depends_on": [
+    "f-mcp-runtime"
+   ],
+   "implements": [
+    "src/foundations/f-test-harness/"
+   ]
+  },
+  {
+   "id": "f-view-projection",
+   "type": "Foundation",
+   "title": "View projection",
+   "description": "Infra — Mermaid/DOT projection (including the mounts edge and optional per-node decision counts) and the auto-generated mindplan/map.md snapshot.",
+   "state": "stable",
+   "created_at": "2026-07-19T18:33:36.744Z",
+   "updated_at": "2026-10-20T13:35:49.568Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-20T13:04:10.795Z",
+   "role": "infra",
+   "depends_on": [
+    "f-domain-model",
+    "f-graph-search",
+    "f-territory-store"
+   ],
+   "implements": [
+    "src/foundations/f-view-projection/"
+   ]
+  },
+  {
+   "id": "f-xyflow",
+   "type": "Foundation",
+   "title": "XYFlow adapter",
+   "description": "Adapter — XYFlow / React Flow for interactive graph chrome (not Mermaid/DOT).",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:13.977Z",
+   "updated_at": "2026-09-23T13:54:16.368Z",
+   "body": "## Purpose\n## Shared Substrate Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "role": "adapter",
+   "depends_on": [
+    "f-design-system"
+   ]
+  },
+  {
+   "id": "i-browse-territory",
+   "type": "Interaction",
+   "title": "Read territory",
+   "description": "See the plan — browse PRD, acceptance criteria, and Atomic Ops with reserved MDX components.",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:23.857Z",
+   "updated_at": "2026-09-23T13:33:48.772Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "belongs_to": [
+    "j-plan-console"
+   ],
+   "depends_on": [
+    "f-console-shell",
+    "f-design-system",
+    "f-console-client"
+   ]
+  },
+  {
+   "id": "i-check-integrity",
+   "type": "Interaction",
+   "title": "Check integrity",
+   "description": "Default check Blocks unclaimed source files (with the probable owner and the claim call, made in place when the owner dominates the file's folder and it is not a migration or schema file), illegal imports over current and next-slot claims (each with its fix), a shipped pipeline node whose next file is missing or is not a state-only twin, and a linked test missing on disk once its node is in review or shipped; warns about stale territory text (including claims added in place that the body does not name), split route families, decision-worthy revisions with no decision, and revisions in review with no linked tests; checks one change's members, its open revisions and its neighbors, on request; and is exposed as the run_check tool. Also builds a scoped, classified drift report of uncommitted source files.",
+   "state": "stable",
+   "created_at": "2026-07-20T18:53:01.570Z",
+   "updated_at": "2026-10-25T21:13:07.730Z",
+   "body": "## Purpose\n## Actor & Trigger\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:07.730Z",
+   "belongs_to": [
+    "j-territory-sdlc"
+   ],
+   "depends_on": [
+    "f-territory-store",
+    "f-compiler-rules",
+    "f-mcp-runtime",
+    "f-source-index"
+   ],
+   "implements": [
+    "src/interactions/i-check-integrity/"
+   ]
+  },
+  {
+   "id": "i-explore-graph",
+   "type": "Interaction",
+   "title": "Explore the graph",
+   "description": "See the plan — interactive XYFlow architecture canvas with focus and state-colored nodes.",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:23.764Z",
+   "updated_at": "2026-09-23T13:33:49.339Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "belongs_to": [
+    "j-plan-console"
+   ],
+   "depends_on": [
+    "f-xyflow",
+    "f-design-system",
+    "f-console-shell",
+    "f-console-client"
+   ]
+  },
+  {
+   "id": "i-export-map",
+   "type": "Interaction",
+   "title": "See the map",
+   "description": "Owns the export_mindplan_view MCP handler (optionally with per-node decision counts, writable to a file, and refusing with a fix instead of returning a diagram the host would truncate) and the view export used by the CLI view/export command.",
+   "state": "stable",
+   "created_at": "2026-07-19T18:33:36.804Z",
+   "updated_at": "2026-10-20T15:10:03.542Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-20T15:10:03.542Z",
+   "belongs_to": [
+    "j-territory-sdlc"
+   ],
+   "depends_on": [
+    "f-territory-store",
+    "f-view-projection",
+    "f-compiler-rules"
+   ],
+   "implements": [
+    "src/interactions/i-export-map/"
+   ]
+  },
+  {
+   "id": "i-init-project",
+   "type": "Interaction",
+   "title": "Init project",
+   "description": "Init installs the playbook, project brief, and host copies for the chosen host (Cursor, Claude Code, or both), ignores the mindplan/ tree in Cursor, writes a missing mirror for each already-shipped pipeline node, and stamps mindplan/version.json; when the stamp is older than the package it refreshes the package-owned agent files.",
+   "state": "stable",
+   "created_at": "2026-07-19T18:33:36.816Z",
+   "updated_at": "2026-10-23T19:24:57.495Z",
+   "body": "## Purpose\n## Actor & Trigger\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-23T19:24:57.495Z",
+   "belongs_to": [
+    "j-agent-onboarding"
+   ],
+   "depends_on": [
+    "f-territory-store",
+    "f-source-index"
+   ],
+   "leads_to": [
+    "i-orient-plan"
+   ],
+   "implements": [
+    "src/interactions/i-init-project/"
+   ]
+  },
+  {
+   "id": "i-model-plan",
+   "type": "Interaction",
+   "title": "Model the plan",
+   "description": "Model the plan — create and link Journeys, Foundations, Interactions, Interfaces, and Bugs through the compiler (human define-entities).",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:24.437Z",
+   "updated_at": "2026-09-23T13:33:49.936Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "belongs_to": [
+    "j-plan-console"
+   ],
+   "depends_on": [
+    "f-design-system",
+    "f-console-shell",
+    "f-console-client"
+   ]
+  },
+  {
+   "id": "i-mutate-plan",
+   "type": "Interaction",
+   "title": "Steer the plan",
+   "description": "Mutate the plan — compiler-gated status, link/unlink, open_next, and related edits with Blocked: surfacing.",
+   "state": "cancelled",
+   "created_at": "2026-07-20T21:15:24.412Z",
+   "updated_at": "2026-10-09T22:21:32.292Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "belongs_to": [
+    "j-plan-console"
+   ],
+   "depends_on": [
+    "f-design-system",
+    "f-console-shell",
+    "f-console-client"
+   ]
+  },
+  {
+   "id": "i-npm-publish",
+   "type": "Interaction",
+   "title": "Publish to npm",
+   "description": "Reusable publish script for mindplan-mcp: first claim, dry-run/test/publish/verify, and consumer install docs. Same script later runs in CI on every merge to main that bumps the version.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:52.964Z",
+   "updated_at": "2026-10-25T20:14:46.359Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Goal\n## Acceptance Criteria\n## Versioning policy\n## Release style (this Interaction)\n## Execution Logic\n## Failure / recovery\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T20:14:46.359Z",
+   "belongs_to": [
+    "j-agent-onboarding",
+    "j-npm-publish"
+   ],
+   "depends_on": [
+    "f-mcp-runtime",
+    "f-npm-registry"
+   ],
+   "implements": [
+    "src/interactions/i-npm-publish/"
+   ]
+  },
+  {
+   "id": "i-npm-tag-publish",
+   "type": "Interaction",
+   "title": "Publish on merge to main",
+   "description": "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing.",
+   "state": "stable",
+   "created_at": "2026-07-19T20:19:48.978Z",
+   "updated_at": "2026-10-25T20:27:49.400Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Goal\n## Acceptance Criteria\n## Prerequisites (Infrastructure First)\n## Execution Logic\n## Failure / recovery\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T20:27:49.400Z",
+   "belongs_to": [
+    "j-npm-publish"
+   ],
+   "depends_on": [
+    "f-npm-registry",
+    "f-github-actions"
+   ],
+   "implements": [
+    ".github/workflows/publish.yml"
+   ],
+   "next": {
+    "state": "in-review",
+    "title": "Publish on merge to main",
+    "description": "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing.",
+    "updated_at": "2026-10-25T21:32:24.771Z"
+   }
+  },
+  {
+   "id": "i-orient-plan",
+   "type": "Interaction",
+   "title": "Orient on the plan",
+   "description": "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules and decisions, list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the decisions it reaches, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check), and expose get_rules for global project rules before each action.",
+   "state": "stable",
+   "created_at": "2026-07-19T18:33:36.789Z",
+   "updated_at": "2026-10-25T21:13:07.859Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:07.859Z",
+   "belongs_to": [
+    "j-territory-sdlc"
+   ],
+   "depends_on": [
+    "f-graph-search",
+    "f-territory-store",
+    "f-compiler-rules",
+    "f-source-index"
+   ],
+   "leads_to": [
+    "i-steer-plan"
+   ],
+   "implements": [
+    "src/interactions/i-orient-plan/"
+   ]
+  },
+  {
+   "id": "i-steer-plan",
+   "type": "Interaction",
+   "title": "Steer the plan",
+   "description": "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), linked test files written in place on live and an open next alike without resetting readiness, neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate settings, and attachments; small results unless verbose.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:48.233Z",
+   "updated_at": "2026-10-25T21:13:08.004Z",
+   "body": "## Purpose\n## Actor & Trigger\n## PRD / Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:08.004Z",
+   "belongs_to": [
+    "j-territory-sdlc",
+    "j-plan-console"
+   ],
+   "depends_on": [
+    "f-compiler-rules",
+    "f-graph-search",
+    "f-view-projection",
+    "f-territory-store",
+    "f-source-index"
+   ],
+   "leads_to": [
+    "i-export-map"
+   ],
+   "implements": [
+    "src/interactions/i-steer-plan/"
+   ]
+  },
+  {
+   "id": "i-view-status",
+   "type": "Interaction",
+   "title": "Status board",
+   "description": "See the plan — delivery-state board with done / in-flight / blocked at a glance.",
+   "state": "ready",
+   "created_at": "2026-07-20T21:15:23.167Z",
+   "updated_at": "2026-09-23T13:33:51.421Z",
+   "body": "## Purpose\n## Actor & Trigger\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "belongs_to": [
+    "j-plan-console"
+   ],
+   "depends_on": [
+    "f-console-shell",
+    "f-design-system",
+    "f-console-client"
+   ]
+  },
+  {
+   "id": "if-cli",
+   "type": "Interface",
+   "title": "CLI",
+   "description": "Print legacy renames that already succeeded when init stops, print legacy files removed during check or view, let init choose its host copies with --host, and print the check's output and warnings.",
+   "state": "stable",
+   "created_at": "2026-08-10T13:44:20.510Z",
+   "updated_at": "2026-10-20T13:35:57.527Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Impact\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-15T15:52:14.190Z",
+   "depends_on": [
+    "f-mcp-runtime"
+   ],
+   "exposes": [
+    "i-init-project",
+    "i-check-integrity",
+    "i-export-map"
+   ],
+   "implements": [
+    "src/interfaces/if-cli/"
+   ]
+  },
+  {
+   "id": "if-console",
+   "type": "Interface",
+   "title": "Console",
+   "description": "Page — human web console app exposing browse, status, graph, model, and steer actions.",
+   "state": "ready",
+   "created_at": "2026-10-09T22:21:04.777Z",
+   "updated_at": "2026-10-09T22:21:39.969Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "depends_on": [
+    "f-console-shell",
+    "f-design-system",
+    "f-xyflow",
+    "f-nextjs"
+   ],
+   "exposes": [
+    "i-browse-territory",
+    "i-view-status",
+    "i-explore-graph",
+    "i-model-plan",
+    "i-steer-plan"
+   ]
+  },
+  {
+   "id": "if-console-api",
+   "type": "Interface",
+   "title": "Console API",
+   "description": "HTTP Interface for the console: maps Blocked: to JSON, returns changed_files; mounts orient and steer.",
+   "state": "ready",
+   "created_at": "2026-09-23T13:28:46.157Z",
+   "updated_at": "2026-09-23T13:55:31.156Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "depends_on": [
+    "f-nextjs"
+   ],
+   "exposes": [
+    "i-orient-plan",
+    "i-steer-plan"
+   ]
+  },
+  {
+   "id": "if-console-graph",
+   "type": "Interface",
+   "title": "Console graph page",
+   "description": "Console page Interface for graph explore.",
+   "state": "cancelled",
+   "created_at": "2026-08-10T13:44:20.521Z",
+   "updated_at": "2026-10-09T22:21:32.359Z",
+   "body": "",
+   "depends_on": [
+    "f-console-shell",
+    "f-xyflow"
+   ],
+   "exposes": [
+    "i-explore-graph"
+   ]
+  },
+  {
+   "id": "if-console-model",
+   "type": "Interface",
+   "title": "Console model page",
+   "description": "Console page Interface for modeling the plan.",
+   "state": "cancelled",
+   "created_at": "2026-08-10T13:44:20.529Z",
+   "updated_at": "2026-10-09T22:21:32.421Z",
+   "body": "",
+   "depends_on": [
+    "f-console-shell",
+    "f-design-system"
+   ],
+   "exposes": [
+    "i-model-plan"
+   ]
+  },
+  {
+   "id": "if-console-mutate",
+   "type": "Interface",
+   "title": "Console mutate page",
+   "description": "Console page Interface for steering the plan.",
+   "state": "cancelled",
+   "created_at": "2026-08-10T13:44:20.524Z",
+   "updated_at": "2026-10-09T22:21:32.483Z",
+   "body": "",
+   "depends_on": [
+    "f-console-shell",
+    "f-design-system"
+   ],
+   "exposes": [
+    "i-mutate-plan"
+   ]
+  },
+  {
+   "id": "if-console-status",
+   "type": "Interface",
+   "title": "Console status page",
+   "description": "Console page Interface for the status board.",
+   "state": "cancelled",
+   "created_at": "2026-08-10T13:44:20.517Z",
+   "updated_at": "2026-10-09T22:21:32.550Z",
+   "body": "",
+   "depends_on": [
+    "f-console-shell",
+    "f-design-system"
+   ],
+   "exposes": [
+    "i-view-status"
+   ]
+  },
+  {
+   "id": "if-console-territory",
+   "type": "Interface",
+   "title": "Console territory page",
+   "description": "Console page Interface for browsing territory.",
+   "state": "cancelled",
+   "created_at": "2026-08-10T13:44:20.514Z",
+   "updated_at": "2026-10-09T22:21:32.612Z",
+   "body": "",
+   "depends_on": [
+    "f-console-shell",
+    "f-design-system"
+   ],
+   "exposes": [
+    "i-browse-territory"
+   ]
+  },
+  {
+   "id": "if-mcp-tools",
+   "type": "Interface",
+   "title": "MCP tools",
+   "description": "MCP stdio Interface that registers twenty-eight tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels, additive in-place claims on shipped nodes, and linked test files.",
+   "state": "stable",
+   "created_at": "2026-08-10T13:44:20.502Z",
+   "updated_at": "2026-10-25T21:13:08.165Z",
+   "body": "## Purpose\n## Kind\n## Exposed Interactions\n## Spec\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "shipped_at": "2026-10-25T21:13:08.165Z",
+   "depends_on": [
+    "f-mcp-runtime",
+    "f-domain-model",
+    "f-graph-search",
+    "f-view-projection"
+   ],
+   "exposes": [
+    "i-orient-plan",
+    "i-steer-plan",
+    "i-export-map",
+    "i-check-integrity"
+   ],
+   "implements": [
+    "src/interfaces/if-mcp-tools/"
+   ]
+  },
+  {
+   "id": "if-publish-script",
+   "type": "Interface",
+   "title": "Publish script",
+   "description": "Script/CLI Interface for npm publish.",
+   "state": "ready",
+   "created_at": "2026-08-10T13:44:20.533Z",
+   "updated_at": "2026-08-10T13:44:20.533Z",
+   "body": "",
+   "depends_on": [
+    "f-npm-registry"
+   ],
+   "exposes": [
+    "i-npm-publish"
+   ]
+  },
+  {
+   "id": "if-release-tag",
+   "type": "Interface",
+   "title": "Main-branch release trigger",
+   "description": "CI trigger Interface: a push to main (or a manual run on main) starts the publish workflow.",
+   "state": "draft",
+   "created_at": "2026-08-10T13:44:20.537Z",
+   "updated_at": "2026-10-23T14:42:21.102Z",
+   "body": "",
+   "depends_on": [
+    "f-github-actions"
+   ],
+   "exposes": [
+    "i-npm-tag-publish"
+   ]
+  },
+  {
+   "id": "j-agent-onboarding",
+   "type": "Journey",
+   "title": "Adopt MindPlan",
+   "description": "Adopt MindPlan in a consumer project and wire it into coding agents via init, playbooks, and integrations.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:13.072Z",
+   "updated_at": "2026-10-25T20:14:46.378Z",
+   "body": "## Purpose\n## Overview\n## Linked Interactions\n## What “healthy” means\n## Attachments"
+  },
+  {
+   "id": "j-npm-publish",
+   "type": "Journey",
+   "title": "Ship to npm",
+   "description": "Maintainer capability to release mindplan-mcp to the public npm registry — first claim, repeatable publish script, then automatic publish when a version bump merges to main.",
+   "state": "evolving",
+   "created_at": "2026-07-19T20:18:58.540Z",
+   "updated_at": "2026-10-25T21:27:52.527Z",
+   "body": "## Purpose\n## Overview\n## Linked Interactions\n## What “healthy” means\n## Attachments"
+  },
+  {
+   "id": "j-plan-console",
+   "type": "Journey",
+   "title": "See and steer the plan",
+   "description": "Human console to see, mutate, and model a repo's MindPlan — status, interactive graph, territory, and compiler-gated edits.",
+   "state": "stable",
+   "created_at": "2026-07-20T21:15:08.291Z",
+   "updated_at": "2026-10-25T21:13:08.011Z",
+   "body": "## Purpose\n## Overview\n## Linked Interactions\n## What “healthy” means\n## Attachments"
+  },
+  {
+   "id": "j-territory-sdlc",
+   "type": "Journey",
+   "title": "Plan software",
+   "description": "Plan and execute software work through MindPlan territory, compiler gates, and MCP graph tools.",
+   "state": "stable",
+   "created_at": "2026-07-15T18:51:13.777Z",
+   "updated_at": "2026-10-25T21:13:08.011Z",
+   "body": "## Purpose\n## Overview\n## Linked Interactions\n## What “healthy” means\n## Attachments"
+  },
+  {
+   "id": "wf-export-views-v2",
+   "type": "Interaction",
+   "title": "Export graph views (auto-persist map)",
+   "description": "Mermaid/DOT export plus automatic mindplan/map.md refresh after every successful graph mutation.",
+   "state": "deprecated",
+   "created_at": "2026-07-15T19:10:47.102Z",
+   "updated_at": "2026-07-19T18:33:37.318Z",
+   "body": "## Execution Logic\n## Checklist",
+   "shipped_at": "2026-07-15T19:12:59.030Z",
+   "belongs_to": [
+    "j-territory-sdlc"
+   ],
+   "depends_on": [
+    "f-territory-store",
+    "f-mcp-runtime"
+   ]
+  },
+  {
+   "id": "wf-framework-docs-v3",
+   "type": "Interaction",
+   "title": "Framework documentation (plan-first punchline)",
+   "description": "README leads with MindPlan as the living product plan agents work from; compiler framing demoted to enforcement.",
+   "state": "deprecated",
+   "created_at": "2026-07-15T19:43:44.335Z",
+   "updated_at": "2026-07-19T18:33:37.373Z",
+   "body": "## Execution Logic\n## Checklist\n## Attachments",
+   "shipped_at": "2026-07-15T19:44:17.130Z",
+   "belongs_to": [
+    "j-territory-sdlc",
+    "j-agent-onboarding"
+   ],
+   "depends_on": [
+    "f-domain-model"
+   ]
+  },
+  {
+   "id": "wf-interaction-model",
+   "type": "Interaction",
+   "title": "Interaction-centric model",
+   "description": "Replace Workflow with Interaction, add Interface + leads_to/exposes edges, Interaction Independence, reachability analysis, and re-model the self-hosted graph.",
+   "state": "cancelled",
+   "created_at": "2026-08-10T13:06:38.151Z",
+   "updated_at": "2026-08-10T13:23:31.399Z",
+   "body": "## Purpose\n## Execution Logic\n## Acceptance Criteria\n## Atomic Ops\n## Attachments",
+   "belongs_to": [
+    "j-territory-sdlc"
+   ],
+   "depends_on": [
+    "f-domain-model",
+    "f-compiler-rules",
+    "f-territory-store",
+    "f-mcp-runtime",
+    "f-view-projection",
+    "f-graph-search"
+   ]
+  },
+  {
+   "id": "wf-project-init-v2",
+   "type": "Interaction",
+   "title": "Project init (blast-radius orient)",
+   "description": "Scaffold consumer mindplan/ plus agent playbook requiring get_blast_radius before Foundation/Workflow implementation; define-entities skill, MCP example, integrations, and AGENTS.md.",
+   "state": "deprecated",
+   "created_at": "2026-07-15T20:09:06.542Z",
+   "updated_at": "2026-07-19T18:33:37.347Z",
+   "body": "## Execution Logic\n## Checklist\n## Attachments",
+   "shipped_at": "2026-07-15T20:12:38.451Z",
+   "belongs_to": [
+    "j-agent-onboarding"
+   ],
+   "depends_on": [
+    "f-territory-store"
+   ]
+  },
+  {
+   "id": "wf-query-graph-v2",
+   "type": "Interaction",
+   "title": "Query graph",
+   "description": "Read orientation tools: find_related_nodes, get_mindplan_graph, get_node_context (current+next), get_blast_radius (same-id dependents), orient_for_work.",
+   "state": "deprecated",
+   "created_at": "2026-07-15T19:58:14.741Z",
+   "updated_at": "2026-07-19T18:33:37.294Z",
+   "body": "## Execution Logic\n## Checklist\n## Attachments",
+   "shipped_at": "2026-07-15T19:59:26.977Z",
+   "belongs_to": [
+    "j-territory-sdlc"
+   ],
+   "depends_on": [
+    "f-mcp-runtime"
+   ]
+  },
+  {
+   "id": "wf-workflow-affected-files",
+   "type": "Interaction",
+   "title": "OBSOLETE — use get_node_implementation",
+   "description": "Superseded by prescribed packages + get_node_implementation. Cancelled — do not revive.",
+   "state": "cancelled",
+   "created_at": "2026-07-15T20:14:46.276Z",
+   "updated_at": "2026-07-20T19:30:00.499Z",
+   "body": "## Checklist\n## Attachments"
+  }
+ ]
+}

@@ -141,6 +141,11 @@ export interface MindPlanNode {
    * carries the same list, so `NextSlot` has none.
    */
   tests?: string[];
+  /**
+   * MCP-only. Other words for the node (synonyms, user wording, other languages) that search
+   * indexes with its text. Slot-independent like `tests`; any node type.
+   */
+  aliases?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
   /** Present when `<id>.next.mdx` is an open evolution (not a `mirror` twin). */

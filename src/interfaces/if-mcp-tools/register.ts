@@ -26,6 +26,7 @@ import {
   getNodeImplementationHandler,
   getProject,
   getRules,
+  listAreas,
   listDecisionsHandler,
   orientForWork,
 } from "../../interactions/i-orient-plan/handlers.js";
@@ -53,7 +54,10 @@ import {
 import { runCheckHandler } from "../../interactions/i-check-integrity/check.js";
 import { EXPORT_RESULT_BUDGET, exportMindPlanViewHandler } from "../../interactions/i-export-map/handlers.js";
 import { FOUNDATION_ROLES } from "../../foundations/f-domain-model/types.js";
-import { drainRemovedLegacyFiles } from "../../foundations/f-territory-store/store.js";
+import {
+  drainRemovedLegacyFiles,
+  restoreRemovedLegacyFiles,
+} from "../../foundations/f-territory-store/store.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -137,21 +141,42 @@ function tool<Args extends ZodRawShapeCompat>(
 function guarded<A>(
   handler: (args: A) => unknown,
   options: { drift?: boolean; write?: boolean } = {}
-): (args: A) => ToolResult {
+): (args: A) => ToolResult | Promise<ToolResult> {
+  const fail = (err: unknown): ToolResult => {
+    const removed = drainRemovedLegacyFiles();
+    const message = err instanceof Error ? err.message : String(err);
+    const note =
+      removed.length === 0
+        ? ""
+        : `\n${removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n")}`;
+    return { content: [{ type: "text", text: `${message}${note}` }], isError: true };
+  };
   return (args: A) => {
     const verbose = (args as { verbose?: boolean } | undefined)?.verbose === true;
     const attachDrift = options.drift !== false && (!options.write || verbose);
-    try {
-      const payload = withRemovedLegacyFiles(handler(args));
+    const succeed = (result: unknown): ToolResult => {
+      const payload = withRemovedLegacyFiles(result);
       return ok(attachDrift ? withDrift(payload) : payload);
+    };
+    try {
+      const result = handler(args);
+      // Search handlers are async (the query embedding); every other handler returns its payload.
+      // They load the graph before their first await, so the legacy files that load removed are
+      // taken now: another call that runs while this one waits keeps its own.
+      if (result instanceof Promise) {
+        const removedBefore = drainRemovedLegacyFiles();
+        const withEarlier = (value: unknown): ToolResult => {
+          restoreRemovedLegacyFiles(removedBefore);
+          return succeed(value);
+        };
+        return result.then(withEarlier).catch((err: unknown) => {
+          restoreRemovedLegacyFiles(removedBefore);
+          return fail(err);
+        });
+      }
+      return succeed(result);
     } catch (err) {
-      const removed = drainRemovedLegacyFiles();
-      const message = err instanceof Error ? err.message : String(err);
-      const note =
-        removed.length === 0
-          ? ""
-          : `\n${removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n")}`;
-      return { content: [{ type: "text", text: `${message}${note}` }], isError: true };
+      return fail(err);
     }
   };
 }
@@ -175,6 +200,28 @@ const CHANGE_REF = z
   .string()
   .optional()
   .describe("Optional branch name or PR URL for the change. Empty string clears it.");
+
+/** An area (a Journey id from list_areas) that limits ranking to that area's members. */
+const AREA = NODE_ID.optional().describe(
+  "A Journey id (list_areas): rank only that area's Interactions, the Interfaces exposing them, and the Foundations they depend on. Omit for a question that cuts across areas."
+);
+
+/** Search aliases: the words people will use for a node that its text does not contain. */
+const ALIASES = z
+  .array(z.string().min(1).max(60))
+  .max(20)
+  .optional()
+  .describe(
+    "Search aliases: synonyms, the words users will say, other languages (e.g. quote, request a quote, ofertă). Replaces the list; [] clears it. At most 20, each up to 60 characters."
+  );
+
+/** The one flag that adds inherited decisions to orient_for_work and get_node_context. */
+const INCLUDE_INHERITED_DECISIONS = z
+  .boolean()
+  .optional()
+  .describe(
+    "Also return the decisions inherited through belongs_to / depends_on (a Bug: past the nodes it affects): whole at distance 1, one line { id, node_id, distance, decision } beyond. Default false: only their count and nodes."
+  );
 
 /** Which writes send a ready revision back to draft; repeated in the write tools' hints. */
 const READINESS_HINT =
@@ -286,14 +333,16 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Find related nodes",
       description:
         "Call before creating a node, to reuse one that already exists. " +
-        "Ranks nodes by text query (id/title/description) and returns the focus node plus its 1-hop " +
+        "Ranks nodes for a text query (keyword plus semantic search; an exact id ranks first) and returns the focus node plus its 1-hop " +
         "linked neighborhood (summaries only). Prefer this over get_mindplan_graph for orientation. " +
         "Provide query and/or node_id. Use get_node_context for full territory; get_blast_radius for transitive dependents.",
       inputSchema: {
         query: z
           .string()
           .optional()
-          .describe("Free-text query to rank nodes (id, title, description). Required if node_id omitted."),
+          .describe(
+            "Free-text query to rank nodes (keyword and semantic: id, title, description, area, headings, paths). Required if node_id omitted."
+          ),
         node_id: NODE_ID.optional().describe(
           "Force focus to this node when present. Required if query is empty."
         ),
@@ -308,10 +357,27 @@ export function registerMindPlanTools(server: McpServer): void {
           .max(MAX_FIND_LIMIT)
           .optional()
           .describe(`Max ranked matches to return (default ${DEFAULT_FIND_LIMIT}, max ${MAX_FIND_LIMIT}).`),
+        area: AREA,
       },
     },
-    ({ query, node_id, type, limit }) =>
-      findRelatedNodesHandler({ query, node_id, type, limit })
+    ({ query, node_id, type, limit, area }) =>
+      findRelatedNodesHandler({ query, node_id, type, limit, area })
+  );
+
+  tool(
+    server,
+    "list_areas",
+    {
+      kind: "read",
+      title: "List areas",
+      description:
+        "Call when you are unsure where work lands, before orient_for_work. " +
+        "Returns every Journey (area) as one row of a compact table: { columns, rows, count } with " +
+        "[id, title, description (60 characters), interactions, interfaces, foundations, open_bugs]. " +
+        "Pick a row and pass its id as area to orient_for_work or find_related_nodes; for a question that cuts across areas, search without area.",
+      inputSchema: {},
+    },
+    () => listAreas()
   );
 
   tool(
@@ -348,7 +414,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call when you are about to read or edit one node's territory. " +
         "Returns authoritative record (graph slice), editable body (without the ## Rules and ## Decisions sections), the node's own rules, " +
-        "its decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), attachment paths, and filenames. " +
+        "its own decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), " +
+        "inherited_decisions ({ count, nodes }, plus entries with include_inherited_decisions), resolved_rules (every node rule that reaches it: it counts as orienting on the node), attachment paths, and filenames. " +
         "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
@@ -356,9 +423,11 @@ export function registerMindPlanTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Also return superseded decisions (each names superseded_by). Default false."),
+        include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
       },
     },
-    ({ node_id, include_superseded }) => getNodeContext({ node_id, include_superseded })
+    ({ node_id, include_superseded, include_inherited_decisions }) =>
+      getNodeContext({ node_id, include_superseded, include_inherited_decisions })
   );
 
   tool(
@@ -368,13 +437,17 @@ export function registerMindPlanTools(server: McpServer): void {
       kind: "read",
       title: "Orient for work",
       description:
-        "Call before each action, after get_rules. Not only at session start. " +
-        "Composite orientation: find_related_nodes + get_node_context (record+body) for focus, " +
-        "plus get_blast_radius when focus is a Foundation, Interaction, or Interface. " +
+        "Call before each action, after get_rules. Not only at session start. Summary first: " +
+        "with only a query it returns ranked rows ({ id, type, state, title, description, area?, score }, default 8, no body, rules, or decisions); " +
+        "pick one and call again with node_id. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
+        "With node_id it returns the full node at depth: record and body (get_node_context), owned files, " +
+        "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface. " +
+        "Writes that act on a node (set_implementation_files, set_test_files, update_node_status, patch_node_territory, patch_node_rules, open_next, record_decision, attachments, force_unship, link_nodes / unlink_nodes on the source) " +
+        "are Blocked: Orientation until that node had a full reply in this session (or get_node_context), and again after the rules that reach it changed; create_node is never blocked. " +
         "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
-        "or an affected node's for a Bug), each labeled with the node it came from. Those rules are mandatory. " +
-        "And a decisions block, at every depth: the recorded design decisions that apply to the focus through the same inheritance, " +
-        "each labeled with the node it came from; read them before reshaping that design. Superseded ones only with include_superseded. " +
+        "or an affected node's for a Bug), each labeled with the node it came from and tagged with a version; pass known_rules_versions ({ node_id: version }) only for entries whose text you still hold, to leave that text out (they come back with unchanged: true). Those rules are mandatory. " +
+        "And a decisions block, at every depth: the focus node's own recorded design decisions (a Bug: those of the nodes it affects); read them before reshaping that design. " +
+        "inherited_decisions ({ count, nodes }) names the Journeys and Foundations whose decisions also apply; include_inherited_decisions adds them (whole at distance 1, one line beyond). Superseded ones only with include_superseded. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
         "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream).",
       inputSchema: {
@@ -390,7 +463,7 @@ export function registerMindPlanTools(server: McpServer): void {
           .min(1)
           .max(MAX_FIND_LIMIT)
           .optional()
-          .describe(`Max ranked matches (default ${DEFAULT_FIND_LIMIT}).`),
+          .describe(`Max ranked rows (default 8 for a query alone, ${DEFAULT_FIND_LIMIT} with node_id).`),
         depth: z
           .enum(ORIENT_DEPTHS)
           .optional()
@@ -401,10 +474,26 @@ export function registerMindPlanTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Also return superseded decisions in the decisions block (each names superseded_by). Default false."),
+        include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
+        known_rules_versions: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Node id → rules version you already hold (from an earlier rules block); those entries come back without their text, with unchanged: true."),
+        area: AREA,
       },
     },
-    ({ query, node_id, type, limit, depth, include_superseded }) =>
-      orientForWork({ query, node_id, type, limit, depth, include_superseded })
+    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area }) =>
+      orientForWork({
+        query,
+        node_id,
+        type,
+        limit,
+        depth,
+        include_superseded,
+        include_inherited_decisions,
+        known_rules_versions,
+        area,
+      })
   );
 
   tool(
@@ -417,7 +506,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
         "Returns the systems dialect and this product's description and standing rules " +
-        "({ path, description, rules, playbook, check, version? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
+        "({ path, description, rules, rules_version, playbook, check, version? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
+        "rules_version tags the rules: pass it to get_rules as known_version. " +
         "version appears only when mindplan/version.json is missing or does not match this server, and names the fix.",
       inputSchema: {},
     },
@@ -433,12 +523,19 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Get project rules",
       description:
         "Call before each action, before orient_for_work. Returns the mandatory project rules " +
-        "({ path, rules }) from mindplan/project.md. Empty string when the section is empty. " +
+        "({ path, rules, rules_version }) from mindplan/project.md. Empty string when the section is empty. " +
+        "While you still hold the rules text, pass its rules_version as known_version: when the rules are unchanged the reply is { path, rules_version, unchanged: true } " +
+        "and that text still applies; otherwise it carries the new text and tag. Without the text in context (a new session, a summarized one), pass nothing. " +
         "These are the global rules only; node rules arrive through orient_for_work. " +
         "Does not return the playbook or description.",
-      inputSchema: {},
+      inputSchema: {
+        known_version: z
+          .string()
+          .optional()
+          .describe("The rules_version of rules text you still hold (from get_project or get_rules); the text is left out when it still matches. Omit it when you no longer have the text."),
+      },
     },
-    () => getRules()
+    ({ known_version }) => getRules({ known_version })
   );
 
   tool(
@@ -457,10 +554,12 @@ export function registerMindPlanTools(server: McpServer): void {
         READINESS_HINT +
         " change / change_ref set the revision's change id (grouping only: never resets readiness); moving the last revision off a change clears its neighbor labels (cleared_neighbors). " +
         "On a shipped node with no open next, change labels it a neighbor of that change (edited in place; returns neighbor_of, " +
-        "and replaced_change when it had another label); change_ref is Blocked there.",
+        "and replaced_change when it had another label); change_ref is Blocked there. " +
+        "aliases replaces the node's search aliases on any node, shipped included, live and an open next alike, without open_next or a readiness reset.",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node whose territory to patch."),
+        aliases: ALIASES,
         title: z
           .string()
           .min(1)
@@ -547,6 +646,7 @@ export function registerMindPlanTools(server: McpServer): void {
         change,
         change_ref,
         slot,
+        aliases,
         verbose,
       }) =>
         patchNodeTerritory({
@@ -562,6 +662,7 @@ export function registerMindPlanTools(server: McpServer): void {
           change,
           change_ref,
           slot,
+          aliases,
           verbose,
         })
   );
@@ -698,8 +799,8 @@ export function registerMindPlanTools(server: McpServer): void {
       kind: "write",
       title: "Patch project config",
       description:
-        "Call when source roots, exclude paths, or decision-gate settings change. " +
-        "Writes mindplan/config.json sources, exclude, and/or decisions via the territory store. " +
+        "Call when source roots, exclude paths, decision-gate settings, or search settings change. " +
+        "Writes mindplan/config.json sources, exclude, decisions, and/or search via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -726,9 +827,23 @@ export function registerMindPlanTools(server: McpServer): void {
           })
           .optional()
           .describe("Decision-gate settings. A field not passed keeps its stored value."),
+        search: z
+          .strictObject({
+            enabled: z
+              .boolean()
+              .optional()
+              .describe("false turns semantic ranking off (keyword ranking always runs). Default true."),
+            model: z
+              .string()
+              .min(1)
+              .optional()
+              .describe('Embedding model id (default "Xenova/bge-small-en-v1.5"); changing it rebuilds the search cache.'),
+          })
+          .optional()
+          .describe("Search settings. A field not passed keeps its stored value."),
       },
     },
-    ({ sources, exclude, decisions }) => patchConfig({ sources, exclude, decisions })
+    ({ sources, exclude, decisions, search }) => patchConfig({ sources, exclude, decisions, search })
   );
 
   tool(
@@ -873,11 +988,12 @@ export function registerMindPlanTools(server: McpServer): void {
           "Optional change id (a slug) that ties this new Foundation, Interaction, or Interface to other revisions of one change."
         ),
         change_ref: CHANGE_REF,
+        aliases: ALIASES,
       },
     },
-    
-      ({ id, type, title, description, role, change, change_ref, verbose }) =>
-        createNode({ id, type, title, description, role, change, change_ref, verbose })
+
+      ({ id, type, title, description, role, change, change_ref, aliases, verbose }) =>
+        createNode({ id, type, title, description, role, change, change_ref, aliases, verbose })
   );
 
   tool(
@@ -970,7 +1086,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Cancelled and deprecated nodes are omitted by default; set include_retired to see them " +
         "(BFS still traverses through retired nodes so live dependents keep true distances). " +
         "When the focus is an Interaction, also returns reachability. " +
-        "decisions lists the active decisions held by the focus and its dependents: the reasoning a change would reach. " +
+        "decisions lists the active decisions held by the focus; dependent_decisions ({ count, nodes }) names the dependents that hold decisions a change would reach, and include_dependent_decisions adds their one-line entries to decisions. " +
         "tests lists the linked test files of the focus and every owner in affected_files: the suites to run. " +
         "Pass change instead of node_id for the merged radius of every member of a change (open revisions and neighbors; members carry kind).",
       inputSchema: {
@@ -980,10 +1096,14 @@ export function registerMindPlanTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Include cancelled/deprecated nodes (default false)."),
+        include_dependent_decisions: z
+          .boolean()
+          .optional()
+          .describe("Also list the dependents' decisions in decisions (default false: only their count and nodes)."),
       },
     },
-    ({ node_id, change, include_retired }) =>
-      getBlastRadius({ node_id, change, include_retired })
+    ({ node_id, change, include_retired, include_dependent_decisions }) =>
+      getBlastRadius({ node_id, change, include_retired, include_dependent_decisions })
   );
 
   tool(
