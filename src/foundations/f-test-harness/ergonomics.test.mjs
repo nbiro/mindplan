@@ -452,7 +452,17 @@ for (const status of ["ready", "in-progress"]) {
   await call("patch_node_territory", {
     node_id: "f-core",
     section: "## Purpose",
-    text: "Core substrate. Lives in `src/foundations/f-core/gone-file.ts` Also see `../elsewhere/notes.md`.",
+    text:
+      "Core substrate. Lives in `src/foundations/f-core/gone-file.ts` Also see `../elsewhere/notes.md`.\n\n" +
+      "- [x] Wrote `src/foundations/f-core/moved-plain.ts`\n" +
+      "- [x] Wrote `src/foundations/f-core/moved-noted.ts` — note: split later\n" +
+      "- [X] Skipped `src/foundations/f-core/moved-na.ts` — n/a: never needed\n" +
+      "- [x] Moved the parser into\n  `src/foundations/f-core/moved-indented.ts`\n" +
+      "- [x] Moved the lexer into\n`src/foundations/f-core/moved-lazy.ts`\n" +
+      "  - kept a shim at `src/foundations/f-core/moved-nested.ts`\n" +
+      "- [ ] Write `src/foundations/f-core/open-item.ts`\n" +
+      "- [x] Port `src/foundations/f-core/empty-na.ts` — n/a:\n\n" +
+      "After the list, `src/foundations/f-core/after-list.ts` is prose.\n",
   });
   // A shipped Foundation's revision is decision-worthy: record one before review.
   await call("record_decision", {
@@ -468,6 +478,18 @@ for (const status of ["ready", "in-progress"]) {
     result.ok === true &&
       result.warnings.some((w) => w.includes("gone-file.ts")) &&
       !result.warnings.some((w) => w.includes("elsewhere")),
+    JSON.stringify(result.warnings)
+  );
+  const closed = ["moved-plain", "moved-noted", "moved-na", "moved-indented", "moved-lazy", "moved-nested"];
+  check(
+    "a ticked checklist item naming a missing path does not warn, continuation lines included",
+    !result.warnings.some((w) => closed.some((name) => w.includes(`${name}.ts`))),
+    JSON.stringify(result.warnings)
+  );
+  const stillOpen = ["open-item", "empty-na", "after-list"];
+  check(
+    "an open item, an n/a tick with no reason, and prose after the list still warn",
+    stillOpen.every((name) => result.warnings.some((w) => w.includes(`${name}.ts\``))),
     JSON.stringify(result.warnings)
   );
   const cli = runCli(["check"]);

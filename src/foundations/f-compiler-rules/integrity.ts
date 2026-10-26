@@ -34,6 +34,7 @@ import {
 } from "../f-source-index/ownership.js";
 import { listUniverseFiles } from "../f-source-index/universe.js";
 import {
+  countCheckboxesInText,
   markdownRelativePath,
   readMarkdown,
   splitContext,
@@ -546,6 +547,46 @@ export function untestedWarning(node: MindPlanNode): string | null {
 // ---------------------------------------------------------------------------
 
 const PATH_TOKEN = /`([A-Za-z0-9_.\-][A-Za-z0-9_.\-/]*\/[A-Za-z0-9_.\-/]*)`/g;
+const CHECKBOX_ITEM_LINE = /^([ \t]*)[-*+][ \t]+\[[ xX]\]/;
+const LIST_ITEM_LINE = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]/;
+const HEADING_LINE = /^#{1,6}[ \t]/;
+
+/**
+ * The body without its closed checklist items: they record what was done, not claims about the
+ * current code. An item is closed when the completion rule counts it as checked (so an `— n/a:`
+ * with no reason stays). Its continuation lines go with it: indented lines and nested non-checkbox
+ * bullets, and lazy lines up to a blank line, until the next list item at its level or a heading.
+ */
+function withoutClosedChecklistItems(body: string): string {
+  const kept: string[] = [];
+  let closedIndent = -1; // marker indent of the closed item being skipped; -1 when none
+  let afterBlank = false;
+  for (const line of body.split(/\r\n|\r|\n/)) {
+    const checkbox = line.match(CHECKBOX_ITEM_LINE);
+    if (checkbox) {
+      closedIndent = countCheckboxesInText(line).checked === 1 ? checkbox[1].length : -1;
+      afterBlank = false;
+      if (closedIndent < 0) kept.push(line);
+      continue;
+    }
+    if (closedIndent >= 0) {
+      if (line.trim() === "") {
+        afterBlank = true;
+        kept.push(line);
+        continue;
+      }
+      const indent = line.length - line.trimStart().length;
+      const newBlock = HEADING_LINE.test(line) || (LIST_ITEM_LINE.test(line) && indent <= closedIndent);
+      if (!newBlock && (indent > closedIndent || !afterBlank)) {
+        afterBlank = false;
+        continue;
+      }
+      closedIndent = -1;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
+}
 
 /** Which stale-text signals to compute. A node still being built is expected to name files it has not written. */
 export type StaleTextScope = { paths: boolean; changed_files: boolean; checkboxes: boolean };
@@ -577,8 +618,9 @@ export function staleTextWarnings(
     return warnings;
   }
 
+  const openText = withoutClosedChecklistItems(body);
   const seen = new Set<string>();
-  for (const m of scope.paths ? body.matchAll(PATH_TOKEN) : []) {
+  for (const m of scope.paths ? openText.matchAll(PATH_TOKEN) : []) {
     const token = m[1];
     if (seen.has(token)) continue;
     seen.add(token);

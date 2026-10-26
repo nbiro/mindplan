@@ -4,9 +4,9 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import, ownership, and linked-test presence gate for in-review and ship, the untested-revision warning, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates (never a migration or schema file), and split route-family warnings. A next file in state mirror is not an open evolution."
 state: mirror
-shipped_at: 2026-10-25T23:55:51.943Z
+shipped_at: 2026-10-26T13:45:56.429Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-25T23:55:51.943Z
+updated_at: 2026-10-26T13:45:56.429Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -42,7 +42,7 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `findAllImportViolations` (whole universe, for the check), `findImportViolationsForClaim` (files being claimed), `findImportViolationsForNode` (a node's active-slot files)
   - Each `ImportViolation` carries the fix: `{ tool: "link_nodes", args }` with `depends_on`, `exposes`, or `mounts`, or `not_allowed` text when no edge can make the import legal (an Interaction importing an Interface, a `depends_on` that would cycle)
   - `assertCheckCleanForNode` — the gate for moves to `in-review` and `ship`: import and exclusivity violations on the node's active-slot files become one `Blocked: Check failed …`
-  - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked, a live `added_claims` entry the body does not name yet as a whole path (`namesPath`; `stale: "<id>" claims … added in place without a revision`, only while no next is open); relative references (`./`, `../`) are skipped; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
+  - `staleTextWarnings` — non-blocking: a body names a repo path that does not exist, a claimed file changed after the body was last updated, checkboxes are unticked, a live `added_claims` entry the body does not name yet as a whole path (`namesPath`; `stale: "<id>" claims … added in place without a revision`, only while no next is open); relative references (`./`, `../`) are skipped; closed checklist items are skipped by the missing-path signal, because they record history, not claims about the current code: an item is closed when `countCheckboxesInText` (the completion rule) counts its line as checked, so `- [x] …`, `— note:`, and `— n/a: <reason>` are skipped and an `— n/a:` with no reason is not; the skip covers the item's continuation lines (indented lines, nested non-checkbox bullets, and lazy lines before a blank line) up to the next list item at its level or a heading; the changed-file signal compares a claimed file's mtime with the territory file's own mtime (plus two seconds), so a fresh checkout does not warn; callers choose which signals
   - `findAllImportViolations` scans every claimant of a file (live, next-slot, and released current-slot owners) and resolves import targets through every claim. A violation found only through a next-slot or released claim, which the check did not scan before, is marked `advisory`; the check reports it as a warning for one release before it Blocks
   - `probableOwner(graph, file)` — the non-retired pipeline node whose claim shares the longest directory prefix with an unclaimed file (a file two or more folders deep needs at least two shared folders), and `coverageFix` — the exact call that claims it (`set_implementation_files` with the active-slot list plus the file, preceded by `open_next` for a shipped owner with no open evolution, unless that owner dominates the file's folder (`isDominatedFolder` with the file as a probe) and the file is not a migration or schema file (`schemaClaimEntries`), where the claim is added in place; `coverageFix(graph, root, owner, file, ctx?)`, where `createCoverageFixContext(root)` holds the schema globs and each owner's `collectOtherClaims`, so one check run expands the other nodes' claims once per owner, not once per unclaimed file)
   - `routeFamilySplits(graph, buckets, universe)` — warnings when the route files (`page`, `route`, `layout`, `template`, `loading`, `error`, `not-found`, `default`) of one route family are owned by more than one node. Only router roots count (`appRouterRoots`: an `app/` folder with a root `layout`, directly or in a route group). `findAllImportViolations` also takes the universe so the check lists it once. A route family is the route folder cut after its last static segment, so `app/sites/[site]/[lang]/blog/[slug]/page.tsx` belongs to `app/sites/[site]/[lang]/blog/`. Rule (SPEC): the Assembler owns routes that dispatch to whichever template is active; a template's entry point owns only routes that exist for that template alone
@@ -96,6 +96,7 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - One decision under a change clears every member of the change
 - A revision that reuses a change id is not cleared by that change's older decisions
 - A decision's text naming a missing path does not warn as stale
+- A ticked checklist item naming a missing path does not warn as stale, on its first line or a continuation line; an unticked one, and an `— n/a:` with no reason, still do
 - `changeNeighbors` returns a labeled shipped node with no open next, and never a retired node or one with an open next
 - A live `added_claims` entry the body does not name warns `stale:`; once the body names it, it does not
 - The Coverage fix for a file in a folder its shipped owner dominates is `set_implementation_files` alone, with no `open_next`; for a migration or schema file in that folder it opens the evolution first
@@ -136,6 +137,10 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - [x] Verified test presence and the untested warning via `npm test`
 
 - [x] Add `descriptionWarnings`
+- [x] Skip closed checklist lines in the missing-path stale signal
+- [x] Verified the closed-checklist skip via `npm test`
+- [x] Decide closed items with the completion rule and skip their continuation lines (review fixes)
+- [x] Verified the review fixes via `npm test`
 
 ## Decisions
 
@@ -186,6 +191,17 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Consequences: Existing graphs with long descriptions see warnings until they are shortened.
 - Change: aliases
 - Date: 2026-10-25
+
+### d-missing-path-stale-signal-ignores
+
+- Decision: The missing-path stale signal ignores ticked checklist lines; open lines and prose still count.
+- Alternatives:
+  - Add a superseded marker to toggle_checkboxes so agents can strike a ticked line (new tool contract for a case the skip already clears)
+  - Keep scanning ticked lines (a moved path leaves a warning the playbook forbids clearing by rewording)
+- Why: A ticked line records what was done at the time; a later move of that path does not make the record wrong, and the playbook forbids rewording a closed item, so the warning could never be cleared.
+- Consequences: A ticked line can name a path that no longer exists without any signal; prose and open items remain the current claims.
+- Change: stale-closed-checklist
+- Date: 2026-10-26
 
 ## Attachments
 
