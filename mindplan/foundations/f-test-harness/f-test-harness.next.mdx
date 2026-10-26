@@ -6,7 +6,7 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: mirror
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-26T08:15:22.251Z
+updated_at: 2026-10-26T10:03:40.426Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -14,6 +14,7 @@ implements:
 tests:
   - src/foundations/f-test-harness/
 role: infra
+change: "body-blank-lines"
 ---
 
 # Test harness
@@ -44,7 +45,7 @@ Intended files: `src/foundations/f-test-harness/`
 - This repository's own nodes link the suites that verify them with `set_test_files`
 - Server-spawning suites set `MINDPLAN_SEARCH=keyword` (unless already set) so no test server downloads or loads the embedding model
 - `search-index.test.mjs` (run by `npm test`) covers: search docs (headings, area, entry points, next-slot wording); rank fusion (clear winners stay, ties break toward linked nodes, exact id first); the cache (incremental sync, self-ignoring folder, stemming, vectors kept per text and dropped per model, corrupt file rebuilt); `searchNodes` (exact id, file path, type filter, retired nodes, keyword-only); two connections on one file (a reused rowid never loses a row), another connection's write never absorbed by an own commit, the type filter before the row limit, no orphan vectors, vectors from another model re-embedded, offline loading of an already-downloaded model (skipped when it is not cached); timing on 1,000 nodes (incremental update < 200 ms, search < 50 ms); over MCP, an edit made outside MCP (a description, or a heading with the frontmatter untouched) found on the next call, the cache never in `changed_files`, an async handler's Blocked envelope, `patch_config` search settings, init's `.gitignore` entry written once, and calls answering over a clean stdout while the model loads
-- `graph-cache.test.mjs` (run by `npm test`) covers: stamps mode (a second load parses nothing, a same-size edit with its mtime restored re-parsed by hash, mutation isolation, added and deleted folders, a Blocked parse on every load, a new `.mdx` in a folder); persistence (a second process reuses records, an edit seen first elsewhere, a corrupt file rebuilt, a version change, the cache off); git mode with the project below the repository top (a clean plan trusted, working-tree and staged edits, a commit, a checkout of another commit, untracked and deleted folders, an ignored folder falling back to stamps); and a warm load under half an uncached one at 1,500 nodes
+- `graph-cache.test.mjs` (run by `npm test`) covers: stamps mode (a second load parses nothing, a same-size edit with its mtime restored re-parsed by hash, mutation isolation, added and deleted folders, a Blocked parse on every load, a new `.mdx` in a folder); persistence (a second process reuses records, an edit seen first elsewhere, a corrupt file rebuilt, a version change, the cache off); git mode with the project below the repository top (a clean plan trusted, working-tree and staged edits, a commit, a checkout of another commit, untracked and deleted folders, an ignored folder falling back to stamps); and a warm load under half an uncached one at 1,500 nodes (the fastest of three loads each, so one slow CI sample does not decide it)
 - `search-eval.test.mjs` (run by `npm test`) runs the test set `search-eval.json` (48 English queries: synonyms, plain phrasing, exact ids, paths, area words, tool names) over `fixtures/search-skyloom.json` and `fixtures/search-mindplan.json` (snapshots made by `scripts/search-fixture.mjs`) through `search-eval.mjs`, in keyword-only and hybrid mode; hybrid embeds from the committed int8 vectors in `fixtures/search-eval.vectors.json`, so it needs no network. It fails when a metric (top-1, top-5, MRR) drops below `search-eval.metrics.json`, when hybrid does not beat the committed token baseline, or when a text has no committed vector. `--write-vectors`, `--write-metrics`, `--live`, and `--model` refresh or compare with the live model
 
 Depends on: `f-mcp-runtime`.

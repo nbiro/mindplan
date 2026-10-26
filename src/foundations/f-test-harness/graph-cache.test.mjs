@@ -357,15 +357,21 @@ function loadInChild(root, mode = "stamps") {
 {
   const root = tmp("scale");
   makePlan(root, 1500);
+  // The fastest of three loads each: one slow sample on a shared CI runner must not decide it.
+  const fastest = () => {
+    let best = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const t = performance.now();
+      loadGraph();
+      best = Math.min(best, performance.now() - t);
+    }
+    return best;
+  };
   use(root, "off");
-  let t = performance.now();
-  loadGraph();
-  const cold = performance.now() - t;
+  const cold = fastest();
   use(root, "stamps");
   loadGraph();
-  t = performance.now();
-  loadGraph();
-  const warm = performance.now() - t;
+  const warm = fastest();
   console.log(`     1500 nodes: uncached ${cold.toFixed(0)} ms, warm stamps ${warm.toFixed(0)} ms`);
   assert.ok(warm < cold / 2, `warm load ${warm.toFixed(0)} ms should be under half of ${cold.toFixed(0)} ms`);
   ok("scale: a warm load costs under half an uncached one");
