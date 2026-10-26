@@ -6,7 +6,7 @@ description: "Adapter — the derived search cache in .mindplan-cache/index.db (
 state: mirror
 shipped_at: 2026-10-25T23:55:51.511Z
 created_at: 2026-10-25T21:51:39.591Z
-updated_at: 2026-10-25T23:56:05.624Z
+updated_at: 2026-10-26T00:29:54.553Z
 depends_on:
   - f-source-index
 implements:
@@ -40,6 +40,7 @@ Package: `src/foundations/f-search-index/`
   - `DEFAULT_SEARCH_MODEL` = `Xenova/bge-small-en-v1.5` (CLS pooling, 384 dimensions, the bge query instruction before a query); `Xenova/all-MiniLM-L6-v2` is the known alternative (mean pooling); an unknown model is mean-pooled, and every model's vector size is read on load
   - `warmModel(model)` starts loading in the background (q8 weights, `env.cacheDir` = `modelCacheDir()` = `MINDPLAN_MODEL_CACHE` or `~/.cache/mindplan/models`, remote downloads off with `MINDPLAN_SEARCH_OFFLINE=1`, which then reads the same folder as the local model path so a downloaded model still loads); a failure is logged once to stderr; `readyEmbedder(model)` is the model once ready, else `null`; calls into the pipeline run one at a time
   - `Embedder` — `{ model, dims, embed(texts, "query" | "passage") }`; tests pass a fixture-backed one
+- `keyword-js.ts` — `keywordRankDocs(docs, query, candidates, limit)`: the keyword half in plain JS for a runtime whose SQLite has no FTS5 (Node 22.13's bundled build) or no `node:sqlite`. BM25 over the same fields and weights as `nodes_fts`, with FTS5's `bm25()` formula (the weighted frequency across fields, saturated once against the document's length); `keywordTerms` takes Unicode letters, marks, and digits, folds diacritics, drops stopwords, and stems lightly (`enquiries` and `enquiry` meet). On the search test set it ranks as FTS5 does
 - `service.ts` — settings and the per-project registry:
   - `searchSettings(root)` — `mindplan/config.json` `search` (`enabled`, `model`); `MINDPLAN_SEARCH=keyword` turns semantic ranking off for one process; an unreadable config reads as the defaults
   - `searchIndexFor(root, model)` — one open `SearchIndex` per project root; a different model closes the old handle first, so two handles never rebuild one file under each other; `closeSearchIndexes()`
