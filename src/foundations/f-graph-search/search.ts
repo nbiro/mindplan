@@ -9,6 +9,7 @@
 import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "../f-domain-model/types.js";
 import type { SearchDoc } from "../f-search-index/index-db.js";
 import type { Embedder } from "../f-search-index/embedder.js";
+import { keywordRankDocs } from "../f-search-index/keyword-js.js";
 import { prepareSearch, refreshSearch, warmSearch } from "../f-search-index/service.js";
 
 export const DEFAULT_FIND_LIMIT = 5;
@@ -436,6 +437,11 @@ export interface SearchOptions {
   limit?: number;
   /** A Journey id: rank only that area's members (`areaMembers`). */
   area?: string;
+  /**
+   * The keyword half: FTS5 when the cache has it (`auto`, the default), else the JS BM25; `js`
+   * always uses the JS BM25 (the eval measures it on every runtime).
+   */
+  keywordEngine?: "auto" | "js";
   /** Project root of the search cache. */
   root: string;
   /** Reads bodies for section headings. */
@@ -476,23 +482,22 @@ export async function searchNodes(
   );
 
   let keyword: string[] | null = null;
-  try {
-    keyword =
-      backend.index?.keyword(q, candidates, FUSION_DEPTH, {
-        type: opts.type,
-        ...(inArea ? { ids: [...candidates] } : {}),
-      }) ?? null;
-  } catch (err) {
-    // Another server may be rebuilding the file; this call ranks by tokens instead.
-    console.error(
-      `MindPlan search: keyword query failed (${err instanceof Error ? err.message : String(err)}).`
-    );
+  if (opts.keywordEngine !== "js") {
+    try {
+      keyword =
+        backend.index?.keyword(q, candidates, FUSION_DEPTH, {
+          type: opts.type,
+          ...(inArea ? { ids: [...candidates] } : {}),
+        }) ?? null;
+    } catch (err) {
+      // Another server may be rebuilding the file; this call ranks in JS instead.
+      console.error(
+        `MindPlan search: keyword query failed (${err instanceof Error ? err.message : String(err)}).`
+      );
+    }
   }
-  keyword ??= rankNodes(
-    graph.nodes.filter((n) => candidates.has(n.id)),
-    q,
-    { limit: MAX_FIND_LIMIT }
-  ).map((m) => m.id);
+  // No FTS5 (Node 22.13's SQLite), no cache, or a failed query: the same BM25 in plain JS.
+  keyword ??= keywordRankDocs(docs, q, candidates, FUSION_DEPTH);
 
   let semantic: string[] = [];
   if (backend.index && backend.embedder) {
