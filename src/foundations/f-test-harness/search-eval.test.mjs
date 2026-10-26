@@ -1,7 +1,8 @@
 /**
  * Search ranking eval (npm test): runs the test set in search-eval.json over the fixture graphs
  * in keyword-only mode (no model, the fallback) and hybrid mode (keyword + semantic, with the
- * committed fixture vectors), and fails when a metric drops below search-eval.metrics.json or the
+ * committed fixture vectors), each with the JS BM25 keyword half and, where SQLite has FTS5, the
+ * FTS5 one, and fails when a metric drops below search-eval.metrics.json or the
  * hybrid ranking does not beat the committed baseline (the token ranking before hybrid search).
  * Needs no network: hybrid mode embeds from fixtures/search-eval.vectors.json.
  *
@@ -18,6 +19,7 @@ import * as os from "os";
 import * as path from "path";
 import { searchNodes } from "../../../dist/foundations/f-graph-search/search.js";
 import { closeSearchIndexes } from "../../../dist/foundations/f-search-index/service.js";
+import { SearchIndex } from "../../../dist/foundations/f-search-index/index-db.js";
 import { DEFAULT_SEARCH_MODEL, readyEmbedder, warmModel } from "../../../dist/foundations/f-search-index/embedder.js";
 import { METRICS_FILE, VECTORS_FILE, loadCases, loadFixtureGraph, scoreRuns } from "./search-eval.mjs";
 
@@ -91,7 +93,7 @@ function recordingEmbedder(inner, sink) {
   };
 }
 
-async function runAll(embedder, label) {
+async function runAll(embedder, label, engine = "auto") {
   const ranked = [];
   for (const c of cases) {
     const { graph, readBody } = fixtures[c.graph];
@@ -100,6 +102,7 @@ async function runAll(embedder, label) {
       readBody,
       limit: 20,
       embedder,
+      keywordEngine: engine,
     });
     ranked.push(matches.map((m) => m.id));
   }
@@ -126,9 +129,11 @@ try {
     process.exit(0);
   }
 
-  const committed = JSON.parse(fs.readFileSync(METRICS_FILE, "utf-8"));
-  const keyword = scoreRuns(cases, await runAll(null, "keyword"));
-  report("keyword", keyword);
+  let committed = JSON.parse(fs.readFileSync(METRICS_FILE, "utf-8"));
+  // FTS5 depends on the SQLite build Node ships (Node 22.13's has none); the JS BM25 runs everywhere.
+  const probe = SearchIndex.open(roots[graphNames[0]], { model: "probe" }, { file: ":memory:" });
+  const fts = probe?.fts === true;
+  probe?.close();
 
   let hybridEmbedder;
   let fixture = null;
@@ -139,9 +144,26 @@ try {
     fixture = fixtureEmbedder(file);
     hybridEmbedder = fixture.embedder;
   }
-  const hybridRuns = await runAll(hybridEmbedder, "hybrid");
-  const hybrid = scoreRuns(cases, hybridRuns);
-  report("hybrid", hybrid);
+
+  // Modes: keyword and hybrid, each with the FTS5 keyword half (when available) and the JS BM25.
+  const modes = [
+    { name: "keyword_js", embedder: null, engine: "js" },
+    { name: "hybrid_js", embedder: hybridEmbedder, engine: "js" },
+    ...(fts
+      ? [
+          { name: "keyword", embedder: null, engine: "auto" },
+          { name: "hybrid", embedder: hybridEmbedder, engine: "auto" },
+        ]
+      : []),
+  ];
+  if (!fts) console.log("note: this runtime's SQLite has no FTS5; the FTS5 modes are skipped and search uses the JS BM25");
+  const runs = {};
+  const results = {};
+  for (const mode of modes) {
+    runs[mode.name] = await runAll(mode.embedder, mode.name, mode.engine);
+    results[mode.name] = scoreRuns(cases, runs[mode.name]);
+    report(mode.name, results[mode.name]);
+  }
   if (fixture) {
     assert.equal(
       fixture.missing.size,
@@ -152,32 +174,36 @@ try {
   }
 
   if (flag("--write-metrics")) {
-    const next = { ...committed, keyword: keyword.metrics, hybrid: hybrid.metrics };
+    const next = { ...committed };
+    for (const mode of modes) next[mode.name] = results[mode.name].metrics;
     fs.writeFileSync(METRICS_FILE, `${JSON.stringify(next, null, 2)}\n`);
+    committed = next;
     console.log(`wrote metrics floor -> ${METRICS_FILE}`);
   }
 
-  for (const metric of ["top1", "top5", "mrr"]) {
-    assert.ok(
-      keyword.metrics[metric] >= committed.keyword[metric],
-      `keyword ${metric} ${keyword.metrics[metric]} fell below the committed ${committed.keyword[metric]}`
-    );
-    if (!flag("--live")) {
-      assert.ok(
-        hybrid.metrics[metric] >= committed.hybrid[metric],
-        `hybrid ${metric} ${hybrid.metrics[metric]} fell below the committed ${committed.hybrid[metric]}`
-      );
+  for (const mode of modes) {
+    const got = results[mode.name].metrics;
+    const floor = committed[mode.name];
+    assert.ok(floor, `no committed floor for ${mode.name}; run with --write-metrics`);
+    for (const metric of ["top1", "top5", "mrr"]) {
+      if (!(flag("--live") && mode.embedder)) {
+        assert.ok(got[metric] >= floor[metric], `${mode.name} ${metric} ${got[metric]} fell below the committed ${floor[metric]}`);
+      }
+      if (mode.embedder) {
+        assert.ok(
+          got[metric] > committed.baseline[metric],
+          `${mode.name} ${metric} ${got[metric]} does not beat the baseline ${committed.baseline[metric]}`
+        );
+      }
     }
-    assert.ok(
-      hybrid.metrics[metric] > committed.baseline[metric],
-      `hybrid ${metric} ${hybrid.metrics[metric]} does not beat the baseline ${committed.baseline[metric]}`
-    );
   }
   const idx = (q) => cases.findIndex((c) => c.query === q);
   // "request a quote skyloom" shares no word with i-send-enquiry and the model does not bridge
-  // quote to enquiry; it is reached through an alias (aliases.test.mjs).
-  assert.equal(hybridRuns[idx("contact form quote request")][0], "i-send-enquiry", "contact form quote request ranks i-send-enquiry first");
-  console.log("ok   search eval: keyword and hybrid at or above the committed floor; hybrid beats the baseline");
+  // quote to enquiry; it is reached through an alias once nodes carry aliases.
+  for (const name of fts ? ["hybrid", "hybrid_js"] : ["hybrid_js"]) {
+    assert.equal(runs[name][idx("contact form quote request")][0], "i-send-enquiry", `${name}: contact form quote request ranks i-send-enquiry first`);
+  }
+  console.log("ok   search eval: every mode at or above its committed floor; hybrid beats the baseline");
   console.log("SEARCH EVAL PASSED");
 } finally {
   closeSearchIndexes();

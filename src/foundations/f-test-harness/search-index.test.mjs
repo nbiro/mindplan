@@ -13,6 +13,7 @@ import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SearchIndex, embedText, ftsQuery } from "../../../dist/foundations/f-search-index/index-db.js";
+import { keywordRankDocs, keywordTerms } from "../../../dist/foundations/f-search-index/keyword-js.js";
 import { closeSearchIndexes } from "../../../dist/foundations/f-search-index/service.js";
 import { fuseRankings, searchDocs, searchNodes, sectionHeadings } from "../../../dist/foundations/f-graph-search/search.js";
 // Spawned servers rank by keyword only: no model download or load during tests.
@@ -83,6 +84,15 @@ const graph = {
 assert.deepEqual(sectionHeadings("# T\n\n## Purpose\n\n## Booking rules\n## Booking rules\n## Atomic Ops\n"), ["Booking rules"]);
 assert.equal(ftsQuery("the NEAR NOT"), '"near" OR "not"', "FTS syntax words are quoted terms, stopwords dropped");
 assert.equal(ftsQuery("a the"), null);
+// The JS BM25 (the keyword half where SQLite has no FTS5) ranks like FTS5's porter + unicode61.
+assert.deepEqual(keywordTerms("Enquiries about Ofertă booking"), ["enquiri", "about", "oferta", "book"]);
+{
+  const jsDocs = searchDocs(graph);
+  const live = new Set(jsDocs.filter((d) => !d.retired).map((d) => d.id));
+  assert.equal(keywordRankDocs(jsDocs, "send enquiry", live, 5)[0], "i-send-enquiry", "JS BM25: id words and title match");
+  assert.ok(keywordRankDocs(jsDocs, "enquiries", live, 5).includes("i-send-enquiry"), "JS BM25: stemming matches enquiry");
+  assert.equal(keywordRankDocs(jsDocs, "old enquiry form", live, 5).includes("i-old"), false, "JS BM25: retired docs never rank");
+}
 const docs = searchDocs(graph);
 const enquiry = docs.find((d) => d.id === "i-send-enquiry");
 assert.deepEqual(enquiry.area, ["Enquiries"]);
@@ -117,7 +127,9 @@ ok("rank fusion: clear winners stay, ties break toward linked nodes, exact id fi
   const identity = { model: "test/fake", dims: 32 };
   const index = SearchIndex.open(root, identity);
   assert.ok(index, "node:sqlite is available on the supported Node versions");
-  assert.equal(index.fts, true, "the bundled SQLite has FTS5");
+  // Node 22.13's bundled SQLite has no FTS5; then the keyword half is the JS BM25 (checked above).
+  const fts = index.fts;
+  if (!fts) console.log("     note: this runtime's SQLite has no FTS5; the FTS5 row checks are skipped");
   assert.equal(
     fs.readFileSync(path.join(root, ".mindplan-cache", ".gitignore"), "utf-8").includes("*"),
     true,
@@ -129,9 +141,13 @@ ok("rank fusion: clear winners stay, ties break toward linked nodes, exact id fi
   assert.deepEqual(index.sync(edited).changed, ["f-mail"]);
   assert.deepEqual(index.sync(edited.filter((d) => d.id !== "if-site")).removed, ["if-site"]);
   const live = new Set(edited.filter((d) => !d.retired && d.id !== "if-site").map((d) => d.id));
-  assert.equal(index.keyword("send enquiry", live, 5)[0], "i-send-enquiry", "id words and title match");
-  assert.equal(index.keyword("enquiries", live, 5).includes("i-send-enquiry"), true, "porter stemming matches enquiry");
-  assert.equal(index.keyword("i-old", live, 5).includes("i-old"), false, "candidates exclude retired nodes");
+  if (fts) {
+    assert.equal(index.keyword("send enquiry", live, 5)[0], "i-send-enquiry", "id words and title match");
+    assert.equal(index.keyword("enquiries", live, 5).includes("i-send-enquiry"), true, "porter stemming matches enquiry");
+    assert.equal(index.keyword("i-old", live, 5).includes("i-old"), false, "candidates exclude retired nodes");
+  } else {
+    assert.equal(index.keyword("send enquiry", live, 5), null, "without FTS5 the cache says so and the caller ranks in JS");
+  }
 
   const stale = index.staleVectors();
   assert.equal(stale.length, live.size, "every live node starts without a vector");
@@ -175,7 +191,9 @@ ok("cache: incremental sync, self-ignoring folder, stemming, vectors kept per te
   const a = SearchIndex.open(root, identity);
   a.sync(many);
   const live = new Set(many.map((d) => d.id));
-  assert.deepEqual(a.keyword("widget", live, 5, { type: "Bug" }), ["bug-widget"], "the type filter applies before the row limit");
+  if (a.fts) {
+    assert.deepEqual(a.keyword("widget", live, 5, { type: "Bug" }), ["bug-widget"], "the type filter applies before the row limit");
+  }
 
   // Two connections on one file: A removes the newest row and adds another; B's view must follow.
   const b = SearchIndex.open(root, identity);
@@ -186,14 +204,17 @@ ok("cache: incremental sync, self-ignoring folder, stemming, vectors kept per te
   a.sync(withZ);
   b.sync(withZ);
   const liveZ = new Set(withZ.map((d) => d.id));
-  assert.deepEqual(a.keyword("zebra", liveZ, 5), ["i-zebra"], "a second connection's sync never deletes a reused row");
-  assert.deepEqual(b.keyword("zebra", liveZ, 5), ["i-zebra"]);
+  if (a.fts) {
+    assert.deepEqual(a.keyword("zebra", liveZ, 5), ["i-zebra"], "a second connection's sync never deletes a reused row");
+    assert.deepEqual(b.keyword("zebra", liveZ, 5), ["i-zebra"]);
+  }
   // A stale second server drops i-zebra; this connection's own write in between must not hide
   // that change, so its next sync puts the row back.
   b.sync(withoutBug);
   a.putVectors([{ id: "i-zebra", hash: "h", vector: new Float32Array(8).fill(1) }]);
-  a.sync(withZ);
-  assert.deepEqual(a.keyword("zebra", liveZ, 5), ["i-zebra"], "another connection's write is never absorbed by an own commit");
+  const resync = a.sync(withZ);
+  assert.ok(resync.changed.includes("i-zebra"), "another connection's write is never absorbed by an own commit");
+  if (a.fts) assert.deepEqual(a.keyword("zebra", liveZ, 5), ["i-zebra"]);
   b.sync(withZ);
 
   // The vector hash names the model, so a vector a process on another model writes for the same
