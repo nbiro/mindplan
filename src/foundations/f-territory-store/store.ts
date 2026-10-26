@@ -19,8 +19,10 @@
  * Callers report those deletions via drainRemovedLegacyFiles().
  */
 
+import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import type {
   BugSeverity,
   DecisionRecord,
@@ -50,6 +52,8 @@ import {
 } from "../f-domain-model/types.js";
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { loadProjectConfig } from "../f-source-index/config.js";
+import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
+import { packageVersion } from "./version.js";
 
 export {
   CONFIG_FILENAME,
@@ -801,39 +805,78 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
   return slot;
 }
 
-/** Scans territory folders and assembles nodes from <id>.mdx (+ optional <id>.next.mdx). */
-export function discoverNodes(): MindPlanNode[] {
-  const nodes: MindPlanNode[] = [];
-  const root = mindplanRoot();
-  if (!fs.existsSync(root)) return nodes;
+type NodeFolder = FolderRef & { id: string; type: NodeType };
 
+let cachedParserVersion: string | null = null;
+
+/**
+ * Identity of the parser the graph cache keys its rows on: the package version plus a hash of the
+ * built modules that shape a record, so a rebuild of a source checkout (same version, changed
+ * parser) never serves records the old build parsed.
+ */
+export function parserVersion(): string {
+  if (cachedParserVersion === null) {
+    const h = createHash("sha1");
+    for (const rel of ["./store.js", "../f-domain-model/types.js", "../f-source-index/claims.js", "../f-graph-cache/cache.js"]) {
+      try {
+        h.update(fs.readFileSync(fileURLToPath(new URL(rel, import.meta.url))));
+      } catch {
+        h.update(`<missing ${rel}>`);
+      }
+    }
+    cachedParserVersion = `${packageVersion()}+${h.digest("hex").slice(0, 12)}`;
+  }
+  return cachedParserVersion;
+}
+
+/** Assembles one node from its folder's <id>.mdx (+ optional <id>.next.mdx); null when it has no live file. */
+function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
+  const currentFile = existingSlotFile(folder.abs, folder.id, "current", folder.rel);
+  if (!currentFile) return null;
+  const node = parseNodeFromFrontmatter(folder.id, folder.type, currentFile);
+  const nextFile = existingSlotFile(folder.abs, folder.id, "next", folder.rel);
+  if (nextFile) {
+    // Non-file next paths (e.g. a directory occupying the twin name) are not evolutions;
+    // leave node.next unset so init can report a skip when healing fails.
+    if (fs.statSync(nextFile).isFile()) {
+      if (!isPipelineNodeType(folder.type)) {
+        throw new Error(
+          `Blocked: ${path.basename(nextFile)} is only allowed for Foundations, Interactions, and Interfaces (found on ${folder.type} "${folder.id}").`
+        );
+      }
+      const evolution = parseNextSlot(folder.id, nextFile);
+      if (evolution) node.next = evolution;
+    }
+  }
+  return node;
+}
+
+/**
+ * Scans territory folders and assembles nodes, re-parsing only folders the graph cache cannot
+ * vouch for (`f-graph-cache`). Returned records are the caller's to mutate.
+ */
+export function discoverNodes(): MindPlanNode[] {
+  const root = mindplanRoot();
+  if (!fs.existsSync(root)) return [];
+
+  const folders: NodeFolder[] = [];
   for (const [dirName, nodeType] of Object.entries(DIR_TO_TYPE)) {
     const typePath = path.join(root, dirName);
     if (!fs.existsSync(typePath)) continue;
     for (const entry of fs.readdirSync(typePath, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const folder = path.join(typePath, entry.name);
-      const folderRel = path.posix.join(MINDPLAN_DIR, dirName, entry.name);
-      const currentFile = existingSlotFile(folder, entry.name, "current", folderRel);
-      if (!currentFile) continue;
-      const node = parseNodeFromFrontmatter(entry.name, nodeType, currentFile);
-      const nextFile = existingSlotFile(folder, entry.name, "next", folderRel);
-      if (nextFile) {
-        // Non-file next paths (e.g. a directory occupying the twin name) are not evolutions;
-        // leave node.next unset so init can report a skip when healing fails.
-        if (fs.statSync(nextFile).isFile()) {
-          if (!isPipelineNodeType(nodeType)) {
-            throw new Error(
-              `Blocked: ${path.basename(nextFile)} is only allowed for Foundations, Interactions, and Interfaces (found on ${nodeType} "${entry.name}").`
-            );
-          }
-          const evolution = parseNextSlot(entry.name, nextFile);
-          if (evolution) node.next = evolution;
-        }
-      }
-      nodes.push(node);
+      folders.push({
+        id: entry.name,
+        type: nodeType,
+        abs: path.join(typePath, entry.name),
+        rel: path.posix.join(MINDPLAN_DIR, dirName, entry.name),
+      });
     }
   }
+  const cache = graphCacheFor(projectRoot(), parserVersion());
+  const nodes = cache
+    ? cache.load(folders, parseNodeFolder, MINDPLAN_DIR)
+    : folders.map(parseNodeFolder).filter((n): n is MindPlanNode => n !== null);
   return nodes.sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -927,8 +970,9 @@ export function readMarkdown(
 }
 
 /**
- * Body reader for search (section headings): `readMarkdown`, plus a `stamp` (size and mtime of the
- * slot's file) so a search re-reads a body edited outside MCP even when its frontmatter is unchanged.
+ * Body reader for search (section headings): `readMarkdown`, plus a `stamp` so a search re-reads a
+ * body edited outside MCP even when its frontmatter is unchanged: the graph cache's content key for
+ * a node it loaded (no file access), else the slot file's size and mtime.
  */
 export function territoryBodyReader(): ((
   node: Pick<MindPlanNode, "id" | "type">,
@@ -937,6 +981,8 @@ export function territoryBodyReader(): ((
   const read = (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => readMarkdown(node, slot);
   return Object.assign(read, {
     stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => {
+      const key = graphCacheFor(projectRoot(), parserVersion())?.contentKey(node as MindPlanNode);
+      if (key) return key;
       const st = fs.statSync(markdownPath(node, slot));
       return `${st.size}:${st.mtimeMs}`;
     },

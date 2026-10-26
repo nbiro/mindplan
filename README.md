@@ -111,7 +111,7 @@ Requires Node.js 22.13 or later (the first 22.x release with `node:sqlite` unfla
      npm install -D mindplan-mcp
      ```
 
-   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.4` (a version range) in the commands below.
+   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.5` (a version range) in the commands below.
 
 2. From your project root, scaffold:
 
@@ -131,7 +131,7 @@ npx mindplan-mcp init --host claude   # or cursor (default) / all
 }
 ```
 
-With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.4"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
+With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.5"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
 4. Reload MCP servers after config changes.
 
@@ -158,7 +158,7 @@ node /absolute/path/to/mindplan/dist/index.js init   # from your project root
 
 ```
 <project-root>/
-├── .mindplan-cache/               # derived search cache (gitignored, safe to delete)
+├── .mindplan-cache/               # derived graph and search caches (gitignored, safe to delete)
 ├── mindplan/
 │   ├── config.json                # { sources, exclude } — coverage universe; optional decisions, search
 │   ├── project.md                 # description + rules only (playbook via get_project)
@@ -204,6 +204,10 @@ Every violation starts with `Blocked: `.
 10. **Next Evolution / Force Unship** — stable-id `open_next`; recovery only with explicit `confirm`
 
 No Dependency Closure / `link_dependent`.
+
+## Graph cache
+
+Every tool call loads the graph. Parsing every `.mdx` file costs about a millisecond per node, so the server keeps parsed records in `.mindplan-cache/graph.db` (and in memory) and re-parses only node folders that changed. In a git repository with 1,000 or more nodes, git status and the plan's tree id tell it which folders are clean and committed, and those are reused without touching their files. Elsewhere it compares each file's size and modification time, and hashes files modified in the last two seconds. On 10,000 nodes (Windows) a load takes 0.4 s with git and 1.1 s by file stamps, against 9.4 s without the cache; the first load after an upgrade costs about 30% more than an uncached one. The cache is derived from the `.mdx` files, gitignored, and safe to delete; `MINDPLAN_GRAPH_CACHE=off` turns it off for one process. See [SPEC.md §1.1.3](SPEC.md#113-graph-cache-mindplan-cachegraphdb).
 
 ## Search
 
@@ -256,7 +260,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src; also the `run_check` MCP tool |
 | `mindplan-mcp help` | Usage |
 
-Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`). Search reads `MINDPLAN_SEARCH`, `MINDPLAN_SEARCH_OFFLINE`, and `MINDPLAN_MODEL_CACHE` (see [Search](#search)).
+Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`). Search reads `MINDPLAN_SEARCH`, `MINDPLAN_SEARCH_OFFLINE`, and `MINDPLAN_MODEL_CACHE` (see [Search](#search)); the graph cache reads `MINDPLAN_GRAPH_CACHE` (see [Graph cache](#graph-cache)).
 
 ## Development
 

@@ -2,19 +2,21 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; read and write the mindplan/version.json stamp and compare it with the running package."
+description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; load the graph through the graph cache; read and write the mindplan/version.json stamp and compare it with the running package."
 state: stable
-shipped_at: 2026-10-25T23:55:51.799Z
+shipped_at: 2026-10-26T08:38:24.579Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-25T23:55:51.799Z
+updated_at: 2026-10-26T08:38:24.579Z
 depends_on:
   - f-domain-model
   - f-source-index
+  - f-graph-cache
 implements:
   - src/foundations/f-territory-store/
 tests:
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/graph-cache.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
@@ -27,7 +29,7 @@ role: infra
 
 ## Purpose
 
-Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer. Small body fixes (one section, one phrase) are first-class writes so an agent does not resend a whole body to change a line. The store also owns each node's `## Decisions` section: decision records written only by `appendDecision`, one entry per decision and never rewritten, so the reasoning trail cannot be edited away by a body rewrite. Unlike rules, decisions are slot-bound: while a shipped node evolves they are recorded on its next file, they ship with the revision, and a discarded revision takes its decisions with it. Recording a decision never resets readiness: it explains the contract, it does not change it. A shipped node's live `change` scalar also serves as its neighbor label, written by one helper that keeps the mirror twin in step. The live `added_claims` list marks claims added in place; the store drops each entry once the body names it, so the marker clears itself through ordinary territory writes.
+Infra — persist territory through the store only; keep a shipped next file as a state-only twin (`mirror`). Sync the twin on every live write; restore on ship/discard; delete on unship/retire. Own `writeProjectBrief` for `mindplan/project.md` and, for every node, the `## Rules` section of its `<id>.mdx`. That section has one writer (`writeNodeRules`); body writes can neither read it as prose nor clobber it, otherwise a territory rewrite would silently erase rules. Because the heading is the storage format, a `## Rules` section that already existed becomes that node's rules, so the contract names that adoption instead of leaving it to surprise a consumer. Small body fixes (one section, one phrase) are first-class writes so an agent does not resend a whole body to change a line. The store also owns each node's `## Decisions` section: decision records written only by `appendDecision`, one entry per decision and never rewritten, so the reasoning trail cannot be edited away by a body rewrite. Unlike rules, decisions are slot-bound: while a shipped node evolves they are recorded on its next file, they ship with the revision, and a discarded revision takes its decisions with it. Recording a decision never resets readiness: it explains the contract, it does not change it. A shipped node's live `change` scalar also serves as its neighbor label, written by one helper that keeps the mirror twin in step. The live `added_claims` list marks claims added in place; the store drops each entry once the body names it, so the marker clears itself through ordinary territory writes. Loading the graph goes through the graph cache (`f-graph-cache`): the store lists the node folders and owns the parser, so a load parses only folders the cache cannot vouch for and returns what a full parse would.
 
 ## Shared Substrate Spec
 
@@ -70,7 +72,8 @@ Intended files: `src/foundations/f-territory-store/`
 - **Neighbor label.** `writeNeighborLabel(node, change)` sets (or with `""` clears) the live `change` scalar of a shipped node with no open next and re-syncs its mirror twin. It returns `{ twin, replaced? }`: `twin` is null when the label already had that value, `replaced` is the previous id when a different one was set. A node that fails `isNeighborNode` (`f-domain-model`; a retired node included) is Blocked
 - **In-place claim marker.** `added_claims` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.added_claims`, `nodeToRecord`). `writeImplementsFrontmatter(node, files, slot, addedInPlace?)` on the live slot merges `addedInPlace` into the stored list and keeps, sorted and deduped, only the entries the list still keeps (`claimListKeeps`: verbatim, or under a non-glob directory entry) that the body (owned sections excluded) does not yet name as a whole path (`namesPath`: `pkg/a.ts` is not named by `pkg/a.tsx`, `pkg/a/` not by `pkg/a/b.ts`); an empty list removes the field. A live `patchNodeTerritory` write prunes the entries its new body names. `clearAddedClaims(node)` removes the list and leaves the twin re-sync to its caller. `promoteNextSlot` rebuilds the live frontmatter and drops it
 - **Deleted next-slot files.** `deleteNextSlotFiles` lists every file it deletes under `next-attachments/` (e.g. `.gitkeep`) as well as the folder
-- **Search body reader.** `territoryBodyReader()` is `readMarkdown` plus a `stamp(node, slot)` (the slot file's size and mtime), the reader `f-graph-search` keys its heading memo on, so a body edited outside MCP is re-read
+- **Search body reader.** `territoryBodyReader()` is `readMarkdown` plus a `stamp(node, slot)`: the graph cache's `contentKey` for a node a load returned (no file access), else the slot file's size and mtime. `f-graph-search` keys its heading memo on it, so a body edited outside MCP is re-read
+- **Cached load.** `discoverNodes()` lists every node folder (`{ id, type, abs, rel }`) and hands `parseNodeFolder` (the live file, the optional next slot, the same Blocked errors) to `graphCacheFor(projectRoot(), parserVersion()).load`, where `parserVersion()` is the package version plus a hash of the built `store.js`, `types.js`, `claims.js`, and `cache.js`, so a rebuild that changes the parser without a version bump drops the old build's records; with the cache off it parses every folder. Records come back as copies the caller may mutate, sorted by id. A legacy duplicate is still removed by the parse that first sees it
 - **Legacy removal log.** `restoreRemovedLegacyFiles(entries)` puts drained entries back at the head of the log, so an async tool result reports the legacy files its own graph load removed (`if-mcp-tools`)
 - **Linked tests.** `tests` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.tests`, `nodeToRecord`) and, like `added_claims`, kept verbatim by frontmatter rewriters that do not know it. `writeTestsFrontmatter(node, entries)` is its only writer: it validates each entry as a claim path (`validateClaimPath`: no `..`, no absolute path, nothing under `mindplan/`), dedupes and sorts, writes the same list to the live `<id>.mdx` and, while a revision is open, to `<id>.next.mdx`, re-syncs the mirror twin when none is open, and returns `{ paths, changed }`. An empty list removes the field. It never touches state, `updated_at`, or readiness. Blocked on a Journey, a Bug, or a retired node. `openNextSlot` copies the list with the live file, and `promoteNextSlot` writes the next file's list (equal to live) into the rebuilt live frontmatter
 
@@ -118,6 +121,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 - The `tests` list survives `open_next`, body, claim, edge, and change writes, and ship; an empty list removes the field
 
 - Aliases round-trip JSON-quoted, survive other territory writes and promotion, and `[]` removes them
+- `loadGraph` returns the same graph with the cache on, off, and in a second process; a Blocked territory file stays Blocked on every load
 
 ## Atomic Ops
 
@@ -162,6 +166,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - [x] Carry `tests` through open_next, frontmatter rewrites, and promote
 - [x] Verified the `tests` list via `npm test`
 - [x] Parse, normalize, write, and promote `aliases`
+- [x] Load through the graph cache (`parseNodeFolder`, `discoverNodes`) and key the search body stamp on its content key
+- [x] Verified the cached load via `npm test`
 
 ## Decisions
 

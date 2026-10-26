@@ -36,7 +36,7 @@ MindPlan prescribes the **planning tree** under `mindplan/`. Implementation code
 
 ```
 <project-root>/
-├── .mindplan-cache/                   # Derived search cache, gitignored, safe to delete (§8.1.1)
+├── .mindplan-cache/                   # Derived graph and search caches, gitignored, safe to delete (§1.1.3, §8.1.1)
 ├── mindplan/
 │   ├── config.json                    # { sources, exclude } — coverage universe (§1.2)
 │   ├── project.md                     # Project brief — description + rules (§1.1.1)
@@ -112,6 +112,15 @@ Consumers install `mindplan-mcp` from npm and upgrade it like any dependency. Th
 - A stamp newer than the running package MUST stop init with `Blocked:` before any write, naming the upgrade; `--force` rewrites the tree with the running version.
 - Status compares the graph format first, then the package version by SemVer precedence (a pre-release sorts before its release; build metadata is ignored): `current`, `missing`, `invalid`, `behind`, `ahead`. Every status but `current` has one warning sentence naming the fix: rerun init with the running version (`missing`, `invalid`, `behind`) or upgrade `mindplan-mcp` (`ahead`).
 - The warning reaches the agent through `get_project` (`version`, §8.1) and the check (`Warning: version: …`, §9.6). It never Blocks a tool or fails the check.
+
+#### 1.1.3 Graph cache (`.mindplan-cache/graph.db`)
+
+Every tool loads the graph, and parsing every `<id>.mdx` costs about a millisecond per node, so the server keeps parsed node records in a derived cache: in memory per process, and in `.mindplan-cache/graph.db` at the project root (Node's built-in `node:sqlite`; memory only where it is unavailable). The `.mdx` files stay the only source of truth. Like the search cache (§8.1.1), it is gitignored, never in `changed_files`, never part of the coverage universe, and safe to delete.
+
+- **Freshness, per node folder.** A load MUST return what parsing every file would return. Inside git, a record is reused without touching its files only when it was parsed while its folder was clean at a plan tree T (no git status entry, and every file at least 2 seconds older than the status call), git status lists nothing under the folder now, and the folder did not change between T and the plan tree of the commit that status call reports. Folder paths from git and from the file system are compared case-folded and NFC-normalized, so a spelling difference can only re-check a folder, never skip one. Every other record is checked by its `.mdx` files' stamps (name, size, mtime): a stamp taken within 2 seconds of a file's mtime is not trusted, so that folder is hashed when parsed and compared by content until its stamps settle. Anything else re-parses the folder. A folder whose files change during its parse is not cached.
+- **When git is used.** Git costs a status call and a tree lookup per load (about 0.1 s on Windows), so it is used from 1,000 node folders on, and only when git can vouch for every plan file: outside a work tree, before the plan's first commit, or when git ignores a plan file, every record is checked by stamp.
+- **Limits.** Like git's own stat check, a stamp cannot see an edit that keeps a file's size and restores its old mtime. Git status does not report files marked `assume-unchanged` or `skip-worktree`, so in git mode their edits are not seen either. `MINDPLAN_GRAPH_CACHE=off` turns the cache off for one process (`git` or `stamps` forces one mode).
+- **Invalidation.** Each record carries the parser that made it (the package version plus a hash of the built modules that shape a record, so a rebuilt source checkout counts as a new parser), and a server reads only its own parser's records, so servers of two versions sharing the file never trade records; opening the file drops other parsers' rows. A change of the cache schema drops every record. A corrupt file is deleted and rebuilt; any other open failure leaves the cache in memory only. Records returned by a load are copies: a caller that mutates one does not change the cache.
 
 ### 1.2 Declared file ownership
 

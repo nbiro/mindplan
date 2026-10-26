@@ -8,7 +8,7 @@ MindPlan exposes a **stdio MCP server**. Any client that supports MCP over stdin
 npx mindplan-mcp
 ```
 
-That runs the copy pinned in your dev dependencies (`npm install -D mindplan-mcp`). Without a `package.json`, use `npx -y mindplan-mcp@0.4`. From a source checkout: `node /absolute/path/to/mindplan/dist/index.js`.
+That runs the copy pinned in your dev dependencies (`npm install -D mindplan-mcp`). Without a `package.json`, use `npx -y mindplan-mcp@0.5`. From a source checkout: `node /absolute/path/to/mindplan/dist/index.js`.
 
 ## Environment
 
