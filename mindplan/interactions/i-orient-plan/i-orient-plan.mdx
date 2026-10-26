@@ -4,9 +4,9 @@ type: Interaction
 title: "Orient on the plan"
 description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules (each tagged with a version, its text left out when the caller already holds it) and its own decisions (naming the inherited ones, listed on request), list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the focus's decisions and the dependents that hold others, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check and tagging the rules), and expose get_rules for global project rules before each action, with a short unchanged reply for a known version."
 state: stable
-shipped_at: 2026-10-25T23:35:19.697Z
+shipped_at: 2026-10-26T00:04:46.376Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-25T23:35:19.697Z
+updated_at: 2026-10-26T00:04:46.376Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -20,10 +20,12 @@ leads_to:
 implements:
   - src/interactions/i-orient-plan/
 tests:
+  - src/foundations/f-test-harness/areas.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-eval.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
@@ -57,6 +59,7 @@ Intended files: `src/interactions/i-orient-plan/`
 - `get_rules({ known_version? })` — `{ path, rules, rules_version }` from `loadProjectBrief()`; empty string when the section is empty; no playbook, no description. `rules_version` is `rulesVersion(rules)`: the first 12 hex characters of its SHA-256. When `known_version` equals it the reply is `{ path, rules_version, unchanged: true }` with no text (under 150 bytes), so a re-read before every action costs almost nothing; any other value, or none, returns the full text. `get_project` returns the same `rules_version`. These are the **global** rules only: rules that apply everywhere. Rules about one area of the code live on that area's node
 - `orient_for_work` returns a separate `rules` block next to `context` and `blast_radius`: `{ node_id, entries: RuleEntry[] }` from `resolveNodeRules` (`f-graph-search`), or `null` when there is no focus. Each entry is `{ node_id, node_type, via, distance, rules }`, ordered self, then `belongs_to`, then `depends_on`, then `affects`. `entries` is `[]` when nothing applies. Each entry carries `version` (`rulesVersion` of its text); `known_rules_versions: { node_id: version }` leaves out the `rules` text of an entry whose version matches and marks it `unchanged: true`. It does **not** repeat the project brief rules
 - **Summary first.** `orient_for_work({ query })` without `node_id` returns `{ query, matches: OrientRow[], focus: null, next }`: ranked rows `{ id, type, state, title, description (cut to `ROW_DESCRIPTION_CHARS` = 70), area? (Journey titles, omitted when none), score }`, default `ORIENT_SUMMARY_LIMIT` = 8, and no body, neighborhood, blast radius, rules, or decisions. When the top row is a clear winner (`clearWinner`: the query is its exact id, it is the only match, or its fused score is at least twice the next) the full node comes back with the rows and `auto_focus: true`. `orient_for_work({ node_id })` returns the full node: `rules`, `decisions`, `context`, and from `depth: "body"` on `files` (`nodeOwnedFiles`: `files`, `next_files?`) for a pipeline node; `full` adds `nodes` / `edges` (the 1-hop neighborhood) and `blast_radius`. A query with `node_id` returns the rows too
+- **Areas.** `list_areas()` returns `{ columns, rows, count }`: one row per active Journey (sorted by id) `[id, title, description cut to AREA_DESCRIPTION_CHARS = 60, interactions, interfaces, foundations, open_bugs]` over the area's active members (`areaMembers`, `f-graph-search`) and the open Bugs affecting any of them; listed in `QUERY_TOOLS`. `orient_for_work` and `find_related_nodes` take `area` (a Journey id; anything else is Blocked) and rank only its members
 - **Orientation ledger.** The `rules` block resolves with `reachingRules` (live edges plus an open revision's proposed ones). `clearWinner` looks at one match past the row limit, so `limit: 1` alone never auto-focuses. `get_node_context` returns `resolved_rules: { node_id, entries }` (every rule that reaches the node) because it counts as orienting. Every full reply (`node_id` or `auto_focus`) and every `get_node_context` records the node with `recordOriented` (`f-orientation-ledger`); that is what lets writes on it through `i-steer-plan`'s gate
 - `orient_for_work` takes `depth`: `full` (default) returns everything; `body` returns `{ query, matches, focus, context, rules }` with the full context; `rules` returns the same keys with `context` cut to the record (and the next record). `body` and `rules` skip the neighborhood and the blast radius, and do not compute the blast radius
 - `get_node_context` returns `body` without the `## Rules` section and a separate `rules` string for that node's own rules (and the same for the `next` slot's body)
@@ -79,6 +82,7 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 
 - A query-only `orient_for_work` returns rows only, under 2 KB for 10 rows; an exact id query auto-focuses; `orient_for_work({ node_id })` returns record, body, rules, own decisions, owned files, and blast radius
 - A full reply and `get_node_context` count as orienting on the node
+- `list_areas` lists 30 areas under 4 KB with member and open-Bug counts; a search with `area` returns only that area's members and is at least as fast as a whole-graph search; a non-Journey `area` is Blocked
 - `get_rules` returns the current project rules string, path, and `rules_version`; with the current tag as `known_version` it returns `unchanged: true` without the text, under 150 bytes; after `patch_project_rules` the tag changes and the old tag gets the new text
 - `get_project` returns `rules_version`
 - Each `orient_for_work` rules entry carries `version`; a known version leaves out that entry's text, and a changed node rules text comes back with a new version
@@ -142,6 +146,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - [x] Verified the rules versions via `npm test`
 - [x] Return summary rows for a query alone, the full node for `node_id` or a clear winner, owned files, and record fetches in the ledger
 - [x] Verified summary-first orientation via `npm test`
+- [x] Add `list_areas` and the `area` option
+- [x] Verified areas via `npm test`
 
 ## Decisions
 
@@ -210,6 +216,28 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - Why: Node rules are mandatory and used to arrive with every orient; once orient returns rows first, only a gate keeps them from being skipped.
 - Consequences: A fresh session must orient on each node before writing it, and a rules change on a Journey or Foundation sends its dependents back to orient; the author of a rules change stays oriented.
 - Change: summary-orient
+- Date: 2026-10-25
+
+### d-list-areas-table
+
+- Decision: list_areas returns one compact table, { columns, rows }, a row per Journey: [id, title, description cut to 60 characters, interactions, interfaces, foundations, open_bugs], not an object per Journey.
+- Alternatives:
+  - An object per Journey with a counts object (the keys alone take about 95 bytes per area, so 30 areas cannot stay under the 4 KB budget)
+  - Drop descriptions (a title alone often does not say what an area covers)
+- Why: The tool exists to be cheap enough to call before orienting; a table keeps 30 areas under 4 KB with the description that makes the pick possible.
+- Consequences: Clients read a row by its column index; the full description comes from orient_for_work on the Journey.
+- Change: list-areas
+- Date: 2026-10-25
+
+### d-area-scope-members
+
+- Decision: An area (a Journey id) scopes search to the Journey itself, the Interactions that belong to it, the Interfaces that expose them, and the Foundations they depend on transitively (live and proposed edges); Bugs are outside it.
+- Alternatives:
+  - Only the Interactions (the Interface and Foundation an agent changes for that area would never rank)
+  - Everything one link away (pulls in unrelated Journeys' Interactions through shared Interfaces)
+- Why: That set is where work for the area lands; a Bug is found by what it affects, or by searching without an area.
+- Consequences: A shared Foundation appears in every area that uses it; a cross-cutting question searches without area.
+- Change: list-areas
 - Date: 2026-10-25
 
 ## Attachments

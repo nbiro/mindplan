@@ -6,7 +6,7 @@
 claude mcp add mindplan -- npx mindplan-mcp
 ```
 
-`npx mindplan-mcp` runs the copy pinned in your dev dependencies (`npm install -D mindplan-mcp`); without a `package.json`, use `npx -y mindplan-mcp@0.8`. To share the server with everyone who opens the repo (including cloud containers), commit it to `.mcp.json` instead:
+`npx mindplan-mcp` runs the copy pinned in your dev dependencies (`npm install -D mindplan-mcp`); without a `package.json`, use `npx -y mindplan-mcp@0.9`. To share the server with everyone who opens the repo (including cloud containers), commit it to `.mcp.json` instead:
 
 ```json
 {

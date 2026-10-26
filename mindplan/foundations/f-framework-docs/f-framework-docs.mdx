@@ -6,7 +6,7 @@ description: "Infra — SPEC, playbook, skills, and changelog: mandatory project
 state: stable
 shipped_at: 2026-10-25T21:13:07.168Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-25T23:42:34.231Z
+updated_at: 2026-10-26T00:00:28.610Z
 depends_on:
   - f-domain-model
 implements:
@@ -58,6 +58,8 @@ Depends on: `f-domain-model`.
 - **Summary-first orientation.** Playbook step 1 is orient with a query, pick a row, `orient_for_work({ node_id })`, act, and names the write gate; the plan-project skill's orient step shows both calls; SPEC §8.1 specifies the rows, `auto_focus`, the full reply, and §8.1.2 the orientation gate; the README row and the `npx` examples (`mindplan-mcp@0.7`) match
 
 - **Aliases and descriptions.** SPEC §6.1 lists `aliases` in the frontmatter schema and the MCP-only fields, §9.6 the description warnings; the define-entities skill and playbook breakdown rule 4 say to keep descriptions short, name the actor, and add aliases for the words users will say; the README row and the `npx` examples (`mindplan-mcp@0.8`) match
+
+- **Areas.** Playbook step 1 adds the area-first path (`list_areas` → pick → `orient_for_work({ query, area })`, without `area` for cross-cutting questions); SPEC §8 counts twenty-nine tools and specifies `list_areas` and `area`; the README lists `list_areas`; the `npx` examples use `mindplan-mcp@0.9`
 
 ## Acceptance Criteria
 

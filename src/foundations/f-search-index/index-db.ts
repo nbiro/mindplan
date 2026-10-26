@@ -385,21 +385,29 @@ export class SearchIndex {
   }
 
   /**
-   * Keyword ranking by FTS5 bm25 over live (non-retired) rows of `type` when given: ids in rank
-   * order, kept to `candidates`. Null when FTS5 is missing, so the caller falls back to token scoring.
+   * Keyword ranking by FTS5 bm25 over live (non-retired) rows of `type` and within `ids` when
+   * given: ids in rank order, kept to `candidates`. Null when FTS5 is missing, so the caller falls back to token scoring.
    */
-  keyword(query: string, candidates: Set<string>, limit: number, opts: { type?: string } = {}): string[] | null {
+  keyword(
+    query: string,
+    candidates: Set<string>,
+    limit: number,
+    opts: { type?: string; ids?: string[] } = {}
+  ): string[] | null {
     if (!this.fts) return null;
     const match = ftsQuery(query);
     if (!match) return [];
+    // An area's members are filtered in SQL too, so the row limit applies after the filter.
+    const ids = opts.ids ? JSON.stringify(opts.ids) : null;
     // Column weights: id words, title, description, aliases, headings, area, entry points, paths.
     const rows = this.db
       .prepare(
         "SELECT n.id AS id FROM nodes_fts JOIN nodes n ON n.rowid = nodes_fts.rowid " +
           "WHERE nodes_fts MATCH ? AND n.retired = 0 AND (? IS NULL OR n.type = ?) " +
+          "AND (? IS NULL OR n.id IN (SELECT value FROM json_each(?))) " +
           "ORDER BY bm25(nodes_fts, 6.0, 8.0, 3.0, 8.0, 1.5, 1.0, 0.5, 1.5) LIMIT ?"
       )
-      .all(match, opts.type ?? null, opts.type ?? null, limit * 4);
+      .all(match, opts.type ?? null, opts.type ?? null, ids, ids, limit * 4);
     const out: string[] = [];
     for (const row of rows) {
       const id = String(row.id);

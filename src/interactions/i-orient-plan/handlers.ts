@@ -52,6 +52,7 @@ import {
 } from "../../foundations/f-compiler-rules/rules.js";
 import {
   DEFAULT_FIND_LIMIT,
+  areaMembers,
   expandNeighborhood,
   findRelatedNodes,
   searchNodes,
@@ -433,15 +434,25 @@ export function getMindPlanGraph(args: { offset?: number; limit?: number } = {})
   return page;
 }
 
+/** The Journey an `area` names; Blocked when it is not a Journey. */
+function assertArea(graph: MindPlanGraph, area: string | undefined): void {
+  if (area === undefined) return;
+  const node = findNode(graph, area);
+  if (node.type !== "Journey") {
+    throw blocked(`area must be a Journey id (list_areas lists them); "${area}" is a ${node.type}.`);
+  }
+}
+
 /** Hybrid-ranked matches for a query over the loaded graph (`[]` without a query). */
 async function rankedMatches(
   graph: MindPlanGraph,
   query: string,
-  args: { type?: NodeType; limit?: number }
+  args: { type?: NodeType; limit?: number; area?: string }
 ): Promise<Awaited<ReturnType<typeof searchNodes>>> {
   if (!query) return [];
   return searchNodes(graph, query, {
     type: args.type,
+    area: args.area,
     limit: args.limit ?? DEFAULT_FIND_LIMIT,
     root: projectRoot(),
     readBody: territoryBodyReader(),
@@ -453,6 +464,7 @@ export async function findRelatedNodesHandler(args: {
   node_id?: string;
   type?: NodeType;
   limit?: number;
+  area?: string;
 }): Promise<ReturnType<typeof findRelatedNodes>> {
   const q = (args.query ?? "").trim();
   if (!q && !args.node_id) {
@@ -462,6 +474,7 @@ export async function findRelatedNodesHandler(args: {
   if (args.node_id) {
     findNode(graph, args.node_id);
   }
+  assertArea(graph, args.area);
   return findRelatedNodes(graph, {
     query: q,
     node_id: args.node_id,
@@ -704,6 +717,7 @@ export async function orientForWork(args: {
   include_superseded?: boolean;
   include_inherited_decisions?: boolean;
   known_rules_versions?: Record<string, string>;
+  area?: string;
 }): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
@@ -717,9 +731,10 @@ export async function orientForWork(args: {
   if (args.node_id) {
     findNode(graph, args.node_id);
   }
+  assertArea(graph, args.area);
   const limit = args.limit ?? (args.node_id ? DEFAULT_FIND_LIMIT : ORIENT_SUMMARY_LIMIT);
   // One extra match decides "the only match" and "twice the next" whatever the row limit.
-  const ranked = await rankedMatches(graph, q, { type: args.type, limit: limit + 1 });
+  const ranked = await rankedMatches(graph, q, { type: args.type, limit: limit + 1, area: args.area });
   const matches = ranked.slice(0, limit);
   const rows = matches.map(orientRow);
 
@@ -770,6 +785,41 @@ export async function orientForWork(args: {
     reply.blast_radius = isPipelineNodeType(node.type) ? buildBlastRadiusPayload(graph, node) : null;
   }
   return reply;
+}
+
+/** An area row's description is cut to this many characters (the full one comes with orient). */
+export const AREA_DESCRIPTION_CHARS = 60;
+export const AREA_COLUMNS = ["id", "title", "description", "interactions", "interfaces", "foundations", "open_bugs"] as const;
+
+/**
+ * Every Journey as one compact row: `{ columns, rows, count }`, a row being `[id, title,
+ * description (60 characters), interactions, interfaces, foundations, open_bugs]` over the area's
+ * live members (`areaMembers`): its active Interactions, the Interfaces exposing them, the
+ * Foundations they depend on, and the open Bugs affecting any of those. Rows sort by id. Small
+ * enough to call before orienting (30 areas stay under 4 KB); pass a row's id as `area`.
+ */
+export function listAreas(): Record<string, unknown> {
+  const graph = loadGraph();
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const journeys = graph.nodes
+    .filter((n) => n.type === "Journey" && !isInactiveNode(n))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const rows = journeys.map((j) => {
+    const members = [...areaMembers(graph, j.id)]
+      .map((id) => byId.get(id))
+      .filter((n): n is MindPlanNode => n !== undefined && !isInactiveNode(n));
+    const count = (type: NodeType) => members.filter((n) => n.type === type).length;
+    const memberIds = new Set(members.map((n) => n.id));
+    const openBugs = graph.nodes.filter(
+      (n) => n.type === "Bug" && !isInactiveNode(n) && (n.affects ?? []).some((id) => memberIds.has(id))
+    ).length;
+    const title = j.next?.title ?? j.title;
+    const full = j.next?.description ?? j.description;
+    const description =
+      full.length > AREA_DESCRIPTION_CHARS ? `${full.slice(0, AREA_DESCRIPTION_CHARS - 1).trimEnd()}…` : full;
+    return [j.id, title, description, count("Interaction"), count("Interface"), count("Foundation"), openBugs];
+  });
+  return { columns: AREA_COLUMNS, rows, count: rows.length };
 }
 
 /**

@@ -4,9 +4,9 @@ type: Foundation
 title: "Search index"
 description: "Adapter — the derived search cache in .mindplan-cache/index.db (node:sqlite): node rows, an FTS5 keyword index, one normalized embedding vector per node from a local transformers.js model, and edges; synced incrementally from the graph, rebuilt when its schema or model changes, and safe to delete."
 state: mirror
-shipped_at: 2026-10-25T23:55:51.511Z
+shipped_at: 2026-10-26T00:04:46.126Z
 created_at: 2026-10-25T21:51:39.591Z
-updated_at: 2026-10-25T23:56:05.624Z
+updated_at: 2026-10-26T00:04:46.126Z
 depends_on:
   - f-source-index
 implements:
@@ -32,7 +32,7 @@ Package: `src/foundations/f-search-index/`
   - Tables: `meta(key, value)` (schema version and model id; a mismatch drops and rebuilds every table), `nodes(rowid INTEGER PRIMARY KEY AUTOINCREMENT, id UNIQUE, type, state, title, description, area, content_hash, retired)`, `nodes_fts` (FTS5, porter + unicode61) over `id_words, title, description, aliases, headings, area, entry, paths` keyed by the `nodes` rowid, `node_vec(id PRIMARY KEY, text_hash, vector BLOB)` (one `Float32Array`, normalized), and `edges(source, target, type)` with indexes on both ends
   - `SearchIndex.open(root, { model }, { file? })` — WAL and a 3 s busy timeout so two servers on one repo share the file; the meta check, a rebuild, and the table creation run in one `BEGIN IMMEDIATE` transaction so two servers opening a new or outdated file cannot interleave; only a file SQLite reports as corrupt (not a database, malformed) is deleted and created again, and any other open failure (a lock past the timeout, a read-only folder) leaves the file alone and keeps the cache in memory for the process; `fts` is false when FTS5 is missing
   - `sync(docs)` — one hash per node; writes only changed rows (node, FTS row, edges) and deletes rows for nodes that are gone, in one transaction; returns `{ changed, removed }`. FTS rows are found by the node's rowid at write time, never a remembered one. Before syncing, the in-memory hashes and vectors are reloaded when `PRAGMA data_version` says another connection wrote the file, or after a failed write (a rollback that SQLite already made is tolerated)
-  - `keyword(query, candidates, limit, { type? })` — the retired and type filters run in SQL before the row limit; bm25 over the query's words (stopwords dropped, each word quoted so no word is read as FTS syntax), column weights id words 6, title 8, description 3, aliases 8, headings 1.5, area 1, entry points 0.5, paths 1.5; `null` without FTS5
+  - `keyword(query, candidates, limit, { type?, ids? })` — the retired, type, and `ids` (an area's members, through `json_each`) filters run in SQL before the row limit; bm25 over the query's words (stopwords dropped, each word quoted so no word is read as FTS syntax), column weights id words 6, title 8, description 3, aliases 8, headings 1.5, area 1, entry points 0.5, paths 1.5; `null` without FTS5
   - `staleVectors()` / `putVectors(rows)` — vectors are keyed by the hash of the model id and `embedText(doc)` (a vector another process wrote with an older model reads as stale), held in memory and written back, and a stored blob that is not a float vector is skipped; only nodes whose embedded text changed are re-embedded, and a vector for a node the last sync no longer has (removed while it was being embedded) is dropped
   - `semantic(queryVector, candidates, limit)` — brute-force dot product over unit vectors, best first; a stored vector of another size is skipped
   - `SearchDoc` — `{ id, type, state, title, description, area, entry, aliases, headings, paths, retired, edges }`; `embedText(doc)` is `"{type}: {title}. {description}. Area: … Entry points: … Aliases: … Sections: …"` (empty parts left out)
@@ -73,6 +73,7 @@ Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
 - [x] Verified via `npm test`
 
 - [x] Split FTS queries on letters of any script
+- [x] Filter keyword rows to an id list in SQL
 
 ## Decisions
 

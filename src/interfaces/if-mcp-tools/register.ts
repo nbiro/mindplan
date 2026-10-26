@@ -26,6 +26,7 @@ import {
   getNodeImplementationHandler,
   getProject,
   getRules,
+  listAreas,
   listDecisionsHandler,
   orientForWork,
 } from "../../interactions/i-orient-plan/handlers.js";
@@ -200,6 +201,11 @@ const CHANGE_REF = z
   .optional()
   .describe("Optional branch name or PR URL for the change. Empty string clears it.");
 
+/** An area (a Journey id from list_areas) that limits ranking to that area's members. */
+const AREA = NODE_ID.optional().describe(
+  "A Journey id (list_areas): rank only that area's Interactions, the Interfaces exposing them, and the Foundations they depend on. Omit for a question that cuts across areas."
+);
+
 /** Search aliases: the words people will use for a node that its text does not contain. */
 const ALIASES = z
   .array(z.string().min(1).max(60))
@@ -351,10 +357,27 @@ export function registerMindPlanTools(server: McpServer): void {
           .max(MAX_FIND_LIMIT)
           .optional()
           .describe(`Max ranked matches to return (default ${DEFAULT_FIND_LIMIT}, max ${MAX_FIND_LIMIT}).`),
+        area: AREA,
       },
     },
-    ({ query, node_id, type, limit }) =>
-      findRelatedNodesHandler({ query, node_id, type, limit })
+    ({ query, node_id, type, limit, area }) =>
+      findRelatedNodesHandler({ query, node_id, type, limit, area })
+  );
+
+  tool(
+    server,
+    "list_areas",
+    {
+      kind: "read",
+      title: "List areas",
+      description:
+        "Call when you are unsure where work lands, before orient_for_work. " +
+        "Returns every Journey (area) as one row of a compact table: { columns, rows, count } with " +
+        "[id, title, description (60 characters), interactions, interfaces, foundations, open_bugs]. " +
+        "Pick a row and pass its id as area to orient_for_work or find_related_nodes; for a question that cuts across areas, search without area.",
+      inputSchema: {},
+    },
+    () => listAreas()
   );
 
   tool(
@@ -456,9 +479,10 @@ export function registerMindPlanTools(server: McpServer): void {
           .record(z.string(), z.string())
           .optional()
           .describe("Node id → rules version you already hold (from an earlier rules block); those entries come back without their text, with unchanged: true."),
+        area: AREA,
       },
     },
-    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions }) =>
+    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area }) =>
       orientForWork({
         query,
         node_id,
@@ -468,6 +492,7 @@ export function registerMindPlanTools(server: McpServer): void {
         include_superseded,
         include_inherited_decisions,
         known_rules_versions,
+        area,
       })
   );
 

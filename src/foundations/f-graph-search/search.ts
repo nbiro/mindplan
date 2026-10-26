@@ -434,6 +434,8 @@ export function fuseRankings(
 export interface SearchOptions {
   type?: NodeType;
   limit?: number;
+  /** A Journey id: rank only that area's members (`areaMembers`). */
+  area?: string;
   /** Project root of the search cache. */
   root: string;
   /** Reads bodies for section headings. */
@@ -466,13 +468,20 @@ export async function searchNodes(
   );
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const docById = new Map(docs.map((d) => [d.id, d]));
+  const inArea = opts.area ? areaMembers(graph, opts.area) : null;
   const candidates = new Set(
-    docs.filter((d) => !d.retired && (!opts.type || d.type === opts.type)).map((d) => d.id)
+    docs
+      .filter((d) => !d.retired && (!opts.type || d.type === opts.type) && (!inArea || inArea.has(d.id)))
+      .map((d) => d.id)
   );
 
   let keyword: string[] | null = null;
   try {
-    keyword = backend.index?.keyword(q, candidates, FUSION_DEPTH, { type: opts.type }) ?? null;
+    keyword =
+      backend.index?.keyword(q, candidates, FUSION_DEPTH, {
+        type: opts.type,
+        ...(inArea ? { ids: [...candidates] } : {}),
+      }) ?? null;
   } catch (err) {
     // Another server may be rebuilding the file; this call ranks by tokens instead.
     console.error(
@@ -513,6 +522,34 @@ export async function searchNodes(
   return fuseRankings([keyword, semantic], { docs: docById, exact, paths })
     .slice(0, limit)
     .map(({ id, score }) => ({ ...toSummary(byId.get(id)!), score, area: docById.get(id)!.area }));
+}
+
+/**
+ * The members of an area (a Journey): the Journey, the active Interactions that belong to it, the
+ * active Interfaces that expose them, and the active Foundations they depend on transitively. Live
+ * and proposed (open next) edges count; the walk never passes through a retired node, so a
+ * Foundation only a deprecated Interaction used is not a member. Bugs are not members.
+ */
+export function areaMembers(graph: MindPlanGraph, journeyId: string): Set<string> {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const members = new Set<string>([journeyId]);
+  const interactions = graph.nodes.filter(
+    (n) => n.type === "Interaction" && !isRetired(n) && edgeTargets(n, "belongs_to").includes(journeyId)
+  );
+  for (const ix of interactions) members.add(ix.id);
+  const interfaces = graph.nodes.filter(
+    (n) => n.type === "Interface" && !isRetired(n) && edgeTargets(n, "exposes").some((id) => members.has(id))
+  );
+  for (const iface of interfaces) members.add(iface.id);
+  const stack = [...interactions, ...interfaces].flatMap((n) => edgeTargets(n, "depends_on"));
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    const node = byId.get(id);
+    if (!node || node.type !== "Foundation" || isRetired(node) || members.has(id)) continue;
+    members.add(id);
+    stack.push(...edgeTargets(node, "depends_on"));
+  }
+  return members;
 }
 
 /** After a graph write: sync the search cache now and embed what changed in the background. */

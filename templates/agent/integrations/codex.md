@@ -5,7 +5,7 @@ Codex CLI, the IDE extension, and the ChatGPT desktop app share MCP config for t
 1. **Register MCP** (from your project root):
 
 ```bash
-codex mcp add mindplan --env MINDPLAN_ROOT="$(pwd)" -- npx -y mindplan-mcp@0.8
+codex mcp add mindplan --env MINDPLAN_ROOT="$(pwd)" -- npx -y mindplan-mcp@0.9
 ```
 
 Or add a project-scoped entry in `.codex/config.toml` (trusted projects only), or globally in `~/.codex/config.toml`:
@@ -21,7 +21,7 @@ startup_timeout_sec = 20
 MINDPLAN_ROOT = "/absolute/path/to/your/project"
 ```
 
-`npx mindplan-mcp` runs the copy pinned in your dev dependencies (`npm install -D mindplan-mcp`); without a `package.json`, use `args = ["-y", "mindplan-mcp@0.8"]`.
+`npx mindplan-mcp` runs the copy pinned in your dev dependencies (`npm install -D mindplan-mcp`); without a `package.json`, use `args = ["-y", "mindplan-mcp@0.9"]`.
 
 2. **Instructions** — Codex auto-reads root `AGENTS.md`. `mindplan-mcp init` writes the stub there when missing. MCP already requires `get_project` (dialect + project brief). The playbook file is a fallback if tools are hidden.
 

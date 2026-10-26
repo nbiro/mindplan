@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 — area-first orientation
+
+Every behavior change in this release. SPEC sections in brackets.
+
+- **`list_areas`** is a new read tool, twenty-nine in all. It returns every Journey as one row of a compact table, `{ columns, rows, count }`, with columns `[id, title, description (60 characters), interactions, interfaces, foundations, open_bugs]`. 30 areas fit in about 3.2 KB. [§8.1]
+- **`area` on `orient_for_work` and `find_related_nodes`** takes a Journey id and ranks only that area's members: the Journey, its Interactions, the Interfaces exposing them, and the Foundations they depend on transitively. The members are filtered in the keyword SQL, so the row limit applies after the filter. A non-Journey id is Blocked. Retired nodes are never walked through. On a 331-node, 30-area graph (median of 31 runs), a search with `area` took 2.6 ms against 3.3 ms without (keyword-only), and 3.0 ms against 3.4 ms (hybrid). [§8.1]
+- **Docs.** Playbook step 1 adds the area-first path (`list_areas`, pick, `orient_for_work({ query, area })`). The README table lists the tool, and the `npx` examples use `mindplan-mcp@0.9`.
+
 ## 0.8.0 — aliases and the description check
 
 Every behavior change in this release. SPEC sections in brackets.
