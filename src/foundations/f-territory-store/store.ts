@@ -1938,7 +1938,7 @@ export function resolveTerritorySlot(
 /** One checkbox toggle: match by substring, tick or untick, optionally annotate. */
 export type CheckboxToggle = {
   contains: string;
-  /** true for [x], false for [ ]. Defaults to true when `not_applicable` is set. */
+  /** true for [x], false for [ ]. Defaults to true when `note` or `not_applicable` is set. */
   checked?: boolean;
   /** Toggle every matching line instead of Blocking on an ambiguous match. */
   all?: boolean;
@@ -1975,11 +1975,12 @@ export function toggleCheckboxesInBody(
     if (toggle.note !== undefined && toggle.not_applicable !== undefined) {
       throw new Error("Blocked: a toggle takes note or not_applicable, not both.");
     }
-    const checked = toggle.checked ?? (toggle.not_applicable !== undefined ? true : undefined);
+    const annotated = toggle.note !== undefined || toggle.not_applicable !== undefined;
+    const checked = toggle.checked ?? (annotated ? true : undefined);
     if (checked === undefined) {
       throw new Error(`Blocked: toggle for "${toggle.contains}" needs checked (true or false).`);
     }
-    if (!checked && (toggle.note !== undefined || toggle.not_applicable !== undefined)) {
+    if (!checked && annotated) {
       throw new Error(
         `Blocked: note and not_applicable tick the item; they cannot be combined with checked: false.`
       );

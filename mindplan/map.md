@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (41 nodes, 110 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (42 nodes, 112 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -31,7 +31,7 @@ flowchart TB
     if_cli{{"if-cli · CLI · stable"}}
     if_console{{"if-console · Console · ready"}}
     if_console_api{{"if-console-api · Console API · ready"}}
-    if_mcp_tools{{"if-mcp-tools · MCP tools · stable"}}
+    if_mcp_tools{{"if-mcp-tools · MCP tools · unstable"}}
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Main-branch release trigger · draft"}}
   end
@@ -57,7 +57,10 @@ flowchart TB
     i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer the plan · stable"]
   end
   bug_body_leading_blank_lines["bug-body-leading-blank-lines · Bodies start with runs of blank lines · in-review"]
+  bug_note_toggle_needs_checked["bug-note-toggle-needs-checked · A note toggle without checked is Blocked · in-review"]
   bug_body_leading_blank_lines -.-> f_territory_store
+  bug_note_toggle_needs_checked -.-> f_territory_store
+  bug_note_toggle_needs_checked -.-> if_mcp_tools
   f_compiler_rules --> f_domain_model
   f_compiler_rules --> f_source_index
   f_compiler_rules --> f_territory_store
