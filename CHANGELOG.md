@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3 — a note ticks without checked
+
+- **`note` implies `checked: true`.** A `toggle_checkboxes` entry with `note` and no `checked` was `Blocked:` asking for `checked`, though a note always ticks the item and `not_applicable` already ticked without it. `checked` may now be omitted with either; `checked: false` with a note or reason stays `Blocked:`. [§8.1]
+
 ## 0.5.2 — ticked checklist lines are history
 
 - **Closed checklist items no longer warn as stale.** The missing-path stale signal scanned every line of a node body, ticked checklist items included. A ticked item that named a path a later change moved warned forever, because the playbook forbids rewording a closed item. Closed items are now skipped by that signal, with their continuation lines: an item is closed when the Completion Check counts it as done (`- [x] …`, with `— note:` or with `— n/a: <reason>`), so an `— n/a:` with no reason is still scanned. Prose and open items still count. [§9.6]

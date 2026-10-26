@@ -222,10 +222,11 @@ fillAndTick("interactions", "i-b");
     toggle_checkboxes: [{ contains: "- [x] Manual check", checked: false }],
   });
   check("a contains with the checkbox marker still matches, and unticking strips the note", untick.toggled?.[0] === "- [ ] Manual check", JSON.stringify(untick.toggled));
-  await call("patch_node_territory", {
+  const noteOnly = await call("patch_node_territory", {
     node_id: "f-tog",
-    toggle_checkboxes: [{ contains: "Manual check", checked: true, note: "verified manually" }],
+    toggle_checkboxes: [{ contains: "Manual check", note: "verified manually" }],
   });
+  check("a note without checked ticks the item", noteOnly.toggled?.[0] === "- [x] Manual check — note: verified manually", JSON.stringify(noteOnly.toggled));
   await call("update_node_status", { node_id: "f-tog", new_status: "in-review" });
   // An n/a with no reason is not done: write one by hand and the completion check refuses ship.
   const file = territory("foundations", "f-tog");

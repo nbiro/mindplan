@@ -1,0 +1,43 @@
+---
+id: bug-note-toggle-needs-checked
+type: Bug
+title: "A note toggle without checked is Blocked"
+description: "patch_node_territory toggle_checkboxes with a note but no checked is Blocked asking for checked, though a note always ticks the item and not_applicable already defaults checked to true."
+state: in-review
+created_at: 2026-10-26T18:03:26.136Z
+updated_at: 2026-10-26T18:10:32.840Z
+affects:
+  - f-territory-store
+  - if-mcp-tools
+---
+
+# A note toggle without checked is Blocked
+
+patch_node_territory toggle_checkboxes with a note but no checked is Blocked asking for checked, though a note always ticks the item and not_applicable already defaults checked to true.
+
+## Summary
+
+`toggleCheckboxesInBody` defaults `checked` to true only for `not_applicable`, so `{ contains, note }` is Blocked even though `note` can only tick (it is Blocked with `checked: false`) and the tool schema marks `checked` optional.
+
+## Repro Steps
+
+1. Give a node an unchecked checklist item `- [ ] Manual check`.
+2. Call `patch_node_territory({ node_id, toggle_checkboxes: [{ contains: "Manual check", note: "verified manually" }] })`.
+
+## Expected / Actual
+
+**Expected:** The item is ticked as `- [x] Manual check — note: verified manually`, as with `not_applicable`.
+
+**Actual:** `Blocked: toggle for "Manual check" needs checked (true or false).` The call only succeeds with `checked: true` added.
+
+## Fix Checklist
+
+- [x] Root cause identified — note: toggleCheckboxesInBody defaulted checked only for not_applicable
+- [x] Fix implemented
+- [x] Regression test added — note: honesty.test.mjs: a note without checked ticks the item
+
+## Attachments
+
+_Logs, screenshots, and HAR files go in `attachments/`._
+
+{/* MDX: Affects, ReproSteps, Severity, ExpectedActual — see SPEC.md §6.4. */}

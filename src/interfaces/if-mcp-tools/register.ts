@@ -599,7 +599,7 @@ export function registerMindPlanTools(server: McpServer): void {
               checked: z
                 .boolean()
                 .optional()
-                .describe("true for [x], false for [ ]. Optional with not_applicable (it ticks)."),
+                .describe("true for [x], false for [ ]. Optional with note or not_applicable (both tick)."),
               all: z
                 .boolean()
                 .optional()
