@@ -371,7 +371,7 @@ export function writeMirrorTwin(node: Pick<MindPlanNode, "id" | "type">): string
       `Blocked: cannot write mirror twin for "${node.id}" — ${path.basename(nextPath)} exists and is not a file.`
     );
   }
-  fs.writeFileSync(nextPath, twin, "utf-8");
+  writeTerritoryFile(nextPath, twin);
   return markdownRelativePath(node, "next");
 }
 
@@ -428,8 +428,9 @@ export function mirrorDriftReason(node: Pick<MindPlanNode, "id" | "type">): stri
   }
   const liveRaw = fs.readFileSync(livePath, "utf-8");
   const nextRaw = fs.readFileSync(nextPath, "utf-8");
+  // A twin written from a live file with an older run of blank lines has one; that is not drift.
   const stripState = (raw: string) =>
-    raw.replace(/^state:\s*.*$/m, "state: <ignored>");
+    oneBlankLineBelowFrontmatter(raw).replace(/^state:\s*.*$/m, "state: <ignored>");
   if (stripState(liveRaw) !== stripState(nextRaw)) {
     return `${path.basename(nextPath)} drifted from live (expected state-only twin)`;
   }
@@ -1005,7 +1006,7 @@ export function writeMarkdown(
       );
     }
   }
-  fs.writeFileSync(file, content, "utf-8");
+  writeTerritoryFile(file, content);
 }
 
 /** Requires a territory MDX file with parseable YAML frontmatter for mutations. */
@@ -1057,7 +1058,7 @@ export function patchFrontmatter(
   }
 
   if (patched !== fence) {
-    fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
+    writeTerritoryFile(file, raw.replace(fence, () => patched));
   }
   if (slot === "current" && "state" in node && isProductionState(String(node.state))) {
     const full = node as MindPlanNode;
@@ -1101,7 +1102,7 @@ export function patchFrontmatterEdges(
   const extras = [edgeLines, implLines].filter(Boolean).join("\n");
   const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
-  fs.writeFileSync(file, raw.replace(fence, () => rebuilt), "utf-8");
+  writeTerritoryFile(file, raw.replace(fence, () => rebuilt));
 }
 
 /** Resolves which territory slot receives edge mutations for pipeline nodes. */
@@ -1727,16 +1728,32 @@ export function appendDecision(
 }
 
 /**
- * Splits raw territory MDX into YAML frontmatter block, the newline after its closing `---`
- * (`separator`), and body. `frontmatter + separator + body` is the raw text, so writers that rebuild
- * a file keep its layout; the body keeps any blank lines that follow.
+ * Splits raw territory MDX into YAML frontmatter block, the newline after its closing `---` plus
+ * every blank line below it (`separator`), and body, which starts at its first text.
+ * `frontmatter + separator + body` is the raw text.
  */
 export function splitContext(
   raw: string
 ): { frontmatter: string; separator: string; body: string } | null {
-  const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---)(\r?\n?)([\s\S]*)$/);
+  const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---)((?:[ \t]*\r?\n)*)([\s\S]*)$/);
   if (!match) return null;
   return { frontmatter: match[1], separator: match[2], body: match[3] };
+}
+
+/**
+ * Puts exactly one blank line between the closing frontmatter fence and the body (none above an
+ * empty body), in the frontmatter's line endings. Text without frontmatter is returned unchanged.
+ */
+export function oneBlankLineBelowFrontmatter(raw: string): string {
+  const split = splitContext(raw);
+  if (!split) return raw;
+  const eol = detectEol(split.frontmatter);
+  return `${split.frontmatter}${split.body ? `${eol}${eol}` : eol}${split.body}`;
+}
+
+/** The one writer of node files: every write collapses runs of blank lines below the frontmatter. */
+function writeTerritoryFile(file: string, raw: string): void {
+  fs.writeFileSync(file, oneBlankLineBelowFrontmatter(raw), "utf-8");
 }
 
 /** Compact node summary for blast-radius / reachability payloads. */
@@ -2091,9 +2108,8 @@ export function patchNodeTerritory(
     }
     // Keep the file's own line endings so a rewritten body does not mix LF into CRLF territory.
     const eol = detectEol(raw);
+    // writeMarkdown puts one blank line above it, whatever blank lines the new body starts with.
     body = input.body.replace(/\r?\n/g, eol);
-    // One blank line below the frontmatter, unless the new body starts with its own.
-    separator = /^\r?\n/.test(body) ? eol : `${eol}${eol}`;
     patched_fields.push("body");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
@@ -2278,7 +2294,7 @@ export function writeChangeFrontmatter(
   }
   const { file, raw, fence } = requireMutableFrontmatter(node, slot);
   const patched = applyChangeScalars(fence, input);
-  if (patched !== fence) fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
+  if (patched !== fence) writeTerritoryFile(file, raw.replace(fence, () => patched));
   assignChange(slot === "next" && node.next ? node.next : node, input);
   return slot === "next" ? dropStaleLiveLabel(node) : undefined;
 }
@@ -2329,7 +2345,7 @@ export function clearAddedClaims(node: MindPlanNode): boolean {
   const patched = replaceNamedListInFence(fence, "added_claims", []);
   delete node.added_claims;
   if (patched === fence) return false;
-  fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
   return true;
 }
 
@@ -2405,7 +2421,7 @@ export function openNextSlot(
     }
   }
   // Bypass writeMarkdown mirror guard — we are intentionally leaving mirror for draft.
-  fs.writeFileSync(nextPath, `${match[1]}${inner}${match[3]}${raw.slice(match[0].length)}`, "utf-8");
+  writeTerritoryFile(nextPath, `${match[1]}${inner}${match[3]}${raw.slice(match[0].length)}`);
 
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
@@ -2542,7 +2558,7 @@ export function promoteNextSlot(
 
   const liveRules = readNodeRules(node, "current");
   const promotedBody = joinNodeRules(splitNodeRules(nextSplit.body).body, liveRules);
-  // The live file takes the next file's line endings and frontmatter-to-body layout.
+  // The live file takes the next file's line endings.
   writeMarkdown(
     node,
     `${frontmatterLines.join(detectEol(nextRaw))}${nextSplit.separator}${promotedBody}`,
@@ -2628,7 +2644,7 @@ export function writeImplementsFrontmatter(
   const extras = [edgeLines, implLines, addedLines].filter(Boolean).join("\n");
   const rebuiltInner = extras ? `${inner}\n${extras}` : inner;
   const rebuilt = `---\n${rebuiltInner}\n---`;
-  fs.writeFileSync(file, raw.replace(fence, () => rebuilt), "utf-8");
+  writeTerritoryFile(file, raw.replace(fence, () => rebuilt));
 
   let twin: string | null = null;
   if (slot === "next") {
@@ -2674,7 +2690,7 @@ export function writeTestsFrontmatter(
     const { file, raw, fence } = requireMutableFrontmatter(node, slot);
     const patched = replaceNamedListInFence(fence, "tests", normalized);
     if (patched === fence) continue;
-    fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
+    writeTerritoryFile(file, raw.replace(fence, () => patched));
     paths.push(markdownRelativePath(node, slot));
     if (slot === "current") changed = true;
   }
@@ -2733,7 +2749,7 @@ export function writeAliasesFrontmatter(
     const { file, raw, fence } = requireMutableFrontmatter(node, slot);
     const patched = replaceNamedListInFence(fence, "aliases", normalized);
     if (patched === fence) continue;
-    fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
+    writeTerritoryFile(file, raw.replace(fence, () => patched));
     paths.push(markdownRelativePath(node, slot));
     if (slot === "current") changed = true;
   }
@@ -2763,7 +2779,7 @@ export function writeRoleFrontmatter(
     patched = patched.replace(/^(type:.*)$/m, `$1\nrole: ${role}`);
   }
   patched = patched.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
-  fs.writeFileSync(file, raw.replace(fence, () => patched), "utf-8");
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
   if (slot === "next" && node.next) {
     node.next.role = role;
     node.next.updated_at = now;
