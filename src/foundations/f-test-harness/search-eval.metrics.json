@@ -1,5 +1,5 @@
 {
-  "about": "Committed search-eval floor. baseline: the token ranking before hybrid search (fixed). keyword: keyword-only mode (no model). hybrid: keyword + semantic with the committed fixture vectors. search-eval.test.mjs fails when a run drops below keyword or hybrid, or hybrid does not beat baseline.",
+  "about": "Committed search-eval floor. baseline: the token ranking before hybrid search (fixed). keyword / hybrid: keyword-only and keyword + semantic (committed fixture vectors) with the FTS5 keyword half, run where SQLite has FTS5. keyword_js / hybrid_js: the same with the JS BM25 keyword half, run everywhere. search-eval.test.mjs fails when a run drops below its floor, or a hybrid run does not beat baseline.",
   "baseline": {
     "top1": 0.458,
     "top5": 0.729,
@@ -14,5 +14,15 @@
     "top1": 0.813,
     "top5": 0.938,
     "mrr": 0.868
+  },
+  "keyword_js": {
+    "top1": 0.688,
+    "top5": 0.875,
+    "mrr": 0.774
+  },
+  "hybrid_js": {
+    "top1": 0.813,
+    "top5": 0.938,
+    "mrr": 0.866
   }
 }
