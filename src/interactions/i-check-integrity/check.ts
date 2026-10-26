@@ -22,6 +22,7 @@ import {
   formatCoverageFix,
   probableOwner,
   routeFamilySplits,
+  descriptionWarnings,
   staleTextWarnings,
   testPresenceFailures,
   untestedWarning,
@@ -449,6 +450,8 @@ function checkImports(
 function collectWarnings(graph: MindPlanGraph, root: string): string[] {
   const warnings: string[] = [];
   for (const node of graph.nodes) {
+    // Description quality (every node type; never fails the check).
+    warnings.push(...descriptionWarnings(node));
     if (!isPipelineNodeType(node.type)) continue;
     if (RETIRED_STATES.has(node.state)) continue;
     const active = node.next ? node.next.state : node.state;

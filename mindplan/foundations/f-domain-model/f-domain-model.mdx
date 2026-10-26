@@ -4,9 +4,9 @@ type: Foundation
 title: "Domain model"
 description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs) and the `added_claims` marker for claims a shipped node added in place, the slot-independent `tests` list of files that verify a node, Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, decision records with their computed status and the active-slot reader, and the optional change id and change ref that group revisions, whose live value on a shipped node with no open next is a neighbor label."
 state: stable
-shipped_at: 2026-10-25T21:13:07.038Z
+shipped_at: 2026-10-25T23:55:51.328Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-25T21:13:07.038Z
+updated_at: 2026-10-25T23:55:51.328Z
 implements:
   - src/foundations/f-domain-model/
 tests:
@@ -48,6 +48,8 @@ Intended files: `src/foundations/f-domain-model/`
 
 Depends on: none.
 
+- **Aliases.** `MindPlanNode.aliases?: string[]` — other words for the node (synonyms, user wording, other languages) that search indexes with its text. Any node type; slot-independent like `tests` (`NextSlot` has none)
+
 ## Acceptance Criteria
 
 - `mirror` is a typed next-file state distinct from pipeline states
@@ -66,6 +68,8 @@ Depends on: none.
 - `MindPlanNode.added_claims` is optional; a graph without it loads exactly as before
 - `isNeighborNode` is false for a retired node, a node with an open next, a pre-ship node, and a Journey or Bug
 - `MindPlanNode.tests` is optional; a graph without it loads exactly as before, and `NextSlot` has no `tests`
+
+- A node record carries `aliases` when its frontmatter has them
 
 ## Atomic Ops
 
@@ -91,6 +95,8 @@ Depends on: none.
 - [x] Add `isNeighborNode` as the shared neighbor test (review fix)
 - [x] Add `MindPlanNode.tests`
 - [x] Verified `tests` via `npm test`
+
+- [x] Add `aliases` to `MindPlanNode`
 
 ## Decisions
 
@@ -135,6 +141,17 @@ Depends on: none.
 - Why: Linking a test records how a contract is verified; it does not change the contract, so it should neither cost a revision nor undo a review.
 - Consequences: A revision cannot propose a different tests list from live; promote keeps the list it finds on next, which equals live.
 - Change: node-tests
+- Date: 2026-10-25
+
+### d-aliases-slot-independent-search-words
+
+- Decision: Aliases are an optional frontmatter list on any node, slot-independent like tests: create_node and patch_node_territory write them in place on shipped nodes too, without open_next or a readiness reset.
+- Alternatives:
+  - Treat aliases as contract text that needs open_next on a shipped node (adding a search word would cost a full revision)
+  - A separate patch tool (one more tool for a field patch_node_territory can carry)
+- Why: Aliases change how a node is found, not what it does; they should be as cheap to add as the moment a search misses.
+- Consequences: A revision cannot propose different aliases from live; each alias is a JSON string in frontmatter.
+- Change: aliases
 - Date: 2026-10-25
 
 ## Attachments

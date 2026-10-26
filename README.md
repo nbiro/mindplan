@@ -101,7 +101,7 @@ Built for people who ship **with AI agents** and need a living product architect
 
 ## Quick start
 
-Requires Node.js 18 or later. No clone or build step: the package ships `dist/` and the agent templates.
+Requires Node.js 22.13 or later (the first 22.x release with `node:sqlite` unflagged, which the search cache uses). No clone or build step: the package ships `dist/` and the agent templates.
 
 1. Install it.
 
@@ -111,7 +111,7 @@ Requires Node.js 18 or later. No clone or build step: the package ships `dist/` 
      npm install -D mindplan-mcp
      ```
 
-   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.1` (a version range) in the commands below.
+   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.4` (a version range) in the commands below.
 
 2. From your project root, scaffold:
 
@@ -119,7 +119,7 @@ Requires Node.js 18 or later. No clone or build step: the package ships `dist/` 
 npx mindplan-mcp init --host claude   # or cursor (default) / all
 ```
 
-`init` installs `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, and a short MindPlan stub in `AGENTS.md` when missing. Host copies depend on `--host cursor|claude|all` (default `cursor`): Cursor gets `.cursorignore`, `.cursor/permissions.json`, `.cursor/rules/mindplan.mdc` and `.cursor/skills/`; Claude Code gets `CLAUDE.md` (an `@AGENTS.md` import) and `.claude/skills/`. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`, and stamps `mindplan/version.json` with the package version. The stub requires `get_project` before planning or code, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work; when tools are hidden, use the init-installed host copies under `.cursor/` or `.claude/` and `AGENTS.md`.
+`init` installs `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, a short MindPlan stub in `AGENTS.md` when missing, and a `.mindplan-cache/` line in `.gitignore`. Host copies depend on `--host cursor|claude|all` (default `cursor`): Cursor gets `.cursorignore`, `.cursor/permissions.json`, `.cursor/rules/mindplan.mdc` and `.cursor/skills/`; Claude Code gets `CLAUDE.md` (an `@AGENTS.md` import) and `.claude/skills/`. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`, and stamps `mindplan/version.json` with the package version. The stub requires `get_project` before planning or code, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work; when tools are hidden, use the init-installed host copies under `.cursor/` or `.claude/` and `AGENTS.md`.
 
 3. Register the MCP server. It runs over stdio, so the host starts it from the project root. For Claude Code, commit a `.mcp.json`:
 
@@ -131,7 +131,7 @@ npx mindplan-mcp init --host claude   # or cursor (default) / all
 }
 ```
 
-With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.1"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
+With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.4"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
 
 4. Reload MCP servers after config changes.
 
@@ -158,8 +158,9 @@ node /absolute/path/to/mindplan/dist/index.js init   # from your project root
 
 ```
 <project-root>/
+├── .mindplan-cache/               # derived search cache (gitignored, safe to delete)
 ├── mindplan/
-│   ├── config.json                # { sources, exclude } — coverage universe
+│   ├── config.json                # { sources, exclude } — coverage universe; optional decisions, search
 │   ├── project.md                 # description + rules only (playbook via get_project)
 │   ├── version.json               # { package, graph } — written by init; drives the upgrade warning
 │   ├── agent/                     # playbook + skills (installed by init)
@@ -204,29 +205,40 @@ Every violation starts with `Blocked: `.
 
 No Dependency Closure / `link_dependent`.
 
+## Search
+
+`find_related_nodes` and `orient_for_work` rank nodes with hybrid search: keyword (SQLite FTS5) and semantic (a small local embedding model) results merged by reciprocal rank fusion, plus a small boost for nodes linked to the best matches. An exact id always ranks first, and a file path ranks the node that claims it. A query saying "quote" can find a node that says "enquiry".
+
+- **The cache.** `.mindplan-cache/index.db` at the project root is derived from the `.mdx` files, which stay the only source of truth. It is gitignored, re-synced on every search (so a `git pull` or branch switch is picked up on the next call), and safe to delete at any time.
+- **The model.** `Xenova/bge-small-en-v1.5` (English, about 30 MB) runs locally through [transformers.js](https://huggingface.co/docs/transformers.js), an optional dependency: no API key, nothing leaves the machine. It downloads once per machine into `~/.cache/mindplan/models` (override with `MINDPLAN_MODEL_CACHE`) in the background when the server starts; a tool call never waits for it.
+- **Fallback.** Until the model is ready, or when it cannot load (offline, a proxy, a sandbox, `npm install --omit=optional`), search is keyword-only and never fails; the reason is logged once to stderr. On a runtime without `node:sqlite` or FTS5 (Node 22.13's bundled SQLite has no FTS5) the keyword half runs the same BM25 in plain JS, which ranks the search test set as well as FTS5 does.
+- **Settings.** `patch_config({ search: { enabled: false } })` turns semantic ranking off; `patch_config({ search: { model: "Xenova/all-MiniLM-L6-v2" } })` picks another model (the cache rebuilds). `MINDPLAN_SEARCH=keyword` turns it off for one process, and `MINDPLAN_SEARCH_OFFLINE=1` uses only an already-downloaded model.
+
 ## MCP Tools
 
 The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are registered in [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract). Every tool carries MCP annotations derived from its kind (`readOnlyHint` on read tools, `destructiveHint` on `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`; `openWorldHint` always false), so a host can auto-approve reads and prompt on destructive calls. Results are compact JSON text plus `structuredContent`. Results that grow with the graph stay under the host's size limit: `get_mindplan_graph` pages (`offset` / `limit`, `next_offset`), and `export_mindplan_view` refuses a diagram over 80,000 characters unless you pass `focus` or `output`.
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `orient_for_work` | read | find + `record`/`body` context + blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); the `rules` and `decisions` that apply to the focus; `depth: rules\|body\|full` trims it |
+| `orient_for_work` | read | Summary first: a query returns ranked rows (the full node only for a clear winner, `auto_focus`); `node_id` returns `record`/`body` context, owned files, and blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); writes on a node wait until it was oriented on (`Blocked: Orientation`); the `rules` that apply to the focus and its own `decisions` (inherited ones counted in `inherited_decisions`, listed with `include_inherited_decisions`); `depth: rules\|body\|full` trims it |
+| `get_rules` | read | The mandatory project rules with a `rules_version` tag; `known_version` returns `{ unchanged: true }` without the text when nothing changed |
 | `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every member of a change (revisions and labeled neighbors) |
-| `find_related_nodes` | read | Rank by query; focus + 1-hop |
+| `list_areas` | read | Every Journey (area) as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
+| `find_related_nodes` | read | Hybrid search by query (keyword + semantic; exact id first); focus + 1-hop |
 | `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset` |
 | `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts; `output` writes to a file; over-budget diagrams are Blocked with the fix |
 | `list_decisions` | read | Decision records of a node, a change, or the graph; superseded ones on request |
-| `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired` |
-| `get_node_context` | read | `record` + `body` + `decisions` (superseded only with `include_superseded`; + `next.record`/`next.body`/`next.decisions` when evolving) |
+| `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired`; the focus's decisions plus `dependent_decisions` (rows with `include_dependent_decisions`) |
+| `get_node_context` | read | `record` + `body` + its own `decisions` (superseded only with `include_superseded`; + `next.record`/`next.body`/`next.decisions` when evolving) + `inherited_decisions` (count and nodes; entries with `include_inherited_decisions`) |
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
 | `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`); on a shipped node, adds a claim in place when it only grows into folders the node alone owns; `change` labels a neighbor |
 | `set_test_files` | mutation | Link the test files (paths, directories ending in `/`, or globs) that verify a node; evidence, not a claim, written to live and an open `next` alike with no `open_next` and no readiness reset; `get_blast_radius` lists them as the tests to run |
-| `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) |
+| `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) and search `aliases` (any node, no `open_next`) |
 | `patch_node_rules` | mutation | Write one node's `## Rules`; `orient_for_work` delivers them to the node and everything that inherits from it |
 | `record_decision` | mutation | Append a decision record (what was chosen, the alternatives, why) to the node it shapes; supersede instead of editing |
 | `patch_project_description` | mutation | Write the `mindplan/project.md` description |
 | `patch_project_rules` | mutation | Write the `mindplan/project.md` rules |
-| `patch_config` | mutation | Write `mindplan/config.json` sources/exclude and decision-gate settings |
+| `patch_config` | mutation | Write `mindplan/config.json` sources/exclude, decision-gate settings, and search settings |
 | `put_attachment` / `remove_attachment` | mutation | Node attachment files |
 | `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold) |
 | `open_next` / `discard_next` | mutation | Flip mirror→draft / restore mirror twin |
@@ -244,7 +256,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src; also the `run_check` MCP tool |
 | `mindplan-mcp help` | Usage |
 
-Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`).
+Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`). Search reads `MINDPLAN_SEARCH`, `MINDPLAN_SEARCH_OFFLINE`, and `MINDPLAN_MODEL_CACHE` (see [Search](#search)).
 
 ## Development
 

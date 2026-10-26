@@ -4,9 +4,9 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import, ownership, and linked-test presence gate for in-review and ship, the untested-revision warning, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates (never a migration or schema file), and split route-family warnings. A next file in state mirror is not an open evolution."
 state: stable
-shipped_at: 2026-10-25T21:13:07.453Z
+shipped_at: 2026-10-25T23:55:51.943Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-25T21:13:07.453Z
+updated_at: 2026-10-25T23:55:51.943Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -70,6 +70,8 @@ Intended files: `src/foundations/f-compiler-rules/`
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
+- **Description warnings.** `descriptionWarnings(node)` (`integrity.ts`) returns `description: …` warnings for a non-retired node's active-slot description: empty; equal to the title (letters and digits compared, case ignored); longer than `DESCRIPTION_MAX_CHARS` (300); an Interaction's that contains none of a loose list of actor words; or, except on a Bug (whose description describes a regression), revision wording (`now`, `no longer`, `was changed to`, `used to be`, `previously`, `anymore`). Heuristics, so warnings only
+
 ## Acceptance Criteria
 
 - A mirror twin does not block `open_next`
@@ -102,6 +104,8 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - A `tests` entry missing on disk Blocks the move to in-review and ship, and is not reported for a draft
 - An in-review revision with no tests yields one `tests:` warning; a draft one, or one with tests, yields none
 
+- Each bad-description case warns and a good description does not; none fails the check
+
 ## Atomic Ops
 
 - [x] Treat mirror as non-evolution in open_next / cancel / force_unship gates
@@ -130,6 +134,8 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - [x] Add `testPresenceFailures` to the in-review / ship gate
 - [x] Add `untestedWarning`
 - [x] Verified test presence and the untested warning via `npm test`
+
+- [x] Add `descriptionWarnings`
 
 ## Decisions
 
@@ -169,6 +175,16 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Why: A broken link is a lie the graph tells, so it fails like a missing claim; an untested node may be legitimate (docs, workflow files), so the check nudges and never stops work.
 - Consequences: Draft plans may list tests that do not exist yet; the presence rule only bites at in-review and after ship.
 - Change: node-tests
+- Date: 2026-10-25
+
+### d-description-check-warn-only
+
+- Decision: Description quality is checked with loose heuristics (empty or title-repeating, over 300 characters, an Interaction with no actor word, revision wording) that only warn.
+- Alternatives:
+  - Block in-review on a bad description (an actor word list cannot judge every phrasing, and a false Block stops work)
+- Why: Descriptions are what search ranks and orientation shows, so bad ones cost every agent later; but the checks are guesses and must never stop work.
+- Consequences: Existing graphs with long descriptions see warnings until they are shortened.
+- Change: aliases
 - Date: 2026-10-25
 
 ## Attachments

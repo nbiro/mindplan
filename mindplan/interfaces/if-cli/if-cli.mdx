@@ -6,7 +6,7 @@ description: "Print legacy renames that already succeeded when init stops, print
 state: stable
 shipped_at: 2026-10-15T15:52:14.190Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-20T13:35:57.527Z
+updated_at: 2026-10-25T22:20:06.509Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -43,7 +43,7 @@ Intended files: `src/interfaces/if-cli/`
 - `--host` accepts `cursor`, `claude`, or `all`; default `cursor`; any other value is `Blocked: unknown init host`
 - Print one line per installed host copy, grouped by host
 - Remove `--layout` parsing and help
-- Print init migration report from `runInit` when applicable
+- Print init migration report from `runInit` when applicable, including the `.gitignore` entry for `.mindplan-cache/` (`searchCacheIgnore`)
 - When init stops after applying some renames, print those lines before the error
 - `check` prints `renderCheckOutput(result)`: `mindplan-mcp check: ok` on stdout, or the `Blocked:` lines on stderr and exit 1; `Warning:` lines follow either way and never change the exit code
 - `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
