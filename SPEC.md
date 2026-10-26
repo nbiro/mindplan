@@ -450,7 +450,7 @@ MindPlan uses a **stable-id evolution model**: a Foundation, Interaction, or Int
 
 Shipped Foundations, Interactions, and Interfaces (`stable`/`unstable`) are never reset to `draft` in place, and they are never replaced by a new node.
 
-After the first `ship`, the node keeps a standing `<id>.next.mdx` **twin**: a byte copy of the live file except `state: mirror`. A `mirror` twin is **not** an open evolution — discover MUST NOT set `node.next` for it. Every live MCP write while there is no open evolution MUST rewrite the twin from the live bytes and set `state: mirror` again. Journeys and Bugs never get a twin. `force_unship`, `cancelled`, and `deprecated` delete the twin.
+After the first `ship`, the node keeps a standing `<id>.next.mdx` **twin**: a byte copy of the live file except `state: mirror` (the twin check also ignores how many blank lines sit below the frontmatter, §6.1). A `mirror` twin is **not** an open evolution — discover MUST NOT set `node.next` for it. Every live MCP write while there is no open evolution MUST rewrite the twin from the live bytes and set `state: mirror` again. Journeys and Bugs never get a twin. `force_unship`, `cancelled`, and `deprecated` delete the twin.
 
 To evolve a shipped node, call `open_next`, which:
 
@@ -742,6 +742,8 @@ For `discard_next`: validate Rule 10 (§5.11), restore `<id>.next.mdx` as a `mir
 ### 6.1 `<id>.mdx` structure
 
 Every entity's `<id>.mdx` MUST begin with YAML frontmatter followed by an MDX body (Markdown plus optional JSX per §6.4). An open `<id>.next.mdx` (Foundation/Interaction/Interface only, §3.6) uses the same frontmatter+body shape, scoped to the fields in the table below marked "also on `<id>.next.mdx`":
+
+Every MCP write of a node file leaves exactly one blank line between the closing `---` and the body (none when the body is empty), in the file's own line endings, so longer runs left by older releases collapse on the next write. `get_node_context` returns the body from its first text.
 
 ```mdx
 ---

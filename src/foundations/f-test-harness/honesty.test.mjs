@@ -1,8 +1,8 @@
 /**
  * Graph-honesty coverage: readiness reset on contract writes, Blocked: Coverage with its fix,
  * next-slot imports, skip_review for scoped ship walks, unambiguous checkbox toggles with notes
- * and not-applicable reasons, change groups, glob claims, territory writes that keep the
- * frontmatter-to-body layout and CRLF, and split route families.
+ * and not-applicable reasons, change groups, glob claims, territory writes that put one blank
+ * line below the frontmatter (collapsing older runs) and keep CRLF, and split route families.
  * Run via npm test.
  */
 import * as fs from "fs";
@@ -499,8 +499,8 @@ fillAndTick("interactions", "i-b");
   );
   await call("patch_node_territory", { node_id: "f-lay", body: "\n\n# Layout\n\nWhole body.\n" });
   check(
-    "a whole-body write keeps the blank lines the body starts with",
-    head(layFile) === `${original}\r\n` && !hasLf(read(layFile)),
+    "a whole-body write that starts with blank lines gets one blank line below the frontmatter",
+    head(layFile) === original && !hasLf(read(layFile)),
     JSON.stringify(head(layFile))
   );
   await call("patch_node_territory", { node_id: "f-lay", body: fullBody });
@@ -535,6 +535,52 @@ fillAndTick("interactions", "i-b");
       !hasLf(read(layFile)) &&
       !hasLf(read(layNext)),
     JSON.stringify(head(layFile))
+  );
+}
+
+// --- runs of blank lines below the frontmatter (left by releases before 0.2.0) collapse ---
+{
+  await call("create_node", { id: "f-gap", type: "Foundation", title: "Gap", description: "Infra — gap", role: "infra" });
+  write("src/f-gap/index.ts", "export const gap = 1;\n");
+  await call("set_implementation_files", { node_id: "f-gap", files: ["src/f-gap/"] });
+  fillAndTick("foundations", "f-gap");
+  const gapFile = territory("foundations", "f-gap");
+  const read = (file) => fs.readFileSync(file, "utf-8");
+  const blankRun = (file) => read(file).match(/\r?\n---\r?\n((?:\r?\n)*)/)[1].replace(/\r/g, "").length;
+  const seed = (eol) =>
+    fs.writeFileSync(
+      gapFile,
+      read(gapFile)
+        .replace(/\r?\n/g, eol)
+        .replace(/(\r?\n---\r?\n)(?:\r?\n)*/, (_m, fence) => `${fence}${eol.repeat(6)}`)
+    );
+
+  seed("\n");
+  check("the gap fixture starts with six blank lines", blankRun(gapFile) === 6, String(blankRun(gapFile)));
+  const { body } = await call("get_node_context", { node_id: "f-gap" });
+  check("get_node_context returns the body from its first text", body.startsWith("# Gap"), JSON.stringify(body.slice(0, 20)));
+  await call("update_node_status", { node_id: "f-gap", new_status: "ready" });
+  check("a status move leaves one blank line below the frontmatter", blankRun(gapFile) === 1, String(blankRun(gapFile)));
+
+  seed("\r\n");
+  await call("patch_node_territory", { node_id: "f-gap", aliases: ["gap"] });
+  check(
+    "an alias write on a CRLF file leaves one blank line and keeps it CRLF",
+    blankRun(gapFile) === 1 && !/(^|[^\r])\n/.test(read(gapFile)),
+    String(blankRun(gapFile))
+  );
+
+  // A discarded revision rewrites the twin from a live file that still has its run.
+  await walk("f-gap", ["in-progress", "in-review", "ship"]);
+  await call("open_next", { node_id: "f-gap" });
+  seed("\n");
+  await call("discard_next", { node_id: "f-gap" });
+  const gapCheck = await call("run_check", {});
+  check(
+    "a twin restored from a live file with a run is not drift",
+    blankRun(territory("foundations", "f-gap", "next")) === 1 &&
+      !gapCheck.failures.some((f) => f.includes("f-gap")),
+    JSON.stringify(gapCheck.failures.filter((f) => f.includes("f-gap")))
   );
 }
 

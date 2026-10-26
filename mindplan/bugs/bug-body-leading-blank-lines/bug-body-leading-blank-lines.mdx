@@ -1,0 +1,46 @@
+---
+id: bug-body-leading-blank-lines
+type: Bug
+title: "Bodies start with runs of blank lines"
+description: "Node files written before 0.2.0 start with runs of blank lines below the frontmatter; every later write keeps them and get_node_context returns them, so they never go away."
+state: in-review
+created_at: 2026-10-26T09:44:18.922Z
+updated_at: 2026-10-26T09:55:31.916Z
+aliases:
+  - "empty lines before heading"
+  - "blank lines after frontmatter"
+affects:
+  - f-territory-store
+---
+
+# Bodies start with runs of blank lines
+
+Node files written before 0.2.0 start with runs of blank lines below the frontmatter; every later write keeps them and get_node_context returns them, so they never go away.
+
+## Summary
+
+Releases before 0.2.0 added a blank line below the frontmatter on every patch and ship. 0.2.0 stopped adding them but kept a file's layout byte for byte (`d-frontmatter-body-separator`), and `get_node_context` returned the body with the run on top, so a body round-trip wrote it back. Affected files keep dozens of blank lines above the heading forever.
+
+## Repro Steps
+
+1. Take a node file with six blank lines below the closing `---` (this repo's `i-orient-plan.mdx` before the fix)
+2. Call `get_node_context`: `body` starts with six blank lines
+3. Write it back with `patch_node_territory({ body })`, or ship the node: the file still has six
+
+## Expected / Actual
+
+**Expected:** one blank line below the frontmatter after any write, and a body without leading blank lines from `get_node_context`.
+
+**Actual:** the run is kept on every write and returned on every read.
+
+## Fix Checklist
+
+- [x] Root cause identified — note: 0.2.0 kept the layout as found and get_node_context returned the run, so nothing ever collapsed it
+- [x] Fix implemented — note: every node file write goes through writeTerritoryFile; splitContext returns the body from its first text; the twin check ignores the gap
+- [x] Regression test added — note: honesty.test.mjs: LF and CRLF runs, status move, alias write, discard twin
+
+## Attachments
+
+_Logs, screenshots, and HAR files go in `attachments/`._
+
+{/* MDX: Affects, ReproSteps, Severity, ExpectedActual — see SPEC.md §6.4. */}

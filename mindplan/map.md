@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (40 nodes, 109 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (41 nodes, 110 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -22,7 +22,7 @@ flowchart TB
     f_orientation_ledger["f-orientation-ledger · Orientation ledger · stable"]
     f_search_index["f-search-index · Search index · stable"]
     f_source_index["f-source-index · Source index · stable"]
-    f_territory_store["f-territory-store · Territory store · stable"]
+    f_territory_store["f-territory-store · Territory store · unstable"]
     f_test_harness["f-test-harness · Test harness · stable"]
     f_view_projection["f-view-projection · View projection · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
@@ -56,6 +56,8 @@ flowchart TB
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient on the plan · stable"]
     i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer the plan · stable"]
   end
+  bug_body_leading_blank_lines["bug-body-leading-blank-lines · Bodies start with runs of blank lines · in-review"]
+  bug_body_leading_blank_lines -.-> f_territory_store
   f_compiler_rules --> f_domain_model
   f_compiler_rules --> f_source_index
   f_compiler_rules --> f_territory_store

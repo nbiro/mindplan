@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 — one blank line below the frontmatter
+
+- **Blank-line runs collapse.** Releases before 0.2.0 added a blank line below a node file's frontmatter on every patch and ship. 0.2.0 stopped adding them but kept a file's layout as it found it, and `get_node_context` returned the body with the run on top, so affected files kept dozens of blank lines above the heading. Every write of a node file (body and section patches, rules, decisions, claims, tests, aliases, status moves, `open_next`, ship, and the mirror twin) now leaves exactly one blank line between the closing `---` and the body, in the file's own line endings, so old files clean up on their next write. `get_node_context` returns the body from its first text. The mirror-twin check ignores the blank lines below the frontmatter, so a twin rewritten from a live file that still has its run is not drift. [§3.6, §6.1]
+
 ## 0.5.0 — cached graph loads
 
 Every behavior change in this release. SPEC sections in brackets.
