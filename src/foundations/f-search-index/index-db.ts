@@ -213,7 +213,12 @@ export class SearchIndex {
     const db = new Ctor(file);
     try {
       db.exec("PRAGMA busy_timeout = 3000");
-      if (file !== ":memory:") db.exec("PRAGMA journal_mode = WAL");
+      if (file !== ":memory:") {
+        db.exec("PRAGMA journal_mode = WAL");
+        // A derived cache: a crash can lose the last commits, which the next sync rewrites, so
+        // commits skip the per-transaction fsync (WAL stays consistent; it syncs at checkpoints).
+        db.exec("PRAGMA synchronous = NORMAL");
+      }
       // The meta check, a rebuild, and the table creation run in one write transaction, so two
       // servers opening a new or outdated file at once cannot interleave their rebuilds.
       db.exec("BEGIN IMMEDIATE");

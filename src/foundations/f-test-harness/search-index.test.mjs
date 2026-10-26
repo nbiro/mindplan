@@ -296,10 +296,17 @@ ok("searchNodes: exact id, path, type filter, retired nodes, keyword-only mode")
   let t = performance.now();
   await searchNodes(big, "booking widgets", { root, embedder });
   const cold = performance.now() - t;
-  big.nodes[500] = { ...big.nodes[500], title: "Renamed action", updated_at: "2026-02-01T00:00:00.000Z" };
-  t = performance.now();
-  await searchNodes(big, "renamed action", { root, embedder });
-  const incremental = performance.now() - t;
+  // The median of five one-node updates: the first commit after a cold index can carry a WAL
+  // checkpoint, which a slow CI disk turns into hundreds of milliseconds once.
+  const updates = [];
+  for (let i = 0; i < 5; i++) {
+    const at = 100 + i * 150;
+    big.nodes[at] = { ...big.nodes[at], title: `Renamed action ${i}`, updated_at: `2026-02-0${i + 1}T00:00:00.000Z` };
+    t = performance.now();
+    await searchNodes(big, `renamed action ${i}`, { root, embedder });
+    updates.push(performance.now() - t);
+  }
+  const incremental = updates.sort((a, b) => a - b)[2];
   const runs = [];
   for (let i = 0; i < 5; i++) {
     t = performance.now();
@@ -307,7 +314,7 @@ ok("searchNodes: exact id, path, type filter, retired nodes, keyword-only mode")
     runs.push(performance.now() - t);
   }
   const search = runs.sort((a, b) => a - b)[2];
-  console.log(`     1,000 nodes: cold index ${cold.toFixed(0)} ms, one-node update + search ${incremental.toFixed(0)} ms, search ${search.toFixed(1)} ms (median)`);
+  console.log(`     1,000 nodes: cold index ${cold.toFixed(0)} ms, one-node update + search ${incremental.toFixed(0)} ms (median of 5), search ${search.toFixed(1)} ms (median)`);
   assert.ok(incremental < 200, `an incremental update after one write takes under 200 ms (took ${incremental.toFixed(0)})`);
   assert.ok(search < 50, `a search takes under 50 ms (took ${search.toFixed(1)})`);
   closeSearchIndexes();
