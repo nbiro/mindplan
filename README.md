@@ -211,7 +211,7 @@ No Dependency Closure / `link_dependent`.
 
 - **The cache.** `.mindplan-cache/index.db` at the project root is derived from the `.mdx` files, which stay the only source of truth. It is gitignored, re-synced on every search (so a `git pull` or branch switch is picked up on the next call), and safe to delete at any time.
 - **The model.** `Xenova/bge-small-en-v1.5` (English, about 30 MB) runs locally through [transformers.js](https://huggingface.co/docs/transformers.js), an optional dependency: no API key, nothing leaves the machine. It downloads once per machine into `~/.cache/mindplan/models` (override with `MINDPLAN_MODEL_CACHE`) in the background when the server starts; a tool call never waits for it.
-- **Fallback.** Until the model is ready, or when it cannot load (offline, a proxy, a sandbox, `npm install --omit=optional`), search is keyword-only and never fails; the reason is logged once to stderr. On a runtime without `node:sqlite` or FTS5 the keyword half falls back to token scoring.
+- **Fallback.** Until the model is ready, or when it cannot load (offline, a proxy, a sandbox, `npm install --omit=optional`), search is keyword-only and never fails; the reason is logged once to stderr. On a runtime without `node:sqlite` or FTS5 (Node 22.13's bundled SQLite has no FTS5) the keyword half runs the same BM25 in plain JS, which ranks the search test set as well as FTS5 does.
 - **Settings.** `patch_config({ search: { enabled: false } })` turns semantic ranking off; `patch_config({ search: { model: "Xenova/all-MiniLM-L6-v2" } })` picks another model (the cache rebuilds). `MINDPLAN_SEARCH=keyword` turns it off for one process, and `MINDPLAN_SEARCH_OFFLINE=1` uses only an already-downloaded model.
 
 ## MCP Tools
