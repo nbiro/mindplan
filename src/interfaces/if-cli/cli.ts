@@ -4,14 +4,20 @@
  */
 
 import {
+  INIT_CI,
   INIT_HOSTS,
   LegacyTerritoryMigrationError,
   resolvePackageRoot,
   runInit,
+  type InitCi,
   type InitHost,
   type LegacyTerritoryRename,
 } from "../../interactions/i-init-project/init.js";
-import { renderCheckOutput, runIntegrityCheck } from "../../interactions/i-check-integrity/check.js";
+import {
+  renderCheckOutput,
+  runIntegrityCheck,
+  type MergeLevel,
+} from "../../interactions/i-check-integrity/check.js";
 import { runViewExport } from "../../interactions/i-export-map/handlers.js";
 
 function parseViewArgs(argv: string[]): {
@@ -64,27 +70,38 @@ function runViewCli(argv: string[]): void {
   printRemovedLegacyFiles(result.removed_legacy_files);
 }
 
-function parseCheckArgs(argv: string[]): { base?: string } {
+function parseCheckArgs(argv: string[]): { base?: string; merge?: MergeLevel } {
   let base: string | undefined;
+  let merge: MergeLevel | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--base") {
       const value = argv[++i];
       if (!value) throw new Error("Blocked: --base requires a git ref.");
       base = value;
+    } else if (arg === "--merge" || arg.startsWith("--merge=")) {
+      const value = arg === "--merge" ? undefined : arg.slice("--merge=".length);
+      if (value !== undefined && value !== "strict") {
+        throw new Error(`Blocked: unknown merge level "${value}". Use --merge or --merge=strict.`);
+      }
+      const level: MergeLevel = value === "strict" ? "strict" : true;
+      if (merge !== undefined && merge !== level) {
+        throw new Error("Blocked: --merge and --merge=strict were both passed. Pass one merge level.");
+      }
+      merge = level;
     } else if (arg === "--help" || arg === "-h") {
       throw new Error("HELP");
     } else {
       throw new Error(`Blocked: unknown check option "${arg}".`);
     }
   }
-  return { base };
+  return { base, merge };
 }
 
 function runCheckCli(argv: string[]): void {
   try {
     const opts = parseCheckArgs(argv);
-    const result = runIntegrityCheck({ base: opts.base });
+    const result = runIntegrityCheck({ base: opts.base, merge: opts.merge });
     printRemovedLegacyFiles(result.removedLegacyFiles);
     const output = renderCheckOutput(result);
     if (result.ok) {
@@ -99,9 +116,15 @@ function runCheckCli(argv: string[]): void {
       console.log(`Usage:
   mindplan-mcp check                  Graph load + file ownership (default; CI mode)
   mindplan-mcp check --base <ref>     Also enforce dirty-src ownership vs base
+  mindplan-mcp check --merge          Merge gate: also Block work still in review
+  mindplan-mcp check --merge=strict   Also Block in-progress work whose claimed files changed
 
 Options:
-  --base <ref>   Opt-in dirty-src vs this git ref (not used by CI)
+  --base <ref>      Opt-in dirty-src vs this git ref; the strict merge gate's base
+  --merge           Block in-review nodes and Bugs (run on PRs to the default branch)
+  --merge=strict    Also Block in-progress nodes whose claimed files changed against
+                    --base (default: the main/master merge base; an explicit --base
+                    also runs dirty-src)
 `);
       return;
     }
@@ -113,10 +136,12 @@ Options:
 function parseInitArgs(argv: string[]): {
   force: boolean;
   hosts: InitHost[];
+  ci?: InitCi;
   error?: string;
 } {
   let force = false;
   let hosts: InitHost[] = ["cursor"];
+  let ci: InitCi | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-f" || arg === "--force") {
@@ -134,6 +159,16 @@ function parseInitArgs(argv: string[]): {
           error: `Blocked: unknown init host "${value ?? ""}". Use --host cursor|claude|all.`,
         };
       }
+    } else if (arg === "--ci" || arg.startsWith("--ci=")) {
+      const value = arg === "--ci" ? argv[++i] : arg.slice("--ci=".length);
+      if (!(INIT_CI as readonly string[]).includes(value)) {
+        return {
+          force: false,
+          hosts,
+          error: `Blocked: unknown init ci "${value ?? ""}". Use --ci github.`,
+        };
+      }
+      ci = value as InitCi;
     } else if (arg === "--layout" || arg.startsWith("--layout=")) {
       return {
         force: false,
@@ -145,11 +180,11 @@ function parseInitArgs(argv: string[]): {
       return {
         force: false,
         hosts,
-        error: `Blocked: unknown init option "${arg}". Use -f|--force or --host cursor|claude|all.`,
+        error: `Blocked: unknown init option "${arg}". Use -f|--force, --host cursor|claude|all, or --ci github.`,
       };
     }
   }
-  return { force, hosts };
+  return { force, hosts, ci };
 }
 
 function printRemovedLegacyFiles(removed: { from: string; to: string }[]): void {
@@ -225,6 +260,12 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
       printInstall("Claude skill", claudeSkill);
     }
   }
+  if (report.ci) {
+    printInstall("merge-gate workflow", report.ci);
+    console.log(
+      "Make its \"mindplan merge gate\" job a required status check on the default branch (Settings → Branches), so a PR with work still in review cannot merge."
+    );
+  }
   const version = report.version;
   if (version.from === version.to) {
     console.log(`Stamped mindplan/version.json at ${version.to}`);
@@ -267,6 +308,10 @@ function printHelp(): void {
 Init options:
   --host cursor|claude|all  Host copies to install: Cursor (.cursor/, .cursorignore), Claude Code
                             (CLAUDE.md, .claude/skills/), or both (default: cursor).
+  --ci github               Also install .github/workflows/mindplan-merge-gate.yml at the
+                            repository top, which runs check --merge in this project on pull
+                            requests to the default branch (kept when present unless --force).
+                            Make it a required status check.
   -f, --force               Overwrite existing agent assets (playbook, skills, host copies,
                             AGENTS.md, CLAUDE.md, .cursorignore, permissions, etc.) from package templates.
                             Also migrates legacy implementation_packages → { sources, exclude }.
@@ -281,7 +326,12 @@ View options:
   --output, -o <file>       Write diagram to a file instead of stdout
 
 Check options:
-  --base <ref>              Opt-in dirty-src ownership vs this git ref (not used by CI)
+  --base <ref>              Opt-in dirty-src ownership vs this git ref (not used by CI);
+                            also the base of --merge=strict
+  --merge                   Merge gate: Block in-review nodes and Bugs (a PR to the default
+                            branch must ship them first, or move them back to in-progress)
+  --merge=strict            Also Block in-progress nodes whose claimed files changed against
+                            the base (default: the main/master merge base)
 
 Environment:
   MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);
@@ -305,6 +355,7 @@ export function runCli(argv: string[] = process.argv): boolean {
       const report = runInit({
         force: parsed.force,
         hosts: parsed.hosts,
+        ci: parsed.ci,
         packageRoot,
       });
       printInitReport(report);

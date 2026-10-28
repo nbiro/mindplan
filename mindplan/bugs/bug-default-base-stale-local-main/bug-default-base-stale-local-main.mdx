@@ -1,0 +1,39 @@
+---
+id: bug-default-base-stale-local-main
+type: Bug
+title: "The default base uses a stale local main"
+description: "defaultBaseRef tries local main before origin/main, so when local main is behind, the merge base moves back and dirty-src, the decision gate, new-file detection, and check --merge=strict count already-merged commits as this branch's changes."
+state: resolved
+created_at: 2026-10-28T16:18:09.744Z
+updated_at: 2026-10-28T16:39:20.258Z
+affects:
+  - f-source-index
+---
+
+# The default base uses a stale local main
+
+## Summary
+
+`defaultBaseRef` in `src/foundations/f-source-index/git.ts` returns the merge base of `HEAD` with the first of `main`, `origin/main`, `master`, `origin/master` that resolves. A local `main` that was never pulled is behind `origin/main`, so the merge base falls back to an older commit and every commit merged to `origin/main` since then counts as this branch's change. Dirty-src, new-file detection for the decision gate, and `check --merge=strict` then report files this branch never touched.
+
+## Repro Steps
+
+1. Clone, let local `main` fall behind `origin/main` (fetch without pulling), and branch from `origin/main`
+2. `check --merge=strict` with no `--base`
+3. In-progress nodes whose files changed only in already-merged commits are Blocked
+
+## Expected / Actual
+
+**Expected:** the base is the newest of the local and remote default branch, so only this branch's commits count.
+
+**Actual:** a stale local `main` wins and already-merged changes count.
+
+## Fix Checklist
+
+- [x] Root cause identified — note: defaultBaseRef returned the first resolving merge base, local main before origin/main
+- [x] Fix implemented — note: defaultBaseRef computes the merge bases with origin/<branch> and <branch> and returns the newer (merge-base --is-ancestor), origin's when they diverge
+- [x] Regression test added — note: merge-gate.test.mjs sets local main behind origin/main and checks that strict counts only this branch's commits
+
+## Attachments
+
+_None._

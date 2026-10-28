@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { GRAPH_VERSION } from "../f-domain-model/types.js";
+import { readFileRetry, writeFileRetry } from "../f-source-index/io.js";
 
 const MINDPLAN_DIR = "mindplan";
 const PACKAGE_NAME = "mindplan-mcp";
@@ -98,7 +99,7 @@ export function readProjectVersion(): ProjectVersion | null | "invalid" {
   const abs = stampPath();
   if (!fs.existsSync(abs)) return null;
   try {
-    const raw = JSON.parse(fs.readFileSync(abs, "utf-8")) as unknown;
+    const raw = JSON.parse(readFileRetry(abs)) as unknown;
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "invalid";
     const obj = raw as Record<string, unknown>;
     if (typeof obj.package !== "string" || parseSemver(obj.package) === null) return "invalid";
@@ -113,11 +114,7 @@ export function readProjectVersion(): ProjectVersion | null | "invalid" {
 export function writeProjectVersion(version: ProjectVersion = runningVersion()): string {
   const abs = stampPath();
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(
-    abs,
-    JSON.stringify({ package: version.package, graph: version.graph }, null, 2) + "\n",
-    "utf-8"
-  );
+  writeFileRetry(abs, JSON.stringify({ package: version.package, graph: version.graph }, null, 2) + "\n");
   return VERSION_RELATIVE_PATH;
 }
 

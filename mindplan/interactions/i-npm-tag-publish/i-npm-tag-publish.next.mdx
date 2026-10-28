@@ -3,10 +3,10 @@ id: i-npm-tag-publish
 type: Interaction
 title: "Publish on merge to main"
 description: "On every push to main, GitHub Actions publishes package.json's version to npm via OIDC Trusted Publishing when that version is not on the registry yet, then tags it vX.Y.Z; a push without a version bump publishes nothing."
-state: in-review
-shipped_at: 2026-10-25T20:27:49.400Z
+state: mirror
+shipped_at: 2026-10-28T16:41:30.469Z
 created_at: 2026-07-19T20:19:48.978Z
-updated_at: 2026-10-25T21:32:24.771Z
+updated_at: 2026-10-28T16:41:30.469Z
 belongs_to:
   - j-npm-publish
 depends_on:
@@ -14,9 +14,6 @@ depends_on:
   - f-github-actions
 implements:
   - .github/workflows/publish.yml
-opened_at: 2026-10-25T21:26:19.783Z
-change: "repin-auto-merge"
-change_ref: "graph/repin-auto-merge"
 ---
 
 # Publish on merge to main
@@ -56,7 +53,7 @@ CI publishes `mindplan-mcp@X.Y.Z` using OIDC and pushes tag `vX.Y.Z`.
 - [x] `CONTRIBUTING.md` documents: bump the version in a PR → merge to main.
 - [x] After a release, Dependabot opens a PR repinning the exact `mindplan-mcp` devDependency to it, and opens no version-update PR for any other dependency. — n/a: Dependabot replaced by the repin job in publish.yml before its first run; see the repin criterion below
 - [x] After a release, the `repin` job opens a PR that pins the exact `mindplan-mcp` devDependency to it (bumping no version) and dispatches CI on it; a re-run does not open a second PR. — note: 0.2.2 release run 40230396563: repin opened #54 (package.json and lockfile only, 0.2.0 -> 0.2.2) and dispatched CI run 40230576949 (green); re-running the repin job logged that the branch exists and opened no second PR; merging #54 published nothing (run 40230756924 skipped publish and repin)
-- [ ] When the CI run dispatched on a repin branch is green, its `merge-repin` job merges the repin PR (merge commit; the branch stays); a red run, a PR touching other files, or a head that moved past the tested commit leaves the PR open.
+- [x] When the CI run dispatched on a repin branch is green, its `merge-repin` job merges the repin PR (merge commit; the branch stays); a red run, a PR touching other files, or a head that moved past the tested commit leaves the PR open. — note: 0.5.2 and 0.5.3: dispatched CI runs 40334685882 and 40376553178 passed and merge-repin merged #73 (93c074d) and #75 (c75a878) as github-actions, package.json and package-lock.json only; the red 0.5.0 run 40294907477 skipped merge-repin and left #69 unmerged
 
 ## Prerequisites (Infrastructure First)
 
@@ -143,7 +140,7 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - [x] Verify on a real release: the repin PR opens with CI checks on it — note: done differently: the PR opened and the dispatched CI ran green, but it shows under Actions for the branch, not as PR checks; the PR's own pull_request run waits for approval (documented)
 - [x] Add the `merge-repin` job to `ci.yml` (`f-github-actions`, in place): dispatch on `repin/mindplan-mcp-*` only, `needs: test`, file allowlist, `--match-head-commit`
 - [x] Update the project rule, the repin PR body, and `CONTRIBUTING.md`: the repin PR merges itself when CI is green — note: also changed the release rule: only PRs that change the shipped package bump the version, so this PR releases nothing
-- [ ] Verify on the next release: the repin PR merges after its dispatched CI run passes
+- [x] Verify on the next release: the repin PR merges after its dispatched CI run passes — note: 0.5.2 (#73) and 0.5.3 (#75) merged by github-actions after their dispatched CI runs passed
 
 ## Decisions
 

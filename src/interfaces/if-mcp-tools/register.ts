@@ -243,6 +243,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Warnings flag stale territory text, next-slot imports (one release before they Block), split route families, and revisions in review with no linked tests, and never fail the check. " +
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
         "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only). " +
+        "Pass merge before telling the user a PR is ready to merge: it Blocks every node still in review (ship its change, or move it back to in-progress), and with \"strict\" also in-progress nodes whose claimed files changed against base; results carry merge grouped by change. " +
         "Moves to in-review and ship run this check on the node's files themselves.",
       inputSchema: {
         base: z
@@ -252,9 +253,15 @@ export function registerMindPlanTools(server: McpServer): void {
         change: CHANGE_ID.optional().describe(
           "Also check every member of this change (imports, ownership, stale text) and list its members, each with kind revision | neighbor."
         ),
+        merge: z
+          .union([z.literal(true), z.literal("strict")])
+          .optional()
+          .describe(
+            "Merge gate: true Blocks in-review nodes and Bugs; \"strict\" also Blocks in-progress nodes whose claimed files changed against base (default: the main/master merge base)."
+          ),
       },
     },
-    ({ base, change }) => runCheckHandler({ base, change })
+    ({ base, change, merge }) => runCheckHandler({ base, change, merge })
   );
 
   tool(

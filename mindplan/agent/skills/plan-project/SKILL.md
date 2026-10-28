@@ -125,7 +125,7 @@ Requirements before self-ready:
 - **No** checking off checklist boxes
 - **No** Interaction→Interaction `depends_on`
 
-Then self-ready. Do not interpret “ship” here as `update_node_status` → `ship`.
+Then self-ready. Do not interpret “ship” here as `update_node_status` → `ship`. The build-pipeline `ship` happens in the execution session, before the PR merges: `run_check({ merge: true })` (CLI `mindplan-mcp check --merge`) is the merge gate and fails while any node is still `in-review`; plan-only PRs (`draft` / `ready`) pass it.
 
 ## Never do (this skill)
 

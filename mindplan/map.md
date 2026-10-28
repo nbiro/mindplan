@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (42 nodes, 112 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (40 nodes, 109 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -22,7 +22,7 @@ flowchart TB
     f_orientation_ledger["f-orientation-ledger · Orientation ledger · stable"]
     f_search_index["f-search-index · Search index · stable"]
     f_source_index["f-source-index · Source index · stable"]
-    f_territory_store["f-territory-store · Territory store · unstable"]
+    f_territory_store["f-territory-store · Territory store · stable"]
     f_test_harness["f-test-harness · Test harness · stable"]
     f_view_projection["f-view-projection · View projection · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
@@ -31,7 +31,7 @@ flowchart TB
     if_cli{{"if-cli · CLI · stable"}}
     if_console{{"if-console · Console · ready"}}
     if_console_api{{"if-console-api · Console API · ready"}}
-    if_mcp_tools{{"if-mcp-tools · MCP tools · unstable"}}
+    if_mcp_tools{{"if-mcp-tools · MCP tools · stable"}}
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Main-branch release trigger · draft"}}
   end
@@ -39,7 +39,7 @@ flowchart TB
     i_init_project__in__j_agent_onboarding["i-init-project · Init project · stable"]
     i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · stable"]
   end
-  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · evolving"]
+  subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · stable"]
     i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · stable"]
     i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · stable"]
   end
@@ -56,11 +56,6 @@ flowchart TB
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient on the plan · stable"]
     i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer the plan · stable"]
   end
-  bug_body_leading_blank_lines["bug-body-leading-blank-lines · Bodies start with runs of blank lines · in-review"]
-  bug_note_toggle_needs_checked["bug-note-toggle-needs-checked · A note toggle without checked is Blocked · in-review"]
-  bug_body_leading_blank_lines -.-> f_territory_store
-  bug_note_toggle_needs_checked -.-> f_territory_store
-  bug_note_toggle_needs_checked -.-> if_mcp_tools
   f_compiler_rules --> f_domain_model
   f_compiler_rules --> f_source_index
   f_compiler_rules --> f_territory_store

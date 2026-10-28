@@ -4,9 +4,9 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-nine tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels, additive in-place claims on shipped nodes, linked test files, summary-first orientation with its write gate, and area-first search."
 state: mirror
-shipped_at: 2026-10-26T00:04:46.524Z
+shipped_at: 2026-10-28T16:39:50.253Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-26T18:03:40.515Z
+updated_at: 2026-10-28T16:39:50.253Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -21,6 +21,7 @@ implements:
   - src/interfaces/if-mcp-tools/
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
@@ -52,6 +53,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 
 - Register `get_rules`
 - Register `patch_node_rules` with `node_id` (slug) and `rules` (string, required; empty clears). Description starts with the when-clause: call when a rule applies to one node and the work that inherits from it, rather than everywhere (use `patch_project_rules` for everywhere)
+- `run_check` takes `merge` (`true` or `"strict"`) and passes it to `runCheckHandler`; its description says the merge gate Blocks work still in review (strict: in-progress work whose claimed files changed against the base) and to run it before telling the user a PR is ready
 - Register `run_check` with optional `base`; it calls `runCheckHandler` and returns `{ ok, output, failures, warnings }`; no drift
 - The `get_rules` description says it returns global rules only and that node rules arrive through `orient_for_work`; the `orient_for_work` description says it returns a `rules` block and takes `depth`
 - Lead every tool description with a when-clause
@@ -143,6 +145,8 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - [x] Verified the tool list via `npm test`
 
 - [x] Add the `aliases` schema to `create_node` and `patch_node_territory`
+- [x] Add `merge` to the `run_check` schema and description
+- [x] Verified `run_check` with `merge` returns the CLI's failures via `npm test` — note: merge-gate.test.mjs, over stdio MCP
 
 ## Decisions
 

@@ -76,6 +76,7 @@ import {
   normalizeClaimList,
 } from "../../foundations/f-source-index/claims.js";
 import { decisionGateSettings } from "../../foundations/f-source-index/config.js";
+import { unlinkRetry, writeFileRetry } from "../../foundations/f-source-index/io.js";
 import {
   buildOwnershipIndex,
   exclusiveOwner,
@@ -2041,7 +2042,7 @@ export function putAttachment(args: {
   if (path.resolve(abs) !== path.resolve(dir, filename)) {
     throw blocked(`invalid attachment filename "${args.filename}".`);
   }
-  fs.writeFileSync(abs, bytes);
+  writeFileRetry(abs, bytes);
   const rel = `${entityRelativePath(node)}/${slot === "next" ? NEXT_ATTACHMENTS_DIR : ATTACHMENTS_DIR}/${filename}`;
   return {
     node_id,
@@ -2081,7 +2082,7 @@ export function removeAttachment(args: {
   if (!fs.existsSync(abs)) {
     throw blocked(`attachment "${filename}" not found on ${slot} for "${node_id}".`);
   }
-  fs.unlinkSync(abs);
+  unlinkRetry(abs);
   const rel = `${entityRelativePath(node)}/${slot === "next" ? NEXT_ATTACHMENTS_DIR : ATTACHMENTS_DIR}/${filename}`;
   return {
     node_id,

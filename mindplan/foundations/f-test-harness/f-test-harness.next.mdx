@@ -6,7 +6,7 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: mirror
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-26T10:03:40.426Z
+updated_at: 2026-10-28T16:29:17.329Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -14,7 +14,6 @@ implements:
 tests:
   - src/foundations/f-test-harness/
 role: infra
-change: "body-blank-lines"
 ---
 
 # Test harness
@@ -69,6 +68,8 @@ Depends on: `f-mcp-runtime`.
 - `npm test` runs `orient-gate.test.mjs` (rows only for a query, under 2 KB for 10; auto-focus on an exact id; the full reply for `node_id`; every gated write Blocked in a fresh session and passing after orienting; a Journey rules change sending its Interaction back to orient; `create_node` never blocked; `get_node_context` carrying `resolved_rules`; `limit: 1` never auto-focusing; attachments gated; proposed next-slot edges changing the rules fingerprint; the CLI never gated) and it passes; the smoke suite runs with `MINDPLAN_ORIENT_GATE=off` because its walks write without orienting
 - `npm test` runs `rules-version.test.mjs` (the `rules_version` tag, the short unchanged `get_rules` reply under 150 bytes, the tag change after `patch_project_rules`, and versioned node-rule entries in `orient_for_work`) and it passes
 - `decisions.test.mjs` asserts the own-decisions default of `orient_for_work`, `get_node_context`, and `get_blast_radius`, the inherited entries' shapes with `include_inherited_decisions`, the one-decision reply on a node shaped like skyloom's `i-contact-platform`, a Bug's context listing the affected node's decisions, and superseded one-line entries
+
+- **Merge gate.** `src/foundations/f-test-harness/merge-gate.test.mjs` writes fixture graphs on disk and covers `check --merge` for every state, a change spanning several nodes (one group), in-review Bugs, `--merge=strict` against a git base, `runCheckHandler` and `run_check` over MCP matching the CLI, a project below the repository top (project-relative changed paths, the workflow at the top with its working directory), a stale local `main`, one git probe per check, conflicting merge levels, and `init --ci github`. `src/foundations/f-test-harness/transient-io.test.mjs` covers the plan-file retry in `f-source-index/io.ts` (which codes are retried on which platform, other errors thrown at once, a lock outlasting the back-off) and 25 rounds of `open_next` then `patch_node_territory` plus `record_decision` in one batch
 
 ## Atomic Ops
 

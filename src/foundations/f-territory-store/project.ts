@@ -6,6 +6,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { readFileRetry, writeFileRetry } from "../f-source-index/io.js";
 
 const MINDPLAN_DIR = "mindplan";
 export const PROJECT_FILENAME = "project.md";
@@ -46,7 +47,7 @@ export function loadProjectBriefTemplate(): string {
     for (let i = 0; i < 8; i++) {
       const candidate = path.join(dir, PROJECT_BRIEF_TEMPLATE);
       if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, "utf-8");
+        return readFileRetry(candidate);
       }
       const parent = path.dirname(dir);
       if (parent === dir) break;
@@ -90,7 +91,7 @@ export function loadProjectBrief(): ProjectBrief {
         markdown: loadProjectBriefTemplate(),
       };
     }
-    const raw = fs.readFileSync(abs, "utf-8");
+    const raw = readFileRetry(abs);
     const { description, rules } = parseSections(raw);
     const trimmed = raw.replace(/^\uFEFF/, "").replace(/\s+$/, "") + "\n";
     return {
@@ -130,7 +131,7 @@ export function writeProjectBrief(input: {
   const markdown = renderBrief(description, rules);
   const abs = path.join(mindplanRoot(), PROJECT_FILENAME);
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, markdown, "utf-8");
+  writeFileRetry(abs, markdown);
   return {
     path: PROJECT_RELATIVE_PATH,
     description: description.trim(),

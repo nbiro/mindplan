@@ -119,7 +119,7 @@ Requires Node.js 22.13 or later (the first 22.x release with `node:sqlite` unfla
 npx mindplan-mcp init --host claude   # or cursor (default) / all
 ```
 
-`init` installs `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, a short MindPlan stub in `AGENTS.md` when missing, and a `.mindplan-cache/` line in `.gitignore`. Host copies depend on `--host cursor|claude|all` (default `cursor`): Cursor gets `.cursorignore`, `.cursor/permissions.json`, `.cursor/rules/mindplan.mdc` and `.cursor/skills/`; Claude Code gets `CLAUDE.md` (an `@AGENTS.md` import) and `.claude/skills/`. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`, and stamps `mindplan/version.json` with the package version. The stub requires `get_project` before planning or code, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work; when tools are hidden, use the init-installed host copies under `.cursor/` or `.claude/` and `AGENTS.md`.
+`init` installs `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, a short MindPlan stub in `AGENTS.md` when missing, and a `.mindplan-cache/` line in `.gitignore`. Host copies depend on `--host cursor|claude|all` (default `cursor`): Cursor gets `.cursorignore`, `.cursor/permissions.json`, `.cursor/rules/mindplan.mdc` and `.cursor/skills/`; Claude Code gets `CLAUDE.md` (an `@AGENTS.md` import) and `.claude/skills/`. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`, and stamps `mindplan/version.json` with the package version. With `--ci github` it also installs the merge-gate workflow (see [Merge gate](#merge-gate)). The stub requires `get_project` before planning or code, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work; when tools are hidden, use the init-installed host copies under `.cursor/` or `.claude/` and `AGENTS.md`.
 
 3. Register the MCP server. It runs over stdio, so the host starts it from the project root. For Claude Code, commit a `.mcp.json`:
 
@@ -226,7 +226,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 |------|------|-------------|
 | `orient_for_work` | read | Summary first: a query returns ranked rows (the full node only for a clear winner, `auto_focus`); `node_id` returns `record`/`body` context, owned files, and blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); writes on a node wait until it was oriented on (`Blocked: Orientation`); the `rules` that apply to the focus and its own `decisions` (inherited ones counted in `inherited_decisions`, listed with `include_inherited_decisions`); `depth: rules\|body\|full` trims it |
 | `get_rules` | read | The mandatory project rules with a `rules_version` tag; `known_version` returns `{ unchanged: true }` without the text when nothing changed |
-| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every member of a change (revisions and labeled neighbors) |
+| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every member of a change (revisions and labeled neighbors); `merge` (`true` or `"strict"`) runs the merge gate |
 | `list_areas` | read | Every Journey (area) as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
 | `find_related_nodes` | read | Hybrid search by query (keyword + semantic; exact id first); focus + 1-hop |
 | `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset` |
@@ -257,8 +257,28 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `mindplan-mcp` | Start MCP server (stdio) |
 | `mindplan-mcp init` | Scaffold territory + agent assets; stamp `mindplan/version.json`; rerun after upgrading |
 | `mindplan-mcp view` | Print Mermaid/DOT (`export` alias) |
-| `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src; also the `run_check` MCP tool |
+| `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src; `--merge` merge gate (see [Merge gate](#merge-gate)); also the `run_check` MCP tool |
 | `mindplan-mcp help` | Usage |
+
+### Merge gate
+
+`main` should hold work that is done (`stable` / `unstable`) or still being built (`in-progress`), never work that is `in-review`: in review means the code is finished but the graph has not shipped it, and that belongs on a branch. Plain `check` ignores lifecycle state, so it cannot catch a PR merged with its change still in review. `check --merge` does:
+
+```bash
+npx mindplan-mcp check --merge
+```
+
+It fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live or open next slot is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back with `new_status: "in-progress"` if the work is unfinished. `draft`, `ready`, `in-progress`, shipped nodes, and mirror twins pass, so planning PRs and incremental PRs still merge. Agents run the same gate with `run_check({ merge: true })` before saying a PR is ready.
+
+`--merge=strict` (with `--base <ref>`, default the merge base with the newer of `main` and `origin/main`, else `master`) also fails an `in-progress` node whose claimed files changed against the base: a finished feature left at `in-progress`. It is opt-in because it blocks the incremental PRs of a large feature. An explicit `--base` also turns on the dirty-src ownership check, as it does without `--merge`.
+
+To run the gate in CI, install the GitHub Actions workflow:
+
+```bash
+npx mindplan-mcp init --ci github
+```
+
+It writes `.github/workflows/mindplan-merge-gate.yml` at the repository top (a project in a subfolder gets the workflow at the top, running in that folder), which runs `check --merge` on every pull request to the default branch. Then make its **mindplan merge gate** job a required status check for the default branch (Settings → Branches, or a ruleset); otherwise a red gate does not stop the merge. Init keeps an edited workflow unless `--force`.
 
 Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`). Search reads `MINDPLAN_SEARCH`, `MINDPLAN_SEARCH_OFFLINE`, and `MINDPLAN_MODEL_CACHE` (see [Search](#search)); the graph cache reads `MINDPLAN_GRAPH_CACHE` (see [Graph cache](#graph-cache)).
 

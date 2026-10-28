@@ -2,11 +2,11 @@
 id: i-init-project
 type: Interaction
 title: "Init project"
-description: "Init installs the playbook, project brief, and host copies for the chosen host (Cursor, Claude Code, or both), ignores the mindplan/ tree in Cursor and the search cache in git, writes a missing mirror for each already-shipped pipeline node, and stamps mindplan/version.json; when the stamp is older than the package it refreshes the package-owned agent files."
+description: "Human runs init: it installs the playbook, brief, and host copies for Cursor, Claude Code, or both, optionally the GitHub merge-gate workflow, ignores mindplan/ in Cursor and the search cache in git, backfills mirror twins, and stamps mindplan/version.json, refreshing package files when behind."
 state: stable
-shipped_at: 2026-10-25T22:42:44.309Z
+shipped_at: 2026-10-28T16:39:50.117Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-25T22:42:44.309Z
+updated_at: 2026-10-28T16:39:50.117Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -17,6 +17,7 @@ leads_to:
 implements:
   - src/interactions/i-init-project/
 tests:
+  - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/version.test.mjs
@@ -42,6 +43,7 @@ Intended files: `src/interactions/i-init-project/`
 - Every host: `installSearchCacheIgnore()` adds `.mindplan-cache/` (the derived search cache, `f-search-index`) to the repo's `.gitignore` under a one-line comment, creating the file when missing and keeping its line endings; an existing entry (`.mindplan-cache`, with or without a leading or trailing `/`) is left alone. The report carries `searchCacheIgnore` (`installed`, `path`)
 - Claude Code host: `CLAUDE.md` containing `@AGENTS.md`, and `.claude/skills/mindplan-*`; an existing `CLAUDE.md` is kept unless `--force`
 - The report carries `cursor` and `claude` groups that are present only when selected
+- **Merge-gate workflow.** `runInit` takes `ci` (`"github"`, or absent: nothing is installed). `installMergeGateWorkflow` copies `templates/ci/github/mindplan-merge-gate.yml` to `mindplan-merge-gate.yml` in `.github/workflows/` at the repository top (`repoTop`, `f-source-index`; outside git, under the project root), where GitHub reads workflows, replacing `{{MINDPLAN_DIR}}` with the project root's path below the top (`.` at the top) for `defaults.run.working-directory`, and `{{MINDPLAN_VERSION}}` with the running package's `major.minor`; the reported path is relative to the project root, so `npx -y mindplan-mcp@<major.minor> check --merge` runs a release that has the flag. It runs on `pull_request` and its job runs only when the PR targets the repository's default branch (`github.base_ref == github.event.repository.default_branch`). The workflow is repo-owned: an existing file is kept unless `--force`. The report carries `ci` (`installed`, `path`) only when requested
 - `backfillMirrorTwins` after installers
 - Graph-load failures during backfill are skipped (incomplete migration fixtures)
 - **Version stamp.** Init reads `mindplan/version.json` before installing. Package-owned files (the playbook, both skills, `mcp.json.example`, `integrations/`, the host skill copies, and `.cursor/rules/mindplan.mdc`) are rewritten when the stamp is missing, unreadable, or older than the package, as if `--force` were passed for those files only. Repo-owned files (`AGENTS.md`, `CLAUDE.md`, `.cursorignore`, `.cursor/permissions.json`, `mindplan/project.md`) still change only with `--force` (the brief never).
@@ -59,6 +61,7 @@ Depends on: `f-territory-store`, `f-source-index`.
 - Init stamps `mindplan/version.json`; a rerun with an older stamp refreshes package-owned files and leaves repo-owned files alone
 - Init refuses a stamp newer than the package unless `--force`
 - Init adds `.mindplan-cache/` to `.gitignore` once; a rerun does not add it again
+- `init --ci github` writes `mindplan-merge-gate.yml` under the repository top's `.github/workflows/` (running in the project root when it sits below the top), running `check --merge` at the package's minor version; a plain init writes no workflow; a rerun keeps an edited workflow unless `--force`
 - Verified via `npm test`
 
 ## Atomic Ops
@@ -76,6 +79,8 @@ Depends on: `f-territory-store`, `f-source-index`.
 - [x] Add `.mindplan-cache/` to the repo's `.gitignore` and report it
 - [x] Verified the `.gitignore` entry via `npm test`
 - [x] Verified via `npm test`
+- [x] Install the merge-gate workflow on `ci: "github"` and report it
+- [x] Verified the workflow install, its version, and the keep-unless-force rule via `npm test` — note: merge-gate.test.mjs
 
 ## Attachments
 

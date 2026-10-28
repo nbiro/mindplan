@@ -4,9 +4,9 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check, links the tests that verify a node, and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked tests, shared-route ownership, decision records and the decision gate, and host install docs for Cursor and Claude Code."
 state: mirror
-shipped_at: 2026-10-25T21:13:07.168Z
+shipped_at: 2026-10-28T16:39:49.979Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-26T08:15:22.874Z
+updated_at: 2026-10-28T16:39:49.979Z
 depends_on:
   - f-domain-model
 implements:
@@ -62,6 +62,8 @@ Depends on: `f-domain-model`.
 
 - **Areas.** Playbook step 1 adds the area-first path (`list_areas` → pick → `orient_for_work({ query, area })`, without `area` for cross-cutting questions); SPEC §8 counts twenty-nine tools and specifies `list_areas` and `area`; the README lists `list_areas`; the `npx` examples use `mindplan-mcp@0.9`
 
+- **Merge gate.** Playbook rule 7 gains one line: a PR is merged only after its change is shipped (or moved back to `in-progress`), and `check --merge` (`run_check({ merge: true })`) is the gate. The plan-project skill names the gate where it talks about shipping. `templates/ci/github/mindplan-merge-gate.yml` is the workflow `init --ci github` installs. SPEC specifies `--merge` / `--merge=strict`, `run_check` `merge`, the `Blocked: Merge` lines and the `merge` result (§8.1, §9.6), and `init --ci github`; the README documents the flag, the strict level (whose explicit `--base` also runs dirty-src), the workflow, and making it a required status check; `CHANGELOG.md` gets the 0.6.0 section. SPEC §1.1 requires plan-file I/O to retry a brief lock (`EBUSY` / `UNKNOWN`, and `EPERM` / `EACCES` on Windows), and §9.6 says changed paths are project-relative, the default base is the newer of the local and remote default branch, the workflow goes at the repository top running in the project root, and conflicting merge levels are `Blocked:`
+
 ## Acceptance Criteria
 
 - Stub, playbook, SPEC, and plan-project skill match the reanchor dialect and the two-scope rules split
@@ -76,8 +78,13 @@ Depends on: `f-domain-model`.
 - The playbook carries the decision line and stays one screen
 - SPEC, the playbook, both skills, README, and the changelog describe in-place claims, `added_claims`, neighbor labels, and when labels clear, in the same terms as the tool descriptions; the playbook stays one screen
 - SPEC, the playbook, and the changelog describe the `tests` list and `set_test_files`
+- The playbook's rule 7 and the plan-project skill name the merge gate; README and the changelog describe `--merge`, `--merge=strict`, and the CI workflow; the playbook stays one screen
 
 ## Atomic Ops
+
+- [x] Add the merge-gate line to playbook rule 7 and the plan-project skill, and refresh the host copies
+- [x] Add the merge-gate workflow template
+- [x] Document the merge gate and `init --ci github` in SPEC, README, and the 0.6.0 changelog — note: SPEC §8.1 run_check, §9.6 table and CI merge gate paragraph; README Merge gate section; CHANGELOG 0.6.0
 
 - [x] Update playbook, agents-stub, and plan-project skill
 - [x] Update SPEC for get_rules, when-hints, drift envelope, twenty-three tools

@@ -1,0 +1,47 @@
+---
+id: bug-windows-transient-file-lock
+type: Bug
+title: "A write fails when Windows briefly locks a new node file"
+description: "On Windows, a tool call that opens a node file another process holds for a moment (antivirus, indexer, editor watcher), such as record_decision right after open_next created <id>.next.mdx, fails with UNKNOWN/EBUSY/EPERM instead of retrying."
+state: resolved
+created_at: 2026-10-28T16:00:05.531Z
+updated_at: 2026-10-28T16:39:20.145Z
+affects:
+  - f-territory-store
+  - i-steer-plan
+  - f-graph-cache
+---
+
+# A write fails when Windows briefly locks a new node file
+
+## Summary
+
+On Windows, another process often opens a file for a moment right after it is created or changed: Defender, the search indexer, or an editor or app file watcher. While it does, opening the file can fail with `UNKNOWN`, `EBUSY`, `EPERM` or `EACCES`. The territory store reads, writes and removes node files with bare `fs.readFileSync` / `fs.writeFileSync` / `fs.unlinkSync` calls in `src/foundations/f-territory-store/store.ts`, so one brief lock fails the whole tool call.
+
+The fix covers every file under `mindplan/`: the helper lives in `src/foundations/f-source-index/io.ts` (decision `d-plan-io-retry-in-source-index`), and the territory store (node files, `.gitkeep`, the ship copy of `next-attachments/`, `version.json`, `project.md`), the graph cache's folder hash, and attachment writes and removals all use it. `EPERM` and `EACCES` are retried only on Windows; elsewhere they are real permission errors.
+
+It is not a race between tool calls: every write handler runs synchronously from its first read to its last write, so two writes never interleave inside the server.
+
+## Repro Steps
+
+1. On Windows, `open_next` on a shipped Foundation (it creates `<id>.next.mdx`)
+2. In the same client batch, call `patch_node_territory` and `record_decision` on that node
+3. `record_decision` fails with `UNKNOWN: unknown error, open '…/<id>/<id>.next.mdx'`; the same call succeeds when retried a moment later
+
+Seen with mindplan-mcp 0.5.2.
+
+## Expected / Actual
+
+**Expected:** a lock another process holds for a few milliseconds is waited out; the call succeeds with the same result shape.
+
+**Actual:** the call fails with an opaque `UNKNOWN` error and the agent has to retry by hand.
+
+## Fix Checklist
+
+- [x] Root cause identified — note: the territory store read, wrote, and removed node files with bare fs calls, so a lock another process held for a moment (UNKNOWN/EBUSY/EPERM/EACCES on Windows) failed the call; write handlers are synchronous, so it was never an in-server race
+- [x] Fix implemented — note: new src/foundations/f-territory-store/io.ts retries those codes up to five times over about 0.3 s with a synchronous back-off; every node-file and project-brief read, write, and unlink in store.ts and project.ts goes through it, and next-attachments removal passes maxRetries; SPEC §1.1
+- [x] Regression test added — note: transient-io.test.mjs checks each transient code is retried, other errors and an outlasting lock throw, and 25 rounds of open_next then patch_node_territory plus record_decision in one batch all succeed; a real OS lock is not simulated
+
+## Attachments
+
+_None._

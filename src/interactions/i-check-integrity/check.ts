@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import type { MindPlanGraph, MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import {
+  activeChange,
   isPipelineNodeType,
   isProductionState,
 } from "../../foundations/f-domain-model/types.js";
@@ -47,7 +48,7 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
-import { defaultBaseRef } from "../../foundations/f-source-index/git.js";
+import { defaultBaseRef, repoPrefix } from "../../foundations/f-source-index/git.js";
 import {
   drainRemovedLegacyFiles,
   loadGraph,
@@ -83,6 +84,30 @@ export interface CheckOptions {
   cwd?: string;
   /** Also run the in-review gate on every open revision in this change. */
   change?: string;
+  /**
+   * Merge gate: also Block work the default branch must not hold. `true` Blocks in-review active
+   * slots and in-review Bugs; `"strict"` also Blocks in-progress active slots whose claimed files
+   * changed against `base` (default: `defaultBaseRef`).
+   */
+  merge?: MergeLevel;
+}
+
+export type MergeLevel = true | "strict";
+
+/** One node the merge gate Blocks. `files` lists the changed claimed paths (strict only). */
+export interface MergeNode {
+  id: string;
+  type: string;
+  state: string;
+  slot: "live" | "next";
+  files?: string[];
+}
+
+/** The merge gate's findings, one group per change id (`null` for nodes with none). */
+export interface MergeReport {
+  level: "default" | "strict";
+  base?: string;
+  changes: { change: string | null; nodes: MergeNode[] }[];
 }
 
 /**
@@ -111,6 +136,8 @@ export interface CheckResult {
   removedLegacyFiles: RemovedLegacyFile[];
   /** Present when the check ran for a change. Its failures are also in `failures`. */
   change?: ChangeCheck;
+  /** Present when the merge gate ran. Its failures are also in `failures`. */
+  merge?: MergeReport;
 }
 
 /**
@@ -234,15 +261,22 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
     return { workingTree: [], commits: [] };
   }
 
-  const porcelain = git(["status", "--porcelain", "-uall"], cwd, true);
-  const workingTree = [...new Set(parsePorcelainSrcPaths(porcelain))].sort((a, b) =>
-    a.localeCompare(b)
-  );
+  // Porcelain paths are relative to the repository top and claims to the project root: limit the
+  // status to the project root and strip its prefix (diff --relative does both for commits).
+  const porcelain = git(["status", "--porcelain", "-uall", "--", "."], cwd, true);
+  const prefix = repoPrefix(cwd) ?? "";
+  const workingTree = [
+    ...new Set(
+      parsePorcelainSrcPaths(porcelain)
+        .filter((p) => p.startsWith(prefix))
+        .map((p) => p.slice(prefix.length))
+    ),
+  ].sort((a, b) => a.localeCompare(b));
 
   const commits = new Set<string>();
   const baseRef = base ?? defaultBaseRef(cwd);
   if (baseRef) {
-    const diff = git(["diff", "--name-only", `${baseRef}...HEAD`], cwd, explicitBase);
+    const diff = git(["diff", "--name-only", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
     for (const line of diff.split("\n")) {
       const p = line.trim();
       if (p) commits.add(toPosix(p));
@@ -509,21 +543,42 @@ function describeOwner(node: MindPlanNode): string {
   return `"${node.id}" is "${node.state}"` + (node.next ? ` (next: ${node.next.state})` : "");
 }
 
+/**
+ * One run's git probe of the changed paths, memoized per base: dirty-src and the strict merge gate
+ * share one `git status` / `git diff`, and a failed probe is reported once (`repeat` on later calls).
+ */
+type DirtyProbe = (base: string) => { dirty: DirtySrcPaths } | { error: string; repeat: boolean };
+
+function dirtyProbe(cwd: string): DirtyProbe {
+  const results = new Map<string, { dirty: DirtySrcPaths } | { error: string }>();
+  return (base) => {
+    const known = results.get(base);
+    if (known) return "error" in known ? { ...known, repeat: true } : known;
+    let result: { dirty: DirtySrcPaths } | { error: string };
+    try {
+      result = { dirty: collectDirtySrcPaths(cwd, base) };
+    } catch (err) {
+      result = { error: err instanceof Error ? err.message : String(err) };
+    }
+    results.set(base, result);
+    return "error" in result ? { ...result, repeat: false } : result;
+  };
+}
+
 function checkDirtySrc(
   graph: MindPlanGraph,
   buckets: OwnershipBuckets,
   cwd: string,
-  base: string | undefined,
+  probe: DirtyProbe,
+  base: string,
   failures: string[]
 ): void {
-  let dirty: DirtySrcPaths;
-  try {
-    dirty = collectDirtySrcPaths(cwd, base);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    fail(failures, `dirty-src git probe failed: ${message}`);
+  const probed = probe(base);
+  if ("error" in probed) {
+    fail(failures, `dirty-src git probe failed: ${probed.error}`);
     return;
   }
+  const dirty = probed.dirty;
 
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const universe = new Set(listUniverseFiles(cwd));
@@ -577,6 +632,125 @@ function checkDirtySrc(
       "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review."
     );
   }
+}
+
+/** Changed claimed paths a strict merge line lists before it counts the rest. */
+const MERGE_FILE_CAP = 5;
+
+/** The ship call for a merge-gate node: the change walk when it has a change, else the node. */
+function mergeShipCall(node: MergeNode, change: string | null): string {
+  return change
+    ? `update_node_status({ scope: "change", change: "${change}", new_status: "ship" })`
+    : `update_node_status({ node_id: "${node.id}", new_status: "ship" })`;
+}
+
+function mergeLine(node: MergeNode, change: string | null, base: string | undefined): string {
+  const where = `"${node.id}" (${node.type}, ${node.slot === "next" ? "next " : ""}${node.state}, ${
+    change ? `change "${change}"` : "no change"
+  })`;
+  if (node.type === "Bug") {
+    return (
+      `Blocked: Merge: ${where}: the fix is finished but the bug is not resolved. ` +
+      `Resolve it: update_node_status({ node_id: "${node.id}", new_status: "resolved" }), ` +
+      `or move it back with new_status: "fixing" if the fix is unfinished.`
+    );
+  }
+  if (node.state === "in-progress") {
+    const files = node.files ?? [];
+    const shown = files.slice(0, MERGE_FILE_CAP).map((f) => `"${f}"`).join(", ");
+    const more = files.length > MERGE_FILE_CAP ? ` (+${files.length - MERGE_FILE_CAP} more)` : "";
+    return (
+      `Blocked: Merge (strict): ${where}: claimed files changed against ${base ?? "the base"}: ${shown}${more}. ` +
+      `Finish it: update_node_status({ node_id: "${node.id}", new_status: "in-review" }), then ${mergeShipCall(node, change)}; ` +
+      `or merge without --merge=strict if this PR is one piece of a larger feature.`
+    );
+  }
+  return (
+    `Blocked: Merge: ${where}: the code is finished but the graph has not shipped it. ` +
+    `Ship it: ${mergeShipCall(node, change)}, or move it back with ` +
+    `update_node_status({ node_id: "${node.id}", new_status: "in-progress" }) if the work is unfinished.`
+  );
+}
+
+/**
+ * Merge gate: the default branch holds done (stable / unstable) or still-building work, never
+ * work in review. Blocks every in-review active slot (the open next while one exists, else live)
+ * and every in-review Bug; strict also Blocks in-progress active slots whose claims cover a path
+ * changed against the base. Lines are grouped by change id, then sorted by node id.
+ */
+function checkMerge(
+  graph: MindPlanGraph,
+  root: string,
+  level: MergeLevel,
+  base: string | undefined,
+  probe: DirtyProbe,
+  failures: string[]
+): MergeReport {
+  const strict = level === "strict";
+  const report: MergeReport = { level: strict ? "strict" : "default", changes: [] };
+  const found: { change: string | null; node: MergeNode }[] = [];
+
+  let changed: string[] | null = null;
+  if (strict) {
+    const baseRef = base ?? defaultBaseRef(root);
+    report.base = base ?? "the default branch";
+    if (!baseRef) {
+      fail(
+        failures,
+        `Merge (strict): no git base to compare against (no main or master merge base). Pass --base <ref> (run_check: base).`
+      );
+    } else {
+      const probed = probe(baseRef);
+      if (!("error" in probed)) {
+        changed = [...new Set([...probed.dirty.commits, ...probed.dirty.workingTree])].sort((a, b) =>
+          a.localeCompare(b)
+        );
+      } else if (!probed.repeat) {
+        fail(failures, `Merge (strict): git probe failed: ${probed.error} Pass --base <ref> with a ref this checkout has.`);
+      }
+    }
+  }
+
+  for (const node of graph.nodes) {
+    if (node.type === "Bug") {
+      if (node.state === "in-review") {
+        found.push({
+          change: node.change ?? null,
+          node: { id: node.id, type: node.type, state: node.state, slot: "live" },
+        });
+      }
+      continue;
+    }
+    if (!isPipelineNodeType(node.type)) continue;
+    if (RETIRED_STATES.has(node.state)) continue;
+    const slot = node.next ? "next" : "live";
+    const state = node.next ? node.next.state : node.state;
+    const change = activeChange(node) ?? null;
+    if (state === "in-review") {
+      found.push({ change, node: { id: node.id, type: node.type, state, slot } });
+    } else if (state === "in-progress" && changed) {
+      const claims = (node.next ? node.next.implements : node.implements) ?? [];
+      const files = changed.filter((rel) => claims.some((claim) => claimCoversPath(claim, rel)));
+      if (files.length > 0) {
+        found.push({ change, node: { id: node.id, type: node.type, state, slot, files } });
+      }
+    }
+  }
+
+  // Group by change id (nodes with none last), then node id.
+  found.sort(
+    (a, b) =>
+      (a.change === null ? 1 : 0) - (b.change === null ? 1 : 0) ||
+      (a.change ?? "").localeCompare(b.change ?? "") ||
+      a.node.id.localeCompare(b.node.id)
+  );
+  for (const { change, node } of found) {
+    failures.push(mergeLine(node, change, report.base));
+    const group = report.changes.find((g) => g.change === change);
+    if (group) group.nodes.push(node);
+    else report.changes.push({ change, nodes: [node] });
+  }
+  return report;
 }
 
 /**
@@ -773,6 +947,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   const failures: string[] = [];
   const warnings: string[] = [];
   let changeReport: ChangeCheck | undefined;
+  let mergeReport: MergeReport | undefined;
   const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
   const prev = process.env.MINDPLAN_ROOT;
   if (options.cwd) {
@@ -808,11 +983,15 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     const version = projectVersionStatus();
     if (version.warning) warnings.push(`version: ${version.warning}`);
+    const probe = dirtyProbe(root);
     if (options.base !== undefined) {
-      checkDirtySrc(graph, buckets, root, options.base, failures);
+      checkDirtySrc(graph, buckets, root, probe, options.base, failures);
     }
     if (options.change !== undefined) {
       changeReport = checkChange(graph, root, options.change, decisionCtx);
+    }
+    if (options.merge) {
+      mergeReport = checkMerge(graph, root, options.merge, options.base, probe, failures);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -838,6 +1017,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings,
     removedLegacyFiles: drainRemovedLegacyFiles(),
     ...(changeReport ? { change: changeReport } : {}),
+    ...(mergeReport ? { merge: mergeReport } : {}),
   };
 }
 
@@ -856,9 +1036,9 @@ export function renderCheckOutput(result: CheckResult): string {
  * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings.
  */
 export function runCheckHandler(
-  args: { base?: string; change?: string } = {}
+  args: { base?: string; change?: string; merge?: MergeLevel } = {}
 ): Record<string, unknown> {
-  const result = runIntegrityCheck({ base: args.base, change: args.change });
+  const result = runIntegrityCheck({ base: args.base, change: args.change, merge: args.merge });
   return {
     ok: result.ok,
     output: renderCheckOutput(result),
@@ -867,6 +1047,7 @@ export function runCheckHandler(
     ...(result.change
       ? { change: { id: result.change.id, members: result.change.members } }
       : {}),
+    ...(result.merge ? { merge: result.merge } : {}),
     ...(result.removedLegacyFiles.length
       ? { removed_legacy_files: result.removedLegacyFiles.map((f) => f.from) }
       : {}),

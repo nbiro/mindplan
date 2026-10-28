@@ -1,0 +1,38 @@
+# MindPlan merge gate, installed by `mindplan-mcp init --ci github`.
+#
+# The default branch holds work that is done (stable / unstable) or still being built
+# (in-progress), never work that is in review. This job fails a pull request to the default
+# branch while any node is in review (or a Bug's fix is in review): ship the change, or move it
+# back to in-progress, before merging.
+#
+# Make the "mindplan merge gate" job a required status check for the default branch
+# (Settings -> Branches, or a ruleset), or a failing gate will not stop the merge. On pull
+# requests to other branches the job is skipped, which a required check counts as passing.
+#
+# For the strict level (also fail in-progress nodes whose claimed files changed on the branch),
+# keep fetch-depth: 0 and run: npx -y mindplan-mcp@{{MINDPLAN_VERSION}} check --merge=strict --base "origin/${{ github.base_ref }}"
+name: MindPlan merge gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  merge-gate:
+    name: mindplan merge gate
+    if: github.base_ref == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # The MindPlan project root, relative to the repository top.
+        working-directory: {{MINDPLAN_DIR}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx -y mindplan-mcp@{{MINDPLAN_VERSION}} check --merge
