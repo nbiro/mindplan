@@ -3,10 +3,10 @@ id: if-cli
 type: Interface
 title: "CLI"
 description: "CLI for init (--host, --ci github), check (--base, --merge, --merge=strict), and view: parses argv, prints the shared check output and warnings, prints legacy renames and removals, and sets the exit code."
-state: in-review
-shipped_at: 2026-10-15T15:52:14.190Z
+state: mirror
+shipped_at: 2026-10-28T16:39:50.182Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-28T16:29:17.684Z
+updated_at: 2026-10-28T16:39:50.182Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -15,9 +15,6 @@ exposes:
   - i-export-map
 implements:
   - src/interfaces/if-cli/
-opened_at: 2026-10-28T14:22:51.418Z
-change: "merge-gate"
-change_ref: "feat/merge-gate"
 tests:
   - src/foundations/f-test-harness/check.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs

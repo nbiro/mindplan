@@ -3,10 +3,10 @@ id: if-mcp-tools
 type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-nine tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels, additive in-place claims on shipped nodes, linked test files, summary-first orientation with its write gate, and area-first search."
-state: in-review
-shipped_at: 2026-10-26T00:04:46.524Z
+state: mirror
+shipped_at: 2026-10-28T16:39:50.253Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-28T16:29:17.754Z
+updated_at: 2026-10-28T16:39:50.253Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -19,9 +19,6 @@ exposes:
   - i-check-integrity
 implements:
   - src/interfaces/if-mcp-tools/
-opened_at: 2026-10-28T14:22:51.492Z
-change: "merge-gate"
-change_ref: "feat/merge-gate"
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs

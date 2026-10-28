@@ -3,20 +3,16 @@ id: f-territory-store
 type: Foundation
 title: "Territory store"
 description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; load the graph through the graph cache; read and write the mindplan/version.json stamp and compare it with the running package."
-state: in-review
-shipped_at: 2026-10-26T08:38:24.579Z
+state: mirror
+shipped_at: 2026-10-28T16:39:56.406Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-26T09:55:31.734Z
+updated_at: 2026-10-28T16:39:56.406Z
 depends_on:
   - f-domain-model
   - f-source-index
   - f-graph-cache
 implements:
   - src/foundations/f-territory-store/
-role: infra
-opened_at: 2026-10-26T09:44:19.040Z
-change: "body-blank-lines"
-change_ref: "graph/body-blank-lines"
 tests:
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
@@ -27,6 +23,7 @@ tests:
   - src/foundations/f-test-harness/transient-io.test.mjs
   - src/foundations/f-test-harness/twins.test.mjs
   - src/foundations/f-test-harness/version.test.mjs
+role: infra
 ---
 
 # Territory store
@@ -93,6 +90,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 - **Aliases.** `aliases` is a frontmatter list parsed like `tests` and kept verbatim by rewriters that do not know it; each entry is written as a JSON string (free text: spaces, colons, other scripts) and decoded on parse. `normalizeAliases(id, entries)` trims, collapses whitespace, drops empties, deduplicates ignoring case, and Blocks an entry over `MAX_ALIAS_CHARS` (60) or more than `MAX_ALIASES` (20). `writeAliasesFrontmatter(node, entries)` is the only writer: any node type, not a retired or closed one; the same list on live and an open next, mirror twin re-synced, state / `updated_at` / readiness untouched; an empty list removes the field. `promoteNextSlot` writes the next file's list into the rebuilt live frontmatter; `nodeToRecord` carries it
 - **One blank line below the frontmatter.** Every write of a node file (`writeMarkdown`, the mirror twin, `open_next`, and each frontmatter rewriter) goes through `writeTerritoryFile`, which applies `oneBlankLineBelowFrontmatter`: exactly one blank line between the closing fence and the body, none above an empty body, in the file's own line endings. `splitContext` puts the newline after the fence and every blank line below it in `separator`, so `body` starts at its first text and `get_node_context` never returns leading blank lines. Runs of blank lines left by releases before 0.2.0 collapse on the node's next write. `mirrorDriftReason` compares live and twin after the same normalization, so a twin rewritten from a live file that still has a run (`discard_next`, init's twin repair) is not drift
 - **Literal replacements.** Every frontmatter write that splices free text (aliases, tests, title, description, `change_ref`) passes a replacer function to `String.replace`, so a `$` in the text is written as is and never read as a replacement pattern
+- **Lock-tolerant I/O.** Every read, write, copy, and removal of a file under `mindplan/` in `store.ts`, `project.ts`, and `version.ts` goes through the `f-source-index/io.ts` wrappers (`readFileRetry`, `writeFileRetry`, `copyFileRetry`, `unlinkRetry`; `fs.rmSync` with `RM_MAX_RETRIES` for `next-attachments/`), so a lock another process holds for a moment is waited out (decision `d-plan-io-retry-in-source-index`, Bug `bug-windows-transient-file-lock`).
 
 ## Acceptance Criteria
 

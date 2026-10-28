@@ -3,9 +3,9 @@ id: bug-windows-transient-file-lock
 type: Bug
 title: "A write fails when Windows briefly locks a new node file"
 description: "On Windows, a tool call that opens a node file another process holds for a moment (antivirus, indexer, editor watcher), such as record_decision right after open_next created <id>.next.mdx, fails with UNKNOWN/EBUSY/EPERM instead of retrying."
-state: in-review
+state: resolved
 created_at: 2026-10-28T16:00:05.531Z
-updated_at: 2026-10-28T16:29:17.803Z
+updated_at: 2026-10-28T16:39:20.145Z
 affects:
   - f-territory-store
   - i-steer-plan
