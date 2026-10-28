@@ -302,6 +302,39 @@ export function installCursorPermissions(
   return installTemplateFile(templatePath, destPath, ".cursor/permissions.json", options);
 }
 
+export type InitCi = "github";
+
+/** CI integrations `init --ci` can install. */
+export const INIT_CI: readonly InitCi[] = ["github"];
+
+/** Where `init --ci github` writes the merge-gate workflow (repo-owned: kept unless force). */
+export const MERGE_GATE_WORKFLOW = ".github/workflows/mindplan-merge-gate.yml";
+
+/**
+ * Install the GitHub Actions merge gate: `check --merge` on pull requests to the default branch.
+ * `{{MINDPLAN_VERSION}}` becomes the running package's major.minor, so `npx` resolves a release
+ * that has the flag. An existing workflow is kept unless force.
+ */
+export function installMergeGateWorkflow(
+  packageRoot: string,
+  packageVersion: string,
+  options: InstallOptions = {}
+): InstallAgentRuleResult {
+  const destPath = path.join(projectRoot(), ...MERGE_GATE_WORKFLOW.split("/"));
+  if (fs.existsSync(destPath) && options.force !== true) {
+    return { installed: false, path: MERGE_GATE_WORKFLOW };
+  }
+  const templatePath = path.join(packageRoot, "templates", "ci", "github", "mindplan-merge-gate.yml");
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`CI template not found at ${templatePath}`);
+  }
+  const minor = packageVersion.split(".").slice(0, 2).join(".");
+  const text = fs.readFileSync(templatePath, "utf-8").replaceAll("{{MINDPLAN_VERSION}}", minor);
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.writeFileSync(destPath, text, "utf-8");
+  return { installed: true, path: MERGE_GATE_WORKFLOW };
+}
+
 export type InitHost = "cursor" | "claude";
 
 export const INIT_HOSTS: readonly InitHost[] = ["cursor", "claude"];
@@ -713,6 +746,8 @@ export type RunInitOptions = {
   packageRoot: string;
   /** Host copies to install. Defaults to ["cursor"]. */
   hosts?: readonly InitHost[];
+  /** CI integration to install (the merge-gate workflow). None by default. */
+  ci?: InitCi;
 };
 
 export type MirrorBackfill = {
@@ -756,6 +791,8 @@ export type RunInitReport = {
     claudeMd: InstallAgentRuleResult;
     skills: InstallSkillResult[];
   };
+  /** The merge-gate workflow; present only when `ci` was requested. */
+  ci?: InstallAgentRuleResult;
   /** The stamp before (null when absent or unreadable) and after this run; refreshed when package-owned files were rewritten. */
   version: { from: string | null; to: string; refreshed: boolean };
   /** Standing next twins written for shipped pipeline nodes that lacked a mirror or had drifted. */
@@ -842,6 +879,10 @@ export function runInit(opts: RunInitOptions): RunInitReport {
         skills: installClaudeSkills(opts.packageRoot, packageOpts),
       }
     : undefined;
+  const ci =
+    opts.ci === "github"
+      ? installMergeGateWorkflow(opts.packageRoot, status.running.package, installOpts)
+      : undefined;
   const mirrorBackfill = backfillMirrorTwins();
   writeProjectVersion(status.running);
 
@@ -860,6 +901,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     searchCacheIgnore,
     cursor,
     claude,
+    ...(ci ? { ci } : {}),
     version: {
       from: status.project?.package ?? null,
       to: status.running.package,

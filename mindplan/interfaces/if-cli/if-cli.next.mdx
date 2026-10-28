@@ -2,11 +2,11 @@
 id: if-cli
 type: Interface
 title: "CLI"
-description: "Print legacy renames that already succeeded when init stops, print legacy files removed during check or view, let init choose its host copies with --host, and print the check's output and warnings."
-state: mirror
+description: "CLI for init (--host, --ci github), check (--base, --merge, --merge=strict), and view: parses argv, prints the shared check output and warnings, prints legacy renames and removals, and sets the exit code."
+state: in-review
 shipped_at: 2026-10-15T15:52:14.190Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-25T22:20:06.509Z
+updated_at: 2026-10-28T14:37:29.330Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -15,8 +15,12 @@ exposes:
   - i-export-map
 implements:
   - src/interfaces/if-cli/
+opened_at: 2026-10-28T14:22:51.418Z
+change: "merge-gate"
+change_ref: "feat/merge-gate"
 tests:
   - src/foundations/f-test-harness/check.test.mjs
+  - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/version.test.mjs
 ---
 
@@ -46,6 +50,8 @@ Intended files: `src/interfaces/if-cli/`
 - Print init migration report from `runInit` when applicable, including the `.gitignore` entry for `.mindplan-cache/` (`searchCacheIgnore`)
 - When init stops after applying some renames, print those lines before the error
 - `check` prints `renderCheckOutput(result)`: `mindplan-mcp check: ok` on stdout, or the `Blocked:` lines on stderr and exit 1; `Warning:` lines follow either way and never change the exit code
+- `check --merge` runs the merge gate (`merge: true`); `--merge=strict` the strict level (`merge: "strict"`), with `--base <ref>` as its base (an explicit `--base` also runs dirty-src, as without `--merge`). Any other `--merge=` value is `Blocked: unknown merge level`. Help documents both
+- `init --ci github` (also `--ci=github`) passes `ci: "github"` to `runInit` and prints the workflow line (installed, or already present) with a reminder to make the job a required status check; any other value is `Blocked: unknown init ci`
 - `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
 
 ## Acceptance Criteria
@@ -72,6 +78,9 @@ Init gains the `--host` flag. Existing invocations behave as before because the 
 - [x] Verified via smoke
 - [x] Print the shared check output and warnings from `check`
 - [x] Verified the check output via the ergonomics suite
+- [x] Parse and document `check --merge` / `--merge=strict`
+- [x] Parse and document `init --ci github` and print the workflow line
+- [x] Verified the flags via `npm test` — note: merge-gate.test.mjs
 
 ## Attachments
 
