@@ -53,6 +53,7 @@ import {
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
+import { readFileRetry, unlinkRetry, writeFileRetry } from "./io.js";
 import { packageVersion } from "./version.js";
 
 export {
@@ -236,7 +237,7 @@ export function removeLegacyIfIdNamedExists(
   const legacyRel = `${folderRel}/${legacy}`;
   const preferredRel = `${folderRel}/${preferred}`;
   try {
-    fs.unlinkSync(legacyPath);
+    unlinkRetry(legacyPath);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     throw new Error(
@@ -324,7 +325,7 @@ export function readNextFileState(node: Pick<MindPlanNode, "id" | "type">): stri
   const file = markdownPath(node, "next");
   try {
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return null;
-    const raw = fs.readFileSync(file, "utf-8");
+    const raw = readFileRetry(file);
     const parsed = parseFrontmatter(raw);
     return parsed?.scalars.state ?? null;
   } catch {
@@ -349,7 +350,7 @@ export function writeMirrorTwin(node: Pick<MindPlanNode, "id" | "type">): string
       `Blocked: cannot write mirror twin for "${node.id}" — live file missing at ${livePath}.`
     );
   }
-  const liveRaw = fs.readFileSync(livePath, "utf-8");
+  const liveRaw = readFileRetry(livePath);
   const match = liveRaw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
   if (!match) {
     throw new Error(
@@ -380,7 +381,7 @@ export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): st
   const removed: string[] = [];
   const nextFile = markdownPath(node, "next");
   if (fs.existsSync(nextFile)) {
-    fs.unlinkSync(nextFile);
+    unlinkRetry(nextFile);
     removed.push(markdownRelativePath(node, "next"));
   }
   const nextAtt = nextAttachmentsDir(node);
@@ -395,7 +396,7 @@ export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): st
       }
     };
     walk(nextAtt, dirRel);
-    fs.rmSync(nextAtt, { recursive: true, force: true });
+    fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: 5 });
     removed.push(dirRel);
   }
   return removed;
@@ -426,8 +427,8 @@ export function mirrorDriftReason(node: Pick<MindPlanNode, "id" | "type">): stri
   if (!nextState || !isMirrorState(nextState)) {
     return `${path.basename(nextPath)} is not state: ${MIRROR_STATE} (got "${nextState ?? ""}")`;
   }
-  const liveRaw = fs.readFileSync(livePath, "utf-8");
-  const nextRaw = fs.readFileSync(nextPath, "utf-8");
+  const liveRaw = readFileRetry(livePath);
+  const nextRaw = readFileRetry(nextPath);
   // A twin written from a live file with an older run of blank lines has one; that is not drift.
   const stripState = (raw: string) =>
     oneBlankLineBelowFrontmatter(raw).replace(/^state:\s*.*$/m, "state: <ignored>");
@@ -681,7 +682,7 @@ function parseNodeFromFrontmatter(
   expectedType: NodeType,
   contextFile: string
 ): MindPlanNode {
-  const raw = fs.readFileSync(contextFile, "utf-8");
+  const raw = readFileRetry(contextFile);
   const parsed = parseFrontmatter(raw);
   if (!parsed) {
     throw new Error(
@@ -755,7 +756,7 @@ function parseNodeFromFrontmatter(
  * (not an evolution). Throws on missing required fields or illegal states.
  */
 function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
-  const raw = fs.readFileSync(nextFile, "utf-8");
+  const raw = readFileRetry(nextFile);
   const parsed = parseFrontmatter(raw);
   if (!parsed) {
     throw new Error(
@@ -967,7 +968,7 @@ export function readMarkdown(
       `Blocked: ${slot} file not found for node "${node.id}" (expected at ${file}).`
     );
   }
-  return fs.readFileSync(file, "utf-8");
+  return readFileRetry(file);
 }
 
 /**
@@ -1020,7 +1021,7 @@ function requireMutableFrontmatter(
       `Blocked: ${slot} file not found for node "${node.id}" (expected at ${file}).`
     );
   }
-  const raw = fs.readFileSync(file, "utf-8");
+  const raw = readFileRetry(file);
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) {
     throw new Error(
@@ -1753,7 +1754,7 @@ export function oneBlankLineBelowFrontmatter(raw: string): string {
 
 /** The one writer of node files: every write collapses runs of blank lines below the frontmatter. */
 function writeTerritoryFile(file: string, raw: string): void {
-  fs.writeFileSync(file, oneBlankLineBelowFrontmatter(raw), "utf-8");
+  writeFileRetry(file, oneBlankLineBelowFrontmatter(raw));
 }
 
 /** Compact node summary for blast-radius / reachability payloads. */
@@ -2386,7 +2387,7 @@ export function openNextSlot(
   }
 
   const now = new Date().toISOString();
-  const raw = fs.readFileSync(nextPath, "utf-8");
+  const raw = readFileRetry(nextPath);
   const match = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
   if (!match) {
     throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
@@ -2428,7 +2429,7 @@ export function openNextSlot(
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
   if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf-8");
 
-  const parsed = parseFrontmatter(fs.readFileSync(nextPath, "utf-8"));
+  const parsed = parseFrontmatter(readFileRetry(nextPath));
   if (!parsed) {
     throw new Error(`Blocked: next file for "${node.id}" unreadable after open_next.`);
   }
@@ -2464,7 +2465,7 @@ export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): void {
   }
   const nextAtt = nextAttachmentsDir(node);
   if (fs.existsSync(nextAtt)) {
-    fs.rmSync(nextAtt, { recursive: true, force: true });
+    fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: 5 });
   }
   writeMirrorTwin(node);
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });

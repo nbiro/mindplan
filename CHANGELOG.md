@@ -1,12 +1,13 @@
 # Changelog
 
-## 0.6.0 — merge gate
+## 0.6.0 — merge gate; a brief file lock is waited out
 
 - **`check --merge`.** Plain `check` ignores lifecycle state, so a PR could merge to `main` with its change still `in-review`: finished code the graph called unreviewed. The new opt-in merge gate fails with one `Blocked: Merge: "<id>" (<type>, [next ]<state>, change "<change>" | no change): …` line per Foundation, Interaction, or Interface whose live or open next slot is `in-review`, and per Bug in `in-review`. Each line names the fix: `update_node_status({ scope: "change", change, new_status: "ship" })` (a node with no change: `{ node_id, new_status: "ship" }`; a Bug: `"resolved"`), or move it back to `in-progress` (a Bug: `fixing`) if the work is unfinished. Lines are grouped by change id. `draft`, `ready`, `in-progress`, shipped nodes, mirror twins, and retired nodes pass, so planning and incremental PRs still merge. [§9.6]
 - **`--merge=strict`.** Also fails an `in-progress` node whose claimed files changed against the base (`--base <ref>`, default the `main` / `master` merge base; `base...HEAD` plus the working tree), listing up to five paths: a finished feature left at `in-progress`. Opt-in, because it blocks the incremental PRs of a large feature. With no resolvable base it fails with the `--base` fix. [§9.6]
 - **`run_check({ merge })`.** `merge: true` or `"strict"` runs the same gate for agents, adds the same `Blocked: Merge` lines to `failures`, and returns `merge: { level, base?, changes: [{ change, nodes: [{ id, type, state, slot, files? }] }] }`, one group per change. [§8.1]
 - **`init --ci github`.** Installs `.github/workflows/mindplan-merge-gate.yml`, which runs `npx -y mindplan-mcp@<major.minor> check --merge` on pull requests to the repository's default branch. Make its `mindplan merge gate` job a required status check, or a red gate does not stop a merge. The workflow is repo-owned: init keeps an existing one unless `--force`. Nothing is installed without `--ci`. [§9.6]
 - **Playbook and skill.** Rule 7 says a PR is merged only after its change is shipped (or moved back to `in-progress`), with `check --merge` as the gate; the plan-project skill names the gate where it talks about shipping.
+- **Node file I/O retries a transient lock.** On Windows, antivirus, the search indexer, or a file watcher often opens a file for a moment right after it is created, and a tool call that read or wrote it then failed with `UNKNOWN: unknown error, open '…'` (for example `record_decision` right after `open_next` created `<id>.next.mdx`). The territory store now retries a node file or project brief read, write, or removal that fails with `EBUSY`, `EPERM`, `EACCES`, or `UNKNOWN`, up to five times over about 0.3 s, before failing with that error. Any other error still fails at once, and no result changes shape. [§1.1]
 
 ## 0.5.3 — a note ticks without checked
 

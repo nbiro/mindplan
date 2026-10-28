@@ -82,6 +82,7 @@ Rules:
 - `attachments/` MAY contain arbitrary files. Attachments SHOULD be referenced from `<id>.mdx` with relative links (e.g. `![flow](attachments/flow.png)`); `next-attachments/` is referenced the same way from `<id>.next.mdx` and is merged into `attachments/` when the evolution ships (§3.6).
 - `components/` MAY contain project-specific MDX components (§6.4.3). It is created by the server but never read by it.
 - The server MUST create missing directories on demand; a fresh project requires no manual scaffolding.
+- A node file or project brief read, write, or removal that fails with `EBUSY`, `EPERM`, `EACCES`, or `UNKNOWN` (another process holding the file for a moment, as antivirus, an indexer, or a file watcher does on Windows right after a write) MUST be retried a few times, about 0.3 s in all, before the call fails with that error. Any other error fails the call at once.
 - `create_node` does **not** scaffold application code paths. Declare ownership with `set_implementation_files`.
 
 #### 1.1.1 Project brief (`mindplan/project.md`)

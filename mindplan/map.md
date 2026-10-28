@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (42 nodes, 112 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (43 nodes, 113 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -58,9 +58,11 @@ flowchart TB
   end
   bug_body_leading_blank_lines["bug-body-leading-blank-lines · Bodies start with runs of blank lines · in-review"]
   bug_note_toggle_needs_checked["bug-note-toggle-needs-checked · A note toggle without checked is Blocked · in-review"]
+  bug_windows_transient_file_lock["bug-windows-transient-file-lock · A write fails when Windows briefly locks a new node file · in-review"]
   bug_body_leading_blank_lines -.-> f_territory_store
   bug_note_toggle_needs_checked -.-> f_territory_store
   bug_note_toggle_needs_checked -.-> if_mcp_tools
+  bug_windows_transient_file_lock -.-> f_territory_store
   f_compiler_rules --> f_domain_model
   f_compiler_rules --> f_source_index
   f_compiler_rules --> f_territory_store
