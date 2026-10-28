@@ -3,10 +3,10 @@ id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
 description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), linked test files written in place on live and an open next alike without resetting readiness, neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate and search settings, and attachments; small results unless verbose; each write refreshes the map and the search cache."
-state: stable
+state: unstable
 shipped_at: 2026-10-25T23:55:52.221Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-25T23:55:52.221Z
+updated_at: 2026-10-28T16:18:25.249Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -30,6 +30,7 @@ tests:
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/transient-io.test.mjs
   - src/foundations/f-test-harness/twins.test.mjs
 ---
 

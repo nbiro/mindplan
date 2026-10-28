@@ -270,7 +270,7 @@ npx mindplan-mcp check --merge
 
 It fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live or open next slot is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back with `new_status: "in-progress"` if the work is unfinished. `draft`, `ready`, `in-progress`, shipped nodes, and mirror twins pass, so planning PRs and incremental PRs still merge. Agents run the same gate with `run_check({ merge: true })` before saying a PR is ready.
 
-`--merge=strict` (with `--base <ref>`, default the `main` / `master` merge base) also fails an `in-progress` node whose claimed files changed against the base: a finished feature left at `in-progress`. It is opt-in because it blocks the incremental PRs of a large feature. An explicit `--base` also turns on the dirty-src ownership check, as it does without `--merge`.
+`--merge=strict` (with `--base <ref>`, default the merge base with the newer of `main` and `origin/main`, else `master`) also fails an `in-progress` node whose claimed files changed against the base: a finished feature left at `in-progress`. It is opt-in because it blocks the incremental PRs of a large feature. An explicit `--base` also turns on the dirty-src ownership check, as it does without `--merge`.
 
 To run the gate in CI, install the GitHub Actions workflow:
 
@@ -278,7 +278,7 @@ To run the gate in CI, install the GitHub Actions workflow:
 npx mindplan-mcp init --ci github
 ```
 
-It writes `.github/workflows/mindplan-merge-gate.yml`, which runs `check --merge` on every pull request to the default branch. Then make its **mindplan merge gate** job a required status check for the default branch (Settings → Branches, or a ruleset); otherwise a red gate does not stop the merge. Init keeps an edited workflow unless `--force`.
+It writes `.github/workflows/mindplan-merge-gate.yml` at the repository top (a project in a subfolder gets the workflow at the top, running in that folder), which runs `check --merge` on every pull request to the default branch. Then make its **mindplan merge gate** job a required status check for the default branch (Settings → Branches, or a ruleset); otherwise a red gate does not stop the merge. Init keeps an edited workflow unless `--force`.
 
 Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`). Search reads `MINDPLAN_SEARCH`, `MINDPLAN_SEARCH_OFFLINE`, and `MINDPLAN_MODEL_CACHE` (see [Search](#search)); the graph cache reads `MINDPLAN_GRAPH_CACHE` (see [Graph cache](#graph-cache)).
 

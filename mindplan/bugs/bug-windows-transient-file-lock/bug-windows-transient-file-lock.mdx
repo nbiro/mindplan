@@ -5,9 +5,11 @@ title: "A write fails when Windows briefly locks a new node file"
 description: "On Windows, a tool call that opens a node file another process holds for a moment (antivirus, indexer, editor watcher), such as record_decision right after open_next created <id>.next.mdx, fails with UNKNOWN/EBUSY/EPERM instead of retrying."
 state: in-review
 created_at: 2026-10-28T16:00:05.531Z
-updated_at: 2026-10-28T16:05:42.493Z
+updated_at: 2026-10-28T16:29:17.803Z
 affects:
   - f-territory-store
+  - i-steer-plan
+  - f-graph-cache
 ---
 
 # A write fails when Windows briefly locks a new node file
@@ -15,6 +17,8 @@ affects:
 ## Summary
 
 On Windows, another process often opens a file for a moment right after it is created or changed: Defender, the search indexer, or an editor or app file watcher. While it does, opening the file can fail with `UNKNOWN`, `EBUSY`, `EPERM` or `EACCES`. The territory store reads, writes and removes node files with bare `fs.readFileSync` / `fs.writeFileSync` / `fs.unlinkSync` calls in `src/foundations/f-territory-store/store.ts`, so one brief lock fails the whole tool call.
+
+The fix covers every file under `mindplan/`: the helper lives in `src/foundations/f-source-index/io.ts` (decision `d-plan-io-retry-in-source-index`), and the territory store (node files, `.gitkeep`, the ship copy of `next-attachments/`, `version.json`, `project.md`), the graph cache's folder hash, and attachment writes and removals all use it. `EPERM` and `EACCES` are retried only on Windows; elsewhere they are real permission errors.
 
 It is not a race between tool calls: every write handler runs synchronously from its first read to its last write, so two writes never interleave inside the server.
 

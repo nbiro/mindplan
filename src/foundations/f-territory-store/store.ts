@@ -53,7 +53,7 @@ import {
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
-import { readFileRetry, unlinkRetry, writeFileRetry } from "./io.js";
+import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 
 export {
@@ -396,7 +396,7 @@ export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): st
       }
     };
     walk(nextAtt, dirRel);
-    fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: 5 });
+    fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
     removed.push(dirRel);
   }
   return removed;
@@ -463,7 +463,7 @@ export function ensureDirectories(): void {
   fs.mkdirSync(componentsDir, { recursive: true });
   const keep = path.join(componentsDir, ".gitkeep");
   if (!fs.existsSync(keep)) {
-    fs.writeFileSync(keep, "", "utf-8");
+    writeFileRetry(keep, "");
   }
 }
 
@@ -1198,7 +1198,7 @@ export function scaffoldEntity(
   ensureEntityDir(node);
   const attachmentsKeep = path.join(attachmentsDir(node), ".gitkeep");
   if (!fs.existsSync(attachmentsKeep)) {
-    fs.writeFileSync(attachmentsKeep, "", "utf-8");
+    writeFileRetry(attachmentsKeep, "");
   }
 
   const frontmatterLines = [
@@ -2427,7 +2427,7 @@ export function openNextSlot(
 
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
-  if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf-8");
+  if (!fs.existsSync(keep)) writeFileRetry(keep, "");
 
   const parsed = parseFrontmatter(readFileRetry(nextPath));
   if (!parsed) {
@@ -2465,12 +2465,12 @@ export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): void {
   }
   const nextAtt = nextAttachmentsDir(node);
   if (fs.existsSync(nextAtt)) {
-    fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: 5 });
+    fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
   }
   writeMirrorTwin(node);
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
-  if (!fs.existsSync(keep)) fs.writeFileSync(keep, "", "utf-8");
+  if (!fs.existsSync(keep)) writeFileRetry(keep, "");
 }
 
 /**
@@ -2574,7 +2574,7 @@ export function promoteNextSlot(
     fs.mkdirSync(dest, { recursive: true });
     for (const entry of fs.readdirSync(nextAtt, { withFileTypes: true })) {
       if (!entry.isFile() || entry.name === ".gitkeep") continue;
-      fs.copyFileSync(path.join(nextAtt, entry.name), path.join(dest, entry.name));
+      copyFileRetry(path.join(nextAtt, entry.name), path.join(dest, entry.name));
     }
   }
 

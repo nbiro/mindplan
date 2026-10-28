@@ -6,7 +6,7 @@ description: "CLI for init (--host, --ci github), check (--base, --merge, --merg
 state: in-review
 shipped_at: 2026-10-15T15:52:14.190Z
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-28T14:37:29.330Z
+updated_at: 2026-10-28T16:29:17.684Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -50,7 +50,7 @@ Intended files: `src/interfaces/if-cli/`
 - Print init migration report from `runInit` when applicable, including the `.gitignore` entry for `.mindplan-cache/` (`searchCacheIgnore`)
 - When init stops after applying some renames, print those lines before the error
 - `check` prints `renderCheckOutput(result)`: `mindplan-mcp check: ok` on stdout, or the `Blocked:` lines on stderr and exit 1; `Warning:` lines follow either way and never change the exit code
-- `check --merge` runs the merge gate (`merge: true`); `--merge=strict` the strict level (`merge: "strict"`), with `--base <ref>` as its base (an explicit `--base` also runs dirty-src, as without `--merge`). Any other `--merge=` value is `Blocked: unknown merge level`. Help documents both
+- `check --merge` runs the merge gate (`merge: true`); `--merge=strict` the strict level (`merge: "strict"`), with `--base <ref>` as its base (an explicit `--base` also runs dirty-src, as without `--merge`). Any other `--merge=` value is `Blocked: unknown merge level`, and `--merge` with `--merge=strict` is `Blocked:` (pass one level). Help documents both
 - `init --ci github` (also `--ci=github`) passes `ci: "github"` to `runInit` and prints the workflow line (installed, or already present) with a reminder to make the job a required status check; any other value is `Blocked: unknown init ci`
 - `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
 

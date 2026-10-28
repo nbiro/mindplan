@@ -6,7 +6,7 @@ description: "Infra — SPEC, playbook, skills, and changelog: mandatory project
 state: in-review
 shipped_at: 2026-10-25T21:13:07.168Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-28T14:37:29.378Z
+updated_at: 2026-10-28T16:29:17.439Z
 depends_on:
   - f-domain-model
 implements:
@@ -65,7 +65,7 @@ Depends on: `f-domain-model`.
 
 - **Areas.** Playbook step 1 adds the area-first path (`list_areas` → pick → `orient_for_work({ query, area })`, without `area` for cross-cutting questions); SPEC §8 counts twenty-nine tools and specifies `list_areas` and `area`; the README lists `list_areas`; the `npx` examples use `mindplan-mcp@0.9`
 
-- **Merge gate.** Playbook rule 7 gains one line: a PR is merged only after its change is shipped (or moved back to `in-progress`), and `check --merge` (`run_check({ merge: true })`) is the gate. The plan-project skill names the gate where it talks about shipping. `templates/ci/github/mindplan-merge-gate.yml` is the workflow `init --ci github` installs. SPEC specifies `--merge` / `--merge=strict`, `run_check` `merge`, the `Blocked: Merge` lines and the `merge` result (§8.1, §9.6), and `init --ci github`; the README documents the flag, the strict level (whose explicit `--base` also runs dirty-src), the workflow, and making it a required status check; `CHANGELOG.md` gets the 0.6.0 section
+- **Merge gate.** Playbook rule 7 gains one line: a PR is merged only after its change is shipped (or moved back to `in-progress`), and `check --merge` (`run_check({ merge: true })`) is the gate. The plan-project skill names the gate where it talks about shipping. `templates/ci/github/mindplan-merge-gate.yml` is the workflow `init --ci github` installs. SPEC specifies `--merge` / `--merge=strict`, `run_check` `merge`, the `Blocked: Merge` lines and the `merge` result (§8.1, §9.6), and `init --ci github`; the README documents the flag, the strict level (whose explicit `--base` also runs dirty-src), the workflow, and making it a required status check; `CHANGELOG.md` gets the 0.6.0 section. SPEC §1.1 requires plan-file I/O to retry a brief lock (`EBUSY` / `UNKNOWN`, and `EPERM` / `EACCES` on Windows), and §9.6 says changed paths are project-relative, the default base is the newer of the local and remote default branch, the workflow goes at the repository top running in the project root, and conflicting merge levels are `Blocked:`
 
 ## Acceptance Criteria
 

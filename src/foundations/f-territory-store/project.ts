@@ -6,7 +6,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { readFileRetry, writeFileRetry } from "./io.js";
+import { readFileRetry, writeFileRetry } from "../f-source-index/io.js";
 
 const MINDPLAN_DIR = "mindplan";
 export const PROJECT_FILENAME = "project.md";

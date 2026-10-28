@@ -3,21 +3,24 @@ id: f-source-index
 type: Foundation
 title: "Source index"
 description: "Infra — ownership universe, claim expansion for files, directories, and glob claims, folder dominance (where a shipped node may claim a file in place, and which per-file claim lists one folder claim would replace), the decision-gate and search settings in mindplan/config.json and its MCP write, and read-only git probes for the files a branch adds and for the plan's tree id and dirty paths."
-state: stable
+state: unstable
 shipped_at: 2026-10-26T08:38:24.457Z
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-10-26T08:38:24.457Z
+updated_at: 2026-10-28T16:25:18.565Z
 depends_on:
   - f-domain-model
 implements:
   - src/foundations/f-source-index/
+role: infra
+change: "merge-gate"
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/graph-cache.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
-role: infra
+  - src/foundations/f-test-harness/transient-io.test.mjs
 ---
 
 # Source index
@@ -45,8 +48,10 @@ Intended files: `src/foundations/f-source-index/`
 - `matchesSchemaFile(path, globs)` — whether a repo path is a migration or schema file under those globs (the universe glob syntax)
 - **Search settings.** `mindplan/config.json` may carry `search: { enabled?, model? }` (`SearchConfigSettings`). `loadProjectConfig` validates it (`enabled` a boolean, `model` a non-empty string, unknown keys Blocked) and keeps it as stored; `f-search-index` fills the defaults. `writeProjectConfig` writes `search` only when the config it is given has it
 - **Search cache.** The no-git walk of the universe skips the top-level `.mindplan-cache/` folder (the derived search cache) as it skips `.git/`; in a git repo the cache's own `.gitignore` keeps it out of `ls-files`
-- **Files a branch adds.** `newFilesSinceBase(root)` — files that are untracked, staged as added, or added (`--diff-filter=A`) since `defaultBaseRef(cwd)` (the merge base of `HEAD` with `main`, `origin/main`, `master`, then `origin/master`; the dirty-src check uses the same helper), or only untracked and staged ones when no base resolves; paths are read with `-z`, so non-ASCII names come back unquoted; `null` when the root is not a git repository. Read-only; the caller decides when to probe
+- **Files a branch adds.** `newFilesSinceBase(root)` — files that are untracked, staged as added, or added (`--diff-filter=A`) since `defaultBaseRef(cwd)` (the merge base of `HEAD` with `main`, else `master`; when both the local branch and `origin/<branch>` resolve, the newer of the two merge bases, so a local branch that was never pulled cannot count already-merged commits; dirty-src and the strict merge gate use the same helper), or only untracked and staged ones when no base resolves; paths are read with `-z`, so non-ASCII names come back unquoted; `null` when the root is not a git repository. Read-only; the caller decides when to probe
 - **Plan git state.** `dirGitState(dir, ignoredExt, root?)` → `{ tree, dirty }` or `null`. One `git status --porcelain=v2 --branch -z --untracked-files=all --ignored=matching --no-renames` call gives both the dirty paths and the commit they were taken against (`# branch.oid`), so a commit landing between two calls cannot pair an old status with a new tree. `tree` is the id of `<prefix><dir>` in that commit, read with `git ls-tree --full-tree` (null before the first commit or while the directory is untracked); `dirty` is every path under `dir` the status lists, made relative to the project root even when it sits below the repository top (`--show-prefix`, cached per root). `null` outside a work tree, when git fails, or when git ignores a folder under `dir` or an untracked file ending in `ignoredExt` (any case): git cannot vouch for a file it ignores. `treeChanges(fromTree, toTree, root?)` → the paths (relative to `dir`) that differ between two tree ids, from the plumbing `git diff-tree -r`, which porcelain settings such as `diff.relative` cannot filter: empty when they are equal, `null` when git fails (a tree gone after a gc). Both are read-only
+- **Repository location.** `repoPrefix(cwd)` — the project root's path below the repository top (`git rev-parse --show-prefix`, cached per root; `""` at the top, `null` outside git); `repoTop(root?)` — the repository top (`--show-toplevel`), or `null`. Dirty-src strips the prefix from porcelain paths; init places the merge-gate workflow at the top.
+- **Plan-file I/O** (`io.ts`). `readFileRetry`, `readBytesRetry`, `writeFileRetry`, `copyFileRetry`, and `unlinkRetry` run the fs call through `withTransientRetry`, which retries `EBUSY` and `UNKNOWN`, and on Windows `EPERM` and `EACCES` (`isTransientFsError`), five times with a 10–160 ms synchronous back-off (about 0.3 s), then throws the last error; any other error is thrown at once. `RM_MAX_RETRIES` is the same budget for `fs.rmSync`. The territory store, the graph cache's folder hash, and attachment writes use them for every file under `mindplan/`; it lives here because every one of those depends on this Foundation.
 
 Depends on: `f-domain-model`.
 
@@ -123,6 +128,17 @@ Depends on: `f-domain-model`.
 - Supersedes: d-additive-claims-in-dominated-folders
 - Change: shipped-claims-and-neighbors
 - Date: 2026-10-25
+
+### d-plan-io-retry-in-source-index
+
+- Decision: The transient-lock retry for plan files is one module (`io.ts`) in f-source-index, used by the territory store, the graph cache, and attachment writes.
+- Alternatives:
+  - Keep it in f-territory-store (the graph cache, which the store depends on, could not use it without a cycle)
+  - Copy a small retry loop into each Foundation that touches plan files
+- Why: Every writer and reader of plan files already depends on f-source-index, so one module there covers all of them without a new edge or duplicated retry rules.
+- Consequences: A new fs call on a file under mindplan/ should use these wrappers; directory removal passes RM_MAX_RETRIES to fs.rmSync.
+- Change: merge-gate
+- Date: 2026-10-28
 
 ## Attachments
 

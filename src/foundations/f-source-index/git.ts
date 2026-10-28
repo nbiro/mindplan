@@ -29,16 +29,22 @@ function paths(output: string | null): string[] {
 }
 
 /**
- * Merge base of HEAD with the default branch: `main`, `origin/main`, `master`, then
- * `origin/master`. Null outside git or when none resolves. Shared by the dirty-src check and the
- * decision gate so both measure "this branch" from the same commit.
+ * Merge base of HEAD with the default branch: `main` / `origin/main`, then `master` /
+ * `origin/master`. When both the local and the remote branch resolve, the newer merge base wins,
+ * so a local branch that was never pulled cannot move the base back and count already-merged
+ * commits as this branch's. Null outside git or when none resolves. Shared by the dirty-src check,
+ * the decision gate, and the strict merge gate so all measure "this branch" from the same commit.
  */
 export function defaultBaseRef(cwd: string): string | null {
   for (const branch of ["main", "master"]) {
-    for (const ref of [branch, `origin/${branch}`]) {
-      const base = git(["merge-base", "HEAD", ref], cwd)?.trim();
-      if (base) return base;
-    }
+    const bases = [`origin/${branch}`, branch]
+      .map((ref) => git(["merge-base", "HEAD", ref], cwd)?.trim())
+      .filter((base): base is string => !!base);
+    if (bases.length === 0) continue;
+    const [first, second] = bases;
+    if (!second || first === second) return first;
+    // `--is-ancestor` exits 0 (git returns "") when the first commit is an ancestor of the second.
+    return git(["merge-base", "--is-ancestor", first, second], cwd) !== null ? second : first;
   }
   return null;
 }
@@ -84,13 +90,18 @@ export type DirGitState = {
 const showPrefix = new Map<string, string | null>();
 
 /** The project root's path below the repository top (`git rev-parse --show-prefix`), cached per root. */
-function repoPrefix(cwd: string): string | null {
+export function repoPrefix(cwd: string): string | null {
   if (!showPrefix.has(cwd)) {
     const out = git(["rev-parse", "--is-inside-work-tree", "--show-prefix"], cwd);
     const lines = out?.split(/\r?\n/) ?? [];
     showPrefix.set(cwd, lines[0]?.trim() === "true" ? (lines[1] ?? "").trim() : null);
   }
   return showPrefix.get(cwd) ?? null;
+}
+
+/** The repository top for the project root (`git rev-parse --show-toplevel`); null outside git. */
+export function repoTop(root?: string): string | null {
+  return git(["rev-parse", "--show-toplevel"], resolveProjectRoot(root))?.trim() || null;
 }
 
 /** The rest of a record after its first `n` space-separated fields (porcelain v2 puts the path last). */

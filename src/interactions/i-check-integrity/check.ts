@@ -48,7 +48,7 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
-import { defaultBaseRef } from "../../foundations/f-source-index/git.js";
+import { defaultBaseRef, repoPrefix } from "../../foundations/f-source-index/git.js";
 import {
   drainRemovedLegacyFiles,
   loadGraph,
@@ -261,15 +261,22 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
     return { workingTree: [], commits: [] };
   }
 
-  const porcelain = git(["status", "--porcelain", "-uall"], cwd, true);
-  const workingTree = [...new Set(parsePorcelainSrcPaths(porcelain))].sort((a, b) =>
-    a.localeCompare(b)
-  );
+  // Porcelain paths are relative to the repository top and claims to the project root: limit the
+  // status to the project root and strip its prefix (diff --relative does both for commits).
+  const porcelain = git(["status", "--porcelain", "-uall", "--", "."], cwd, true);
+  const prefix = repoPrefix(cwd) ?? "";
+  const workingTree = [
+    ...new Set(
+      parsePorcelainSrcPaths(porcelain)
+        .filter((p) => p.startsWith(prefix))
+        .map((p) => p.slice(prefix.length))
+    ),
+  ].sort((a, b) => a.localeCompare(b));
 
   const commits = new Set<string>();
   const baseRef = base ?? defaultBaseRef(cwd);
   if (baseRef) {
-    const diff = git(["diff", "--name-only", `${baseRef}...HEAD`], cwd, explicitBase);
+    const diff = git(["diff", "--name-only", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
     for (const line of diff.split("\n")) {
       const p = line.trim();
       if (p) commits.add(toPosix(p));
@@ -536,21 +543,42 @@ function describeOwner(node: MindPlanNode): string {
   return `"${node.id}" is "${node.state}"` + (node.next ? ` (next: ${node.next.state})` : "");
 }
 
+/**
+ * One run's git probe of the changed paths, memoized per base: dirty-src and the strict merge gate
+ * share one `git status` / `git diff`, and a failed probe is reported once (`repeat` on later calls).
+ */
+type DirtyProbe = (base: string) => { dirty: DirtySrcPaths } | { error: string; repeat: boolean };
+
+function dirtyProbe(cwd: string): DirtyProbe {
+  const results = new Map<string, { dirty: DirtySrcPaths } | { error: string }>();
+  return (base) => {
+    const known = results.get(base);
+    if (known) return "error" in known ? { ...known, repeat: true } : known;
+    let result: { dirty: DirtySrcPaths } | { error: string };
+    try {
+      result = { dirty: collectDirtySrcPaths(cwd, base) };
+    } catch (err) {
+      result = { error: err instanceof Error ? err.message : String(err) };
+    }
+    results.set(base, result);
+    return "error" in result ? { ...result, repeat: false } : result;
+  };
+}
+
 function checkDirtySrc(
   graph: MindPlanGraph,
   buckets: OwnershipBuckets,
   cwd: string,
-  base: string | undefined,
+  probe: DirtyProbe,
+  base: string,
   failures: string[]
 ): void {
-  let dirty: DirtySrcPaths;
-  try {
-    dirty = collectDirtySrcPaths(cwd, base);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    fail(failures, `dirty-src git probe failed: ${message}`);
+  const probed = probe(base);
+  if ("error" in probed) {
+    fail(failures, `dirty-src git probe failed: ${probed.error}`);
     return;
   }
+  const dirty = probed.dirty;
 
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const universe = new Set(listUniverseFiles(cwd));
@@ -655,6 +683,7 @@ function checkMerge(
   root: string,
   level: MergeLevel,
   base: string | undefined,
+  probe: DirtyProbe,
   failures: string[]
 ): MergeReport {
   const strict = level === "strict";
@@ -671,14 +700,13 @@ function checkMerge(
         `Merge (strict): no git base to compare against (no main or master merge base). Pass --base <ref> (run_check: base).`
       );
     } else {
-      try {
-        const dirty = collectDirtySrcPaths(root, baseRef);
-        changed = [...new Set([...dirty.commits, ...dirty.workingTree])].sort((a, b) =>
+      const probed = probe(baseRef);
+      if (!("error" in probed)) {
+        changed = [...new Set([...probed.dirty.commits, ...probed.dirty.workingTree])].sort((a, b) =>
           a.localeCompare(b)
         );
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        fail(failures, `Merge (strict): git probe failed: ${message} Pass --base <ref> with a ref this checkout has.`);
+      } else if (!probed.repeat) {
+        fail(failures, `Merge (strict): git probe failed: ${probed.error} Pass --base <ref> with a ref this checkout has.`);
       }
     }
   }
@@ -955,14 +983,15 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     const version = projectVersionStatus();
     if (version.warning) warnings.push(`version: ${version.warning}`);
+    const probe = dirtyProbe(root);
     if (options.base !== undefined) {
-      checkDirtySrc(graph, buckets, root, options.base, failures);
+      checkDirtySrc(graph, buckets, root, probe, options.base, failures);
     }
     if (options.change !== undefined) {
       changeReport = checkChange(graph, root, options.change, decisionCtx);
     }
     if (options.merge) {
-      mergeReport = checkMerge(graph, root, options.merge, options.base, failures);
+      mergeReport = checkMerge(graph, root, options.merge, options.base, probe, failures);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

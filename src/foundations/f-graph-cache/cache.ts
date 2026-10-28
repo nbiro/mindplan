@@ -22,6 +22,7 @@ import { createRequire } from "module";
 import * as path from "path";
 import type { MindPlanNode } from "../f-domain-model/types.js";
 import { dirGitState, treeChanges } from "../f-source-index/git.js";
+import { readBytesRetry } from "../f-source-index/io.js";
 
 /** Bump when the table or the stored entry shape changes; a mismatch drops every row. */
 export const GRAPH_CACHE_SCHEMA = "2";
@@ -98,7 +99,7 @@ export function folderHash(abs: string, files: FileStamp[]): string {
     h.update(f.name);
     h.update("\0");
     try {
-      h.update(fs.readFileSync(path.join(abs, f.name)));
+      h.update(readBytesRetry(path.join(abs, f.name)));
     } catch {
       h.update("<missing>");
     }

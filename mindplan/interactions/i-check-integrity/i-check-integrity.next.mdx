@@ -6,7 +6,7 @@ description: "Human, CI, or agent runs the integrity check (CLI check, run_check
 state: in-review
 shipped_at: 2026-10-25T23:55:52.085Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-28T14:37:19.141Z
+updated_at: 2026-10-28T16:29:17.529Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -63,7 +63,7 @@ Intended files: `src/interactions/i-check-integrity/`
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
 
 - **Merge gate.** `CheckOptions.merge` (`true` or `"strict"`; off by default) adds the rule that the default branch holds only done (`stable` / `unstable`) or still-building (`in-progress`, and the plan states `draft` / `ready`) work. `checkMerge` walks the pipeline nodes and Bugs: a Foundation, Interaction, or Interface whose active slot (the open next while one exists, else live; a mirror twin is not an open next) is `in-review`, and a Bug in `in-review`, are each `Blocked: Merge: …` naming the id, type, state (with `(next)` for a next slot), the change id, and the fix: `update_node_status({ scope: "change", change, new_status: "ship" })` for a node with a change, `update_node_status({ node_id, new_status: "ship" })` without one (a Bug: `"resolved"`), or move it back (`"in-progress"`; a Bug: `"fixing"`) if the work is unfinished. Lines are ordered by change id, then node id, so a change's lines sit together, and the result carries `merge: { level, base?, changes: [{ change, nodes: [{ id, type, state, slot, files? }] }] }` with one group per change (`change: null` for the nodes with none). Cancelled and deprecated nodes pass
-- **Strict merge gate.** With `merge: "strict"`, an `in-progress` active slot whose claims cover a path that changed against the base is also `Blocked: Merge (strict): …` listing up to five changed paths: the work looks finished but was never moved to review. Changed paths are `git diff --name-only <base>...HEAD` plus the working tree (`collectDirtySrcPaths`), deleted paths included, matched with `claimCoversPath` against the active slot's claims. The base is `options.base`, else `defaultBaseRef`; strict outside git or with no resolvable base is `Blocked: Merge (strict): …` with the fix (`--base <ref>`). Strict stays opt-in because it blocks the incremental PRs of a large feature
+- **Strict merge gate.** With `merge: "strict"`, an `in-progress` active slot whose claims cover a path that changed against the base is also `Blocked: Merge (strict): …` listing up to five changed paths: the work looks finished but was never moved to review. Changed paths are `git diff --name-only --relative <base>...HEAD` plus the working tree under the project root (`collectDirtySrcPaths`, `git status -- .` with the root's repository prefix stripped, so a project below the repository top gets project-relative paths), deleted paths included, matched with `claimCoversPath` against the active slot's claims. One memoized probe per run serves dirty-src and strict, so `--merge=strict --base` runs git once and reports a failed probe once. The base is `options.base`, else `defaultBaseRef`; strict outside git or with no resolvable base is `Blocked: Merge (strict): …` with the fix (`--base <ref>`). Strict stays opt-in because it blocks the incremental PRs of a large feature
 - `runCheckHandler({ base?, change?, merge? })` passes `merge` through and returns `merge` when the gate ran
 
 - The default check adds `descriptionWarnings` (`f-compiler-rules`) for every node to its warnings; they never change `ok` or the exit code

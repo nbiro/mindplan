@@ -10,7 +10,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { isTransientFsError, withTransientRetry } from "../../../dist/foundations/f-territory-store/io.js";
+import { isTransientFsError, withTransientRetry } from "../../../dist/foundations/f-source-index/io.js";
 
 // Spawned servers rank by keyword only: no model download or load during tests.
 process.env.MINDPLAN_SEARCH ??= "keyword";
@@ -35,8 +35,8 @@ for (const code of ["EBUSY", "EPERM", "EACCES", "UNKNOWN"]) {
   const value = withTransientRetry(() => {
     if (++calls < 3) throw fsError(code);
     return "read";
-  }, [1, 1, 1]);
-  check(`${code} is retried until the file opens`, value === "read" && calls === 3, `calls=${calls}`);
+  }, [1, 1, 1], "win32");
+  check(`${code} is retried on Windows until the file opens`, value === "read" && calls === 3, `calls=${calls}`);
 }
 {
   let calls = 0;
@@ -63,6 +63,19 @@ for (const code of ["EBUSY", "EPERM", "EACCES", "UNKNOWN"]) {
     thrown = err;
   }
   check("a lock that outlasts the back-off throws its last error", thrown?.code === "EBUSY" && calls === 3, `calls=${calls}`);
+}
+for (const code of ["EPERM", "EACCES"]) {
+  let calls = 0;
+  try {
+    withTransientRetry(() => {
+      calls++;
+      throw fsError(code);
+    }, [1, 1, 1], "linux");
+  } catch {}
+  check(`${code} is a real permission error outside Windows and is not retried`, calls === 1, `calls=${calls}`);
+}
+for (const code of ["EBUSY", "UNKNOWN"]) {
+  check(`${code} is transient outside Windows too`, isTransientFsError(fsError(code), "linux"));
 }
 check("an error without a code is not transient", !isTransientFsError(new Error("x")) && !isTransientFsError(null));
 

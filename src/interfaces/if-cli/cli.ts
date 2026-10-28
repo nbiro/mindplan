@@ -79,14 +79,16 @@ function parseCheckArgs(argv: string[]): { base?: string; merge?: MergeLevel } {
       const value = argv[++i];
       if (!value) throw new Error("Blocked: --base requires a git ref.");
       base = value;
-    } else if (arg === "--merge") {
-      merge = true;
-    } else if (arg.startsWith("--merge=")) {
-      const value = arg.slice("--merge=".length);
-      if (value !== "strict") {
+    } else if (arg === "--merge" || arg.startsWith("--merge=")) {
+      const value = arg === "--merge" ? undefined : arg.slice("--merge=".length);
+      if (value !== undefined && value !== "strict") {
         throw new Error(`Blocked: unknown merge level "${value}". Use --merge or --merge=strict.`);
       }
-      merge = "strict";
+      const level: MergeLevel = value === "strict" ? "strict" : true;
+      if (merge !== undefined && merge !== level) {
+        throw new Error("Blocked: --merge and --merge=strict were both passed. Pass one merge level.");
+      }
+      merge = level;
     } else if (arg === "--help" || arg === "-h") {
       throw new Error("HELP");
     } else {
@@ -306,9 +308,10 @@ function printHelp(): void {
 Init options:
   --host cursor|claude|all  Host copies to install: Cursor (.cursor/, .cursorignore), Claude Code
                             (CLAUDE.md, .claude/skills/), or both (default: cursor).
-  --ci github               Also install .github/workflows/mindplan-merge-gate.yml, which runs
-                            check --merge on pull requests to the default branch (kept when
-                            present unless --force). Make it a required status check.
+  --ci github               Also install .github/workflows/mindplan-merge-gate.yml at the
+                            repository top, which runs check --merge in this project on pull
+                            requests to the default branch (kept when present unless --force).
+                            Make it a required status check.
   -f, --force               Overwrite existing agent assets (playbook, skills, host copies,
                             AGENTS.md, CLAUDE.md, .cursorignore, permissions, etc.) from package templates.
                             Also migrates legacy implementation_packages → { sources, exclude }.

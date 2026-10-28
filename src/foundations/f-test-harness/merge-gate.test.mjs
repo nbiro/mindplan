@@ -1,7 +1,10 @@
 /**
  * Merge gate: `check --merge` Blocks in-review active slots and in-review Bugs, groups the lines
  * by change, and `--merge=strict` also Blocks in-progress nodes whose claimed files changed
- * against the base. The CLI, runCheckHandler, and run_check over MCP agree. Run via npm test.
+ * against the base. The CLI, runCheckHandler, and run_check over MCP agree. Changed paths are
+ * project-relative when the project sits below the repository top, the default base is the newer
+ * of the local and remote default branch, and init --ci github writes the workflow at the
+ * repository top. Run via npm test.
  */
 import assert from "assert/strict";
 import { spawnSync } from "child_process";
@@ -11,7 +14,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { runCheckHandler } from "../../../dist/interactions/i-check-integrity/check.js";
+import { collectDirtySrcPaths, runCheckHandler } from "../../../dist/interactions/i-check-integrity/check.js";
 // Spawned servers rank by keyword only: no model download or load during tests.
 process.env.MINDPLAN_SEARCH ??= "keyword";
 
@@ -311,6 +314,107 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   }
 }
 
+// --- Git helpers for repositories built below ---------------------------------------------------
+function gitIn(cwd) {
+  return (...args) => {
+    const r = spawnSync(
+      "git",
+      ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args],
+      { cwd, encoding: "utf-8" }
+    );
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+}
+
+/** A project in `<repo>/sub`: the repository top holds only a README. */
+function subfolderProject(label, nodes) {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), `mindplan-merge-${label}-`));
+  const root = path.join(repo, "sub");
+  fs.mkdirSync(path.join(root, "mindplan"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "mindplan", "config.json"),
+    JSON.stringify({ sources: ["src/**"], exclude: [] }, null, 2) + "\n"
+  );
+  for (const node of nodes) writeNode(root, node);
+  fs.writeFileSync(path.join(repo, "README.md"), "top\n");
+  return { repo, root };
+}
+
+// --- Strict level with the project below the repository top ------------------------------------
+{
+  const { repo, root } = subfolderProject("subdir", [
+    { id: "i-touched", type: "Interaction", state: "in-progress", change: "feature" },
+    { id: "i-untouched", type: "Interaction", state: "in-progress", change: "feature" },
+  ]);
+  const git = gitIn(repo);
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  git("switch", "-q", "-c", "feature");
+  fs.writeFileSync(path.join(root, "src", "i-touched", "index.ts"), 'export const v = "changed";\n');
+  fs.writeFileSync(path.join(repo, "README.md"), "top, changed\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "work");
+  fs.writeFileSync(path.join(root, "src", "i-touched", "extra.ts"), "export const e = 1;\n");
+  fs.writeFileSync(path.join(repo, "NOTES.md"), "outside the project\n");
+
+  const dirty = collectDirtySrcPaths(root, "main");
+  assert.deepEqual(dirty.commits, ["src/i-touched/index.ts"]);
+  assert.deepEqual(dirty.workingTree, ["src/i-touched/extra.ts"]);
+  ok("changed paths are relative to a project below the repository top, and paths outside it are left out");
+
+  const strict = cli(root, ["--merge=strict", "--base", "main"]);
+  assert.equal(strict.status, 1, strict.out);
+  const lines = strict.out.split("\n").filter((l) => l.startsWith("Blocked: Merge (strict):"));
+  assert.equal(lines.length, 1, strict.out);
+  assert.match(lines[0], /"i-touched"/);
+  assert.match(lines[0], /"src\/i-touched\/extra.ts", "src\/i-touched\/index.ts"/);
+  ok("--merge=strict Blocks a changed in-progress node in a project below the repository top");
+
+  const bogus = cli(root, ["--merge=strict", "--base", "no-such-ref"]);
+  assert.equal(bogus.status, 1, bogus.out);
+  const probeLines = bogus.out.split("\n").filter((l) => l.includes("git probe failed"));
+  assert.equal(probeLines.length, 1, bogus.out);
+  ok("--merge=strict --base runs one git probe for dirty-src and the merge gate, and reports its failure once");
+
+  const both = cli(root, ["--merge=strict", "--merge"]);
+  assert.equal(both.status, 1, both.out);
+  assert.match(both.out, /--merge and --merge=strict were both passed/);
+  ok("conflicting merge levels are Blocked");
+}
+
+// --- The default base ignores a stale local main ------------------------------------------------
+{
+  const root = sandbox("stale-main", [
+    { id: "i-merged", type: "Interaction", state: "in-progress" },
+    { id: "i-touched", type: "Interaction", state: "in-progress" },
+  ]);
+  const git = gitIn(root);
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  const old = git("rev-parse", "HEAD");
+  // Someone else's work lands on the remote main; this clone fetched it but never pulled.
+  fs.writeFileSync(path.join(root, "src", "i-merged", "index.ts"), 'export const v = "merged";\n');
+  git("add", "-A");
+  git("commit", "-q", "-m", "merged elsewhere");
+  git("update-ref", "refs/remotes/origin/main", "HEAD");
+  git("switch", "-q", "-c", "feature");
+  git("branch", "-f", "main", old);
+  fs.writeFileSync(path.join(root, "src", "i-touched", "index.ts"), 'export const v = "mine";\n');
+  git("add", "-A");
+  git("commit", "-q", "-m", "mine");
+
+  const result = handler(root, { merge: "strict" });
+  assert.deepEqual(
+    result.merge.changes.flatMap((g) => g.nodes.map((n) => n.id)),
+    ["i-touched"],
+    result.output
+  );
+  ok("the default base is the newer of main and origin/main, so already-merged commits do not count");
+}
+
 // --- init --ci github ------------------------------------------------------------------------------
 {
   const init = (root, args) =>
@@ -339,6 +443,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   assert.ok(!text.includes("{{MINDPLAN_VERSION}}"), "the version placeholder is replaced");
   assert.match(text, /pull_request:/);
   assert.match(text, /if: github\.base_ref == github\.event\.repository\.default_branch/);
+  assert.match(text, /working-directory: \.\r?\n/);
   ok(`init --ci github writes the workflow running check --merge at mindplan-mcp@${minor}`);
 
   fs.writeFileSync(workflow(root), "# edited\n");
@@ -355,6 +460,15 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /unknown init ci "gitlab"/);
   ok("an unknown --ci value is Blocked");
+
+  const { repo, root: subRoot } = subfolderProject("init-subdir", []);
+  gitIn(repo)("init", "-q", "-b", "main");
+  const nested = init(subRoot, ["--ci", "github"]);
+  assert.equal(nested.status, 0, nested.stderr);
+  assert.match(nested.stdout, /Installed merge-gate workflow at \.\.\/\.github\/workflows\/mindplan-merge-gate\.yml/);
+  assert.equal(fs.existsSync(workflow(subRoot)), false, "no workflow below the repository top");
+  assert.match(fs.readFileSync(workflow(repo), "utf-8"), /working-directory: sub\r?\n/);
+  ok("init --ci github in a project below the repository top writes the workflow at the top, running in the project");
 }
 
 console.log("merge-gate tests passed");
