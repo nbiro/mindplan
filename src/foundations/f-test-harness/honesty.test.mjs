@@ -515,7 +515,8 @@ fillAndTick("interactions", "i-b");
   await walk("f-lay", ["ready", "in-progress", "in-review", "ship"]);
   await call("open_next", { node_id: "f-lay" });
   await call("patch_node_territory", { node_id: "f-lay", section: "## Purpose", text: "Next purpose." });
-  await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ contains: "Spec written", checked: true }] });
+  // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
+  await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
   // A shipped Foundation's revision needs a decision before in-review; recording it is a write too.
   await call("record_decision", {
     node_id: "f-lay",

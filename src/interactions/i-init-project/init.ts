@@ -42,6 +42,7 @@ import {
   removeLegacyIfIdNamedExists,
   writeImplementsFrontmatter,
   writeMirrorTwin,
+  stripLiveAtomicOps,
   writeRoleFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
 import {
@@ -806,6 +807,8 @@ export type RunInitReport = {
   ci?: InstallAgentRuleResult;
   /** The stamp before (null when absent or unreadable) and after this run; refreshed when package-owned files were rewritten. */
   version: { from: string | null; to: string; refreshed: boolean };
+  /** Shipped nodes whose live Atomic Ops init removed (a release before 0.7.0 kept shipped ledgers). */
+  atomicOpsDropped: string[];
   /** Standing next twins written for shipped pipeline nodes that lacked a mirror or had drifted. */
   mirrorTwins: MirrorBackfill[];
   /** Shipped nodes whose twin could not be written (live unreadable, etc.). */
@@ -813,6 +816,31 @@ export type RunInitReport = {
   /** Legacy files deleted by a graph load after the rename walk (the walk itself is in territoryFilenames). */
   removedLegacyFiles: { from: string; to: string }[];
 };
+
+/**
+ * Removes the Atomic Ops a release before 0.7.0 left on shipped Foundations, Interactions, and
+ * Interfaces, so each shows its current state; an open next file keeps its own list. Runs before
+ * the twin backfill, which rewrites each twin this drifted. Returns the ids it changed, or none
+ * when the graph cannot load.
+ */
+export function dropShippedAtomicOps(): string[] {
+  let graph;
+  try {
+    graph = loadGraph();
+  } catch {
+    return [];
+  }
+  const dropped: string[] = [];
+  for (const node of graph.nodes) {
+    if (!isPipelineNodeType(node.type) || !node.shipped_at || node.state === "cancelled") continue;
+    try {
+      if (stripLiveAtomicOps(node)) dropped.push(node.id);
+    } catch {
+      // An unreadable live file is reported by the twin backfill that follows.
+    }
+  }
+  return dropped;
+}
 
 /**
  * For each shipped Foundation/Interaction/Interface with no open evolution, write
@@ -894,6 +922,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     opts.ci === "github"
       ? installMergeGateWorkflow(opts.packageRoot, status.running.package, installOpts)
       : undefined;
+  const atomicOpsDropped = dropShippedAtomicOps();
   const mirrorBackfill = backfillMirrorTwins();
   writeProjectVersion(status.running);
 
@@ -918,6 +947,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
       to: status.running.package,
       refreshed,
     },
+    atomicOpsDropped,
     mirrorTwins: mirrorBackfill.written,
     mirrorTwinSkips: mirrorBackfill.skipped,
     removedLegacyFiles: drainRemovedLegacyFiles(),

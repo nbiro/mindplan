@@ -257,7 +257,7 @@ Replace scaffold placeholders with real content. Section guidance:
 - **Expected / Actual** — behaviour contrast
 - **Fix Checklist** — root cause, fix, regression test
 
-Use `- [ ]` syntax for gates — unchecked boxes block `ship` and Bug `resolved` (Completion Check). Treat Atomic Ops as the record you confirm before ship, not as progress narration. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
+Use `- [ ]` syntax for gates — unchecked boxes block `ship` and Bug `resolved` (Completion Check). Treat Atomic Ops as the record you confirm before ship, not as progress narration. A shipped node keeps none: ship removes the section (git keeps it), and `open_next` starts the revision with fresh unticked defaults that you rewrite into this revision's ops. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
 
 ## Step 7 — Verify graph
 

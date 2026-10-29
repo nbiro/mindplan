@@ -2452,7 +2452,7 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
   new_status: "ready",
 });
 
-// --- open_next on a CRLF body keeps line terminators and checkboxes (no reset) ---
+// --- open_next on a CRLF body keeps line terminators and starts a fresh, unticked ledger ---
 {
   const fDbCurrent = territoryPath("foundations", "f-db");
   const fDbNext = nextTerritoryPath("foundations", "f-db");
@@ -2460,23 +2460,24 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
   fs.writeFileSync(fDbCurrent, lf.replace(/\n/g, "\r\n"));
   // Host bypass of the store: drop the twin so open_next seeds from the CRLF live file.
   if (fs.existsSync(fDbNext)) fs.unlinkSync(fDbNext);
-  const checkedBefore = (fs.readFileSync(fDbCurrent, "utf-8").match(/^\s*[-*+]\s+\[[xX]\]/gm) ?? []).length;
+  const liveRaw = fs.readFileSync(fDbCurrent, "utf-8");
   await expectOk("open_next f-db (CRLF body)", "open_next", { node_id: "f-db" });
   const nextRaw = fs.readFileSync(fDbNext, "utf-8");
   const checkedAfter = (nextRaw.match(/^\s*[-*+]\s+\[[xX]\]/gm) ?? []).length;
-  if (checkedBefore === 0) {
+  const uncheckedAfter = (nextRaw.match(/^\s*[-*+]\s+\[ \]/gm) ?? []).length;
+  if (/^## Atomic Ops/m.test(liveRaw)) {
     failures++;
-    console.log("FAIL CRLF open_next fixture has no checked items");
+    console.log("FAIL a shipped node's live file should keep no Atomic Ops");
   } else if (/\r(?!\n)/.test(nextRaw)) {
     failures++;
     console.log("FAIL open_next on CRLF body left a lone CR in next.mdx");
-  } else if (checkedAfter !== checkedBefore) {
+  } else if (checkedAfter !== 0 || uncheckedAfter !== 3 || (nextRaw.match(/^## Atomic Ops\r$/gm) ?? []).length !== 1) {
     failures++;
-    console.log(`FAIL open_next must not reset checkboxes: before ${checkedBefore} after ${checkedAfter}`);
+    console.log(`FAIL open_next must start one fresh ledger: checked ${checkedAfter} unchecked ${uncheckedAfter}`);
   } else if (!nextRaw.includes("\r\n") || !nextRaw.includes("state: draft")) {
     failures++;
     console.log("FAIL open_next on CRLF body should keep CRLF and flip to draft");
-  } else console.log("ok   open_next on CRLF body keeps CRLF and checkboxes");
+  } else console.log("ok   open_next on CRLF body keeps CRLF and starts a fresh ledger");
   await expectOk("discard_next f-db (CRLF body)", "discard_next", { node_id: "f-db" });
   fs.writeFileSync(fDbCurrent, lf);
   // Heal twin after host rewrite of live (mirrors init/check path).
@@ -2571,7 +2572,10 @@ Legacy substrate.
         } else {
           console.log("ok   legacy current.mdx and next.mdx still load and write");
           const nextPath = path.join(legacyFoundation, "next.mdx");
-          const nextRaw = fs.readFileSync(nextPath, "utf-8").replace(/\[[ ]\]/g, "[x]") + "\nPROMOTED_LEGACY\n";
+          const nextRaw = fs
+            .readFileSync(nextPath, "utf-8")
+            .replace(/\[[ ]\]/g, "[x]")
+            .replace("Legacy substrate.", "Legacy substrate.\n\nPROMOTED_LEGACY");
           fs.writeFileSync(nextPath, nextRaw, "utf-8");
           const legacySrc = path.join(root, "src", "foundations", "f-legacy");
           fs.mkdirSync(legacySrc, { recursive: true });
@@ -2884,6 +2888,10 @@ role: infra
     decision: "Rules stay prose, not checks.",
     alternatives: ["Compile rules into gates (too rigid for area guidance)"],
     why: "Areas need judgment the compiler cannot encode.",
+  });
+  // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
+  await expectOk("tick the revision's ops", "patch_node_territory", {
+    node_id: "f-rules-base", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }],
   });
   for (const status of ["ready", "in-progress", "in-review", "ship"]) {
     await expectOk(`f-rules-base evolution -> ${status}`, "update_node_status", {

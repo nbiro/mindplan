@@ -18,6 +18,7 @@ import { VIEW_FORMATS } from "../../foundations/f-view-projection/view.js";
 import {
   GRAPH_PAGE_DEFAULT,
   GRAPH_PAGE_MAX,
+  CONTEXT_SLOTS,
   ORIENT_DEPTHS,
   findRelatedNodesHandler,
   getBlastRadius,
@@ -223,6 +224,23 @@ const INCLUDE_INHERITED_DECISIONS = z
     "Also return the decisions inherited through belongs_to / depends_on (a Bug: past the nodes it affects): whole at distance 1, one line { id, node_id, distance, decision } beyond. Default false: only their count and nodes."
   );
 
+/** The territory slot a node read returns (orient_for_work and get_node_context). */
+const SLOT_READ = z
+  .enum(CONTEXT_SLOTS)
+  .optional()
+  .describe(
+    "Return only this slot's body (get_node_context: and its decisions): current (live) or next (the open revision; Blocked when none is open)."
+  );
+
+/** One level-2 section of each returned body (orient_for_work and get_node_context). */
+const SECTION_READ = z
+  .string()
+  .min(1)
+  .optional()
+  .describe(
+    'Return only this section of each body, e.g. "## Spec"; a missing heading is Blocked and lists the sections. Read a large node a section at a time.'
+  );
+
 /** Which writes send a ready revision back to draft; repeated in the write tools' hints. */
 const READINESS_HINT =
   "A contract write to a slot in state ready (territory text or checkboxes, claims, links) moves that slot back to draft and returns readiness_reset; self-ready it again after review.";
@@ -423,7 +441,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Returns authoritative record (graph slice), editable body (without the ## Rules and ## Decisions sections), the node's own rules, " +
         "its own decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), " +
         "inherited_decisions ({ count, nodes }, plus entries with include_inherited_decisions), resolved_rules (every node rule that reaches it: it counts as orienting on the node), attachment paths, and filenames. " +
-        "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`).",
+        "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`). " +
+        "Both slots come back unless slot names one; section returns one section of each body.",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
         include_superseded: z
@@ -431,10 +450,12 @@ export function registerMindPlanTools(server: McpServer): void {
           .optional()
           .describe("Also return superseded decisions (each names superseded_by). Default false."),
         include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
+        slot: SLOT_READ,
+        section: SECTION_READ,
       },
     },
-    ({ node_id, include_superseded, include_inherited_decisions }) =>
-      getNodeContext({ node_id, include_superseded, include_inherited_decisions })
+    ({ node_id, include_superseded, include_inherited_decisions, slot, section }) =>
+      getNodeContext({ node_id, include_superseded, include_inherited_decisions, slot, section })
   );
 
   tool(
@@ -448,12 +469,13 @@ export function registerMindPlanTools(server: McpServer): void {
         "with only a query it returns ranked rows ({ id, type, state, title, description, area?, score }, default 8, no body, rules, or decisions); " +
         "pick one and call again with node_id. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
         "With node_id it returns the full node at depth: record and body (get_node_context), owned files, " +
+        "the body being the active slot's (the open next while a revision is open; slot picks one, section cuts it to one section), " +
         "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface. " +
         "Writes that act on a node (set_implementation_files, set_test_files, update_node_status, patch_node_territory, patch_node_rules, open_next, record_decision, attachments, force_unship, link_nodes / unlink_nodes on the source) " +
         "are Blocked: Orientation until that node had a full reply in this session (or get_node_context), and again after the rules that reach it changed; create_node is never blocked. " +
         "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
         "or an affected node's for a Bug), each labeled with the node it came from and tagged with a version; pass known_rules_versions ({ node_id: version }) only for entries whose text you still hold, to leave that text out (they come back with unchanged: true). Those rules are mandatory. " +
-        "And a decisions block, at every depth: the focus node's own recorded design decisions (a Bug: those of the nodes it affects); read them before reshaping that design. " +
+        "And a decisions block, at every depth: the focus node's own recorded design decisions (a Bug: those of the nodes it affects), the reply's only copy of them; read them before reshaping that design. " +
         "inherited_decisions ({ count, nodes }) names the Journeys and Foundations whose decisions also apply; include_inherited_decisions adds them (whole at distance 1, one line beyond). Superseded ones only with include_superseded. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
         "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream).",
@@ -487,9 +509,11 @@ export function registerMindPlanTools(server: McpServer): void {
           .optional()
           .describe("Node id → rules version you already hold (from an earlier rules block); those entries come back without their text, with unchanged: true."),
         area: AREA,
+        slot: SLOT_READ,
+        section: SECTION_READ,
       },
     },
-    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area }) =>
+    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section }) =>
       orientForWork({
         query,
         node_id,
@@ -500,6 +524,8 @@ export function registerMindPlanTools(server: McpServer): void {
         include_inherited_decisions,
         known_rules_versions,
         area,
+        slot,
+        section,
       })
   );
 
@@ -1040,7 +1066,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call when a shipped node's contract changes, before editing that contract. " +
         "Flips a shipped node's standing <id>.next.mdx twin from state mirror to draft (creates the twin from live if missing). " +
-        "Optional title/description overrides. Does not reset checkboxes. The live node keeps serving. " +
+        "Optional title/description overrides. The next file gets a fresh list of unticked default Atomic Ops to rewrite (a shipped node keeps none). The live node keeps serving. " +
         "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror. " +
         "Pass change to tie this revision to the others of one change (update_node_status scope change, get_blast_radius change, run_check change act on the group). " +
         "A neighbor label is inherited as the revision's change unless change names another, which clears it (replaced_change).",
@@ -1144,7 +1170,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
         "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
         "When an open evolution exists (not a mirror twin), build-pipeline transitions apply to the next slot; " +
-        "ship promotes next over current and restores the mirror twin. " +
+        "ship promotes next over current and restores the mirror twin; every ship drops the node's Atomic Ops (the shipped node shows its current state, git keeps the ledger). " +
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
         "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
         "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +

@@ -6,7 +6,7 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: mirror
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-28T16:29:17.329Z
+updated_at: 2026-10-29T12:50:30.590Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -53,6 +53,8 @@ Depends on: `f-mcp-runtime`.
 
 - `areas.test.mjs` (run by `npm test`) covers `areaMembers`, an `area` search on a 331-node, 30-area graph returning only that area's members and at least as fast as a whole-graph search, and over MCP `list_areas` under 4 KB for 30 areas with counts, `area` on `orient_for_work` and `find_related_nodes`, and a non-Journey `area` Blocked; smoke counts twenty-nine tools
 
+- `lean-replies.test.mjs` (run by `npm test`) covers the store's Atomic Ops helpers (fenced headings, a Foundation's Checklist, CRLF, a Bug's Fix Checklist untouched) and `readSectionFromBody`; over MCP, first ship and promotion leaving no Atomic Ops on live and twin with Rules and Decisions kept, `open_next` starting one unticked list before Rules, a revision Blocked by the Completion Check until it ticks its own ops, `force_unship` restoring a list (and a refused unship writing nothing), `orient_for_work` returning the active slot's body and its decisions once, `slot`, `section` (a missing heading Blocked, naming the slot), a `slot` outside the enum rejected, and `get_node_context` with both slots by default; and over the CLI, init dropping an older release's ledgers (live stripped, twin rewritten, an open revision's list kept, a rerun dropping nothing). The other suites that ship a revision tick its fresh ops first
+
 ## Acceptance Criteria
 
 - Smoke passes with short instructions and the get_project playbook and check payload
@@ -70,32 +72,6 @@ Depends on: `f-mcp-runtime`.
 - `decisions.test.mjs` asserts the own-decisions default of `orient_for_work`, `get_node_context`, and `get_blast_radius`, the inherited entries' shapes with `include_inherited_decisions`, the one-decision reply on a node shaped like skyloom's `i-contact-platform`, a Bug's context listing the affected node's decisions, and superseded one-line entries
 
 - **Merge gate.** `src/foundations/f-test-harness/merge-gate.test.mjs` writes fixture graphs on disk and covers `check --merge` for every state, a change spanning several nodes (one group), in-review Bugs, `--merge=strict` against a git base, `runCheckHandler` and `run_check` over MCP matching the CLI, a project below the repository top (project-relative changed paths, the workflow at the top with its working directory), a stale local `main`, one git probe per check, conflicting merge levels, and `init --ci github`. `src/foundations/f-test-harness/transient-io.test.mjs` covers the plan-file retry in `f-source-index/io.ts` (which codes are retried on which platform, other errors thrown at once, a lock outlasting the back-off) and 25 rounds of `open_next` then `patch_node_territory` plus `record_decision` in one batch
-
-## Atomic Ops
-
-- [x] Update smoke for short instructions and get_project.playbook
-- [x] Verified via `npm test`
-- [x] Add `ergonomics.test.mjs` and run it from `npm test`
-- [x] Update smoke for twenty-five tools, batch lines, and the get_project check sentence
-- [x] Scope the check suite's drift assertions to the focus node
-- [x] Verified the ergonomics suite via `npm test`
-- [x] Cover parked plans and relative paths in the ergonomics suite
-- [x] Add `honesty.test.mjs` and run it from `npm test`
-- [x] Verified via `npm test`
-- [x] Add `decisions.test.mjs` and run it from `npm test`
-- [x] Update smoke for twenty-seven tools
-- [x] Verified the decisions suite via `npm test`
-- [x] Cover the review fixes and isolate the sandbox git config
-- [x] Add `shipped-claims.test.mjs` and `change-neighbors.test.mjs` and run them from `npm test`
-- [x] Update the honesty suite's Coverage fix cases for dominated folders
-- [x] Verified the shipped-claims and change-neighbors suites via `npm test`
-- [x] Cover the review fixes: schema refusal, whole-path markers, markers kept through other writes, stale labels on change moves, neighbor decision defaults, and one cleanup per batch
-- [x] Verified the review-fix cases via `npm test`
-- [x] Add `node-tests.test.mjs` and run it from `npm test`
-- [x] Update smoke for twenty-eight tools
-- [x] Link this repository's nodes to the suites that verify them — note: fifteen nodes linked with set_test_files; f-test-harness links its own folder
-- [x] Verified the node-tests suite via `npm test`
-- [x] Add `graph-cache.test.mjs` and run it from `npm test`
 
 ## Attachments
 

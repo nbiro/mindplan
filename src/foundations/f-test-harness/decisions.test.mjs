@@ -92,7 +92,19 @@ function git(...args) {
 }
 
 async function walk(id, steps) {
-  for (const new_status of steps) await call("update_node_status", { node_id: id, new_status });
+  for (const new_status of steps) {
+    // open_next starts a fresh ledger: a revision ticks its own ops before it ships.
+    if (new_status === "ship") await tickAll(id);
+    await call("update_node_status", { node_id: id, new_status });
+  }
+}
+
+/** Ticks every open Atomic Op on the node's active slot (a no-op when there is none). */
+async function tickAll(id) {
+  const ctx = await call("get_node_context", { node_id: id });
+  const body = ctx.next?.body ?? ctx.body ?? "";
+  if (!/^\s*[-*+]\s+\[ \]/m.test(body)) return;
+  await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
 }
 
 const decisionWarnings = (result, id) =>
@@ -387,9 +399,12 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   const orientCtx = await call("orient_for_work", { node_id: "f-bookings", depth: "body" });
   const orientCtxAll = await call("orient_for_work", { node_id: "f-bookings", depth: "body", include_superseded: true });
   check(
-    "orient_for_work passes include_superseded into the context it embeds",
-    !orientCtx.context.decisions.some((d) => d.id === "d-capacity-on-booking") &&
-      orientCtxAll.context.decisions.some((d) => d.id === "d-capacity-on-booking" && d.status === "superseded")
+    "orient_for_work carries decisions once, and include_superseded reaches its decisions block",
+    !("decisions" in orientCtx.context) &&
+      !("decisions" in (orientCtx.context.next ?? {})) &&
+      !orientCtx.decisions.entries.some((d) => d.id === "d-capacity-on-booking") &&
+      orientCtxAll.decisions.entries.some((d) => d.id === "d-capacity-on-booking" && d.status === "superseded"),
+    JSON.stringify({ context: Object.keys(orientCtx.context), all: orientCtxAll.decisions.entries.map((d) => d.id) })
   );
   const twice = await blocked("record_decision", {
     node_id: "f-bookings",
@@ -442,7 +457,10 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     why: "Overbooking is the failure this area exists to prevent.",
   });
   check("recording on a ready revision does not reset readiness", onReady.next_state === "ready", JSON.stringify(onReady));
-  await walk("f-bookings", ["in-progress", "in-review", "ship"]);
+  await walk("f-bookings", ["in-progress"]);
+  // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
+  await call("patch_node_territory", { node_id: "f-bookings", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await walk("f-bookings", ["in-review", "ship"]);
   const live = read(territory("foundations", "f-bookings"));
   check(
     "promote ships the revision's decision into the live file and the check passes",
@@ -482,6 +500,10 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     decisionWarnings(after, "i-cancel").length === 0 && decisionWarnings(after, "f-db").length === 0,
     JSON.stringify(after.warnings)
   );
+  // open_next starts a fresh ledger, so each revision ticks its own ops before it ships.
+  for (const node_id of ["i-cancel", "f-db"]) {
+    await call("patch_node_territory", { node_id, toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  }
   const shipped = await call("update_node_status", {
     scope: "change",
     change: "db",

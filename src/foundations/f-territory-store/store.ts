@@ -1261,9 +1261,7 @@ export function scaffoldEntity(
         "",
         "## Atomic Ops",
         "",
-        "- [ ] Spec written",
-        "- [ ] Implementation complete",
-        "- [ ] Verified in target environment",
+        ...defaultAtomicOps("Foundation"),
         "",
         "## Attachments",
         "",
@@ -1301,9 +1299,7 @@ export function scaffoldEntity(
         "",
         "## Atomic Ops",
         "",
-        "- [ ] Requirements defined",
-        "- [ ] Implementation complete",
-        "- [ ] Tests passing",
+        ...defaultAtomicOps("Interaction"),
         "",
         "## Attachments",
         "",
@@ -1341,9 +1337,7 @@ export function scaffoldEntity(
         "",
         "## Atomic Ops",
         "",
-        "- [ ] Spec written",
-        "- [ ] Implementation complete",
-        "- [ ] Verified against exposed Interactions",
+        ...defaultAtomicOps("Interface"),
         "",
         "## Attachments",
         "",
@@ -1837,24 +1831,15 @@ function detectEol(text: string): "\r\n" | "\n" {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }
 
-function normalizeHeadingName(heading: string): string {
+export function normalizeHeadingName(heading: string): string {
   return heading.replace(/^\s*##\s*/, "").trim();
 }
 
-/** Replaces the content under one level-2 heading; Blocked when the heading is missing. */
-export function replaceSectionInBody(
-  body: string,
-  heading: string,
-  text: string
-): string {
-  const name = normalizeHeadingName(heading);
-  if (!name) throw new Error('Blocked: section requires a heading such as "## Purpose".');
-  const eol = detectEol(body);
-  const lines = body.split(/\r?\n/);
+/** Level-2 heading lines of a body, by line index; a '## ' line inside a fenced code block is code. */
+function levelTwoHeadings(lines: string[]): { index: number; name: string }[] {
   const headings: { index: number; name: string }[] = [];
   let fence: string | null = null;
   lines.forEach((line, index) => {
-    // A '## ' line inside a fenced code block is code, not a heading.
     const f = line.match(/^\s*(```|~~~)/);
     if (f) {
       if (fence === null) fence = f[1];
@@ -1865,6 +1850,16 @@ export function replaceSectionInBody(
     const m = line.match(/^##\s+(.+?)\s*$/);
     if (m) headings.push({ index, name: m[1] });
   });
+  return headings;
+}
+
+/** The level-2 heading named `heading` (case-insensitive); Blocked when missing, listing the sections. */
+function findSectionHeading(
+  headings: { index: number; name: string }[],
+  heading: string
+): { index: number; name: string } {
+  const name = normalizeHeadingName(heading);
+  if (!name) throw new Error('Blocked: section requires a heading such as "## Purpose".');
   const hit = headings.find((h) => h.name.toLowerCase() === name.toLowerCase());
   if (!hit) {
     throw new Error(
@@ -1872,6 +1867,32 @@ export function replaceSectionInBody(
         `Sections: ${headings.map((h) => `"## ${h.name}"`).join(", ") || "(none)"}.`
     );
   }
+  return hit;
+}
+
+/** The text under one level-2 heading (heading line excluded, surrounding blank lines trimmed); Blocked when missing. */
+export function readSectionFromBody(body: string, heading: string): string {
+  const lines = body.split(/\r?\n/);
+  const headings = levelTwoHeadings(lines);
+  const hit = findSectionHeading(headings, heading);
+  const nextHeading = headings.find((h) => h.index > hit.index);
+  return lines
+    .slice(hit.index + 1, nextHeading ? nextHeading.index : lines.length)
+    .join(detectEol(body))
+    .replace(/^(\r?\n)+/, "")
+    .replace(/(\r?\n)+$/, "");
+}
+
+/** Replaces the content under one level-2 heading; Blocked when the heading is missing. */
+export function replaceSectionInBody(
+  body: string,
+  heading: string,
+  text: string
+): string {
+  const eol = detectEol(body);
+  const lines = body.split(/\r?\n/);
+  const headings = levelTwoHeadings(lines);
+  const hit = findSectionHeading(headings, heading);
   const nextHeading = headings.find((h) => h.index > hit.index);
   const end = nextHeading ? nextHeading.index : lines.length;
   const replacement = text.replace(/^(\r?\n)+/, "").replace(/(\r?\n)+$/, "").split(/\r?\n/);
@@ -1884,6 +1905,113 @@ export function replaceSectionInBody(
     ...(nextHeading ? [] : [""]),
   ];
   return out.join(eol);
+}
+
+// ---------------------------------------------------------------------------
+// Atomic Ops: a ledger of unshipped slots only
+// ---------------------------------------------------------------------------
+
+/** Headings of a pipeline node's Atomic Ops section; a Foundation may call it Checklist. Bugs have none here. */
+function atomicOpsHeadings(type: NodeType): string[] {
+  if (type === "Foundation") return ["Atomic Ops", "Checklist"];
+  if (type === "Interaction" || type === "Interface") return ["Atomic Ops"];
+  return [];
+}
+
+/** The scaffold's default checklist lines for a pipeline node (empty for a Journey or a Bug). */
+export function defaultAtomicOps(type: NodeType): string[] {
+  switch (type) {
+    case "Foundation":
+      return ["- [ ] Spec written", "- [ ] Implementation complete", "- [ ] Verified in target environment"];
+    case "Interaction":
+      return ["- [ ] Requirements defined", "- [ ] Implementation complete", "- [ ] Tests passing"];
+    case "Interface":
+      return ["- [ ] Spec written", "- [ ] Implementation complete", "- [ ] Verified against exposed Interactions"];
+    default:
+      return [];
+  }
+}
+
+/** Line ranges `[start, end)` of every Atomic Ops section in `lines`, in order. */
+function atomicOpsRanges(lines: string[], type: NodeType): [number, number][] {
+  const names = atomicOpsHeadings(type).map((n) => n.toLowerCase());
+  if (names.length === 0) return [];
+  const headings = levelTwoHeadings(lines);
+  const ranges: [number, number][] = [];
+  headings.forEach((h, i) => {
+    if (!names.includes(h.name.toLowerCase())) return;
+    ranges.push([h.index, i + 1 < headings.length ? headings[i + 1].index : lines.length]);
+  });
+  return ranges;
+}
+
+/** `lines` without the `[start, end)` ranges. */
+function withoutRanges(lines: string[], ranges: [number, number][]): string[] {
+  return lines.filter((_, i) => !ranges.some(([s, e]) => i >= s && i < e));
+}
+
+/**
+ * A pipeline body with every Atomic Ops section removed (heading to the next level-2 heading).
+ * A shipped node shows its current state; the ledger it shipped with is history, and git keeps it.
+ */
+export function withoutAtomicOps(body: string, type: NodeType): string {
+  const lines = body.split(/\r?\n/);
+  const ranges = atomicOpsRanges(lines, type);
+  if (ranges.length === 0) return body;
+  return withoutRanges(lines, ranges).join(detectEol(body));
+}
+
+const FRESH_OPS_BEFORE = ["decisions", "rules", "attachments"];
+
+/**
+ * A pipeline body with one `## Atomic Ops` section of unticked defaults: it takes the place of the
+ * first existing Atomic Ops (or Foundation Checklist) section and any further one is dropped; with
+ * none it goes before the first of Decisions, Rules, or Attachments, else at the end. A revision
+ * starts its own ledger, so it can never ship on the ticks of the release before it.
+ */
+export function withFreshAtomicOps(body: string, type: NodeType): string {
+  const ops = defaultAtomicOps(type);
+  if (ops.length === 0) return body;
+  const eol = detectEol(body);
+  const lines = body.split(/\r?\n/);
+  const section = ["## Atomic Ops", "", ...ops, ""];
+  const ranges = atomicOpsRanges(lines, type);
+  if (ranges.length > 0) {
+    const at = ranges[0][0];
+    const rest = withoutRanges(lines, ranges);
+    return [...rest.slice(0, at), ...section, ...rest.slice(at)].join(eol);
+  }
+  const before = levelTwoHeadings(lines).find((h) => FRESH_OPS_BEFORE.includes(h.name.toLowerCase()));
+  if (!before) {
+    return `${body.replace(/\s+$/, "")}${eol}${eol}${section.join(eol)}`;
+  }
+  return [...lines.slice(0, before.index), ...section, ...lines.slice(before.index)].join(eol);
+}
+
+/**
+ * Removes the live file's Atomic Ops of a node shipped in place (first ship, or init on a project
+ * from a release that kept shipped ledgers). Returns whether the file changed; the caller rewrites
+ * the mirror twin after it.
+ */
+export function stripLiveAtomicOps(node: Pick<MindPlanNode, "id" | "type">): boolean {
+  return rewriteLiveBody(node, (body) => withoutAtomicOps(body, node.type));
+}
+
+/**
+ * Gives the live file a fresh list of unticked default Atomic Ops: a node taken back before ship
+ * (`force_unship`) needs a ledger again for its next ship. Returns whether the file changed.
+ */
+export function freshLiveAtomicOps(node: Pick<MindPlanNode, "id" | "type">): boolean {
+  return rewriteLiveBody(node, (body) => withFreshAtomicOps(body, node.type));
+}
+
+function rewriteLiveBody(node: Pick<MindPlanNode, "id" | "type">, edit: (body: string) => string): boolean {
+  const split = splitContext(readMarkdown(node, "current"));
+  if (!split) return false;
+  const body = edit(split.body);
+  if (body === split.body) return false;
+  writeMarkdown(node, `${split.frontmatter}${split.separator}${body}`, "current");
+  return true;
 }
 
 /** Replaces one exact occurrence of `find` in the body; Blocked on zero or ambiguous matches. */
@@ -2353,7 +2481,8 @@ export function clearAddedClaims(node: MindPlanNode): boolean {
 
 /**
  * Opens an evolution: flips a standing `mirror` twin to `draft` (or seeds from live when missing).
- * Does not reset checkboxes — the standing diff is `state` only until the agent edits the successor.
+ * The revision gets a fresh list of unticked default Atomic Ops (`withFreshAtomicOps`); the rest of
+ * the body is the live text until the agent edits the successor.
  */
 export function openNextSlot(
   node: MindPlanNode,
@@ -2422,8 +2551,10 @@ export function openNextSlot(
       inner = `${inner}${nl}description: ${JSON.stringify(description)}`;
     }
   }
+  // The revision starts its own Atomic Ops; the shipped ledger is not copied forward.
+  const rest = withFreshAtomicOps(raw.slice(match[0].length), node.type);
   // Bypass writeMarkdown mirror guard — we are intentionally leaving mirror for draft.
-  writeTerritoryFile(nextPath, `${match[1]}${inner}${match[3]}${raw.slice(match[0].length)}`);
+  writeTerritoryFile(nextPath, `${match[1]}${inner}${match[3]}${rest}`);
 
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
   const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
@@ -2559,7 +2690,8 @@ export function promoteNextSlot(
   frontmatterLines.push("---");
 
   const liveRules = readNodeRules(node, "current");
-  const promotedBody = joinNodeRules(splitNodeRules(nextSplit.body).body, liveRules);
+  // A shipped node keeps no Atomic Ops: the ledger was for this ship, and git keeps it.
+  const promotedBody = joinNodeRules(withoutAtomicOps(splitNodeRules(nextSplit.body).body, node.type), liveRules);
   // The live file takes the next file's line endings.
   writeMarkdown(
     node,

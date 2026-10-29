@@ -125,23 +125,6 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - **OIDC / Trusted Publisher misconfigured:** fix the npm binding; do not add `NPM_TOKEN` without a product decision
 - **Broken published version:** bump patch in a new PR and merge; never unpublish or move a tag
 
-## Atomic Ops
-
-- [x] Rewrite `.github/workflows/publish.yml`: push-to-main trigger, `version` gate job, `publish` job with environment, tag push, concurrency
-- [x] Publish script CI mode: require `refs/heads/main`, skip when the version is already on npm
-- [x] OIDC permissions + `registry-url` per `f-npm-registry` / `f-github-actions`
-- [x] `CONTRIBUTING.md` and `f-npm-registry` docs describe merge-to-main releases
-- [x] GitHub Environment `npm-publish` created (reviewers optional) — note: exists in nbiro/mindplan (checked with gh api)
-- [x] Live Trusted Publisher bound on npmjs.com after first claim — note: 0.2.0 published over OIDC on 2026-10-25
-- [x] End-to-end verify: a version-bump merge publishes and tags; a merge without a bump skips — note: runs 40229545536 (publish + tag) and 39977013169 (skip)
-- [x] Add `.github/dependabot.yml` scoped to `mindplan-mcp` for the self-dependency repin — note: daily npm entry for /, allow mindplan-mcp only; removed again in favor of the repin job
-- [x] Add the `repin` job to `publish.yml` (branch, exact pin, PR, CI dispatch; skips on re-run) and remove `.github/dependabot.yml` — note: job repin needs version + publish; skips when the branch exists or the pin already matches; Dependabot config removed
-- [x] Add a `workflow_dispatch` trigger to `ci.yml` so the repin job can start CI (`f-github-actions`, in place)
-- [x] Verify on a real release: the repin PR opens with CI checks on it — note: done differently: the PR opened and the dispatched CI ran green, but it shows under Actions for the branch, not as PR checks; the PR's own pull_request run waits for approval (documented)
-- [x] Add the `merge-repin` job to `ci.yml` (`f-github-actions`, in place): dispatch on `repin/mindplan-mcp-*` only, `needs: test`, file allowlist, `--match-head-commit`
-- [x] Update the project rule, the repin PR body, and `CONTRIBUTING.md`: the repin PR merges itself when CI is green — note: also changed the release rule: only PRs that change the shipped package bump the version, so this PR releases nothing
-- [x] Verify on the next release: the repin PR merges after its dispatched CI run passes — note: 0.5.2 (#73) and 0.5.3 (#75) merged by github-actions after their dispatched CI runs passed
-
 ## Decisions
 
 ### d-publish-unpublished-version-on-main

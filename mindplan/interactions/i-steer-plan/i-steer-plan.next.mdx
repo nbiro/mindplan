@@ -2,11 +2,11 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review, links including mounts, open_next with a change id, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), linked test files written in place on live and an open next alike without resetting readiness, neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate and search settings, and attachments; small results unless verbose; each write refreshes the map and the search cache."
+description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review and a ship that drops the shipped Atomic Ops, links including mounts, open_next with a change id and a fresh ops list, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), linked test files written in place on live and an open next alike without resetting readiness, neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate and search settings, and attachments; small results unless verbose; each write refreshes the map and the search cache."
 state: mirror
-shipped_at: 2026-10-25T23:55:52.221Z
+shipped_at: 2026-10-29T13:32:27.669Z
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-28T16:39:20.146Z
+updated_at: 2026-10-29T13:32:27.669Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -26,6 +26,7 @@ tests:
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
@@ -57,6 +58,7 @@ Intended files: `src/interactions/i-steer-plan/`
 - `patch_project_description` replaces only the brief description; `patch_project_rules` replaces only the brief rules (global, apply everywhere); each leaves the other section unchanged
 - `patch_config`, `put_attachment`, `remove_attachment`
 - First ship and promote restore/create the mirror twin; retire/unship delete it
+- **Ship drops the ledger.** First ship removes the live file's Atomic Ops (`stripLiveAtomicOps`, `f-territory-store`) before it writes the mirror twin, and promote does the same through `promoteNextSlot`; the shipped node shows its current state and git keeps the ledger. `open_next` returns a next file with a fresh list of unticked default ops for the agent to rewrite, and `force_unship` gives the live file one (`freshLiveAtomicOps`), since the unshipped node must pass the shape and completion checks again; a failure anywhere in the unship (the target's gates or a later frontmatter write) puts the live file back as it was, so a still-shipped node never keeps ops its twin lacks
 - **Small results.** Each single-node write returns its own fields plus `state` and `next_state` and `changed_files`; the record and 1-hop neighborhood (`anchor`) only with `verbose: true`. A batch returns `lines`, one `id: from -> to` per node
 - **Twins in `changed_files`.** A write lists every mirror twin it re-synced: the stability and Journey recompute after links, unlinks, and status moves (`syncNodes` returns each node's live path plus its twin), live edge writes on a shipped source, and `patch_node_territory` on a shipped node's live slot
 - **Claim-time import scan.** `set_implementation_files` writes the claim, then scans the claimed files with `findImportViolationsForClaim` and returns `import_violations: [{ file, imports, fix | not_allowed }]`; `fix` is the exact `link_nodes` call (`depends_on`, `exposes`, or `mounts`)
@@ -120,6 +122,7 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - Shipping, cancelling, or discarding a change's last revision clears its neighbors' labels and lists `cleared_neighbors`; a `scope: "change"` walk to ship clears a neighbor-only change
 - `open_next` with a different change clears the live label, and a later `discard_next` does not bring it back
 - `force_unship` and deprecation clear the label and report `cleared_change`
+- After first ship and after promotion the live file and its twin have no Atomic Ops section, and the ship lists both in `changed_files`; `open_next` on that node returns a next file with unticked default ops, so shipping it without new ticks is Blocked by the Completion Check; `force_unship` of a shipped node leaves a live file with unticked default ops that can move to `ready`
 - Claiming a new migration file, or a migrations folder, in place is Blocked with `open_next`; a plain sibling in the same dominated folder is still claimed in place
 - Moving an open revision's change id off its inherited label (`patch_node_territory` or `set_implementation_files`) reports `replaced_change` and leaves live unlabeled
 - `record_decision` on a labeled neighbor without `change` records the decision under the label
@@ -128,59 +131,6 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - `set_test_files` with an invalid path, or on a Journey, a Bug, or a retired node, is Blocked
 
 - `create_node` and `patch_node_territory` write `aliases`; `[]` clears them; an alias over 60 characters is rejected; the next search finds the node by its alias
-
-## Atomic Ops
-
-- [x] Retire changed_files lists deleted mirror twin paths
-- [x] Attachment base64 allows empty and unpadded payloads
-- [x] Strict base64 validation for put_attachment
-- [x] Attachment basename hardening (reject `.` / `..`)
-- [x] Twin lifecycle in handlers
-- [x] patch_project / patch_config / attachments
-- [x] Verified via `npm test`
-- [x] Split project brief writes into patch_project_description and patch_project_rules
-- [x] Verified the split via `npm test`
-- [x] Add the `patchNodeRules` handler and list it in MUTATE_TOOLS
-- [x] Make `patch_node_territory` preserve the Rules section and Block a body containing one
-- [x] Return `rules_impact` and the full `changed_files` list from `patch_node_rules`
-- [x] Verified `patch_node_rules` via `npm test`
-- [x] Block closed Bugs and build `rules_impact` with `rulesImpact`
-- [x] Verified the closed-Bug Block via `npm test`
-- [x] Return small write results by default (`mutationTail`) and one line per node for a batch
-- [x] Scan claimed files in `set_implementation_files` and return `import_violations` with fixes
-- [x] Gate `in-review` and `ship` on the check's import and ownership rules and return stale-text warnings
-- [x] Handle the `mounts` edge in link, unlink, and promote
-- [x] Add `section` / `replace` to `patch_node_territory`
-- [x] Add `scope` and `dry_run` to `update_node_status`
-- [x] Verified the small results, claim scan, gate, mounts, patches, and scoped walks via `npm test`
-- [x] Keep draft and ready plans out of `all_open_updates` and follow proposed next edges in `node_and_dependents`
-- [x] Verified the scope selection via `npm test`
-- [x] Reset a `ready` slot to `draft` on contract writes and report `readiness_reset`
-- [x] Require `skip_review` for scoped walks that jump to ship, list every step in `dry_run`, and report `skipped_review`
-- [x] Add `change` / `change_ref` to create, open_next, and territory patches, and `scope: "change"`
-- [x] Pass `all`, `note`, and `not_applicable` through and return `toggled`
-- [x] Verified readiness reset, skip_review, change walks, and toggles via `npm test`
-- [x] Add the `recordDecision` handler and list it in MUTATE_TOOLS
-- [x] Run the decision gate on moves to in-review (single, batch, scope, and dry runs)
-- [x] Add `decisions` to `patch_config`
-- [x] Add `search` to `patch_config` and keep stored settings on partial writes
-- [x] Refresh the search cache in `refreshPersistedMap`
-- [x] Gate node writes on the orientation ledger; return the reaching rules from `create_node` and rule-changing links
-- [x] Verified via `npm test`
-- [x] Verified record_decision, supersession, and the gate via `npm test`
-- [x] Promote in memory field for field, share one decision context per call, and validate change ids with `validateChangeInput` (review fixes)
-- [x] Write additive claims in place on a shipped node with no open next (`assertAdditiveInPlace`), returning `added_in_place`, `hint`, and `folder_claims`
-- [x] Label neighbors from `patch_node_territory`, `record_decision`, and `set_implementation_files` (`change`), returning `neighbor_of` and `replaced_change`, and Block `change_ref` on a neighbor
-- [x] Clear orphaned neighbor labels on ship, cancel, deprecate, discard, change moves, and change walks to ship, returning `cleared_neighbors`
-- [x] Clear the label on `open_next` with another change, on deprecation, and on `force_unship`, and `added_claims` on `force_unship`
-- [x] Verified in-place claims and neighbor labels via `npm test`
-- [x] Check the node's own live label on `discard_next` (review fix) — note: replaced by the store dropping a stale live label when the revision's change moves, plus the before/after cleanup, so discard_next needs no special case
-- [x] Refuse schema files in place, default a neighbor's decisions to its label, and clear labels through one `withNeighborCleanup` around every membership-ending write (review fixes)
-- [x] Verified the review fixes via `npm test`
-- [x] Add `setTestFiles`
-- [x] Verified `set_test_files` via `npm test`
-
-- [x] Take `aliases` on `create_node` and `patch_node_territory`
 
 ## Decisions
 

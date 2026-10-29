@@ -107,41 +107,6 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 - Each bad-description case warns and a good description does not; none fails the check
 
-## Atomic Ops
-
-- [x] Treat mirror as non-evolution in open_next / cancel / force_unship gates
-- [x] Verified via `npm test`
-- [x] Add `mounts` to `validateLink` and `importAllowed`, and `effectiveMounts`
-- [x] Add `integrity.ts` import violations with fixes
-- [x] Add the in-review / ship gate `assertCheckCleanForNode`
-- [x] Add `staleTextWarnings`
-- [x] Verified the import fixes, mounts, gate, and warnings via `npm test`
-- [x] Block cancelling an Interface that a Foundation still mounts
-- [x] Verified the stale-text and cancel refinements via `npm test`
-- [x] Scan every claimant in `findAllImportViolations` and mark next-slot and released findings advisory
-- [x] Add `probableOwner` and `coverageFix`
-- [x] Add `routeFamilySplits`
-- [x] Verified next-slot imports, coverage fixes, and route families via `npm test`
-- [x] Add `decisions.ts`: triggers, `revisionHasDecision`, gap, warnings, and the in-review assert
-- [x] Read the body without the Decisions section in `staleTextWarnings`
-- [x] Verified the decision gate via `npm test`
-- [x] Bound change-id decisions by the revision's start day and read the body through `withoutOwnedSections` (review fixes)
-- [x] Add `changeNeighbors`
-- [x] Warn on `added_claims` entries the body does not name
-- [x] Leave `open_next` out of the Coverage fix when the owner dominates the file's folder
-- [x] Verified neighbors, the in-place claim warning, and the Coverage fix via `npm test`
-- [x] Share a Coverage fix context per check run, refuse schema files in place, match `added_claims` by whole path, and add `changesWithRevisions` (review fixes)
-- [x] Verified the review fixes via `npm test`
-- [x] Add `testPresenceFailures` to the in-review / ship gate
-- [x] Add `untestedWarning`
-- [x] Verified test presence and the untested warning via `npm test`
-
-- [x] Add `descriptionWarnings`
-- [x] Skip closed checklist lines in the missing-path stale signal
-- [x] Verified the closed-checklist skip via `npm test`
-- [x] Decide closed items with the completion rule and skip their continuation lines (review fixes)
-- [x] Verified the review fixes via `npm test`
-
 ## Decisions
 
 ### d-first-build-edges-ungated

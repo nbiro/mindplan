@@ -2,11 +2,11 @@
 id: i-init-project
 type: Interaction
 title: "Init project"
-description: "Human runs init: it installs the playbook, brief, and host copies for Cursor, Claude Code, or both, optionally the GitHub merge-gate workflow, ignores mindplan/ in Cursor and the search cache in git, backfills mirror twins, and stamps mindplan/version.json, refreshing package files when behind."
+description: "Human runs init: it installs the playbook, brief, and host copies for Cursor, Claude Code, or both, optionally the GitHub merge-gate workflow, ignores mindplan/ in Cursor and the search cache in git, drops the Atomic Ops left on shipped nodes, backfills mirror twins, and stamps mindplan/version.json, refreshing package files when behind."
 state: mirror
-shipped_at: 2026-10-28T16:39:50.117Z
+shipped_at: 2026-10-29T13:32:27.480Z
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-28T16:39:50.117Z
+updated_at: 2026-10-29T13:32:27.480Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -17,6 +17,7 @@ leads_to:
 implements:
   - src/interactions/i-init-project/
 tests:
+  - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
@@ -44,6 +45,7 @@ Intended files: `src/interactions/i-init-project/`
 - Claude Code host: `CLAUDE.md` containing `@AGENTS.md`, and `.claude/skills/mindplan-*`; an existing `CLAUDE.md` is kept unless `--force`
 - The report carries `cursor` and `claude` groups that are present only when selected
 - **Merge-gate workflow.** `runInit` takes `ci` (`"github"`, or absent: nothing is installed). `installMergeGateWorkflow` copies `templates/ci/github/mindplan-merge-gate.yml` to `mindplan-merge-gate.yml` in `.github/workflows/` at the repository top (`repoTop`, `f-source-index`; outside git, under the project root), where GitHub reads workflows, replacing `{{MINDPLAN_DIR}}` with the project root's path below the top (`.` at the top) for `defaults.run.working-directory`, and `{{MINDPLAN_VERSION}}` with the running package's `major.minor`; the reported path is relative to the project root, so `npx -y mindplan-mcp@<major.minor> check --merge` runs a release that has the flag. It runs on `pull_request` and its job runs only when the PR targets the repository's default branch (`github.base_ref == github.event.repository.default_branch`). The workflow is repo-owned: an existing file is kept unless `--force`. The report carries `ci` (`installed`, `path`) only when requested
+- **Shipped ledgers.** `dropShippedAtomicOps()` runs after the installers and before `backfillMirrorTwins`: for every shipped Foundation, Interaction, or Interface (it has `shipped_at` and is not cancelled) it removes the live file's Atomic Ops with `stripLiveAtomicOps` (`f-territory-store`), so a project upgraded from a release that kept shipped ledgers shows each node's current state. An open next file keeps its own list. The twin backfill that follows rewrites each twin the strip drifted. The report carries `atomicOpsDropped` (node ids) and the CLI prints one line with their count. A graph that cannot load is skipped, like the backfill
 - `backfillMirrorTwins` after installers
 - Graph-load failures during backfill are skipped (incomplete migration fixtures)
 - **Version stamp.** Init reads `mindplan/version.json` before installing. Package-owned files (the playbook, both skills, `mcp.json.example`, `integrations/`, the host skill copies, and `.cursor/rules/mindplan.mdc`) are rewritten when the stamp is missing, unreadable, or older than the package, as if `--force` were passed for those files only. Repo-owned files (`AGENTS.md`, `CLAUDE.md`, `.cursorignore`, `.cursor/permissions.json`, `mindplan/project.md`) still change only with `--force` (the brief never).
@@ -55,6 +57,7 @@ Depends on: `f-territory-store`, `f-source-index`.
 ## Acceptance Criteria
 
 - Init backfills missing mirrors
+- Init on a project whose shipped nodes still carry ticked Atomic Ops removes those sections from the live files and rewrites their twins, reports the node ids, leaves an open next file's list alone, and a rerun drops nothing
 - `--host claude` installs `CLAUDE.md` and `.claude/skills/` and no Cursor files
 - `--host all` installs both hosts; the default still installs Cursor only
 - Host ignore covers the whole mindplan tree for Cursor
@@ -63,24 +66,6 @@ Depends on: `f-territory-store`, `f-source-index`.
 - Init adds `.mindplan-cache/` to `.gitignore` once; a rerun does not add it again
 - `init --ci github` writes `mindplan-merge-gate.yml` under the repository top's `.github/workflows/` (running in the project root when it sits below the top), running `check --merge` at the package's minor version; a plain init writes no workflow; a rerun keeps an edited workflow unless `--force`
 - Verified via `npm test`
-
-## Atomic Ops
-
-- [x] Smoke covers mirrorTwinSkips CLI reporting
-- [x] Init reports mirrorTwinSkips when twin write fails
-- [x] Init rewrites missing and drifted mirror twins
-- [x] backfillMirrorTwins + report
-- [x] cursorignore mindplan/**
-- [x] Host selection: runInit hosts option and grouped cursor/claude report
-- [x] Claude Code host copies: CLAUDE.md and .claude/skills
-- [x] Read the stamp, refresh package-owned files when it is missing or behind, Block when it is ahead
-- [x] Write the stamp after a successful init and report `version`
-- [x] Verified the stamp, refresh, and ahead refusal via `npm test`
-- [x] Add `.mindplan-cache/` to the repo's `.gitignore` and report it
-- [x] Verified the `.gitignore` entry via `npm test`
-- [x] Verified via `npm test`
-- [x] Install the merge-gate workflow on `ci: "github"` and report it
-- [x] Verified the workflow install, its version, and the keep-unless-force rule via `npm test` — note: merge-gate.test.mjs
 
 ## Attachments
 

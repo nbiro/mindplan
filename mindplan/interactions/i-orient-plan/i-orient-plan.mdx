@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context at a chosen depth, return the focus node's inherited rules (each tagged with a version, its text left out when the caller already holds it) and its own decisions (naming the inherited ones, listed on request), list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the focus's decisions and the dependents that hold others, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check and tagging the rules), and expose get_rules for global project rules before each action, with a short unchanged reply for a known version."
+description: "Find focus nodes, load territory context at a chosen depth, slot, and section (one copy of the focus's decisions per reply), return the focus node's inherited rules (each tagged with a version, its text left out when the caller already holds it) and its own decisions (naming the inherited ones, listed on request), list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the focus's decisions and the dependents that hold others, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check and tagging the rules), and expose get_rules for global project rules before each action, with a short unchanged reply for a known version."
 state: stable
-shipped_at: 2026-10-26T00:04:46.376Z
+shipped_at: 2026-10-29T13:32:27.578Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-26T00:04:46.376Z
+updated_at: 2026-10-29T13:32:27.578Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -24,6 +24,7 @@ tests:
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
@@ -58,6 +59,9 @@ Intended files: `src/interactions/i-orient-plan/`
 - **Orientation ledger.** The `rules` block resolves with `reachingRules` (live edges plus an open revision's proposed ones). `clearWinner` looks at one match past the row limit, so `limit: 1` alone never auto-focuses. `get_node_context` returns `resolved_rules: { node_id, entries }` (every rule that reaches the node) because it counts as orienting. Every full reply (`node_id` or `auto_focus`) and every `get_node_context` records the node with `recordOriented` (`f-orientation-ledger`); that is what lets writes on it through `i-steer-plan`'s gate
 - `orient_for_work` takes `depth`: `full` (default) returns everything; `body` returns `{ query, matches, focus, context, rules }` with the full context; `rules` returns the same keys with `context` cut to the record (and the next record). `body` and `rules` skip the neighborhood and the blast radius, and do not compute the blast radius
 - `get_node_context` returns `body` without the `## Rules` section and a separate `rules` string for that node's own rules (and the same for the `next` slot's body)
+- **One slot.** `orient_for_work` and `get_node_context` take `slot: "current" | "next"`. `orient_for_work` defaults to the active slot (`next` while a revision is open, else `current`), because nearly every edit targets it; `get_node_context` defaults to both slots, as before. With `slot: "current"` the context carries the live body and decisions and, when a revision is open, `next: { record }` only; with `slot: "next"` it carries `next: { record, body, decisions }` and leaves out the live `body` and `decisions` (the live `record` stays). `slot: "next"` on a node with no open revision is Blocked. `depth: "rules"` ignores `slot`
+- **One section.** Both tools take `section: "## Heading"`: each returned body is only that section's text (`readSectionFromBody`, `f-territory-store`), and the context names it (`section`). A heading missing from a returned slot is Blocked and lists that slot's sections, so a large node can be read a section at a time. `depth: "rules"` ignores `section`
+- **Decisions once.** `orient_for_work`'s `context` leaves out `decisions` and `next.decisions`: the top-level `decisions` block is the reply's only copy. `get_node_context` keeps them, since it has no block. `buildNodeContextPayload` takes `omitDecisions`, so orientation never builds the decisions it would drop, and at `depth: "rules"` it reads only the live file (the next record still comes back)
 - `get_blast_radius` adds `rules_impact` for every focus type: `{ node_id, has_rules, inherited_by: RulesImpactEntry[] }` from `rulesAudience`. It reports who is reached by the focus's rules, so editing a Foundation's rules shows every dependent; `affected` / `affected_files` / `reachability` are unchanged. When the focus has no rules, `has_rules` is `false` and `inherited_by` is `[]`
 - Rules are advisory prose: nothing here is a `Blocked:`
 - **Change blast radius.** `get_blast_radius` takes `node_id` or `change`. For a change it merges the members' radii: `{ change, members, affected, journeys_at_risk, affected_files, rules_impact }` where `affected` keeps the smallest distance and leaves out the members themselves. Members are the change's open revisions (`changeMembers`) and its neighbors (`changeNeighbors`, shipped nodes it edits in place), each listed with `kind: "revision" | "neighbor"`; a change with neither is Blocked (`has no members`)
@@ -65,7 +69,7 @@ Intended files: `src/interactions/i-orient-plan/`
 - Node context shows `change` / `change_ref` on the live record and the next record
 - **Decisions block.** `orient_for_work` returns `decisions` next to `rules` at every depth: `{ node_id, entries: DecisionEntry[], inherited_decisions }`. `splitNodeDecisions` splits `resolveNodeDecisions`: `entries` are the focus's own (`via: self`; for a Bug, the nodes it affects directly, `via: affects`, distance 1, since a Bug holds none), and `inherited_decisions: { count, nodes }` names the rest (`belongs_to`, `depends_on`, a Bug's further `affects`), nodes nearest first; `include_inherited_decisions: true` adds `inherited_decisions.entries`, whole at distance 1 (compact at `depth: "rules"`) and one line `{ id, node_id, distance, decision }` beyond. Each entry carries its record, `node_id`, `node_type`, `via`, `distance`, and `status`; superseded entries are left out unless `include_superseded: true` (then each names `superseded_by`); at `depth: "rules"` each entry is compact (`id`, `decision`, `why`, and its labels) because orientation runs before every action, while `body` / `full` and `list_decisions` return whole records; `null` without a focus
 - **`list_decisions({ node_id?, change?, include_superseded? })`** → `{ decisions: DecisionEntry[], count }` from `listDecisions`: one node's own decisions (its active slot), every decision recorded under a change, or every decision in the graph; superseded entries only with `include_superseded`, each then naming `superseded_by`. Blocked on an unknown node. Listed in `QUERY_TOOLS`
-- `get_node_context` returns `body` without the `## Decisions` section too, plus `decisions` (the live file's entries, each with `status`) and `next.decisions` for an open next, whose record also shows `opened_at`. It takes `include_superseded` (default `false`) like `list_decisions`: superseded entries are left out of both lists unless asked for, so a long trail does not bury the decisions that currently apply. `orient_for_work` passes its own `include_superseded` through to the `context` it embeds
+- `get_node_context` returns `body` without the `## Decisions` section too, plus `decisions` (the live file's entries, each with `status`) and `next.decisions` for an open next, whose record also shows `opened_at`. It takes `include_superseded` (default `false`) like `list_decisions`: superseded entries are left out of both lists unless asked for, so a long trail does not bury the decisions that currently apply. `orient_for_work`'s `include_superseded` applies to its decisions block, the reply's only copy
 - `get_blast_radius` adds `decisions`: the active decisions held by the focus (`via: focus`, distance 0), each `{ id, node_id, via, distance, decision }`, and `dependent_decisions: { count, nodes }` for the visible affected nodes that hold decisions; `include_dependent_decisions: true` adds their rows (`via: dependent`, their distance) to `decisions`; inactive nodes' decisions are left out and uncounted, even with `include_retired`. The change radius merges them across members (a member's own decisions are `focus`; each non-member holder counts once). `orient_for_work` at `depth: "full"` embeds the default radius
 - `get_node_context` adds `inherited_decisions` (the same summary, except that a Bug's affected nodes, whose decisions orient lists as the Bug's own, are inherited there, whole at distance 1, since the context's `decisions` are the node's own file's) and takes `include_inherited_decisions` for its entries; a one-line entry names `status` and `superseded_by` when superseded; `orient_for_work`'s embedded `context` leaves it out because the decisions block carries it
 - **Paged graph.** `get_mindplan_graph({ offset?, limit? })` returns `{ nodes, edges, total_nodes, total_edges, offset, limit, next_offset? }`. Nodes are sorted by id and sliced by `offset` (default 0) and `limit` (default `GRAPH_PAGE_DEFAULT` = 200, max `GRAPH_PAGE_MAX` = 500, both exported from this package); `edges` holds every edge whose source is in the page, so a client that walks every page sees every edge exactly once; `next_offset` is present only when nodes remain. A graph that fits in one page returns the same `nodes` and `edges` as before plus the totals, so a small project sees no truncation. `offset` past the end returns an empty page with the totals, not Blocked. The default page keeps one result of a typical graph (about 400 characters per node) under Claude Code's 25,000-token result limit; the tool description names `next_offset`
@@ -100,49 +104,13 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - `list_decisions` returns a node's, a change's, and the graph's decisions; with `include_superseded` the superseded entry carries `superseded_by`
 - `get_blast_radius` on a Foundation lists its own active decisions and names its dependents that hold decisions; with `include_dependent_decisions` it lists theirs too
 - `get_node_context` `body` excludes the Decisions section and `decisions` carries it
-- `get_node_context` leaves a superseded decision out of `decisions` by default and returns it with `include_superseded`, naming `superseded_by`; `orient_for_work` with `include_superseded` shows it in `context.decisions` too
+- `get_node_context` leaves a superseded decision out of `decisions` by default and returns it with `include_superseded`, naming `superseded_by`; `orient_for_work` with `include_superseded` shows it in its decisions block
+- An `orient_for_work` reply carries the focus's decisions once (no `context.decisions` or `context.next.decisions`)
+- With a revision open, `orient_for_work` at `depth: "body"` returns only the next body; `slot: "current"` returns only the live body; `get_node_context` returns both unless `slot` is passed; `slot: "next"` without a revision is Blocked
+- `section` returns only that section of each returned body and Blocks on a missing heading, listing the sections
 - `get_mindplan_graph` on a graph larger than `limit` returns `limit` nodes, only edges from those nodes, the totals, and `next_offset`; walking every page yields every node and every edge exactly once; a graph within one page returns no `next_offset`; `limit` above 500 is rejected at the schema layer
 - `get_blast_radius` lists the expanded tests of the focus and its affected owners, and the change radius merges them
 - `get_node_context` returns a node's `tests` list
-
-## Atomic Ops
-
-- [x] Add `getRules` handler and list it in QUERY_TOOLS
-- [x] Verified via `npm test`
-- [x] Add the `rules` block to `orient_for_work` using `resolveNodeRules`
-- [x] Add `rules_impact` to `get_blast_radius` using `rulesAudience`
-- [x] Split `rules` from `body` in `get_node_context` (live and next)
-- [x] Verified the node rules orientation via `npm test`
-- [x] Add the `depth` option to `orient_for_work`
-- [x] Add the `check` sentence to `get_project`
-- [x] Verified `depth` and `check` via `npm test`
-- [x] Add change blast radius
-- [x] Show `change` / `change_ref` in node context
-- [x] Verified change blast radius and glob expansion via `npm test`
-- [x] Add the `decisions` block to `orient_for_work`
-- [x] Add the `listDecisions` handler and list it in QUERY_TOOLS
-- [x] Add `decisions` to `get_blast_radius` (node and change) and to `get_node_context`
-- [x] Verified decision orientation via `npm test`
-- [x] Compact decisions at depth rules, leave retired decisions out of the blast radius, and show `opened_at` (review fixes)
-- [x] Add `include_superseded` to `get_node_context` and pass orientation's flag into the embedded context
-- [x] Verified the get_node_context default via `npm test`
-- [x] Page `get_mindplan_graph` by `offset` / `limit` with totals and `next_offset`, exporting the page constants
-- [x] Test the page walk, the single-page shape, and the past-the-end page (`f-test-harness`, in place)
-- [x] Verified via `npm test`
-- [x] Add the `version` warning to `get_project`
-- [x] Verified the `get_project` version warning via `npm test`
-- [x] Merge a change's neighbors into its blast radius and label each member's `kind`
-- [x] Verified the neighbor blast radius via `npm test`
-- [x] Add `tests` to the node and change blast radius
-- [x] Verified the blast-radius tests via `npm test`
-- [x] Return only the focus's own decisions by default with `inherited_decisions`, and `dependent_decisions` on the blast radius
-- [x] Verified the own-decisions default via `npm test`
-- [x] Tag project rules with `rules_version` in `get_project` / `get_rules`, take `known_version`, and version node rule entries with `known_rules_versions`
-- [x] Verified the rules versions via `npm test`
-- [x] Return summary rows for a query alone, the full node for `node_id` or a clear winner, owned files, and record fetches in the ledger
-- [x] Verified summary-first orientation via `npm test`
-- [x] Add `list_areas` and the `area` option
-- [x] Verified areas via `npm test`
 
 ## Decisions
 
@@ -234,6 +202,18 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - Consequences: A shared Foundation appears in every area that uses it; a cross-cutting question searches without area.
 - Change: list-areas
 - Date: 2026-10-25
+
+### d-orient-active-slot-default
+
+- Decision: orient_for_work returns only the active slot's body by default (next while a revision is open) and its decisions only in the top-level block; get_node_context keeps both slots by default and both take slot and section.
+- Alternatives:
+  - Add slot and section but keep both bodies by default in orient_for_work (every orient on an evolving node still pays for two near-identical bodies)
+  - Default get_node_context to the active slot too (it is the full read; comparing live with next is what it is for)
+  - Page a body by character offset (a cut can split a section or a checkbox line; headings are the unit agents edit by)
+- Why: Orientation runs before every action and nearly every edit targets the active slot; a reply that repeats the body and the decisions doubled its size and could exceed the host's result limit on a large node.
+- Consequences: A client that read the live body from orient_for_work while a revision is open must pass slot: "current"; a client that read context.decisions must read the decisions block.
+- Change: lean-node-replies
+- Date: 2026-10-29
 
 ## Attachments
 

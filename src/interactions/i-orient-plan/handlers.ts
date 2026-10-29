@@ -28,6 +28,8 @@ import {
   nodeToRecord,
   projectRoot,
   readMarkdown,
+  readSectionFromBody,
+  normalizeHeadingName,
   splitContext,
   summarizeGraphNode,
   territoryBodyReader,
@@ -334,62 +336,97 @@ function splitNodeDecisions(
   return { own: orientDecisionEntries(own, depth), inherited_decisions: summary };
 }
 
+/** Which territory slot a node read returns; omitted means both (get_node_context). */
+export const CONTEXT_SLOTS = ["current", "next"] as const;
+export type ContextSlot = (typeof CONTEXT_SLOTS)[number];
+
 /**
  * Territory context of one node: the live body and the open next body without the Rules and
  * Decisions sections, which come back separately (`rules`, `decisions`, `next.decisions`).
  * Superseded decisions are left out of both lists unless `include_superseded`, the same default
  * as `list_decisions` and `orient_for_work`, so a long trail does not bury what currently applies.
+ * `slot` returns one slot's body and decisions (the other slot's record stays, so the caller knows
+ * a revision is open); `section` cuts each returned body to one level-2 section, so a large node
+ * can be read a section at a time.
  */
 export function buildNodeContextPayload(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  opts: DecisionQueryOptions & { inherited?: boolean; include_inherited_decisions?: boolean } = {}
+  opts: DecisionQueryOptions & {
+    inherited?: boolean;
+    include_inherited_decisions?: boolean;
+    slot?: ContextSlot;
+    section?: string;
+    /** Leave the slots' decisions out (orient_for_work carries them in its own decisions block). */
+    omitDecisions?: boolean;
+  } = {}
 ): Record<string, unknown> {
+  if (opts.slot === "next" && !node.next) {
+    throw blocked(`"${node.id}" has no open revision; read slot "current", or open_next first.`);
+  }
+  const withCurrent = opts.slot !== "next";
+  const withNextBody = opts.slot !== "current";
+  // A heading missing from one slot names that slot: a section new in the revision is only in next.
+  const cut = (body: string, slot: ContextSlot) => {
+    if (!opts.section) return body;
+    try {
+      return readSectionFromBody(body, opts.section);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(message.replace(/^Blocked: /, `Blocked: ${slot} slot: `));
+    }
+  };
   const rel = entityRelativePath(node);
-  const currentRaw = readMarkdown(node, "current");
-  const currentSplit = splitContext(currentRaw);
   // One supersession index serves both slots.
-  const index = supersessionIndex(graph);
+  const index = opts.omitDecisions ? null : supersessionIndex(graph);
   const payload: Record<string, unknown> = {
     folder: rel,
     current_path: markdownRelativePath(node, "current"),
     attachments_path: `${rel}/${ATTACHMENTS_DIR}`,
     attachments: listAttachments(node),
     record: nodeToRecord(node),
-    // The Rules and Decisions sections are returned separately; each has its own writer.
-    body: withoutOwnedSections(currentSplit?.body ?? ""),
-    rules: node.rules ?? "",
-    decisions: slotDecisions(graph, node, "current", opts, index),
-    next: null,
   };
+  if (opts.section) payload.section = `## ${normalizeHeadingName(opts.section)}`;
+  if (withCurrent) {
+    const currentSplit = splitContext(readMarkdown(node, "current"));
+    // The Rules and Decisions sections are returned separately; each has its own writer.
+    payload.body = cut(withoutOwnedSections(currentSplit?.body ?? ""), "current");
+  }
+  payload.rules = node.rules ?? "";
+  if (withCurrent && index) payload.decisions = slotDecisions(graph, node, "current", opts, index);
+  payload.next = null;
   // get_node_context names the inherited decisions; orient_for_work carries them in its decisions block.
   if (opts.inherited) {
     payload.inherited_decisions = splitNodeDecisions(graph, node, { ...opts, selfOnly: true }).inherited_decisions;
   }
   if (node.next) {
-    const nextRaw = readMarkdown(node, "next");
-    const nextSplit = splitContext(nextRaw);
     payload.next_path = markdownRelativePath(node, "next");
     payload.next_attachments_path = `${rel}/${NEXT_ATTACHMENTS_DIR}`;
-    payload.next = {
-      record: {
-        state: node.next.state,
-        title: node.next.title,
-        description: node.next.description,
-        updated_at: node.next.updated_at,
-        ...(node.next.opened_at ? { opened_at: node.next.opened_at } : {}),
-        ...(node.next.belongs_to?.length ? { belongs_to: node.next.belongs_to } : {}),
-        ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
-        ...(node.next.exposes?.length ? { exposes: node.next.exposes } : {}),
-        ...(node.next.leads_to?.length ? { leads_to: node.next.leads_to } : {}),
-        ...(node.next.implements?.length ? { implements: node.next.implements } : {}),
-        ...(node.next.role ? { role: node.next.role } : {}),
-        ...(node.next.change ? { change: node.next.change } : {}),
-        ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
-      },
-      body: withoutOwnedSections(nextSplit?.body ?? ""),
-      decisions: slotDecisions(graph, node, "next", opts, index),
+    const record = {
+      state: node.next.state,
+      title: node.next.title,
+      description: node.next.description,
+      updated_at: node.next.updated_at,
+      ...(node.next.opened_at ? { opened_at: node.next.opened_at } : {}),
+      ...(node.next.belongs_to?.length ? { belongs_to: node.next.belongs_to } : {}),
+      ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
+      ...(node.next.exposes?.length ? { exposes: node.next.exposes } : {}),
+      ...(node.next.leads_to?.length ? { leads_to: node.next.leads_to } : {}),
+      ...(node.next.implements?.length ? { implements: node.next.implements } : {}),
+      ...(node.next.role ? { role: node.next.role } : {}),
+      ...(node.next.change ? { change: node.next.change } : {}),
+      ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
     };
+    if (withNextBody) {
+      const nextSplit = splitContext(readMarkdown(node, "next"));
+      payload.next = {
+        record,
+        body: cut(withoutOwnedSections(nextSplit?.body ?? ""), "next"),
+        ...(index ? { decisions: slotDecisions(graph, node, "next", opts, index) } : {}),
+      };
+    } else {
+      payload.next = { record };
+    }
   }
   return payload;
 }
@@ -619,6 +656,8 @@ export function getNodeContext(args: {
   node_id: string;
   include_superseded?: boolean;
   include_inherited_decisions?: boolean;
+  slot?: ContextSlot;
+  section?: string;
 }): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
@@ -626,6 +665,8 @@ export function getNodeContext(args: {
     include_superseded: args.include_superseded,
     inherited: true,
     include_inherited_decisions: args.include_inherited_decisions,
+    slot: args.slot,
+    section: args.section,
   });
   // It counts as orienting on the node, so it carries every rule that reaches it, not only its own.
   payload.resolved_rules = { node_id: node.id, entries: reachingRules(graph, node.id) };
@@ -718,6 +759,8 @@ export async function orientForWork(args: {
   include_inherited_decisions?: boolean;
   known_rules_versions?: Record<string, string>;
   area?: string;
+  slot?: ContextSlot;
+  section?: string;
 }): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
@@ -751,7 +794,16 @@ export async function orientForWork(args: {
   }
 
   const node = findNode(graph, focus);
-  const context = buildNodeContextPayload(graph, node, { include_superseded: args.include_superseded });
+  // The body comes from the active slot unless the caller names one; depth "rules" returns no body,
+  // so it reads the live slot only (its next record comes back without the next body).
+  // The decisions block is the reply's one copy of the focus's decisions.
+  const context = buildNodeContextPayload(
+    graph,
+    node,
+    depth === "rules"
+      ? { slot: "current", omitDecisions: true }
+      : { slot: args.slot ?? (node.next ? "next" : "current"), section: args.section, omitDecisions: true }
+  );
   const rules = {
     node_id: node.id,
     entries: versionedRuleEntries(reachingRules(graph, node.id), args.known_rules_versions),

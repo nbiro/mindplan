@@ -275,6 +275,11 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
         (version.refreshed ? " and refreshed the package-owned agent files" : "")
     );
   }
+  if (report.atomicOpsDropped.length > 0) {
+    console.log(
+      `Dropped the shipped Atomic Ops of ${report.atomicOpsDropped.length} node(s); a shipped node shows its current state and git keeps the ledger`
+    );
+  }
   for (const twin of report.mirrorTwins) {
     console.log(`Wrote mirror twin ${twin.path} (${twin.node_id})`);
   }

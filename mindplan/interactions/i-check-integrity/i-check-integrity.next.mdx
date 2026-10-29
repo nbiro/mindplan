@@ -94,39 +94,6 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - Several in-review nodes of one change produce one group in `merge.changes`, and their lines are adjacent
 - The strict gate fails an `in-progress` node only when a claimed file differs from the base
 
-## Atomic Ops
-
-- [x] Export `buildDriftReport` for uncommitted source ownership
-- [x] Report deleted tracked source paths with their claim owner
-- [x] Verified via `npm test`
-- [x] Use the shared import violations (with fixes) in the import check
-- [x] Add warnings to the check result and `renderCheckOutput`
-- [x] Add `runCheckHandler` for the `run_check` tool
-- [x] Classify drift (unowned, owner_idle, claimed_missing, expected count) and scope it to nodes
-- [x] Verified the check output, warnings, and drift classes via `npm test`
-- [x] Report `Blocked: Coverage` with the probable owner and fix; stop counting retired claims as coverage
-- [x] Report advisory next-slot import violations as warnings
-- [x] Warn on split route families
-- [x] Add `change` to `runCheckHandler`
-- [x] Verified coverage, next-slot imports, route families, and the change check via `npm test`
-- [x] Add decision warnings to the check and to the change check
-- [x] Verified the decision warnings via `npm test`
-- [x] Use the shared `defaultBaseRef` for dirty-src (review fix)
-- [x] Warn when `mindplan/version.json` is not current
-- [x] Verified the version warning via `npm test`
-- [x] Check a change's neighbors with its revisions and list each member's `kind`
-- [x] Pass the graph and root to `coverageFix` so a dominated folder's fix has no `open_next`
-- [x] Verified the neighbor check and the in-place Coverage fix via `npm test`
-- [x] Share one Coverage fix context per run and open the evolution for an unclaimed schema file (review fixes)
-- [x] Verified the Coverage fix for schema files via `npm test`
-- [x] Check linked-test presence and warn on untested in-review revisions
-- [x] Verified the linked-test checks via `npm test`
-
-- [x] Add description warnings to the check
-- [x] Add the merge gate (`merge: true`) with grouped `Blocked: Merge` lines and the `merge` result
-- [x] Add the strict level over claimed files changed against the base
-- [x] Verified the merge gate via `npm test` — note: merge-gate.test.mjs
-
 ## Decisions
 
 ### d-merge-gate-opt-level-existing

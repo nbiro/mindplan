@@ -86,35 +86,6 @@ Depends on: `f-domain-model`, `f-search-index`.
 - A node with an open next is found by its next wording
 - Verified via `npm test` (`search.test.mjs`, `search-index.test.mjs`, `search-eval.test.mjs`)
 
-## Atomic Ops
-
-- [x] Ensure ranking/neighborhood work for Interaction and Interface once types exist; add fixtures for `exposes`/`leads_to` neighbors
-- [x] Remove any Interaction-only fixtures from search tests; keep retired-node and find-limit behavior
-- [x] Verified via `npm test`
-- [x] Stable title and H1; description is current purpose (no changelog parentheticals)
-- [x] Verified by Reviewer against the naming contract
-- [x] Add `resolveNodeRules` with the four inheritance steps and retired/empty filtering
-- [x] Add `rulesAudience` as the exact inverse of `resolveNodeRules`
-- [x] Add search-test fixtures for every inherited and every not-inherited direction
-- [x] Verified the rules queries via `npm test`
-- [x] Treat closed Bugs as inactive in both rules queries and test it
-- [x] Build the node index once per call and add `rulesImpact`
-- [x] Verified the inactive-node and `rulesImpact` changes via `npm test`
-- [x] Extract `inheritanceSources` from the rules walk
-- [x] Add `decisions.ts`: supersession index, resolve, list, find, and id generation
-- [x] Verified decision inheritance and supersession via `npm test`
-- [x] Keep deprecated superseders and reserve ids named by `supersedes` (review fixes)
-- [x] Give `slotDecisions` the `include_superseded` option with the same default as `nodeDecisions`
-- [x] Verified the slot filter via `npm test`
-- [x] Build the search test set and commit the token-ranking baseline
-- [x] Add `searchDocs`, `sectionHeadings`, `fuseRankings`, and `searchNodes` over `f-search-index`, with the token fallback
-- [x] Tune the graph boost and semantic window on the test set; keep bge-small (beat MiniLM on top-1 and MRR)
-- [x] Verified hybrid ranking via `npm test`
-- [x] Add `area` to the ranked matches for orient's summary rows
-
-- [x] Index node aliases
-- [x] Add `areaMembers` and the `area` option of `searchNodes`
-
 ## Decisions
 
 ### d-supersede-reach-follows-inheritance
