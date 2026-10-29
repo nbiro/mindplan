@@ -71,33 +71,6 @@ Depends on: none.
 
 - A node record carries `aliases` when its frontmatter has them
 
-## Atomic Ops
-
-- [x] Add `MIRROR_STATE` and `isMirrorState`
-- [x] Document that `node.next` is open evolution only
-- [x] Verified via `npm test`
-- [x] Add optional `MindPlanNode.rules`
-- [x] Add `RULE_VIAS`, `RuleEntry`, and `RulesImpactEntry`
-- [x] Verified the rules types via `npm test`
-- [x] Add `isInactiveNode`
-- [x] Verified `isInactiveNode` via `npm test`
-- [x] Add the `mounts` edge type and `mounts` on `MindPlanNode` and `NextSlot`
-- [x] Verified `mounts` via `npm test`
-- [x] Add `change` / `change_ref` to nodes and next slots, `CHANGE_ID_PATTERN`, and `activeChange`
-- [x] Verified the change fields via `npm test`
-- [x] Add `DecisionRecord`, `DECISION_ID_PATTERN`, `DECISION_STATUSES`, and `DecisionEntry`
-- [x] Add `decisions` to `MindPlanNode` and `NextSlot`, and `activeDecisions`
-- [x] Verified the decision types via `npm test`
-- [x] Add `NextSlot.opened_at` for the decision gate's revision start (review fix)
-- [x] Document the live `change` of a shipped node with no open next as a neighbor label
-- [x] Add `MindPlanNode.added_claims`
-- [x] Verified the neighbor label and `added_claims` via `npm test`
-- [x] Add `isNeighborNode` as the shared neighbor test (review fix)
-- [x] Add `MindPlanNode.tests`
-- [x] Verified `tests` via `npm test`
-
-- [x] Add `aliases` to `MindPlanNode`
-
 ## Decisions
 
 ### d-computed-decision-status

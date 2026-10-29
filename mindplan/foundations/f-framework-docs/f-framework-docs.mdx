@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check, links the tests that verify a node, and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked tests, shared-route ownership, decision records and the decision gate, and host install docs for Cursor and Claude Code."
+description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check, links the tests that verify a node, and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked tests, shared-route ownership, decision records and the decision gate, Atomic Ops that live only until ship, slot and section reads, and host install docs for Cursor and Claude Code."
 state: stable
-shipped_at: 2026-10-28T16:39:49.979Z
+shipped_at: 2026-10-29T13:32:27.270Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-28T16:39:49.979Z
+updated_at: 2026-10-29T13:32:27.270Z
 depends_on:
   - f-domain-model
 implements:
@@ -79,41 +79,7 @@ Depends on: `f-domain-model`.
 - SPEC, the playbook, both skills, README, and the changelog describe in-place claims, `added_claims`, neighbor labels, and when labels clear, in the same terms as the tool descriptions; the playbook stays one screen
 - SPEC, the playbook, and the changelog describe the `tests` list and `set_test_files`
 - The playbook's rule 7 and the plan-project skill name the merge gate; README and the changelog describe `--merge`, `--merge=strict`, and the CI workflow; the playbook stays one screen
-
-## Atomic Ops
-
-- [x] Add the merge-gate line to playbook rule 7 and the plan-project skill, and refresh the host copies
-- [x] Add the merge-gate workflow template
-- [x] Document the merge gate and `init --ci github` in SPEC, README, and the 0.6.0 changelog — note: SPEC §8.1 run_check, §9.6 table and CI merge gate paragraph; README Merge gate section; CHANGELOG 0.6.0
-
-- [x] Update playbook, agents-stub, and plan-project skill
-- [x] Update SPEC for get_rules, when-hints, drift envelope, twenty-three tools
-- [x] Document init --host in README, SPEC, and the Claude Code guide
-- [x] Verified via `npm test`
-- [x] Update SPEC for node rules, `patch_node_rules`, the changed outputs, and twenty-four tools
-- [x] Update playbook, agents-stub, plan-project skill, and README for the two rule scopes
-- [x] Refresh the init-installed host copies to match
-- [x] Verified the node rules docs via `npm test`
-- [x] Update SPEC for `run_check`, the check gate, import fixes, warnings, drift classes, small writes, orient depth, section patches, scoped status, and twenty-five tools
-- [x] Update SPEC and the define-entities skill and examples for `mounts` and the multi-template example
-- [x] Name `run_check` in the playbook, plan-project skill, and README
-- [x] Refresh the init-installed host copies again
-- [x] Verified the docs via `npm test`
-- [x] Document readiness reset, coverage, next-slot imports, skip_review, toggles and notes, change ids, glob claims, and shared-route ownership in SPEC
-- [x] Update the bundled playbook and skills
-- [x] Add `CHANGELOG.md`
-- [x] Document decision records, the decision gate, the config settings, and twenty-seven tools in SPEC
-- [x] Add the decision line to the playbook and `record_decision` to the plan-project skill
-- [x] Add the decision records entry to `CHANGELOG.md` and the two tools to README
-- [x] Verified the docs via `npm test`
-- [x] Document the review fixes in SPEC and the changelog
-- [x] Document in-place claims, folder dominance, `added_claims`, and change neighbors in SPEC
-- [x] Update the playbook, the plan-project and define-entities skills, and README for neighbors and in-place claims, and refresh the init-installed host copies
-- [x] Add the Unreleased entry to `CHANGELOG.md`
-- [x] Verified the shipped-claims and neighbor docs via `npm test`
-- [x] Document the review fixes in SPEC and the changelog
-- [x] Document the graph cache in SPEC §1.1.3, README, and the 0.5.0 changelog, and move the `npx` examples to `mindplan-mcp@0.5`
-- [x] Document linked tests in SPEC, the playbook, and the changelog — note: SPEC §6.1, §6.2, §8.1, §8.2, §9.6; playbook handoff step; README tool table; CHANGELOG 0.3.0
+- SPEC §5.6 says Atomic Ops live only on unshipped slots (ship drops them, `open_next` starts a fresh list) and §6.3 / the scaffold section say the same; the define-entities skill and README say a shipped node keeps no ledger; SPEC and README describe `slot` and `section` on `orient_for_work` / `get_node_context` and the single decisions block; CHANGELOG has a 0.7.0 section
 
 ## Attachments
 

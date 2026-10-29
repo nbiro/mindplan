@@ -73,26 +73,6 @@ Depends on: `f-domain-model`.
 - `namesPath` rejects a longer path that contains the entry and accepts the exact path followed by punctuation
 - `dirGitState` gives the plan tree and dirty paths relative to a project root below the repository top, and `null` when git ignores an untracked plan file; `treeChanges` lists the paths that differ between two commits' plan trees
 
-## Atomic Ops
-
-- [x] Expose config write for steer `patch_config`
-- [x] Verified via `npm test`
-- [x] Accept and expand glob claims (`isGlobClaim`, `expandClaims`, `claimEntryExists`, `claimCoversPath`)
-- [x] Add `claimantsOf`
-- [x] Verified glob claims via `npm test`
-- [x] Parse, validate, default, and write the `decisions` settings
-- [x] Parse, validate, and write the `search` settings; skip `.mindplan-cache/` in the walk
-- [x] Add `matchesSchemaFile` and `newFilesSinceBase`
-- [x] Verified the settings and the git probe via `npm test`
-- [x] Narrow the default schema globs, read git paths with `-z`, and share `defaultBaseRef` with the dirty-src check (review fixes)
-- [x] Add `dominance.ts` (`isDominatedFolder`, `collectOtherClaims`, `folderClaimSuggestions`) and re-export it from `index.ts`
-- [x] Verified folder dominance and folder-claim suggestions via `npm test`
-- [x] Add `schemaClaimEntries`, `claimListKeeps`, and `namesPath` (review fixes)
-- [x] Verified the schema refusal and whole-path matching via `npm test`
-- [x] Add `dirGitState` and `treeChanges`
-- [x] Take the tree from the status call's own commit and read tree changes with `diff-tree` (review fixes)
-- [x] Verified the plan git state via `npm test` (`graph-cache.test.mjs`)
-
 ## Decisions
 
 ### d-git-finds-new-migrations

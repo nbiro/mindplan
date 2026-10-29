@@ -307,6 +307,8 @@ await foundation("f-dep");
     alternatives: ["One suite"],
     why: "Each part runs alone.",
   });
+  // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
+  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
   await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
   check(
     "ship keeps the tests list on live and the restored twin",

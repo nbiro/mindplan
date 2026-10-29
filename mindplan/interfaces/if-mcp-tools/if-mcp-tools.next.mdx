@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-nine tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, and describes neighbor labels, additive in-place claims on shipped nodes, linked test files, summary-first orientation with its write gate, and area-first search."
+description: "MCP stdio Interface that registers twenty-nine tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, takes slot and section on the node reads, and describes neighbor labels, additive in-place claims on shipped nodes, linked test files, the shipped-ops drop, summary-first orientation with its write gate, and area-first search."
 state: mirror
-shipped_at: 2026-10-28T16:39:50.253Z
+shipped_at: 2026-10-29T13:32:27.789Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-28T16:39:50.253Z
+updated_at: 2026-10-29T13:32:27.789Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -21,6 +21,7 @@ implements:
   - src/interfaces/if-mcp-tools/
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
@@ -68,6 +69,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - **Areas.** Registers `list_areas` (a read tool, no input; twenty-nine tools) and one shared `area` schema (a Journey id) on `orient_for_work` and `find_related_nodes`
 - **Summary-first orient.** `orient_for_work` describes the rows, `auto_focus`, the full reply for `node_id`, and the write gate (`Blocked: Orientation`, `create_node` never blocked); its `limit` defaults to 8 for a query alone
 - **Rules versions.** `get_rules` takes `known_version` and describes `rules_version` and the `unchanged: true` reply; `get_project` names `rules_version`; `orient_for_work` takes `known_rules_versions` (a string record) and describes the entry `version`
+- **Slot and section reads.** `orient_for_work` and `get_node_context` take `slot` (`"current" | "next"`, one shared schema) and `section` (a level-2 heading such as `"## Spec"`, one shared schema) and pass them to their handlers. The `orient_for_work` description says the body is the active slot's by default (the open next while a revision is open), that `section` returns one section, and that the decisions block is the reply's only copy; the `get_node_context` description says both slots come back unless `slot` names one; the `slot` schema says decisions per slot come back from `get_node_context` only
 - **Decision defaults.** `orient_for_work` and `get_node_context` take `include_inherited_decisions` (one shared schema) and describe the own-decisions default and `inherited_decisions`; `get_blast_radius` takes `include_dependent_decisions` and describes `dependent_decisions`
 - **Tool kinds and annotations.** One registration helper takes `kind: "read" | "write" | "destructive"` and derives both the `guarded` options (`drift` / `write`) and the MCP `annotations`: `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`: every tool acts on the local `mindplan/` tree and the repo, never on an external system. Read tools: `run_check`, `get_mindplan_graph`, `export_mindplan_view`, `find_related_nodes`, `get_node_implementation`, `get_node_context`, `orient_for_work`, `get_project`, `get_rules`, `list_decisions`, `get_blast_radius`. Destructive tools (they remove data or edges that no undo restores): `unlink_nodes`, `remove_attachment`, `discard_next`, `force_unship`. Every other tool is `write`. `run_check` keeps `drift: false` on top of `read`. Every tool keeps its `title`
 - **Result envelope.** `ok(payload)` returns `content: [{ type: "text", text: JSON.stringify(payload) }]` (compact, no indentation) and, when the payload is a plain object, `structuredContent: payload` as well. String payloads stay text-only. Error results are unchanged (`isError: true`, message text). No `outputSchema` is declared: twenty-seven schemas would double the tool list the host loads, and `structuredContent` is useful without one
@@ -102,51 +104,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - `set_implementation_files` `change` reaches the handler, and `""` is accepted to clear it
 - The descriptions of the change-scoped and shipped-node tools name neighbors, in-place claims, and the result fields they return
 - The server registers twenty-eight tools, including `set_test_files` as a write tool
-
-## Atomic Ops
-
-- [x] Register `get_rules` and when-hints on all tools
-- [x] Attach non-empty drift on successful results
-- [x] Thin wiring only — handlers stay on Interactions
-- [x] Skip drift on `get_project` and `get_rules`
-- [x] Verified via `npm test`
-- [x] Register `patch_node_rules` and update the tool count to twenty-four
-- [x] Update the `get_rules` and `orient_for_work` descriptions for node rules
-- [x] Verified the new tool via `npm test`
-- [x] Register `run_check` and expose `i-check-integrity`
-- [x] Add `verbose` to the write tools and drop default drift from writes
-- [x] Add `section` / `replace`, `scope` / `dry_run`, `depth`, and the `mounts` edge type to the schemas
-- [x] Verified the new tools and parameters via `npm test`
-- [x] Add the change, skip_review, and toggle fields to the tool schemas and hints
-- [x] Verified the schemas via `npm test`
-- [x] Register `record_decision` and `list_decisions` and update the tool count to twenty-seven
-- [x] Add `decisions` to the `export_mindplan_view` and `patch_config` schemas and update the orient, blast-radius, and status hints
-- [x] Describe summary-first orientation and the write gate on `orient_for_work`
-- [x] Register `list_areas` and `area`
-- [x] Add `known_version` to `get_rules` and `known_rules_versions` to `orient_for_work`
-- [x] Add `include_inherited_decisions` to `orient_for_work` and `get_node_context`, and `include_dependent_decisions` to `get_blast_radius`
-- [x] Let `guarded` await async handlers; add `search` to the `patch_config` schema; describe hybrid ranking on `find_related_nodes`
-- [x] Verified the decision tools via `npm test`
-- [x] Make the `decisions` config schema strict and reuse `DECISION_ID_PATTERN` (review fixes)
-- [x] Add `include_superseded` to the `get_node_context` schema and hint
-- [x] Verified the schema via `npm test`
-- [x] Add the `kind`-driven registration helper that derives `annotations` and the `guarded` options, and register every tool through it with the read / write / destructive table
-- [x] Switch `ok()` to compact JSON text plus `structuredContent` for object payloads
-- [x] Remove skill routing and the DANGEROUS prose from the descriptions; keep the `force_unship` confirm-token sentence
-- [x] Add `offset` / `limit` to `get_mindplan_graph` and `output` to `export_mindplan_view`, with hints that name paging and the size refusal
-- [x] Extend the smoke test (`f-test-harness`, in place) with the annotation table, description bans, and envelope assertions
-- [x] Update the MCP Tools section of README and SPEC §5.1 for annotations, the envelope, paging, and `output` (`f-framework-docs`, in place); add a CHANGELOG entry
-- [x] Add `change` to the `set_implementation_files` schema and describe in-place claims, `added_in_place`, and `folder_claims`
-- [x] Describe neighbor labels, members with `kind`, and cleared labels in the change-taking and lifecycle tool descriptions
-- [x] Verified the schema and descriptions via `npm test`
-- [x] Name the schema-file refusal in `set_implementation_files` and the neighbor-label default in `record_decision`'s `change` (review fixes)
-- [x] Verified via `npm test`
-- [x] Register `set_test_files` and name tests in the `run_check` and `get_blast_radius` descriptions
-- [x] Verified the tool list via `npm test`
-
-- [x] Add the `aliases` schema to `create_node` and `patch_node_territory`
-- [x] Add `merge` to the `run_check` schema and description
-- [x] Verified `run_check` with `merge` returns the CLI's failures via `npm test` — note: merge-gate.test.mjs, over stdio MCP
+- `slot` and `section` reach the `orient_for_work` and `get_node_context` handlers; a `slot` outside the enum is rejected at the zod layer
 
 ## Decisions
 

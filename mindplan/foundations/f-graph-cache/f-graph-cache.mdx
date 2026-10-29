@@ -60,14 +60,6 @@ Intended files: `src/foundations/f-graph-cache/`
 - At 1,500 nodes a warm load costs under half an uncached one; at 10,000 nodes (Windows) a warm load takes about 0.4 s with git and 1.1 s by stamps, against 9.4 s uncached, and a cold load about 30% more than uncached
 - Verified via `npm test` on Node 24 and Node 22.13
 
-## Atomic Ops
-
-- [x] Add `cache.ts`: `GraphCache`, persistence, the freshness rule, `graphCacheFor`
-- [x] Hash only folders with racy stamps, so a cold load reads each file about once more than an uncached one
-- [x] Add `graph-cache.test.mjs` and run it from `npm test`
-- [x] Key rows by package version, survive a locked corrupt file, fold folder paths, stamp `.MDX`, and re-hash racy folders after the parse (review fixes)
-- [x] Verified via `npm test` on Node 24 and Node 22.13
-
 ## Decisions
 
 ### d-graph-cache-derived-read-model

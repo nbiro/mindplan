@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; load the graph through the graph cache; read and write the mindplan/version.json stamp and compare it with the running package."
+description: "Infra — persist territory through the store only, including each node's ## Rules section and its ## Decisions section (one writer each), the `mounts` edge field, the change id and ref (and a shipped node's neighbor label in its live change), the live `added_claims` marker for claims added in place, the slot-independent `tests` list (one writer, live and an open next alike), section/replace body patches and single-section reads, and unambiguous checkbox toggles with notes or not-applicable reasons; keep a shipped next file as a state-only twin; keep Atomic Ops only on unshipped slots (ship drops them, open_next starts a fresh list); load the graph through the graph cache; read and write the mindplan/version.json stamp and compare it with the running package."
 state: mirror
-shipped_at: 2026-10-28T16:39:56.406Z
+shipped_at: 2026-10-29T13:32:27.389Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-28T16:39:56.406Z
+updated_at: 2026-10-29T13:32:27.389Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -18,8 +18,10 @@ tests:
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/graph-cache.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/transient-io.test.mjs
   - src/foundations/f-test-harness/twins.test.mjs
   - src/foundations/f-test-harness/version.test.mjs
@@ -39,7 +41,14 @@ Intended files: `src/foundations/f-territory-store/`
 - Discover: `mirror` does not set `node.next`; pipeline states do
 - `writeMirrorTwin` / `syncMirrorAfterLiveWrite` / `deleteNextSlotFiles` / `mirrorDriftReason`
 - Every live writer that re-syncs the twin returns its path (`patchFrontmatter`, `addEdgeToFrontmatter` / `removeEdgesFromFrontmatter` / `writeImplementsFrontmatter` as `{ readinessReset, twin }`, `patchNodeTerritory`'s `twin`, and the `paths` of `writeNodeRules` / `appendDecision`), so the tool that called it can list the twin in `changed_files`
-- `openNextSlot` flips mirror→draft (creates twin from live when missing); does not reset checkboxes
+- `openNextSlot` flips mirror→draft (creates twin from live when missing) and gives the revision a fresh Atomic Ops list (below)
+- **Atomic Ops live in unshipped slots only.** A node shows its current state; the shipped ledger is history and git keeps it. `ATOMIC_OPS_HEADINGS` is `Atomic Ops` for every pipeline type plus `Checklist` for a Foundation; Bugs are untouched (`Fix Checklist`)
+  - `defaultAtomicOps(type)` returns the scaffold's default checklist lines; `scaffoldTerritory` and `openNextSlot` both use it
+  - `withoutAtomicOps(body, type)` removes every Atomic Ops section (heading to the next level-1/2 heading, fence-aware like `replaceSectionInBody`) and keeps the file's line endings; Rules, Decisions, and every other section stay
+  - `withFreshAtomicOps(body, type)` replaces the content of the first Atomic Ops section with the defaults and drops any further one; with none it inserts `## Atomic Ops` before the first of `## Decisions`, `## Rules`, `## Attachments`, else at the end
+  - `promoteNextSlot` writes the promoted body through `withoutAtomicOps`; `stripLiveAtomicOps(node)` does the same to the live file of a node shipped in place (first ship) and returns whether it changed it, so the caller rewrites the mirror twin after it; `freshLiveAtomicOps(node)` writes the live file through `withFreshAtomicOps` for a node taken back before ship (`force_unship`), so it has a ledger again for its next ship
+  - `openNextSlot` writes the next file's body through `withFreshAtomicOps`, so a revision can never ship on the ticks of the release before it (the Completion Check sees its own open items)
+- **Section read.** `readSectionFromBody(body, heading)` returns the text under one level-2 heading (same heading matching as `replaceSectionInBody`, through the exported `normalizeHeadingName` that readers use to echo the heading; a missing heading is Blocked and lists the sections)
 - `discardNextSlot` / `promoteNextSlot` restore the mirror twin (do not delete the next file)
 - Reject writes aimed at a mirror file
 - A whole-body write converts the new body to the file's own line endings, so CRLF territory stays CRLF
@@ -94,7 +103,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 
 ## Acceptance Criteria
 
-- Standing twin after first ship; open_next is a state flip
+- Standing twin after first ship; open_next is a state flip plus a fresh Atomic Ops list
+- A shipped node's live file and mirror twin have no Atomic Ops section after first ship and after promotion; Rules, Decisions, and Attachments survive; `open_next` gives the next file one `## Atomic Ops` section of unticked defaults (a Foundation's `## Checklist` is replaced too), placed before Decisions / Rules / Attachments; a Bug's Fix Checklist is never touched
+- `readSectionFromBody` returns one section's text and Blocks on a missing heading
 - Live MCP writes keep the twin true when no evolution is open, and the writer hands back the twin path it re-synced
 - Ship/discard restore mirror; retire/unship delete it
 - `writeNodeRules` then a `patch_node_territory` body write leaves the rules text unchanged
@@ -126,54 +137,6 @@ Depends on: `f-domain-model`, `f-source-index`.
 - Aliases round-trip JSON-quoted, survive other territory writes and promotion, and `[]` removes them
 - `loadGraph` returns the same graph with the cache on, off, and in a second process; a Blocked territory file stays Blocked on every load
 - A node file that starts with a run of blank lines below the frontmatter (LF or CRLF) has exactly one after any write, status moves included; `get_node_context` returns its body without leading blank lines, and a whole-body write of a body that starts with blank lines writes one; discarding a revision of a node whose live file has a run leaves no mirror drift
-
-## Atomic Ops
-
-- [x] Non-file next paths skipped in discover; writeMirrorTwin rejects non-files
-- [x] open_next Blocks on drifted mirror (heal via init / live write)
-- [x] open_next seeds from live only when twin is missing
-- [x] Mirror twin helpers and discover skip
-- [x] open_next / discard / promote twin lifecycle
-- [x] Sync after live writes; writeProjectBrief
-- [x] Verified via `npm test`
-- [x] Add `splitNodeRules` / `joinNodeRules` and the heading-termination rules
-- [x] Add `writeNodeRules` (live + open next + twin sync) and set `node.rules` in discover
-- [x] Preserve the section across body writes, open_next, and promote; reject a body containing `## Rules`
-- [x] Return body-without-rules plus `rules` from the territory read used by `get_node_context`
-- [x] Verified the node rules section via `npm test`
-- [x] Block `writeNodeRules` on closed Bugs through `isInactiveNode`
-- [x] Test promote, CRLF, and inactive-node writes end to end
-- [x] Document adoption and fence limits in SPEC §6.1.1
-- [x] Parse, write, unlink, open, and promote the `mounts` edge field
-- [x] Add `replaceSectionInBody` / `replaceTextInBody` and the `section` / `replace` patch inputs
-- [x] Verified `mounts` and the section/replace patches via `npm test`
-- [x] Skip fenced lines when finding section headings and keep the file's line endings on body writes
-- [x] Block ambiguous toggles unless `all`, and return the toggled lines
-- [x] Write notes and not-applicable reasons; count an empty reason as unchecked
-- [x] Read and write `change` / `change_ref`; drop them on ship
-- [x] Verified toggles, notes, and change frontmatter via `npm test`
-- [x] Add split, join, parse, and format for the `## Decisions` section
-- [x] Add `appendDecision` and set `node.decisions` / `node.next.decisions` in discover
-- [x] Keep the section through body writes, open_next, and promote; Block `## Decisions` in body writes
-- [x] Ignore the section in checkbox counting and labels
-- [x] Verified the decisions section via `npm test`
-- [x] Write `opened_at` on open_next and export `withoutOwnedSections` (review fixes)
-- [x] Add `version.ts`: `packageVersion`, `readProjectVersion`, `writeProjectVersion`, `projectVersionStatus`
-- [x] Verified the version stamp and status via `npm test`
-- [x] Add `writeNeighborLabel`
-- [x] Parse, write, and prune `added_claims` (`writeImplementsFrontmatter`, `patchNodeTerritory`) and add `clearAddedClaims`
-- [x] List each deleted file in `deleteNextSlotFiles`
-- [x] Verified the neighbor label, `added_claims`, and the deleted-file list via `npm test`
-- [x] Drop stale live labels on next-slot change writes, match `added_claims` by whole path, and guard labels with `isNeighborNode` (review fixes)
-- [x] Verified the review fixes via `npm test`
-- [x] Parse `tests` and add `writeTestsFrontmatter`
-- [x] Carry `tests` through open_next, frontmatter rewrites, and promote
-- [x] Verified the `tests` list via `npm test`
-- [x] Parse, normalize, write, and promote `aliases`
-- [x] Load through the graph cache (`parseNodeFolder`, `discoverNodes`) and key the search body stamp on its content key
-- [x] Verified the cached load via `npm test`
-- [x] Route every node file write through `writeTerritoryFile` and return bodies without leading blank lines from `splitContext`
-- [x] Verified the one-blank-line layout via `npm test`
 
 ## Decisions
 
@@ -239,6 +202,19 @@ Depends on: `f-domain-model`, `f-source-index`.
 - Supersedes: d-frontmatter-body-separator
 - Change: body-blank-lines
 - Date: 2026-10-26
+
+### d-atomic-ops-unshipped-only
+
+- Decision: Atomic Ops live only on unshipped slots: ship removes the section from the live file (and so from the mirror twin), and open_next gives the revision a fresh list of unticked defaults.
+- Alternatives:
+  - Reset the list only on open_next (the live node would still show the last release's ticked ledger, which is history, not current state)
+  - Move ticked ops to an archive section or attachment on ship (keeps history inside the node; the owner wants nodes to show current state and git to hold history)
+  - An explicit trim tool or flag (agents forget to call it, and it does not stop a revision from shipping on the previous release's ticks)
+  - Untick the old ops on open_next (they describe finished work, so re-confirming them is meaningless)
+- Why: A node should show its current state, and git keeps the history. A copied, fully ticked ledger also let a revision pass the Completion Check without one op of its own, and every revision made the body (and each orient reply) longer.
+- Consequences: The mirror twin stays a byte copy of live. A shipped node's file no longer shows what its last release did; read git history or the PR for that. Shape rules that require an Atomic Ops checkbox apply only on transitions of unshipped slots.
+- Change: lean-node-replies
+- Date: 2026-10-29
 
 ## Attachments
 

@@ -65,17 +65,6 @@ Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
 - On 1,000 nodes: an incremental update after one write is under 200 ms and a search under 50 ms; a cold index with the real model is under a minute
 - Verified via `npm test` (`search-index.test.mjs`, `search-eval.test.mjs`)
 
-## Atomic Ops
-
-- [x] Add `index-db.ts`: schema with meta rebuild, incremental sync, FTS5 keyword ranking, vectors, edges
-- [x] Add `embedder.ts`: background model load, once-logged failure, serialized calls, offline and cache-dir settings
-- [x] Add `service.ts`: settings, registry, `prepareSearch` with the inline embed limit, warm-up and post-write refresh
-- [x] Review fixes: rowids at write time and a reload on `data_version`, filters in SQL, identity by model, corrupt-only delete, offline local path, orphan vectors dropped
-- [x] Verified via `npm test`
-
-- [x] Split FTS queries on letters of any script
-- [x] Filter keyword rows to an id list in SQL
-
 ## Decisions
 
 ### d-mdx-only-source-of-truth

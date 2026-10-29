@@ -59,21 +59,6 @@ Depends on: `f-territory-store`, `f-framework-docs`, `f-graph-search`, `f-orient
 - In MCP mode a console.log from any module reaches stderr, not the stdio channel
 - The server answers tool calls while the search model is still loading (keyword-only until it is ready)
 
-## Atomic Ops
-
-- [x] Update `SERVER_INSTRUCTIONS` for get_rules, orient_for_work, and plan-project
-- [x] Export `withDrift` for the MCP success envelope
-- [x] Verified via `npm test`
-- [x] Scope `withDrift` to the node a payload is about
-- [x] Verified the scoped drift via `npm test`
-- [x] Add `readPackageVersion()` and construct `McpServer` with it; remove the literal version from `server.ts`
-- [x] Make the instructions pointer name the graph writes the plan-project skill covers
-- [x] Assert `serverInfo.version` equals `package.json` in the smoke test (`f-test-harness`, in place)
-- [x] Verified via `npm test`
-- [x] Add `guardStdout()` and the background search warm-up after connect
-- [x] Enable the orientation gate in MCP mode
-- [x] Verified the warm-up and the stdio guard via `npm test`
-
 ## Decisions
 
 ### d-version-from-package-json

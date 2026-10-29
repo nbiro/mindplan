@@ -46,6 +46,7 @@ import {
   patchNodeTerritory as patchNodeTerritoryStore,
   promoteNextSlot,
   readMarkdown,
+  writeMarkdown,
   territoryBodyReader,
   normalizeAliases,
   writeAliasesFrontmatter,
@@ -58,6 +59,8 @@ import {
   writeImplementsFrontmatter,
   writeTestsFrontmatter,
   writeMirrorTwin,
+  stripLiveAtomicOps,
+  freshLiveAtomicOps,
   writeNeighborLabel,
   type CheckboxToggle,
   writeNodeRules,
@@ -1445,6 +1448,8 @@ function applyOneStatus(args: {
     node.state = resolved.state;
     node.updated_at = now;
     patchFrontmatter(node);
+    // The shipped node shows its current state; its Atomic Ops ledger stays in git.
+    stripLiveAtomicOps(node);
     writeMirrorTwin(node);
   } else if (node.next && isNextPipelineState(resolved.state)) {
     node.next.state = resolved.state;
@@ -1525,20 +1530,30 @@ export function forceUnship(args: {
   const target = new_status ?? "ready";
   const previous = node.state;
 
-  resolveForceUnship(graph, node, target, confirm);
-
-  // A pre-ship node's live `change` is a revision's membership: drop the shipped node's neighbor
-  // label so the unshipped node is not silently a revision of that change. The in-place claim
-  // marker belongs to shipped nodes only.
+  // Ship dropped the ledger; the unshipped node needs one again, and the target's shape rules
+  // must see it. An unship that fails before the live file is unshipped puts that file back as it
+  // was, so a still-shipped node never keeps fresh ops that its mirror twin lacks.
+  const liveBefore = readMarkdown(node, "current");
+  const freshOps = freshLiveAtomicOps(node);
   const clearedChange = node.change;
-  if (clearedChange) writeChangeFrontmatter(node, { change: "" }, "current");
-  if (node.added_claims?.length) clearAddedClaims(node);
-
   const now = new Date().toISOString();
-  delete node.shipped_at;
-  node.state = target;
-  node.updated_at = now;
-  patchFrontmatter(node, "current", { clearShippedAt: true });
+  try {
+    resolveForceUnship(graph, node, target, confirm);
+
+    // A pre-ship node's live `change` is a revision's membership: drop the shipped node's neighbor
+    // label so the unshipped node is not silently a revision of that change. The in-place claim
+    // marker belongs to shipped nodes only.
+    if (clearedChange) writeChangeFrontmatter(node, { change: "" }, "current");
+    if (node.added_claims?.length) clearAddedClaims(node);
+
+    delete node.shipped_at;
+    node.state = target;
+    node.updated_at = now;
+    patchFrontmatter(node, "current", { clearShippedAt: true });
+  } catch (err) {
+    if (freshOps || clearedChange) writeMarkdown(node, liveBefore, "current");
+    throw err;
+  }
   const removedTwin = deleteNextSlotFiles(node);
 
   const changedStability = recomputeStability(graph);

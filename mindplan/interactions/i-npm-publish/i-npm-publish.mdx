@@ -110,18 +110,6 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 - **`0.1.0` already published by us:** bump patch/minor and publish; update docs.
 - **Broken publish after install check:** ship a patch via the same script; never leave README advertising a broken path.
 
-## Atomic Ops
-
-- [x] Publish script lives under `src/interactions/i-npm-publish/` with maintainer + CI modes (CI mode includes `npm test`)
-- [x] Optional root `package.json` script wrapper points at that implementation — note: `npm run publish:release`
-- [x] Pack/dry-run asserts tarball allowlist (`dist/`, `templates/`, docs, LICENSE)
-- [x] `npm test` green on the release commit — note: `npm run publish:release -- --dry-run` passed on a clean worktree of the branch head
-- [x] `mindplan-mcp@0.1.0` (or next SemVer) published to the public registry — note: 0.1.0 (maintainer), 0.2.0 and 0.2.1 (CI over OIDC)
-- [x] Fresh-install verification (`help` + `init`) passed — note: npx -y mindplan-mcp@0.2.1 help and init --host all in an empty folder on 2026-10-25; init stamped 0.2.1
-- [x] README Quick start updated for npm / `npx` primary install
-- [x] `CONTRIBUTING.md` Publishing section matches this runbook and points to merge-to-main releases
-- [x] Lengthen the Verify step's registry wait to 10 minutes, polling every 15 seconds, with no sleep after the last poll
-
 ## Attachments
 
 Optional: dry-run logs under `attachments/`.

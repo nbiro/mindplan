@@ -57,18 +57,6 @@ Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belong
 - A diagram over `EXPORT_RESULT_BUDGET` without `output` is an `isError` result whose text names the size, the budget, `focus`, and `output`; the same diagram with `output` is written in full; the CLI prints it in full
 - A diagram within the budget is returned unchanged
 
-## Atomic Ops
-
-- [x] Move `export_mindplan_view` handler + CLI-callable export into this package
-- [x] Export functions for `if-mcp-tools` and `if-cli`
-- [x] Verify MCP export + CLI view via smoke/tests
-- [x] Pass `decisions` through the handler and `runViewExport`
-- [x] Verified decision counts in the export via `npm test`
-- [x] Add `output` to the MCP handler, reusing `runViewExport`'s file write, with the root and `mindplan/` path guard
-- [x] Add `EXPORT_RESULT_BUDGET` and the over-budget refusal on the MCP path only
-- [x] Test the file write, the path guard, the refusal text, and that the CLI ignores the budget (`f-test-harness`, in place)
-- [x] Verified via `npm test`
-
 ## Decisions
 
 ### d-export-refuses-over-budget
