@@ -110,14 +110,12 @@ function testsIn(rel) {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/** True when the twin is the live file with only `state:` changed to mirror. */
-function twinInSync(id) {
-  const strip = (raw) => raw.replace(/^state:.*$/m, "state: <ignored>");
-  const twin = readRel(nextOf(id));
-  return /^state: mirror$/m.test(twin) && strip(readRel(liveOf(id))) === strip(twin);
+/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+function noNextFile(id) {
+  return fs.existsSync(path.join(root, ...liveOf(id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(id).split("/")));
 }
 
-/** Fill create_node scaffold stubs with real text and tick every checkbox (before any twin exists). */
+/** Fill create_node scaffold stubs with real text and tick every checkbox (before first ship). */
 function fillAndTick(id) {
   const file = path.join(root, "mindplan", "foundations", id, `${id}.mdx`);
   let text = fs.readFileSync(file, "utf-8");
@@ -229,17 +227,17 @@ await foundation("f-dep");
   await walk("f-bare", ["ship"]);
 }
 
-// --- a shipped node changes its tests in place: live and twin, no open_next ---
+// --- a shipped node changes its tests in place: live only, no open_next ---
 {
   const res = await call("set_test_files", {
     node_id: "f-core",
     files: ["tests/core.test.mjs", "tests/extra/"],
   });
   check(
-    "set_test_files on a shipped node writes live and its twin, opening no revision",
-    same(res.changed_files.sort(), [liveOf("f-core"), nextOf("f-core")].sort()) &&
+    "set_test_files on a shipped node writes only live, opening no revision",
+    same(res.changed_files, [liveOf("f-core")]) &&
       res.next_state === null &&
-      twinInSync("f-core"),
+      noNextFile("f-core"),
     JSON.stringify(res)
   );
   await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs", "tests/gone.test.mjs"] });
@@ -311,8 +309,8 @@ await foundation("f-dep");
   await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
   await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
   check(
-    "ship keeps the tests list on live and the restored twin",
-    same(testsIn(liveOf("f-core")), ["tests/core.test.mjs", "tests/extra/one.test.mjs"]) && twinInSync("f-core"),
+    "ship keeps the tests list on live and deletes the next file",
+    same(testsIn(liveOf("f-core")), ["tests/core.test.mjs", "tests/extra/one.test.mjs"]) && noNextFile("f-core"),
     JSON.stringify(testsIn(liveOf("f-core")))
   );
 }
@@ -323,14 +321,14 @@ await foundation("f-dep");
   await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"] });
   await call("discard_next", { node_id: "f-dep" });
   check(
-    "discard_next keeps the tests written during the revision on live",
-    same(testsIn(liveOf("f-dep")), ["tests/core.test.mjs", "tests/dep.test.mjs"]) && twinInSync("f-dep"),
+    "discard_next keeps the tests written during the revision on live and deletes the next file",
+    same(testsIn(liveOf("f-dep")), ["tests/core.test.mjs", "tests/dep.test.mjs"]) && noNextFile("f-dep"),
     JSON.stringify(testsIn(liveOf("f-dep")))
   );
   await call("set_test_files", { node_id: "f-dep", files: [] });
   check(
     "an empty list removes the field",
-    !/^tests:/m.test(readRel(liveOf("f-dep"))) && twinInSync("f-dep"),
+    !/^tests:/m.test(readRel(liveOf("f-dep"))) && noNextFile("f-dep"),
     readRel(liveOf("f-dep")).slice(0, 400)
   );
 }

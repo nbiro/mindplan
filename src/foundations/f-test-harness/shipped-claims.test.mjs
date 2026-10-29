@@ -1,7 +1,7 @@
 /**
  * In-place claims on shipped nodes: set_implementation_files on a shipped node with no open next
  * accepts an additive list whose new entries sit in a folder the node dominates, writes the live
- * slot (and its mirror twin), and marks each new entry in `added_claims` until the body names it.
+ * slot only (a shipped node keeps no next file), and marks each new entry in `added_claims` until the body names it.
  * Every write here is also diffed against the sandbox: each mindplan/ file it touched must be in
  * its changed_files. Run via npm test.
  */
@@ -95,14 +95,17 @@ async function blocked(tool, args) {
 }
 
 const liveOf = (kind, id) => `mindplan/${kind}/${id}/${id}.mdx`;
-const twinOf = (kind, id) => `mindplan/${kind}/${id}/${id}.next.mdx`;
+const nextOf = (kind, id) => `mindplan/${kind}/${id}/${id}.next.mdx`;
 const readRel = (rel) => fs.readFileSync(path.join(root, ...rel.split("/")), "utf-8");
 
-/** True when the twin is the live file with only `state:` changed to mirror. */
-function twinInSync(kind, id) {
-  const strip = (raw) => raw.replace(/^state:.*$/m, "state: <ignored>");
-  const twin = readRel(twinOf(kind, id));
-  return /^state: mirror$/m.test(twin) && strip(readRel(liveOf(kind, id))) === strip(twin);
+/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+function noNextFile(kind, id) {
+  return fs.existsSync(path.join(root, ...liveOf(kind, id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(kind, id).split("/")));
+}
+
+/** True when a live write's changed_files lists the live file and no next file. */
+function liveOnly(changed, kind, id) {
+  return Array.isArray(changed) && changed.includes(liveOf(kind, id)) && !changed.includes(nextOf(kind, id));
 }
 
 /** The `added_claims` list in a live file's frontmatter. */
@@ -115,7 +118,7 @@ function addedClaims(kind, id) {
     .filter(Boolean);
 }
 
-/** Fill create_node scaffold stubs with real text and tick every checkbox (before any twin exists). */
+/** Fill create_node scaffold stubs with real text and tick every checkbox (before first ship). */
 function fillAndTick(kind, id) {
   const file = path.join(root, "mindplan", kind, id, `${id}.mdx`);
   let text = fs.readFileSync(file, "utf-8");
@@ -158,7 +161,7 @@ fillAndTick("foundations", "f-core");
 fillAndTick("foundations", "f-other");
 await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
 await walk("f-other", ["ready", "in-progress", "in-review", "ship"]);
-check("both Foundations start shipped with in-sync twins", twinInSync("foundations", "f-core") && twinInSync("foundations", "f-other"));
+check("both Foundations start shipped with no next file", noNextFile("foundations", "f-core") && noNextFile("foundations", "f-other"));
 
 // Files written after ship: siblings no node claims yet.
 write("src/core/new.ts", "export const n = 1;\n");
@@ -180,12 +183,11 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     JSON.stringify(added)
   );
   check(
-    "the in-place write lists the live file and its re-synced twin",
-    added.changed_files.includes(liveOf("foundations", "f-core")) &&
-      added.changed_files.includes(twinOf("foundations", "f-core")),
+    "the in-place write lists only the live file",
+    liveOnly(added.changed_files, "foundations", "f-core"),
     JSON.stringify(added.changed_files)
   );
-  check("the twin carries the in-place claim", twinInSync("foundations", "f-core"));
+  check("the in-place claim writes no next file", noNextFile("foundations", "f-core"));
   check(
     "the live frontmatter marks the new entry in added_claims",
     JSON.stringify(addedClaims("foundations", "f-core")) === JSON.stringify(["src/core/new.ts"]),
@@ -265,7 +267,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     dir.slot === "current" &&
       JSON.stringify(dir.added_in_place) === JSON.stringify(["src/core/"]) &&
       JSON.stringify(dir.implements) === JSON.stringify(["src/core/", "src/mixed/c.ts"]) &&
-      dir.changed_files.includes(twinOf("foundations", "f-core")) &&
+      liveOnly(dir.changed_files, "foundations", "f-core") &&
       !("folder_claims" in dir),
     JSON.stringify(dir)
   );
@@ -283,7 +285,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     node_id: "f-core",
     replace: { find: "# Core", with: "# Core\n\nCore lives in `src/core/new.ts`." },
   });
-  check("the live patch lists the re-synced twin", partial.changed_files.includes(twinOf("foundations", "f-core")), JSON.stringify(partial));
+  check("the live patch lists only the live file", liveOnly(partial.changed_files, "foundations", "f-core"), JSON.stringify(partial));
   const midCheck = await call("run_check", {});
   check(
     "a named marker clears; an unnamed one still warns",
@@ -309,7 +311,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
       !/^added_claims:/m.test(readRel(liveOf("foundations", "f-core"))),
     JSON.stringify(cleared.warnings)
   );
-  check("the twin matches the cleared live file", twinInSync("foundations", "f-core"));
+  check("the cleared live file has no next file beside it", noNextFile("foundations", "f-core"));
 }
 
 // --- a shipped node with an open next still writes next ---
@@ -507,7 +509,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     addedClaims("foundations", "f-app").length === 0 && !claimWarning(named.warnings, "f-app", "src/conf/app/extra.ts"),
     `${JSON.stringify(addedClaims("foundations", "f-app"))} | ${JSON.stringify(named.warnings)}`
   );
-  check("the f-app twin matches its live file", twinInSync("foundations", "f-app"));
+  check("f-app keeps no next file", noNextFile("foundations", "f-app"));
 }
 
 // --- other live writes on a shipped node keep its added_claims ---
@@ -521,7 +523,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   await call("set_implementation_files", { node_id: "f-keep", files: ["src/keep/a.ts", "src/keep/b.ts"] });
   const kept = () =>
     JSON.stringify(addedClaims("foundations", "f-keep")) === JSON.stringify(["src/keep/b.ts"]) &&
-    twinInSync("foundations", "f-keep");
+    noNextFile("foundations", "f-keep");
   check("f-keep starts with an in-place marker", kept(), JSON.stringify(addedClaims("foundations", "f-keep")));
 
   await call("patch_node_rules", { node_id: "f-keep", rules: "- Keep helpers small." });

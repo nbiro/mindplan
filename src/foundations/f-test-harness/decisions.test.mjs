@@ -218,10 +218,12 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     consequences: "Capacity reads join through Booking.",
   });
   check(
-    "on a shipped node with no open revision the entry lands in the live file and refreshes the twin",
+    "on a shipped node with no open revision the entry lands in the live file only and writes no next file",
     shipped.slot === "current" &&
       shipped.changed_files.includes("mindplan/foundations/f-bookings/f-bookings.mdx") &&
-      shipped.changed_files.includes("mindplan/foundations/f-bookings/f-bookings.next.mdx") &&
+      !shipped.changed_files.includes("mindplan/foundations/f-bookings/f-bookings.next.mdx") &&
+      read(territory("foundations", "f-bookings")).includes("### d-capacity-on-booking") &&
+      !fs.existsSync(territory("foundations", "f-bookings", "next")) &&
       (await call("run_check", {})).ok === true,
     JSON.stringify(shipped)
   );

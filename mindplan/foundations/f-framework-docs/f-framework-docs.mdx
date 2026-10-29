@@ -2,11 +2,11 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, skills, and changelog: mandatory project rules via get_rules, when-to-call tool hints, graph-first new features through plan-project, handoff that runs run_check, links the tests that verify a node, and updates the graph to match the implementation, the mounts composition root, readiness reset, change groups and their neighbors, glob claims, additive in-place claims on shipped nodes, linked tests, shared-route ownership, decision records and the decision gate, Atomic Ops that live only until ship, slot and section reads, and host install docs for Cursor and Claude Code."
+description: "Infra — SPEC, playbook, skills, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and linked tests, decision records, next files only while a revision is open, Atomic Ops only until ship, and host install docs."
 state: stable
-shipped_at: 2026-10-29T13:32:27.270Z
+shipped_at: 2026-10-29T15:21:03.159Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-29T13:32:27.270Z
+updated_at: 2026-10-29T15:21:03.159Z
 depends_on:
   - f-domain-model
 implements:
@@ -80,6 +80,7 @@ Depends on: `f-domain-model`.
 - SPEC, the playbook, and the changelog describe the `tests` list and `set_test_files`
 - The playbook's rule 7 and the plan-project skill name the merge gate; README and the changelog describe `--merge`, `--merge=strict`, and the CI workflow; the playbook stays one screen
 - SPEC §5.6 says Atomic Ops live only on unshipped slots (ship drops them, `open_next` starts a fresh list) and §6.3 / the scaffold section say the same; the define-entities skill and README say a shipped node keeps no ledger; SPEC and README describe `slot` and `section` on `orient_for_work` / `get_node_context` and the single decisions block; CHANGELOG has a 0.7.0 section
+- SPEC, README, and the skills describe a next file that exists only while a revision is open (no standing twin), the check's leftover-twin warning, and init's removal of twins; CHANGELOG has a 0.8.0 section
 
 ## Attachments
 

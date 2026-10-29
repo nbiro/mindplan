@@ -58,7 +58,6 @@ import {
   writeChangeFrontmatter,
   writeImplementsFrontmatter,
   writeTestsFrontmatter,
-  writeMirrorTwin,
   stripLiveAtomicOps,
   freshLiveAtomicOps,
   writeNeighborLabel,
@@ -160,12 +159,12 @@ function rulesReachingAfterWrite(id: string, before: string | null): Record<stri
   return { rules: { node_id: id, entries: reachingRules(graph, id) } };
 }
 
-/** Persist recomputed states. Returns each node's live path plus any mirror twin re-synced. */
+/** Persist recomputed states. Returns each node's live path. */
 export function syncNodes(nodes: MindPlanNode[]): string[] {
   const paths: string[] = [];
   for (const n of nodes) {
-    const twin = patchFrontmatter(n);
-    paths.push(territoryPath(n), ...(twin ? [twin] : []));
+    patchFrontmatter(n);
+    paths.push(territoryPath(n));
   }
   return paths;
 }
@@ -341,7 +340,7 @@ function readinessFields(reset: ReadinessReset | null): Record<string, unknown> 
 }
 
 /**
- * Label a neighbor of `change` (live `change` scalar + mirror twin). Returns the result fields
+ * Label a neighbor of `change` (the live `change` scalar). Returns the result fields
  * (`neighbor_of`, `replaced_change`) and the files written.
  */
 function labelNeighbor(
@@ -354,13 +353,13 @@ function labelNeighbor(
       ...(change ? { neighbor_of: change } : {}),
       ...(label.replaced ? { replaced_change: label.replaced } : {}),
     },
-    files: label.twin ? [territoryPath(node), label.twin] : [],
+    files: label.changed ? [territoryPath(node)] : [],
   };
 }
 
 /**
  * A change with no open revisions left has no neighbors either: clear each of these changes'
- * labels from every neighbor in `graph` (each twin re-synced). Returns the cleared node ids and
+ * labels from every neighbor in `graph`. Returns the cleared node ids and
  * the files.
  */
 function clearOrphanedNeighbors(
@@ -708,7 +707,7 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
     ...(importViolations.length ? { import_violations: importViolations } : {}),
     ...readinessFields(readiness.reset),
     changed_files: changedFiles(
-      [pathWritten, claimWrite.twin, ...readiness.files, ...changeWrite.files],
+      [pathWritten, ...readiness.files, ...changeWrite.files],
       true
     ),
     ...mutationTail(loadGraph(), node.id, args.verbose),
@@ -825,7 +824,7 @@ export function linkNodes(args: {
   const synced = syncNodes([...changedJourneys, ...changedStability]);
   refreshPersistedMap();
   const readiness = readinessResult(source, writeSlot, edgeWrite.readinessReset);
-  const files = [territoryPath(source, writeSlot), edgeWrite.twin, ...synced, ...readiness.files];
+  const files = [territoryPath(source, writeSlot), ...synced, ...readiness.files];
   return {
     linked: { source: source_id, target: target_id, type: edge_type },
     slot: writeSlot,
@@ -890,7 +889,7 @@ export function unlinkNodes(args: {
   const changedStability = recomputeStability(graph);
   const synced = syncNodes([...changedJourneys, ...changedStability]);
   refreshPersistedMap();
-  const sourceFiles = [territoryPath(source, "current"), edgeWrite.twin];
+  const sourceFiles = [territoryPath(source, "current")];
   if (source.next) sourceFiles.push(territoryPath(source, "next"));
   const readiness = readinessResult(source, source.next ? "next" : "current", edgeWrite.readinessReset);
   const files = [...sourceFiles, ...synced, ...readiness.files];
@@ -1429,8 +1428,7 @@ function applyOneStatus(args: {
   const now = new Date().toISOString();
   let promoted = false;
   let promoteSlotFiles: string[] = [];
-  let removedTwin: string[] = [];
-  let syncedTwin: string | null = null;
+  let removedNext: string[] = [];
   let clearedLabel: string | undefined;
 
   if (resolved.promote_next) {
@@ -1450,7 +1448,6 @@ function applyOneStatus(args: {
     patchFrontmatter(node);
     // The shipped node shows its current state; its Atomic Ops ledger stays in git.
     stripLiveAtomicOps(node);
-    writeMirrorTwin(node);
   } else if (node.next && isNextPipelineState(resolved.state)) {
     node.next.state = resolved.state;
     node.next.updated_at = now;
@@ -1473,9 +1470,9 @@ function applyOneStatus(args: {
     }
     node.state = resolved.state;
     node.updated_at = now;
-    syncedTwin = patchFrontmatter(node);
+    patchFrontmatter(node);
     if (retiring && isPipelineNodeType(node.type)) {
-      removedTwin = deleteNextSlotFiles(node);
+      removedNext = deleteNextSlotFiles(node);
     }
   }
 
@@ -1487,17 +1484,14 @@ function applyOneStatus(args: {
   const primaryPaths: string[] = [];
   if (promoted) {
     primaryPaths.push(territoryPath(node, "current"));
-    primaryPaths.push(territoryPath(node, "next"));
     primaryPaths.push(...promoteSlotFiles);
   } else if (resolved.ship) {
     primaryPaths.push(territoryPath(node, "current"));
-    primaryPaths.push(territoryPath(node, "next"));
   } else if (node.next && isNextPipelineState(resolved.state)) {
     primaryPaths.push(territoryPath(node, "next"));
   } else {
     primaryPaths.push(territoryPath(node, "current"));
-    if (syncedTwin) primaryPaths.push(syncedTwin);
-    primaryPaths.push(...removedTwin);
+    primaryPaths.push(...removedNext);
   }
   const files = [...primaryPaths, ...synced];
 
@@ -1532,7 +1526,7 @@ export function forceUnship(args: {
 
   // Ship dropped the ledger; the unshipped node needs one again, and the target's shape rules
   // must see it. An unship that fails before the live file is unshipped puts that file back as it
-  // was, so a still-shipped node never keeps fresh ops that its mirror twin lacks.
+  // was, so a still-shipped node never keeps ops it did not ship with.
   const liveBefore = readMarkdown(node, "current");
   const freshOps = freshLiveAtomicOps(node);
   const clearedChange = node.change;
@@ -1554,14 +1548,14 @@ export function forceUnship(args: {
     if (freshOps || clearedChange) writeMarkdown(node, liveBefore, "current");
     throw err;
   }
-  const removedTwin = deleteNextSlotFiles(node);
+  const removedNext = deleteNextSlotFiles(node);
 
   const changedStability = recomputeStability(graph);
   const changedJourneys = recomputeJourneyStates(graph);
   const synced = syncNodes([...changedStability, ...changedJourneys]);
   refreshPersistedMap();
 
-  const files = [territoryPath(node), ...removedTwin, ...synced];
+  const files = [territoryPath(node), ...removedNext, ...synced];
 
   return {
     node_id,
@@ -1720,7 +1714,7 @@ function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
     slot: resolvedSlot,
   });
   const pathWritten = territoryPath(node, result.slot);
-  const { readinessReset, twin, ...written } = result;
+  const { readinessReset, ...written } = result;
   const readiness = readinessResult(node, result.slot, readinessReset);
   // The store dropped a stale live label when the revision's change moved off it.
   const liveLabelFile = written.replaced_change ? territoryPath(node, "current") : null;
@@ -1732,7 +1726,7 @@ function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
     ...(replacedChange ? { replaced_change: replacedChange } : {}),
     ...readinessFields(readiness.reset),
     changed_files: changedFiles(
-      [pathWritten, twin, liveLabelFile, ...readiness.files],
+      [pathWritten, liveLabelFile, ...readiness.files],
       readiness.reset !== null
     ),
     ...mutationTail(loadGraph(), node_id, args.verbose),
@@ -1932,9 +1926,8 @@ export function openNext(args: {
 }
 
 export function discardNext(args: { node_id: string; verbose?: boolean }): Record<string, unknown> {
-  // Discarding a change's last revision closes it. The live label that comes back with the mirror
-  // twin can only name the revision's own change (the store drops any other), so that closing
-  // clears it too.
+  // Discarding a change's last revision closes it. The live label left after the discard can only
+  // name the revision's own change (the store drops any other), so that closing clears it too.
   return withNeighborCleanup(() => discardNextSlotWrite(args));
 }
 
@@ -1944,20 +1937,17 @@ function discardNextSlotWrite(args: { node_id: string; verbose?: boolean }): Rec
   const node = findNode(graph, node_id);
   if (!node.next) {
     throw blocked(
-      `node "${node_id}" has no open evolution to discard (standing mirror twins are not discarded).`
+      `node "${node_id}" has no open evolution to discard (a leftover mirror file is not a revision; mindplan-mcp init removes it).`
     );
   }
-  const next_path = territoryPath(node, "next");
-  const slotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: false });
-  discardNextSlot(node);
+  const removed = discardNextSlot(node);
   delete node.next;
   refreshPersistedMap();
   return {
     node_id,
     discarded: true,
-    restored_mirror: true,
     live_state: node.state,
-    changed_files: changedFiles([next_path, ...slotFiles], true),
+    changed_files: changedFiles(removed, true),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }

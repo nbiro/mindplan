@@ -13,7 +13,7 @@
  * Owned source files are declared via server-owned `implements` (not prescribed folders).
  * Live node records and outgoing edge arrays live in the live MDX YAML frontmatter.
  * While evolving a shipped Foundation/Interaction/Interface, the evolution file holds the draft pipeline + proposed edges.
- * After first ship, `<id>.next.mdx` stays as a standing twin with `state: mirror` (not an open evolution).
+ * A shipped node has `<id>.next.mdx` only while a revision is open; ship and discard delete it.
  * New files use the id names. An existing current.mdx / next.mdx stays in use.
  * When both names exist for one slot, the id-named file is kept and the legacy file is deleted.
  * Callers report those deletions via drainRemovedLegacyFiles().
@@ -46,7 +46,6 @@ import {
   isNeighborNode,
   isNextPipelineState,
   isPipelineNodeType,
-  isProductionState,
   MIRROR_STATE,
   NODE_TYPES,
 } from "../f-domain-model/types.js";
@@ -307,7 +306,7 @@ export function nextAttachmentsDir(node: Pick<MindPlanNode, "id" | "type">): str
   return path.join(entityDir(node), NEXT_ATTACHMENTS_DIR);
 }
 
-/** True when the next-slot path exists on disk (mirror twin or open evolution). */
+/** True when the next-slot path exists on disk (an open evolution, or a leftover mirror). */
 export function nextFileExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
   return fs.existsSync(markdownPath(node, "next"));
 }
@@ -333,50 +332,16 @@ export function readNextFileState(node: Pick<MindPlanNode, "id" | "type">): stri
   }
 }
 
-/** True when the next file exists and is a standing twin (`state: mirror`). */
-export function isMirrorTwin(node: Pick<MindPlanNode, "id" | "type">): boolean {
+/**
+ * True when the next file is a `state: mirror` twin a release before 0.8.0 left beside a shipped
+ * node. It is not a revision (discover does not set `node.next`); init removes it.
+ */
+export function isLegacyMirror(node: Pick<MindPlanNode, "id" | "type">): boolean {
   const state = readNextFileState(node);
   return state !== null && isMirrorState(state);
 }
 
-/**
- * Copy live territory bytes into `<id>.next.mdx` with only `state: mirror` changed.
- * Used after first ship, after ship of an evolution, after discard, and after live writes.
- */
-export function writeMirrorTwin(node: Pick<MindPlanNode, "id" | "type">): string {
-  const livePath = markdownPath(node, "current");
-  if (!fs.existsSync(livePath)) {
-    throw new Error(
-      `Blocked: cannot write mirror twin for "${node.id}" — live file missing at ${livePath}.`
-    );
-  }
-  const liveRaw = readFileRetry(livePath);
-  const match = liveRaw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
-  if (!match) {
-    throw new Error(
-      `Blocked: live file for "${node.id}" has no YAML frontmatter; cannot write mirror twin.`
-    );
-  }
-  const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-  let inner = match[2];
-  if (/^state:\s*/m.test(inner)) {
-    inner = inner.replace(/^state:\s*.*$/m, `state: ${MIRROR_STATE}`);
-  } else {
-    inner = `state: ${MIRROR_STATE}${nl}${inner}`;
-  }
-  const twin = `${match[1]}${inner}${match[3]}${liveRaw.slice(match[0].length)}`;
-  ensureEntityDir(node);
-  const nextPath = markdownPath(node, "next");
-  if (fs.existsSync(nextPath) && !fs.statSync(nextPath).isFile()) {
-    throw new Error(
-      `Blocked: cannot write mirror twin for "${node.id}" — ${path.basename(nextPath)} exists and is not a file.`
-    );
-  }
-  writeTerritoryFile(nextPath, twin);
-  return markdownRelativePath(node, "next");
-}
-
-/** Delete the standing twin / next file and next-attachments/ (retire, force_unship). */
+/** Delete the next file and next-attachments/ (ship, discard, retire, force_unship). */
 export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): string[] {
   const removed: string[] = [];
   const nextFile = markdownPath(node, "next");
@@ -403,39 +368,18 @@ export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): st
 }
 
 /**
- * After a live-slot write on a shipped node with no open evolution, refresh the mirror twin.
- * No-op when the node is not shipped, has an open evolution, or is not a pipeline type.
+ * Deletes a leftover `state: mirror` next file, and its `next-attachments/` when that holds
+ * nothing but `.gitkeep` (a twin never had attachments of its own). Returns the paths deleted;
+ * none when the next file is not a mirror.
  */
-export function syncMirrorAfterLiveWrite(node: MindPlanNode): string | null {
-  if (!isPipelineNodeType(node.type)) return null;
-  if (!isProductionState(node.state)) return null;
-  if (node.next) return null;
-  return writeMirrorTwin(node);
-}
-
-/**
- * Compare live vs next file ignoring only the `state:` line.
- * Returns null when they match as a state-only twin; otherwise a short reason.
- */
-export function mirrorDriftReason(node: Pick<MindPlanNode, "id" | "type">): string | null {
-  const livePath = markdownPath(node, "current");
-  const nextPath = markdownPath(node, "next");
-  if (!fs.existsSync(nextPath)) {
-    return `missing ${path.basename(nextPath)} mirror twin`;
-  }
-  const nextState = readNextFileState(node);
-  if (!nextState || !isMirrorState(nextState)) {
-    return `${path.basename(nextPath)} is not state: ${MIRROR_STATE} (got "${nextState ?? ""}")`;
-  }
-  const liveRaw = readFileRetry(livePath);
-  const nextRaw = readFileRetry(nextPath);
-  // A twin written from a live file with an older run of blank lines has one; that is not drift.
-  const stripState = (raw: string) =>
-    oneBlankLineBelowFrontmatter(raw).replace(/^state:\s*.*$/m, "state: <ignored>");
-  if (stripState(liveRaw) !== stripState(nextRaw)) {
-    return `${path.basename(nextPath)} drifted from live (expected state-only twin)`;
-  }
-  return null;
+export function removeLegacyMirror(node: Pick<MindPlanNode, "id" | "type">): string[] {
+  if (!isLegacyMirror(node)) return [];
+  const nextAtt = nextAttachmentsDir(node);
+  const onlyKeep =
+    !fs.existsSync(nextAtt) || fs.readdirSync(nextAtt).every((name) => name === ".gitkeep");
+  if (onlyKeep) return deleteNextSlotFiles(node);
+  unlinkRetry(markdownPath(node, "next"));
+  return [markdownRelativePath(node, "next")];
 }
 
 /** Lists filenames in the entity's attachments/ folder (non-recursive). */
@@ -752,7 +696,7 @@ function parseNodeFromFrontmatter(
 }
 
 /**
- * Parse an open-evolution next slot. Returns null when the file is a standing `mirror` twin
+ * Parse an open-evolution next slot. Returns null when the file is a leftover `mirror` twin
  * (not an evolution). Throws on missing required fields or illegal states.
  */
 function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
@@ -838,7 +782,7 @@ function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
   const node = parseNodeFromFrontmatter(folder.id, folder.type, currentFile);
   const nextFile = existingSlotFile(folder.abs, folder.id, "next", folder.rel);
   if (nextFile) {
-    // Non-file next paths (e.g. a directory occupying the twin name) are not evolutions;
+    // Non-file next paths (e.g. a directory occupying the next file's name) are not evolutions;
     // leave node.next unset so init can report a skip when healing fails.
     if (fs.statSync(nextFile).isFile()) {
       if (!isPipelineNodeType(folder.type)) {
@@ -1002,8 +946,8 @@ export function writeMarkdown(
     const state = readNextFileState(node);
     if (state && isMirrorState(state)) {
       throw new Error(
-        `Blocked: cannot write "${node.id}" next while it is a ${MIRROR_STATE} twin. ` +
-          `Change the live file via MCP, or call open_next first.`
+        `Blocked: "${node.id}" has a leftover ${MIRROR_STATE} next file, not an open revision. ` +
+          `Run mindplan-mcp init to remove it, or call open_next first.`
       );
     }
   }
@@ -1031,15 +975,12 @@ function requireMutableFrontmatter(
   return { file, raw, fence: match[0], inner: match[1] };
 }
 
-/**
- * Patches server-owned state fields in `<id>.mdx` or `<id>.next.mdx` frontmatter.
- * Returns the mirror twin path when a live write on a shipped node re-synced it, else null.
- */
+/** Patches server-owned state fields in `<id>.mdx` or `<id>.next.mdx` frontmatter. */
 export function patchFrontmatter(
   node: Pick<MindPlanNode, "id" | "type" | "state" | "updated_at" | "shipped_at">,
   slot: TerritorySlot = "current",
   opts?: { clearShippedAt?: boolean }
-): string | null {
+): void {
   const { file, raw, fence } = requireMutableFrontmatter(node, slot);
 
   let patched = fence
@@ -1061,13 +1002,6 @@ export function patchFrontmatter(
   if (patched !== fence) {
     writeTerritoryFile(file, raw.replace(fence, () => patched));
   }
-  if (slot === "current" && "state" in node && isProductionState(String(node.state))) {
-    const full = node as MindPlanNode;
-    if (isPipelineNodeType(full.type) && !full.next) {
-      return writeMirrorTwin(node);
-    }
-  }
-  return null;
 }
 
 /** Patches MCP-owned outgoing edge arrays in `<id>.mdx` or `<id>.next.mdx` frontmatter. */
@@ -1122,11 +1056,8 @@ export function edgeWriteSlot(node: MindPlanNode, edgeType: EdgeType): Territory
   return "current";
 }
 
-/**
- * What a contract write to one node's frontmatter reports: whether it sent a `ready` slot back to
- * `draft`, and the mirror twin path it re-synced after a live write on a shipped node (else null).
- */
-export type FrontmatterWrite = { readinessReset: boolean; twin: string | null };
+/** What a contract write to one node's frontmatter reports: whether it sent a `ready` slot back to `draft`. */
+export type FrontmatterWrite = { readinessReset: boolean };
 
 /** Appends a target id to the source node's outgoing edge array for edge_type. */
 export function addEdgeToFrontmatter(
@@ -1148,8 +1079,7 @@ export function addEdgeToFrontmatter(
   if (!current.includes(targetId)) current.push(targetId);
   const now = new Date().toISOString();
   patchFrontmatterEdges(node, { [field]: current }, now, slot);
-  const twin = slot === "current" ? syncMirrorAfterLiveWrite(node) : null;
-  return { readinessReset: demoteReadySlot(node, slot), twin };
+  return { readinessReset: demoteReadySlot(node, slot) };
 }
 
 /** Removes target_id from all outgoing edge arrays on the source node (current and open evolution). */
@@ -1158,9 +1088,8 @@ export function removeEdgesFromFrontmatter(
   targetId: string
 ): FrontmatterWrite {
   const now = new Date().toISOString();
-  let twin: string | null = null;
   for (const slot of ["current", "next"] as const) {
-    // Mirror twins are not evolutions — only patch next when node.next is set.
+    // Only an open revision has a next slot to patch.
     if (slot === "next" && !node.next) continue;
     const raw = readMarkdown(node, slot);
     const parsed = parseFrontmatter(raw);
@@ -1182,9 +1111,8 @@ export function removeEdgesFromFrontmatter(
       now,
       slot
     );
-    if (slot === "current") twin = syncMirrorAfterLiveWrite(node);
   }
-  return { readinessReset: demoteReadySlot(node, node.next ? "next" : "current"), twin };
+  return { readinessReset: demoteReadySlot(node, node.next ? "next" : "current") };
 }
 
 /** Scaffolds an entity folder: `<id>.mdx` + empty attachments/ directory. */
@@ -1503,8 +1431,7 @@ export function readNodeRules(
 
 /**
  * The only writer of a node's `## Rules` section. Writes the live file and, when an evolution is
- * open, the same text into the next file; otherwise refreshes the mirror twin. Frontmatter,
- * state, and edges are untouched. Returns the slots written and repo-relative paths.
+ * open, the same text into the next file. Frontmatter, state, and edges are untouched. Returns the slots written and repo-relative paths.
  */
 export function writeNodeRules(
   node: MindPlanNode,
@@ -1529,10 +1456,6 @@ export function writeNodeRules(
     const stripped = splitNodeRules(match[2]).body;
     writeMarkdown(node, `${match[1]}${joinNodeRules(stripped, text)}`, slot);
     paths.push(markdownRelativePath(node, slot));
-  }
-  if (!node.next) {
-    const twin = syncMirrorAfterLiveWrite(node);
-    if (twin) paths.push(twin);
   }
   if (text) node.rules = text;
   else delete node.rules;
@@ -1685,7 +1608,7 @@ export function formatDecisionEntry(record: DecisionRecord): string {
 
 /**
  * The only writer of the `## Decisions` section. Appends one entry to the active slot (the open
- * next file while a shipped node evolves, else the live file, then re-syncs the mirror twin).
+ * next file while a shipped node evolves, else the live file).
  * Frontmatter, state, and readiness are untouched: a decision explains the contract, it does not
  * change it. Returns the slot and repo-relative paths written.
  */
@@ -1716,8 +1639,6 @@ export function appendDecision(
     node.next.decisions = [...(node.next.decisions ?? []), record];
   } else {
     node.decisions = [...(node.decisions ?? []), record];
-    const twin = syncMirrorAfterLiveWrite(node);
-    if (twin) paths.push(twin);
   }
   return { slot, paths };
 }
@@ -1990,8 +1911,7 @@ export function withFreshAtomicOps(body: string, type: NodeType): string {
 
 /**
  * Removes the live file's Atomic Ops of a node shipped in place (first ship, or init on a project
- * from a release that kept shipped ledgers). Returns whether the file changed; the caller rewrites
- * the mirror twin after it.
+ * from a release that kept shipped ledgers). Returns whether the file changed.
  */
 export function stripLiveAtomicOps(node: Pick<MindPlanNode, "id" | "type">): boolean {
   return rewriteLiveBody(node, (body) => withoutAtomicOps(body, node.type));
@@ -2049,7 +1969,7 @@ export function resolveTerritorySlot(
   if (explicit) {
     if (explicit === "next" && !node.next) {
       throw new Error(
-        `Blocked: node "${node.id}" has no open evolution (standing mirror twins are not writable; call open_next first).`
+        `Blocked: node "${node.id}" has no open evolution (a leftover mirror file is not a revision; call open_next first).`
       );
     }
     return explicit;
@@ -2179,7 +2099,6 @@ function patchTerritoryScalars(
 /**
  * Patches territory-owned content (body and title/description scalars).
  * Server-owned frontmatter fields (except updated_at on territory edits) are never modified here.
- * `twin` is the mirror twin path a live write on a shipped node re-synced, else null.
  */
 export function patchNodeTerritory(
   node: MindPlanNode,
@@ -2188,7 +2107,6 @@ export function patchNodeTerritory(
   patched_fields: string[];
   slot: TerritorySlot;
   readinessReset: boolean;
-  twin: string | null;
   toggled?: string[];
   /** A stale live neighbor label dropped because the next slot's change moved off it. */
   replaced_change?: string;
@@ -2319,7 +2237,6 @@ export function patchNodeTerritory(
     `${frontmatter}${separator}${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
     slot
   );
-  const twin = slot === "current" ? syncMirrorAfterLiveWrite(node) : null;
   // Moving the revision's change id off a live neighbor label leaves that label stale.
   const replacedLabel =
     slot === "next" && input.change !== undefined ? dropStaleLiveLabel(node) : undefined;
@@ -2330,7 +2247,6 @@ export function patchNodeTerritory(
     patched_fields,
     slot,
     readinessReset,
-    twin,
     ...(toggled ? { toggled } : {}),
     ...(replacedLabel ? { replaced_change: replacedLabel } : {}),
   };
@@ -2433,7 +2349,7 @@ export function writeChangeFrontmatter(
  * While a shipped node has an open next, its live `change` (the neighbor label it carried before
  * the revision opened) may only name the revision's own change. Any other id is stale: the node is
  * that change's revision now, not another change's neighbor, and `discard_next` would restore the
- * label after its change may have closed. Clears such a label from the live file (no mirror twin
+ * label after its change may have closed. Clears such a label from the live file (no other file
  * exists while next is open). Returns the cleared id.
  */
 export function dropStaleLiveLabel(node: MindPlanNode): string | undefined {
@@ -2446,29 +2362,26 @@ export function dropStaleLiveLabel(node: MindPlanNode): string | undefined {
 
 /**
  * Label a neighbor node (`isNeighborNode`: shipped, not retired, no open next) as a neighbor of
- * `change` (the live `change` scalar; an empty string clears it), then re-sync its mirror twin.
- * One label per node: a different id replaces the old one, returned as `replaced`. `twin` is null
- * when nothing was written.
+ * `change` (the live `change` scalar; an empty string clears it). One label per node: a different
+ * id replaces the old one, returned as `replaced`. `changed` is false when nothing was written.
  */
 export function writeNeighborLabel(
   node: MindPlanNode,
   change: string
-): { twin: string | null; replaced?: string } {
+): { changed: boolean; replaced?: string } {
   if (!isNeighborNode(node)) {
     throw new Error(
       `Blocked: "${node.id}" is not a shipped, active node with no open next; only those take a neighbor label.`
     );
   }
   const previous = node.change;
-  if ((previous ?? "") === change) return { twin: null };
+  if ((previous ?? "") === change) return { changed: false };
   writeChangeFrontmatter(node, { change }, "current");
-  const twin = syncMirrorAfterLiveWrite(node);
-  return { twin, ...(previous && change ? { replaced: previous } : {}) };
+  return { changed: true, ...(previous && change ? { replaced: previous } : {}) };
 }
 
 /**
- * Remove the live `added_claims` review marker. Returns true when the file changed. Does not
- * re-sync a mirror twin: callers that keep the node shipped call `syncMirrorAfterLiveWrite`.
+ * Remove the live `added_claims` review marker. Returns true when the file changed.
  */
 export function clearAddedClaims(node: MindPlanNode): boolean {
   const { file, raw, fence } = requireMutableFrontmatter(node, "current");
@@ -2480,7 +2393,8 @@ export function clearAddedClaims(node: MindPlanNode): boolean {
 }
 
 /**
- * Opens an evolution: flips a standing `mirror` twin to `draft` (or seeds from live when missing).
+ * Opens an evolution: writes `<id>.next.mdx` from the live file in state `draft` (replacing a
+ * leftover `mirror` file).
  * The revision gets a fresh list of unticked default Atomic Ops (`withFreshAtomicOps`); the rest of
  * the body is the live text until the agent edits the successor.
  */
@@ -2498,28 +2412,20 @@ export function openNextSlot(
   if (existingState && !isMirrorState(existingState)) {
     throw new Error(
       `Blocked: "${node.id}" next file has unexpected state "${existingState}". ` +
-        `Expected ${MIRROR_STATE} or a missing file.`
+        `Expected a missing file (or a leftover ${MIRROR_STATE} file, which open_next replaces).`
     );
   }
-  // Seed from live only when the twin is missing (old consumer repos). An existing
-  // mirror is flipped in place — do not rewrite body/checkboxes from live again.
-  if (!fs.existsSync(nextPath)) {
-    writeMirrorTwin(node);
-  } else {
-    const drift = mirrorDriftReason(node);
-    if (drift) {
-      throw new Error(
-        `Blocked: "${node.id}" ${drift}. ` +
-          `Heal with mindplan-mcp init or a live MCP write before open_next.`
-      );
-    }
+  if (fs.existsSync(nextPath) && !fs.statSync(nextPath).isFile()) {
+    throw new Error(
+      `Blocked: cannot open "${node.id}": ${path.basename(nextPath)} exists and is not a file.`
+    );
   }
 
   const now = new Date().toISOString();
-  const raw = readFileRetry(nextPath);
+  const raw = readMarkdown(node, "current");
   const match = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
   if (!match) {
-    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
+    throw new Error(`Blocked: live file for "${node.id}" has no YAML frontmatter.`);
   }
   let inner = match[2].replace(/^state:\s*.*$/m, "state: draft");
   if (/^updated_at:/m.test(inner)) {
@@ -2553,7 +2459,7 @@ export function openNextSlot(
   }
   // The revision starts its own Atomic Ops; the shipped ledger is not copied forward.
   const rest = withFreshAtomicOps(raw.slice(match[0].length), node.type);
-  // Bypass writeMarkdown mirror guard — we are intentionally leaving mirror for draft.
+  // Bypass writeMarkdown's guard: a leftover mirror file is replaced here.
   writeTerritoryFile(nextPath, `${match[1]}${inner}${match[3]}${rest}`);
 
   fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
@@ -2586,27 +2492,20 @@ export function openNextSlot(
 }
 
 /**
- * Abandons an in-flight evolution by restoring the standing mirror twin from live.
- * Does not delete `<id>.next.mdx`.
+ * Abandons an in-flight evolution: deletes `<id>.next.mdx` and `next-attachments/`. Returns the
+ * paths deleted.
  */
-export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): void {
+export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): string[] {
   const nextFile = markdownPath(node, "next");
   if (!fs.existsSync(nextFile)) {
     throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to discard.`);
   }
-  const nextAtt = nextAttachmentsDir(node);
-  if (fs.existsSync(nextAtt)) {
-    fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
-  }
-  writeMirrorTwin(node);
-  fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
-  const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
-  if (!fs.existsSync(keep)) writeFileRetry(keep, "");
+  return deleteNextSlotFiles(node);
 }
 
 /**
  * Promotes `<id>.next.mdx` over `<id>.mdx`: copies next body/scalars/edges into the live file with
- * production state, then restores the next file as a `mirror` twin.
+ * production state, then deletes the next file and `next-attachments/`.
  */
 export function promoteNextSlot(
   node: MindPlanNode,
@@ -2780,7 +2679,6 @@ export function writeImplementsFrontmatter(
   const rebuilt = `---\n${rebuiltInner}\n---`;
   writeTerritoryFile(file, raw.replace(fence, () => rebuilt));
 
-  let twin: string | null = null;
   if (slot === "next") {
     if (!node.next) {
       throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")}.`);
@@ -2793,15 +2691,13 @@ export function writeImplementsFrontmatter(
     if (added.length > 0) node.added_claims = added;
     else delete node.added_claims;
     node.updated_at = now;
-    twin = syncMirrorAfterLiveWrite(node);
   }
-  return { readinessReset: !unchanged && demoteReadySlot(node, slot), twin };
+  return { readinessReset: !unchanged && demoteReadySlot(node, slot) };
 }
 
 /**
  * Write (replace) a node's linked `tests` list: the only writer. Slot-independent like rules, so
- * the same list goes to live and, while a revision is open, to the next file; the mirror twin is
- * re-synced when none is open. Evidence, not contract: state, `updated_at`, and readiness are
+ * the same list goes to live and, while a revision is open, to the next file. Evidence, not contract: state, `updated_at`, and readiness are
  * untouched. An empty list removes the field. Returns the paths written and whether live changed.
  */
 export function writeTestsFrontmatter(
@@ -2830,10 +2726,6 @@ export function writeTestsFrontmatter(
   }
   if (normalized.length > 0) node.tests = normalized;
   else delete node.tests;
-  if (changed) {
-    const twin = syncMirrorAfterLiveWrite(node);
-    if (twin) paths.push(twin);
-  }
   return { paths, changed };
 }
 
@@ -2864,7 +2756,7 @@ export function normalizeAliases(id: string, entries: string[]): string[] {
 
 /**
  * Write (replace) a node's search `aliases`: the only writer. Any node type; slot-independent like
- * `tests` (live and an open next alike, mirror twin re-synced when none is open). Search words, not
+ * `tests` (live and an open next alike). Search words, not
  * contract: state, `updated_at`, and readiness are untouched. Entries are trimmed, one line each,
  * deduplicated ignoring case; an empty list removes the field.
  */
@@ -2889,10 +2781,6 @@ export function writeAliasesFrontmatter(
   }
   if (normalized.length > 0) node.aliases = normalized;
   else delete node.aliases;
-  if (changed) {
-    const twin = syncMirrorAfterLiveWrite(node);
-    if (twin) paths.push(twin);
-  }
   return { paths, changed, aliases: normalized };
 }
 

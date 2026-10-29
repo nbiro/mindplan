@@ -96,16 +96,18 @@ async function blocked(tool, args) {
   return error && text.startsWith("Blocked:") ? text : null;
 }
 
-const twinOf = (kind, id) => `mindplan/${kind}/${id}/${id}.next.mdx`;
+const nextOf = (kind, id) => `mindplan/${kind}/${id}/${id}.next.mdx`;
 const liveOf = (kind, id) => `mindplan/${kind}/${id}/${id}.mdx`;
 const readRel = (rel) => fs.readFileSync(path.join(root, ...rel.split("/")), "utf-8");
 
-/** True when the twin is the live file with only `state:` changed to mirror. */
-function twinInSync(kind, id) {
-  const live = readRel(liveOf(kind, id));
-  const twin = readRel(twinOf(kind, id));
-  const strip = (text) => text.replace(/^state:.*$/m, "state: <ignored>");
-  return /^state: mirror$/m.test(twin) && strip(live) === strip(twin);
+/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+function noNextFile(kind, id) {
+  return fs.existsSync(path.join(root, ...liveOf(kind, id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(kind, id).split("/")));
+}
+
+/** True when a live write's changed_files lists the live file and no next file. */
+function liveOnly(changed, kind, id) {
+  return Array.isArray(changed) && changed.includes(liveOf(kind, id)) && !changed.includes(nextOf(kind, id));
 }
 
 /** The live `change` label of a node, read from its record. */
@@ -113,7 +115,7 @@ async function labelOf(id) {
   return (await call("get_node_context", { node_id: id })).record.change;
 }
 
-/** Fill create_node scaffold stubs with real text and tick every checkbox (before any twin exists). */
+/** Fill create_node scaffold stubs with real text and tick every checkbox (before first ship). */
 function fillAndTick(kind, id) {
   const file = path.join(root, "mindplan", kind, id, `${id}.mdx`);
   let text = fs.readFileSync(file, "utf-8");
@@ -153,7 +155,7 @@ fs.writeFileSync(
   JSON.stringify({ sources: ["src/**"], exclude: [] }, null, 2) + "\n"
 );
 
-// --- base graph: shipped Foundations and Interactions, each with a mirror twin ---
+// --- base graph: shipped Foundations and Interactions, none with a next file ---
 await call("create_node", { id: "j-app", type: "Journey", title: "App", description: "App area" });
 await call("create_node", { id: "f-core", type: "Foundation", title: "Core", description: "Infra — core", role: "infra" });
 await call("create_node", { id: "f-util", type: "Foundation", title: "Util", description: "Infra — util", role: "infra" });
@@ -181,9 +183,9 @@ for (const [kind, id] of [
 }
 for (const id of ["f-core", "f-util", "i-a", "i-b"]) await walk(id, SHIP);
 check(
-  "shipped nodes start with in-sync mirror twins",
-  ["f-core", "f-util"].every((id) => twinInSync("foundations", id)) &&
-    ["i-a", "i-b"].every((id) => twinInSync("interactions", id))
+  "shipped nodes start with no next file",
+  ["f-core", "f-util"].every((id) => noNextFile("foundations", id)) &&
+    ["i-a", "i-b"].every((id) => noNextFile("interactions", id))
 );
 
 // --- patch_node_territory labels a shipped node with no open next ---
@@ -192,18 +194,17 @@ await newRevision("i-new2", "feat");
 {
   const labeled = await call("patch_node_territory", { node_id: "f-util", change: "feat" });
   check(
-    "change on a shipped live slot labels it a neighbor and lists the re-synced twin",
+    "change on a shipped live slot labels it a neighbor and lists only the live file",
     labeled.neighbor_of === "feat" &&
       labeled.replaced_change === undefined &&
-      labeled.changed_files.includes(liveOf("foundations", "f-util")) &&
-      labeled.changed_files.includes(twinOf("foundations", "f-util")),
+      liveOnly(labeled.changed_files, "foundations", "f-util"),
     JSON.stringify(labeled)
   );
   check(
-    "the label is on the live file and the twin is still a state-only copy",
+    "the label is on the live file and no next file is written",
     (await labelOf("f-util")) === "feat" &&
       /^change: "feat"$/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      twinInSync("foundations", "f-util")
+      noNextFile("foundations", "f-util")
   );
 
   const ref = await blocked("patch_node_territory", { node_id: "f-util", change_ref: "feat/x" });
@@ -223,11 +224,11 @@ await newRevision("i-new2", "feat");
   );
   const cleared = await call("patch_node_territory", { node_id: "f-util", change: "" });
   check(
-    "an empty change clears the label and re-syncs the twin",
+    "an empty change clears the label and writes no next file",
     cleared.neighbor_of === undefined &&
       (await labelOf("f-util")) === undefined &&
       !/^change:/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      twinInSync("foundations", "f-util"),
+      noNextFile("foundations", "f-util"),
     JSON.stringify(cleared)
   );
   await call("patch_node_territory", { node_id: "f-util", change: "feat" });
@@ -287,9 +288,9 @@ await newRevision("i-new2", "feat");
     "record_decision with change on a shipped node with no open next labels it",
     decided.neighbor_of === "feat" &&
       decided.decision.change === "feat" &&
-      decided.changed_files.includes(twinOf("interactions", "i-a")) &&
+      liveOnly(decided.changed_files, "interactions", "i-a") &&
       (await labelOf("i-a")) === "feat" &&
-      twinInSync("interactions", "i-a"),
+      noNextFile("interactions", "i-a"),
     JSON.stringify(decided)
   );
 
@@ -297,9 +298,9 @@ await newRevision("i-new2", "feat");
   check(
     "set_implementation_files with change on a shipped node with no open next labels it",
     claimed.neighbor_of === "feat" &&
-      claimed.changed_files.includes(twinOf("interactions", "i-b")) &&
+      liveOnly(claimed.changed_files, "interactions", "i-b") &&
       (await labelOf("i-b")) === "feat" &&
-      twinInSync("interactions", "i-b"),
+      noNextFile("interactions", "i-b"),
     JSON.stringify(claimed)
   );
   const members = (await call("run_check", { change: "feat" })).change.members;
@@ -328,8 +329,8 @@ await newRevision("i-new2", "feat");
     JSON.stringify(last)
   );
   check(
-    "each cleared neighbor's twin is still a state-only copy",
-    twinInSync("foundations", "f-util") && twinInSync("interactions", "i-a") && twinInSync("interactions", "i-b")
+    "no cleared neighbor gains a next file",
+    noNextFile("foundations", "f-util") && noNextFile("interactions", "i-a") && noNextFile("interactions", "i-b")
   );
   check("a change with no members fails run_check", !(await call("run_check", { change: "feat" })).ok);
 }
@@ -390,7 +391,7 @@ await newRevision("i-new2", "feat");
     "a scoped walk of it to ship clears its labels",
     shipped.cleared_neighbors?.join() === "f-core" &&
       (await labelOf("f-core")) === undefined &&
-      twinInSync("foundations", "f-core"),
+      noNextFile("foundations", "f-core"),
     JSON.stringify(shipped)
   );
   const empty = await blocked("update_node_status", { scope: "change", change: "tidy", new_status: "ship" });
@@ -406,13 +407,13 @@ await newRevision("i-new2", "feat");
     opened.replaced_change === "m1" &&
       opened.changed_files.includes(liveOf("foundations", "f-util")) &&
       !/^change:/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      /^change: "m1b"$/m.test(readRel(twinOf("foundations", "f-util"))),
+      /^change: "m1b"$/m.test(readRel(nextOf("foundations", "f-util"))),
     JSON.stringify(opened)
   );
   await call("discard_next", { node_id: "f-util" });
   check(
     "discard_next after it does not restore the stale label",
-    (await labelOf("f-util")) === undefined && twinInSync("foundations", "f-util")
+    (await labelOf("f-util")) === undefined && noNextFile("foundations", "f-util")
   );
 
   await call("patch_node_territory", { node_id: "f-util", change: "m1" });
@@ -422,7 +423,7 @@ await newRevision("i-new2", "feat");
     inherited.replaced_change === undefined &&
       inherited.next.change === "m1" &&
       /^change: "m1"$/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      /^change: "m1"$/m.test(readRel(twinOf("foundations", "f-util"))),
+      /^change: "m1"$/m.test(readRel(nextOf("foundations", "f-util"))),
     JSON.stringify(inherited)
   );
   const dropped = await call("discard_next", { node_id: "f-util" });
@@ -430,7 +431,7 @@ await newRevision("i-new2", "feat");
     "discarding that revision clears the change's labels, its own included",
     dropped.cleared_neighbors?.join() === "f-util" &&
       (await labelOf("f-util")) === undefined &&
-      twinInSync("foundations", "f-util"),
+      noNextFile("foundations", "f-util"),
     JSON.stringify(dropped)
   );
 
@@ -451,7 +452,7 @@ await newRevision("i-new2", "feat");
   const moved = await call("discard_next", { node_id: "f-util" });
   check(
     "discard_next after the label's change closed restores no label",
-    (await labelOf("f-util")) === undefined && twinInSync("foundations", "f-util"),
+    (await labelOf("f-util")) === undefined && noNextFile("foundations", "f-util"),
     JSON.stringify(moved)
   );
   await call("patch_node_territory", { node_id: "f-util", change: "m3" });
@@ -479,9 +480,9 @@ await newRevision("i-new2", "feat");
   check(
     "patch_node_territory moving the last revision to another change clears the old change's labels",
     moved.cleared_neighbors?.join() === "f-core" &&
-      moved.changed_files.includes(twinOf("foundations", "f-core")) &&
+      liveOnly(moved.changed_files, "foundations", "f-core") &&
       (await labelOf("f-core")) === undefined &&
-      twinInSync("foundations", "f-core"),
+      noNextFile("foundations", "f-core"),
     JSON.stringify(moved)
   );
   const same = await call("patch_node_territory", { node_id: "i-l2", change: "l2b" });
@@ -495,7 +496,7 @@ await newRevision("i-new2", "feat");
     "set_implementation_files clearing the last revision's change clears its labels",
     unset.cleared_neighbors?.join() === "f-core" &&
       (await labelOf("f-core")) === undefined &&
-      twinInSync("foundations", "f-core"),
+      noNextFile("foundations", "f-core"),
     JSON.stringify(unset)
   );
 }
@@ -530,7 +531,7 @@ await newRevision("i-new2", "feat");
     decided.decision.change === "rd" &&
       listed.decisions.some((d) => d.node_id === "f-core" && d.decision === "Core keeps a single export.") &&
       (await labelOf("f-core")) === "rd" &&
-      twinInSync("foundations", "f-core"),
+      noNextFile("foundations", "f-core"),
     `${JSON.stringify(decided)} | ${JSON.stringify(listed)}`
   );
 }
@@ -552,7 +553,7 @@ await newRevision("i-new2", "feat");
     JSON.stringify(batch.cleared_neighbors) === JSON.stringify(["f-core"]) &&
       batch.changed_files.includes(liveOf("foundations", "f-core")) &&
       (await labelOf("f-core")) === undefined &&
-      twinInSync("foundations", "f-core"),
+      noNextFile("foundations", "f-core"),
     JSON.stringify(batch)
   );
 }

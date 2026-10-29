@@ -65,7 +65,10 @@ export type FoundationRole = (typeof FOUNDATION_ROLES)[number];
 export const NEXT_PIPELINE_STATES = ["draft", "ready", "in-progress", "in-review"] as const;
 export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
 
-/** Standing twin of a shipped live file. Not an evolution — discover must not set `node.next`. */
+/**
+ * State of a next file a release before 0.8.0 kept beside a shipped node. Not an evolution:
+ * discover must not set `node.next`, and init removes the file.
+ */
 export const MIRROR_STATE = "mirror" as const;
 export type MirrorState = typeof MIRROR_STATE;
 
@@ -148,7 +151,7 @@ export interface MindPlanNode {
   aliases?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
-  /** Present when `<id>.next.mdx` is an open evolution (not a `mirror` twin). */
+  /** Present when `<id>.next.mdx` is an open evolution (not a leftover `mirror` file). */
   next?: NextSlot;
   /**
    * Own node rules — the trimmed `## Rules` section of the live `<id>.mdx` body.

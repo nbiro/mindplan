@@ -11,7 +11,6 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import {
   isPipelineNodeType,
-  isProductionState,
   type FoundationRole,
 } from "../../foundations/f-domain-model/types.js";
 import {
@@ -31,17 +30,14 @@ import {
   implementationDir,
   implementationRelativePath,
   drainRemovedLegacyFiles,
-  isMirrorTwin,
   liveMdxFilename,
   loadGraph,
   mindplanRoot,
-  mirrorDriftReason,
-  nextFileExists,
   nextMdxFilename,
   projectRoot,
   removeLegacyIfIdNamedExists,
+  removeLegacyMirror,
   writeImplementsFrontmatter,
-  writeMirrorTwin,
   stripLiveAtomicOps,
   writeRoleFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
@@ -762,19 +758,15 @@ export type RunInitOptions = {
   ci?: InitCi;
 };
 
-export type MirrorBackfill = {
-  node_id: string;
-  path: string;
-};
-
-export type MirrorBackfillSkip = {
+export type MirrorRemovalSkip = {
   node_id: string;
   reason: string;
 };
 
-export type MirrorBackfillResult = {
-  written: MirrorBackfill[];
-  skipped: MirrorBackfillSkip[];
+export type MirrorRemovalResult = {
+  /** Repo-relative paths deleted (each next file, and an emptied `next-attachments/`). */
+  removed: string[];
+  skipped: MirrorRemovalSkip[];
 };
 
 export type RunInitReport = {
@@ -809,18 +801,17 @@ export type RunInitReport = {
   version: { from: string | null; to: string; refreshed: boolean };
   /** Shipped nodes whose live Atomic Ops init removed (a release before 0.7.0 kept shipped ledgers). */
   atomicOpsDropped: string[];
-  /** Standing next twins written for shipped pipeline nodes that lacked a mirror or had drifted. */
-  mirrorTwins: MirrorBackfill[];
-  /** Shipped nodes whose twin could not be written (live unreadable, etc.). */
-  mirrorTwinSkips: MirrorBackfillSkip[];
+  /** Paths of the `state: mirror` twins (and their emptied `next-attachments/`) init deleted. */
+  mirrorTwinsRemoved: string[];
+  /** Nodes whose leftover twin could not be deleted. */
+  mirrorTwinSkips: MirrorRemovalSkip[];
   /** Legacy files deleted by a graph load after the rename walk (the walk itself is in territoryFilenames). */
   removedLegacyFiles: { from: string; to: string }[];
 };
 
 /**
  * Removes the Atomic Ops a release before 0.7.0 left on shipped Foundations, Interactions, and
- * Interfaces, so each shows its current state; an open next file keeps its own list. Runs before
- * the twin backfill, which rewrites each twin this drifted. Returns the ids it changed, or none
+ * Interfaces, so each shows its current state; an open next file keeps its own list. Returns the ids it changed, or none
  * when the graph cannot load.
  */
 export function dropShippedAtomicOps(): string[] {
@@ -836,43 +827,36 @@ export function dropShippedAtomicOps(): string[] {
     try {
       if (stripLiveAtomicOps(node)) dropped.push(node.id);
     } catch {
-      // An unreadable live file is reported by the twin backfill that follows.
+      // An unreadable live file fails the check; init has nothing to strip there.
     }
   }
   return dropped;
 }
 
 /**
- * For each shipped Foundation/Interaction/Interface with no open evolution, write
- * `<id>.next.mdx` as a state-only copy of the live file when the twin is missing
- * or drifted (including a next file that is not `state: mirror`).
- * Returns empty written/skipped when the graph cannot load (e.g. mid-migration incomplete fixtures).
+ * Deletes the `state: mirror` next files releases before 0.8.0 kept beside shipped nodes (a node
+ * now has a next file only while a revision is open). An open revision is never touched. Returns
+ * nothing when the graph cannot load (e.g. mid-migration incomplete fixtures).
  */
-export function backfillMirrorTwins(): MirrorBackfillResult {
+export function removeLegacyMirrorTwins(): MirrorRemovalResult {
   let graph;
   try {
     graph = loadGraph();
   } catch {
-    return { written: [], skipped: [] };
+    return { removed: [], skipped: [] };
   }
-  const written: MirrorBackfill[] = [];
-  const skipped: MirrorBackfillSkip[] = [];
+  const removed: string[] = [];
+  const skipped: MirrorRemovalSkip[] = [];
   for (const node of graph.nodes) {
-    if (!isPipelineNodeType(node.type)) continue;
-    if (!isProductionState(node.state)) continue;
-    if (node.next) continue;
-    const inSync =
-      nextFileExists(node) && isMirrorTwin(node) && mirrorDriftReason(node) === null;
-    if (inSync) continue;
+    if (!isPipelineNodeType(node.type) || node.next) continue;
     try {
-      const rel = writeMirrorTwin(node);
-      written.push({ node_id: node.id, path: rel });
+      removed.push(...removeLegacyMirror(node));
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       skipped.push({ node_id: node.id, reason });
     }
   }
-  return { written, skipped };
+  return { removed, skipped };
 }
 
 /**
@@ -923,7 +907,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
       ? installMergeGateWorkflow(opts.packageRoot, status.running.package, installOpts)
       : undefined;
   const atomicOpsDropped = dropShippedAtomicOps();
-  const mirrorBackfill = backfillMirrorTwins();
+  const mirrorRemoval = removeLegacyMirrorTwins();
   writeProjectVersion(status.running);
 
   return {
@@ -948,8 +932,8 @@ export function runInit(opts: RunInitOptions): RunInitReport {
       refreshed,
     },
     atomicOpsDropped,
-    mirrorTwins: mirrorBackfill.written,
-    mirrorTwinSkips: mirrorBackfill.skipped,
+    mirrorTwinsRemoved: mirrorRemoval.removed,
+    mirrorTwinSkips: mirrorRemoval.skipped,
     removedLegacyFiles: drainRemovedLegacyFiles(),
   };
   } catch (err) {

@@ -534,10 +534,10 @@ fillAndTick("interactions", "i-b");
     "shipping an evolution keeps one blank line after the frontmatter and the file CRLF",
     fromFence(layFile).startsWith("---\r\n\r\n# Layout") &&
       read(layFile).includes("Next purpose.") &&
-      !hasLf(read(layFile)) &&
-      !hasLf(read(layNext)),
+      !hasLf(read(layFile)),
     JSON.stringify(head(layFile))
   );
+  check("shipping an evolution deletes the next file", !fs.existsSync(layNext));
 }
 
 // --- runs of blank lines below the frontmatter (left by releases before 0.2.0) collapse ---
@@ -572,15 +572,21 @@ fillAndTick("interactions", "i-b");
     String(blankRun(gapFile))
   );
 
-  // A discarded revision rewrites the twin from a live file that still has its run.
+  // A discarded revision deletes the next file, even while the live file still has its run.
   await walk("f-gap", ["in-progress", "in-review", "ship"]);
   await call("open_next", { node_id: "f-gap" });
+  check(
+    "open_next writes the next file with one blank line below the frontmatter",
+    blankRun(territory("foundations", "f-gap", "next")) === 1,
+    String(blankRun(territory("foundations", "f-gap", "next")))
+  );
   seed("\n");
   await call("discard_next", { node_id: "f-gap" });
   const gapCheck = await call("run_check", {});
   check(
-    "a twin restored from a live file with a run is not drift",
-    blankRun(territory("foundations", "f-gap", "next")) === 1 &&
+    "discarding beside a live file with a run deletes the next file and the check passes for it",
+    !fs.existsSync(territory("foundations", "f-gap", "next")) &&
+      blankRun(gapFile) === 6 &&
       !gapCheck.failures.some((f) => f.includes("f-gap")),
     JSON.stringify(gapCheck.failures.filter((f) => f.includes("f-gap")))
   );

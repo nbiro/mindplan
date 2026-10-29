@@ -4,9 +4,9 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface that registers twenty-nine tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, takes slot and section on the node reads, and describes neighbor labels, additive in-place claims on shipped nodes, linked test files, the shipped-ops drop, summary-first orientation with its write gate, and area-first search."
 state: stable
-shipped_at: 2026-10-29T13:32:27.789Z
+shipped_at: 2026-10-29T15:21:03.872Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-29T13:32:27.789Z
+updated_at: 2026-10-29T15:21:03.872Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -70,6 +70,7 @@ Intended files: `src/interfaces/if-mcp-tools/`
 - **Summary-first orient.** `orient_for_work` describes the rows, `auto_focus`, the full reply for `node_id`, and the write gate (`Blocked: Orientation`, `create_node` never blocked); its `limit` defaults to 8 for a query alone
 - **Rules versions.** `get_rules` takes `known_version` and describes `rules_version` and the `unchanged: true` reply; `get_project` names `rules_version`; `orient_for_work` takes `known_rules_versions` (a string record) and describes the entry `version`
 - **Slot and section reads.** `orient_for_work` and `get_node_context` take `slot` (`"current" | "next"`, one shared schema) and `section` (a level-2 heading such as `"## Spec"`, one shared schema) and pass them to their handlers. The `orient_for_work` description says the body is the active slot's by default (the open next while a revision is open), that `section` returns one section, and that the decisions block is the reply's only copy; the `get_node_context` description says both slots come back unless `slot` names one; the `slot` schema says decisions per slot come back from `get_node_context` only
+- **No twin in the descriptions.** `open_next` says it writes `<id>.next.mdx` from the live file with a fresh Atomic Ops list; `discard_next` says it deletes the next file and `next-attachments/`; `update_node_status` says ship promotes and deletes the next file; `force_unship` says it deletes any next file; `run_check` names leftover mirror twins among its warnings, not its Blocks; `patch_node_territory` drops the twin wording
 - **Decision defaults.** `orient_for_work` and `get_node_context` take `include_inherited_decisions` (one shared schema) and describe the own-decisions default and `inherited_decisions`; `get_blast_radius` takes `include_dependent_decisions` and describes `dependent_decisions`
 - **Tool kinds and annotations.** One registration helper takes `kind: "read" | "write" | "destructive"` and derives both the `guarded` options (`drift` / `write`) and the MCP `annotations`: `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`: every tool acts on the local `mindplan/` tree and the repo, never on an external system. Read tools: `run_check`, `get_mindplan_graph`, `export_mindplan_view`, `find_related_nodes`, `get_node_implementation`, `get_node_context`, `orient_for_work`, `get_project`, `get_rules`, `list_decisions`, `get_blast_radius`. Destructive tools (they remove data or edges that no undo restores): `unlink_nodes`, `remove_attachment`, `discard_next`, `force_unship`. Every other tool is `write`. `run_check` keeps `drift: false` on top of `read`. Every tool keeps its `title`
 - **Result envelope.** `ok(payload)` returns `content: [{ type: "text", text: JSON.stringify(payload) }]` (compact, no indentation) and, when the payload is a plain object, `structuredContent: payload` as well. String payloads stay text-only. Error results are unchanged (`isError: true`, message text). No `outputSchema` is declared: twenty-seven schemas would double the tool list the host loads, and `structuredContent` is useful without one
@@ -105,6 +106,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - The descriptions of the change-scoped and shipped-node tools name neighbors, in-place claims, and the result fields they return
 - The server registers twenty-eight tools, including `set_test_files` as a write tool
 - `slot` and `section` reach the `orient_for_work` and `get_node_context` handlers; a `slot` outside the enum is rejected at the zod layer
+- No tool description mentions a mirror twin except `run_check` (as a warning about leftovers)
 
 ## Decisions
 
