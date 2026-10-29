@@ -37,7 +37,7 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 
 - **Rewire** — `link_nodes` / `unlink_nodes` (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`, `mounts`)
 - **Retreat** — `in-review` → `in-progress` when scope or checklist reality changes
-- **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id and a standing `<id>.next.mdx` twin (`state: mirror`); `open_next` flips it to `draft` → build → `ship` promotes over `<id>.mdx` and restores the twin
+- **Evolve** — shipped Foundations/Interactions/Interfaces keep the same id; `open_next` writes `<id>.next.mdx` from the live file → build → `ship` promotes it over `<id>.mdx` and deletes it, so a shipped node is one file
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
 - **Ship after green check** — the implementer `ship`s when `run_check` (the CLI `mindplan-mcp check`) is green and legal transitions allow; moves to `in-review` and `ship` also run its import and ownership rules on the node's files, and `update_node_status` with `scope` walks every open update (or one change's revisions) through in-review to ship in one call — jumping past in-review needs `skip_review: true`, which is reported
 - **Decide on the record** — when an agent chooses between viable designs, `record_decision` keeps the choice, the rejected alternative, and the reason on the node; the next agent gets it from `orient_for_work` before touching that design. A shipped Foundation's revision, a new migration, a wide blast radius, or a `depends_on` change cannot reach `in-review` without one
@@ -245,7 +245,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `patch_config` | mutation | Write `mindplan/config.json` sources/exclude, decision-gate settings, and search settings |
 | `put_attachment` / `remove_attachment` | mutation | Node attachment files |
 | `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold) |
-| `open_next` / `discard_next` | mutation | Flip mirror→draft / restore mirror twin |
+| `open_next` / `discard_next` | mutation | Write `<id>.next.mdx` from live (fresh Atomic Ops) / delete it |
 | `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent` |
 | `update_node_status` | mutation | One node, or a `revisions` list ordered Foundation → Interaction → Interface → Bug; stops on the first `Blocked:` |
 | `force_unship` | mutation, destructive | Mistaken-ship recovery (`confirm: "unship:<id>"`) |
@@ -268,7 +268,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 npx mindplan-mcp check --merge
 ```
 
-It fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live or open next slot is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back with `new_status: "in-progress"` if the work is unfinished. `draft`, `ready`, `in-progress`, shipped nodes, and mirror twins pass, so planning PRs and incremental PRs still merge. Agents run the same gate with `run_check({ merge: true })` before saying a PR is ready.
+It fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live or open next slot is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back with `new_status: "in-progress"` if the work is unfinished. `draft`, `ready`, `in-progress`, and shipped nodes pass, so planning PRs and incremental PRs still merge. Agents run the same gate with `run_check({ merge: true })` before saying a PR is ready.
 
 `--merge=strict` (with `--base <ref>`, default the merge base with the newer of `main` and `origin/main`, else `master`) also fails an `in-progress` node whose claimed files changed against the base: a finished feature left at `in-progress`. It is opt-in because it blocks the incremental PRs of a large feature. An explicit `--base` also turns on the dirty-src ownership check, as it does without `--merge`.
 

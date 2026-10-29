@@ -6,7 +6,7 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: stable
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-29T12:50:30.590Z
+updated_at: 2026-10-29T14:37:19.962Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -54,6 +54,8 @@ Depends on: `f-mcp-runtime`.
 - `areas.test.mjs` (run by `npm test`) covers `areaMembers`, an `area` search on a 331-node, 30-area graph returning only that area's members and at least as fast as a whole-graph search, and over MCP `list_areas` under 4 KB for 30 areas with counts, `area` on `orient_for_work` and `find_related_nodes`, and a non-Journey `area` Blocked; smoke counts twenty-nine tools
 
 - `lean-replies.test.mjs` (run by `npm test`) covers the store's Atomic Ops helpers (fenced headings, a Foundation's Checklist, CRLF, a Bug's Fix Checklist untouched) and `readSectionFromBody`; over MCP, first ship and promotion leaving no Atomic Ops on live and twin with Rules and Decisions kept, `open_next` starting one unticked list before Rules, a revision Blocked by the Completion Check until it ticks its own ops, `force_unship` restoring a list (and a refused unship writing nothing), `orient_for_work` returning the active slot's body and its decisions once, `slot`, `section` (a missing heading Blocked, naming the slot), a `slot` outside the enum rejected, and `get_node_context` with both slots by default; and over the CLI, init dropping an older release's ledgers (live stripped, twin rewritten, an open revision's list kept, a rerun dropping nothing). The other suites that ship a revision tick its fresh ops first
+
+- **No standing twin.** `twins.test.mjs` (run by `npm test`) now covers the one-file model: every live write on a shipped node (links and unlinks with the stability recompute, Bug status, territory, aliases, rules, tests, neighbor labels, decisions) touches only `<id>.mdx` and lists every file it touched; no write creates a `state: mirror` file; `open_next` writes the next file and `.gitkeep`; ship and `discard_next` delete them (with attachments) and list each path; a hand-written leftover mirror loads as no revision, warns in `run_check`, survives a live write, is replaced by `open_next`, and is deleted by `force_unship`. Smoke covers init deleting a leftover twin (keeping a non-empty `next-attachments/`) and the CLI line; the other suites assert no next file where they used to assert a true twin
 
 ## Acceptance Criteria
 

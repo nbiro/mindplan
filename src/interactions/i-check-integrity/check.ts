@@ -52,8 +52,9 @@ import { defaultBaseRef, repoPrefix } from "../../foundations/f-source-index/git
 import {
   drainRemovedLegacyFiles,
   loadGraph,
+  isLegacyMirror,
   loadProjectConfig,
-  mirrorDriftReason,
+  markdownRelativePath,
   projectRoot,
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
@@ -406,23 +407,20 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
 }
 
 /**
- * Shipped pipeline nodes must keep a standing `<id>.next.mdx` twin (`state: mirror`)
- * that matches the live file except for that state line. Open evolutions skip this check.
+ * A shipped node has no next file unless a revision is open. A `state: mirror` file left by a
+ * release before 0.8.0 is not a revision; it only warns, with the init call that removes it.
  */
-function checkMirrorTwins(graph: MindPlanGraph, failures: string[]): void {
+function legacyMirrorWarnings(graph: MindPlanGraph): string[] {
+  const warnings: string[] = [];
   for (const node of graph.nodes) {
-    if (!isPipelineNodeType(node.type)) continue;
-    if (!isProductionState(node.state)) continue;
-    if (node.next) continue;
-    const reason = mirrorDriftReason(node);
-    if (reason) {
-      fail(
-        failures,
-        `mirror: "${node.id}" ${reason}. ` +
-          `Run mindplan-mcp init to backfill or heal drift, or restore the twin via a live MCP write.`
-      );
-    }
+    if (!isPipelineNodeType(node.type) || node.next) continue;
+    if (!isLegacyMirror(node)) continue;
+    warnings.push(
+      `legacy: "${node.id}" has a leftover mirror twin (${markdownRelativePath(node, "next")}); ` +
+        `run mindplan-mcp init to remove it.`
+    );
   }
+  return warnings;
 }
 
 function checkLeftovers(
@@ -974,10 +972,10 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     const universe = listUniverseFiles(root);
     checkCoverage(graph, root, buckets, universe, failures);
     checkPresence(graph, root, failures);
-    checkMirrorTwins(graph, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
     warnings.push(...collectWarnings(graph, root));
+    warnings.push(...legacyMirrorWarnings(graph));
     warnings.push(...routeFamilySplits(graph, buckets, universe));
     const decisionCtx = createDecisionContext(root);
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));

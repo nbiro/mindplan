@@ -785,7 +785,7 @@ export function validateOpenNext(node: MindPlanNode): void {
       `"${node.id}" already has an open evolution in state "${node.next.state}". Ship or discard_next before opening another.`
     );
   }
-  // A standing `mirror` twin does not set node.next — open_next flips it to draft.
+  // A shipped node has no next file until open_next writes one.
 }
 
 export type DependentEntry = { node: MindPlanNode; distance: number };

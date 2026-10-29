@@ -280,11 +280,12 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
       `Dropped the shipped Atomic Ops of ${report.atomicOpsDropped.length} node(s); a shipped node shows its current state and git keeps the ledger`
     );
   }
-  for (const twin of report.mirrorTwins) {
-    console.log(`Wrote mirror twin ${twin.path} (${twin.node_id})`);
+  const removedTwins = report.mirrorTwinsRemoved.filter((p) => p.endsWith(".mdx")).length;
+  if (removedTwins > 0) {
+    console.log(`Removed ${removedTwins} mirror twin(s); a shipped node now has a next file only while a revision is open`);
   }
   for (const skip of report.mirrorTwinSkips) {
-    console.log(`Skipped mirror twin for ${skip.node_id}: ${skip.reason}`);
+    console.log(`Could not remove the mirror twin of ${skip.node_id}: ${skip.reason}`);
   }
 
   if (!report.agentsMd.installed) {

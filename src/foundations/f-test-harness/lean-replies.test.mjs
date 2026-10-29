@@ -103,11 +103,9 @@ const count = (text, re) => (text.match(re) ?? []).length;
 const UNTICKED = /^\s*[-*+]\s+\[ \]/gm;
 const TICKED = /^\s*[-*+]\s+\[[xX]\]/gm;
 
-/** True when the twin is the live file with only `state:` changed to mirror. */
-function twinInSync(id) {
-  const strip = (raw) => raw.replace(/^state:.*$/m, "state: <ignored>");
-  const twin = readRel(nextOf(id));
-  return /^state: mirror$/m.test(twin) && strip(readRel(liveOf(id))) === strip(twin);
+/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+function noNextFile(id) {
+  return fs.existsSync(path.join(root, ...liveOf(id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(id).split("/")));
 }
 
 function write(rel, content) {
@@ -214,7 +212,7 @@ fs.writeFileSync(
   );
 }
 
-// --- first ship drops the ledger from live and twin ---
+// --- first ship drops the ledger from live and writes no next file ---
 await foundation("f-core");
 await call("patch_node_rules", { node_id: "f-core", rules: "- Keep it small." });
 await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
@@ -225,7 +223,7 @@ await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
     !live.includes("## Atomic Ops") && count(live, TICKED) === 0 && live.includes("- Keep it small.") && live.includes("## Attachments"),
     live
   );
-  check("the twin matches the stripped live file", twinInSync("f-core"));
+  check("first ship writes no next file", noNextFile("f-core"));
 }
 
 // --- open_next starts a fresh ledger; the revision cannot ship on old ticks ---
@@ -306,7 +304,7 @@ await walk("f-core", ["ship"]);
     !live.includes("## Atomic Ops") && live.includes("Core stays one module.") && live.includes("- Keep it small."),
     live
   );
-  check("the restored twin matches live", twinInSync("f-core"));
+  check("promote deletes the next file", noNextFile("f-core"));
   const noNext = await blocked("get_node_context", { node_id: "f-core", slot: "next" });
   check("slot next without an open revision is Blocked", noNext?.includes("Blocked:") && noNext.includes("no open revision"), noNext ?? "accepted");
 }
@@ -335,7 +333,7 @@ await foundation("f-chk");
   // Ticking is a contract write, so the ready node goes back to draft first.
   await tickAll("f-chk");
   await walk("f-chk", ["ready", "in-progress", "in-review", "ship"]);
-  check("the unshipped node ships again", !readRel(liveOf("f-chk")).includes("## Atomic Ops") && twinInSync("f-chk"));
+  check("the unshipped node ships again", !readRel(liveOf("f-chk")).includes("## Atomic Ops") && noNextFile("f-chk"));
 }
 
 const final = await call("run_check", {});
@@ -361,13 +359,12 @@ await client.close();
 ## Attachments`));
   };
   addLedger(liveOf("f-core"), "Old work");
-  addLedger(nextOf("f-core"), "Old work");
   const first = runCli(["init", "--host", "claude"]);
   check("init succeeds", first.status === 0, first.stderr);
   check("init reports the dropped ledger", first.stdout.includes("Dropped the shipped Atomic Ops of 1 node(s)"), first.stdout);
   check(
-    "init strips the live ledger and the twin follows",
-    !readRel(liveOf("f-core")).includes("## Atomic Ops") && twinInSync("f-core"),
+    "init strips the live ledger and writes no next file",
+    !readRel(liveOf("f-core")).includes("## Atomic Ops") && noNextFile("f-core"),
     readRel(liveOf("f-core"))
   );
 

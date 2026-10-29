@@ -1007,26 +1007,20 @@ await expectBlocked("open_next on draft", "open_next", {
 });
 
 {
-  const mirrorBefore = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.next.mdx");
-  const liveBefore = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx");
-  if (!fs.existsSync(mirrorBefore) || !fs.readFileSync(mirrorBefore, "utf-8").includes("state: mirror")) {
+  const nextBefore = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.next.mdx");
+  const nextAttBefore = path.join(root, "mindplan", "interactions", "i-checkout", "next-attachments");
+  if (fs.existsSync(nextBefore) || fs.existsSync(nextAttBefore)) {
     failures++;
-    console.log("FAIL first ship should leave a standing mirror twin");
-  } else {
-    const stripState = (raw) => raw.replace(/^state:\s*.*$/m, "state: <ignored>");
-    if (stripState(fs.readFileSync(liveBefore, "utf-8")) !== stripState(fs.readFileSync(mirrorBefore, "utf-8"))) {
-      failures++;
-      console.log("FAIL mirror twin should match live except state");
-    } else console.log("ok   standing mirror twin after first ship");
-  }
+    console.log("FAIL first ship should write no next file or next-attachments/");
+  } else console.log("ok   first ship writes no next file");
 }
 
 const openNextRes = JSON.parse(await expectOk("open_next i-checkout", "open_next", {
   node_id: "i-checkout", title: "Checkout v2", description: "Revised checkout",
 }));
 if (openNextRes.next?.state !== "draft") {
-  failures++; console.log(`FAIL open_next should flip mirror to draft: ${JSON.stringify(openNextRes.next)}`);
-} else console.log("ok   open_next flips mirror twin to draft");
+  failures++; console.log(`FAIL open_next should write a draft next: ${JSON.stringify(openNextRes.next)}`);
+} else console.log("ok   open_next writes a draft next file");
 if (
   !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
   !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments/.gitkeep") ||
@@ -1199,9 +1193,10 @@ if (!fs.existsSync(promotedAtt)) {
   failures++; console.log("FAIL promote should copy next-attachments/note.txt into attachments/");
 } else console.log("ok   promote copied next-attachment into attachments/");
 
-if (!fs.existsSync(nextPath) || !fs.readFileSync(nextPath, "utf-8").includes("state: mirror")) {
-  failures++; console.log("FAIL next.mdx should be restored as mirror after promote");
-} else console.log("ok   next.mdx restored as mirror after promote");
+const nextAttDir = path.join(root, "mindplan", "interactions", "i-checkout", "next-attachments");
+if (fs.existsSync(nextPath) || fs.existsSync(nextAttDir)) {
+  failures++; console.log("FAIL promote should delete next.mdx and next-attachments/");
+} else console.log("ok   promote deletes next.mdx and next-attachments/");
 
 const currentAfter = fs.readFileSync(path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx"), "utf-8");
 if (!currentAfter.includes("Checkout v2") || !currentAfter.includes("Revised checkout")) {
@@ -1212,7 +1207,7 @@ graph = JSON.parse(await expectOk("read graph after promote", "get_mindplan_grap
 const afterPromote = graph.nodes.find((n) => n.id === "i-checkout");
 if (afterPromote.next) {
   failures++; console.log(`FAIL open evolution should be gone after promote: ${JSON.stringify(afterPromote.next)}`);
-} else console.log("ok   no open evolution after promote (mirror twin remains)");
+} else console.log("ok   no open evolution after promote");
 if (
   !afterPromote.implements?.includes("src/interactions/i-checkout/") ||
   !afterPromote.implements?.includes("src/interactions/i-checkout/extra.ts") ||
@@ -1231,12 +1226,14 @@ if (tipsLeadsAfterPromote.length !== 1) {
 // discard_next path
 const openForDiscard = JSON.parse(await expectOk("open_next again for discard", "open_next", { node_id: "i-checkout" }));
 const discardRes = JSON.parse(await expectOk("discard_next", "discard_next", { node_id: "i-checkout" }));
-if (!fs.existsSync(nextPath) || !fs.readFileSync(nextPath, "utf-8").includes("state: mirror")) {
-  failures++; console.log("FAIL discard_next should restore mirror twin");
-} else console.log("ok   discard_next restores mirror twin");
+if (fs.existsSync(nextPath) || fs.existsSync(nextAttDir)) {
+  failures++; console.log("FAIL discard_next should delete next.mdx and next-attachments/");
+} else console.log("ok   discard_next deletes next.mdx and next-attachments/");
 if (
-  !discardRes.restored_mirror ||
+  "restored_mirror" in discardRes ||
   !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
+  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments/.gitkeep") ||
+  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments") ||
   !discardRes.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL discard_next changed_files: ${JSON.stringify(discardRes.changed_files)}`);
@@ -1329,46 +1326,83 @@ void openForDiscard;
     console.log(`FAIL remove_attachment: ${JSON.stringify(rmRes)}`);
   } else console.log("ok   remove_attachment deletes attachments/");
 
-  await expectBlocked("patch next while mirror", "patch_node_territory", {
+  await expectBlocked("patch next without open revision", "patch_node_territory", {
     node_id: "i-checkout",
-    body: "# must not write mirror\n",
+    body: "# must not write a next file\n",
     slot: "next",
   });
 
-  // Drift the twin with a host write; open_next and check must Block; init heals.
-  fs.appendFileSync(nextPath, "\n<!-- drift -->\n");
-  await expectBlocked("open_next while mirror drifted", "open_next", {
-    node_id: "i-checkout",
-  });
-  const { spawnSync } = await import("child_process");
-  const checkDrift = spawnSync(process.execPath, [serverEntry, "check"], {
-    env: { ...process.env, MINDPLAN_ROOT: root },
-    encoding: "utf-8",
-  });
-  if (checkDrift.status === 0 || !`${checkDrift.stdout}${checkDrift.stderr}`.includes("mirror:")) {
-    failures++;
-    console.log(
-      `FAIL check should Block drifted mirror (status=${checkDrift.status}): ${checkDrift.stdout}${checkDrift.stderr}`
+  // A leftover `state: mirror` next file (older release) is not a revision:
+  // the graph has no next, check warns and passes, init removes it.
+  const livePathNow = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx");
+  const writeLeftoverMirror = () =>
+    fs.writeFileSync(
+      nextPath,
+      fs.readFileSync(livePathNow, "utf-8").replace(/^state:\s*.*$/m, "state: mirror")
     );
-  } else console.log("ok   check Blocks drifted mirror twin");
-
-  const initHeal = spawnSync(process.execPath, [serverEntry, "init"], {
+  writeLeftoverMirror();
+  const graphLeftover = JSON.parse(await expectOk("read graph with leftover mirror", "get_mindplan_graph", {}));
+  if (graphLeftover.nodes.find((n) => n.id === "i-checkout")?.next) {
+    failures++;
+    console.log("FAIL leftover mirror file must not load as a revision");
+  } else console.log("ok   leftover mirror file loads with no next");
+  await expectBlocked("discard_next on leftover mirror", "discard_next", { node_id: "i-checkout" });
+  const { spawnSync } = await import("child_process");
+  const checkLeftover = spawnSync(process.execPath, [serverEntry, "check"], {
     env: { ...process.env, MINDPLAN_ROOT: root },
     encoding: "utf-8",
   });
-  const stripState = (raw) => raw.replace(/^state:\s*.*$/m, "state: <ignored>");
-  const liveNow = fs.readFileSync(path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx"), "utf-8");
-  const twinNow = fs.readFileSync(nextPath, "utf-8");
+  const checkLeftoverOut = `${checkLeftover.stdout}${checkLeftover.stderr}`;
+  // The fixture carries an unrelated Block (retired if-pending leftovers), so the
+  // exit code is not asserted here: the leftover twin must only warn, never Block.
+  const leftoverBlocks = checkLeftoverOut
+    .split(/\r?\n/)
+    .filter((l) => /^Blocked/.test(l) && (l.includes("mirror") || l.includes("i-checkout.next.mdx")));
   if (
-    initHeal.status !== 0 ||
-    !twinNow.includes("state: mirror") ||
-    stripState(liveNow) !== stripState(twinNow)
+    leftoverBlocks.length > 0 ||
+    !checkLeftoverOut.includes(
+      'Warning: legacy: "i-checkout" has a leftover mirror twin (mindplan/interactions/i-checkout/i-checkout.next.mdx)'
+    ) ||
+    !checkLeftoverOut.includes("run mindplan-mcp init to remove it")
   ) {
     failures++;
     console.log(
-      `FAIL init should heal drifted mirror (status=${initHeal.status}): ${initHeal.stdout}${initHeal.stderr}`
+      `FAIL check should warn (not Block) on a leftover mirror (status=${checkLeftover.status}): ${checkLeftoverOut}`
     );
-  } else console.log("ok   init heals drifted mirror twin");
+  } else console.log("ok   check warns (does not Block) on a leftover mirror twin");
+
+  const initRemove = spawnSync(process.execPath, [serverEntry, "init"], {
+    env: { ...process.env, MINDPLAN_ROOT: root },
+    encoding: "utf-8",
+  });
+  if (
+    initRemove.status !== 0 ||
+    fs.existsSync(nextPath) ||
+    !initRemove.stdout.includes("Removed 1 mirror twin(s)")
+  ) {
+    failures++;
+    console.log(
+      `FAIL init should remove a leftover mirror (status=${initRemove.status}): ${initRemove.stdout}${initRemove.stderr}`
+    );
+  } else console.log("ok   init removes a leftover mirror twin");
+
+  // open_next replaces a leftover mirror file with a real draft revision.
+  writeLeftoverMirror();
+  const openOverLeftover = JSON.parse(
+    await expectOk("open_next over leftover mirror", "open_next", { node_id: "i-checkout" })
+  );
+  if (
+    openOverLeftover.next?.state !== "draft" ||
+    !fs.readFileSync(nextPath, "utf-8").includes("state: draft")
+  ) {
+    failures++;
+    console.log(`FAIL open_next should replace a leftover mirror: ${JSON.stringify(openOverLeftover.next)}`);
+  } else console.log("ok   open_next replaces a leftover mirror file");
+  await expectOk("discard_next after open over leftover", "discard_next", { node_id: "i-checkout" });
+  if (fs.existsSync(nextPath)) {
+    failures++;
+    console.log("FAIL discard_next should leave no next file");
+  }
 }
 
 // --- force_unship (mistaken ship recovery) ---
@@ -1393,6 +1427,11 @@ await expectBlocked("force_unship with shipped dependents", "force_unship", {
   confirm: "unship:f-db",
 });
 
+// A leftover mirror next file does not gate force_unship, and force_unship deletes it.
+fs.writeFileSync(
+  path.join(root, "mindplan", "interactions", "i-tips", "i-tips.next.mdx"),
+  fs.readFileSync(tipsPath, "utf-8").replace(/^state:\s*.*$/m, "state: mirror")
+);
 const unshipRes = JSON.parse(
   await expectOk("force_unship i-tips to ready", "force_unship", {
     node_id: "i-tips",
@@ -1425,10 +1464,10 @@ if (/^shipped_at:/m.test(tipsFm) || !/^state: ready$/m.test(tipsFm)) {
 const tipsNextAfterUnship = path.join(root, "mindplan", "interactions", "i-tips", "i-tips.next.mdx");
 if (fs.existsSync(tipsNextAfterUnship)) {
   failures++;
-  console.log("FAIL force_unship should delete the standing mirror twin");
-} else console.log("ok   force_unship deletes standing mirror twin");
+  console.log("FAIL force_unship should leave no next file");
+} else console.log("ok   force_unship leaves no next file");
 
-// --- deprecate shipped pipeline node deletes mirror twin + lists it in changed_files ---
+// --- deprecate shipped pipeline node deletes a leftover next file + lists it in changed_files ---
 {
   await expectOk("create f-retire-twin", "create_node", {
     id: "f-retire-twin",
@@ -1457,10 +1496,15 @@ if (fs.existsSync(tipsNextAfterUnship)) {
     new_status: "ship",
   });
   const retireNext = nextTerritoryPath("foundations", "f-retire-twin");
-  if (!fs.existsSync(retireNext) || !fs.readFileSync(retireNext, "utf-8").includes("state: mirror")) {
+  if (fs.existsSync(retireNext)) {
     failures++;
-    console.log("FAIL f-retire-twin ship should leave a mirror twin");
+    console.log("FAIL f-retire-twin ship should write no next file");
   }
+  // Leftover mirror from an older release: retiring the node deletes it.
+  fs.writeFileSync(
+    retireNext,
+    fs.readFileSync(retirePath, "utf-8").replace(/^state:\s*.*$/m, "state: mirror")
+  );
   const deprecateRes = JSON.parse(
     await expectOk("deprecate f-retire-twin", "update_node_status", {
       node_id: "f-retire-twin",
@@ -1469,7 +1513,7 @@ if (fs.existsSync(tipsNextAfterUnship)) {
   );
   if (fs.existsSync(retireNext)) {
     failures++;
-    console.log("FAIL deprecate should delete the standing mirror twin");
+    console.log("FAIL deprecate should delete the leftover next file");
   } else if (
     !deprecateRes.changed_files?.includes("mindplan/foundations/f-retire-twin/f-retire-twin.next.mdx")
   ) {
@@ -1477,7 +1521,7 @@ if (fs.existsSync(tipsNextAfterUnship)) {
     console.log(
       `FAIL deprecate changed_files should list deleted twin: ${JSON.stringify(deprecateRes.changed_files)}`
     );
-  } else console.log("ok   deprecate deletes mirror twin and lists it in changed_files");
+  } else console.log("ok   deprecate deletes leftover next file and lists it in changed_files");
 }
 
 await expectBlocked("stable to ready still blocked on update_node_status", "update_node_status", {
@@ -1801,7 +1845,8 @@ if (initResult.status !== 0) {
   console.log("ok   mindplan-mcp init installs templates from package root");
 }
 
-// --- init reports mirrorTwinSkips when the twin path cannot be written ---
+// --- init removes a leftover mirror twin but keeps next-attachments/ holding real files ---
+// (A mirrorTwinSkips case — unlink failing — cannot be provoked portably, so it is not covered.)
 {
   const skipRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-skip-twin-"));
   const ent = path.join(skipRoot, "mindplan", "foundations", "f-skip-twin");
@@ -1843,20 +1888,49 @@ Adapted so the already-shipped contract still holds.
 
 `
   );
-  // Occupy the next-slot path with a directory so writeMirrorTwin cannot write a file.
-  fs.mkdirSync(path.join(ent, "f-skip-twin.next.mdx"), { recursive: true });
+  const skipLive = fs.readFileSync(path.join(ent, "f-skip-twin.mdx"), "utf-8");
+  const skipNext = path.join(ent, "f-skip-twin.next.mdx");
+  fs.writeFileSync(skipNext, skipLive.replace(/^state:\s*.*$/m, "state: mirror"));
+  const skipNextAtt = path.join(ent, "next-attachments");
+  fs.mkdirSync(skipNextAtt, { recursive: true });
+  fs.writeFileSync(path.join(skipNextAtt, ".gitkeep"), "");
+  fs.writeFileSync(path.join(skipNextAtt, "keep.txt"), "user file\n");
+  fs.mkdirSync(path.join(skipRoot, "src", "foundations", "f-skip-twin"), { recursive: true });
+  fs.writeFileSync(path.join(skipRoot, "src", "foundations", "f-skip-twin", "index.ts"), "export {};\n");
+  // In an otherwise clean graph a leftover twin is a warning only: check exits 0.
+  const skipCheck = spawnSync(process.execPath, [serverEntry, "check"], {
+    cwd: skipRoot,
+    env: { ...process.env, MINDPLAN_ROOT: skipRoot },
+    encoding: "utf-8",
+  });
+  const skipCheckOut = `${skipCheck.stdout}${skipCheck.stderr}`;
+  if (
+    skipCheck.status !== 0 ||
+    !skipCheckOut.includes(
+      'legacy: "f-skip-twin" has a leftover mirror twin (mindplan/foundations/f-skip-twin/f-skip-twin.next.mdx); run mindplan-mcp init to remove it.'
+    )
+  ) {
+    failures++;
+    console.log(`FAIL check should pass with a legacy warning on a leftover twin (status=${skipCheck.status}): ${skipCheckOut}`);
+  } else console.log("ok   check passes with a legacy warning on a leftover twin");
   const skipInit = spawnSync(process.execPath, [serverEntry, "init"], {
     cwd: skipRoot,
     env: { ...process.env, MINDPLAN_ROOT: skipRoot },
     encoding: "utf-8",
   });
   const skipOut = `${skipInit.stdout}${skipInit.stderr}`;
-  if (skipInit.status !== 0 || !skipOut.includes("Skipped mirror twin for f-skip-twin")) {
+  if (
+    skipInit.status !== 0 ||
+    fs.existsSync(skipNext) ||
+    !fs.existsSync(path.join(skipNextAtt, "keep.txt")) ||
+    !skipOut.includes("Removed 1 mirror twin(s); a shipped node now has a next file only while a revision is open") ||
+    skipOut.includes("Could not remove the mirror twin")
+  ) {
     failures++;
     console.log(
-      `FAIL init should report mirrorTwinSkips (status=${skipInit.status}): ${skipOut}`
+      `FAIL init should remove the leftover twin and keep non-empty next-attachments (status=${skipInit.status}): ${skipOut}`
     );
-  } else console.log("ok   init reports skipped mirror twin writes");
+  } else console.log("ok   init removes leftover twin, keeps next-attachments/ with real files");
 }
 
 // --- init --host: claude installs CLAUDE.md + .claude/skills, not .cursor ---
@@ -2458,8 +2532,11 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
   const fDbNext = nextTerritoryPath("foundations", "f-db");
   const lf = fs.readFileSync(fDbCurrent, "utf-8").replace(/\r\n/g, "\n");
   fs.writeFileSync(fDbCurrent, lf.replace(/\n/g, "\r\n"));
-  // Host bypass of the store: drop the twin so open_next seeds from the CRLF live file.
-  if (fs.existsSync(fDbNext)) fs.unlinkSync(fDbNext);
+  // A shipped node has no next file until open_next seeds one from the CRLF live file.
+  if (fs.existsSync(fDbNext)) {
+    failures++;
+    console.log("FAIL shipped f-db should have no next file before open_next");
+  }
   const liveRaw = fs.readFileSync(fDbCurrent, "utf-8");
   await expectOk("open_next f-db (CRLF body)", "open_next", { node_id: "f-db" });
   const nextRaw = fs.readFileSync(fDbNext, "utf-8");
@@ -2480,9 +2557,10 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
   } else console.log("ok   open_next on CRLF body keeps CRLF and starts a fresh ledger");
   await expectOk("discard_next f-db (CRLF body)", "discard_next", { node_id: "f-db" });
   fs.writeFileSync(fDbCurrent, lf);
-  // Heal twin after host rewrite of live (mirrors init/check path).
-  const healed = fs.readFileSync(fDbCurrent, "utf-8").replace(/^state:\s*.*$/m, "state: mirror");
-  fs.writeFileSync(fDbNext, healed);
+  if (fs.existsSync(fDbNext)) {
+    failures++;
+    console.log("FAIL discard_next f-db should delete the next file");
+  }
 }
 
 {
@@ -2596,22 +2674,22 @@ Legacy substrate.
           await expectOk("legacy next in-review", "update_node_status", { node_id: "f-legacy", new_status: "in-review" });
           await expectOk("legacy next ship", "update_node_status", { node_id: "f-legacy", new_status: "ship" });
           const promoted = fs.readFileSync(path.join(legacyFoundation, "current.mdx"), "utf-8");
-          const nextAfterShip = fs.existsSync(nextPath)
-            ? fs.readFileSync(nextPath, "utf-8")
-            : "";
-          if (!promoted.includes("PROMOTED_LEGACY") || !nextAfterShip.includes("state: mirror")) {
+          if (!promoted.includes("PROMOTED_LEGACY") || fs.existsSync(nextPath)) {
             failures++;
-            console.log("FAIL promote should write current.mdx and restore mirror next.mdx");
-          } else console.log("ok   promote restores legacy next.mdx as mirror");
+            console.log("FAIL promote should write current.mdx and delete legacy next.mdx");
+          } else console.log("ok   promote writes legacy current.mdx and deletes next.mdx");
           await expectOk("open_next again on legacy foundation", "open_next", { node_id: "f-legacy" });
+          if (!fs.existsSync(nextPath) || fs.existsSync(path.join(legacyFoundation, "f-legacy.next.mdx"))) {
+            failures++;
+            console.log("FAIL open_next again on current.mdx should recreate legacy next.mdx");
+          }
           await expectOk("discard legacy next.mdx", "discard_next", { node_id: "f-legacy" });
           if (
-            !fs.existsSync(nextPath) ||
-            !fs.readFileSync(nextPath, "utf-8").includes("state: mirror") ||
+            fs.existsSync(nextPath) ||
             !fs.existsSync(path.join(legacyFoundation, "current.mdx"))
           ) {
             failures++;
-            console.log("FAIL discard_next should restore mirror next.mdx and keep current.mdx");
+            console.log("FAIL discard_next should delete legacy next.mdx and keep current.mdx");
           }
         }
       }
@@ -2745,7 +2823,7 @@ role: infra
   });
   await expectOk("bug-rules affects i-rules-a", "link_nodes", { source_id: "bug-rules", target_id: "i-rules-a", edge_type: "affects" });
 
-  // Write rules on a shipped Foundation without open_next; twin stays a state-only copy.
+  // Write rules on a shipped Foundation without open_next; only the live file is touched.
   const baseRules = "- Money is integer cents.\n- [ ] Not an atomic op";
   const written = await json("patch_node_rules", { node_id: "f-rules-base", rules: baseRules });
   const audience = (written.rules_impact?.inherited_by ?? []).map((e) => e.id).sort();
@@ -2755,26 +2833,25 @@ role: infra
     written.rules_impact?.has_rules !== true ||
     JSON.stringify(audience) !== JSON.stringify(["bug-rules", "f-rules-top", "i-rules-a", "i-rules-b"]) ||
     !written.changed_files?.includes("mindplan/foundations/f-rules-base/f-rules-base.mdx") ||
-    !written.changed_files?.includes("mindplan/foundations/f-rules-base/f-rules-base.next.mdx")
+    written.changed_files?.includes("mindplan/foundations/f-rules-base/f-rules-base.next.mdx")
   ) {
     failures++;
     console.log(`FAIL patch_node_rules on shipped Foundation: ${JSON.stringify(written)}`);
   } else console.log("ok   patch_node_rules writes a shipped node without open_next and reports its audience");
   const baseCtx = await json("get_node_context", { node_id: "f-rules-base" });
   const liveRaw = readFile("foundations", "f-rules-base", "f-rules-base.mdx");
-  const twinRaw = readFile("foundations", "f-rules-base", "f-rules-base.next.mdx");
+  const baseNextExists = fs.existsSync(nextTerritoryPath("foundations", "f-rules-base"));
   if (
     baseCtx.record.state !== "stable" ||
     baseCtx.next !== null ||
     baseCtx.rules !== baseRules ||
     baseCtx.body.includes("## Rules") ||
     !liveRaw.includes("## Rules") ||
-    !twinRaw.includes("state: mirror") ||
-    twinRaw.replace(/^state:.*$/m, "") !== liveRaw.replace(/^state:.*$/m, "")
+    baseNextExists
   ) {
     failures++;
-    console.log(`FAIL shipped node rules: stays stable, body excludes Rules, twin mirrors live`);
-  } else console.log("ok   shipped node stays stable, get_node_context splits rules from body, twin mirrors live");
+    console.log(`FAIL shipped node rules: stays stable, body excludes Rules, no next file written`);
+  } else console.log("ok   shipped node stays stable, get_node_context splits rules from body, no next file written");
 
   await expectOk("patch_node_rules j-rules", "patch_node_rules", { node_id: "j-rules", rules: "- Journey rule." });
   await expectOk("patch_node_rules i-rules-a", "patch_node_rules", { node_id: "i-rules-a", rules: "- Own rule A." });
@@ -2848,7 +2925,7 @@ role: infra
   }, "heading");
   await expectBlocked("patch_node_rules unknown node", "patch_node_rules", { node_id: "j-nope", rules: "x" });
 
-  // Open evolution: same text lands in live and next; discard restores the twin.
+  // Open evolution: same text lands in live and next; discard deletes the next file.
   await expectOk("open_next f-rules-base", "open_next", { node_id: "f-rules-base" });
   const evolving = await json("patch_node_rules", { node_id: "f-rules-base", rules: "- Evolving rule." });
   const nextRaw = readFile("foundations", "f-rules-base", "f-rules-base.next.mdx");
@@ -2899,7 +2976,7 @@ role: infra
     });
   }
   const shippedLive = readRules("foundations", "f-rules-base", "f-rules-base.mdx");
-  const shippedTwin = readRules("foundations", "f-rules-base", "f-rules-base.next.mdx");
+  const shippedNextExists = fs.existsSync(path.join(root, "mindplan", "foundations", "f-rules-base", "f-rules-base.next.mdx"));
   const shippedCtx = await json("get_node_context", { node_id: "f-rules-base" });
   if (
     (shippedLive.match(/^## Rules$/gm) ?? []).length !== 1 ||
@@ -2909,12 +2986,12 @@ role: infra
     !shippedLive.includes("- Shipped rule.") ||
     shippedCtx.rules !== "- Shipped rule." ||
     shippedCtx.record.state !== "stable" ||
-    !shippedTwin.includes("state: mirror") ||
-    shippedTwin.replace(/^state:.*$/m, "") !== shippedLive.replace(/^state:.*$/m, "")
+    shippedNextExists ||
+    shippedCtx.next !== null
   ) {
     failures++;
-    console.log("FAIL shipping an evolution must keep exactly one Rules section and a true twin");
-  } else console.log("ok   promote keeps the node rules and restores a true mirror twin");
+    console.log("FAIL shipping an evolution must keep exactly one Rules section and delete the next file");
+  } else console.log("ok   promote keeps the node rules and deletes the next file");
 
   // CRLF territory stays CRLF through a rules write and a body write.
   const crlfPath = territoryPath("interactions", "i-rules-b");

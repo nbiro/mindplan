@@ -256,9 +256,9 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Run the integrity check",
       description:
         "Call before in-review, before ship, and before telling the user the work is done. " +
-        "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence (claims, and linked tests once a node is in review or shipped), mirror twins, leftovers, and the import matrix. " +
+        "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence (claims, and linked tests once a node is in review or shipped), leftovers, and the import matrix. " +
         "Returns { ok, output, failures, warnings }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import). " +
-        "Warnings flag stale territory text, next-slot imports (one release before they Block), split route families, and revisions in review with no linked tests, and never fail the check. " +
+        "Warnings flag stale territory text, next-slot imports (one release before they Block), split route families, revisions in review with no linked tests, and leftover mirror twins from releases before 0.8.0 (init removes them), and never fail the check. " +
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
         "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only). " +
         "Pass merge before telling the user a PR is ready to merge: it Blocks every node still in review (ship its change, or move it back to in-progress), and with \"strict\" also in-progress nodes whose claimed files changed against base; results carry merge grouped by change. " +
@@ -583,7 +583,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "replace { find, with } (one exact edit), toggle_checkboxes, optional title/description/role " +
         "(pre-ship or open evolution). Prefer section/replace for small fixes: they do not resend the body. " +
         "Do not edit mindplan/ MDX with host file tools. " +
-        "When a shipped node has an open evolution (not a mirror twin), patches default to next. Optional slot: current|next. " +
+        "When a shipped node has an open evolution, patches default to next. Optional slot: current|next. " +
         READINESS_HINT +
         " change / change_ref set the revision's change id (grouping only: never resets readiness); moving the last revision off a change clears its neighbor labels (cleared_neighbors). " +
         "On a shipped node with no open next, change labels it a neighbor of that change (edited in place; returns neighbor_of, " +
@@ -1065,9 +1065,9 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Open next evolution",
       description:
         "Call when a shipped node's contract changes, before editing that contract. " +
-        "Flips a shipped node's standing <id>.next.mdx twin from state mirror to draft (creates the twin from live if missing). " +
+        "Writes <id>.next.mdx from the live file in state draft (a shipped node has no next file until then). " +
         "Optional title/description overrides. The next file gets a fresh list of unticked default Atomic Ops to rewrite (a shipped node keeps none). The live node keeps serving. " +
-        "Ship from next in-review to promote and restore the mirror; discard_next to abandon and restore the mirror. " +
+        "Ship from next in-review to promote it over the live file; discard_next to abandon it. Both delete the next file. " +
         "Pass change to tie this revision to the others of one change (update_node_status scope change, get_blast_radius change, run_check change act on the group). " +
         "A neighbor label is inherited as the revision's change unless change names another, which clears it (replaced_change).",
       inputSchema: {
@@ -1094,8 +1094,7 @@ export function registerMindPlanTools(server: McpServer): void {
       title: "Discard next evolution",
       description:
         "Call when an open evolution should be abandoned. " +
-        "Abandons an in-flight evolution and restores <id>.next.mdx as a state: mirror twin of the live file. " +
-        "Clears next-attachments/. The live <id>.mdx is unchanged. " +
+        "Abandons an in-flight evolution: deletes <id>.next.mdx and next-attachments/. The live <id>.mdx is unchanged. " +
         "When it was its change's last open revision, the change's neighbor labels are cleared (cleared_neighbors).",
       inputSchema: {
         verbose: VERBOSE,
@@ -1169,8 +1168,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call when a node should move along the build or bug pipeline, including ship or resolved at handoff. " +
         "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
         "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
-        "When an open evolution exists (not a mirror twin), build-pipeline transitions apply to the next slot; " +
-        "ship promotes next over current and restores the mirror twin; every ship drops the node's Atomic Ops (the shipped node shows its current state, git keeps the ledger). " +
+        "When an open evolution exists, build-pipeline transitions apply to the next slot; " +
+        "ship promotes next over current and deletes the next file; every ship drops the node's Atomic Ops (the shipped node shows its current state, git keeps the ledger). " +
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
         "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
         "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +
@@ -1243,7 +1242,7 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call only after the user confirms a mistaken ship; recovery only. " +
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
-        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while an open evolution exists or shipped dependents exist. Deletes the standing mirror twin and clears a neighbor label (cleared_change) and added_claims.',
+        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while an open evolution exists or shipped dependents exist. Deletes any next file and clears a neighbor label (cleared_change) and added_claims.',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(

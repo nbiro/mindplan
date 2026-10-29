@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 — a shipped node is one file
+
+- **No standing twin.** Every shipped Foundation, Interaction, and Interface used to keep `<id>.next.mdx` as a `state: mirror` byte copy of `<id>.mdx`, rewritten on every live write. A shipped node is now `<id>.mdx` alone: `open_next` writes `<id>.next.mdx` from the live file (with a fresh Atomic Ops list), and ship, `discard_next`, `force_unship`, and retiring delete it with `next-attachments/`. Live writes touch one file, `changed_files` no longer lists twins, and a pull request shows a node's change once, as the diff of `<id>.mdx` (the merge gate ships every change before it merges). While a revision is open, compare `<id>.next.mdx` with `<id>.mdx` to see it. [§3.6, §5.11]
+- **`discard_next`** no longer returns `restored_mirror`; its `changed_files` list each deleted path. [§8.2]
+- **The check no longer Blocks on a missing or drifted twin.** A `state: mirror` file left by an earlier release is not a revision: it warns `legacy: "<id>" has a leftover mirror twin (<path>); run mindplan-mcp init to remove it.`, and `open_next` replaces it. [§9.6]
+- **`init` removes the twins.** It deletes every leftover `state: mirror` next file (and its `next-attachments/` when that holds only `.gitkeep`) and prints how many; an open revision is never touched. The report's `mirrorTwins` is now `mirrorTwinsRemoved` (paths). Expect a one-time diff deleting the twins under `mindplan/` on the first init with 0.8.0. [§3.6]
+
 ## 0.7.0 — leaner node reads; a shipped node keeps no Atomic Ops
 
 - **A shipped node keeps no Atomic Ops.** `open_next` copied the shipped, fully ticked checklist into the revision, so every release piled more ticked items into the body, and a revision could pass the Completion Check without one op of its own. Now every `ship` (first ship and promotion) removes the Atomic Ops section (a Foundation's `## Checklist` too) from the shipped node before the mirror twin is written, and `open_next` starts the revision with the unticked `create_node` defaults, to be rewritten into this revision's ops. `force_unship` gives the live file the same fresh list. Rules, Decisions, and every other section stay; a Bug's Fix Checklist is untouched. Git keeps the shipped ledgers. [§5.6, §6.3]
