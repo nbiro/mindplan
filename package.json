@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.9",
-    "mindplan-mcp": "0.8.0",
+    "mindplan-mcp": "0.8.1",
     "typescript": "^5.9.3"
   },
   "optionalDependencies": {
