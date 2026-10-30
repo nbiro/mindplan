@@ -2,11 +2,11 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, and missing linked tests, warns about stale text, missing decisions, and leftover mirror twins, checks one change, and runs the merge gate on request."
+description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, and missing tests, warns about stale text, draft shape gaps, missing decisions, and mirror leftovers, notes planned paths, checks one change, and runs the merge gate."
 state: stable
-shipped_at: 2026-10-29T15:21:03.460Z
+shipped_at: 2026-10-30T12:50:12.159Z
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-29T15:21:03.460Z
+updated_at: 2026-10-30T12:50:12.159Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -17,12 +17,14 @@ depends_on:
 implements:
   - src/interactions/i-check-integrity/
 tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/check.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
 ---
 
 # Check integrity
@@ -64,6 +66,10 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - `runCheckHandler({ base?, change?, merge? })` passes `merge` through and returns `merge` when the gate ran
 
 - The default check adds `descriptionWarnings` (`f-compiler-rules`) for every node to its warnings; they never change `ok` or the exit code
+- **Shape.** The default check adds `shapeWarning` (`f-compiler-rules`) as `Warning: shape: …` for every Foundation, Interaction, or Interface whose active slot is `draft` and every Bug before `in-review`, one line per node naming each missing or stub section and the gate it is required before; it never changes `ok`
+- **Planned edges.** With `change`, the check takes its members from `changeMembership` (`f-compiler-rules`) and lists the change's planned sources as members (`kind: "planned"`; no file gates, their files do not change yet) and adds each `plannedEdgeProblems` (`f-compiler-rules`) line as `Blocked: change "<id>": planned edge …` (so `ok` is false), and one `planned edges: "<source>" plans <type> <target>, … under this change (applied when open_next opens it with this change).` info line per source. A change with only planned sources is not `has no members`
+- **Attributed presence.** `checkPresence` reports each `attributed` entry missing on disk as `Blocked: presence: "<id>" attributed file missing on disk: "<path>".` once the slot that holds it is in review
+- **Planned paths.** `runIntegrityCheck` and `run_check` return `info: string[]` next to `warnings`; `renderCheckOutput` prints them as `Info:` lines after the warnings. With `change`, a member's `planned:` lines from `staleTextWarnings` go to `info`, not `warnings`, so a plan-only change shows one `planned:` line per node and no `stale:` lines for paths it has not built yet. `info` never changes `ok`
 
 ## Acceptance Criteria
 
@@ -94,6 +100,9 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - `draft`, `ready`, `in-progress`, `stable`, and `unstable` nodes pass the merge gate; a Bug in `in-review` fails and a `resolved` one passes
 - Several in-review nodes of one change produce one group in `merge.changes`, and their lines are adjacent
 - The strict gate fails an `in-progress` node only when a claimed file differs from the base
+- A scaffolded draft prints one `shape:` warning naming its stub sections and `ok` stays true; once the sections are written it prints none
+- `run_check({ change })` on a plan-only change prints one `Info: planned:` line per node naming paths and no `stale:` line for them
+- `run_check({ change })` lists a planned source as a `planned` member with an `Info: planned edges:` line, and fails on a planned edge whose target was cancelled
 
 ## Decisions
 

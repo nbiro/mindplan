@@ -17,11 +17,13 @@ import {
   isNextPipelineState,
   isPipelineNodeType,
   isProductionState,
+  PLANNED_EDGE_TYPES,
   type DecisionRecord,
   type FoundationRole,
   type MindPlanGraph,
   type MindPlanNode,
   type NodeType,
+  type PlannedEdgeType,
 } from "../../foundations/f-domain-model/types.js";
 import {
   ATTACHMENTS_DIR,
@@ -58,6 +60,9 @@ import {
   writeChangeFrontmatter,
   writeImplementsFrontmatter,
   writeTestsFrontmatter,
+  writePlannedEdges,
+  writeAttributedFrontmatter,
+  clearAttributed,
   stripLiveAtomicOps,
   freshLiveAtomicOps,
   writeNeighborLabel,
@@ -105,6 +110,8 @@ import {
   validateLink,
   validateOpenNext,
 } from "../../foundations/f-compiler-rules/rules.js";
+import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
+import { plannedEdgeProblems, validatePlannedLink } from "../../foundations/f-compiler-rules/planned.js";
 import {
   assertCheckCleanForNode,
   findImportViolationsForClaim,
@@ -141,9 +148,14 @@ import {
  * Blocked: Orientation unless every node was oriented on in this session with the rules that apply
  * to it now (`f-orientation-ledger`). Free when the gate is off (the CLI, or MINDPLAN_ORIENT_GATE=off).
  */
-function gateWrite(graph: MindPlanGraph | null, ids: string[], tool: string): void {
+function gateWrite(
+  graph: MindPlanGraph | null,
+  ids: string[],
+  tool: string,
+  opts: { change?: string } = {}
+): void {
   if (!orientationGateEnabled()) return;
-  assertOriented(graph ?? loadGraph(), ids, tool);
+  assertOriented(graph ?? loadGraph(), ids, tool, opts);
 }
 
 /**
@@ -365,8 +377,9 @@ function labelNeighbor(
 function clearOrphanedNeighbors(
   graph: MindPlanGraph,
   changes: string[]
-): { cleared: string[]; files: string[] } {
+): { cleared: string[]; planned: string[]; files: string[] } {
   const cleared: string[] = [];
+  const planned: string[] = [];
   const files: string[] = [];
   for (const change of new Set(changes)) {
     if (changeMembers(graph, change).length > 0) continue;
@@ -374,8 +387,16 @@ function clearOrphanedNeighbors(
       files.push(...labelNeighbor(neighbor, "").files);
       cleared.push(neighbor.id);
     }
+    // Wiring planned under a closed change was never opened: it goes with the change.
+    for (const node of graph.nodes) {
+      const dropped = (node.planned ?? []).filter((e) => e.change === change);
+      if (dropped.length === 0) continue;
+      writePlannedEdges(node, (node.planned ?? []).filter((e) => e.change !== change));
+      files.push(territoryPath(node, "current"));
+      for (const e of dropped) planned.push(`${node.id} -${e.type}-> ${e.target} (${change})`);
+    }
   }
-  return { cleared, files };
+  return { cleared, planned, files };
 }
 
 /**
@@ -396,13 +417,18 @@ function withNeighborCleanup(write: () => Record<string, unknown>): Record<strin
       const graph = loadGraph();
       const after = changesWithRevisions(graph);
       const closed = [...before].filter((c) => !after.has(c));
-      const orphaned = closed.length ? clearOrphanedNeighbors(graph, closed) : { cleared: [], files: [] };
-      if (result && orphaned.cleared.length > 0) {
+      const orphaned = closed.length
+        ? clearOrphanedNeighbors(graph, closed)
+        : { cleared: [], planned: [], files: [] };
+      if (result && (orphaned.cleared.length > 0 || orphaned.planned.length > 0)) {
         const prior = (result.cleared_neighbors as string[] | undefined) ?? [];
         const files = (result.changed_files as string[] | undefined) ?? [];
         result = {
           ...result,
-          cleared_neighbors: [...new Set([...prior, ...orphaned.cleared])],
+          ...(orphaned.cleared.length || prior.length
+            ? { cleared_neighbors: [...new Set([...prior, ...orphaned.cleared])] }
+            : {}),
+          ...(orphaned.planned.length ? { cleared_planned: orphaned.planned } : {}),
           changed_files: [...new Set([...files, ...orphaned.files])],
         };
       }
@@ -481,6 +507,7 @@ export function createNode(args: {
   refreshPersistedMap();
   const files = [current, `${attachments}/.gitkeep`];
   const graph = loadGraph();
+  const shape = shapeReport(graph.nodes.find((n) => n.id === id) ?? node);
   return {
     created: node,
     folder: rel,
@@ -489,6 +516,8 @@ export function createNode(args: {
     attachments,
     // create_node is never gated: the new node counts as oriented, with the rules that reach it.
     ...rulesReachingAfterWrite(id, null),
+    // The sections its first transition checks, so they are written before it, not found one Blocked at a time.
+    ...(shape ? { shape } : {}),
     changed_files: changedFiles(files, true),
     ...mutationTail(graph, id, args.verbose),
   };
@@ -561,10 +590,42 @@ function assertAdditiveInPlace(
 type SetImplementationArgs = {
   verbose?: boolean;
   node_id: string;
-  files: string[];
+  /** Replaces the claims; omitted (with `attributed`) keeps them. */
+  files?: string[];
+  /** Replaces the revision's files in another node's claimed folder. */
+  attributed?: string[];
   slot?: TerritorySlot;
   change?: string;
 };
+
+/**
+ * Checks a revision's attributed files: each an exact repo path (no glob, no trailing `/`) that
+ * another active node's claim covers and this node's own claims do not. Returns the normalized list.
+ */
+function validateAttributed(graph: MindPlanGraph, node: MindPlanNode, entries: string[], ownClaims: string[]): string[] {
+  const normalized = normalizeClaimList(entries);
+  for (const f of normalized) {
+    if (isGlobClaim(f) || f.endsWith("/")) {
+      throw blocked(`attributed "${f}" must be one exact file (no glob, no trailing /): attribution names the files a revision adds.`);
+    }
+    if (ownClaims.some((c) => claimCoversPath(c, f))) {
+      throw blocked(`"${node.id}" already claims "${f}"; attributed is for files in another node's folder.`);
+    }
+    const owner = graph.nodes.find(
+      (o) =>
+        o.id !== node.id &&
+        isPipelineNodeType(o.type) &&
+        !isInactiveNode(o) &&
+        ((o.next ? o.next.implements : o.implements) ?? []).some((c) => claimCoversPath(c, f))
+    );
+    if (!owner) {
+      throw blocked(
+        `no other node claims "${f}", so there is nothing to attribute it from: claim it with set_implementation_files({ node_id: "${node.id}", files: [...] }).`
+      );
+    }
+  }
+  return normalized;
+}
 
 /**
  * Replace the implements list for a pipeline node on the appropriate slot.
@@ -592,7 +653,9 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
     throw blocked(`"${node.id}" is ${node.state}; a retired node takes no change id.`);
   }
 
-  const normalized = normalizeClaimList(args.files);
+  if (args.files === undefined && args.attributed === undefined) {
+    throw blocked("set_implementation_files needs files, attributed, or both.");
+  }
   const retired = node.state === "cancelled" || node.state === "deprecated";
   let slot: TerritorySlot;
   // A shipped node with no open next may only grow its live claims in a folder it dominates.
@@ -622,6 +685,21 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
     }
   } else {
     slot = "current";
+  }
+
+  // Without files, the claims of the written slot stay as they are.
+  const normalized = normalizeClaimList(
+    args.files ?? ((slot === "next" ? node.next?.implements : node.implements) ?? [])
+  );
+  let attributed: string[] | undefined;
+  if (args.attributed !== undefined) {
+    if (retired) throw blocked(`"${node.id}" is ${node.state}; a retired node attributes no files.`);
+    if (inPlace) {
+      throw blocked(
+        `shipped "${node.id}" has no open revision: attributed files belong to a revision. Call open_next({ node_id: "${node.id}" }) first.`
+      );
+    }
+    attributed = validateAttributed(graph, node, args.attributed, normalized);
   }
 
   const addedInPlace = inPlace ? assertAdditiveInPlace(graph, node, normalized) : [];
@@ -659,9 +737,14 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
   }
 
   const claimWrite = writeImplementsFrontmatter(node, normalized, slot, addedInPlace);
+  const attributedWrite = attributed ? writeAttributedFrontmatter(node, attributed, slot) : null;
   refreshPersistedMap();
   const pathWritten = territoryPath(node, slot);
-  const readiness = readinessResult(node, slot, claimWrite.readinessReset);
+  const readiness = readinessResult(
+    node,
+    slot,
+    claimWrite.readinessReset || Boolean(attributedWrite?.readinessReset)
+  );
   // Scan the claimed files now, so a missing edge is reported with the exact call that fixes it.
   const claimedGraph = loadGraph();
   const claimedNode = findNode(claimedGraph, node.id);
@@ -694,6 +777,7 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
     node_id: node.id,
     slot,
     implements: normalized,
+    ...(attributed ? { attributed } : {}),
     ...changeWrite.fields,
     ...(inPlace ? { added_in_place: addedInPlace } : {}),
     ...(addedInPlace.length
@@ -767,11 +851,15 @@ export function linkNodes(args: {
   source_id: string;
   target_id: string;
   edge_type: (typeof EDGE_TYPES)[number];
+  change?: string;
 }): Record<string, unknown> {
   const { source_id, target_id, edge_type } = args;
   const graph = loadGraph();
   const source = findNode(graph, source_id);
   const target = findNode(graph, target_id);
+  if (args.change !== undefined && isPlannedSource(source, args.change)) {
+    return planEdge(graph, source, target, edge_type, args.change, args.verbose);
+  }
   validateLink(source, target, edge_type);
 
   if (edge_type === "depends_on") {
@@ -837,14 +925,55 @@ export function linkNodes(args: {
   };
 }
 
+/**
+ * Whether `change` on a link plans the edge: the source is shipped and has no open revision of
+ * that change (a revision of it takes the edge on its next slot, as without `change`).
+ */
+function isPlannedSource(source: MindPlanNode, change: string): boolean {
+  if (!isPipelineNodeType(source.type) || !source.shipped_at) return false;
+  return !(source.next && activeChange(source) === change);
+}
+
+/** link_nodes with `change` on a shipped node: record the edge as planned under that change. */
+function planEdge(
+  graph: MindPlanGraph,
+  source: MindPlanNode,
+  target: MindPlanNode,
+  edge_type: (typeof EDGE_TYPES)[number],
+  change: string,
+  verbose?: boolean
+): Record<string, unknown> {
+  validateChangeInput({ change });
+  if (!change) throw blocked("link_nodes change must be a change id to plan an edge.");
+  if (!(PLANNED_EDGE_TYPES as readonly string[]).includes(edge_type)) {
+    throw blocked(`a ${edge_type} edge cannot be planned; planned edges are ${PLANNED_EDGE_TYPES.join(", ")}.`);
+  }
+  const row = { source: source.id, change, type: edge_type as PlannedEdgeType, target: target.id };
+  validatePlannedLink(graph, row);
+  gateWrite(graph, [source.id], "link_nodes");
+  // Planned edges are not in the map or the search docs, so neither is refreshed.
+  writePlannedEdges(source, [...(source.planned ?? []), { change, type: row.type, target: target.id }]);
+  return {
+    planned: row,
+    note: `Planned, not live: open_next({ node_id: "${source.id}", change: "${change}" }) applies it to the revision.`,
+    changed_files: changedFiles([territoryPath(source, "current")]),
+    ...mutationTail(loadGraph(), source.id, verbose),
+  };
+}
+
 export function unlinkNodes(args: {
   verbose?: boolean;
   source_id: string;
   target_id: string;
+  change?: string;
 }): Record<string, unknown> {
   const { source_id, target_id } = args;
   const graph = loadGraph();
   const source = findNode(graph, source_id);
+  // A planned edge may point at a node deleted since: removing it must not need the target.
+  if (args.change !== undefined) {
+    return unplanEdges(graph, source, target_id, args.change, args.verbose);
+  }
   findNode(graph, target_id);
   gateWrite(graph, [source_id], "unlink_nodes");
   const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source_id) : null;
@@ -1184,7 +1313,7 @@ function simulateWalk(
         if (step === "in-review" || step === "ship") {
           assertCheckCleanForNode(graph, root, node, step);
           if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx);
-          for (const w of staleTextWarnings(graph, root, node)) warnings.add(w);
+          for (const w of staleTextWarnings(graph, root, node).warnings) warnings.add(w);
         }
         if (resolved.promote_next) {
           promoteInMemory(graph, node, resolved.state, now);
@@ -1293,7 +1422,12 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
         `${sim.blocked}. Nothing was written: the whole walk is validated before the first transition.`
       );
     }
-    gateWrite(graph, plan.map((row) => row.node_id), "update_node_status");
+    gateWrite(
+      graph,
+      plan.map((row) => row.node_id),
+      "update_node_status",
+      args.scope === "change" ? { change: args.change } : {}
+    );
     const lines: string[] = [];
     const changed = new Set<string>();
     const cleared = new Set<string>();
@@ -1310,10 +1444,12 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     }
     // A change walked to ship is done. A change that had revisions is cleaned up by
     // withNeighborCleanup; a neighbor-only change never had one, so close it here.
+    const plannedCleared: string[] = [];
     if (args.scope === "change" && args.new_status === "ship") {
       const orphaned = clearOrphanedNeighbors(loadGraph(), [args.change!]);
       for (const f of orphaned.files) changed.add(f);
       for (const id of orphaned.cleared) cleared.add(id);
+      plannedCleared.push(...orphaned.planned);
     }
     return {
       ordered: true,
@@ -1322,6 +1458,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       lines,
       ...skipped,
       ...clearedFields([...cleared]),
+      ...(plannedCleared.length ? { cleared_planned: plannedCleared } : {}),
       changed_files: [...changed],
       ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
       ...(verbose
@@ -1421,7 +1558,7 @@ function applyOneStatus(args: {
     if (new_status === "in-review") {
       assertDecisionForReview(graph, projectRoot(), node, args.decisionCtx);
     }
-    warnings = staleTextWarnings(graph, projectRoot(), node);
+    warnings = staleTextWarnings(graph, projectRoot(), node).warnings;
   }
 
   const previous = node.next ? node.next.state : node.state;
@@ -1448,6 +1585,8 @@ function applyOneStatus(args: {
     patchFrontmatter(node);
     // The shipped node shows its current state; its Atomic Ops ledger stays in git.
     stripLiveAtomicOps(node);
+    // Once shipped, an attributed file is simply part of its owner's folder.
+    if (node.attributed?.length) clearAttributed(node);
   } else if (node.next && isNextPipelineState(resolved.state)) {
     node.next.state = resolved.state;
     node.next.updated_at = now;
@@ -1880,6 +2019,49 @@ export function recordDecision(args: {
   };
 }
 
+/** unlink_nodes with `change`: remove that change's planned edges from source to target. */
+function unplanEdges(
+  graph: MindPlanGraph,
+  source: MindPlanNode,
+  target_id: string,
+  change: string,
+  verbose?: boolean
+): Record<string, unknown> {
+  const all = source.planned ?? [];
+  const kept = all.filter((e) => !(e.change === change && e.target === target_id));
+  if (kept.length === all.length) {
+    throw blocked(`no planned edge from "${source.id}" to "${target_id}" under change "${change}".`);
+  }
+  gateWrite(graph, [source.id], "unlink_nodes");
+  writePlannedEdges(source, kept);
+  return {
+    unplanned: all
+      .filter((e) => !kept.includes(e))
+      .map((e) => ({ source: source.id, change: e.change, type: e.type, target: e.target })),
+    changed_files: changedFiles([territoryPath(source, "current")]),
+    ...mutationTail(loadGraph(), source.id, verbose),
+  };
+}
+
+/**
+ * After open_next: add the planned edges of the revision's change to the next slot (skipping any
+ * already there). They stay on live until the revision ships, so a discard leaves them planned.
+ */
+function applyPlannedEdges(node: MindPlanNode): string[] {
+  const change = node.next?.change;
+  if (!change || !node.next) return [];
+  const applied: string[] = [];
+  for (const e of node.planned ?? []) {
+    if (e.change !== change) continue;
+    const current = node.next[e.type] ?? [];
+    if (current.includes(e.target)) continue;
+    addEdgeToFrontmatter(node, e.type, e.target);
+    node.next[e.type] = [...current, e.target];
+    applied.push(`${node.id} -${e.type}-> ${e.target}`);
+  }
+  return applied;
+}
+
 export function openNext(args: {
   verbose?: boolean;
   node_id: string;
@@ -1894,6 +2076,19 @@ export function openNext(args: {
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   validateOpenNext(node);
+  // The revision takes its change's planned edges: each must still be legal before it opens.
+  const revisionChange = args.change !== undefined ? args.change || undefined : node.change;
+  if (revisionChange) {
+    const problems = plannedEdgeProblems(graph, revisionChange).filter((p) =>
+      p.startsWith(`planned edge ${node_id} -`)
+    );
+    if (problems.length > 0) {
+      throw blocked(
+        `open_next would apply planned edges that are no longer legal: ${problems.join("; ")}. ` +
+          `Remove each with unlink_nodes({ source_id: "${node_id}", target_id, change: "${revisionChange}" }), then retry.`
+      );
+    }
+  }
   const next = openNextSlot(node, { title, description });
   node.next = next;
   // The next slot is a copy of live, so it inherits a neighbor label unless change says otherwise.
@@ -1905,6 +2100,8 @@ export function openNext(args: {
     { change: args.change, change_ref: args.change_ref },
     "next"
   );
+  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, node_id) : null;
+  const applied = applyPlannedEdges(node);
   const rel = entityRelativePath(node);
   const current = territoryPath(node, "current");
   const next_path = territoryPath(node, "next");
@@ -1917,6 +2114,9 @@ export function openNext(args: {
     current,
     next_path,
     ...(replacedChange ? { replaced_change: replacedChange } : {}),
+    ...(applied.length ? { applied_planned: applied } : {}),
+    // Applied belongs_to / depends_on can bring new rules: return them so the node stays oriented.
+    ...(applied.length ? rulesReachingAfterWrite(node_id, rulesBefore) : {}),
     changed_files: changedFiles(
       [next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`, replacedChange ? current : null],
       true

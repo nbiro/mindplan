@@ -73,8 +73,27 @@ function quoteList(ids: string[], cap = 3): string {
   return ids.length > cap ? `${shown}, ...` : shown;
 }
 
-/** Migration or schema files the revision claims that are new in this revision. */
+/**
+ * Migration or schema files the revision claims, or attributes to itself in another node's folder,
+ * that are new in this revision.
+ */
 function newSchemaFiles(node: MindPlanNode, ctx: DecisionContext): string[] {
+  const attributed = ((node.next ? node.next.attributed : node.attributed) ?? []).filter((f) =>
+    matchesSchemaFile(f, ctx.settings.schema_files)
+  );
+  // An attributed file is new when the branch adds it (or always outside git): attributing a
+  // migration the repository already had is modeling, not a schema change.
+  const addedAttributed = () => {
+    if (attributed.length === 0) return [];
+    const added = ctx.newFiles();
+    return added ? attributed.filter((f) => added.has(f)) : attributed;
+  };
+  const claimed = newClaimedSchemaFiles(node, ctx);
+  return [...new Set([...claimed, ...addedAttributed()])];
+}
+
+/** Migration or schema files the revision claims that are new in this revision. */
+function newClaimedSchemaFiles(node: MindPlanNode, ctx: DecisionContext): string[] {
   const claims = (node.next ? node.next.implements : node.implements) ?? [];
   const schema = expandClaims(claims, ctx.root).filter((f) =>
     matchesSchemaFile(f, ctx.settings.schema_files)

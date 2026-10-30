@@ -223,11 +223,11 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas"];
-  if (names.size !== 29 || required.some((n) => !names.has(n))) {
+  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec"];
+  if (names.size !== 30 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 29 tools including ${required.join(", ")} (got ${names.size})`);
-  } else console.log(`ok   twenty-nine tools registered including ${required.join(", ")}`);
+    console.log(`FAIL expected 30 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   thirty tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
     if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {
@@ -250,7 +250,7 @@ function nextTerritoryPath(...parts) {
   const READ = [
     "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
     "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
-    "list_areas",
+    "list_areas", "get_spec",
   ];
   const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
   const annotationProblems = [];

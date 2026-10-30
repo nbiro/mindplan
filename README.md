@@ -224,9 +224,10 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `orient_for_work` | read | Summary first: a query returns ranked rows (the full node only for a clear winner, `auto_focus`); `node_id` returns `record`/`body` context, owned files, and blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); writes on a node wait until it was oriented on (`Blocked: Orientation`); the `rules` that apply to the focus and its own `decisions` (inherited ones counted in `inherited_decisions`, listed with `include_inherited_decisions`); `depth: rules\|body\|full` trims it; the body is the active slot's (the open revision's while one is open), `slot` picks one, `section` returns one section; the `decisions` block is the reply's only copy |
+| `orient_for_work` | read | Summary first: a query returns ranked rows (the full node only for a clear winner, `auto_focus`); `change` orients on every member of a change at once; `node_id` returns `record`/`body` context, `shape`, owned files, and blast radius (grouped files; retired omitted; Interaction focus includes `reachability`); writes on a node wait until it was oriented on (`Blocked: Orientation`); the `rules` that apply to the focus and its own `decisions` (inherited ones counted in `inherited_decisions`, listed with `include_inherited_decisions`); `depth: rules\|body\|full` trims it; the body is the active slot's (the open revision's while one is open), `slot` picks one, `section` returns one section; the `decisions` block is the reply's only copy |
 | `get_rules` | read | The mandatory project rules with a `rules_version` tag; `known_version` returns `{ unchanged: true }` without the text when nothing changed |
-| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`); unclaimed files and illegal imports come with their fix; `change` also gates every member of a change (revisions and labeled neighbors); `merge` (`true` or `"strict"`) runs the merge gate |
+| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`, `info`); unclaimed files and illegal imports come with their fix; `change` also gates every member of a change (revisions and labeled neighbors); `merge` (`true` or `"strict"`) runs the merge gate |
+| `get_spec` | read | One section of the running server's own SPEC.md by stable topic id (`territory-shape`, `lifecycle`, `change-ids`, `neighbors`, `decisions`, …) or tool name; no topic lists them |
 | `list_areas` | read | Every Journey (area) as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
 | `find_related_nodes` | read | Hybrid search by query (keyword + semantic; exact id first); focus + 1-hop |
 | `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset` |
@@ -235,7 +236,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change`; cancelled/deprecated omitted unless `include_retired`; the focus's decisions plus `dependent_decisions` (rows with `include_dependent_decisions`) |
 | `get_node_context` | read | `record` + `body` + its own `decisions` (superseded only with `include_superseded`; + `next.record`/`next.body`/`next.decisions` when evolving; `slot` returns one slot, `section` one section of each body) + `inherited_decisions` (count and nodes; entries with `include_inherited_decisions`) |
 | `get_node_implementation` | read | Owned files for a node, or path → owner lookup |
-| `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`); on a shipped node, adds a claim in place when it only grows into folders the node alone owns; `change` labels a neighbor |
+| `set_implementation_files` | mutation | Set `implements` claims (files or directories ending in `/`); on a shipped node, adds a claim in place when it only grows into folders the node alone owns; `change` labels a neighbor; `attributed` names files a revision adds in another node's folder (a migration in the root's migrations folder), counted by the decision gate |
 | `set_test_files` | mutation | Link the test files (paths, directories ending in `/`, or globs) that verify a node; evidence, not a claim, written to live and an open `next` alike with no `open_next` and no readiness reset; `get_blast_radius` lists them as the tests to run |
 | `patch_node_territory` | mutation | Required writer for territory prose (title/description/body/checkboxes) and search `aliases` (any node, no `open_next`) |
 | `patch_node_rules` | mutation | Write one node's `## Rules`; `orient_for_work` delivers them to the node and everything that inherits from it |
@@ -244,9 +245,9 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `patch_project_rules` | mutation | Write the `mindplan/project.md` rules |
 | `patch_config` | mutation | Write `mindplan/config.json` sources/exclude, decision-gate settings, and search settings |
 | `put_attachment` / `remove_attachment` | mutation | Node attachment files |
-| `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold) |
+| `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold); returns `shape`, the sections its first move checks, each `present`, `missing`, or `stub` |
 | `open_next` / `discard_next` | mutation | Write `<id>.next.mdx` from live (fresh Atomic Ops) / delete it |
-| `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent` |
+| `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent`; with `change` on a shipped node, plan (or drop) an edge under that change without `open_next`, applied when `open_next` opens it with that change |
 | `update_node_status` | mutation | One node, or a `revisions` list ordered Foundation → Interaction → Interface → Bug; stops on the first `Blocked:` |
 | `force_unship` | mutation, destructive | Mistaken-ship recovery (`confirm: "unship:<id>"`) |
 

@@ -33,6 +33,8 @@ import type {
   MindPlanNode,
   NextPipelineState,
   NextSlot,
+  PlannedEdge,
+  PlannedEdgeType,
   NodeType,
 } from "../f-domain-model/types.js";
 import {
@@ -48,6 +50,7 @@ import {
   isPipelineNodeType,
   MIRROR_STATE,
   NODE_TYPES,
+  PLANNED_EDGE_TYPES,
 } from "../f-domain-model/types.js";
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { loadProjectConfig } from "../f-source-index/config.js";
@@ -91,11 +94,11 @@ const EDGE_FIELDS = [
 type EdgeField = (typeof EDGE_FIELDS)[number];
 
 /**
- * Array fields parsed like edges (YAML list or inline). `added_claims`, `tests`, and `aliases` are parsed here
- * but are not stripped by `stripListFieldLines`, so frontmatter rewriters that do not know them
- * keep them verbatim.
+ * Array fields parsed like edges (YAML list or inline). `added_claims`, `tests`, `aliases`,
+ * `planned`, and `attributed` are parsed here but are not stripped by `stripListFieldLines`, so
+ * frontmatter rewriters that do not know them keep them verbatim.
  */
-const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims", "tests", "aliases"] as const;
+const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims", "tests", "aliases", "planned", "attributed"] as const;
 type ListField = (typeof LIST_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
@@ -427,7 +430,35 @@ export type ParsedFrontmatter = {
   tests: string[];
   /** Search aliases (slot-independent); stored JSON-quoted, decoded here. */
   aliases: string[];
+  /** Planned edges (live file of a shipped node), one `<change> <type> <target>` item each. */
+  planned: PlannedEdge[];
+  /** Files the slot's revision adds in another node's claimed folder. */
+  attributed: string[];
 };
+
+/** One `planned:` item: `<change> <edge_type> <target>`; null when it does not parse. */
+function parsePlannedItem(item: string): PlannedEdge | null {
+  const [change, type, target, ...rest] = item.trim().split(/\s+/);
+  if (rest.length > 0 || !change || !target) return null;
+  if (!(PLANNED_EDGE_TYPES as readonly string[]).includes(type)) return null;
+  return { change, type: type as PlannedEdgeType, target };
+}
+
+function formatPlannedItem(e: PlannedEdge): string {
+  return `${e.change} ${e.type} ${e.target}`;
+}
+
+/** The raw block-list items of one named list in frontmatter lines (inline lists are not used for these). */
+function rawNamedListItems(inner: string, field: string): string[] {
+  const lines = inner.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.startsWith(`${field}:`));
+  if (start < 0) return [];
+  const items: string[] = [];
+  for (let i = start + 1; i < lines.length && /^\s+-\s+/.test(lines[i]); i++) {
+    items.push(lines[i].replace(/^\s+-\s+/, "").trim());
+  }
+  return items;
+}
 
 function isEdgeField(key: string): key is EdgeField {
   return (EDGE_FIELDS as readonly string[]).includes(key);
@@ -455,6 +486,10 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
   let addedClaims: string[] = [];
   let testsList: string[] = [];
   let aliasesList: string[] = [];
+  let plannedList: PlannedEdge[] = [];
+  let attributedList: string[] = [];
+  const toPlanned = (items: string[]) =>
+    items.map(parsePlannedItem).filter((e): e is PlannedEdge => e !== null);
   const unquote = (item: string) => {
     if (!item.startsWith('"')) return item;
     try {
@@ -482,6 +517,8 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
       else if (field === "added_claims") addedClaims = items;
       else if (field === "tests") testsList = items;
       else if (field === "aliases") aliasesList = items.map(unquote);
+      else if (field === "planned") plannedList = toPlanned(items);
+      else if (field === "attributed") attributedList = items;
       else arrays[field] = items;
       continue;
     }
@@ -497,6 +534,8 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
       else if (field === "added_claims") addedClaims = items;
       else if (field === "tests") testsList = items;
       else if (field === "aliases") aliasesList = items.map(unquote);
+      else if (field === "planned") plannedList = toPlanned(items);
+      else if (field === "attributed") attributedList = items;
       else arrays[field] = items;
       i++;
       continue;
@@ -524,6 +563,8 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     added_claims: addedClaims,
     tests: testsList,
     aliases: aliasesList,
+    planned: plannedList,
+    attributed: attributedList,
   };
 }
 
@@ -562,9 +603,9 @@ function formatImplementsLines(entries: string[]): string {
 }
 
 /** A list field written by name and kept verbatim by rewriters that do not know it. */
-type NamedListField = "added_claims" | "tests" | "aliases";
+type NamedListField = "added_claims" | "tests" | "aliases" | "planned" | "attributed";
 
-/** Removes one named list field (`added_claims`, `tests`, `aliases`) and its items from frontmatter lines. */
+/** Removes one named list field (`added_claims`, `tests`, `aliases`, …) and its items from frontmatter lines. */
 function stripNamedListLines(inner: string, field: NamedListField): string {
   const lines = inner.split(/\r?\n/);
   const result: string[] = [];
@@ -683,6 +724,8 @@ function parseNodeFromFrontmatter(
   if (parsed.added_claims.length > 0) node.added_claims = [...parsed.added_claims];
   if (parsed.tests.length > 0) node.tests = [...parsed.tests];
   if (parsed.aliases.length > 0) node.aliases = [...parsed.aliases];
+  if (parsed.planned.length > 0) node.planned = parsed.planned.map((e) => ({ ...e }));
+  if (parsed.attributed.length > 0) node.attributed = [...parsed.attributed];
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
       throw new Error(
@@ -739,6 +782,7 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
   if (parsed.arrays.leads_to.length > 0) slot.leads_to = [...parsed.arrays.leads_to];
   if (parsed.arrays.mounts.length > 0) slot.mounts = [...parsed.arrays.mounts];
   if (parsed.implements.length > 0) slot.implements = [...parsed.implements];
+  if (parsed.attributed.length > 0) slot.attributed = [...parsed.attributed];
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
       throw new Error(
@@ -1706,6 +1750,8 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.added_claims?.length) record.added_claims = [...node.added_claims];
   if (node.tests?.length) record.tests = [...node.tests];
   if (node.aliases?.length) record.aliases = [...node.aliases];
+  if (node.planned?.length) record.planned = node.planned.map((e) => ({ ...e }));
+  if (node.attributed?.length) record.attributed = [...node.attributed];
   if (node.change) record.change = node.change;
   if (node.change_ref) record.change_ref = node.change_ref;
   if (node.next) {
@@ -1721,6 +1767,7 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
       ...(node.next.leads_to?.length ? { leads_to: [...node.next.leads_to] } : {}),
       ...(node.next.mounts?.length ? { mounts: [...node.next.mounts] } : {}),
       ...(node.next.implements?.length ? { implements: [...node.next.implements] } : {}),
+      ...(node.next.attributed?.length ? { attributed: [...node.next.attributed] } : {}),
       ...(node.next.role ? { role: node.next.role } : {}),
       ...(node.next.change ? { change: node.next.change } : {}),
       ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
@@ -2427,7 +2474,11 @@ export function openNextSlot(
   if (!match) {
     throw new Error(`Blocked: live file for "${node.id}" has no YAML frontmatter.`);
   }
-  let inner = match[2].replace(/^state:\s*.*$/m, "state: draft");
+  // Planned edges stay on live (the handler applies the revision's own); attribution is per revision.
+  const eol = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+  let inner = stripNamedListLines(stripNamedListLines(match[2], "planned"), "attributed")
+    .replace(/\r?\n/g, eol)
+    .replace(/^state:\s*.*$/m, "state: draft");
   if (/^updated_at:/m.test(inner)) {
     inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   } else {
@@ -2539,6 +2590,11 @@ export function promoteNextSlot(
     nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
       ? (nextParsed.scalars.role as FoundationRole)
       : node.next.role ?? node.role;
+  // The shipped change's planned edges are now real (or were dropped on purpose); other changes keep theirs.
+  const shippedChange = nextParsed.scalars.change ?? node.next.change;
+  const plannedKept = (parseFrontmatter(readMarkdown(node, "current"))?.planned ?? []).filter(
+    (e) => e.change !== shippedChange
+  );
 
   const frontmatterLines = [
     "---",
@@ -2582,6 +2638,10 @@ export function promoteNextSlot(
   if (aliasesList.length > 0) {
     frontmatterLines.push("aliases:");
     for (const a of aliasesList) frontmatterLines.push(`  - ${JSON.stringify(a)}`);
+  }
+  if (plannedKept.length > 0) {
+    frontmatterLines.push("planned:");
+    for (const e of plannedKept) frontmatterLines.push(`  - ${formatPlannedItem(e)}`);
   }
   if (role) {
     frontmatterLines.push(`role: ${role}`);
@@ -2634,7 +2694,59 @@ export function promoteNextSlot(
   else delete node.aliases;
   if (role) node.role = role;
   else delete node.role;
+  if (plannedKept.length > 0) node.planned = plannedKept;
+  else delete node.planned;
+  delete node.attributed;
   delete node.next;
+}
+
+/**
+ * Replace the live `planned:` list of a node (removed when empty). Planned edges are wiring a
+ * shipped node gains when their change opens it; they are not graph edges, so `updated_at`, state,
+ * and readiness are untouched. Returns whether the file changed.
+ */
+export function writePlannedEdges(node: MindPlanNode, entries: PlannedEdge[]): boolean {
+  const { file, raw, fence, inner } = requireMutableFrontmatter(node, "current");
+  // An item this release cannot read (a hand edit, a newer edge type) is kept, not dropped.
+  const unreadable = rawNamedListItems(inner, "planned").filter((item) => parsePlannedItem(item) === null);
+  const patched = replaceNamedListInFence(fence, "planned", [
+    ...entries.map(formatPlannedItem),
+    ...unreadable,
+  ]);
+  if (entries.length > 0) node.planned = entries.map((e) => ({ ...e }));
+  else delete node.planned;
+  if (patched === fence) return false;
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
+  return true;
+}
+
+/**
+ * Replace the `attributed:` list on the slot that holds the revision (removed when empty). A
+ * changed list is a contract write: it sends a `ready` slot back to `draft`.
+ */
+export function writeAttributedFrontmatter(
+  node: MindPlanNode,
+  files: string[],
+  slot: TerritorySlot
+): FrontmatterWrite & { changed: boolean } {
+  const { file, raw, fence } = requireMutableFrontmatter(node, slot);
+  const patched = replaceNamedListInFence(fence, "attributed", files);
+  const target = slot === "next" && node.next ? node.next : node;
+  if (files.length > 0) target.attributed = [...files];
+  else delete target.attributed;
+  if (patched === fence) return { readinessReset: false, changed: false };
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
+  return { readinessReset: demoteReadySlot(node, slot), changed: true };
+}
+
+/** Remove the live `attributed:` list (first ship: the files are now just part of their owner's folder). */
+export function clearAttributed(node: MindPlanNode): boolean {
+  const { file, raw, fence } = requireMutableFrontmatter(node, "current");
+  const patched = replaceNamedListInFence(fence, "attributed", []);
+  delete node.attributed;
+  if (patched === fence) return false;
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
+  return true;
 }
 
 /**

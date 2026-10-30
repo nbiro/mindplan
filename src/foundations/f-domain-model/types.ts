@@ -100,6 +100,22 @@ export interface NextSlot {
   change_ref?: string;
   /** Decision records of the open next file (its `## Decisions` section), in recorded order. */
   decisions?: DecisionRecord[];
+  /** Files this revision adds in another node's claimed folder (see `MindPlanNode.attributed`). */
+  attributed?: string[];
+}
+
+/** Edge types a planned edge may carry: the outgoing edges of a Foundation, Interaction, or Interface. */
+export const PLANNED_EDGE_TYPES = ["belongs_to", "depends_on", "exposes", "leads_to", "mounts"] as const;
+export type PlannedEdgeType = (typeof PLANNED_EDGE_TYPES)[number];
+
+/**
+ * Wiring a shipped node will gain when `change` opens it. Not a graph edge: `graph.edges` never
+ * holds it. `open_next` with that change applies it to the next slot.
+ */
+export interface PlannedEdge {
+  change: string;
+  type: PlannedEdgeType;
+  target: string;
 }
 
 export interface MindPlanNode {
@@ -149,6 +165,18 @@ export interface MindPlanNode {
    * indexes with its text. Slot-independent like `tests`; any node type.
    */
   aliases?: string[];
+  /**
+   * MCP-only, live file of a shipped node. Planned edges by change: wiring the node gains when
+   * that change opens it. Kept until that revision ships; dropped when the change closes.
+   */
+  planned?: PlannedEdge[];
+  /**
+   * MCP-only. Exact files this revision adds in another node's claimed folder (a migration in a
+   * composition root's single migrations folder). Ownership stays with the claimant; the decision
+   * gate and the blast radius count them for this revision. On the pre-ship live slot here; a
+   * shipped node's revision holds them on `next`. Dropped on ship.
+   */
+  attributed?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
   /** Present when `<id>.next.mdx` is an open evolution (not a leftover `mirror` file). */

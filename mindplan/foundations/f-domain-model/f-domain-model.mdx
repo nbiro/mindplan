@@ -2,15 +2,16 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types, edges (including the Foundation → Interface `mounts` composition edge), implements claims (files, directories, and globs) and the `added_claims` marker for claims a shipped node added in place, the slot-independent `tests` list of files that verify a node, Foundation roles, the next-file mirror state, the per-node rules field and rule-entry types, decision records with their computed status and the active-slot reader, and the optional change id and change ref that group revisions, whose live value on a shipped node with no open next is a neighbor label."
+description: "Infra — node types and edges (with `mounts`), planned edges a shipped node gains when its change opens it, implements claims, files a revision adds in another node's folder, `added_claims`, `tests`, Foundation roles, rules and decision types, and change ids that group revisions or label a neighbor."
 state: stable
-shipped_at: 2026-10-25T23:55:51.328Z
+shipped_at: 2026-10-30T12:50:11.817Z
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-25T23:55:51.328Z
+updated_at: 2026-10-30T12:50:11.817Z
 implements:
   - src/foundations/f-domain-model/
 tests:
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
 role: infra
 ---
@@ -50,6 +51,9 @@ Depends on: none.
 
 - **Aliases.** `MindPlanNode.aliases?: string[]` — other words for the node (synonyms, user wording, other languages) that search indexes with its text. Any node type; slot-independent like `tests` (`NextSlot` has none)
 
+- **Planned edges.** `PlannedEdge = { change, type, target }`, and `MindPlanNode.planned?: PlannedEdge[]`, read from the live file only: wiring a shipped Foundation, Interaction, or Interface will gain when the named change opens it (`belongs_to`, `depends_on`, `exposes`, `leads_to`, or `mounts`). Planned edges are not graph edges: `graph.edges` never contains them, so no rule, search, or projection treats them as real until the change opens the node
+- **Attributed files.** `MindPlanNode.attributed?: string[]` and `NextSlot.attributed?: string[]`: exact files in another node's claimed folder that this slot's revision adds (a migration in a composition root's single migrations folder). Ownership stays with the folder's claimant; attribution only says which revision a file belongs to
+
 ## Acceptance Criteria
 
 - `mirror` is a typed next-file state distinct from pipeline states
@@ -70,6 +74,8 @@ Depends on: none.
 - `MindPlanNode.tests` is optional; a graph without it loads exactly as before, and `NextSlot` has no `tests`
 
 - A node record carries `aliases` when its frontmatter has them
+
+- `planned` and `attributed` round-trip through the graph load and the graph cache; no planned edge appears in `graph.edges`
 
 ## Decisions
 
@@ -126,6 +132,29 @@ Depends on: none.
 - Consequences: A revision cannot propose different aliases from live; each alias is a JSON string in frontmatter.
 - Change: aliases
 - Date: 2026-10-25
+
+### d-planned-edges-on-live-by-change
+
+- Decision: Wiring a shipped node will gain is a planned edge: a live-file list of { change, type, target } entries, outside graph.edges, written by link_nodes with change, applied to the next slot when open_next opens the node with that change, kept on live until that revision ships (a discard leaves it planned), and dropped when its change closes.
+- Alternatives:
+  - Queued revisions: several pending next drafts per shipped node keyed by change id, each rebased when another ships (covers contract text too, but needs a rebase and conflict model for sections, claims, and decisions)
+  - Write the edge live at once (it already works for a node with no open next, but the live graph would claim a shipped node exposes or depends on what is not built, and no gate reviews it)
+  - Keep the wiring as prose in the feature's body (what the field report did; the check cannot validate prose)
+- Why: The report's blocker was edges, not text: about 14 features each needed wiring on one shipped Interface. A planned edge records and validates that wiring without locking the node in a revision and without telling the live graph it already exists.
+- Consequences: Contract text for a shipped node still waits for open_next; one revision per node at a time is unchanged. A change that ships without opening a node it planned wiring on loses those entries (reported as cleared_planned).
+- Change: agent-guidance
+- Date: 2026-10-30
+
+### d-attributed-files-on-the-revision
+
+- Decision: A revision lists the files it adds in another node's claimed folder as attributed on its own slot (set_implementation_files attributed); ownership stays with the folder's claimant, the decision gate and the blast radius count the files for the revision, and ship drops the list.
+- Alternatives:
+  - A migration_owner config mapping a migration name prefix or change id to a node (global and indirect: nothing on the revision says which migration is its own, and a naming convention must exist first)
+  - Let the schema node claim the single migration file inside the root's folder (two owners would share one folder, which exclusivity and folder dominance forbid)
+- Why: Payload and similar frameworks keep one migrations folder owned by the composition root, so the file's owner and the revision that needs it differ; naming the file on the revision is the smallest fact that lets the gate connect them.
+- Consequences: An agent has to attribute the migration explicitly; an unattributed migration in the root's folder still counts only for the root, as before.
+- Change: agent-guidance
+- Date: 2026-10-30
 
 ## Attachments
 

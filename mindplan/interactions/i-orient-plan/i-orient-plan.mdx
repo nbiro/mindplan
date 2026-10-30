@@ -2,11 +2,11 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Find focus nodes, load territory context at a chosen depth, slot, and section (one copy of the focus's decisions per reply), return the focus node's inherited rules (each tagged with a version, its text left out when the caller already holds it) and its own decisions (naming the inherited ones, listed on request), list decisions by node, change, or graph, report blast radius for a node or a whole change (its open revisions and its neighbors) with rules impact, the focus's decisions and the dependents that hold others, and the linked tests to run, expand glob claims to concrete files, page the full graph so one result stays under the host's size limit, expose get_project (naming the check and tagging the rules), and expose get_rules for global project rules before each action, with a short unchanged reply for a known version."
+description: "Agent orients before work: ranked rows or a full node (versioned rules, own decisions, body by slot and section, files, blast radius, required-section shape), a whole change in one call, decisions, change blast radius, the paged graph, project rules, and SPEC sections by topic."
 state: stable
-shipped_at: 2026-10-29T13:32:27.578Z
+shipped_at: 2026-10-30T12:50:12.220Z
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-29T13:32:27.578Z
+updated_at: 2026-10-30T12:50:12.220Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -20,6 +20,7 @@ leads_to:
 implements:
   - src/interactions/i-orient-plan/
 tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/areas.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
@@ -27,6 +28,7 @@ tests:
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-eval.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
@@ -73,6 +75,10 @@ Intended files: `src/interactions/i-orient-plan/`
 - `get_blast_radius` adds `decisions`: the active decisions held by the focus (`via: focus`, distance 0), each `{ id, node_id, via, distance, decision }`, and `dependent_decisions: { count, nodes }` for the visible affected nodes that hold decisions; `include_dependent_decisions: true` adds their rows (`via: dependent`, their distance) to `decisions`; inactive nodes' decisions are left out and uncounted, even with `include_retired`. The change radius merges them across members (a member's own decisions are `focus`; each non-member holder counts once). `orient_for_work` at `depth: "full"` embeds the default radius
 - `get_node_context` adds `inherited_decisions` (the same summary, except that a Bug's affected nodes, whose decisions orient lists as the Bug's own, are inherited there, whole at distance 1, since the context's `decisions` are the node's own file's) and takes `include_inherited_decisions` for its entries; a one-line entry names `status` and `superseded_by` when superseded; `orient_for_work`'s embedded `context` leaves it out because the decisions block carries it
 - **Paged graph.** `get_mindplan_graph({ offset?, limit? })` returns `{ nodes, edges, total_nodes, total_edges, offset, limit, next_offset? }`. Nodes are sorted by id and sliced by `offset` (default 0) and `limit` (default `GRAPH_PAGE_DEFAULT` = 200, max `GRAPH_PAGE_MAX` = 500, both exported from this package); `edges` holds every edge whose source is in the page, so a client that walks every page sees every edge exactly once; `next_offset` is present only when nodes remain. A graph that fits in one page returns the same `nodes` and `edges` as before plus the totals, so a small project sees no truncation. `offset` past the end returns an empty page with the totals, not Blocked. The default page keeps one result of a typical graph (about 400 characters per node) under Claude Code's 25,000-token result limit; the tool description names `next_offset`
+- **Shape up front.** Every full `orient_for_work` reply (any `depth`) and `get_node_context` carry `shape`: `shapeReport` (`f-compiler-rules`) for the active slot, `{ slot, gates, sections: [{ heading, kind, status }], role? }` with each required section `present`, `missing`, or `stub`; left out for a Journey, a shipped node with no open revision, a retired node, and a closed Bug
+- **Change-wide orientation.** `orient_for_work({ change, known_rules_versions? })` (no `query` or `node_id`) returns `{ change, members, rules, decisions }`: `members` are the change's open revisions and its neighbors (`changeMembers`, `changeNeighbors`), each `{ id, type, state, next_state?, kind, rules_from }` where `rules_from` lists the nodes whose rules reach it (`reachingRules`); `rules` holds each source's entry once, `{ node_id, node_type, version, rules }`, its text left out with `unchanged: true` when `known_rules_versions` holds its version; `decisions` is `{ count, nodes }` naming the members that hold active decisions. It records every member with `recordOriented`, so one call clears the gate for a scoped walk over the change. A change with no members is Blocked (`has no members`); `change` with `query` or `node_id` is Blocked
+- **Planned wiring and attribution in the radius.** The change blast radius and change-wide orientation take their members from `changeMembership` (`f-compiler-rules`). The change blast radius adds `planned_edges` (`plannedEdges`, `f-compiler-rules`: `{ source, type, target }`) and lists each planned source as a member with `kind: "planned"`, so its dependents are in `affected`; a change with only planned sources is not Blocked. A revision's `attributed` files appear in `affected_files` under the revision with `via: ["focus"]`, and the folder's owner keeps them too. `orient_for_work({ change })` lists planned sources as members (`kind: "planned"`) and records them
+- **Spec by topic.** `get_spec({ topic? })` returns one part of the running package's `SPEC.md` (resolved next to the bundled playbook, so it is always the server's own version): `{ topic, version, text }`, `version` being the package version. `SPEC_TOPICS` maps each stable topic id to the SPEC headings it covers, matched by heading text without section numbers, so renumbering does not break a topic: `territory-shape`, `lifecycle`, `bugs`, `atomic-ops`, `versioning`, `change-ids`, `neighbors`, `decisions`, `imports`, `ownership`, `orientation`, `rules`, `checks`, `errors`. A heading's text runs to the next heading of the same or a higher level. A tool name as `topic` returns that tool's `#### \`<tool>\`` entry. Without `topic` it returns `{ version, topics: [{ id, title }], tools }`; an unknown topic is `Blocked:` naming the valid ids. A missing SPEC.md, or a topic heading it lacks, is Blocked with the reinstall fix. `findPackageFile` (`spec.ts`) resolves both SPEC.md and the bundled playbook
 - **Linked tests.** `buildBlastRadiusPayload` adds `tests`: the sorted files that the `tests` lists of the focus and of every owner in `affected_files` expand to (`expandClaims`, `f-source-index`), so a change knows which suites to run; `buildChangeBlastRadiusPayload` merges them across members. Node records (`get_node_context`, `orient_for_work`, `get_mindplan_graph`) carry the node's `tests` list
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
@@ -111,6 +117,10 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - `get_mindplan_graph` on a graph larger than `limit` returns `limit` nodes, only edges from those nodes, the totals, and `next_offset`; walking every page yields every node and every edge exactly once; a graph within one page returns no `next_offset`; `limit` above 500 is rejected at the schema layer
 - `get_blast_radius` lists the expanded tests of the focus and its affected owners, and the change radius merges them
 - `get_node_context` returns a node's `tests` list
+- A full `orient_for_work` reply on a scaffolded draft lists every required section with `missing` or `stub`; a shipped node with no open revision has no `shape`
+- `orient_for_work({ change })` on a change with three members returns their rules once per source and records all three: a scoped walk over the change then needs no other orient call; a known version leaves its text out
+- `get_spec({ topic: "territory-shape" })` returns under 3 KB and contains the same table as `shapeTableMarkdown()`; an unknown topic is Blocked and lists the valid ones; every topic resolves against the bundled SPEC.md
+- The change blast radius of a change with a planned edge lists it in `planned_edges` and its source as a `planned` member; a revision's attributed migration appears under the revision in `affected_files`
 
 ## Decisions
 
@@ -214,6 +224,18 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - Consequences: A client that read the live body from orient_for_work while a revision is open must pass slot: "current"; a client that read context.decisions must read the decisions block.
 - Change: lean-node-replies
 - Date: 2026-10-29
+
+### d-spec-topics-by-heading-text
+
+- Decision: get_spec serves the running package's SPEC.md through a fixed map of stable topic ids to SPEC headings, matched by heading text without section numbers; without a topic it lists the ids.
+- Alternatives:
+  - A spec field on get_project (every session start would pay for it, or get_project would grow a parameter it does not need)
+  - Address sections by number (renumbering SPEC would silently change what a topic returns)
+  - Serve the whole SPEC (about 1,700 lines, past what an agent should load for one answer)
+- Why: Agents need one answer at a time from the version that is enforcing the rules; stable ids survive SPEC edits, and the npx cache can no longer hand them a stale copy.
+- Consequences: A SPEC heading rename must update SPEC_TOPICS; a test resolves every topic so a rename fails the suite.
+- Change: agent-guidance
+- Date: 2026-10-30
 
 ## Attachments
 

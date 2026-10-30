@@ -2,11 +2,11 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface that registers twenty-nine tools with when-to-call hints and MCP annotations (readOnlyHint on every read tool, destructiveHint on the removing ones) derived from one registration helper, returns compact JSON text plus structuredContent, returns small write results unless verbose, scopes drift to the touched node on reads, keeps skill routing out of per-tool descriptions, takes change ids on open_next, create_node, patch_node_territory, record_decision, set_implementation_files, set_test_files, update_node_status, get_blast_radius, and run_check, takes slot and section on the node reads, and describes neighbor labels, additive in-place claims on shipped nodes, linked test files, the shipped-ops drop, summary-first orientation with its write gate, and area-first search."
+description: "MCP stdio Interface: thirty tools with when-to-call hints and read/write/destructive annotations from one helper, compact JSON plus structuredContent, small write results unless verbose, node-scoped drift on reads, change ids, change-wide orientation, section shape, and SPEC topics."
 state: stable
-shipped_at: 2026-10-29T15:21:03.872Z
+shipped_at: 2026-10-30T12:50:12.356Z
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-29T15:21:03.872Z
+updated_at: 2026-10-30T12:50:12.356Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -20,10 +20,12 @@ exposes:
 implements:
   - src/interfaces/if-mcp-tools/
 tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
@@ -80,6 +82,8 @@ Intended files: `src/interfaces/if-mcp-tools/`
 
 Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-projection`.
 - **`set_test_files`** (write) mounts `setTestFiles` (`i-steer-plan`): it replaces a node's linked test files, and its description says the list is evidence, not a claim, so it never needs `open_next` and never resets readiness; it takes `change`. `run_check` names test presence among its checks and `get_blast_radius` names its `tests` list. Twenty-eight tools
+- **Agent guidance.** Registers `get_spec` (a read tool, no drift, like `get_project`) with optional `topic` (a slug) mounting `getSpec` (`i-orient-plan`); its description says it returns one SPEC section by stable topic id from the running server's own SPEC.md and lists the ids when called without one. Thirty tools. `orient_for_work` takes `change` (a slug) and describes the change-wide reply that records every member; `create_node` and `orient_for_work` name `shape`; `run_check` names `shape:` warnings and `info` (`planned:` paths); `update_node_status` says an orientation Block names every unoriented node at once
+- **Planned wiring and attribution.** `link_nodes` and `unlink_nodes` take `change` (a slug) and describe planned edges on a shipped node (written under the change without `open_next`, applied when `open_next` opens it with that change, dropped when the change closes); `open_next` names `applied_planned`; `set_implementation_files` takes `attributed` (repo paths) with `files` optional when it is given, and describes attribution; `run_check` and `get_blast_radius` name `planned` members and `planned_edges`
 
 ## Acceptance Criteria
 
@@ -107,6 +111,7 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - The server registers twenty-eight tools, including `set_test_files` as a write tool
 - `slot` and `section` reach the `orient_for_work` and `get_node_context` handlers; a `slot` outside the enum is rejected at the zod layer
 - No tool description mentions a mirror twin except `run_check` (as a warning about leftovers)
+- The server registers thirty tools, including `get_spec` as a read tool with no drift; `orient_for_work`'s `change` and `get_spec`'s `topic` reach their handlers
 
 ## Decisions
 

@@ -210,7 +210,20 @@ patch_node_territory({ node_id, toggle_checkboxes: [...] })     // fallback — 
 
 `toggle_checkboxes` matches item text by substring and is `Blocked:` when the substring matches several items (pass `all: true` to tick them all). Close an item that was done differently with `{ contains, checked: true, note: "…" }`, or one that does not apply with `{ contains, not_applicable: "<reason>" }` — never reword the item to make it tickable. Editing a `ready` node's text, claims, or links sends it back to `draft` (`readiness_reset` in the result).
 
-Replace scaffold placeholders with real content. Section guidance:
+Replace scaffold placeholders with real content. The gate checks these sections on every listed move, and `create_node` returns `shape` with each one's status (`present`, `missing`, or `stub`):
+
+<!-- shape-table:start -->
+| Type | Required sections | Checked when moving to |
+|---|---|---|
+| Foundation | `## Purpose`, `## Shared Substrate Spec`, `## Acceptance Criteria`, `## Atomic Ops` (or `## Checklist`) with a checkbox, and a `role` (frontmatter, or a role tag starting the description) | `ready`, `in-review`, `ship` |
+| Interaction | `## Purpose`, `## Actor & Trigger`, `## PRD / Execution Logic` (or `## Execution Logic` / `## PRD`), `## Acceptance Criteria`, `## Atomic Ops` with a checkbox | `ready`, `in-review`, `ship` |
+| Interface | `## Purpose`, `## Kind`, `## Spec`, `## Acceptance Criteria`, `## Atomic Ops` with a checkbox | `ready`, `in-review`, `ship` |
+| Bug | `## Summary`, `## Repro Steps`, `## Fix Checklist` with a checkbox | `in-review`, `resolved` |
+
+A prose section must not be empty or hold only `create_node` placeholder text. An optional `## Impact` must not be a stub. Journeys have no required sections. `create_node` and `orient_for_work` return `shape`: each required section marked `present`, `missing`, or `stub`.
+<!-- shape-table:end -->
+
+Section guidance:
 
 ### Journey
 
@@ -220,9 +233,11 @@ Replace scaffold placeholders with real content. Section guidance:
 
 ### Foundation
 
+- **Purpose** — what shared substrate it owns and why other nodes depend on it
 - **Shared Substrate Spec** — schemas, adapters, design system, contracts (not behavior). Put the role tag in frontmatter `description` at create time, not here.
 - **Implementation** — code in paths declared via `set_implementation_files`
-- **Checklist** — PR-sized Atomic Ops (`- [ ]` / `- [x]`):
+- **Acceptance Criteria** — checkable outcomes of the substrate contract
+- **Atomic Ops** (or **Checklist**) — PR-sized items (`- [ ]` / `- [x]`):
   - Spec written
   - Implementation complete
   - Verified in target environment
@@ -234,18 +249,21 @@ Replace scaffold placeholders with real content. Section guidance:
 - **Inputs & Outputs** — data in/out (not UI layout)
 - **PRD / Execution Logic** — step-by-step behavior. When a Page/UI Interface will `exposes` this Interaction, name the **mountable view**. When Kind is CLI/MCP/Webhook/Cron, name the **exportable handler/module** (not a `*-view.tsx`).
 - **Implementation** — code in files declared via `set_implementation_files` (domain + view/handler). MUST NOT import Interface-owned files.
-- **Checklist** — Atomic Ops MUST include (Kind-gated):
+- **Acceptance Criteria** — checkable outcomes of the behavior
+- **Atomic Ops** — MUST include (Kind-gated):
   - Domain API against Foundations (no Interaction→Interaction `depends_on`)
   - Exportable behavior surface in claimed paths (UI: mountable view; CLI/MCP/Webhook/Cron: handler/module)
   - Behavior surface does not import Interface-owned files (UI: view accepts shell/nav as props/callbacks)
 
 ### Interface
 
+- **Purpose** — which actor surface it is and which Interactions it mounts or wires
 - **Kind** — Page | CLI | MCP | Webhook | Cron | Script | …
 - **Exposed Interactions** — which Interactions this surface `exposes` and how (one surface, many Interactions — not one Interface per screen)
 - **Spec** — routing, commands, tool names, schedules, auth boundaries of the surface. Boilerplate: **App Router (or CLI/MCP) mounts Interaction surfaces; Interface does not own core domain logic or screen bodies.**
 - **Implementation** — code in paths declared via `set_implementation_files`. Thin mounts/wiring + shell chrome (Page). No duplicated domain/behavior UI.
-- **Checklist** — Atomic Ops MUST include:
+- **Acceptance Criteria** — checkable outcomes of the surface
+- **Atomic Ops** — MUST include:
   - Thin wiring for each `exposes` target (Page: screen file wires Shell + guards + nav only; CLI/MCP/Webhook/Cron: command/tool/job calls the Interaction export only)
   - No duplicated domain logic / behavior UI that belongs in an exposed Interaction
   - Page/UI only: shell chrome only — not feature screen bodies
