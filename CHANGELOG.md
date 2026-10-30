@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — zod 4.6.6 or later
+
+- **`zod` floor raised to `^4.6.6`.** zod before 4.6.6 could exhaust memory while validating oversized constrained collections ([GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)), and `^4.4.3` still allowed it. No behavior changes.
+
 ## 0.8.0 — a shipped node is one file
 
 - **No standing twin.** Every shipped Foundation, Interaction, and Interface used to keep `<id>.next.mdx` as a `state: mirror` byte copy of `<id>.mdx`, rewritten on every live write. A shipped node is now `<id>.mdx` alone: `open_next` writes `<id>.next.mdx` from the live file (with a fresh Atomic Ops list), and ship, `discard_next`, `force_unship`, and retiring delete it with `next-attachments/`. Live writes touch one file, `changed_files` no longer lists twins, and a pull request shows a node's change once, as the diff of `<id>.mdx` (the merge gate ships every change before it merges). While a revision is open, compare `<id>.next.mdx` with `<id>.mdx` to see it. [§3.6, §5.11]

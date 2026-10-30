@@ -1,6 +1,6 @@
 {
   "name": "mindplan-mcp",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "MindPlan MCP server — API gateway and strict compiler for the MindPlan SDLC framework",
   "type": "module",
   "main": "dist/index.js",
@@ -46,7 +46,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^24.10.9",
