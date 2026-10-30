@@ -4,9 +4,9 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, skills, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and linked tests, decision records, next files only while a revision is open, Atomic Ops only until ship, and host install docs."
 state: stable
-shipped_at: 2026-10-29T15:21:03.159Z
+shipped_at: 2026-10-30T12:50:11.881Z
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-29T15:21:03.159Z
+updated_at: 2026-10-30T12:50:11.881Z
 depends_on:
   - f-domain-model
 implements:
@@ -15,6 +15,8 @@ implements:
   - SPEC.md
   - templates/
 tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
 role: infra
 ---
@@ -62,6 +64,8 @@ Depends on: `f-domain-model`.
 
 - **Areas.** Playbook step 1 adds the area-first path (`list_areas` → pick → `orient_for_work({ query, area })`, without `area` for cross-cutting questions); SPEC §8 counts twenty-nine tools and specifies `list_areas` and `area`; the README lists `list_areas`; the `npx` examples use `mindplan-mcp@0.9`
 
+- **Agent guidance.** SPEC §6.5 specifies the Minimum Territory Shape: the per-type table generated from `TERRITORY_SHAPE` between `<!-- shape-table:start -->` / `<!-- shape-table:end -->` markers, the one-message Blocked, `shape` on `create_node`, `orient_for_work`, and `get_node_context`, and the `shape:` warning; the define-entities skill embeds the same generated table and lists `Purpose` and `Acceptance Criteria` in its section guidance; the playbook stays one screen and points to `shape`, the skill, and `get_spec` (and to `orient_for_work({ change })` after a reconnect). SPEC §8 counts thirty tools and specifies `get_spec` and its topic ids, `orient_for_work({ change })`, the one-message `Blocked: Orientation` (§8.1.2), and `run_check` `info` with `planned:` lines (§8.1, §9.6). README lists `get_spec`, `shape`, `info`, and change-wide orient; `CHANGELOG.md` has the 0.9.0 section. SPEC §3.7 adds Planned edges and Attributed files (members of kind `planned`, `applied_planned`, `cleared_planned`), §5.13 counts attributed schema files, §6.1 lists the `planned` and `attributed` frontmatter fields, §8.2 the `change` input of `link_nodes` / `unlink_nodes` and `attributed` on `set_implementation_files`, §9.6 the planned-edge check and attributed presence, and `get_spec` gains `planned-wiring`; the plan-project skill tells plan-only sessions to plan wiring on shipped nodes and attribute migrations; README and CHANGELOG describe both
+
 - **Merge gate.** Playbook rule 7 gains one line: a PR is merged only after its change is shipped (or moved back to `in-progress`), and `check --merge` (`run_check({ merge: true })`) is the gate. The plan-project skill names the gate where it talks about shipping. `templates/ci/github/mindplan-merge-gate.yml` is the workflow `init --ci github` installs. SPEC specifies `--merge` / `--merge=strict`, `run_check` `merge`, the `Blocked: Merge` lines and the `merge` result (§8.1, §9.6), and `init --ci github`; the README documents the flag, the strict level (whose explicit `--base` also runs dirty-src), the workflow, and making it a required status check; `CHANGELOG.md` gets the 0.6.0 section. SPEC §1.1 requires plan-file I/O to retry a brief lock (`EBUSY` / `UNKNOWN`, and `EPERM` / `EACCES` on Windows), and §9.6 says changed paths are project-relative, the default base is the newer of the local and remote default branch, the workflow goes at the repository top running in the project root, and conflicting merge levels are `Blocked:`
 
 ## Acceptance Criteria
@@ -81,6 +85,7 @@ Depends on: `f-domain-model`.
 - The playbook's rule 7 and the plan-project skill name the merge gate; README and the changelog describe `--merge`, `--merge=strict`, and the CI workflow; the playbook stays one screen
 - SPEC §5.6 says Atomic Ops live only on unshipped slots (ship drops them, `open_next` starts a fresh list) and §6.3 / the scaffold section say the same; the define-entities skill and README say a shipped node keeps no ledger; SPEC and README describe `slot` and `section` on `orient_for_work` / `get_node_context` and the single decisions block; CHANGELOG has a 0.7.0 section
 - SPEC, README, and the skills describe a next file that exists only while a revision is open (no standing twin), the check's leftover-twin warning, and init's removal of twins; CHANGELOG has a 0.8.0 section
+- The shape table embedded in SPEC §6.5 and the define-entities skill equals `shapeTableMarkdown()` (`agent-guidance.test.mjs`); every `get_spec` topic resolves against SPEC.md; the playbook stays one screen with no checklist text; SPEC counts thirty tools; CHANGELOG has a 0.9.0 section
 
 ## Attachments
 

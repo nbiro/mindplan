@@ -594,11 +594,32 @@ export type StaleTextScope = { paths: boolean; changed_files: boolean; checkboxe
 export const STALE_ALL: StaleTextScope = { paths: true, changed_files: true, checkboxes: true };
 export const STALE_PATHS_ONLY: StaleTextScope = { paths: true, changed_files: false, checkboxes: false };
 
+/** Stale-text signals: `warnings` that the text no longer matches the repo, and `info` that is not drift. */
+export type StaleTextSignals = { warnings: string[]; info: string[] };
+
+/** A line that says its paths come into being later ("created at build time"). */
+const AT_BUILD_TIME = /\bat build time\b/i;
+
+/** Planned paths named in one `planned:` line, at most this many shown. */
+const PLANNED_SHOWN = 3;
+
 /**
- * Non-blocking warnings that the territory text no longer matches the repo:
+ * A slot that is still a plan: `draft` or `ready`, and none of its claimed files exists yet. Its
+ * missing paths are files it has not written, not drift.
+ */
+function isPlanOnlySlot(node: MindPlanNode, slot: "current" | "next", root: string): boolean {
+  const state = slot === "next" && node.next ? node.next.state : node.state;
+  if (state !== "draft" && state !== "ready") return false;
+  const claimed = (slot === "next" && node.next ? node.next.implements : node.implements) ?? [];
+  return !claimed.some((entry) => claimEntryExists(entry, root));
+}
+
+/**
+ * Non-blocking signals that the territory text no longer matches the repo, as `warnings`:
  * a body names a path that does not exist, a claim added in place (`added_claims`) is not
  * named by the body, a claimed file changed after the body was last written, or checkboxes
- * are still open.
+ * are still open. Missing paths of a plan-only slot, and paths on an "at build time" line, are
+ * not stale: they come back as one `planned:` line per node in `info`.
  */
 export function staleTextWarnings(
   graph: MindPlanGraph,
@@ -606,34 +627,44 @@ export function staleTextWarnings(
   node: MindPlanNode,
   slot: "current" | "next" = node.next ? "next" : "current",
   scope: StaleTextScope = STALE_ALL
-): string[] {
-  if (!isPipelineNodeType(node.type)) return [];
+): StaleTextSignals {
   const warnings: string[] = [];
+  const info: string[] = [];
+  if (!isPipelineNodeType(node.type)) return { warnings, info };
   let body = "";
   try {
     const split = splitContext(readMarkdown(node, slot));
     // Recorded decisions may name paths a later revision removed; they are history, not stale text.
     body = withoutOwnedSections(split?.body ?? "");
   } catch {
-    return warnings;
+    return { warnings, info };
   }
 
   const openText = withoutClosedChecklistItems(body);
+  const planOnly = scope.paths && isPlanOnlySlot(node, slot, root);
   const seen = new Set<string>();
-  for (const m of scope.paths ? openText.matchAll(PATH_TOKEN) : []) {
-    const token = m[1];
-    if (seen.has(token)) continue;
-    seen.add(token);
-    if (/[*<>{}]/.test(token) || token.startsWith("mindplan/")) continue;
-    // Relative references point outside the repo root's own layout; their top segment is "." or "..".
-    if (token.startsWith("./") || token.startsWith("../")) continue;
-    const top = token.split("/")[0];
-    // Only repo paths: the first segment must be a real top-level directory.
-    const topAbs = path.join(root, top);
-    if (!fs.existsSync(topAbs) || !fs.statSync(topAbs).isDirectory()) continue;
-    if (!fs.existsSync(path.join(root, ...token.replace(/\/$/, "").split("/")))) {
-      warnings.push(`stale: "${node.id}" body names \`${token}\` which does not exist.`);
+  const planned: string[] = [];
+  for (const line of scope.paths ? openText.split(/\r?\n/) : []) {
+    for (const m of line.matchAll(PATH_TOKEN)) {
+      const token = m[1];
+      if (seen.has(token)) continue;
+      seen.add(token);
+      if (/[*<>{}]/.test(token) || token.startsWith("mindplan/")) continue;
+      // Relative references point outside the repo root's own layout; their top segment is "." or "..".
+      if (token.startsWith("./") || token.startsWith("../")) continue;
+      const top = token.split("/")[0];
+      // Only repo paths: the first segment must be a real top-level directory.
+      const topAbs = path.join(root, top);
+      if (!fs.existsSync(topAbs) || !fs.statSync(topAbs).isDirectory()) continue;
+      if (fs.existsSync(path.join(root, ...token.replace(/\/$/, "").split("/")))) continue;
+      if (planOnly || AT_BUILD_TIME.test(line)) planned.push(token);
+      else warnings.push(`stale: "${node.id}" body names \`${token}\` which does not exist.`);
     }
+  }
+  if (planned.length > 0) {
+    const shown = planned.slice(0, PLANNED_SHOWN).map((t) => `\`${t}\``).join(", ");
+    const more = planned.length > PLANNED_SHOWN ? ", ..." : "";
+    info.push(`planned: "${node.id}" names ${planned.length} path(s) not on disk yet (${shown}${more}).`);
   }
 
   // Claims a shipped node added in place stay flagged until the live body names them.
@@ -677,7 +708,7 @@ export function staleTextWarnings(
   if (unchecked > 0) {
     warnings.push(`stale: "${node.id}" has ${unchecked} unticked checkbox(es); ship Blocks until they are [x].`);
   }
-  return warnings;
+  return { warnings, info };
 }
 
 /** A description longer than this warns: descriptions are search rows; detail belongs in the body. */

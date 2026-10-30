@@ -75,16 +75,28 @@ export function orientationGap(graph: MindPlanGraph, nodeId: string): "unfetched
 }
 
 /**
- * Blocked: Orientation for the first node in `nodeIds` that was not fetched this session, or
- * whose rules changed since; the message names the call that fixes it. No-op while the gate is off.
+ * Blocked: Orientation naming every node in `nodeIds` that was not fetched this session, or whose
+ * rules changed since, in one message with the call that fixes it: one gap keeps the one-node
+ * wording; several are listed, and a walk over one change (`opts.change`) names the change-wide
+ * orient. No-op while the gate is off.
  */
-export function assertOriented(graph: MindPlanGraph, nodeIds: string[], tool: string): void {
+export function assertOriented(
+  graph: MindPlanGraph,
+  nodeIds: string[],
+  tool: string,
+  opts: { change?: string } = {}
+): void {
   if (!enabled) return;
-  for (const id of nodeIds) {
+  const gaps: { id: string; gap: "unfetched" | "rules_changed" }[] = [];
+  for (const id of new Set(nodeIds)) {
     // An unknown id is the handler's own Blocked ("does not exist"), not an orientation gap.
     if (!graph.nodes.some((n) => n.id === id)) continue;
     const gap = orientationGap(graph, id);
-    if (!gap) continue;
+    if (gap) gaps.push({ id, gap });
+  }
+  if (gaps.length === 0) return;
+  if (gaps.length === 1) {
+    const { id, gap } = gaps[0];
     const reason =
       gap === "unfetched"
         ? `"${id}" was not oriented on in this session, so its node rules have not reached you`
@@ -93,4 +105,13 @@ export function assertOriented(graph: MindPlanGraph, nodeIds: string[], tool: st
       `Blocked: Orientation: ${tool} acts on ${reason}. Call orient_for_work({ node_id: "${id}" }) (or get_node_context), read the rules it returns, then retry.`
     );
   }
+  const list = gaps
+    .map(({ id, gap }) => `"${id}" (${gap === "unfetched" ? "not oriented on in this session" : "rules changed since"})`)
+    .join(", ");
+  const fix = opts.change
+    ? `Call orient_for_work({ change: "${opts.change}" }) to orient on every member at once`
+    : `Call orient_for_work({ node_id }) for each (or get_node_context)`;
+  throw new Error(
+    `Blocked: Orientation: ${tool} acts on ${gaps.length} nodes whose node rules have not reached you: ${list}. ${fix}, read the rules it returns, then retry.`
+  );
 }

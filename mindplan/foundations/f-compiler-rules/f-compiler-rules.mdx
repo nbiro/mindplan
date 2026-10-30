@@ -2,11 +2,11 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — validation-at-transition rules, the import matrix over current and next-slot claims with the `mounts` composition root, the import, ownership, and linked-test presence gate for in-review and ship, the untested-revision warning, the decision gate on decision-worthy revisions, a change's revisions and its neighbors, annotated checklist completion, stale-text warnings (including claims added in place that the body does not name yet), Coverage fixes that claim in place in a folder the owner dominates (never a migration or schema file), and split route-family warnings. A next file in state mirror is not an open evolution."
+description: "Infra — transition rules: Minimum Territory Shape (one constant, section report, one-message Blocked, draft warning, doc table), the import matrix, the in-review and ship gate, the decision gate, change members and neighbors, checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-10-26T13:45:56.429Z
+shipped_at: 2026-10-30T12:50:12.084Z
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-26T13:45:56.429Z
+updated_at: 2026-10-30T12:50:12.084Z
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -14,11 +14,13 @@ depends_on:
 implements:
   - src/foundations/f-compiler-rules/
 tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
 role: infra
 ---
@@ -68,6 +70,17 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `testPresenceFailures(node, root)` — each `tests` entry that matches nothing on disk (`claimEntryExists`), once the node's live state is in-review or shipped or its next is in-review; nothing for a draft plan. `assertCheckCleanForNode` adds them to its `Blocked: Check failed …`, so a move to in-review or ship with a broken test link is Blocked
   - `untestedWarning(node)` — `tests: "<id>" is in review with no linked tests; link the files that verify it with set_test_files.` for a Foundation, Interaction, or Interface whose active slot is in-review and whose `tests` list is empty; null otherwise. It never Blocks
 
+- **Minimum Territory Shape** (`shape.ts`):
+  - `TERRITORY_SHAPE` — the one constant of required sections per type (Foundation: `## Purpose`, `## Shared Substrate Spec`, `## Acceptance Criteria`, `## Atomic Ops` or `## Checklist` with a checkbox, and a role; Interaction: `## Purpose`, `## Actor & Trigger`, `## PRD / Execution Logic` (or `## Execution Logic` / `## PRD`), `## Acceptance Criteria`, `## Atomic Ops`; Interface: `## Purpose`, `## Kind`, `## Spec`, `## Acceptance Criteria`, `## Atomic Ops`; Bug: `## Summary`, `## Repro Steps`, `## Fix Checklist`) and the gates that read it (`ready`, `in-review`, `ship` for the build pipeline; `in-review`, `resolved` for a Bug). An optional `## Impact` must not be a stub when present
+  - `shapeProblems(node, slot)` — every gap at once: a missing section, a prose section that is empty or still holds `create_node` placeholder text (`stub`), a checklist section with no checkbox, a stub `## Impact`, a Foundation with no role
+  - `assertMinimumTerritoryShape(node, slot)` Blocks once with every problem: one problem keeps the single-section wording; several are listed in one `Blocked: Minimum Territory Shape. "<id>"/<file> has N problems: …` message
+  - `shapeReport(node, slot)` → `{ slot, gates, sections: [{ heading, kind, status }], role? }`, `status` being `present`, `missing`, or `stub`; null for a Journey, a shipped node with no open next, a retired node, and a closed Bug
+  - `shapeWarning(node)` → `shape: "<id>" is missing "## X" and has stub "## Y" (required before ready)` (`before in-review` for a Bug) for a draft active slot or a Bug before in-review; null when the shape is complete
+  - `shapeTableMarkdown()` — the per-type table that the define-entities skill and SPEC embed (the playbook, which stays one screen, points to them) between `<!-- shape-table:start -->` / `<!-- shape-table:end -->` markers; a test fails when an embedded copy differs from it, so the docs cannot drift from the gate
+- **Planned edges.** `plannedEdges(graph, change?)` lists `{ source, change, type, target }` for every planned entry of a shipped, non-retired node, leaving out the entries an open revision of their change has already applied to its next slot (an entry that revision lacks stays pending). `changePlannedSources(graph, change)` returns those sources: members of the change with `kind: "planned"`, never walked by status moves. `changeMembership(graph, change)` returns `{ revisions, neighbors, planned }`, each node once, for the check, the change blast radius, and change-wide orientation. `plannedEdgeProblems(graph, change)` checks each entry as `link_nodes` would — the target exists and is active, `validateLink` accepts the shape (Interaction Independence included), the edge does not already exist on the slot it will land in, and a planned `depends_on` closes no cycle in the effective graph plus the change's planned `depends_on` (`withPlannedDependsOn`) — and returns one problem string each. `validatePlannedLink(graph, source, target, type, change)` is the same check for one new entry
+- **Attributed files in the decision gate.** `newSchemaFiles` also reads the active slot's `attributed` list: an attributed file matching `decisions.schema_files` is new when the branch adds it (`newFilesSinceBase`), or always outside git, so a schema node's revision that adds a migration in the composition root's folder is decision-worthy
+- **Planned paths.** `staleTextWarnings` returns `{ warnings, info }`. For a node whose active slot is `draft` or `ready` and none of whose claimed files exist on disk yet, missing named paths are not `stale:`: they are one `planned: "<id>" names N path(s) not on disk yet (…)` info line per node. A path named on a line that says "at build time" is planned on every node.
+
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 - **Description warnings.** `descriptionWarnings(node)` (`integrity.ts`) returns `description: …` warnings for a non-retired node's active-slot description: empty; equal to the title (letters and digits compared, case ignored); longer than `DESCRIPTION_MAX_CHARS` (300); an Interaction's that contains none of a loose list of actor words; or, except on a Bug (whose description describes a regression), revision wording (`now`, `no longer`, `was changed to`, `used to be`, `previously`, `anymore`). Heuristics, so warnings only
@@ -106,6 +119,15 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - An in-review revision with no tests yields one `tests:` warning; a draft one, or one with tests, yields none
 
 - Each bad-description case warns and a good description does not; none fails the check
+- A draft with three shape gaps is Blocked once at `ready`, naming all three; one gap keeps the single-section message
+- `shapeReport` marks each required section `present`, `missing`, or `stub`; following it brings a scaffolded draft to `ready` with no shape `Blocked:`
+- A draft with gaps yields one `shape:` warning; a complete draft, a ready node, and a shipped node yield none
+- The shape table embedded in the define-entities skill and SPEC equals `shapeTableMarkdown()`
+- A plan-only node (draft or ready, no claimed file on disk) naming missing paths yields one `planned:` info line and no `stale:` line; once one claimed file exists the missing paths are `stale:` again
+- A path on an "at build time" line is planned on a shipped node's revision too
+- A planned `depends_on` that would close a cycle, a planned `exposes` from a Foundation, and a planned edge to a missing node are each a problem; a legal planned edge is none
+- A planned entry of a change already open on its node is not listed
+- A revision attributing a new migration file in another node's folder trips `schema`; without the attribution it does not
 
 ## Decisions
 
@@ -167,6 +189,41 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Consequences: A ticked line can name a path that no longer exists without any signal; prose and open items remain the current claims.
 - Change: stale-closed-checklist
 - Date: 2026-10-26
+
+### d-shape-one-constant-docs-embed
+
+- Decision: The required sections per type live in one constant (TERRITORY_SHAPE) that the gate, shapeReport, shapeWarning, and shapeTableMarkdown read; the skill, playbook, and SPEC embed the generated table between markers, and a test fails when an embedded copy differs.
+- Alternatives:
+  - Substitute the table into the skill and playbook at install and serve time (the template files in the repo and the npm tarball would not show the table, and SPEC.md readers outside MCP would not see it)
+  - Keep the sections inline in the gate and document them by hand (the drift that made agents learn the shape one Blocked at a time)
+- Why: Agents read the skill, the playbook, and get_spec; only a generated table checked by the test suite keeps all three equal to what the gate enforces.
+- Consequences: Changing a required section means regenerating the embedded tables (the test prints the expected table) in the same PR.
+- Change: agent-guidance
+- Date: 2026-10-30
+
+### d-planned-paths-are-info
+
+- Decision: A node whose active slot is draft or ready and none of whose claimed files exist yet reports missing named paths as one planned: info line per node, not stale: warnings; a path on an "at build time" line is planned on every node.
+- Alternatives:
+  - Drop missing-path signals for plan-only nodes entirely (a typo in a planned path would never surface)
+  - Keep stale: warnings (a 60-node plan buried the real warnings under one line per planned path)
+- Why: A plan names files it has not built; that is information, not drift, and one line per node keeps it visible without drowning real warnings.
+- Consequences: run_check gains an info list and Info: output lines; the moment a node's first claimed file exists its missing paths are stale: again.
+- Change: agent-guidance
+- Date: 2026-10-30
+
+### d-shape-table-skill-and-spec
+
+- Decision: The required sections per type live in one constant (TERRITORY_SHAPE) that the gate, shapeReport, shapeWarning, and shapeTableMarkdown read; the define-entities skill and SPEC embed the generated table between markers, a test fails when an embedded copy differs, and the playbook carries a one-line pointer to shape, the skill, and get_spec.
+- Alternatives:
+  - Embed the table in the playbook too (the playbook loads every session and is held to one screen with no checklist procedure text; the table broke both)
+  - Substitute the table at install and serve time (the template files and SPEC.md readers outside MCP would not show it)
+  - Keep the sections inline in the gate and document them by hand (the drift that made agents learn the shape one Blocked at a time)
+- Why: Agents read the skill and get_spec when they create nodes; generated copies checked by the suite stay equal to the gate, and the per-call shape field reaches agents that read neither.
+- Consequences: Changing a required section means regenerating the embedded tables (the test prints the expected table) in the same PR.
+- Supersedes: d-shape-one-constant-docs-embed
+- Change: agent-guidance
+- Date: 2026-10-30
 
 ## Attachments
 

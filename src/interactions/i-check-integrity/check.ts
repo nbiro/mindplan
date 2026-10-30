@@ -29,6 +29,12 @@ import {
   untestedWarning,
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { changeMembers, changeNeighbors } from "../../foundations/f-compiler-rules/rules.js";
+import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
+import {
+  changeMembership,
+  plannedEdgeProblems,
+  plannedEdges,
+} from "../../foundations/f-compiler-rules/planned.js";
 import {
   createDecisionContext,
   decisionWarnings,
@@ -120,12 +126,13 @@ export interface ChangeCheck {
   members: {
     id: string;
     type: string;
-    kind: "revision" | "neighbor";
+    kind: "revision" | "neighbor" | "planned";
     state: string;
     next_state: string | null;
   }[];
   failures: string[];
   warnings: string[];
+  info: string[];
 }
 
 export interface CheckResult {
@@ -133,6 +140,8 @@ export interface CheckResult {
   failures: string[];
   /** Non-blocking: territory text that no longer matches the repo. Never changes `ok`. */
   warnings: string[];
+  /** Not drift: paths a plan names before building them (`planned:`). Never changes `ok`. */
+  info: string[];
   /** Legacy territory files deleted while loading the graph. */
   removedLegacyFiles: RemovedLegacyFile[];
   /** Present when the check ran for a change. Its failures are also in `failures`. */
@@ -144,7 +153,7 @@ export interface CheckResult {
 /**
  * The in-review gate on every member of a change: import and ownership violations on each
  * revision's active-slot files and each neighbor's live files (Blocked), and every stale-text
- * signal (warnings). Decision warnings apply to revisions only.
+ * signal (warnings; planned paths go to info). Decision warnings apply to revisions only.
  */
 function checkChange(
   graph: MindPlanGraph,
@@ -152,11 +161,12 @@ function checkChange(
   change: string,
   decisionCtx: DecisionContext
 ): ChangeCheck {
-  const revisions = changeMembers(graph, change);
-  const neighbors = changeNeighbors(graph, change);
+  // Planned sources are listed, not gated: their files do not change until the change opens them.
+  const { revisions, neighbors, planned } = changeMembership(graph, change);
   const failures: string[] = [];
   const warnings: string[] = [];
-  if (revisions.length === 0 && neighbors.length === 0) {
+  const info: string[] = [];
+  if (revisions.length === 0 && neighbors.length === 0 && planned.length === 0) {
     failures.push(
       `Blocked: change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
@@ -171,14 +181,29 @@ function checkChange(
     for (const missing of testPresenceFailures(node, root)) {
       failures.push(`Blocked: change "${change}": ${missing}`);
     }
-    warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_ALL));
+    const stale = staleTextWarnings(graph, root, node, undefined, STALE_ALL);
+    warnings.push(...stale.warnings);
+    info.push(...stale.info);
+  }
+  for (const problem of plannedEdgeProblems(graph, change)) {
+    failures.push(`Blocked: change "${change}": ${problem}`);
+  }
+  const bySource = new Map<string, string[]>();
+  for (const row of plannedEdges(graph, change)) {
+    bySource.set(row.source, [...(bySource.get(row.source) ?? []), `${row.type} ${row.target}`]);
+  }
+  for (const [source, edges] of bySource) {
+    info.push(
+      `planned edges: "${source}" plans ${edges.join(", ")} under this change ` +
+        `(applied when open_next opens it with this change).`
+    );
   }
   for (const node of revisions) {
     warnings.push(...decisionWarnings(graph, node, decisionCtx));
     const untested = untestedWarning(node);
     if (untested) warnings.push(untested);
   }
-  const member = (kind: "revision" | "neighbor") => (n: MindPlanNode) => ({
+  const member = (kind: "revision" | "neighbor" | "planned") => (n: MindPlanNode) => ({
     id: n.id,
     type: n.type,
     kind,
@@ -187,9 +212,14 @@ function checkChange(
   });
   return {
     id: change,
-    members: [...revisions.map(member("revision")), ...neighbors.map(member("neighbor"))],
+    members: [
+      ...revisions.map(member("revision")),
+      ...neighbors.map(member("neighbor")),
+      ...planned.map(member("planned")),
+    ],
     failures,
     warnings: [...new Set(warnings)],
+    info: [...new Set(info)],
   };
 }
 
@@ -403,6 +433,15 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
       checkSlot(node.next.implements, "next", true);
     }
     for (const missing of testPresenceFailures(node, root)) fail(failures, missing);
+    // A revision in review must have written the files it attributes to itself.
+    const reviewSlot = node.next ? node.next : node;
+    if (reviewSlot.state === "in-review") {
+      for (const f of reviewSlot.attributed ?? []) {
+        if (!fs.existsSync(path.join(root, ...f.split("/")))) {
+          fail(failures, `presence: "${node.id}" attributed file missing on disk: "${f}".`);
+        }
+      }
+    }
   }
 }
 
@@ -477,25 +516,31 @@ function checkImports(
 /**
  * Stale-text warnings. A node in review gets every signal (it is about to ship). A shipped node
  * with no open update gets only the missing-path signal. Nodes still being built are skipped:
- * they are expected to name files they have not written yet.
+ * they are expected to name files they have not written yet. A draft slot, or a Bug before
+ * review, with shape gaps gets one `shape:` warning, so the sections are known before the gate.
  */
-function collectWarnings(graph: MindPlanGraph, root: string): string[] {
+function collectWarnings(graph: MindPlanGraph, root: string): { warnings: string[]; info: string[] } {
   const warnings: string[] = [];
+  const info: string[] = [];
   for (const node of graph.nodes) {
     // Description quality (every node type; never fails the check).
     warnings.push(...descriptionWarnings(node));
+    const shape = shapeWarning(node);
+    if (shape) warnings.push(shape);
     if (!isPipelineNodeType(node.type)) continue;
     if (RETIRED_STATES.has(node.state)) continue;
     const active = node.next ? node.next.state : node.state;
-    if (active === "in-review") {
-      warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_ALL));
-    } else if (!node.next && isProductionState(node.state)) {
-      warnings.push(...staleTextWarnings(graph, root, node, undefined, STALE_PATHS_ONLY));
+    const scope =
+      active === "in-review" ? STALE_ALL : !node.next && isProductionState(node.state) ? STALE_PATHS_ONLY : null;
+    if (scope) {
+      const stale = staleTextWarnings(graph, root, node, undefined, scope);
+      warnings.push(...stale.warnings);
+      info.push(...stale.info);
     }
     const untested = untestedWarning(node);
     if (untested) warnings.push(untested);
   }
-  return warnings;
+  return { warnings, info };
 }
 
 /**
@@ -944,6 +989,7 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
 export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   const failures: string[] = [];
   const warnings: string[] = [];
+  const info: string[] = [];
   let changeReport: ChangeCheck | undefined;
   let mergeReport: MergeReport | undefined;
   const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
@@ -964,7 +1010,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
       if (prev === undefined) delete process.env.MINDPLAN_ROOT;
       else process.env.MINDPLAN_ROOT = prev;
     }
-    return { ok: false, failures, warnings, removedLegacyFiles: drainRemovedLegacyFiles() };
+    return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
   }
 
   try {
@@ -974,7 +1020,9 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
-    warnings.push(...collectWarnings(graph, root));
+    const collected = collectWarnings(graph, root);
+    warnings.push(...collected.warnings);
+    info.push(...collected.info);
     warnings.push(...legacyMirrorWarnings(graph));
     warnings.push(...routeFamilySplits(graph, buckets, universe));
     const decisionCtx = createDecisionContext(root);
@@ -1008,11 +1056,13 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
       if (!failures.includes(plain)) failures.push(f);
     }
     for (const w of changeReport.warnings) if (!warnings.includes(w)) warnings.push(w);
+    for (const line of changeReport.info) if (!info.includes(line)) info.push(line);
   }
   return {
     ok: failures.length === 0,
     failures,
     warnings,
+    info,
     removedLegacyFiles: drainRemovedLegacyFiles(),
     ...(changeReport ? { change: changeReport } : {}),
     ...(mergeReport ? { merge: mergeReport } : {}),
@@ -1021,17 +1071,18 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
 
 /**
  * The text `mindplan-mcp check` prints: `mindplan-mcp check: ok` or one `Blocked:` line
- * per failure, then any warnings. The CLI and the run_check tool share it.
+ * per failure, then any warnings, then info lines. The CLI and the run_check tool share it.
  */
 export function renderCheckOutput(result: CheckResult): string {
   const lines = result.ok ? ["mindplan-mcp check: ok"] : [...result.failures];
   for (const warning of result.warnings) lines.push(`Warning: ${warning}`);
+  for (const line of result.info) lines.push(`Info: ${line}`);
   return lines.join("\n");
 }
 
 /**
  * `run_check` MCP handler: the same text `mindplan-mcp check` prints, plus the parts split out.
- * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings.
+ * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings and info.
  */
 export function runCheckHandler(
   args: { base?: string; change?: string; merge?: MergeLevel } = {}
@@ -1042,6 +1093,7 @@ export function runCheckHandler(
     output: renderCheckOutput(result),
     failures: result.failures,
     warnings: result.warnings,
+    info: result.info,
     ...(result.change
       ? { change: { id: result.change.id, members: result.change.members } }
       : {}),

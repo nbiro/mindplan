@@ -6,7 +6,6 @@
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
-import { fileURLToPath } from "url";
 import {
   isInactiveNode,
   isPipelineNodeType,
@@ -14,6 +13,7 @@ import {
   type MindPlanGraph,
   type MindPlanNode,
   type NodeType,
+  type RuleEntry,
 } from "../../foundations/f-domain-model/types.js";
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { projectVersionStatus } from "../../foundations/f-territory-store/version.js";
@@ -59,7 +59,10 @@ import {
   findRelatedNodes,
   searchNodes,
 } from "../../foundations/f-graph-search/search.js";
+import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
+import { changeMembership, plannedEdges } from "../../foundations/f-compiler-rules/planned.js";
 import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
+import { findPackageFile } from "./spec.js";
 import { resolveNodeRules, rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import {
   listDecisions,
@@ -159,6 +162,10 @@ export function buildBlastRadiusPayload(
       for (const p of expandClaims(owner.next.implements, root)) {
         group.files.add(p);
       }
+    }
+    // Files the revision adds in another node's folder count as the revision's own.
+    if (via === "focus") {
+      for (const p of (owner.next ? owner.next.attributed : owner.attributed) ?? []) group.files.add(p);
     }
   };
 
@@ -554,15 +561,16 @@ export function buildChangeBlastRadiusPayload(
   change: string,
   opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
 ): Record<string, unknown> {
-  const revisions = changeMembers(graph, change);
-  const neighbors = changeNeighbors(graph, change);
-  const members = [...revisions, ...neighbors];
+  // A shipped node with planned wiring under the change is a member too: its contract will change.
+  const { revisions, neighbors, planned } = changeMembership(graph, change);
+  const neighborIds = new Set(neighbors.map((n) => n.id));
+  const plannedIds = new Set(planned.map((n) => n.id));
+  const members = [...revisions, ...neighbors, ...planned];
   if (members.length === 0) {
     throw blocked(
       `change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
   }
-  const neighborIds = new Set(neighbors.map((n) => n.id));
   const memberIds = new Set(members.map((m) => m.id));
   const affected = new Map<string, { id: string; type: string; state: string; distance: number }>();
   const journeys = new Set<string>();
@@ -622,10 +630,11 @@ export function buildChangeBlastRadiusPayload(
     members: members.map((m) => ({
       id: m.id,
       type: m.type,
-      kind: neighborIds.has(m.id) ? "neighbor" : "revision",
+      kind: neighborIds.has(m.id) ? "neighbor" : plannedIds.has(m.id) ? "planned" : "revision",
       state: m.state,
       next_state: m.next?.state ?? null,
     })),
+    planned_edges: plannedEdges(graph, change).map(({ source, type, target }) => ({ source, type, target })),
     affected: [...affected.values()].sort(
       (a, b) => a.distance - b.distance || a.id.localeCompare(b.id)
     ),
@@ -670,8 +679,66 @@ export function getNodeContext(args: {
   });
   // It counts as orienting on the node, so it carries every rule that reaches it, not only its own.
   payload.resolved_rules = { node_id: node.id, entries: reachingRules(graph, node.id) };
+  const shape = shapeReport(node);
+  if (shape) payload.shape = shape;
   recordOriented(graph, [node.id]);
   return payload;
+}
+
+/**
+ * orient_for_work({ change }): every member of a change (its open revisions and its neighbors) with
+ * the nodes whose rules reach it, each source's rules once, and the members that hold decisions.
+ * Every member is recorded as oriented, so one call clears the gate for a walk over the change.
+ */
+function orientForChange(
+  graph: MindPlanGraph,
+  change: string,
+  known: Record<string, string> | undefined
+): Record<string, unknown> {
+  const { revisions, neighbors, planned } = changeMembership(graph, change);
+  if (revisions.length === 0 && neighbors.length === 0 && planned.length === 0) {
+    throw blocked(
+      `change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
+    );
+  }
+  const sources = new Map<string, RuleEntry>();
+  const holders: string[] = [];
+  let decisionCount = 0;
+  const members = [
+    ...revisions.map((n) => [n, "revision"] as const),
+    ...neighbors.map((n) => [n, "neighbor"] as const),
+    ...planned.map((n) => [n, "planned"] as const),
+  ].map(([n, kind]) => {
+    const entries = reachingRules(graph, n.id);
+    for (const e of entries) if (!sources.has(e.node_id)) sources.set(e.node_id, e);
+    const own = nodeDecisions(graph, n).length;
+    if (own > 0) {
+      holders.push(n.id);
+      decisionCount += own;
+    }
+    return {
+      id: n.id,
+      type: n.type,
+      state: n.state,
+      ...(n.next ? { next_state: n.next.state } : {}),
+      kind,
+      rules_from: entries.map((e) => e.node_id),
+    };
+  });
+  const rules = [...sources.values()].map((e) => {
+    const version = rulesVersion(e.rules);
+    return known?.[e.node_id] === version
+      ? { node_id: e.node_id, node_type: e.node_type, version, unchanged: true }
+      : { node_id: e.node_id, node_type: e.node_type, version, rules: e.rules };
+  });
+  recordOriented(graph, members.map((m) => m.id));
+  return {
+    change,
+    members,
+    rules,
+    decisions: { count: decisionCount, nodes: holders },
+    next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
+  };
 }
 
 /**
@@ -761,14 +828,21 @@ export async function orientForWork(args: {
   area?: string;
   slot?: ContextSlot;
   section?: string;
+  change?: string;
 }): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
     throw blocked(`orient_for_work depth must be one of: ${ORIENT_DEPTHS.join(", ")}.`);
   }
   const q = (args.query ?? "").trim();
+  if (args.change !== undefined) {
+    if (q || args.node_id) {
+      throw blocked('orient_for_work takes "change" alone: drop "query" and "node_id", or orient on one node without "change".');
+    }
+    return orientForChange(loadGraph(), args.change, args.known_rules_versions);
+  }
   if (!q && !args.node_id) {
-    throw blocked('orient_for_work requires a non-empty "query" and/or "node_id".');
+    throw blocked('orient_for_work requires a non-empty "query", "node_id", or "change".');
   }
   const graph = loadGraph();
   if (args.node_id) {
@@ -820,6 +894,8 @@ export async function orientForWork(args: {
     rules,
     decisions,
   };
+  const shape = shapeReport(node);
+  if (shape) reply.shape = shape;
   if (depth === "rules") {
     const next = context.next as { record?: unknown } | null;
     reply.context = { record: context.record, next: next ? { record: next.record } : null };
@@ -995,26 +1071,20 @@ export function getNodeImplementationHandler(args: {
  * Walks up from this module to the package root (same layout as the npm package).
  */
 function loadBundledPlaybook(): string {
+  const file = findPackageFile("templates", "agent", "playbook.md");
+  if (!file) {
+    throw blocked(
+      "get_project could not find templates/agent/playbook.md. Reinstall mindplan-mcp so the systems dialect ships with the package."
+    );
+  }
   try {
-    let dir = path.dirname(fileURLToPath(import.meta.url));
-    for (let i = 0; i < 8; i++) {
-      const candidate = path.join(dir, "templates", "agent", "playbook.md");
-      if (fs.existsSync(candidate)) {
-        return fs.readFileSync(candidate, "utf-8");
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
+    return fs.readFileSync(file, "utf-8");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw blocked(
       `get_project could not read the bundled playbook (${message}). Reinstall mindplan-mcp so templates/agent/playbook.md is present.`
     );
   }
-  throw blocked(
-    "get_project could not find templates/agent/playbook.md. Reinstall mindplan-mcp so the systems dialect ships with the package."
-  );
 }
 
 /** Names the integrity check where an agent cannot miss it: get_project is read first. */

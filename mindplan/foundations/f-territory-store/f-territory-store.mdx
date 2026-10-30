@@ -2,11 +2,11 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — the only writer of node files: Rules and Decisions sections, edges, change ids and neighbor labels, claims, tests, aliases, section patches and reads, checkbox toggles; a next file only while a revision is open; Atomic Ops only on unshipped slots; cached graph loads; the version stamp."
+description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, change ids and neighbor labels, claims and attributed files, tests, aliases, section patches, checkboxes; a next file only while a revision is open; Atomic Ops only before ship; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-10-29T15:21:03.313Z
+shipped_at: 2026-10-30T12:50:12.018Z
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-29T15:21:03.313Z
+updated_at: 2026-10-30T12:50:12.018Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -20,6 +20,7 @@ tests:
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/transient-io.test.mjs
@@ -100,6 +101,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 - **Literal replacements.** Every frontmatter write that splices free text (aliases, tests, title, description, `change_ref`) passes a replacer function to `String.replace`, so a `$` in the text is written as is and never read as a replacement pattern
 - **Lock-tolerant I/O.** Every read, write, copy, and removal of a file under `mindplan/` in `store.ts`, `project.ts`, and `version.ts` goes through the `f-source-index/io.ts` wrappers (`readFileRetry`, `writeFileRetry`, `copyFileRetry`, `unlinkRetry`; `fs.rmSync` with `RM_MAX_RETRIES` for `next-attachments/`), so a lock another process holds for a moment is waited out (decision `d-plan-io-retry-in-source-index`, Bug `bug-windows-transient-file-lock`).
 
+- **Planned edges.** The live file holds `planned:` as a named list, one `<change> <edge_type> <target>` item each, kept verbatim by every frontmatter rewriter. `writePlannedEdges(node, entries)` replaces it (removed when empty), keeping any item it cannot parse verbatim. `openNextSlot` never copies `planned:` (nor `attributed:`) into the next file; the handler applies the entries of the revision's change to the next slot's edges and leaves them on live. `promoteNextSlot` keeps the live entries of every other change and drops those of the change that shipped. A discard leaves them, so they apply again when the change reopens the node
+- **Attributed files.** `attributed:` is a named list on the slot that holds the revision (`<id>.next.mdx`, or `<id>.mdx` before first ship); `writeAttributedFrontmatter(node, files, slot)` replaces it and reports a readiness reset like a claim write. Promotion does not carry it, and a first ship clears it from the live file (`clearAttributed`): once shipped, the file is simply part of its owner's folder
+
 ## Acceptance Criteria
 
 - After first ship a node has no next file; `open_next` writes one from live with a fresh Atomic Ops list, and ship and discard delete it with `next-attachments/`
@@ -136,6 +140,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - Aliases round-trip JSON-quoted, survive other territory writes and promotion, and `[]` removes them
 - `loadGraph` returns the same graph with the cache on, off, and in a second process; a Blocked territory file stays Blocked on every load
 - A node file that starts with a run of blank lines below the frontmatter (LF or CRLF) has exactly one after any write, status moves included; `get_node_context` returns its body without leading blank lines, and a whole-body write of a body that starts with blank lines writes one
+- A live `planned:` list survives an edge write, a claim write, and a territory patch; `open_next` leaves it out of the next file; promotion keeps another change's entries and drops the shipped change's
+- `attributed:` is written to the revision's slot, survives other writes, and is gone from the live file after first ship and after promotion
 
 ## Decisions
 

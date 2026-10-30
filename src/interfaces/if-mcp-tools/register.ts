@@ -31,6 +31,7 @@ import {
   listDecisionsHandler,
   orientForWork,
 } from "../../interactions/i-orient-plan/handlers.js";
+import { getSpec } from "../../interactions/i-orient-plan/spec.js";
 import { withDrift } from "../../foundations/f-mcp-runtime/with-drift.js";
 import {
   STATUS_SCOPES,
@@ -257,8 +258,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call before in-review, before ship, and before telling the user the work is done. " +
         "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence (claims, and linked tests once a node is in review or shipped), leftovers, and the import matrix. " +
-        "Returns { ok, output, failures, warnings }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import). " +
-        "Warnings flag stale territory text, next-slot imports (one release before they Block), split route families, revisions in review with no linked tests, and leftover mirror twins from releases before 0.8.0 (init removes them), and never fail the check. " +
+        "Returns { ok, output, failures, warnings, info }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import, then Warning: and Info: lines). " +
+        "Warnings flag draft nodes missing required sections (shape:), stale territory text, next-slot imports (one release before they Block), split route families, revisions in review with no linked tests, and leftover mirror twins from releases before 0.8.0 (init removes them), and never fail the check; info lists paths a plan names before building them (planned:), one line per node. " +
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
         "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only). " +
         "Pass merge before telling the user a PR is ready to merge: it Blocks every node still in review (ship its change, or move it back to in-progress), and with \"strict\" also in-progress nodes whose claimed files changed against base; results carry merge grouped by change. " +
@@ -467,10 +468,11 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call before each action, after get_rules. Not only at session start. Summary first: " +
         "with only a query it returns ranked rows ({ id, type, state, title, description, area?, score }, default 8, no body, rules, or decisions); " +
-        "pick one and call again with node_id. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
+        "pick one and call again with node_id, or pass change alone to orient on every member of a change in one reply (each member's rules_from, each rule source's text once, the members holding decisions), which clears the write gate for all of them. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
         "With node_id it returns the full node at depth: record and body (get_node_context), owned files, " +
         "the body being the active slot's (the open next while a revision is open; slot picks one, section cuts it to one section), " +
         "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface. " +
+        "A full reply carries shape while the node has a transition ahead: the required sections of its active slot, each present, missing, or stub, and the gates that check them. " +
         "Writes that act on a node (set_implementation_files, set_test_files, update_node_status, patch_node_territory, patch_node_rules, open_next, record_decision, attachments, force_unship, link_nodes / unlink_nodes on the source) " +
         "are Blocked: Orientation until that node had a full reply in this session (or get_node_context), and again after the rules that reach it changed; create_node is never blocked. " +
         "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
@@ -483,8 +485,11 @@ export function registerMindPlanTools(server: McpServer): void {
         query: z
           .string()
           .optional()
-          .describe("Free-text query to rank nodes. Required if node_id omitted."),
+          .describe("Free-text query to rank nodes. Required if node_id and change are omitted."),
         node_id: NODE_ID.optional().describe("Force focus to this node when present."),
+        change: CHANGE_ID.optional().describe(
+          "Orient on every member of this change (open revisions and neighbors) in one reply; pass it without query or node_id."
+        ),
         type: z.enum(NODE_TYPES).optional().describe("Optional type filter before ranking."),
         limit: z
           .number()
@@ -513,10 +518,11 @@ export function registerMindPlanTools(server: McpServer): void {
         section: SECTION_READ,
       },
     },
-    ({ query, node_id, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section }) =>
+    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section }) =>
       orientForWork({
         query,
         node_id,
+        change,
         type,
         limit,
         depth,
@@ -545,6 +551,28 @@ export function registerMindPlanTools(server: McpServer): void {
       inputSchema: {},
     },
     () => getProject()
+  );
+
+  tool(
+    server,
+    "get_spec",
+    {
+      kind: "read",
+      drift: false,
+      title: "Read the specification",
+      description:
+        "Call when you need a specific MindPlan rule (lifecycle, required sections, change ids, neighbors, decisions, imports, orientation) instead of guessing or retrying. " +
+        "Returns one part of the running server's own SPEC.md ({ topic, version, text }) by stable topic id, or a tool's SPEC entry by tool name. " +
+        "Without topic it lists the topic ids and tool names.",
+      inputSchema: {
+        topic: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("A topic id (e.g. territory-shape, lifecycle, change-ids, neighbors, decisions) or a tool name (e.g. run_check). Omit to list them."),
+      },
+    },
+    ({ topic }) => getSpec({ topic })
   );
 
   tool(
@@ -941,14 +969,23 @@ export function registerMindPlanTools(server: McpServer): void {
         "retired nodes may only shrink. Rejects bad paths and ownership conflicts. " +
         "Results may carry folder_claims: a folder/ entry that would replace several per-file entries. " +
         "Entries are files, directories ending in /, or globs (* ** ?; [ ] stay literal), e.g. src/templates/*/actions/i-read-post/. " +
+        "attributed names files a revision adds in another node's claimed folder (a migration in a composition root's single migrations folder): ownership stays with that node, " +
+        "but the decision gate and the blast radius count them for this revision; each must be an exact file another active node claims, and a shipped node needs an open next. " +
         READINESS_HINT,
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Pipeline node whose implements list to replace."),
         files: z
           .array(z.string())
+          .optional()
           .describe(
-            "Repo-relative POSIX paths (files, or directories ending in /). Replaces the slot list."
+            "Repo-relative POSIX paths (files, or directories ending in /). Replaces the slot list. Omit with attributed to keep the claims."
+          ),
+        attributed: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Exact repo-relative files this revision adds in another node's claimed folder. Replaces the list; [] clears it."
           ),
         slot: z
           .enum(["current", "next"])
@@ -962,8 +999,8 @@ export function registerMindPlanTools(server: McpServer): void {
       },
     },
     
-      ({ node_id, files, slot, change, verbose }) =>
-        setImplementationFiles({ node_id, files, slot, change, verbose })
+      ({ node_id, files, attributed, slot, change, verbose }) =>
+        setImplementationFiles({ node_id, files, attributed, slot, change, verbose })
   );
 
   tool(
@@ -1006,7 +1043,8 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call when reuse found no node, before any new-feature code. " +
         "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
-        "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold).",
+        "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold). " +
+        "Returns shape for a Foundation, Interaction, Interface, or Bug: the sections its first transition checks, each present, missing, or stub (the scaffold), so you write them before moving it.",
       inputSchema: {
         verbose: VERBOSE,
         id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
@@ -1042,6 +1080,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Interface -exposes-> Interaction, Foundation -mounts-> Interface (a composition root that imports Interfaces), Interaction -leads_to-> Interaction, " +
         "Bug -affects-> Interaction|Interface|Foundation. " +
         "While a node has <id>.next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship). " +
+        "Pass change on a shipped node with no open revision of that change to plan the edge instead: it is checked like a link (shape, cycles), recorded under the change on the live file without open_next, " +
+        "listed by run_check and get_blast_radius for the change, applied to the next slot when open_next opens the node with that change, and dropped if the change closes first. The live graph does not change. " +
         READINESS_HINT,
       inputSchema: {
         verbose: VERBOSE,
@@ -1050,11 +1090,14 @@ export function registerMindPlanTools(server: McpServer): void {
         edge_type: z
           .enum(EDGE_TYPES)
           .describe("belongs_to | depends_on | exposes | leads_to | affects | mounts"),
+        change: CHANGE_ID.optional().describe(
+          "Plan the edge under this change id when the source is shipped and has no open revision of it."
+        ),
       },
     },
-    
-      ({ source_id, target_id, edge_type, verbose }) =>
-        linkNodes({ source_id, target_id, edge_type, verbose })
+
+      ({ source_id, target_id, edge_type, change, verbose }) =>
+        linkNodes({ source_id, target_id, edge_type, change, verbose })
   );
 
   tool(
@@ -1069,7 +1112,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Optional title/description overrides. The next file gets a fresh list of unticked default Atomic Ops to rewrite (a shipped node keeps none). The live node keeps serving. " +
         "Ship from next in-review to promote it over the live file; discard_next to abandon it. Both delete the next file. " +
         "Pass change to tie this revision to the others of one change (update_node_status scope change, get_blast_radius change, run_check change act on the group). " +
-        "A neighbor label is inherited as the revision's change unless change names another, which clears it (replaced_change).",
+        "A neighbor label is inherited as the revision's change unless change names another, which clears it (replaced_change). " +
+        "Edges planned on the node under the revision's change are added to the next slot (applied_planned).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(
@@ -1120,7 +1164,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "When the focus is an Interaction, also returns reachability. " +
         "decisions lists the active decisions held by the focus; dependent_decisions ({ count, nodes }) names the dependents that hold decisions a change would reach, and include_dependent_decisions adds their one-line entries to decisions. " +
         "tests lists the linked test files of the focus and every owner in affected_files: the suites to run. " +
-        "Pass change instead of node_id for the merged radius of every member of a change (open revisions and neighbors; members carry kind).",
+        "Pass change instead of node_id for the merged radius of every member of a change (open revisions, neighbors, and shipped nodes with planned edges; members carry kind revision | neighbor | planned) and its planned_edges.",
       inputSchema: {
         node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),
         change: CHANGE_ID.optional().describe("A change id: merge the blast radius of all its open revisions and neighbors."),
@@ -1147,15 +1191,17 @@ export function registerMindPlanTools(server: McpServer): void {
       description:
         "Call when an existing edge should go away. " +
         "Removes edge(s) between two nodes from the source node's frontmatter. " +
+        "With change, removes only the edges planned under that change from source to target. " +
         READINESS_HINT,
       inputSchema: {
         verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),
         target_id: NODE_ID.describe("The id of the edge target node."),
+        change: CHANGE_ID.optional().describe("Remove the edges planned under this change instead of real edges."),
       },
     },
-    
-      ({ source_id, target_id, verbose }) => unlinkNodes({ source_id, target_id, verbose })
+
+      ({ source_id, target_id, change, verbose }) => unlinkNodes({ source_id, target_id, change, verbose })
   );
 
   tool(
@@ -1175,6 +1221,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +
         "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
         "A move to in-review of a decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, or a depends_on change) with no decision recorded is Blocked: Decision with the record_decision call. " +
+        "A Blocked: Orientation names every unoriented node of the call at once (a scope change walk names orient_for_work({ change })). " +
         "A batch returns one line per node. " +
         "When a ship or cancel leaves a change with no open revisions, its neighbor labels are cleared (cleared_neighbors); " +
         "scope change walks revisions only, and a walk of it to ship clears its labels. " +

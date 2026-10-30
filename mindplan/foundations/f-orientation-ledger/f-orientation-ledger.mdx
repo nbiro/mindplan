@@ -4,17 +4,18 @@ type: Foundation
 title: "Orientation ledger"
 description: "Infra — the in-memory record of which nodes had their full context and rules fetched in this MCP session, with a fingerprint of the rules that reached them, and the gate that blocks writes on a node until it was fetched with its current rules."
 state: stable
-shipped_at: 2026-10-25T23:35:19.567Z
+shipped_at: 2026-10-30T12:50:11.953Z
 created_at: 2026-10-25T23:20:45.972Z
-updated_at: 2026-10-25T23:35:19.567Z
-role: infra
+updated_at: 2026-10-30T12:50:11.953Z
 depends_on:
   - f-graph-search
   - f-domain-model
 implements:
   - src/foundations/f-orientation-ledger/
 tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
+role: infra
 ---
 
 # Orientation ledger
@@ -33,7 +34,7 @@ Package: `src/foundations/f-orientation-ledger/`
   - `rulesFingerprint(graph, nodeId)` — SHA-1 of the node's `reachingRules` entries (`f-graph-search`) as `[node_id, rules]` pairs: it changes when the node's own rules or any inherited rules change, or when an edge brings or drops a source
   - `recordOriented(graph, ids)` — stores each existing id with its current fingerprint
   - `orientationGap(graph, id)` — `unfetched`, `rules_changed`, or null (null while the gate is off)
-  - `assertOriented(graph, ids, tool)` — `Blocked: Orientation: <tool> acts on …` for the first gap, naming `orient_for_work({ node_id: "<id>" })`; an id not in the graph is skipped so the handler reports that it does not exist
+  - `assertOriented(graph, ids, tool, opts?)` — one `Blocked: Orientation: <tool> acts on …` for every gap at once: a single gap keeps the one-node wording naming `orient_for_work({ node_id: "<id>" })`; several list each id with its reason (not oriented, rules changed) in one message, and name `orient_for_work({ change: "<change>" })` when `opts.change` is set (a walk over one change), else one `orient_for_work({ node_id })` per id; an id not in the graph is skipped so the handler reports that it does not exist
   - `resetOrientationLedger()` — forget every fetch (tests)
 
 Depends on: `f-graph-search`, `f-domain-model`.
@@ -42,6 +43,7 @@ Depends on: `f-graph-search`, `f-domain-model`.
 
 - A node fetched with its current rules passes; an unfetched node and a node whose reaching rules changed are Blocked with the fixing call
 - The gate is off in the CLI and with `MINDPLAN_ORIENT_GATE=off`
+- A write over three unoriented nodes is Blocked once, naming all three; over one change it names `orient_for_work({ change })`
 - Verified via `npm test` (`orient-gate.test.mjs`)
 
 ## Decisions
@@ -56,6 +58,17 @@ Depends on: `f-graph-search`, `f-domain-model`.
 - Consequences: Restarting the server forgets every fetch; MINDPLAN_ORIENT_GATE=off turns the gate off for a process (legacy test suites).
 - Change: summary-orient
 - Date: 2026-10-25
+
+### d-change-wide-orient-stays-in-memory
+
+- Decision: A reconnect is covered by orient_for_work({ change }), which returns the rules of every member of a change once per source and records them all; the ledger stays in memory per process, and an orientation Block names every unoriented node at once.
+- Alternatives:
+  - Persist the ledger per working directory with rules fingerprints (a new conversation would inherit orientation whose rules never reached it)
+  - Both persist and add the change-wide orient (keeps the persistence risk for a case one call already covers)
+- Why: Orientation is a property of what reached this conversation; one call per change makes a reconnect cheap without letting rules be skipped.
+- Consequences: After a reconnect an agent makes one orient call per change (or per node outside a change) before writing.
+- Change: agent-guidance
+- Date: 2026-10-30
 
 ## Attachments
 

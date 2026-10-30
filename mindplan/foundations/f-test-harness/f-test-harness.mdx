@@ -6,14 +6,14 @@ description: "Infra — smoke, view, search, check, ergonomics, honesty, decisio
 state: stable
 shipped_at: 2026-10-25T21:13:07.604Z
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-29T14:37:19.962Z
+updated_at: 2026-10-30T12:39:22.647Z
 depends_on:
   - f-mcp-runtime
 implements:
   - src/foundations/f-test-harness/
+role: infra
 tests:
   - src/foundations/f-test-harness/
-role: infra
 ---
 
 # Test harness
@@ -56,6 +56,9 @@ Depends on: `f-mcp-runtime`.
 - `lean-replies.test.mjs` (run by `npm test`) covers the store's Atomic Ops helpers (fenced headings, a Foundation's Checklist, CRLF, a Bug's Fix Checklist untouched) and `readSectionFromBody`; over MCP, first ship and promotion leaving no Atomic Ops on live and twin with Rules and Decisions kept, `open_next` starting one unticked list before Rules, a revision Blocked by the Completion Check until it ticks its own ops, `force_unship` restoring a list (and a refused unship writing nothing), `orient_for_work` returning the active slot's body and its decisions once, `slot`, `section` (a missing heading Blocked, naming the slot), a `slot` outside the enum rejected, and `get_node_context` with both slots by default; and over the CLI, init dropping an older release's ledgers (live stripped, twin rewritten, an open revision's list kept, a rerun dropping nothing). The other suites that ship a revision tick its fresh ops first
 
 - **No standing twin.** `twins.test.mjs` (run by `npm test`) now covers the one-file model: every live write on a shipped node (links and unlinks with the stability recompute, Bug status, territory, aliases, rules, tests, neighbor labels, decisions) touches only `<id>.mdx` and lists every file it touched; no write creates a `state: mirror` file; `open_next` writes the next file and `.gitkeep`; ship and `discard_next` delete them (with attachments) and list each path; a hand-written leftover mirror loads as no revision, warns in `run_check`, survives a live write, is replaced by `open_next`, and is deleted by `force_unship`. Smoke covers init deleting a leftover twin (keeping a non-empty `next-attachments/`) and the CLI line; the other suites assert no next file where they used to assert a true twin
+
+- **Agent guidance.** `agent-guidance.test.mjs` (run by `npm test`) covers: the shape table embedded in the define-entities skill and SPEC equal to `shapeTableMarkdown()`; `shape` on `create_node`, `orient_for_work`, and `get_node_context`; the `shape:` warning; one Blocked listing every gap; `get_spec` (listing, `territory-shape` under 3 KB with the table, an unknown topic, every topic resolving, a tool name); `planned:` info lines for a plan-only change and "at build time" lines; and across two server sessions, a change walk Blocked once for every unoriented member, then cleared by one `orient_for_work({ change })`. Smoke counts thirty tools including `get_spec`
+- **Planned wiring.** `planned-wiring.test.mjs` (run by `npm test`) covers: a planned `exposes` on a shipped Interface (live list unchanged, not a graph edge, on the record), Blocked duplicates, shapes, and cycles; a cancelled target failing `run_check({ change })` and Blocking `open_next`; the `planned` member, `Info: planned edges:`, and `planned_edges` in the change radius; `unlink_nodes` with `change`; `open_next` applying the edge, a discard leaving it planned, ship making it live, and the closing change reporting `cleared_planned`; a planned edge to a deleted node still removable, an unreadable planned item kept through a write, a CRLF live file opening a CRLF next file, and an unapplied entry still listed after the change id is set on an open revision; and attribution (Blocked glob, unclaimed file, and shipped node with no revision; the decision warning and `Blocked: Decision` naming the migration; the radius listing it; ship dropping the list)
 
 ## Acceptance Criteria
 
