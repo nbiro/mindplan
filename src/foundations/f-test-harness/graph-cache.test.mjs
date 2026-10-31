@@ -373,8 +373,11 @@ function loadInChild(root, mode = "stamps") {
   loadGraph();
   const warm = fastest();
   console.log(`     1500 nodes: uncached ${cold.toFixed(0)} ms, warm stamps ${warm.toFixed(0)} ms`);
-  assert.ok(warm < cold / 2, `warm load ${warm.toFixed(0)} ms should be under half of ${cold.toFixed(0)} ms`);
-  ok("scale: a warm load costs under half an uncached one");
+  // The guarantee is that a warm load parses nothing; that is exact. A speed ratio on a shared CI
+  // runner is not (a 2x bar failed at exactly 24 ms vs 48 ms), so timing only has to beat no cache.
+  assert.equal(stats().parsed, 0, "a warm load of an unchanged plan re-parses no node folder");
+  assert.ok(warm < cold, `warm load ${warm.toFixed(0)} ms should beat the uncached ${cold.toFixed(0)} ms`);
+  ok("scale: a warm load parses nothing and beats an uncached one");
 }
 
 closeGraphCaches();
