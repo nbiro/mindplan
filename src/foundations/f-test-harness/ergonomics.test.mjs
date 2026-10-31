@@ -3,6 +3,8 @@
  * `mounts` composition root, small write responses, section patching, scoped status walks,
  * drift classes, stale-text warnings, and orient depth. Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";

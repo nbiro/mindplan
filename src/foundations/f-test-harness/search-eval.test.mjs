@@ -12,6 +12,8 @@
  *   --model <id>      live model for --write-vectors / --live (default: the search default)
  *   --live            hybrid mode with the live model instead of the fixture vectors
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import assert from "node:assert/strict";
 import { createHash } from "crypto";
 import * as fs from "fs";

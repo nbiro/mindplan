@@ -10,10 +10,10 @@ mcpServers:
       - mindplan-mcp
 ```
 
-`npx mindplan-mcp` runs the copy pinned in your `package.json` dev dependencies (`npm install -D mindplan-mcp`). In a project without a `package.json`, use `args: ["-y", "mindplan-mcp@0.5"]`.
+`npx mindplan-mcp` runs the copy pinned in your `package.json` dev dependencies (`npm install -D mindplan-mcp`). In a project without a `package.json`, use `args: ["-y", "mindplan-mcp@0.13"]`.
 
 See [Continue MCP docs](https://docs.continue.dev/customization/mcp) for the current schema.
 
-2. **Instructions** — MCP already requires `get_project` (dialect + project brief). `init` writes that stub to `AGENTS.md` when missing. Point Continue rules at the stub if this host does not read `AGENTS.md`.
+2. Restart Continue or reload config.
 
-3. Restart Continue or reload config.
+3. **Set up MindPlan** — ask Continue to set up MindPlan in the repository. It calls `setup_project` and follows the returned guide: it writes `MINDPLAN.md` at the root and points your agent files at it (a line in `AGENTS.md`, or a Continue rule that references `MINDPLAN.md` if this host reads neither `AGENTS.md` nor `CLAUDE.md`), and proposes moving your standing rules into the project brief.

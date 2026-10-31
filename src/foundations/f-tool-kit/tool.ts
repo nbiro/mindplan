@@ -21,6 +21,12 @@ export type ToolConfig<Args extends ZodRawShapeCompat> = {
   inputSchema: Args;
   /** `false` for read tools that must never carry drift (get_project, get_rules, run_check). */
   drift?: boolean;
+  /**
+   * `false` for tools that answer before the graph is set up or upgraded (get_project, get_rules,
+   * get_spec, get_skill, run_check, setup_project, upgrade_project); every other tool passes the
+   * version gate before its handler.
+   */
+  gate?: boolean;
 };
 
 /** One tool an action defines: its name, config, and handler. */

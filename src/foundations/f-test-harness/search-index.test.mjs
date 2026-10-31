@@ -4,6 +4,8 @@
  * first, never serves a graph that changed outside MCP, and meets the timing budget on 1,000
  * nodes (incremental sync after one write < 200 ms, a search < 50 ms).
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import assert from "node:assert/strict";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
@@ -375,21 +377,9 @@ ok("timing: incremental update < 200 ms and search < 50 ms on 1,000 nodes");
   assert.equal(typo.isError, true, "an unknown search key is rejected, not stripped");
   await client.close();
 
-  // init adds the cache to .gitignore once and keeps what was there.
-  fs.writeFileSync(path.join(root, ".gitignore"), "node_modules/");
-  const init = () =>
-    spawnSync(process.execPath, [path.join(toolRoot, "dist/index.js"), "init", "--host", "claude"], {
-      cwd: root,
-      env: { ...process.env, MINDPLAN_ROOT: root },
-      encoding: "utf-8",
-    });
-  assert.equal(init().status, 0);
-  assert.equal(fs.readFileSync(path.join(root, ".gitignore"), "utf-8"), "node_modules/\n# MindPlan search cache (derived; safe to delete)\n.mindplan-cache/\n");
-  assert.equal(init().status, 0);
-  assert.equal(fs.readFileSync(path.join(root, ".gitignore"), "utf-8").match(/\.mindplan-cache/g).length, 1, "a rerun does not add it again");
   fs.rmSync(root, { recursive: true, force: true });
 }
-ok("MCP: outside edits reach search on the next call; async Blocked envelope; search settings; init ignores the cache once");
+ok("MCP: outside edits reach search on the next call; async Blocked envelope; search settings");
 
 // --- MCP with semantic ranking on: calls answer while the model loads, stdout stays clean ---
 {

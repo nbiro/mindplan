@@ -1,6 +1,8 @@
 /**
  * Unit tests for graph search ranking (retired-node filter) + Interaction/Interface neighborhoods.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import assert from "node:assert/strict";
 import {
   expandNeighborhood,

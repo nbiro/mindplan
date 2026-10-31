@@ -2,13 +2,13 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, and missing tests, warns about stale text, shape gaps, missing decisions, hotspots, and mirror leftovers, checks one change with its additivity, and runs the merge gate."
+description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, and hotspots, checks one change, and runs the merge gate."
 state: stable
-shipped_at: 2026-10-31T12:20:48.794Z
-revisions: 23
-churn: 15.493
+shipped_at: 2026-10-31T20:33:28.956Z
+revisions: 24
+churn: 16.371
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-31T12:20:48.794Z
+updated_at: 2026-10-31T20:33:28.956Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -17,6 +17,7 @@ depends_on:
   - f-mcp-runtime
   - f-source-index
   - f-tool-kit
+  - f-graph-migrations
 implements:
   - src/interactions/i-check-integrity/
 tests:
@@ -35,7 +36,7 @@ tests:
 
 ## Purpose
 
-Default check Blocks an illegal import with the exact fix. A shipped node has no next file unless a revision is open, so there is no twin to check; a `state: mirror` file left by a release before 0.8.0 only warns, naming `mindplan-mcp init`, which removes it. It prints non-blocking warnings when a node's text no longer matches the repo. The same check is reachable by agents as `run_check`, because a check only the CLI exposes is never run. Also builds a read-only drift report of uncommitted source files and their owners, classified so the actionable files are not buried under expected edits. A later session that only grepped `src/` would miss those owners. The check also warns about every decision-worthy open revision that has no decision yet, from draft on, so the `Blocked: Decision` at `in-review` is never the first the agent hears of it. A change's check covers its neighbors too, the shipped nodes it edits in place, so a feature that touches a shipped helper without revising it is still checked as one piece.
+Default check Blocks an illegal import with the exact fix. A shipped node has no next file unless a revision is open, so there is no twin to check; a `state: mirror` file left by a release before 0.8.0 only warns, naming `upgrade_project`, which removes it. A graph that needs setup or upgrade fails the check, so CI stops an outdated graph from merging. It prints non-blocking warnings when a node's text no longer matches the repo. The same check is reachable by agents as `run_check`, because a check only the CLI exposes is never run. Also builds a read-only drift report of uncommitted source files and their owners, classified so the actionable files are not buried under expected edits. A later session that only grepped `src/` would miss those owners. The check also warns about every decision-worthy open revision that has no decision yet, from draft on, so the `Blocked: Decision` at `in-review` is never the first the agent hears of it. A change's check covers its neighbors too, the shipped nodes it edits in place, so a feature that touches a shipped helper without revising it is still checked as one piece.
 
 ## Actor & Trigger
 
@@ -46,7 +47,7 @@ Default check Blocks an illegal import with the exact fix. A shipped node has no
 
 Intended files: `src/interactions/i-check-integrity/`
 
-- Keep ownership checks; there is no mirror-twin check. `legacyMirrorWarnings` adds one `legacy: "<id>" has a leftover mirror twin (<path>); run mindplan-mcp init to remove it.` warning per leftover `state: mirror` next file, and never fails the check
+- Keep ownership checks; there is no mirror-twin check. `legacyMirrorWarnings` adds one `legacy: "<id>" has a leftover mirror twin (<path>); call upgrade_project to remove it.` warning per leftover `state: mirror` next file, and never fails the check
 - Import rule: `findAllImportViolations` (`f-compiler-rules`); each failure ends with `Fix: link_nodes({...})` or `not allowed: ...`; a Foundation importing an Interface it mounts is legal
 - `runIntegrityCheck` returns `{ ok, failures, warnings, removedLegacyFiles }`; `renderCheckOutput` formats it (`mindplan-mcp check: ok`, or one `Blocked:` line per failure, then `Warning:` lines) for both the CLI and `run_check`
 - Warnings never change `ok` or the exit code: a node in review gets every stale-text signal (body names a missing path, a claimed file changed after the body was updated, unticked checkboxes); a shipped node with no open update gets only the path signals (a missing path, and a live `added_claims` entry its body does not name); nodes still being built are skipped
@@ -60,7 +61,7 @@ Intended files: `src/interactions/i-check-integrity/`
 - **Changes.** `runCheckHandler({ base?, change? })` adds `change: { id, members, failures, warnings }`: each member's active-slot import and ownership violations (Blocked lines that make `ok` false) and its stale-text warnings; a member violation the global import rule already reported is not repeated. Members are the change's open revisions (`changeMembers`) and its neighbors (`changeNeighbors`), each listed with `kind: "revision" | "neighbor"`; a neighbor is checked on its live files. Decision warnings apply to revisions only. A change with neither revisions nor neighbors is Blocked (`has no members`)
 - **Decisions.** For every open revision (a shipped node with an open next; a pre-ship, non-retired pipeline node at any pre-ship state), `decisionWarnings` (`f-compiler-rules`) adds `Warning: decision: …` lines naming the triggers. One `DecisionContext` (config plus the lazy git probe) serves the whole run. Decision warnings never change `ok`; with `change`, the members' decision warnings are part of the change's warnings
 - The dirty-src base is `defaultBaseRef` (`f-source-index`), the same merge base the decision gate uses
-- **Version.** When `projectVersionStatus()` (`f-territory-store`) is not `current`, its warning prints as `Warning: version: …`. It never changes `ok`, so CI keeps passing while a project catches up
+- **Version.** When `graphStatus()` (`f-graph-migrations`) is not `current`, the check fails with `Blocked: Version — <warning>` (naming `setup_project`, `upgrade_project`, or the package to upgrade to), before the graph checks run. `MINDPLAN_VERSION_GATE=off` skips it, like the tool gate
 - **Linked tests.** `checkPresence` also reports `testPresenceFailures` (`f-compiler-rules`): `Blocked: presence: "<id>" tests entry missing on disk: "<entry>".` for a node in review or shipped. Each in-review revision with no linked tests adds its `untestedWarning` as `Warning: tests: …`; it never changes `ok`. The change check reports both for its members
 
 Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
@@ -94,7 +95,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - `run_check` on this repository's graph reports no new failures
 - A Foundation `open_next` revision with no decision prints a `decision:` warning and `ok` stays true; recording a decision under its change removes the warning
 - A revision that is not decision-worthy never prints a `decision:` warning
-- A missing or older `mindplan/version.json` prints a `version:` warning and `ok` stays true; a current stamp prints none
+- A graph with no stamp, or a stamp below `MIGRATION_LEVEL`, fails with `Blocked: Version` naming `upgrade_project`; a directory without `mindplan/` fails naming `setup_project`; a current stamp passes
 - `run_check` with `change` lists revisions and neighbors with their `kind`, fails on a neighbor's import violation, and gives decision warnings for revisions only
 - A change with only neighbors is checked; a change with no members is Blocked
 - A shipped node's `added_claims` entry that its body does not name prints a `stale:` warning and `ok` stays true
@@ -103,7 +104,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - An in-review revision with no tests prints a `tests:` warning and `ok` stays true
 
 - `run_check` stays ok with bad descriptions and lists one `description:` warning per kind
-- A leftover `state: mirror` file warns with the init fix and the check still passes; a shipped node with no next file passes
+- A leftover `state: mirror` file warns naming `upgrade_project` and the check still passes; a shipped node with no next file passes
 - A graph with one `in-review` next slot fails the merge gate with a `Blocked: Merge` line naming the node, its change, and the ship call, and passes the default check
 - `draft`, `ready`, `in-progress`, `stable`, and `unstable` nodes pass the merge gate; a Bug in `in-review` fails and a `resolved` one passes
 - Several in-review nodes of one change produce one group in `merge.changes`, and their lines are adjacent

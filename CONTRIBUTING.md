@@ -16,16 +16,19 @@ npm test
 
 `npm test` runs an end-to-end smoke test that exercises every MCP tool and compiler rule against a temporary sandbox.
 
+While developing, run only the suites that cover your change: `npm run test:files -- <paths>`, with the linked tests `get_blast_radius({ change })` lists (files, `dir/`, or globs). It builds once and runs the matching suites of `npm test` in the same order; anything else in the list (fixtures, helpers) is skipped. Run the full `npm test` before handing work off; CI runs it on every PR.
+
 ## Project layout
 
 | Path | Purpose |
 |------|---------|
 | `SPEC.md` | Framework specification — source of truth for behaviour |
-| `templates/agent/playbook.md` | Always-on systems dialect installed into consumer projects by `init` |
-| `templates/agent/project.md` | Project brief template copied to `mindplan/project.md` by `init` when missing |
-| `templates/agent/skills/define-entities/` | Entity-definition guide installed by `init` |
-| `templates/agent/skills/plan-project/` | Plan-only session guide installed by `init` |
-| `templates/agent/integrations/` | Per-agent MCP setup guides installed by `init` |
+| `templates/agent/playbook.md` | Always-on systems dialect, served by `get_project` |
+| `templates/agent/project.md` | Project brief template copied to `mindplan/project.md` by `setup_project` when missing |
+| `templates/agent/skills/define-entities/` | Entity-definition skill, served by `get_skill` |
+| `templates/agent/skills/plan-project/` | Plan-only session skill, served by `get_skill` |
+| `templates/agent/integrations/` | Per-agent MCP setup guides (shipped in the package, not installed) |
+| `templates/agent/agents-stub.md`, `setup-guide.md`, `upgrade-guide.md` | Pointer text and guides returned by `setup_project` / `upgrade_project` |
 | `src/` | TypeScript MCP server |
 | `scripts/smoke.mjs` | Integration smoke test |
 | `dist/` | Compiled output (gitignored; built at publish time) |
@@ -42,7 +45,7 @@ Planning data (`mindplan/`) lives in **consumer projects**, not in this repo. Co
 
 ## Publishing (maintainers)
 
-One script publishes, by hand or from CI: `src/interactions/i-npm-publish/publish.mjs` (`npm run publish:release`). It checks the package and a clean tree, runs `npm test`, asserts the tarball holds only `dist/`, `templates/`, `README.md`, `SPEC.md`, `LICENSE`, and `package.json`, publishes, and verifies the registry (and, by hand, a fresh `npx mindplan-mcp init`). Add `-- --dry-run` to run everything but the publish. Do not commit `dist/` to git.
+One script publishes, by hand or from CI: `src/interactions/i-npm-publish/publish.mjs` (`npm run publish:release`). It checks the package and a clean tree, runs `npm test`, asserts the tarball holds only `dist/`, `templates/`, `README.md`, `SPEC.md`, `LICENSE`, and `package.json`, publishes, and verifies the registry (and, by hand, a fresh `npx mindplan-mcp` registered with an agent that calls `setup_project`). Add `-- --dry-run` to run everything but the publish. Do not commit `dist/` to git.
 
 **First publish (claims the name).** From a clean checkout of `main`:
 
@@ -63,7 +66,7 @@ On every push to `main`, `.github/workflows/publish.yml` checks whether `package
 
 The repo dev-depends on one exact release of itself (`"mindplan-mcp": "X.Y.Z"` in `devDependencies`, no range). Right after a release, the Publish workflow's `repin` job opens a PR (`repin/mindplan-mcp-X.Y.Z`) that pins it to that release and refreshes the lockfile, then dispatches CI on that branch. The dispatched run is listed under Actions → CI for the branch, not as checks on the PR. GitHub also creates the PR's own `pull_request` run, which waits for a maintainer's approval ("Approve and run" puts its checks on the PR). When the dispatched run is green, its `merge-repin` job merges the PR (only when it changes nothing but `package.json` and `package-lock.json`, and only the commit that run tested). A repin PR still open after that run finished needs a maintainer: fix the cause, or merge it by hand once CI is green. That PR does not bump the package version, so merging it publishes nothing. Do not add a bump: otherwise each repin PR would publish a new release, which would call for another repin. The job needs the repository setting that allows GitHub Actions to create pull requests (Settings → Actions → General → Workflow permissions). If the job did not run (the publish job failed after publishing) or failed, re-run the failed jobs, or open the PR by hand: `npm install --save-dev --save-exact mindplan-mcp@X.Y.Z` on a new branch off `main`, changing nothing else.
 
-**Versioning.** Until 1.0.0, a minor bump may break: list it in `CHANGELOG.md` with **Breaking** and what a project must do. Any change to the playbook, the skills, or the graph format reaches a project when it reruns `mindplan-mcp init`; `mindplan/version.json` makes `get_project` and `check` remind it.
+**Versioning.** Until 1.0.0, a minor bump may break: list it in `CHANGELOG.md` with **Breaking** and what a project must do. The playbook and the skills reach a project as soon as it runs the new release (the server serves them). A change to the graph format or its on-disk conventions needs a migration in `upgrade_project` and a raised `MIGRATION_LEVEL` (SPEC §1.1.2): until a project calls `upgrade_project`, its gated tools answer `Blocked: Version` and `check` fails. A release that adds no migration leaves `MIGRATION_LEVEL` as it is.
 
 ## Reporting issues
 

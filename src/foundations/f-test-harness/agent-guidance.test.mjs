@@ -4,6 +4,8 @@
  * sections by topic (get_spec), change-wide orientation that clears the write gate in one call,
  * and planned paths reported as info on plan-only nodes instead of stale warnings.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

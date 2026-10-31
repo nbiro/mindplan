@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T21:13:07.604Z
 revisions: 23
 churn: 11.268
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-30T13:27:31.744Z
+updated_at: 2026-10-31T20:29:06.824Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -22,7 +22,7 @@ tests:
 
 ## Purpose
 
-Regression suite for MindPlan. Assert MCP `initialize` instructions are the short `get_project` pointer, and that `get_project` returns the bundled playbook with the project brief and the sentence that names the check. The ergonomics suite covers what keeps an agent's session small and honest: the check is reachable and gates shipping, claims report their import fixes, a registry can mount Interfaces, writes return little by default, one section can be patched, a whole open set ships in one call, drift is classified, and stale text warns. The decisions suite covers that recorded reasoning survives and reaches the next agent: records round-trip through every slot move, inherit like rules, supersede without rewriting, and the gate asks for a decision only where one is costly. The shipped-claims suite covers that a shipped node grows in place only inside a folder no one else can own and that the addition stays visible until the body names it; the change-neighbors suite covers that a change sees every shipped node it edits in place and that its labels go away with it.
+Regression suite for MindPlan. Assert MCP `initialize` instructions are the short `get_project` pointer, and that `get_project` returns the bundled playbook with the project brief and the sentence that names the check. The ergonomics suite covers what keeps an agent's session small and honest: the check is reachable and gates shipping, claims report their import fixes, a registry can mount Interfaces, writes return little by default, one section can be patched, a whole open set ships in one call, drift is classified, and stale text warns. The decisions suite covers that recorded reasoning survives and reaches the next agent: records round-trip through every slot move, inherit like rules, supersede without rewriting, and the gate asks for a decision only where one is costly. The shipped-claims suite covers that a shipped node grows in place only inside a folder no one else can own and that the addition stays visible until the body names it; the change-neighbors suite covers that a change sees every shipped node it edits in place and that its labels go away with it. The version suite covers setup, upgrade, and the version gate: which tools answer before setup, that setup writes no file the user owns, that an upgrade lists every file it changed and the retired host copies, and that `init` is gone. Suites that build graphs without a stamp set `MINDPLAN_VERSION_GATE=off`, and `upgrade-run.mjs` runs the setup and upgrade handlers in a child process rooted at a fixture. `run-files.mjs` (`npm run test:files -- <paths>`) runs only the suites of the `test` script that match the given files, directories, or globs (the linked tests a change's blast radius lists), in that script's order, and names what it skipped; the full `npm test` stays the handoff check.
 
 ## Shared Substrate Spec
 

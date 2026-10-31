@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (52 nodes, 156 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (54 nodes, 168 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -15,6 +15,7 @@ flowchart TB
     f_framework_docs["f-framework-docs · Framework docs · stable"]
     f_github_actions["f-github-actions · GitHub Actions · stable"]
     f_graph_cache["f-graph-cache · Graph cache · stable"]
+    f_graph_migrations["f-graph-migrations · Graph migrations · stable"]
     f_graph_search["f-graph-search · Graph search · stable"]
     f_mcp_runtime["f-mcp-runtime · MCP runtime · stable"]
     f_nextjs["f-nextjs · Next.js assembler · ready"]
@@ -39,8 +40,9 @@ flowchart TB
     if_release_tag{{"if-release-tag · Main-branch release trigger · draft"}}
   end
   subgraph journey_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
-    i_init_project__in__j_agent_onboarding["i-init-project · Init project · stable"]
     i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · stable"]
+    i_setup_project__in__j_agent_onboarding["i-setup-project · Set up the project · stable"]
+    i_upgrade_graph__in__j_agent_onboarding["i-upgrade-graph · Upgrade the graph · stable"]
   end
   subgraph journey_j_npm_publish["j-npm-publish · Ship to npm · stable"]
     i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · stable"]
@@ -84,6 +86,10 @@ flowchart TB
   f_github_actions --> f_npm_registry
   f_graph_cache --> f_domain_model
   f_graph_cache --> f_source_index
+  f_graph_migrations --> f_compiler_rules
+  f_graph_migrations --> f_domain_model
+  f_graph_migrations --> f_source_index
+  f_graph_migrations --> f_territory_store
   f_graph_search --> f_domain_model
   f_graph_search --> f_search_index
   f_mcp_runtime --> f_framework_docs
@@ -122,6 +128,7 @@ flowchart TB
   i_change_status__in__j_plan_console --> f_tool_kit
   i_change_status__in__j_territory_sdlc --> f_tool_kit
   i_check_integrity__in__j_territory_sdlc --> f_compiler_rules
+  i_check_integrity__in__j_territory_sdlc --> f_graph_migrations
   i_check_integrity__in__j_territory_sdlc --> f_mcp_runtime
   i_check_integrity__in__j_territory_sdlc --> f_source_index
   i_check_integrity__in__j_territory_sdlc --> f_territory_store
@@ -146,10 +153,6 @@ flowchart TB
   i_export_map__in__j_territory_sdlc --> f_territory_store
   i_export_map__in__j_territory_sdlc --> f_tool_kit
   i_export_map__in__j_territory_sdlc --> f_view_projection
-  i_init_project__in__j_agent_onboarding --> f_compiler_rules
-  i_init_project__in__j_agent_onboarding --> f_source_index
-  i_init_project__in__j_agent_onboarding --> f_territory_store
-  i_init_project__in__j_agent_onboarding -.->|leads_to| i_orient_plan__in__j_territory_sdlc
   i_model_plan__in__j_plan_console --> f_console_client
   i_model_plan__in__j_plan_console --> f_console_shell
   i_model_plan__in__j_plan_console --> f_design_system
@@ -167,6 +170,7 @@ flowchart TB
   i_orient_plan__in__j_territory_sdlc --> f_territory_store
   i_orient_plan__in__j_territory_sdlc --> f_tool_kit
   i_orient_plan__in__j_territory_sdlc -.->|leads_to| i_edit_territory__in__j_plan_console
+  i_read_brief__in__j_territory_sdlc --> f_graph_migrations
   i_read_brief__in__j_territory_sdlc --> f_plan_views
   i_read_brief__in__j_territory_sdlc --> f_tool_kit
   i_record_decision__in__j_plan_console --> f_plan_writes
@@ -177,17 +181,23 @@ flowchart TB
   i_revise_node__in__j_territory_sdlc --> f_plan_writes
   i_revise_node__in__j_plan_console --> f_tool_kit
   i_revise_node__in__j_territory_sdlc --> f_tool_kit
+  i_setup_project__in__j_agent_onboarding --> f_graph_migrations
+  i_setup_project__in__j_agent_onboarding --> f_source_index
+  i_setup_project__in__j_agent_onboarding --> f_territory_store
+  i_setup_project__in__j_agent_onboarding --> f_tool_kit
+  i_setup_project__in__j_agent_onboarding -.->|leads_to| i_orient_plan__in__j_territory_sdlc
   i_shape_graph__in__j_plan_console --> f_plan_writes
   i_shape_graph__in__j_territory_sdlc --> f_plan_writes
   i_shape_graph__in__j_plan_console --> f_tool_kit
   i_shape_graph__in__j_territory_sdlc --> f_tool_kit
+  i_upgrade_graph__in__j_agent_onboarding --> f_graph_migrations
+  i_upgrade_graph__in__j_agent_onboarding --> f_tool_kit
   i_view_status__in__j_plan_console --> f_console_client
   i_view_status__in__j_plan_console --> f_console_shell
   i_view_status__in__j_plan_console --> f_design_system
   if_cli --> f_mcp_runtime
   if_cli -->|exposes| i_check_integrity__in__j_territory_sdlc
   if_cli -->|exposes| i_export_map__in__j_territory_sdlc
-  if_cli -->|exposes| i_init_project__in__j_agent_onboarding
   if_console_api --> f_nextjs
   if_console_api -->|exposes| i_orient_plan__in__j_territory_sdlc
   if_console --> f_console_shell
@@ -198,6 +208,7 @@ flowchart TB
   if_console -->|exposes| i_explore_graph__in__j_plan_console
   if_console -->|exposes| i_model_plan__in__j_plan_console
   if_console -->|exposes| i_view_status__in__j_plan_console
+  if_mcp_tools --> f_graph_migrations
   if_mcp_tools --> f_mcp_runtime
   if_mcp_tools --> f_territory_store
   if_mcp_tools --> f_tool_kit
@@ -213,7 +224,9 @@ flowchart TB
   if_mcp_tools -->|exposes| i_read_brief__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_record_decision__in__j_plan_console
   if_mcp_tools -->|exposes| i_revise_node__in__j_plan_console
+  if_mcp_tools -->|exposes| i_setup_project__in__j_agent_onboarding
   if_mcp_tools -->|exposes| i_shape_graph__in__j_plan_console
+  if_mcp_tools -->|exposes| i_upgrade_graph__in__j_agent_onboarding
   if_publish_script --> f_npm_registry
   if_publish_script -->|exposes| i_npm_publish__in__j_agent_onboarding
   if_release_tag --> f_github_actions

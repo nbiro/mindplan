@@ -1,5 +1,8 @@
 // End-to-end smoke test: spawns the built server over stdio and exercises
 // every tool plus each Compiler Rule. Run with: npm test (from repo root)
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
+import { runSetup, runUpgrade } from "./upgrade-run.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import * as fs from "fs";
@@ -40,7 +43,7 @@ let failures = 0;
     "Before answering any questions or writing any code for this project, call get_project and read the response. " +
     "Follow the playbook (systems dialect) and the project description and rules it returns. " +
     "Project rules are mandatory: before each action, call get_rules then orient_for_work. " +
-    "Before any new-feature code change, update or create the matching nodes using the plan-project skill: " +
+    "Before any new-feature code change, update or create the matching nodes using the plan-project skill (load it with get_skill): " +
     "it covers every graph write (create_node, open_next, discard_next, link_nodes, unlink_nodes, patch_node_territory, " +
     "patch_node_rules, patch_project_description, patch_project_rules, patch_config, and attachments).";
   const instructions = client.getInstructions();
@@ -223,11 +226,11 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec"];
-  if (names.size !== 30 || required.some((n) => !names.has(n))) {
+  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec", "get_skill", "setup_project", "upgrade_project"];
+  if (names.size !== 33 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 30 tools including ${required.join(", ")} (got ${names.size})`);
-  } else console.log(`ok   thirty tools registered including ${required.join(", ")}`);
+    console.log(`FAIL expected 33 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   thirty-three tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
     if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {
@@ -250,7 +253,7 @@ function nextTerritoryPath(...parts) {
   const READ = [
     "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
     "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
-    "list_areas", "get_spec",
+    "list_areas", "get_spec", "get_skill",
   ];
   const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
   const annotationProblems = [];
@@ -264,7 +267,8 @@ function nextTerritoryPath(...parts) {
     if (a.readOnlyHint !== read) annotationProblems.push(`${t.name}: readOnlyHint should be ${read}`);
     if (a.destructiveHint !== destructive) annotationProblems.push(`${t.name}: destructiveHint should be ${destructive}`);
     if (read && a.idempotentHint !== true) annotationProblems.push(`${t.name}: read tools are idempotent`);
-    if (/plan-project|skill|DANGEROUS/.test(t.description ?? "")) {
+    // get_skill serves the skills, so it alone names them; no other tool routes to one.
+    if (t.name !== "get_skill" && /plan-project|skill|DANGEROUS/.test(t.description ?? "")) {
       annotationProblems.push(`${t.name}: description must not route to a skill or shout`);
     }
   }
@@ -1333,7 +1337,7 @@ void openForDiscard;
   });
 
   // A leftover `state: mirror` next file (older release) is not a revision:
-  // the graph has no next, check warns and passes, init removes it.
+  // the graph has no next, check warns and passes, upgrade_project removes it.
   const livePathNow = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx");
   const writeLeftoverMirror = () =>
     fs.writeFileSync(
@@ -1363,7 +1367,7 @@ void openForDiscard;
     !checkLeftoverOut.includes(
       'Warning: legacy: "i-checkout" has a leftover mirror twin (mindplan/interactions/i-checkout/i-checkout.next.mdx)'
     ) ||
-    !checkLeftoverOut.includes("run mindplan-mcp init to remove it")
+    !checkLeftoverOut.includes("call upgrade_project to remove it")
   ) {
     failures++;
     console.log(
@@ -1371,20 +1375,16 @@ void openForDiscard;
     );
   } else console.log("ok   check warns (does not Block) on a leftover mirror twin");
 
-  const initRemove = spawnSync(process.execPath, [serverEntry, "init"], {
-    env: { ...process.env, MINDPLAN_ROOT: root },
-    encoding: "utf-8",
-  });
+  const initRemove = runUpgrade(root);
   if (
     initRemove.status !== 0 ||
     fs.existsSync(nextPath) ||
-    !initRemove.stdout.includes("Removed 1 mirror twin(s)")
+    !initRemove.result.migrations.mirrorTwinsRemoved.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
+    !initRemove.result.changed_files.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx")
   ) {
     failures++;
-    console.log(
-      `FAIL init should remove a leftover mirror (status=${initRemove.status}): ${initRemove.stdout}${initRemove.stderr}`
-    );
-  } else console.log("ok   init removes a leftover mirror twin");
+    console.log(`FAIL upgrade_project should remove a leftover mirror (status=${initRemove.status}): ${initRemove.stderr}`);
+  } else console.log("ok   upgrade_project removes a leftover mirror twin");
 
   // open_next replaces a leftover mirror file with a real draft revision.
   writeLeftoverMirror();
@@ -1719,133 +1719,69 @@ if (!viewRetired.diagram.includes("f-deadend")) {
   console.log("FAIL include_retired should show cancelled node");
 } else console.log("ok   include_retired shows cancelled");
 
-// --- CLI init resolves package templates from nested dist layout ---
-const initRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-"));
-const { spawnSync } = await import("child_process");
-const initResult = spawnSync(process.execPath, [serverEntry, "init"], {
-  cwd: initRoot,
-  env: { ...process.env, MINDPLAN_ROOT: initRoot },
-  encoding: "utf-8",
-});
-if (initResult.status !== 0) {
-  failures++;
-  console.log(`FAIL mindplan-mcp init exit ${initResult.status}: ${initResult.stderr || initResult.stdout}`);
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "playbook.md"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install playbook (packageRoot likely wrong)");
-} else if (!fs.existsSync(path.join(initRoot, "AGENTS.md"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install AGENTS.md");
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "project.md"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install mindplan/project.md");
-} else if (
-  fs.readFileSync(path.join(initRoot, "mindplan", "project.md"), "utf-8") !==
-  fs.readFileSync(path.join(toolRoot, "templates", "agent", "project.md"), "utf-8")
-) {
-  failures++;
-  console.log("FAIL init project.md must be a copy of templates/agent/project.md");
-} else if (
-  (() => {
-    const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
-    return (
-      !stub.includes("get_project") ||
-      !stub.includes("get_rules") ||
-      !stub.includes("plan-project") ||
-      !stub.includes(".cursor/") ||
-      !stub.includes(".claude/") ||
-      !stub.includes("mindplan/**") ||
-      stub.includes("read `mindplan/agent/playbook.md`")
-    );
-  })()
-) {
-  failures++;
-  console.log("FAIL agents-stub must point offline fallback at .cursor/ (not mindplan/** reads)");
-} else if (!fs.existsSync(path.join(initRoot, ".cursorignore"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install .cursorignore");
-} else if (
-  (() => {
-    const ignore = fs.readFileSync(path.join(initRoot, ".cursorignore"), "utf-8");
-    return !ignore.includes("mindplan/**");
-  })()
-) {
-  failures++;
-  console.log("FAIL .cursorignore must ignore mindplan/** (MCP-only territory)");
-} else if (!fs.existsSync(path.join(initRoot, ".cursor", "permissions.json"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install .cursor/permissions.json");
-} else if (
-  (() => {
-    const perms = fs.readFileSync(path.join(initRoot, ".cursor", "permissions.json"), "utf-8");
-    return !perms.includes("mindplan:*");
-  })()
-) {
-  failures++;
-  console.log("FAIL .cursor/permissions.json must allowlist mindplan:*");
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "integrations", "codex.md"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install Codex integration guide");
-} else if (!fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "plan-project", "SKILL.md"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install plan-project skill");
-} else if (
-  fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "review-work", "SKILL.md")) ||
-  fs.existsSync(path.join(initRoot, "mindplan", "agent", "skills", "code-review", "SKILL.md"))
-) {
-  failures++;
-  console.log("FAIL mindplan-mcp init must not install review-work or code-review skills");
-} else if (
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-define-entities", "SKILL.md")) ||
-  !fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-plan-project", "SKILL.md"))
-) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install Cursor skills under .cursor/skills/");
-} else if (
-  fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-review-work", "SKILL.md")) ||
-  fs.existsSync(path.join(initRoot, ".cursor", "skills", "mindplan-code-review", "SKILL.md"))
-) {
-  failures++;
-  console.log("FAIL mindplan-mcp init must not install Cursor review-work or code-review skills");
-} else if (!fs.existsSync(path.join(initRoot, ".cursor", "rules", "mindplan.mdc"))) {
-  failures++;
-  console.log("FAIL mindplan-mcp init did not install .cursor/rules/mindplan.mdc");
-} else if (
-  (() => {
-    const rule = fs.readFileSync(path.join(initRoot, ".cursor", "rules", "mindplan.mdc"), "utf-8");
-    const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
-    return !rule.includes("alwaysApply: true") || !rule.endsWith(stub);
-  })()
-) {
-  failures++;
-  console.log("FAIL .cursor/rules/mindplan.mdc must be alwaysApply frontmatter plus the stub body");
-} else if (
-  (() => {
-    const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
-    const playbook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
-    return (
-      fs.readFileSync(path.join(initRoot, "AGENTS.md"), "utf-8") !== stub ||
-      fs.readFileSync(path.join(initRoot, "mindplan", "agent", "playbook.md"), "utf-8") !== playbook
-    );
-  })()
-) {
-  failures++;
-  console.log("FAIL init: AGENTS.md must equal the stub and mindplan/agent/playbook.md must equal the playbook");
-} else if (
-  (() => {
-    const cfgPath = path.join(initRoot, "mindplan", "config.json");
-    if (!fs.existsSync(cfgPath)) return true;
-    const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
-    return !Array.isArray(cfg.sources) || !("exclude" in cfg);
-  })()
-) {
-  failures++;
-  console.log("FAIL mindplan-mcp init should write { sources, exclude } by default");
-} else {
-  console.log("ok   mindplan-mcp init installs templates from package root");
+// upgrade_project, with its report printed as one line per rename, removal, and twin, so the
+// migration cases below assert the same facts they asserted for the retired init command.
+function upgradeLike(root) {
+  const r = runUpgrade(root);
+  const line = (x) => (x.action === "removed" ? `Removed ${x.from} (kept ${x.to})` : `Renamed ${x.from} → ${x.to}`);
+  if (r.status !== 0) {
+    const applied = /Already applied: (.*)\.$/.exec(r.stderr)?.[1] ?? "";
+    const lines = applied
+      .split("; ")
+      .filter(Boolean)
+      .map((e) => /^(.*) → (.*) \((renamed|removed)\)$/.exec(e))
+      .filter(Boolean)
+      .map((m) => line({ from: m[1], to: m[2], action: m[3] }));
+    return { status: r.status, stdout: lines.join("\n"), stderr: r.stderr };
+  }
+  const m = r.result.migrations;
+  const out = m.territoryFilenames.map(line);
+  const twins = m.mirrorTwinsRemoved.filter((p) => p.endsWith(".mdx")).length;
+  if (twins > 0) out.push(`Removed ${twins} mirror twin(s); a shipped node now has a next file only while a revision is open`);
+  for (const skip of m.mirrorTwinSkips) out.push(`Could not remove the mirror twin of ${skip.node_id}: ${skip.reason}`);
+  return { status: 0, stdout: out.join("\n"), stderr: "", result: r.result };
 }
 
-// --- init removes a leftover mirror twin but keeps next-attachments/ holding real files ---
+// --- setup_project resolves package templates from nested dist layout ---
+const { spawnSync } = await import("child_process");
+{
+  const initRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-setup-"));
+  const setup = runSetup(initRoot);
+  const stub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8").replace(/\r\n/g, "\n");
+  const cfgPath = path.join(initRoot, "mindplan", "config.json");
+  const cfg = fs.existsSync(cfgPath) ? JSON.parse(fs.readFileSync(cfgPath, "utf-8")) : null;
+  if (setup.status !== 0) {
+    failures++;
+    console.log(`FAIL setup_project exit ${setup.status}: ${setup.stderr}`);
+  } else if (
+    fs.readFileSync(path.join(initRoot, "mindplan", "project.md"), "utf-8").replace(/\r\n/g, "\n") !==
+    fs.readFileSync(path.join(toolRoot, "templates", "agent", "project.md"), "utf-8").replace(/\r\n/g, "\n")
+  ) {
+    failures++;
+    console.log("FAIL setup project.md must be a copy of templates/agent/project.md");
+  } else if (!cfg || !Array.isArray(cfg.sources) || !("exclude" in cfg)) {
+    failures++;
+    console.log("FAIL setup_project should write { sources, exclude } by default");
+  } else if (
+    setup.result.pointer !== stub ||
+    !["get_project", "get_rules", "plan-project", "get_skill", "mindplan/**", "setup_project"].every((w) => stub.includes(w))
+  ) {
+    failures++;
+    console.log("FAIL setup_project pointer must be the stub, naming get_project, get_rules, plan-project, get_skill, and mindplan/**");
+  } else if (
+    fs.existsSync(path.join(initRoot, "mindplan", "agent")) ||
+    fs.existsSync(path.join(initRoot, "AGENTS.md")) ||
+    fs.existsSync(path.join(initRoot, ".cursor")) ||
+    fs.existsSync(path.join(initRoot, ".claude"))
+  ) {
+    failures++;
+    console.log("FAIL setup_project must install no agent copies or host files");
+  } else {
+    console.log("ok   setup_project writes the graph from package templates and returns the pointer");
+  }
+}
+
+// --- upgrade_project removes a leftover mirror twin but keeps next-attachments/ holding real files ---
 // (A mirrorTwinSkips case — unlink failing — cannot be provoked portably, so it is not covered.)
 {
   const skipRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-skip-twin-"));
@@ -1907,17 +1843,13 @@ Adapted so the already-shipped contract still holds.
   if (
     skipCheck.status !== 0 ||
     !skipCheckOut.includes(
-      'legacy: "f-skip-twin" has a leftover mirror twin (mindplan/foundations/f-skip-twin/f-skip-twin.next.mdx); run mindplan-mcp init to remove it.'
+      'legacy: "f-skip-twin" has a leftover mirror twin (mindplan/foundations/f-skip-twin/f-skip-twin.next.mdx); call upgrade_project to remove it.'
     )
   ) {
     failures++;
     console.log(`FAIL check should pass with a legacy warning on a leftover twin (status=${skipCheck.status}): ${skipCheckOut}`);
   } else console.log("ok   check passes with a legacy warning on a leftover twin");
-  const skipInit = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: skipRoot,
-    env: { ...process.env, MINDPLAN_ROOT: skipRoot },
-    encoding: "utf-8",
-  });
+  const skipInit = upgradeLike(skipRoot);
   const skipOut = `${skipInit.stdout}${skipInit.stderr}`;
   if (
     skipInit.status !== 0 ||
@@ -1930,66 +1862,8 @@ Adapted so the already-shipped contract still holds.
     console.log(
       `FAIL init should remove the leftover twin and keep non-empty next-attachments (status=${skipInit.status}): ${skipOut}`
     );
-  } else console.log("ok   init removes leftover twin, keeps next-attachments/ with real files");
+  } else console.log("ok   upgrade_project removes leftover twin, keeps next-attachments/ with real files");
 }
-
-// --- init --host: claude installs CLAUDE.md + .claude/skills, not .cursor ---
-{
-  const runHost = (root, ...args) =>
-    spawnSync(process.execPath, [serverEntry, "init", ...args], {
-      cwd: root,
-      env: { ...process.env, MINDPLAN_ROOT: root },
-      encoding: "utf-8",
-    });
-  const claudeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-claude-"));
-  const claudeInit = runHost(claudeRoot, "--host", "claude");
-  const claudeMd = path.join(claudeRoot, "CLAUDE.md");
-  if (claudeInit.status !== 0) {
-    failures++;
-    console.log(`FAIL init --host claude exit ${claudeInit.status}: ${claudeInit.stderr || claudeInit.stdout}`);
-  } else if (
-    !fs.existsSync(claudeMd) ||
-    fs.readFileSync(claudeMd, "utf-8") !== "@AGENTS.md\n" ||
-    !fs.existsSync(path.join(claudeRoot, ".claude", "skills", "mindplan-define-entities", "SKILL.md")) ||
-    !fs.existsSync(path.join(claudeRoot, ".claude", "skills", "mindplan-plan-project", "SKILL.md"))
-  ) {
-    failures++;
-    console.log("FAIL init --host claude must install CLAUDE.md (@AGENTS.md) and .claude/skills/");
-  } else if (
-    fs.existsSync(path.join(claudeRoot, ".cursor")) ||
-    fs.existsSync(path.join(claudeRoot, ".cursorignore"))
-  ) {
-    failures++;
-    console.log("FAIL init --host claude must not install Cursor files");
-  } else {
-    fs.writeFileSync(claudeMd, "custom\n");
-    runHost(claudeRoot, "--host", "claude");
-    if (fs.readFileSync(claudeMd, "utf-8") !== "custom\n") {
-      failures++;
-      console.log("FAIL init --host claude must keep an existing CLAUDE.md without --force");
-    } else console.log("ok   init --host claude installs Claude Code host copies only");
-  }
-  const allRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-all-"));
-  runHost(allRoot, "--host", "all");
-  if (!fs.existsSync(path.join(allRoot, ".cursor", "rules", "mindplan.mdc")) || !fs.existsSync(path.join(allRoot, "CLAUDE.md"))) {
-    failures++;
-    console.log("FAIL init --host all must install both Cursor and Claude copies");
-  } else console.log("ok   init --host all installs both hosts");
-  const badHost = runHost(claudeRoot, "--host", "vim");
-  if (badHost.status === 0 || !String(badHost.stderr).includes("Blocked: unknown init host")) {
-    failures++;
-    console.log("FAIL init --host with an unknown host must be blocked");
-  } else console.log("ok   init --host rejects unknown hosts");
-}
-
-const layoutReject = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
-  cwd: fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-layout-")),
-  encoding: "utf-8",
-});
-if (layoutReject.status === 0 || !(layoutReject.stderr || "").includes("--layout")) {
-  failures++;
-  console.log(`FAIL --layout should be rejected: ${layoutReject.stderr || layoutReject.stdout}`);
-} else console.log("ok   --layout is rejected");
 
 // Migrate legacy implementation_packages
 const migrateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-migrate-"));
@@ -1998,20 +1872,16 @@ fs.writeFileSync(
   path.join(migrateRoot, "mindplan", "config.json"),
   JSON.stringify({ implementation_packages: "required" }, null, 2) + "\n"
 );
-const migrateInit = spawnSync(process.execPath, [serverEntry, "init"], {
-  cwd: migrateRoot,
-  env: { ...process.env, MINDPLAN_ROOT: migrateRoot },
-  encoding: "utf-8",
-});
+const migrateInit = upgradeLike(migrateRoot);
 if (migrateInit.status !== 0) {
   failures++;
-  console.log(`FAIL init migration exit ${migrateInit.status}: ${migrateInit.stderr || migrateInit.stdout}`);
+  console.log(`FAIL upgrade_project migration exit ${migrateInit.status}: ${migrateInit.stderr || migrateInit.stdout}`);
 } else {
   const cfg = JSON.parse(fs.readFileSync(path.join(migrateRoot, "mindplan", "config.json"), "utf-8"));
   if (!Array.isArray(cfg.sources) || cfg.sources[0] !== "src/**") {
     failures++;
     console.log(`FAIL migration sources: ${JSON.stringify(cfg)}`);
-  } else console.log("ok   init migrates implementation_packages → sources");
+  } else console.log("ok   upgrade_project migrates implementation_packages → sources");
 }
 
 // Rename legacy current.mdx / next.mdx to <id>.mdx / <id>.next.mdx
@@ -2024,17 +1894,13 @@ if (migrateInit.status !== 0) {
   fs.writeFileSync(path.join(ixDir, "current.mdx"), "---\nid: i-old\n---\n\n# Old\n", "utf-8");
   fs.writeFileSync(path.join(ixDir, "next.mdx"), "---\nid: i-old\n---\n\n# Next\n", "utf-8");
   fs.writeFileSync(path.join(journeyDir, "current.mdx"), "---\nid: j-old\n---\n\n# Journey\n", "utf-8");
-  const renameInit = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: renameRoot,
-    env: { ...process.env, MINDPLAN_ROOT: renameRoot },
-    encoding: "utf-8",
-  });
+  const renameInit = upgradeLike(renameRoot);
   const live = path.join(ixDir, "i-old.mdx");
   const evolved = path.join(ixDir, "i-old.next.mdx");
   const journey = path.join(journeyDir, "j-old.mdx");
   if (renameInit.status !== 0) {
     failures++;
-    console.log(`FAIL init rename exit ${renameInit.status}: ${renameInit.stderr || renameInit.stdout}`);
+    console.log(`FAIL upgrade_project rename exit ${renameInit.status}: ${renameInit.stderr || renameInit.stdout}`);
   } else if (
     !fs.existsSync(live) ||
     !fs.existsSync(evolved) ||
@@ -2045,20 +1911,16 @@ if (migrateInit.status !== 0) {
     !renameInit.stdout.includes("Renamed mindplan/interactions/i-old/next.mdx → mindplan/interactions/i-old/i-old.next.mdx")
   ) {
     failures++;
-    console.log(`FAIL init did not rename legacy territory files:\n${renameInit.stdout}`);
+    console.log(`FAIL upgrade_project did not rename legacy territory files:\n${renameInit.stdout}`);
   } else if (fs.readFileSync(live, "utf-8") !== "---\nid: i-old\n---\n\n# Old\n") {
     failures++;
     console.log("FAIL renamed live file body changed");
   } else {
-    const again = spawnSync(process.execPath, [serverEntry, "init"], {
-      cwd: renameRoot,
-      env: { ...process.env, MINDPLAN_ROOT: renameRoot },
-      encoding: "utf-8",
-    });
+    const again = upgradeLike(renameRoot);
     if (again.status !== 0 || again.stdout.includes("Renamed ")) {
       failures++;
-      console.log(`FAIL second init should rename nothing: ${again.stdout}`);
-    } else console.log("ok   init renames legacy current.mdx and next.mdx");
+      console.log(`FAIL second upgrade_project should rename nothing: ${again.stdout}`);
+    } else console.log("ok   upgrade_project renames legacy current.mdx and next.mdx");
   }
 
   const clashRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-rename-clash-"));
@@ -2066,43 +1928,35 @@ if (migrateInit.status !== 0) {
   fs.mkdirSync(clashDir, { recursive: true });
   fs.writeFileSync(path.join(clashDir, "current.mdx"), "legacy\n", "utf-8");
   fs.writeFileSync(path.join(clashDir, "f-old.mdx"), "named\n", "utf-8");
-  const clash = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: clashRoot,
-    env: { ...process.env, MINDPLAN_ROOT: clashRoot },
-    encoding: "utf-8",
-  });
+  const clash = upgradeLike(clashRoot);
   if (clash.status !== 0) {
     failures++;
-    console.log(`FAIL init clash exit ${clash.status}: ${clash.stderr || clash.stdout}`);
+    console.log(`FAIL upgrade_project clash exit ${clash.status}: ${clash.stderr || clash.stdout}`);
   } else if (
     fs.existsSync(path.join(clashDir, "current.mdx")) ||
     fs.readFileSync(path.join(clashDir, "f-old.mdx"), "utf-8") !== "named\n" ||
     !clash.stdout.includes("Removed mindplan/foundations/f-old/current.mdx (kept mindplan/foundations/f-old/f-old.mdx)")
   ) {
     failures++;
-    console.log(`FAIL init should drop legacy file and keep the id-named file:\n${clash.stdout}`);
-  } else console.log("ok   init drops legacy file when the id-named file exists");
+    console.log(`FAIL upgrade_project should drop legacy file and keep the id-named file:\n${clash.stdout}`);
+  } else console.log("ok   upgrade_project drops legacy file when the id-named file exists");
 
   const bugNextRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-rename-bug-"));
   const bugDir = path.join(bugNextRoot, "mindplan", "bugs", "bug-old");
   fs.mkdirSync(bugDir, { recursive: true });
   fs.writeFileSync(path.join(bugDir, "next.mdx"), "nope\n", "utf-8");
-  const bugNext = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: bugNextRoot,
-    env: { ...process.env, MINDPLAN_ROOT: bugNextRoot },
-    encoding: "utf-8",
-  });
+  const bugNext = upgradeLike(bugNextRoot);
   if (
     bugNext.status === 0 ||
     !(bugNext.stderr || "").includes("mindplan/bugs/bug-old/next.mdx") ||
     !(bugNext.stderr || "").includes("by hand")
   ) {
     failures++;
-    console.log(`FAIL init should ask to fix next.mdx on a bug by hand: ${bugNext.stderr || bugNext.stdout}`);
+    console.log(`FAIL upgrade_project should ask to fix next.mdx on a bug by hand: ${bugNext.stderr || bugNext.stdout}`);
   } else if (!fs.existsSync(path.join(bugDir, "next.mdx"))) {
     failures++;
-    console.log("FAIL failed init must leave the unrenamed next.mdx in place");
-  } else console.log("ok   init asks to fix next.mdx under bugs by hand");
+    console.log("FAIL failed upgrade_project must leave the unrenamed next.mdx in place");
+  } else console.log("ok   upgrade_project asks to fix next.mdx under bugs by hand");
 
   const preflightRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-preflight-"));
   const keepDir = path.join(preflightRoot, "mindplan", "foundations", "f-keep");
@@ -2111,11 +1965,7 @@ if (migrateInit.status !== 0) {
   fs.mkdirSync(namedBugDir, { recursive: true });
   fs.writeFileSync(path.join(keepDir, "current.mdx"), "keep\n", "utf-8");
   fs.writeFileSync(path.join(namedBugDir, "bug-named.next.mdx"), "evolve\n", "utf-8");
-  const preflight = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: preflightRoot,
-    env: { ...process.env, MINDPLAN_ROOT: preflightRoot },
-    encoding: "utf-8",
-  });
+  const preflight = upgradeLike(preflightRoot);
   if (
     preflight.status === 0 ||
     !(preflight.stderr || "").includes("mindplan/bugs/bug-named/bug-named.next.mdx") ||
@@ -2126,8 +1976,8 @@ if (migrateInit.status !== 0) {
     (preflight.stdout || "").includes("Renamed ")
   ) {
     failures++;
-    console.log(`FAIL init should stop before renaming when a bug has an id-named evolution file:\n${preflight.stdout}\n${preflight.stderr}`);
-  } else console.log("ok   init stops before renaming when a journey or bug has an id-named evolution file");
+    console.log(`FAIL upgrade_project should stop before renaming when a bug has an id-named evolution file:\n${preflight.stdout}\n${preflight.stderr}`);
+  } else console.log("ok   upgrade_project stops before renaming when a journey or bug has an id-named evolution file");
 
   const partialRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-partial-"));
   const okDir = path.join(partialRoot, "mindplan", "foundations", "a-ok");
@@ -2137,11 +1987,7 @@ if (migrateInit.status !== 0) {
   fs.writeFileSync(path.join(okDir, "current.mdx"), "ok\n", "utf-8");
   fs.writeFileSync(path.join(badDir, "current.mdx"), "bad\n", "utf-8");
   fs.mkdirSync(path.join(badDir, "b-bad.mdx"));
-  const partial = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: partialRoot,
-    env: { ...process.env, MINDPLAN_ROOT: partialRoot },
-    encoding: "utf-8",
-  });
+  const partial = upgradeLike(partialRoot);
   if (
     partial.status === 0 ||
     !(partial.stdout || "").includes("Renamed mindplan/foundations/a-ok/current.mdx → mindplan/foundations/a-ok/a-ok.mdx") ||
@@ -2151,18 +1997,14 @@ if (migrateInit.status !== 0) {
     !fs.existsSync(path.join(badDir, "current.mdx"))
   ) {
     failures++;
-    console.log(`FAIL init should print renames already applied when a later rename fails:\n${partial.stdout}\n${partial.stderr}`);
-  } else console.log("ok   init prints renames already applied when a later rename fails");
+    console.log(`FAIL upgrade_project should print renames already applied when a later rename fails:\n${partial.stdout}\n${partial.stderr}`);
+  } else console.log("ok   upgrade_project prints renames already applied when a later rename fails");
 
   const currentIdRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-current-id-"));
   const currentIdDir = path.join(currentIdRoot, "mindplan", "foundations", "current");
   fs.mkdirSync(currentIdDir, { recursive: true });
   fs.writeFileSync(path.join(currentIdDir, "current.mdx"), "same file\n", "utf-8");
-  const currentId = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: currentIdRoot,
-    env: { ...process.env, MINDPLAN_ROOT: currentIdRoot },
-    encoding: "utf-8",
-  });
+  const currentId = upgradeLike(currentIdRoot);
   if (
     currentId.status !== 0 ||
     !fs.existsSync(path.join(currentIdDir, "current.mdx")) ||
@@ -2170,18 +2012,14 @@ if (migrateInit.status !== 0) {
     (currentId.stdout || "").includes("Renamed mindplan/foundations/current/")
   ) {
     failures++;
-    console.log(`FAIL init should leave current.mdx in place when the id is current:\n${currentId.stdout}\n${currentId.stderr}`);
-  } else console.log("ok   init leaves current.mdx in place when the id is current");
+    console.log(`FAIL upgrade_project should leave current.mdx in place when the id is current:\n${currentId.stdout}\n${currentId.stderr}`);
+  } else console.log("ok   upgrade_project leaves current.mdx in place when the id is current");
 
   const caseRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-current-case-"));
   const caseDir = path.join(caseRoot, "mindplan", "foundations", "Current");
   fs.mkdirSync(caseDir, { recursive: true });
   fs.writeFileSync(path.join(caseDir, "current.mdx"), "case file\n", "utf-8");
-  const caseInit = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: caseRoot,
-    env: { ...process.env, MINDPLAN_ROOT: caseRoot },
-    encoding: "utf-8",
-  });
+  const caseInit = upgradeLike(caseRoot);
   const caseBody = fs.existsSync(path.join(caseDir, "current.mdx"))
     ? fs.readFileSync(path.join(caseDir, "current.mdx"), "utf-8")
     : fs.existsSync(path.join(caseDir, "Current.mdx"))
@@ -2190,7 +2028,7 @@ if (migrateInit.status !== 0) {
   if (caseInit.status !== 0 || caseBody !== "case file\n" || (caseInit.stderr || "").includes("Removed ")) {
     failures++;
     console.log(`FAIL case-only current id should keep the file:\n${caseInit.stdout}\n${caseInit.stderr}`);
-  } else console.log("ok   init does not delete the file when the id differs only by case");
+  } else console.log("ok   upgrade_project does not delete the file when the id differs only by case");
 
   const nextClashRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-next-clash-"));
   const nextClashDir = path.join(nextClashRoot, "mindplan", "foundations", "f-next");
@@ -2198,11 +2036,7 @@ if (migrateInit.status !== 0) {
   fs.writeFileSync(path.join(nextClashDir, "f-next.mdx"), "live\n", "utf-8");
   fs.writeFileSync(path.join(nextClashDir, "next.mdx"), "legacy-next\n", "utf-8");
   fs.writeFileSync(path.join(nextClashDir, "f-next.next.mdx"), "named-next\n", "utf-8");
-  const nextClash = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: nextClashRoot,
-    env: { ...process.env, MINDPLAN_ROOT: nextClashRoot },
-    encoding: "utf-8",
-  });
+  const nextClash = upgradeLike(nextClashRoot);
   if (
     nextClash.status !== 0 ||
     fs.existsSync(path.join(nextClashDir, "next.mdx")) ||
@@ -2210,8 +2044,8 @@ if (migrateInit.status !== 0) {
     !(nextClash.stdout || "").includes("Removed mindplan/foundations/f-next/next.mdx (kept mindplan/foundations/f-next/f-next.next.mdx)")
   ) {
     failures++;
-    console.log(`FAIL init should drop legacy next.mdx when the id-named evolution exists:\n${nextClash.stdout}\n${nextClash.stderr}`);
-  } else console.log("ok   init drops legacy next.mdx when the id-named evolution exists");
+    console.log(`FAIL upgrade_project should drop legacy next.mdx when the id-named evolution exists:\n${nextClash.stdout}\n${nextClash.stderr}`);
+  } else console.log("ok   upgrade_project drops legacy next.mdx when the id-named evolution exists");
 
   const checkRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-check-legacy-"));
   const checkDir = path.join(checkRoot, "mindplan", "bugs", "bug-both");
@@ -2230,106 +2064,6 @@ if (migrateInit.status !== 0) {
     failures++;
     console.log(`FAIL check should print the legacy file it removed:\n${checkClash.stdout}\n${checkClash.stderr}`);
   } else console.log("ok   check prints a legacy file removed while loading the graph");
-}
-
-// init -f / --force: overwrite mutated agent assets; preserve sources config
-{
-  const forceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-force-"));
-  const forceEnv = { ...process.env, MINDPLAN_ROOT: forceRoot };
-  const first = spawnSync(process.execPath, [serverEntry, "init"], {
-    cwd: forceRoot,
-    env: forceEnv,
-    encoding: "utf-8",
-  });
-  if (first.status !== 0) {
-    failures++;
-    console.log(`FAIL init (force suite) exit ${first.status}: ${first.stderr || first.stdout}`);
-  } else {
-    const playbookPath = path.join(forceRoot, "mindplan", "agent", "playbook.md");
-    const marker = "FORCE_OVERWRITE_MARKER_DO_NOT_SHIP";
-    fs.writeFileSync(playbookPath, marker, "utf-8");
-    // Widen sources to prove -f does not overwrite config
-    fs.writeFileSync(
-      path.join(forceRoot, "mindplan", "config.json"),
-      JSON.stringify({ sources: ["app/**"], exclude: ["app/**/*.test.ts"] }, null, 2) + "\n"
-    );
-
-    const bare = spawnSync(process.execPath, [serverEntry, "init"], {
-      cwd: forceRoot,
-      env: forceEnv,
-      encoding: "utf-8",
-    });
-    if (bare.status !== 0) {
-      failures++;
-      console.log(`FAIL bare init (force suite) exit ${bare.status}: ${bare.stderr || bare.stdout}`);
-    } else if (fs.readFileSync(playbookPath, "utf-8") !== marker) {
-      failures++;
-      console.log("FAIL bare init must not overwrite existing playbook");
-    } else {
-      console.log("ok   bare init leaves mutated playbook");
-    }
-
-    // An older install left the full playbook in AGENTS.md; -f must replace it with the stub.
-    const templatePlaybook = fs.readFileSync(path.join(toolRoot, "templates", "agent", "playbook.md"), "utf-8");
-    const templateStub = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
-    fs.writeFileSync(path.join(forceRoot, "AGENTS.md"), "# MindPlan Agent Playbook (old full copy)\n", "utf-8");
-    const customBrief = "# Project\n\n## Description\n\nCustom product.\n\n## Rules\n\n- Keep me\n";
-    const briefPath = path.join(forceRoot, "mindplan", "project.md");
-    fs.writeFileSync(briefPath, customBrief, "utf-8");
-
-    const forced = spawnSync(process.execPath, [serverEntry, "init", "-f"], {
-      cwd: forceRoot,
-      env: forceEnv,
-      encoding: "utf-8",
-    });
-    if (forced.status !== 0) {
-      failures++;
-      console.log(`FAIL init -f exit ${forced.status}: ${forced.stderr || forced.stdout}`);
-    } else {
-      const restored = fs.readFileSync(playbookPath, "utf-8");
-      if (restored !== templatePlaybook) {
-        failures++;
-        console.log("FAIL init -f must restore playbook from package templates");
-      } else {
-        console.log("ok   init -f overwrites mutated playbook from templates");
-      }
-      if (fs.readFileSync(path.join(forceRoot, "AGENTS.md"), "utf-8") !== templateStub) {
-        failures++;
-        console.log("FAIL init -f must replace an old full-playbook AGENTS.md with the stub");
-      } else {
-        console.log("ok   init -f replaces old AGENTS.md with the stub");
-      }
-      if (fs.readFileSync(briefPath, "utf-8") !== customBrief) {
-        failures++;
-        console.log("FAIL init -f must not overwrite mindplan/project.md");
-      } else {
-        console.log("ok   init -f leaves project brief untouched");
-      }
-      const cfg = JSON.parse(fs.readFileSync(path.join(forceRoot, "mindplan", "config.json"), "utf-8"));
-      if (cfg.sources?.[0] !== "app/**") {
-        failures++;
-        console.log(`FAIL init -f must preserve sources config: ${JSON.stringify(cfg)}`);
-      } else {
-        console.log("ok   init -f preserves existing sources config");
-      }
-    }
-
-    fs.writeFileSync(playbookPath, marker, "utf-8");
-    const forcedLong = spawnSync(process.execPath, [serverEntry, "init", "--force"], {
-      cwd: forceRoot,
-      env: forceEnv,
-      encoding: "utf-8",
-    });
-    if (forcedLong.status !== 0) {
-      failures++;
-      console.log(`FAIL init --force exit ${forcedLong.status}: ${forcedLong.stderr || forcedLong.stdout}`);
-    } else if (fs.readFileSync(playbookPath, "utf-8") === marker) {
-      failures++;
-      console.log("FAIL init --force must overwrite mutated playbook");
-    } else {
-      console.log("ok   init --force overwrites mutated playbook");
-    }
-  }
 }
 
 // --- ordered revision status + real impact section ---

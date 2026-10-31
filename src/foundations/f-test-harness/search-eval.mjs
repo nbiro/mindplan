@@ -3,6 +3,8 @@
  * and score it (top1, top5, mrr). Used by search-eval.test.mjs and by the vector refresh
  * (`node src/foundations/f-test-harness/search-eval.test.mjs --write-vectors`).
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";

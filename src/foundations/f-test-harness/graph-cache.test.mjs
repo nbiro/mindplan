@@ -7,6 +7,8 @@
  * callers cannot corrupt the cache by mutating what a load returns; a Blocked parse stays Blocked
  * every call; and a warm load beats a cold one.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "child_process";
 import * as fs from "fs";

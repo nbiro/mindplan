@@ -16,12 +16,17 @@ import {
   type NodeType,
   type PlannedEdgeType,
 } from "../../foundations/f-domain-model/types.js";
+import * as fs from "fs";
+import * as path from "path";
 import {
   ATTACHMENTS_DIR,
+  COMPONENTS_DIR,
+  MINDPLAN_DIR,
   addEdgeToFrontmatter,
   edgeWriteSlot,
   ensureDirectories,
   entityRelativePath,
+  mindplanRoot,
   loadGraph,
   loadProjectConfig,
   nodeExists,
@@ -112,6 +117,9 @@ export function createNode(args: {
     updated_at: now,
     ...(role ? { role } : {}),
   };
+  // A graph scaffolded by hand may lack components/; ensureDirectories then writes its .gitkeep.
+  const componentsKeep = path.posix.join(MINDPLAN_DIR, COMPONENTS_DIR, ".gitkeep");
+  const hadComponentsKeep = fs.existsSync(path.join(mindplanRoot(), COMPONENTS_DIR, ".gitkeep"));
   ensureDirectories();
   scaffoldEntity(node, { title, description: desc });
   writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref });
@@ -120,7 +128,7 @@ export function createNode(args: {
   const current = territoryPath(node, "current");
   const attachments = `${rel}/${ATTACHMENTS_DIR}`;
   refreshPersistedMap();
-  const files = [current, `${attachments}/.gitkeep`];
+  const files = [current, `${attachments}/.gitkeep`, ...(hadComponentsKeep ? [] : [componentsKeep])];
   const graph = loadGraph();
   const shape = shapeReport(graph.nodes.find((n) => n.id === id) ?? node);
   return {

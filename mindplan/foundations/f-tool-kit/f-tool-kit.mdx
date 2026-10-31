@@ -2,19 +2,19 @@
 id: f-tool-kit
 type: Foundation
 title: "Tool kit"
-description: "Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape, defineTool, and the schema fragments several actions share."
+description: "Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape with its version-gate opt-out, defineTool, and the schema fragments several actions share."
 state: stable
-shipped_at: 2026-10-31T12:20:48.519Z
-revisions: 1
-churn: 1
+shipped_at: 2026-10-31T20:33:28.889Z
+revisions: 2
+churn: 1.992
 created_at: 2026-10-31T11:57:22.631Z
-updated_at: 2026-10-31T12:20:48.519Z
-role: infra
+updated_at: 2026-10-31T20:33:28.889Z
 implements:
   - src/foundations/f-tool-kit/
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
+role: infra
 ---
 
 # Tool kit
@@ -30,7 +30,7 @@ Infra — what an action needs to define its own MCP tools, so each action owns 
 Intended files: `src/foundations/f-tool-kit/` (`tool.ts`)
 
 - `ToolKind` (`read` | `write` | `destructive`) — one kind per tool drives its MCP annotations, drift, and verbose behavior (the entry point maps it)
-- `ToolConfig<Args>` — `{ kind, title, description, inputSchema, drift? }`
+- `ToolConfig<Args>` — `{ kind, title, description, inputSchema, drift?, gate? }`. `gate: false` marks a tool that runs before the graph is set up or upgraded (`get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `setup_project`, `upgrade_project`); every other tool passes the version gate (`versionGate`, `f-graph-migrations`) before its handler, applied by the entry point
 - `ToolDef`, `defineTool(name, config, handler)` — a tool definition whose handler is typed from its input schema; each action exports `TOOLS: ToolDef[]` from its `tools.ts`
 - Schema fragments several actions share: `VERBOSE`, `NODE_ID`, `CHANGE_ID`, `CHANGE_REF`, `AREA`, `ALIASES`, `INCLUDE_INHERITED_DECISIONS`, `SECTION_READ`, and the `READINESS_HINT` sentence
 
@@ -39,7 +39,7 @@ Depends on: none inside the graph (zod and the MCP SDK types).
 ## Acceptance Criteria
 
 - Every exposed action defines its tools with `defineTool` in its own `tools.ts`; the MCP entry point holds no tool schema
-- `tools/list` shows the same thirty tools, in the same order, with the same annotations and descriptions as before
+- `tools/list` shows every tool with annotations from its kind; a tool with `gate: false` answers before setup and upgrade
 - Verified via `npm test` (smoke)
 
 ## Attachments

@@ -5,6 +5,8 @@
  * under 4 KB for 30 areas, counts each area's members, and `area` reaches orient_for_work and
  * find_related_nodes (a non-Journey area is Blocked).
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";

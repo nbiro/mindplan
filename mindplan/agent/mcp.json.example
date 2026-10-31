@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "mindplan": {
-      "command": "npx",
-      "args": ["mindplan-mcp"]
-    }
-  }
-}

@@ -150,10 +150,16 @@ if (!ci) {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-publish-verify-"));
   try {
     run("npx", ["-y", `${PACKAGE_NAME}@${version}`, "help"], { cwd: sandbox });
-    run("npx", ["-y", `${PACKAGE_NAME}@${version}`, "init", "--host", "all"], { cwd: sandbox });
-    const stamp = JSON.parse(fs.readFileSync(path.join(sandbox, "mindplan", "version.json"), "utf-8"));
-    if (stamp.package !== version) fail(`init in a fresh project stamped ${stamp.package}, expected ${version}.`);
-    console.log("fresh-install help + init passed");
+    // No graph yet: the published check must fail and send the user to setup_project.
+    const check = spawnSync("npx", ["-y", `${PACKAGE_NAME}@${version}`, "check"], {
+      cwd: sandbox,
+      encoding: "utf-8",
+      shell: process.platform === "win32",
+    });
+    if (check.status === 0 || !`${check.stderr}`.includes("setup_project")) {
+      fail(`check in a fresh project should fail naming setup_project (exit ${check.status}): ${check.stderr}${check.stdout}`);
+    }
+    console.log("fresh-install help + check passed");
   } finally {
     fs.rmSync(sandbox, { recursive: true, force: true });
   }

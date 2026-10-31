@@ -1,6 +1,6 @@
 # Cursor
 
-1. Register MCP — merge into `.cursor/mcp.json` (see `mindplan/agent/mcp.json.example`):
+1. **Register MCP** — merge into `.cursor/mcp.json` (the package ships the same snippet as `templates/agent/mcp.json.example`):
 
 ```json
 {
@@ -13,37 +13,21 @@
 }
 ```
 
-`npx mindplan-mcp` runs the copy pinned in your `package.json` dev dependencies (`npm install -D mindplan-mcp`). In a project without a `package.json`, use `"args": ["-y", "mindplan-mcp@0.5"]`.
+`npx mindplan-mcp` runs the copy pinned in your `package.json` dev dependencies (`npm install -D mindplan-mcp`). In a project without a `package.json`, use `"args": ["-y", "mindplan-mcp@0.13"]`.
 
-2. **Always-on stub** — `mindplan-mcp init` installs `.cursor/rules/mindplan.mdc` (alwaysApply frontmatter + a short stub) when missing. The stub requires `get_project` (dialect + project brief), `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work. MCP `instructions` are the same short pointer (no rules body). If tools are hidden, use `.cursor/rules` + `.cursor/skills` + root `AGENTS.md` — not `mindplan/**`. After upgrading MindPlan, re-run `mindplan-mcp init`: `mindplan/version.json` is older than the package, so init refreshes the playbook, skills, and Cursor copies (`get_project` and `check` warn until it runs). Add `-f` (or `--force`) only to also overwrite `AGENTS.md`, `.cursorignore`, and `.cursor/permissions.json`. If the rule was deleted, recreate it with:
+Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
 
-```yaml
----
-description: MindPlan — orient on the product graph before planning or changing code
-alwaysApply: true
----
-```
+2. **Set up MindPlan** — ask the Cursor agent to set up MindPlan in the repository. It calls `setup_project`, which creates `mindplan/` (`config.json` as `{ sources, exclude }` with default `sources: ["src/**"]`, an empty `project.md`, `version.json`), and follows the returned guide:
+   - writes `MINDPLAN.md` at the root and adds a "Read and follow MINDPLAN.md" line to `AGENTS.md`, which Cursor reads (or, if you do not use `AGENTS.md`, a rule under `.cursor/rules/` that points at `MINDPLAN.md`);
+   - adds `mindplan/**` to `.cursorignore`, so Cursor never edits or indexes the graph with its own file tools (MCP is the only writer), and `.mindplan-cache/` to `.gitignore`;
+   - proposes moving your standing rules (including `.cursor/rules/*` and `.cursorrules`) into the project brief, and edits those files only after you approve.
 
-Paste the contents of `templates/agent/agents-stub.md` below the frontmatter. Root `AGENTS.md` (also installed by init when missing) carries the same stub for agents that read it.
+3. **Skills** — `define-entities` and `plan-project` are served by the server through `get_skill`; nothing is copied to `.cursor/skills/`.
 
-3. **Skills** — `mindplan-mcp init` installs Cursor-native skill discovery paths when missing:
-   - `.cursor/skills/mindplan-define-entities/` (scaffold Journey, Foundation, Interaction, Interface, Bug nodes)
-   - `.cursor/skills/mindplan-plan-project/` (plan-only product modeling; no application code)
+4. **File ownership** — declare owned files with `set_implementation_files`; change the source universe with `patch_config`. See SPEC §1.2.
 
-   Canonical copies also live under `mindplan/agent/skills/` (ignored by `.cursorignore`). Re-copy from those directories, or re-run `mindplan-mcp init` (it reinstalls missing trees, and refreshes them after a MindPlan upgrade).
+5. **Authority** — MCP is the only writer of `mindplan/` (nodes, attachments, `project.md`, `config.json`). Tool results include `changed_files` — inspect via Source Control (hosts often omit subprocess writes from the agent edit strip). Never hand-edit territory MDX or frontmatter.
 
-4. **`.cursorignore`** — `mindplan-mcp init` installs `.cursorignore` at the project root when missing. It ignores the entire `mindplan/**` tree so Cursor will not edit or index territory (MCP is the only writer). Offline fallback is `get_project` plus copies under `.cursor/rules` and `.cursor/skills`:
+6. **Handoff matches the graph** — before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done, update the graph so it matches the implementation, then run `run_check` (CLI `mindplan-mcp check`). When the implementation is done and a merge is requested, `ship` the node. Host typecheck is not a MindPlan gate. Code review is outside the MindPlan dialect — use host process or `mindplan/project.md` rules if desired.
 
-```gitignore
-mindplan/**
-```
-
-5. **`.cursor/permissions.json`** — `mindplan-mcp init` installs this when missing. It allowlists MindPlan MCP tools (`mindplan:*`, plus the Cursor UI server id `project-0-mindplan-mindplan:*` / `*mindplan*:*`) so Auto-review does **not** prompt on playbook-required graph mutations (`update_node_status`, `create_node`, `link_nodes`, `patch_node_territory`, etc.). Requires Run Mode **Auto-review** or **Allowlist** (Settings → Agents → Approvals & Execution). Defining `mcpAllowlist` in this file replaces the in-app MCP allowlist for that key type — if you already allowlisted other MCP servers in Settings, add those patterns to the same file (or `~/.cursor/permissions.json`).
-
-6. **File ownership** — `mindplan-mcp init` writes `mindplan/config.json` as `{ sources, exclude }` (default `sources: ["src/**"]`). Declare owned files with `set_implementation_files`. Legacy `implementation_packages` configs migrate on init. See SPEC §1.2. Change config with `patch_config`.
-
-7. **Authority** — MCP is the only writer of `mindplan/` (nodes, attachments, `project.md`, `config.json`). Tool results include `changed_files` — inspect via Source Control (hosts often omit subprocess writes from the agent edit strip). Never hand-edit territory MDX or frontmatter.
-
-8. **Handoff matches the graph** — before self-`ready`, `in-review`, `ship` / `resolved`, or claiming the session is done, update the graph so it matches the implementation, then run default `mindplan-mcp check`. When the implementation is done and a merge is requested, `ship` the node. Optionally `check --base <ref>` for local dirty-src hygiene — not a CI merge gate. Host typecheck is not a MindPlan gate. Code review is outside the MindPlan dialect — use host process or `mindplan/project.md` rules if desired.
-
-9. Reload MCP servers (Cursor Settings → MCP, or restart Cursor).
+7. **Upgrading** — after upgrading `mindplan-mcp` to a release that adds a graph migration, tools answer `Blocked: Version`: ask the agent to call `upgrade_project` and follow its guide (it deletes the old `.cursor/skills/mindplan-*` and `.cursor/rules/mindplan.mdc` copies earlier releases installed).

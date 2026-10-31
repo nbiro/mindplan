@@ -9,6 +9,8 @@
  * on disk: each mindplan/ file it created, changed, or deleted must be in its changed_files.
  * Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -422,7 +424,7 @@ check(
     String(discardMsg)
   );
   const r = await call("run_check", {});
-  const expected = `legacy: "f-core" has a leftover mirror twin (${nextOf("foundations", "f-core")}); run mindplan-mcp init to remove it.`;
+  const expected = `legacy: "f-core" has a leftover mirror twin (${nextOf("foundations", "f-core")}); call upgrade_project to remove it.`;
   check("run_check warns about the leftover mirror and passes", r.ok === true && r.warnings.includes(expected), JSON.stringify({ ok: r.ok, warnings: r.warnings, failures: r.failures }));
   const mirrorBefore = read(nextOf("foundations", "f-core"));
   const livePatch = await call("patch_node_territory", {

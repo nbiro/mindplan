@@ -2,13 +2,13 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, change ids and neighbor labels, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; a next file only while a revision is open; Atomic Ops only before ship; cached loads; the version stamp."
+description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, change ids and neighbor labels, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-10-31T11:40:11.484Z
-revisions: 18
-churn: 4.831
+shipped_at: 2026-10-31T20:33:28.710Z
+revisions: 19
+churn: 5.79
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-31T11:40:11.484Z
+updated_at: 2026-10-31T20:33:28.710Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -46,7 +46,7 @@ Infra — persist territory through the store only. A shipped node is one file, 
 Intended files: `src/foundations/f-territory-store/`
 
 - **No standing twin.** A shipped node has only `<id>.mdx` until `open_next`; every live write touches the live file alone. A next file exists only while a revision is open
-  - Discover: a next file in a pipeline state sets `node.next`. A `state: mirror` file left by a release before 0.8.0 is not a revision and does not set it; `isLegacyMirror(node)` names one and `removeLegacyMirror(node)` deletes it and its empty `next-attachments/` (init)
+  - Discover: a next file in a pipeline state sets `node.next`. A `state: mirror` file left by a release before 0.8.0 is not a revision and does not set it; `isLegacyMirror(node)` names one and `removeLegacyMirror(node)` deletes it and its empty `next-attachments/` (`upgrade_project`); a next-slot write on such a node is Blocked naming `upgrade_project`
   - `openNextSlot` writes `<id>.next.mdx` from the live file (state `draft`, `updated_at` / `opened_at` now, optional title and description; a leftover mirror file is replaced) and gives the revision a fresh Atomic Ops list (below)
   - `promoteNextSlot` writes the live file from the next file, copies `next-attachments/` into `attachments/`, then deletes the next file and `next-attachments/`; `discardNextSlot` deletes them; `deleteNextSlotFiles` lists every path it deletes (the next file, each file under `next-attachments/`, the folder) and is also used by unship and retire
   - A next-slot write on a node with no open revision is Blocked (call `open_next` first)
@@ -97,10 +97,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 
 ### Project version stamp (`version.ts`)
 
-- `mindplan/version.json` records which package last migrated the tree: `{ "package": "<semver>", "graph": <GRAPH_VERSION> }`. Only `init` writes it (`writeProjectVersion`).
-- `packageVersion()` reads `version` from this package's own `package.json` by walking up from the module (works from `dist/` and from a consumer's `node_modules`); `f-mcp-runtime` reports the same value on `initialize`.
-- `projectVersionStatus()` compares the stamp with the running package and graph format and never throws. Status: `current`, `missing` (no stamp), `invalid` (unreadable stamp), `behind` (stamp older than the package, or older graph format), `ahead` (stamp newer than the package, or newer graph format). Every status but `current` carries one `warning` sentence naming the fix: `behind` / `missing` / `invalid` → run `mindplan-mcp init` with the installed version; `ahead` → upgrade `mindplan-mcp`.
-- Versions compare as SemVer `major.minor.patch`; a pre-release sorts before its release.
+- `mindplan/version.json` records which package last set up or upgraded the tree and the migration level it reached: `{ "package": "<semver>", "graph": <GRAPH_VERSION>, "migrations": <level> }`. `readProjectVersion()` returns `null` when the file is missing, `"invalid"` when it cannot be parsed or lacks a semver `package` and an integer `graph`, and reads an absent or non-integer `migrations` as `0` (stamps written by init). `writeProjectVersion(version)` writes all three fields; only `stampGraph` (`f-graph-migrations`) calls it.
+- `packageRoot()` is the directory of this package's own `package.json`, found by walking up from the module (works from `dist/` and from a consumer's `node_modules`); setup and upgrade read their templates from it. `packageVersion()` reads `version` from that file; `f-mcp-runtime` reports the same value on `initialize`.
+- Comparing the stamp with the server (and the Block) belongs to `graphStatus` / `versionGate` in `f-graph-migrations`; this file only reads and writes the stamp.
+- `compareVersions(a, b)` compares SemVer `major.minor.patch`; a pre-release sorts before its release.
 
 - **Aliases.** `aliases` is a frontmatter list parsed like `tests` and kept verbatim by rewriters that do not know it; each entry is written as a JSON string (free text: spaces, colons, other scripts) and decoded on parse. `normalizeAliases(id, entries)` trims, collapses whitespace, drops empties, deduplicates ignoring case, and Blocks an entry over `MAX_ALIAS_CHARS` (60) or more than `MAX_ALIASES` (20). `writeAliasesFrontmatter(node, entries)` is the only writer: any node type, not a retired or closed one; the same list on live and an open next, state / `updated_at` / readiness untouched; an empty list removes the field. `promoteNextSlot` writes the next file's list into the rebuilt live frontmatter; `nodeToRecord` carries it
 - **One blank line below the frontmatter.** Every write of a node file (`writeMarkdown`, `open_next`, and each frontmatter rewriter) goes through `writeTerritoryFile`, which applies `oneBlankLineBelowFrontmatter`: exactly one blank line between the closing fence and the body, none above an empty body, in the file's own line endings. `splitContext` puts the newline after the fence and every blank line below it in `separator`, so `body` starts at its first text and `get_node_context` never returns leading blank lines. Runs of blank lines left by releases before 0.2.0 collapse on the node's next write
@@ -154,6 +154,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 - `attributed:` is written to the revision's slot, survives other writes, and is gone from the live file after first ship and after promotion
 
 - A first ship writes `revisions: 1`; promoting a revision writes `revisions: 2`; promoting with `splitInto: [f-a]` writes `split_at: 2` and `split_into: [f-a]`, and a later promotion keeps them
+- `writeProjectVersion` writes `{ package, graph, migrations }`; `readProjectVersion` reads a stamp without `migrations` as level 0 and an unparseable one as `"invalid"`
 
 ## Decisions
 

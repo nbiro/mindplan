@@ -4,7 +4,7 @@
  */
 
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
-import { projectVersionStatus } from "../../foundations/f-territory-store/version.js";
+import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
 import { findPackageFile } from "./spec.js";
 import * as fs from "fs";
@@ -42,12 +42,12 @@ export const CHECK_HINT =
 /**
  * Project brief (description + rules) plus the bundled systems dialect (playbook).
  * `rules_version` tags the rules, so the first `get_rules` of a session can already pass it.
- * `version` is the stamp warning, present only when mindplan/version.json is not current.
+ * `version` is the graph status warning (setup, upgrade, or an older server), absent when current.
  * Call before the first answer or code change; call again after description/rules change.
  */
 export function getProject(): Record<string, unknown> {
   const brief = loadProjectBrief();
-  const version = projectVersionStatus();
+  const version = graphStatus();
   return {
     path: brief.path,
     description: brief.description,

@@ -2,14 +2,16 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime"
-description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version on initialize; serves a short pointer requiring get_project, then get_rules and orient_for_work before each action, and plan-project before new-feature graph work; scopes the drift report to the node a result is about."
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, get_rules and orient_for_work before each action, the plan-project skill via get_skill); scopes drift to the node a result is about."
 state: stable
-shipped_at: 2026-10-25T23:35:19.448Z
-revisions: 21
-churn: 0
-split_at: 21
+shipped_at: 2026-10-31T20:33:28.832Z
+revisions: 22
+churn: 1
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-25T23:35:19.448Z
+updated_at: 2026-10-31T20:33:28.832Z
+split_at: 21
+split_into:
+  - f-orientation-ledger
 depends_on:
   - f-territory-store
   - f-framework-docs
@@ -23,8 +25,6 @@ tests:
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/version.test.mjs
 role: assembler
-split_into:
-  - f-orientation-ledger
 ---
 
 # MCP runtime
@@ -40,7 +40,8 @@ The version the server reports on `initialize` is read from the package's own `p
 Package: `src/foundations/f-mcp-runtime/`
 
 - `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
-- Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and the plan-project skill before new-feature graph work (`create_node`, `open_next`, links, territory, brief, config). This sentence is the only skill routing the server sends; tool descriptions carry none
+- Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and the plan-project skill, loaded with `get_skill`, before new-feature graph work (`create_node`, `open_next`, links, territory, brief, config). This sentence is the only skill routing the server sends; tool descriptions carry none
+- Boot creates no directory: `mindplan/` exists only after `setup_project`, so `graphStatus` (`f-graph-migrations`) can tell a repo without a graph from one with an empty graph
 - Export `readPackageVersion()` — reads `version` from the package's `package.json` (resolved relative to the compiled module, so it works from `dist/` in a consumer's `node_modules`), and `McpServer` is constructed with `{ name: "mindplan", version: readPackageVersion() }`. Falls back to `"0.0.0"` with a stderr note if the file is unreadable; boot never fails over it
 - `with-drift.ts` — Assembler helper that calls `buildDriftReport` from `i-check-integrity` (legal because check depends_on this Assembler) so `if-mcp-tools` can attach drift without importing a non-exposed Interaction. It reads the node ids a payload is about (`node_id`, orient `focus`, link ends, created node) and passes them as `nodeIds`, so the report lists that node's files and only counts other owners' (`other_count`); a payload about no node gets the capped whole-tree report
 - Always pass `{ instructions: SERVER_INSTRUCTIONS }`
@@ -59,7 +60,8 @@ Depends on: `f-territory-store`, `f-framework-docs`, `f-graph-search`, `f-orient
 - Boot never fails over a missing brief or playbook file
 - Drift on a result about one node lists that node's files and counts the others
 - `initialize` reports `serverInfo.version` equal to the `version` field of the repo's `package.json`, and `server.ts` contains no literal version string
-- The instructions pointer names `get_project`, `get_rules`, `orient_for_work`, and the plan-project skill
+- The instructions pointer names `get_project`, `get_rules`, `orient_for_work`, the plan-project skill, and `get_skill`
+- Starting the server in a directory without `mindplan/` creates nothing
 - The smoke test asserts the version match
 - In MCP mode a console.log from any module reaches stderr, not the stdio channel
 - The server answers tool calls while the search model is still loading (keyword-only until it is ready)

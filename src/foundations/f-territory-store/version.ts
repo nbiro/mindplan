@@ -1,13 +1,12 @@
 /**
- * Project version stamp — mindplan/version.json records which package version last ran init
- * (agent files refreshed, migrations applied) and which graph format the tree is in.
- * Only init writes it; get_project and the check compare it with the running package.
+ * Project version stamp — mindplan/version.json records which package last set up or upgraded the
+ * tree, its graph format, and the migration level it reached. stampGraph (f-graph-migrations) is
+ * the only writer; graphStatus there compares it with the running server.
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { GRAPH_VERSION } from "../f-domain-model/types.js";
 import { readFileRetry, writeFileRetry } from "../f-source-index/io.js";
 
 const MINDPLAN_DIR = "mindplan";
@@ -23,18 +22,8 @@ export const FALLBACK_PACKAGE_VERSION = "0.0.0";
 export type ProjectVersion = {
   package: string;
   graph: number;
-};
-
-export type ProjectVersionState = "current" | "missing" | "invalid" | "behind" | "ahead";
-
-export type ProjectVersionStatus = {
-  state: ProjectVersionState;
-  /** The stamp as read; null when missing or invalid. */
-  project: ProjectVersion | null;
-  /** The running package version and graph format. */
-  running: ProjectVersion;
-  /** One sentence naming the fix; absent when current. */
-  warning?: string;
+  /** Migration level the tree reached; 0 for a stamp written before levels existed. */
+  migrations: number;
 };
 
 function stampPath(): string {
@@ -42,28 +31,30 @@ function stampPath(): string {
 }
 
 /**
- * Reads `version` from this package's own package.json by walking up from this module, so it
- * works from dist/ in the repo and from a consumer's node_modules. Throws when it cannot be read.
+ * The directory holding this package's own package.json, found by walking up from this module, so
+ * it works from dist/ in the repo and from a consumer's node_modules. Throws when there is none.
  */
-function readOwnPackageVersion(): string {
+export function packageRoot(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 8; i++) {
     const manifest = path.join(dir, "package.json");
     if (fs.existsSync(manifest)) {
-      const parsed = JSON.parse(fs.readFileSync(manifest, "utf-8")) as {
-        name?: unknown;
-        version?: unknown;
-      };
-      if (parsed.name === PACKAGE_NAME) {
-        if (typeof parsed.version === "string" && parsed.version) return parsed.version;
-        throw new Error(`${manifest} has no version`);
-      }
+      const parsed = JSON.parse(fs.readFileSync(manifest, "utf-8")) as { name?: unknown };
+      if (parsed.name === PACKAGE_NAME) return dir;
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   throw new Error(`no ${PACKAGE_NAME} package.json above ${fileURLToPath(import.meta.url)}`);
+}
+
+/** Reads `version` from this package's own package.json. Throws when it cannot be read. */
+function readOwnPackageVersion(): string {
+  const manifest = path.join(packageRoot(), "package.json");
+  const parsed = JSON.parse(fs.readFileSync(manifest, "utf-8")) as { version?: unknown };
+  if (typeof parsed.version === "string" && parsed.version) return parsed.version;
+  throw new Error(`${manifest} has no version`);
 }
 
 let cachedPackageVersion: string | undefined;
@@ -86,14 +77,10 @@ export function packageVersion(): string {
   return cachedPackageVersion;
 }
 
-/** The version and graph format of the code that is running now. */
-export function runningVersion(): ProjectVersion {
-  return { package: packageVersion(), graph: GRAPH_VERSION };
-}
-
 /**
  * Reads mindplan/version.json. Returns null when the file is missing and "invalid" when it
- * cannot be parsed or lacks a string `package` and an integer `graph`.
+ * cannot be parsed or lacks a semver `package` and an integer `graph`. An absent or non-integer
+ * `migrations` reads as 0 (stamps written by init).
  */
 export function readProjectVersion(): ProjectVersion | null | "invalid" {
   const abs = stampPath();
@@ -104,17 +91,22 @@ export function readProjectVersion(): ProjectVersion | null | "invalid" {
     const obj = raw as Record<string, unknown>;
     if (typeof obj.package !== "string" || parseSemver(obj.package) === null) return "invalid";
     if (typeof obj.graph !== "number" || !Number.isInteger(obj.graph)) return "invalid";
-    return { package: obj.package, graph: obj.graph };
+    const migrations =
+      typeof obj.migrations === "number" && Number.isInteger(obj.migrations) && obj.migrations >= 0 ? obj.migrations : 0;
+    return { package: obj.package, graph: obj.graph, migrations };
   } catch {
     return "invalid";
   }
 }
 
-/** Writes mindplan/version.json with the running version. Returns the repo-relative path. */
-export function writeProjectVersion(version: ProjectVersion = runningVersion()): string {
+/** Writes mindplan/version.json. Returns the repo-relative path. */
+export function writeProjectVersion(version: ProjectVersion): string {
   const abs = stampPath();
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  writeFileRetry(abs, JSON.stringify({ package: version.package, graph: version.graph }, null, 2) + "\n");
+  writeFileRetry(
+    abs,
+    JSON.stringify({ package: version.package, graph: version.graph, migrations: version.migrations }, null, 2) + "\n"
+  );
   return VERSION_RELATIVE_PATH;
 }
 
@@ -162,54 +154,4 @@ export function compareVersions(a: string, b: string): number {
   if (pa.pre === null) return 1;
   if (pb.pre === null) return -1;
   return comparePre(pa.pre, pb.pre);
-}
-
-/**
- * Compares the stamp with the running package and graph format. Never throws.
- * The graph format decides first: a tree in another format is behind or ahead whatever the package says.
- */
-export function projectVersionStatus(): ProjectVersionStatus {
-  const running = runningVersion();
-  const initFix = `Run \`npx mindplan-mcp@${running.package} init\` (add the --host you use) to refresh the agent files and apply migrations; see the mindplan-mcp CHANGELOG for breaking changes.`;
-  let stamp: ProjectVersion | null | "invalid";
-  try {
-    stamp = readProjectVersion();
-  } catch {
-    stamp = "invalid";
-  }
-  if (stamp === null) {
-    return {
-      state: "missing",
-      project: null,
-      running,
-      warning: `${VERSION_RELATIVE_PATH} is missing, so this project's agent files and graph may predate mindplan-mcp ${running.package}. ${initFix}`,
-    };
-  }
-  if (stamp === "invalid") {
-    return {
-      state: "invalid",
-      project: null,
-      running,
-      warning: `${VERSION_RELATIVE_PATH} is unreadable (expected { "package": "<semver>", "graph": <integer> }). ${initFix}`,
-    };
-  }
-  const graphOrder = Math.sign(stamp.graph - running.graph);
-  const order = graphOrder !== 0 ? graphOrder : compareVersions(stamp.package, running.package);
-  if (order < 0) {
-    return {
-      state: "behind",
-      project: stamp,
-      running,
-      warning: `This project was last initialized with mindplan-mcp ${stamp.package} (graph format ${stamp.graph}); the server is ${running.package} (graph format ${running.graph}). ${initFix}`,
-    };
-  }
-  if (order > 0) {
-    return {
-      state: "ahead",
-      project: stamp,
-      running,
-      warning: `This project was initialized with mindplan-mcp ${stamp.package} (graph format ${stamp.graph}), newer than this server ${running.package} (graph format ${running.graph}). Upgrade mindplan-mcp (npm install -D mindplan-mcp@${stamp.package}, or point npx at it) before changing the graph.`,
-    };
-  }
-  return { state: "current", project: stamp, running };
 }

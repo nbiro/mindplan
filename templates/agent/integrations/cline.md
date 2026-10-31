@@ -6,10 +6,18 @@
 |-------|-------|
 | Name | `mindplan` |
 | Command | `npx` |
-| Args | `mindplan-mcp` (or `-y mindplan-mcp@0.5` without a `package.json` dev dependency) |
+| Args | `mindplan-mcp` (or `-y mindplan-mcp@0.13` without a `package.json` dev dependency) |
 
-Or merge the JSON from `mindplan/agent/mcp.json.example` into Cline's MCP settings file.
+Or merge this JSON (the package ships it as `templates/agent/mcp.json.example`) into Cline's MCP settings file:
 
-2. **Instructions** — MCP already requires `get_project` (dialect + project brief). `init` writes that stub to `AGENTS.md` when missing. Add it to `.clinerules` if this host does not read `AGENTS.md`. All graph mutations go through MindPlan MCP tools.
+```json
+{
+  "mcpServers": {
+    "mindplan": { "command": "npx", "args": ["mindplan-mcp"] }
+  }
+}
+```
 
-3. Enable the server in Cline and verify `get_mindplan_graph` is available.
+2. Enable the server in Cline and verify `get_project` is available.
+
+3. **Set up MindPlan** — ask Cline to set up MindPlan in the repository. It calls `setup_project` and follows the returned guide: it writes `MINDPLAN.md` at the root and points your agent files at it (a line in `AGENTS.md`, or `.clinerules` if this host reads neither `AGENTS.md` nor `CLAUDE.md`), and proposes moving your standing rules into the project brief. All graph mutations go through MindPlan MCP tools.

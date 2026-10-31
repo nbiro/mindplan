@@ -12,7 +12,7 @@ description: >-
 
 Use this skill whenever you create or patch MindPlan territory. That includes plan-only sessions and the graph work that must finish **before** any new-feature code change. Application code (files claimed via `implements` / `set_implementation_files`) is out of scope until a later execution session under `get_project.playbook`.
 
-Prerequisite: MindPlan MCP is registered. Normative reference: `SPEC.md`. Entity create/link details: the `define-entities` skill. Always-on execution process (build pipeline, bugs, shipping): `get_project.playbook`. Before each action in this skill, call `get_rules`, then `orient_for_work`.
+Prerequisite: MindPlan MCP is registered. The server serves this skill (`get_skill({ name: "plan-project" })`). Normative reference: `SPEC.md`. Entity create/link details: the `define-entities` skill (`get_skill({ name: "define-entities" })`). Always-on execution process (build pipeline, bugs, shipping): `get_project.playbook`. Before each action in this skill, call `get_rules`, then `orient_for_work`.
 
 ## When to use
 

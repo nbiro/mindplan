@@ -1,4 +1,5 @@
 {
-  "package": "0.12.0",
-  "graph": 1
+  "package": "0.13.0",
+  "graph": 1,
+  "migrations": 1
 }

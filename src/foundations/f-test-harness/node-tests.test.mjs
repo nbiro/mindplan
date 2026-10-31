@@ -5,6 +5,8 @@
  * Every write here is also diffed against the sandbox: each mindplan/ file it touched must be in
  * its changed_files. Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

@@ -1,9 +1,12 @@
 /**
  * Open–closed signals: fan-in and churn from graph facts, the revision count and split record
- * (written at ship, backfilled by init from git), the hotspot warning, a change's additivity
+ * (written at ship, backfilled by upgrade_project from git), the hotspot warning, a change's additivity
  * summary, the open_next fan-in warning with its decision prompt, the hotspots config, and the
  * additive alternative in the decision gate's Blocked message. Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
+import { runUpgrade } from "./upgrade-run.mjs";
 import * as fs from "fs";
 import { spawnSync } from "child_process";
 import * as os from "os";
@@ -528,7 +531,7 @@ try {
   check("a ship one half-life later carries half", types.churnAfterShip(2, "2026-10-01T00:00:00.000Z", "2026-10-31T00:00:00.000Z", 30) === 2);
 }
 
-// --- init backfills revisions and splits from git ---
+// --- upgrade_project backfills revisions and splits from git ---
 {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-open-closed-git-"));
   const git = (args, date) =>
@@ -588,38 +591,37 @@ try {
   nodeFile("f-user", "2026-01-04T00:00:00.000Z", ["f-lib"], ["src/user/"]);
   git(["add", "-A"], "2026-01-04T00:00:00Z");
   git(["commit", "-qm", "ship 3: split"], "2026-01-04T00:00:00Z");
-  const init = () =>
-    spawnSync(process.execPath, [serverEntry, "init", "--host", "claude"], {
-      cwd: repo,
-      encoding: "utf-8",
-      env: { ...process.env, MINDPLAN_ROOT: repo },
-    });
-  // A shipped node file git has never seen (renamed by this init, not yet committed) waits.
+  const init = () => runUpgrade(repo);
+  // A shipped node file git has never seen (renamed by this upgrade, not yet committed) waits.
   nodeFile("f-fresh", "2026-01-05T00:00:00.000Z");
   const first = init();
   const freshText = fs.readFileSync(path.join(repo, "mindplan", "foundations", "f-fresh", "f-fresh.mdx"), "utf-8");
   check("a node file git has never seen gets no revision count yet", !/^revisions:/m.test(freshText), freshText);
   const rootText = fs.readFileSync(path.join(repo, "mindplan", "foundations", "f-root", "f-root.mdx"), "utf-8");
   check(
-    "init writes the ship count and the split it finds in git",
+    "upgrade_project writes the ship count and the split it finds in git",
     /^revisions: 3$/m.test(rootText) && /^churn: 0$/m.test(rootText) && /^split_at: 3$/m.test(rootText) && rootText.includes("split_into:\n  - f-a\n  - f-b"),
-    first.stdout + first.stderr + rootText
+    first.stderr + rootText
   );
-  check("init reports the split", first.stdout.includes("Found a split in git: f-root split into f-a, f-b"), first.stdout);
+  check(
+    "upgrade_project reports the split",
+    JSON.stringify(first.result?.migrations?.splitsFound) === JSON.stringify({ "f-root": ["f-a", "f-b"] }),
+    JSON.stringify(first.result?.migrations)
+  );
   const userText = fs.readFileSync(path.join(repo, "mindplan", "foundations", "f-user", "f-user.mdx"), "utf-8");
   check(
     "a ship that only starts using a new building block is no split",
-    /^revisions: 3$/m.test(userText) && !userText.includes("split_") && !first.stdout.includes("f-user split"),
-    userText + first.stdout
+    /^revisions: 3$/m.test(userText) && !userText.includes("split_") && !("f-user" in (first.result?.migrations?.splitsFound ?? {})),
+    userText
   );
   const partText = fs.readFileSync(path.join(repo, "mindplan", "foundations", "f-a", "f-a.mdx"), "utf-8");
   check("a part shipped once gets revisions: 1, churn: 1, and no split", /^revisions: 1$/m.test(partText) && /^churn: 1$/m.test(partText) && !partText.includes("split_"), partText);
   const second = init();
   check(
-    "a second init writes no revision counts",
-    !second.stdout.includes("Wrote the revision count") &&
+    "a second upgrade writes no revision counts",
+    second.result?.migrations?.revisionsBackfilled.length === 0 &&
       fs.readFileSync(path.join(repo, "mindplan", "foundations", "f-root", "f-root.mdx"), "utf-8") === rootText,
-    second.stdout
+    JSON.stringify(second.result?.migrations)
   );
 
   const plain = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-open-closed-nogit-"));
@@ -630,9 +632,9 @@ try {
     path.join(plain, "mindplan", "foundations", "f-solo", "f-solo.mdx"),
     rootText.replace(/^id: f-root$/m, "id: f-solo").replace(/^revisions:.*\n|^split_at:.*\n|^split_into:\n(  - .*\n)*|^depends_on:\n(  - .*\n)*/gm, "")
   );
-  spawnSync(process.execPath, [serverEntry, "init", "--host", "claude"], { cwd: plain, encoding: "utf-8", env: { ...process.env, MINDPLAN_ROOT: plain, GIT_CEILING_DIRECTORIES: path.dirname(plain) } });
+  runUpgrade(plain, { env: { GIT_CEILING_DIRECTORIES: path.dirname(plain) } });
   const solo = fs.readFileSync(path.join(plain, "mindplan", "foundations", "f-solo", "f-solo.mdx"), "utf-8");
-  check("outside git init writes revisions: 1", /^revisions: 1$/m.test(solo), solo);
+  check("outside git the upgrade writes revisions: 1", /^revisions: 1$/m.test(solo), solo);
 }
 
 if (failures > 0) {
