@@ -4,11 +4,11 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, change additivity), change members and neighbors, checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-10-31T12:26:09.583Z
-revisions: 24
-churn: 12.848
+shipped_at: 2026-10-31T13:02:30.765Z
+revisions: 25
+churn: 13.841
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-31T12:26:09.583Z
+updated_at: 2026-10-31T13:02:30.765Z
 split_at: 8
 split_into:
   - f-source-index
@@ -98,6 +98,7 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `openClosedWarning(graph, node, settings)` — for `open_next` on a shipped node that is a hotspot counting the revision it opens (and is not `keepsWhole`): `Warning: "<id>" has N direct dependents, and this revision reaches every one. Prefer extending it: add a new node that depends_on "<id>", or split it so this change revises a smaller part. If revising it is still right, record why with record_decision and name the additive alternative you rejected.` (plus the hotspot groups when it is one); null below the threshold
   - `changeAdditivity(graph, change)` → `{ summary, new_nodes, revised, neighbors, planned }` from `changeMembership`: `new_nodes` are revisions never shipped, `revised` the shipped nodes with an open next (`{ id, state, fan_in }`), `planned` the planned sources (`{ id, state, fan_in }`), `neighbors` the neighbor ids. `summary` reads `change "<id>": 5 new nodes, 1 revised shipped node (f-payload, fan-in 43), 3 neighbors`, plus `, 1 planned revision (…)` when there are planned sources, and ends `; purely additive` when nothing shipped is revised or planned
 - **What each type splits into** (`open-closed.ts`): `splitPartType(type)` — a Foundation splits into Foundations, an Interaction or Interface into Interactions; `splitPartProblem(graph, node, partId)` — why a part cannot be marked (wrong kind, inactive, the node itself), or null; `splitPartLinked(graph, node, partId)` — whether a marked part counts when the node's open revision ships, by the edge that keeps imports legal (a Foundation `depends_on` it, an Interaction shares one of its Journeys, an Interface `exposes` it); `splitLinkHint(node)` — the edge the warning names. `hotspotWarning`'s advice for an Interaction and an Interface also tells the agent to mark the parts with `split_into`
+- **Ship history** (`ship-history.ts`): `shipHistory(relPath)` → `{ date, shipped_at, depends_on, implements }[]` oldest first — one ship per distinct `shipped_at` in the node file's git history (`fileHistory`, f-source-index), parsed with the store's `parseFrontmatter`; `null` outside git, `[]` for a path git has not seen. `inferredSplits(graph, node, ships, partShips)` — the ships at which a Foundation split parts out of itself, judged from claims, not edges: at ship j it gained `depends_on` on a Foundation first shipped between ship j-1 and ship j, and some claim of that part (at its first ship) was covered by the node's claims at ship j-1 and is no longer covered at ship j (`claimsOverlap`: equal, one a folder holding the other, or a glob covering it). A node that only starts using a new building block moved nothing, so no split. `replayChurn(shipTimes, splitShips, halfLife)` — the stored rate a node would have after those ships, reset to 0 at each split ship
 - **Decision gate wording.** When a shipped node's revision is decision-worthy because it revises a shipped Foundation or has a wide blast radius, the `Blocked: Decision` message also names the open–closed alternative: `An additive alternative leaves "<id>" closed: a new node that depends_on it, or a split of it; name it in alternatives if you rejected it.`
 - **Planned paths.** `staleTextWarnings` returns `{ warnings, info }`. For a node whose active slot is `draft` or `ready` and none of whose claimed files exist on disk yet, missing named paths are not `stale:`: they are one `planned: "<id>" names N path(s) not on disk yet (…)` info line per node. A path named on a line that says "at build time" is planned on every node.
 
@@ -157,6 +158,8 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - The `Blocked: Decision` message for a shipped Foundation or a wide blast radius names the additive alternative; other triggers keep their wording
 
 - `splitPartProblem` accepts an Interaction for an Interaction or Interface and refuses a Foundation; `splitPartLinked` counts an Interaction's part that shares its Journey and an Interface's part it exposes, and not one elsewhere
+
+- A ship that adds `depends_on` on a newly shipped Foundation while keeping all its own claims is no split; one whose earlier claim moves to the new Foundation is
 
 ## Decisions
 
@@ -314,6 +317,17 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
   - A fixed floor instead of the median (back to static thresholds the owner rejected)
 - Why: A node shipped once, or a root whose rate a split just reset, says nothing yet about how often things change here; counting them lets structure changes, not change frequency, move the baseline.
 - Change: hotspot-baseline
+- Date: 2026-10-31
+
+### d-backfill-split-needs-moved-claims
+
+- Decision: init infers a past split only when a claim of the new Foundation was covered by the node's claims before that ship and is not after it (files moved), not merely when the node gained depends_on on a Foundation first shipped in the window.
+- Alternatives:
+  - Keep the depends_on-gain rule (on skyloom it inferred 10 splits, of which only f-payload's was real, e.g. f-site-domains -> f-languages)
+  - Stop inferring splits from git altogether (the real f-payload split, the case the feature exists for, would be lost)
+- Why: SPEC already says a revision that only starts using a new building block marks nothing; moved claims are the git-visible fact that separates an extraction from a new dependency.
+- Consequences: An extraction that wrote the part into a fresh folder without the root ever claiming it (this repo's own past splits) is no longer inferred; the agent declares future splits with split_into, and a wrong record can be cleared with split_into: [].
+- Change: split-by-claims
 - Date: 2026-10-31
 
 ## Attachments

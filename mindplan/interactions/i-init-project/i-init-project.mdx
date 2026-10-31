@@ -4,16 +4,17 @@ type: Interaction
 title: "Init project"
 description: "Human runs init: it installs the playbook, brief, and host copies for Cursor, Claude Code, or both, optionally the merge-gate workflow, ignores mindplan/ in Cursor and the search cache in git, drops leftovers older releases left, backfills revision counts and splits from git, and stamps the version."
 state: stable
-shipped_at: 2026-10-31T11:40:11.667Z
-revisions: 9
-churn: 7.531
+shipped_at: 2026-10-31T13:02:30.905Z
+revisions: 10
+churn: 8.521
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-31T11:40:11.667Z
+updated_at: 2026-10-31T13:02:30.905Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
   - f-territory-store
   - f-source-index
+  - f-compiler-rules
 leads_to:
   - i-orient-plan
 implements:
@@ -57,7 +58,7 @@ Intended files: `src/interactions/i-init-project/`
 
 Depends on: `f-territory-store`, `f-source-index`.
 
-**Revision backfill from git.** For each shipped Foundation, Interaction, and Interface whose live file has no `revisions`, init reads the file's git history (`fileShipHistory`, f-source-index: one `git log --follow` plus one `git cat-file --batch` read): each distinct `shipped_at` value is a ship (read with the store's `parseFrontmatter` from `fileHistory`, f-source-index, at the first commit that has it). A node file git has never seen at its path (one this init just renamed) is skipped, so a later init counts its real history once the rename is committed. It writes `revisions` as the number of ships (at least 1). A ship whose `depends_on` gained nodes that first shipped after the node's previous ship and no later than this one is a split: the last such ship sets `split_at`, and the nodes gained are added to `split_into`. Outside git, or for a file git has never seen, it writes `revisions: 1`. It also writes `churn`, replaying the ships' `shipped_at` values through the same decay (reset to 0 at a split). Nodes that already carry both `revisions` and `churn` are left alone, so a second init changes nothing. The report lists `revisionsBackfilled` (node ids) and `splitsFound` (node id → parts).
+**Revision backfill from git.** (History and split inference: `shipHistory`, `inferredSplits`, `replayChurn` in f-compiler-rules; a split is inferred only when claimed files move from the node to the new Foundation in that ship.) For each shipped Foundation, Interaction, and Interface whose live file has no `revisions`, init reads the file's git history (`fileShipHistory`, f-source-index: one `git log --follow` plus one `git cat-file --batch` read): each distinct `shipped_at` value is a ship (read with the store's `parseFrontmatter` from `fileHistory`, f-source-index, at the first commit that has it). A node file git has never seen at its path (one this init just renamed) is skipped, so a later init counts its real history once the rename is committed. It writes `revisions` as the number of ships (at least 1). A ship whose `depends_on` gained nodes that first shipped after the node's previous ship and no later than this one is a split: the last such ship sets `split_at`, and the nodes gained are added to `split_into`. Outside git, or for a file git has never seen, it writes `revisions: 1`. It also writes `churn`, replaying the ships' `shipped_at` values through the same decay (reset to 0 at a split). Nodes that already carry both `revisions` and `churn` are left alone, so a second init changes nothing. The report lists `revisionsBackfilled` (node ids) and `splitsFound` (node id → parts).
 
 ## Acceptance Criteria
 
@@ -73,6 +74,8 @@ Depends on: `f-territory-store`, `f-source-index`.
 - Verified via `npm test`
 
 - In a git sandbox where a node shipped three times and its last ship added `depends_on` to two nodes first shipped in that commit, init writes `revisions: 3`, `split_at: 3`, and both ids in `split_into`; a second init writes nothing; outside git it writes `revisions: 1`
+
+- In a git sandbox where a Foundation's ship adds `depends_on` on a new Foundation but keeps every claim, init records no split; where the ship moves a claimed folder to the new Foundation, it records the split
 
 ## Attachments
 

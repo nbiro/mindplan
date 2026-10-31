@@ -4,6 +4,8 @@
  * patch_node_rules, and attachments.
  */
 
+import { hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { nodeShipHistory, replayChurn, shipTimesOf } from "../../foundations/f-compiler-rules/ship-history.js";
 import { splitLinkHint, splitPartLinked, splitPartProblem, splitPartType } from "../../foundations/f-compiler-rules/open-closed.js";
 import {
   isFoundationRole,
@@ -31,6 +33,8 @@ import {
   type CheckboxToggle,
   writeNodeRules,
   type TerritorySlot,
+  loadProjectConfig,
+  writeRevisionFields,
 } from "../../foundations/f-territory-store/store.js";
 import { unlinkRetry, writeFileRetry } from "../../foundations/f-source-index/io.js";
 import { assertPipelineTerritoryScalarsEditable, blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
@@ -102,6 +106,13 @@ function validateSplitInto(graph: MindPlanGraph, node: MindPlanNode, ids: string
   if (!splitPartType(node.type)) {
     throw blocked(`"${node.id}" is a ${node.type}; only a Foundation, Interaction, or Interface splits.`);
   }
+  if (!node.next && ids.length === 0) {
+    // Clearing a wrong split record on a shipped node.
+    if (!node.split_into?.length && node.split_at === undefined) {
+      throw blocked(`"${node.id}" has no split record to clear.`);
+    }
+    return;
+  }
   if (!node.next) {
     throw blocked(`"${node.id}" has no open revision; split_into marks the revision that splits it. Call open_next first.`);
   }
@@ -109,6 +120,24 @@ function validateSplitInto(graph: MindPlanGraph, node: MindPlanNode, ids: string
     const problem = splitPartProblem(graph, node, id);
     if (problem) throw blocked(problem);
   }
+}
+
+/**
+ * Removes a wrong split record from a shipped node in place: `split_at` and `split_into` go, the
+ * revision count stays, and the ship rate is replayed from the node file's git history without the
+ * split's reset (kept as stored outside git). Returns the paths written and the new rate.
+ */
+function clearSplitRecord(node: MindPlanNode): { paths: string[]; churn: number | undefined } {
+  const history = nodeShipHistory(node);
+  const churn = history?.length
+    ? replayChurn(shipTimesOf(node, history), new Set(), hotspotSettings(loadProjectConfig()).half_life_days)
+    : node.churn;
+  const changed = writeRevisionFields(node, {
+    revisions: node.revisions ?? 1,
+    ...(churn !== undefined ? { churn } : {}),
+    split_into: [],
+  });
+  return { paths: changed ? [territoryPath(node, "current")] : [], churn };
 }
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
@@ -154,7 +183,13 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
     paths.push(...written.paths);
     extra.aliases = written.aliases;
   }
-  if (split_into !== undefined) {
+  if (split_into !== undefined && split_into.length === 0 && !findNode(loadGraph(), args.node_id).next) {
+    const written = clearSplitRecord(findNode(loadGraph(), args.node_id));
+    fields.push("split_into");
+    paths.push(...written.paths);
+    extra.split_into = [];
+    extra.churn = written.churn;
+  } else if (split_into !== undefined) {
     // A record of the revision's shape, like a change id: it never resets readiness.
     const graph = loadGraph();
     const target = findNode(graph, args.node_id);

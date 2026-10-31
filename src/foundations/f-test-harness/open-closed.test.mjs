@@ -475,6 +475,16 @@ try {
   );
   const afterSplit = await call("run_check", {});
   check("after the split run_check no longer reports the root as a hotspot", !afterSplit.warnings.some((w) => w.startsWith('hotspot: "f-core"')), JSON.stringify(afterSplit.warnings));
+  // Clearing the split record in place: the count stays, the split goes.
+  const cleared = await call("patch_node_territory", { node_id: "f-core", split_into: [] });
+  const afterClear = (await call("orient_for_work", { node_id: "f-core", depth: "rules" })).context.record;
+  check(
+    "split_into: [] on a shipped node clears its split record and keeps its revision count",
+    cleared.split_into?.length === 0 && afterClear.split_at === undefined && afterClear.split_into === undefined && afterClear.revisions === 2,
+    JSON.stringify({ cleared, afterClear })
+  );
+  const clearAgain = await raw("patch_node_territory", { node_id: "f-core", split_into: [] });
+  check("clearing a node with no split record is Blocked", clearAgain.error && clearAgain.text.includes("no split record"), clearAgain.text);
   const part = (await call("orient_for_work", { node_id: "f-part", depth: "rules" })).context.record;
   check("a part's first ship counts one revision", part.revisions === 1 && part.churn === 1, JSON.stringify(part));
 
@@ -527,7 +537,7 @@ try {
       encoding: "utf-8",
       env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" },
     });
-  const nodeFile = (id, shippedAt, dependsOn = []) => {
+  const nodeFile = (id, shippedAt, dependsOn = [], claims = []) => {
     const lines = [
       "---",
       `id: ${id}`,
@@ -539,6 +549,7 @@ try {
       "created_at: 2026-01-01T00:00:00.000Z",
       `updated_at: ${shippedAt}`,
       ...(dependsOn.length ? ["depends_on:", ...dependsOn.map((d) => `  - ${d}`)] : []),
+      ...(claims.length ? ["implements:", ...claims.map((c) => `  - ${c}`)] : []),
       "role: infra",
       "---",
       "",
@@ -552,7 +563,10 @@ try {
   fs.mkdirSync(path.join(repo, "mindplan"), { recursive: true });
   fs.writeFileSync(path.join(repo, "mindplan", "config.json"), JSON.stringify({ sources: [], exclude: [] }) + "\n");
   git(["init", "-q"], "2026-01-01T00:00:00Z");
-  nodeFile("f-root", "2026-01-02T00:00:00.000Z");
+  const rootClaims = ["src/root/core/", "src/root/accounts/", "src/root/media/"];
+  nodeFile("f-root", "2026-01-02T00:00:00.000Z", [], rootClaims);
+  // f-user starts using a new building block later without giving it any of its files.
+  nodeFile("f-user", "2026-01-02T00:00:00.000Z", [], ["src/user/"]);
   git(["add", "-A"], "2026-01-02T00:00:00Z");
   git(["commit", "-qm", "ship 1"], "2026-01-02T00:00:00Z");
   // A side branch that merges an older copy back (no shipped_at, then the same one) is not a ship.
@@ -562,11 +576,16 @@ try {
   git(["commit", "-qam", "older copy"], "2026-01-02T06:00:00Z");
   fs.writeFileSync(rootFile, shipped1);
   git(["commit", "-qam", "same ship again"], "2026-01-02T12:00:00Z");
-  nodeFile("f-root", "2026-01-03T00:00:00.000Z");
+  nodeFile("f-root", "2026-01-03T00:00:00.000Z", [], rootClaims);
+  nodeFile("f-user", "2026-01-03T00:00:00.000Z", [], ["src/user/"]);
   git(["commit", "-qam", "ship 2"], "2026-01-03T00:00:00Z");
-  nodeFile("f-a", "2026-01-04T00:00:00.000Z");
-  nodeFile("f-b", "2026-01-04T00:00:00.000Z");
-  nodeFile("f-root", "2026-01-04T00:00:00.000Z", ["f-a", "f-b"]);
+  // The split: f-root's accounts and media folders move to the new f-a and f-b.
+  nodeFile("f-a", "2026-01-04T00:00:00.000Z", [], ["src/root/accounts/"]);
+  nodeFile("f-b", "2026-01-04T00:00:00.000Z", [], ["src/root/media/"]);
+  nodeFile("f-root", "2026-01-04T00:00:00.000Z", ["f-a", "f-b"], ["src/root/core/"]);
+  // Not a split: f-user gains depends_on on the new f-lib and keeps its own files.
+  nodeFile("f-lib", "2026-01-04T00:00:00.000Z", [], ["src/lib/"]);
+  nodeFile("f-user", "2026-01-04T00:00:00.000Z", ["f-lib"], ["src/user/"]);
   git(["add", "-A"], "2026-01-04T00:00:00Z");
   git(["commit", "-qm", "ship 3: split"], "2026-01-04T00:00:00Z");
   const init = () =>
@@ -587,6 +606,12 @@ try {
     first.stdout + first.stderr + rootText
   );
   check("init reports the split", first.stdout.includes("Found a split in git: f-root split into f-a, f-b"), first.stdout);
+  const userText = fs.readFileSync(path.join(repo, "mindplan", "foundations", "f-user", "f-user.mdx"), "utf-8");
+  check(
+    "a ship that only starts using a new building block is no split",
+    /^revisions: 3$/m.test(userText) && !userText.includes("split_") && !first.stdout.includes("f-user split"),
+    userText + first.stdout
+  );
   const partText = fs.readFileSync(path.join(repo, "mindplan", "foundations", "f-a", "f-a.mdx"), "utf-8");
   check("a part shipped once gets revisions: 1, churn: 1, and no split", /^revisions: 1$/m.test(partText) && /^churn: 1$/m.test(partText) && !partText.includes("split_"), partText);
   const second = init();
