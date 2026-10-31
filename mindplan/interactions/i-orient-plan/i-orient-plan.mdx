@@ -2,11 +2,13 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Agent orients before work: ranked rows or a full node (versioned rules, own decisions, body by slot and section, files, blast radius, required-section shape), a whole change in one call, decisions, change blast radius, the paged graph, project rules, and SPEC sections by topic."
+description: "Agent orients before work: ranked rows or a full node (versioned rules, own decisions, body by slot and section, files, blast radius, stability, shape), a whole change in one call, decisions, change blast radius with additivity, the paged graph, project rules, and SPEC topics."
 state: stable
-shipped_at: 2026-10-30T12:50:12.220Z
+shipped_at: 2026-10-31T11:40:11.738Z
+revisions: 20
+churn: 14.291
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-30T12:50:12.220Z
+updated_at: 2026-10-31T11:40:11.738Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -27,6 +29,7 @@ tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
@@ -83,6 +86,8 @@ Intended files: `src/interactions/i-orient-plan/`
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`.
 
+**Open–closed signals.** The change blast radius carries `additivity`, so an agent sees before building whether a feature is purely additive or reopens shipped nodes, and how widely depended on each one is. A full orient reply on a pipeline node carries `stability` (direct fan-in, its recent ship rate against the graph's median, and its revision count and split record), with the hotspot line when its rate is an outlier, so the agent checks it before choosing `open_next`.
+
 ## Acceptance Criteria
 
 - A query-only `orient_for_work` returns rows only, under 2 KB for 10 rows; an exact id query auto-focuses; `orient_for_work({ node_id })` returns record, body, rules, own decisions, owned files, and blast radius
@@ -121,6 +126,8 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source
 - `orient_for_work({ change })` on a change with three members returns their rules once per source and records all three: a scoped walk over the change then needs no other orient call; a known version leaves its text out
 - `get_spec({ topic: "territory-shape" })` returns under 3 KB and contains the same table as `shapeTableMarkdown()`; an unknown topic is Blocked and lists the valid ones; every topic resolves against the bundled SPEC.md
 - The change blast radius of a change with a planned edge lists it in `planned_edges` and its source as a `planned` member; a revision's attributed migration appears under the revision in `affected_files`
+- `get_blast_radius({ change })` returns `additivity` (`changeAdditivity`): its `summary` counts new nodes, revised shipped nodes with their fan-in, neighbors, and planned revisions, and says "purely additive" when nothing shipped is revised
+- `orient_for_work({ node_id })` at `depth: "full"` on a Foundation, Interaction, or Interface returns `stability: { fan_in, rate, median_rate, revisions?, split_at?, split_into? }`, plus `hotspot` (the `hotspotWarning` line) when the node is one; `depth: "rules"` and `"body"` leave it out
 
 ## Decisions
 

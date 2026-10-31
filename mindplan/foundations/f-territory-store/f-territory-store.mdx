@@ -2,11 +2,16 @@
 id: f-territory-store
 type: Foundation
 title: "Territory store"
-description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, change ids and neighbor labels, claims and attributed files, tests, aliases, section patches, checkboxes; a next file only while a revision is open; Atomic Ops only before ship; cached loads; the version stamp."
+description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, change ids and neighbor labels, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; a next file only while a revision is open; Atomic Ops only before ship; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-10-30T12:50:12.018Z
+shipped_at: 2026-10-31T11:40:11.484Z
+revisions: 18
+churn: 4.831
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-30T12:50:12.018Z
+updated_at: 2026-10-31T11:40:11.484Z
+split_at: 13
+split_into:
+  - f-graph-cache
 depends_on:
   - f-domain-model
   - f-source-index
@@ -20,6 +25,7 @@ tests:
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
@@ -104,6 +110,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 - **Planned edges.** The live file holds `planned:` as a named list, one `<change> <edge_type> <target>` item each, kept verbatim by every frontmatter rewriter. `writePlannedEdges(node, entries)` replaces it (removed when empty), keeping any item it cannot parse verbatim. `openNextSlot` never copies `planned:` (nor `attributed:`) into the next file; the handler applies the entries of the revision's change to the next slot's edges and leaves them on live. `promoteNextSlot` keeps the live entries of every other change and drops those of the change that shipped. A discard leaves them, so they apply again when the change reopens the node
 - **Attributed files.** `attributed:` is a named list on the slot that holds the revision (`<id>.next.mdx`, or `<id>.mdx` before first ship); `writeAttributedFrontmatter(node, files, slot)` replaces it and reports a readiness reset like a claim write. Promotion does not carry it, and a first ship clears it from the live file (`clearAttributed`): once shipped, the file is simply part of its owner's folder
 
+- **Revision count at ship.** First ship writes `revisions: <previous + 1>` (`1` for a node that never shipped) on the live file with `writeRevisionFields(node, { revisions, split_at?, split_into? })`. `promoteNextSlot(node, state, shippedAt, { splitInto? })` writes `revisions: <live + 1>` (live absent counts as 1) and keeps the live `split_at` / `split_into`; with `splitInto` (the parts this revision split out, found by the steer handler) it sets `split_at` to the new count and adds the ids to `split_into`. Each ship also writes `churn` (`nextChurn(previous, previousShippedAt, shippedAt, halfLifeDays)`: the previous value decayed over the days between the two ships, plus 1; 0 when the ship records a split), rounded to three decimals. `open_next` copies the fields into the next file like any frontmatter; only a ship changes them. `force_unship` keeps `revisions` and the split record, and writes `churn` decayed to the unship with `churn_at` (the time it is as of, since `shipped_at` goes away); the next ship decays from `churn_at` and drops it. `writeRevisionFields` takes `churn_at` (a time, or null to remove it).
+- **Declared splits.** `writeNextSplitInto(node, ids)` writes the open next file's `split_into` as the live list plus `ids` (the live file is untouched until the revision ships); `NextSlot.split_into` reads it back.
+- **`keep_whole` in decision records.** `record_decision` writes a `keep_whole: true` line in the record when given; the parser reads it back, and a record without it has none.
+
 ## Acceptance Criteria
 
 - After first ship a node has no next file; `open_next` writes one from live with a fresh Atomic Ops list, and ship and discard delete it with `next-attachments/`
@@ -142,6 +152,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 - A node file that starts with a run of blank lines below the frontmatter (LF or CRLF) has exactly one after any write, status moves included; `get_node_context` returns its body without leading blank lines, and a whole-body write of a body that starts with blank lines writes one
 - A live `planned:` list survives an edge write, a claim write, and a territory patch; `open_next` leaves it out of the next file; promotion keeps another change's entries and drops the shipped change's
 - `attributed:` is written to the revision's slot, survives other writes, and is gone from the live file after first ship and after promotion
+
+- A first ship writes `revisions: 1`; promoting a revision writes `revisions: 2`; promoting with `splitInto: [f-a]` writes `split_at: 2` and `split_into: [f-a]`, and a later promotion keeps them
 
 ## Decisions
 

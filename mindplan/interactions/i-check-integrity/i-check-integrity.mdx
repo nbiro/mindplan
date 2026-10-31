@@ -2,11 +2,13 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, and missing tests, warns about stale text, draft shape gaps, missing decisions, and mirror leftovers, notes planned paths, checks one change, and runs the merge gate."
+description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, and missing tests, warns about stale text, shape gaps, missing decisions, hotspots, and mirror leftovers, checks one change with its additivity, and runs the merge gate."
 state: stable
-shipped_at: 2026-10-30T12:50:12.159Z
+shipped_at: 2026-10-31T11:40:11.614Z
+revisions: 22
+churn: 14.502
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-30T12:50:12.159Z
+updated_at: 2026-10-31T11:40:11.614Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -24,6 +26,7 @@ tests:
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
 ---
 
@@ -71,6 +74,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - **Attributed presence.** `checkPresence` reports each `attributed` entry missing on disk as `Blocked: presence: "<id>" attributed file missing on disk: "<path>".` once the slot that holds it is in review
 - **Planned paths.** `runIntegrityCheck` and `run_check` return `info: string[]` next to `warnings`; `renderCheckOutput` prints them as `Info:` lines after the warnings. With `change`, a member's `planned:` lines from `staleTextWarnings` go to `info`, not `warnings`, so a plan-only change shows one `planned:` line per node and no `stale:` lines for paths it has not built yet. `info` never changes `ok`
 
+**Open–closed signals.** The default check warns `hotspot:` for each shipped node whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, naming its recent change groups as candidate cuts; a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
+
 ## Acceptance Criteria
 
 - `run_check` output equals the CLI check output
@@ -103,6 +108,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - A scaffolded draft prints one `shape:` warning naming its stub sections and `ok` stays true; once the sections are written it prints none
 - `run_check({ change })` on a plan-only change prints one `Info: planned:` line per node naming paths and no `stale:` line for them
 - `run_check({ change })` lists a planned source as a `planned` member with an `Info: planned edges:` line, and fails on a planned edge whose target was cancelled
+- A shipped node shipping well above the graph's median prints one `hotspot:` warning listing its recent change groups, and `ok` stays true; an active `keep_whole` decision removes it and superseding that decision brings it back; nodes at one pace print none
+- `run_check({ change })` prints one `Info: additivity:` line with the change's summary and carries `change.additivity`
 
 ## Decisions
 

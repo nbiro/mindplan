@@ -10,14 +10,17 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import {
+  churnAfterShip,
   isPipelineNodeType,
   type FoundationRole,
 } from "../../foundations/f-domain-model/types.js";
 import {
+  hotspotSettings,
+  loadProjectConfig as loadSourceConfig,
   writeProjectConfig,
   type MindPlanProjectConfig,
 } from "../../foundations/f-source-index/config.js";
-import { repoPrefix, repoTop } from "../../foundations/f-source-index/git.js";
+import { fileHistory, repoPrefix, repoTop } from "../../foundations/f-source-index/git.js";
 import {
   PROJECT_FILENAME,
   PROJECT_RELATIVE_PATH,
@@ -38,7 +41,10 @@ import {
   removeLegacyIfIdNamedExists,
   removeLegacyMirror,
   writeImplementsFrontmatter,
+  markdownRelativePath,
+  parseFrontmatter,
   stripLiveAtomicOps,
+  writeRevisionFields,
   writeRoleFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
 import {
@@ -805,6 +811,10 @@ export type RunInitReport = {
   mirrorTwinsRemoved: string[];
   /** Nodes whose leftover twin could not be deleted. */
   mirrorTwinSkips: MirrorRemovalSkip[];
+  /** Shipped nodes that had no revision count, which init wrote from git (or as 1 outside git). */
+  revisionsBackfilled: string[];
+  /** Node id → the parts git shows it split into (a ship that gained depends_on on new nodes). */
+  splitsFound: Record<string, string[]>;
   /** Legacy files deleted by a graph load after the rename walk (the walk itself is in territoryFilenames). */
   removedLegacyFiles: { from: string; to: string }[];
 };
@@ -859,6 +869,119 @@ export function removeLegacyMirrorTwins(): MirrorRemovalResult {
   return { removed, skipped };
 }
 
+type Backfill = { revisionsBackfilled: string[]; splitsFound: Record<string, string[]> };
+
+/** One ship in a node file's history: its commit date, `shipped_at`, and `depends_on` then. */
+type ShipRecord = { date: string; shipped_at: string; depends_on: string[] };
+
+/**
+ * The ships in a node file's git history, oldest first: one per distinct `shipped_at` value, at the
+ * first commit that has it (a side branch merging an older copy back does not count twice), parsed
+ * with the store's own frontmatter reader. `null` outside git; `[]` when git has not seen the file.
+ */
+function shipHistory(relPath: string): ShipRecord[] | null {
+  const versions = fileHistory(relPath);
+  if (versions === null) return null;
+  const ships: ShipRecord[] = [];
+  const seen = new Set<string>();
+  for (const v of versions) {
+    const parsed = parseFrontmatter(v.text);
+    const shippedAt = parsed?.scalars.shipped_at;
+    if (!parsed || !shippedAt || seen.has(shippedAt)) continue;
+    seen.add(shippedAt);
+    ships.push({ date: v.date, shipped_at: shippedAt, depends_on: [...parsed.arrays.depends_on] });
+  }
+  return ships.sort((a, b) => a.shipped_at.localeCompare(b.shipped_at));
+}
+
+/**
+ * Writes `revisions` (and `split_at` / `split_into`) on every shipped Foundation, Interaction, and
+ * Interface that has no count yet, from the git history of its live file: each commit that changed
+ * `shipped_at` is a ship (plus one when the working tree holds a ship not yet committed). A
+ * Foundation ship whose `depends_on` gained Foundations that first shipped after its previous ship,
+ * and no later than this one, split those parts out (an Interaction or Interface gaining a building
+ * block only starts using it). Outside git a node gets `revisions: 1`. Nodes that already
+ * carry a count are left alone, so a second run writes nothing.
+ */
+export function backfillRevisions(): Backfill {
+  const result: Backfill = { revisionsBackfilled: [], splitsFound: {} };
+  let graph;
+  try {
+    graph = loadGraph();
+  } catch {
+    return result;
+  }
+  const shipped = graph.nodes.filter(
+    (n) => isPipelineNodeType(n.type) && n.shipped_at && n.state !== "cancelled"
+  );
+  const todo = shipped.filter((n) => n.revisions === undefined || n.churn === undefined);
+  if (todo.length === 0) return result;
+  const halfLife = hotspotSettings(loadSourceConfig()).half_life_days;
+  // History is needed for the nodes to write, plus every Foundation when one of them is a Foundation
+  // (a split's parts are Foundations, and their first ship dates the split).
+  const needed = new Set(todo.map((n) => n.id));
+  if (todo.some((n) => n.type === "Foundation")) for (const n of shipped) if (n.type === "Foundation") needed.add(n.id);
+  const histories = new Map<string, ShipRecord[] | null>();
+  for (const node of shipped) {
+    if (needed.has(node.id)) histories.set(node.id, shipHistory(markdownRelativePath(node, "current")));
+  }
+  // When each node first shipped: its first ship commit, else its live shipped_at.
+  const foundations = new Set(shipped.filter((n) => n.type === "Foundation").map((n) => n.id));
+  const firstShip = new Map<string, number>();
+  for (const node of shipped) {
+    const first = histories.get(node.id)?.[0];
+    firstShip.set(node.id, Date.parse(first ? first.date : node.shipped_at!));
+  }
+  for (const node of todo) {
+    const history = histories.get(node.id);
+    // In git but never committed at this path (a rename this init just made): wait for the commit,
+    // so a later init counts the real history instead of stamping 1 for good.
+    if (history !== null && history !== undefined && history.length === 0) continue;
+    const ships = history ?? [];
+    let revisions = ships.length;
+    if (ships.length === 0 || ships[ships.length - 1].shipped_at !== node.shipped_at) revisions++;
+    let splitAt: number | undefined;
+    const parts = new Set<string>();
+    // Replay the ships through the same decay a live ship applies; a split starts it over.
+    const shipTimes = ships.map((s) => s.shipped_at);
+    if (shipTimes[shipTimes.length - 1] !== node.shipped_at) shipTimes.push(node.shipped_at!);
+    const splitShips = new Set<number>();
+    for (let j = 1; node.type === "Foundation" && j < ships.length; j++) {
+      const before = new Set(ships[j - 1].depends_on);
+      const from = Date.parse(ships[j - 1].date);
+      const to = Date.parse(ships[j].date);
+      const gained = ships[j].depends_on.filter((id) => {
+        if (foundations.has(id) === false) return false;
+        const t = firstShip.get(id);
+        return !before.has(id) && t !== undefined && t > from && t <= to;
+      });
+      if (gained.length > 0) {
+        splitAt = j + 1;
+        splitShips.add(j);
+        for (const id of gained) parts.add(id);
+      }
+    }
+    let churn = 0;
+    shipTimes.forEach((at, j) => {
+      churn = splitShips.has(j) ? 0 : churnAfterShip(churn, j > 0 ? shipTimes[j - 1] : undefined, at, halfLife);
+    });
+    let wrote: boolean;
+    try {
+      wrote = writeRevisionFields(node, {
+        revisions: node.revisions ?? Math.max(1, revisions),
+        churn,
+        ...(splitAt !== undefined ? { split_at: splitAt, split_into: [...parts].sort() } : {}),
+      });
+    } catch {
+      continue; // An unreadable live file fails the check; there is nothing to stamp.
+    }
+    if (!wrote) continue;
+    result.revisionsBackfilled.push(node.id);
+    if (splitAt !== undefined) result.splitsFound[node.id] = [...parts].sort();
+  }
+  return result;
+}
+
 /**
  * Runs all consumer installers and returns a structured report.
  * CLI owns console output / exit codes — this package does not print or exit.
@@ -908,6 +1031,7 @@ export function runInit(opts: RunInitOptions): RunInitReport {
       : undefined;
   const atomicOpsDropped = dropShippedAtomicOps();
   const mirrorRemoval = removeLegacyMirrorTwins();
+  const backfill = backfillRevisions();
   writeProjectVersion(status.running);
 
   return {
@@ -934,6 +1058,8 @@ export function runInit(opts: RunInitOptions): RunInitReport {
     atomicOpsDropped,
     mirrorTwinsRemoved: mirrorRemoval.removed,
     mirrorTwinSkips: mirrorRemoval.skipped,
+    revisionsBackfilled: backfill.revisionsBackfilled,
+    splitsFound: backfill.splitsFound,
     removedLegacyFiles: drainRemovedLegacyFiles(),
   };
   } catch (err) {

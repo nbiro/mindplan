@@ -10,6 +10,8 @@ import {
   DECISION_ID_PATTERN,
   EDGE_TYPES,
   activeChange,
+  churnAfterShip,
+  decayChurn,
   initialStateForType,
   isFoundationRole,
   isInactiveNode,
@@ -47,6 +49,8 @@ import {
   patchFrontmatter,
   patchNodeTerritory as patchNodeTerritoryStore,
   promoteNextSlot,
+  writeNextSplitInto,
+  writeRevisionFields,
   readMarkdown,
   writeMarkdown,
   territoryBodyReader,
@@ -82,7 +86,8 @@ import {
   isGlobClaim,
   normalizeClaimList,
 } from "../../foundations/f-source-index/claims.js";
-import { decisionGateSettings } from "../../foundations/f-source-index/config.js";
+import { decisionGateSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
 import { unlinkRetry, writeFileRetry } from "../../foundations/f-source-index/io.js";
 import {
   buildOwnershipIndex,
@@ -1272,6 +1277,16 @@ function promoteInMemory(
   node.title = next.title;
   node.description = next.description;
   node.state = state;
+  // The revision count, rate, and split, as promoteNextSlot writes them.
+  const parts = splitParts(node);
+  node.revisions = (node.revisions ?? 1) + 1;
+  node.churn = parts.length
+    ? 0
+    : churnAfterShip(node.churn, node.shipped_at, shippedAt, hotspotSettings(loadProjectConfig()).half_life_days);
+  if (parts.length) {
+    node.split_at = node.revisions;
+    node.split_into = [...new Set([...(node.split_into ?? []), ...parts])];
+  }
   node.shipped_at = shippedAt;
   node.updated_at = shippedAt;
   const assign = <K extends "belongs_to" | "depends_on" | "exposes" | "leads_to" | "mounts" | "implements">(
@@ -1538,6 +1553,19 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   };
 }
 
+/**
+ * The parts a Foundation's revision split out of it: the ids its next slot marks in `split_into`
+ * (patch_node_territory) beyond the live list, kept only where the node depends_on them by now, so
+ * the root imports its parts and never the other way round. A split is declared, not guessed: a
+ * revision that starts using a new building block extracts nothing.
+ */
+function splitParts(node: MindPlanNode): string[] {
+  if (node.type !== "Foundation" || !node.next) return [];
+  const live = new Set(node.split_into ?? []);
+  const depends = new Set(node.next.depends_on ?? []);
+  return (node.next.split_into ?? []).filter((id) => !live.has(id) && depends.has(id)).sort();
+}
+
 function applyOneStatus(args: {
   verbose?: boolean;
   node_id: string;
@@ -1570,7 +1598,7 @@ function applyOneStatus(args: {
 
   if (resolved.promote_next) {
     promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
-    promoteNextSlot(node, resolved.state, now);
+    promoteNextSlot(node, resolved.state, now, { splitInto: splitParts(node) });
     promoted = true;
     rebuildOutgoingEdges(graph, node);
   } else if (resolved.ship) {
@@ -1579,10 +1607,17 @@ function applyOneStatus(args: {
       change: node.change ? "" : undefined,
       change_ref: node.change_ref ? "" : undefined,
     });
+    // A reship after force_unship carries the rate force_unship stored as of `churn_at`.
+    const rateAt = node.churn_at;
     node.shipped_at = now;
     node.state = resolved.state;
     node.updated_at = now;
     patchFrontmatter(node);
+    writeRevisionFields(node, {
+      revisions: (node.revisions ?? 0) + 1,
+      churn: churnAfterShip(node.churn, rateAt, now, hotspotSettings(loadProjectConfig()).half_life_days),
+      churn_at: null,
+    });
     // The shipped node shows its current state; its Atomic Ops ledger stays in git.
     stripLiveAtomicOps(node);
     // Once shipped, an attributed file is simply part of its owner's folder.
@@ -1670,6 +1705,8 @@ export function forceUnship(args: {
   const freshOps = freshLiveAtomicOps(node);
   const clearedChange = node.change;
   const now = new Date().toISOString();
+  let wroteRate = false;
+  const rateBefore = { revisions: node.revisions, churn: node.churn, churn_at: node.churn_at };
   try {
     resolveForceUnship(graph, node, target, confirm);
 
@@ -1678,13 +1715,24 @@ export function forceUnship(args: {
     // marker belongs to shipped nodes only.
     if (clearedChange) writeChangeFrontmatter(node, { change: "" }, "current");
     if (node.added_claims?.length) clearAddedClaims(node);
+    // The node keeps its count (at least the ship being undone); shipped_at, the rate's reference
+    // time, goes away, so the rate is kept as of now, with now.
+    if (node.shipped_at) {
+      const halfLife = hotspotSettings(loadProjectConfig()).half_life_days;
+      const decayed = node.churn !== undefined ? decayChurn(node.churn, node.shipped_at, now, halfLife) : undefined;
+      wroteRate = writeRevisionFields(node, {
+        revisions: node.revisions ?? 1,
+        ...(decayed !== undefined ? { churn: Math.round(decayed * 1000) / 1000, churn_at: now } : {}),
+      });
+    }
 
     delete node.shipped_at;
     node.state = target;
     node.updated_at = now;
     patchFrontmatter(node, "current", { clearShippedAt: true });
   } catch (err) {
-    if (freshOps || clearedChange) writeMarkdown(node, liveBefore, "current");
+    if (freshOps || clearedChange || wroteRate) writeMarkdown(node, liveBefore, "current");
+    Object.assign(node, rateBefore);
     throw err;
   }
   const removedNext = deleteNextSlotFiles(node);
@@ -1726,11 +1774,39 @@ type PatchTerritoryArgs = {
   slot?: TerritorySlot;
   /** Replace the node's search aliases (slot-independent; never resets readiness). */
   aliases?: string[];
+  /** Foundations this open revision splits out of the node (recorded when it ships). */
+  split_into?: string[];
 };
+
+/**
+ * Blocked unless `split_into` can be written: a Foundation with an open revision, and each id an
+ * active Foundation other than the node itself.
+ */
+function validateSplitInto(graph: MindPlanGraph, node: MindPlanNode, ids: string[]): void {
+  if (node.type !== "Foundation") {
+    throw blocked(
+      `"${node.id}" is a ${node.type}; only a Foundation splits parts out of itself. ` +
+        `Split an Interaction into Interactions, or move an Interface's behavior into the Interactions it exposes.`
+    );
+  }
+  if (!node.next) {
+    throw blocked(`"${node.id}" has no open revision; split_into marks the revision that splits it. Call open_next first.`);
+  }
+  for (const id of ids) {
+    const part = graph.nodes.find((n) => n.id === id);
+    if (!part || part.type !== "Foundation" || isInactiveNode(part) || id === node.id) {
+      throw blocked(`split_into names "${id}", which is not another active Foundation.`);
+    }
+  }
+}
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   gateWrite(null, [args.node_id], "patch_node_territory");
-  const { aliases, ...territory } = args;
+  const { aliases, split_into, ...territory } = args;
+  if (split_into !== undefined) {
+    const graph = loadGraph();
+    validateSplitInto(graph, findNode(graph, args.node_id), split_into);
+  }
   if (aliases !== undefined) {
     // Validate the alias write in full before any territory write, so a Blocked writes nothing.
     normalizeAliases(args.node_id, aliases);
@@ -1748,33 +1824,57 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
       key !== "slot"
   );
   let result: Record<string, unknown> | null = null;
-  if (territoryFields || aliases === undefined) {
+  if (territoryFields || (aliases === undefined && split_into === undefined)) {
     // A revision moved off (or cleared from) its change may leave that change with no revisions.
     result =
       territory.change === undefined
         ? writeNodeTerritory(territory)
         : withNeighborCleanup(() => writeNodeTerritory(territory));
   }
-  if (aliases === undefined) return result!;
-  // Aliases are search words, not contract: written to live and an open next alike, on any node,
-  // shipped ones included, without open_next or a readiness reset.
-  const written = writeAliasesFrontmatter(findNode(loadGraph(), args.node_id), aliases);
-  if (written.paths.length > 0) refreshPersistedMap();
+  if (aliases === undefined && split_into === undefined) return result!;
+  const fields: string[] = [];
+  const paths: string[] = [];
+  const extra: Record<string, unknown> = {};
+  if (aliases !== undefined) {
+    // Aliases are search words, not contract: written to live and an open next alike, on any node,
+    // shipped ones included, without open_next or a readiness reset.
+    const written = writeAliasesFrontmatter(findNode(loadGraph(), args.node_id), aliases);
+    fields.push("aliases");
+    paths.push(...written.paths);
+    extra.aliases = written.aliases;
+  }
+  if (split_into !== undefined) {
+    // A record of the revision's shape, like a change id: it never resets readiness.
+    const target = findNode(loadGraph(), args.node_id);
+    const written = writeNextSplitInto(target, split_into);
+    fields.push("split_into");
+    paths.push(...written.paths);
+    extra.split_into = written.split_into;
+    const depends = new Set(target.next?.depends_on ?? []);
+    const unlinked = split_into.filter((id) => !depends.has(id));
+    if (unlinked.length > 0) {
+      extra.warnings = [
+        `split_into: "${args.node_id}" does not depend_on ${unlinked.map((id) => `"${id}"`).join(", ")} yet; ` +
+          `only parts it depends_on when the revision ships are recorded as split out (link_nodes depends_on).`,
+      ];
+    }
+  }
+  if (paths.length > 0) refreshPersistedMap();
   if (result) {
     return {
       ...result,
-      // The anchor reflects the node after both writes.
+      // The anchor reflects the node after every write.
       ...mutationTail(loadGraph(), args.node_id, args.verbose),
-      patched_fields: [...((result.patched_fields as string[] | undefined) ?? []), "aliases"],
-      aliases: written.aliases,
-      changed_files: changedFiles([...((result.changed_files as string[]) ?? []), ...written.paths]),
+      patched_fields: [...((result.patched_fields as string[] | undefined) ?? []), ...fields],
+      ...extra,
+      changed_files: changedFiles([...((result.changed_files as string[]) ?? []), ...paths]),
     };
   }
   return {
     node_id: args.node_id,
-    patched_fields: ["aliases"],
-    aliases: written.aliases,
-    changed_files: changedFiles(written.paths),
+    patched_fields: fields,
+    ...extra,
+    changed_files: changedFiles(paths),
     ...mutationTail(loadGraph(), args.node_id, args.verbose),
   };
 }
@@ -1920,6 +2020,7 @@ export function recordDecision(args: {
   supersedes?: string;
   change?: string;
   id?: string;
+  keep_whole?: boolean;
 }): Record<string, unknown> {
   gateWrite(null, [args.node_id], "record_decision");
   const graph = loadGraph();
@@ -1997,6 +2098,7 @@ export function recordDecision(args: {
     ...(superseded ? { supersedes: superseded.id } : {}),
     ...(change ? { change } : {}),
     date: new Date().toISOString().slice(0, 10),
+    ...(args.keep_whole ? { keep_whole: true } : {}),
   };
   const written = appendDecision(node, record);
   // A decision under a change on a shipped node with no open next: the change edits it in place.
@@ -2076,6 +2178,8 @@ export function openNext(args: {
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   validateOpenNext(node);
+  // Reopening a widely depended-on node warns now, while an additive design is still cheap.
+  const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
   // The revision takes its change's planned edges: each must still be legal before it opens.
   const revisionChange = args.change !== undefined ? args.change || undefined : node.change;
   if (revisionChange) {
@@ -2115,6 +2219,23 @@ export function openNext(args: {
     next_path,
     ...(replacedChange ? { replaced_change: replacedChange } : {}),
     ...(applied.length ? { applied_planned: applied } : {}),
+    ...(openClosed
+      ? {
+          warnings: [openClosed],
+          decision_prompt: {
+            tool: "record_decision",
+            args: {
+              node_id,
+              decision: "<one sentence: why this revision reopens the node>",
+              alternatives: [
+                `A new node that depends_on "${node_id}" and adds the behavior without revising it: <why it lost>`,
+              ],
+              why: "<the constraint that makes revising it the right call>",
+              ...(next.change ? { change: next.change } : {}),
+            },
+          },
+        }
+      : {}),
     // Applied belongs_to / depends_on can bring new rules: return them so the node stays oriented.
     ...(applied.length ? rulesReachingAfterWrite(node_id, rulesBefore) : {}),
     changed_files: changedFiles(
@@ -2184,28 +2305,32 @@ export function patchConfig(args: {
   sources?: string[];
   exclude?: string[];
   decisions?: { blast_radius?: number; schema_files?: string[] };
+  hotspots?: { half_life_days?: number; outlier_ratio?: number; min_rate?: number };
   search?: { enabled?: boolean; model?: string };
 }): Record<string, unknown> {
   if (
     args.sources === undefined &&
     args.exclude === undefined &&
     args.decisions === undefined &&
+    args.hotspots === undefined &&
     args.search === undefined
   ) {
-    throw blocked("patch_config requires sources, exclude, decisions, and/or search.");
+    throw blocked("patch_config requires sources, exclude, decisions, hotspots, and/or search.");
   }
   const current = loadProjectConfig();
-  // A decision or search setting that is not passed keeps its stored value.
+  // A decision, hotspot, or search setting that is not passed keeps its stored value.
   const merged = <T extends object>(stored: T | undefined, passedArgs: T | undefined): Partial<T> => ({
     ...(stored ?? {}),
     ...Object.fromEntries(Object.entries(passedArgs ?? {}).filter(([, v]) => v !== undefined)),
   });
   const decisions = merged(current.decisions, args.decisions);
+  const hotspots = merged(current.hotspots, args.hotspots);
   const search = merged(current.search, args.search);
   const next = {
     sources: args.sources ?? current.sources,
     exclude: args.exclude ?? current.exclude,
     ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
+    ...(Object.keys(hotspots).length > 0 ? { hotspots } : {}),
     ...(Object.keys(search).length > 0 ? { search } : {}),
   };
   const written = writeProjectConfig(next, { force: true });

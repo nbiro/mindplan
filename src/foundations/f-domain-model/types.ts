@@ -102,6 +102,8 @@ export interface NextSlot {
   decisions?: DecisionRecord[];
   /** Files this revision adds in another node's claimed folder (see `MindPlanNode.attributed`). */
   attributed?: string[];
+  /** The live `split_into` plus the parts this revision splits out (patch_node_territory). */
+  split_into?: string[];
 }
 
 /** Edge types a planned edge may carry: the outgoing edges of a Foundation, Interaction, or Interface. */
@@ -127,6 +129,22 @@ export interface MindPlanNode {
   created_at: string;
   updated_at: string;
   shipped_at?: string;
+  /**
+   * MCP-only, live file of a shipped Foundation, Interaction, or Interface. How many times the
+   * node shipped (first ship and each promotion). A count, not a log: git keeps the history.
+   */
+  revisions?: number;
+  /** MCP-only. The revision at which the node last split parts out of itself. */
+  split_at?: number;
+  /** MCP-only. The ids of the parts the node split into, across every split. Not edges. */
+  split_into?: string[];
+  /**
+   * MCP-only. A decayed ship count as of `shipped_at`: each ship sets it to the previous value
+   * decayed over the days since the previous ship, plus 1 (`decayChurn`); a split sets it to 0.
+   */
+  churn?: number;
+  /** MCP-only. While a force-unshipped node has no `shipped_at`: the time `churn` is as of. */
+  churn_at?: string;
   severity?: BugSeverity;
   /** MCP-only. Interaction → Journey ids. */
   belongs_to?: string[];
@@ -223,6 +241,26 @@ export interface DecisionRecord {
   change?: string;
   /** Date it was recorded (`YYYY-MM-DD`). */
   date?: string;
+  /** The owner decided the node stays one node: hotspot detection skips it while this is active. */
+  keep_whole?: boolean;
+}
+
+/** `value` decayed from `fromIso` to `toIso`, halving every `halfLifeDays` (never grows backwards). */
+export function decayChurn(value: number, fromIso: string, toIso: string, halfLifeDays: number): number {
+  const days = Math.max(0, (Date.parse(toIso) - Date.parse(fromIso)) / 86_400_000);
+  if (!Number.isFinite(days) || value <= 0) return Math.max(0, value);
+  return value * Math.pow(0.5, days / halfLifeDays);
+}
+
+/** The stored churn after a ship at `shippedAt`: the previous value decayed since the previous ship, plus 1. */
+export function churnAfterShip(
+  previous: number | undefined,
+  previousShippedAt: string | undefined,
+  shippedAt: string,
+  halfLifeDays: number
+): number {
+  const carried = previous && previousShippedAt ? decayChurn(previous, previousShippedAt, shippedAt, halfLifeDays) : 0;
+  return Math.round((carried + 1) * 1000) / 1000;
 }
 
 /** Computed from supersession, never stored. */

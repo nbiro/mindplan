@@ -5,6 +5,9 @@ title: "Graph search"
 description: "Infra — ranks nodes for a query by fusing keyword and semantic results from the search index (reciprocal rank fusion plus a small graph boost, an exact id always first), falls back to token scoring when the index or model is unavailable, expands graph neighborhoods, resolves which nodes' rules and decisions apply to a node (and which nodes a node's rules reach), computes whether a decision is superseded, and lists decisions by node, change, or graph."
 state: stable
 shipped_at: 2026-10-26T00:04:46.247Z
+revisions: 9
+churn: 0
+split_at: 9
 created_at: 2026-07-19T18:33:36.731Z
 updated_at: 2026-10-26T00:31:07.970Z
 depends_on:
@@ -18,6 +21,8 @@ tests:
   - src/foundations/f-test-harness/search-eval.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/search.test.mjs
+split_into:
+  - f-search-index
 ---
 
 # Graph search

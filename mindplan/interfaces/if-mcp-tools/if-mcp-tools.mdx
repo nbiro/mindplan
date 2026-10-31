@@ -4,9 +4,11 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface: thirty tools with when-to-call hints and read/write/destructive annotations from one helper, compact JSON plus structuredContent, small write results unless verbose, node-scoped drift on reads, change ids, change-wide orientation, section shape, and SPEC topics."
 state: stable
-shipped_at: 2026-10-30T12:50:12.356Z
+shipped_at: 2026-10-31T11:40:11.879Z
+revisions: 25
+churn: 18.431
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-30T12:50:12.356Z
+updated_at: 2026-10-31T11:40:11.879Z
 depends_on:
   - f-mcp-runtime
   - f-domain-model
@@ -25,6 +27,7 @@ tests:
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
@@ -112,6 +115,9 @@ Depends on: `f-mcp-runtime`, `f-domain-model`, `f-graph-search`, `f-view-project
 - `slot` and `section` reach the `orient_for_work` and `get_node_context` handlers; a `slot` outside the enum is rejected at the zod layer
 - No tool description mentions a mirror twin except `run_check` (as a warning about leftovers)
 - The server registers thirty tools, including `get_spec` as a read tool with no drift; `orient_for_work`'s `change` and `get_spec`'s `topic` reach their handlers
+- `record_decision`'s `keep_whole` and `patch_node_territory`'s `split_into` reach their handlers
+- `patch_config`'s `hotspots` field (`half_life_days`, `outlier_ratio`, `min_rate`, each a positive number) reaches its handler and an unknown key inside it is rejected at the zod layer
+- The `open_next`, `get_blast_radius`, `run_check`, and `orient_for_work` descriptions name the open–closed fields they return (`warnings` and `decision_prompt`, `additivity`, `hotspot:` warnings, `stability`)
 
 ## Decisions
 

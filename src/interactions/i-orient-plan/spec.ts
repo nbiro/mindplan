@@ -33,6 +33,7 @@ export const SPEC_TOPICS: Record<string, { title: string; headings: string[] }> 
     headings: ["Planned edges", "Attributed files"],
   },
   decisions: { title: "The decision gate and decision records", headings: ["Rule 12 — Decision gate", "Decision records"] },
+  "open-closed": { title: "Fan-in, churn, hotspots, and change additivity", headings: ["Open–closed signals"] },
   imports: {
     title: "The import matrix, package ownership, and the check gate",
     headings: ["Ownership split (Interaction owns the body; Interface mounts)", "Rule 9 — Taxonomy enforcement and Interaction Independence"],

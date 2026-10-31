@@ -259,9 +259,9 @@ export function registerMindPlanTools(server: McpServer): void {
         "Call before in-review, before ship, and before telling the user the work is done. " +
         "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence (claims, and linked tests once a node is in review or shipped), leftovers, and the import matrix. " +
         "Returns { ok, output, failures, warnings, info }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import, then Warning: and Info: lines). " +
-        "Warnings flag draft nodes missing required sections (shape:), stale territory text, next-slot imports (one release before they Block), split route families, revisions in review with no linked tests, and leftover mirror twins from releases before 0.8.0 (init removes them), and never fail the check; info lists paths a plan names before building them (planned:), one line per node. " +
+        "Warnings flag draft nodes missing required sections (shape:), stale territory text, next-slot imports (one release before they Block), split route families, revisions in review with no linked tests, hotspots (hotspot: a shipped node shipping far more often than the project's median lately, ranked by fan-in, with its recent change groups), and leftover mirror twins from releases before 0.8.0 (init removes them), and never fail the check; info lists paths a plan names before building them (planned:), one line per node. " +
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
-        "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only). " +
+        "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only), with an additivity: info line and change.additivity (new nodes, reopened shipped nodes with their fan-in, neighbors). " +
         "Pass merge before telling the user a PR is ready to merge: it Blocks every node still in review (ship its change, or move it back to in-progress), and with \"strict\" also in-progress nodes whose claimed files changed against base; results carry merge grouped by change. " +
         "Moves to in-review and ship run this check on the node's files themselves.",
       inputSchema: {
@@ -471,7 +471,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "pick one and call again with node_id, or pass change alone to orient on every member of a change in one reply (each member's rules_from, each rule source's text once, the members holding decisions), which clears the write gate for all of them. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
         "With node_id it returns the full node at depth: record and body (get_node_context), owned files, " +
         "the body being the active slot's (the open next while a revision is open; slot picks one, section cuts it to one section), " +
-        "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface. " +
+        "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface, plus stability ({ fan_in, rate, median_rate, revisions?, split_at?, split_into?, hotspot? }): how many nodes depend on it directly and how often it shipped lately against the project's median; check it before choosing open_next. " +
         "A full reply carries shape while the node has a transition ahead: the required sections of its active slot, each present, missing, or stub, and the gates that check them. " +
         "Writes that act on a node (set_implementation_files, set_test_files, update_node_status, patch_node_territory, patch_node_rules, open_next, record_decision, attachments, force_unship, link_nodes / unlink_nodes on the source) " +
         "are Blocked: Orientation until that node had a full reply in this session (or get_node_context), and again after the rules that reach it changed; create_node is never blocked. " +
@@ -691,6 +691,12 @@ export function registerMindPlanTools(server: McpServer): void {
           .enum(["current", "next"])
           .optional()
           .describe("Territory slot to patch. Defaults to next when an open evolution exists."),
+        split_into: z
+          .array(NODE_ID)
+          .optional()
+          .describe(
+            "Foundation with an open revision only: the Foundations this revision splits out of it. Shipping the revision records the split (split_at, split_into) for those it depends_on, and resets its hotspot rate."
+          ),
       },
     },
     
@@ -708,6 +714,7 @@ export function registerMindPlanTools(server: McpServer): void {
         change_ref,
         slot,
         aliases,
+        split_into,
         verbose,
       }) =>
         patchNodeTerritory({
@@ -724,6 +731,7 @@ export function registerMindPlanTools(server: McpServer): void {
           change_ref,
           slot,
           aliases,
+          split_into,
           verbose,
         })
   );
@@ -773,6 +781,10 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("What else was considered, one line each (the alternative you rejected, and why it lost)."),
         why: z.string().min(1).describe("The constraint or trade-off that decided it."),
         consequences: z.string().optional().describe("What this makes harder or forbids."),
+        keep_whole: z
+          .boolean()
+          .optional()
+          .describe("The node stays one node on purpose (e.g. auth): hotspot detection skips it until this decision is superseded."),
         supersedes: z
           .string()
           .optional()
@@ -788,8 +800,8 @@ export function registerMindPlanTools(server: McpServer): void {
       },
     },
     
-      ({ node_id, decision, alternatives, why, consequences, supersedes, change, id, verbose }) =>
-        recordDecision({ node_id, decision, alternatives, why, consequences, supersedes, change, id, verbose })
+      ({ node_id, decision, alternatives, why, consequences, supersedes, change, id, keep_whole, verbose }) =>
+        recordDecision({ node_id, decision, alternatives, why, consequences, supersedes, change, id, keep_whole, verbose })
   );
 
   tool(
@@ -860,8 +872,8 @@ export function registerMindPlanTools(server: McpServer): void {
       kind: "write",
       title: "Patch project config",
       description:
-        "Call when source roots, exclude paths, decision-gate settings, or search settings change. " +
-        "Writes mindplan/config.json sources, exclude, decisions, and/or search via the territory store. " +
+        "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, or search settings change. " +
+        "Writes mindplan/config.json sources, exclude, decisions, hotspots, and/or search via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -888,6 +900,26 @@ export function registerMindPlanTools(server: McpServer): void {
           })
           .optional()
           .describe("Decision-gate settings. A field not passed keeps its stored value."),
+        hotspots: z
+          .strictObject({
+            half_life_days: z
+              .number()
+              .positive()
+              .optional()
+              .describe("Days for a node's recent ship rate to fade by half (default 30)."),
+            outlier_ratio: z
+              .number()
+              .positive()
+              .optional()
+              .describe("A node shipping this many times as often as the graph's median node is a hotspot (default 3)."),
+            min_rate: z
+              .number()
+              .positive()
+              .optional()
+              .describe("The lowest recent ship rate that can be a hotspot (default 2)."),
+          })
+          .optional()
+          .describe("Hotspot settings, used by run_check warnings and the open_next warning. A field not passed keeps its stored value."),
         search: z
           .strictObject({
             enabled: z
@@ -904,7 +936,8 @@ export function registerMindPlanTools(server: McpServer): void {
           .describe("Search settings. A field not passed keeps its stored value."),
       },
     },
-    ({ sources, exclude, decisions, search }) => patchConfig({ sources, exclude, decisions, search })
+    ({ sources, exclude, decisions, hotspots, search }) =>
+      patchConfig({ sources, exclude, decisions, hotspots, search })
   );
 
   tool(
@@ -1113,7 +1146,8 @@ export function registerMindPlanTools(server: McpServer): void {
         "Ship from next in-review to promote it over the live file; discard_next to abandon it. Both delete the next file. " +
         "Pass change to tie this revision to the others of one change (update_node_status scope change, get_blast_radius change, run_check change act on the group). " +
         "A neighbor label is inherited as the revision's change unless change names another, which clears it (replaced_change). " +
-        "Edges planned on the node under the revision's change are added to the next slot (applied_planned).",
+        "Edges planned on the node under the revision's change are added to the next slot (applied_planned). " +
+        "On a hotspot (a node shipping far more often than the graph's median lately; config hotspots) the result also carries warnings and decision_prompt: prefer a new node that depends_on it, or record why revising it is right.",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(
@@ -1164,7 +1198,7 @@ export function registerMindPlanTools(server: McpServer): void {
         "When the focus is an Interaction, also returns reachability. " +
         "decisions lists the active decisions held by the focus; dependent_decisions ({ count, nodes }) names the dependents that hold decisions a change would reach, and include_dependent_decisions adds their one-line entries to decisions. " +
         "tests lists the linked test files of the focus and every owner in affected_files: the suites to run. " +
-        "Pass change instead of node_id for the merged radius of every member of a change (open revisions, neighbors, and shipped nodes with planned edges; members carry kind revision | neighbor | planned) and its planned_edges.",
+        "Pass change instead of node_id for the merged radius of every member of a change (open revisions, neighbors, and shipped nodes with planned edges; members carry kind revision | neighbor | planned), its planned_edges, and additivity ({ summary, new_nodes, revised, neighbors, planned }): whether the change only adds nodes or reopens shipped ones, each with its fan-in.",
       inputSchema: {
         node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),
         change: CHANGE_ID.optional().describe("A change id: merge the blast radius of all its open revisions and neighbors."),
