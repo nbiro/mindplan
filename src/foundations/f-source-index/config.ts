@@ -2,7 +2,8 @@
  * Project-level MindPlan config (`mindplan/config.json`).
  * Declares which repo paths form the ownership universe (`sources` / `exclude`), and optionally
  * when the decision gate asks for a decision (`decisions`), when a node counts as a hotspot
- * (`hotspots`), and how search ranks (`search`).
+ * (`hotspots`), when a planned node depends on too many other changes (`fan_out`), and how search
+ * ranks (`search`).
  */
 
 import * as fs from "fs";
@@ -30,6 +31,14 @@ export type HotspotSettings = {
 
 const HOTSPOT_KEYS = ["half_life_days", "outlier_ratio", "min_rate"] as const;
 
+/**
+ * When a pre-ship node reaches too many other unshipped changes through `depends_on`: the check
+ * warns `fan-out:` once the count is at least `warn_at`.
+ */
+export type FanOutSettings = {
+  warn_at: number;
+};
+
 /** Search settings: `enabled: false` turns semantic ranking off; `model` names the embedding model. */
 export type SearchConfigSettings = {
   enabled: boolean;
@@ -43,6 +52,8 @@ export type MindPlanProjectConfig = {
   decisions?: Partial<DecisionGateSettings>;
   /** Stored hotspot thresholds; absent fields take `DEFAULT_HOTSPOT_SETTINGS`. */
   hotspots?: Partial<HotspotSettings>;
+  /** Stored fan-out threshold; an absent `warn_at` takes `DEFAULT_FAN_OUT_SETTINGS`. */
+  fan_out?: Partial<FanOutSettings>;
   /** Stored search settings; absent fields take the search index's defaults. */
   search?: Partial<SearchConfigSettings>;
 };
@@ -81,6 +92,15 @@ export const DEFAULT_HOTSPOT_SETTINGS: HotspotSettings = {
 /** The hotspot settings in effect: stored values over the defaults. */
 export function hotspotSettings(config: MindPlanProjectConfig): HotspotSettings {
   return { ...DEFAULT_HOTSPOT_SETTINGS, ...config.hotspots };
+}
+
+export const DEFAULT_FAN_OUT_SETTINGS: FanOutSettings = {
+  warn_at: 3,
+};
+
+/** The fan-out settings in effect: stored values over the defaults. */
+export function fanOutSettings(config: MindPlanProjectConfig): FanOutSettings {
+  return { ...DEFAULT_FAN_OUT_SETTINGS, ...config.fan_out };
 }
 
 const DEFAULT_CONFIG: MindPlanProjectConfig = {
@@ -162,6 +182,25 @@ function parseHotspotSettings(value: unknown): Partial<HotspotSettings> {
   return out;
 }
 
+/** Validates the optional `fan_out` object; unknown keys are Blocked like `decisions`. */
+function parseFanOutSettings(value: unknown): Partial<FanOutSettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw blockedConfig('"fan_out" must be an object with optional "warn_at".');
+  }
+  const out: Partial<FanOutSettings> = {};
+  for (const [key, n] of Object.entries(value as Record<string, unknown>)) {
+    if (key !== "warn_at") {
+      throw blockedConfig(`"fan_out" has unknown key "${key}" (allowed: warn_at).`);
+    }
+    if (n === undefined) continue;
+    if (typeof n !== "number" || !Number.isInteger(n) || n <= 0) {
+      throw blockedConfig('"fan_out.warn_at" must be a positive integer.');
+    }
+    out.warn_at = n;
+  }
+  return out;
+}
+
 /** Validates the optional `search` object; unknown keys are Blocked like `decisions`. */
 function parseSearchSettings(value: unknown): Partial<SearchConfigSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -227,6 +266,7 @@ export function loadProjectConfig(root?: string): MindPlanProjectConfig {
   };
   if ("decisions" in obj) config.decisions = parseDecisionSettings(obj.decisions);
   if ("hotspots" in obj) config.hotspots = parseHotspotSettings(obj.hotspots);
+  if ("fan_out" in obj) config.fan_out = parseFanOutSettings(obj.fan_out);
   if ("search" in obj) config.search = parseSearchSettings(obj.search);
   return config;
 }
@@ -238,8 +278,8 @@ export type WriteProjectConfigResult = {
 };
 
 /**
- * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions`, `hotspots`, and `search` when the
- * config has them.
+ * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions`, `hotspots`, `fan_out`, and
+ * `search` when the config has them.
  * - When `force` is false: create only if missing.
  * - When `force` is true: always overwrite.
  */
@@ -260,6 +300,10 @@ export function writeProjectConfig(
   if (config.hotspots) {
     const hotspots = parseHotspotSettings(config.hotspots);
     if (Object.keys(hotspots).length > 0) next.hotspots = hotspots;
+  }
+  if (config.fan_out) {
+    const fanOut = parseFanOutSettings(config.fan_out);
+    if (Object.keys(fanOut).length > 0) next.fan_out = fanOut;
   }
   if (config.search) {
     const search = parseSearchSettings(config.search);

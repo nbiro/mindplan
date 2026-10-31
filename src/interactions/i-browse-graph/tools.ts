@@ -10,7 +10,10 @@ import {
   NODE_ID,
   CHANGE_ID,
 } from "../../foundations/f-tool-kit/tool.js";
+import { NODE_TYPES } from "../../foundations/f-domain-model/types.js";
 import {
+  GRAPH_NODE_FIELDS,
+  GRAPH_NODE_STATES,
   GRAPH_PAGE_DEFAULT,
   GRAPH_PAGE_MAX,
   getMindPlanGraph,
@@ -26,9 +29,12 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Get MindPlan graph",
       description:
-        "Call when you need every node and edge. Prefer orient_for_work for one piece of work. " +
+        "Call when you need the graph's nodes and edges, or a slice of them. Prefer orient_for_work for one piece of work. " +
+        "For a question about part of the graph, filter and project instead of reading every node: " +
+        'e.g. state: ["draft", "ready"] with fields: ["id", "type", "title", "change"] lists what is planned but not built. ' +
+        "state, type, and change combine with AND; values inside one array combine with OR. " +
         "Returns one page of the MindPlan graph assembled from <id>.mdx frontmatter: nodes sorted by id, " +
-        "the edges whose source is in the page, total_nodes, total_edges, and next_offset while nodes remain. " +
+        "the edges whose source is in the page, total_nodes, total_edges, and next_offset while nodes remain, all over the filtered set. " +
         `A graph of up to ${GRAPH_PAGE_DEFAULT} nodes fits one page; walk offset = next_offset for the rest.`,
       inputSchema: {
         offset: z.number().int().min(0).optional().describe("First node index (default 0)."),
@@ -39,9 +45,26 @@ export const TOOLS: ToolDef[] = [
           .max(GRAPH_PAGE_MAX)
           .optional()
           .describe(`Nodes per page (default ${GRAPH_PAGE_DEFAULT}, max ${GRAPH_PAGE_MAX}).`),
+        state: z
+          .union([z.enum(GRAPH_NODE_STATES), z.array(z.enum(GRAPH_NODE_STATES)).min(1)])
+          .optional()
+          .describe('Only nodes in this state, or in any of these states (e.g. "ready", ["in-progress", "in-review"]). Matches the live state field.'),
+        type: z
+          .union([z.enum(NODE_TYPES), z.array(z.enum(NODE_TYPES)).min(1)])
+          .optional()
+          .describe("Only nodes of this type, or of any of these types."),
+        change: CHANGE_ID.optional().describe(
+          "Only the nodes of this change: an open revision's change id, else the node's change field (new nodes and neighbors)."
+        ),
+        fields: z
+          .array(z.string())
+          .optional()
+          .describe(
+            `Node fields to return (id is always included), e.g. ["id", "type", "title", "change"]. Valid: ${GRAPH_NODE_FIELDS.join(", ")}.`
+          ),
       },
     },
-    ({ offset, limit }) => getMindPlanGraph({ offset, limit })
+    ({ offset, limit, state, type, change, fields }) => getMindPlanGraph({ offset, limit, state, type, change, fields })
   ),
   defineTool(
     "list_areas",

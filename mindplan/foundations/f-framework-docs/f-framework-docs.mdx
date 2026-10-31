@@ -4,11 +4,11 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and tests, decisions, and host install docs."
 state: stable
-shipped_at: 2026-10-31T20:33:28.650Z
-revisions: 47
-churn: 23.492
+shipped_at: 2026-10-31T21:15:36.083Z
+revisions: 48
+churn: 24.476
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-31T20:33:28.650Z
+updated_at: 2026-10-31T21:15:36.083Z
 depends_on:
   - f-domain-model
 implements:
@@ -48,6 +48,16 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 - **Decision records.** SPEC documents the `## Decisions` section and its entry format with adoption and fence notes (§6.1.2), computed status and supersession, inheritance into the `orient_for_work` `decisions` block, `record_decision` and `list_decisions` (§8), the `decisions` additions to `get_blast_radius`, `get_node_context`, `export_mindplan_view`, and `patch_config`, the `decisions` config settings and their database-only defaults (§1.2.1), `opened_at` on an open next (§6.1, §6.2), and the decision gate as Rule 12 (§5.13, enforcement ordering moves to §5.14) with its four triggers (a first build's schema files count only when the branch adds them), its warning, and `Blocked: Decision` (§9.6, Appendix A). The bundled playbook gains one line: "Record a decision when you choose between viable designs; MindPlan blocks in-review on shared-contract, schema, or wide-radius changes without one." The plan-project skill names `record_decision`; README lists the two tools
 - **Shipped claims and neighbors.** SPEC documents additive in-place claims on a shipped node with no open next and folder dominance (§1.2, §1.2.1), the live `added_claims` frontmatter and its stale warning (§6.1, §6.2, §9.6), neighbor labels in the live `change`, change members as revisions plus neighbors, and when labels clear (§3.7), and the new parameters and result fields of `set_implementation_files`, `patch_node_territory`, `record_decision`, `open_next`, `discard_next`, `force_unship`, `update_node_status`, `run_check`, and `get_blast_radius` (§8.1, §8.2, Appendix A). The bundled playbook's rule 3 tells agents to pass `change` on a neighbor's in-place writes and rule 6 that a new file beside a neighbor's own, in a folder no other node claims into, is claimed in place; the plan-project and define-entities skills say the same; README's tool table and the `CHANGELOG.md` Unreleased section list the changes. SPEC and the changelog also state that a migration or schema file is never claimed in place (§1.2, the Coverage fix, §8.2 errors), that `added_claims` entries are matched as whole paths, that moving an open revision's change id drops a stale live label, that `record_decision` on a neighbor defaults to its label, and that labels clear once per call when a write closes a change
 - **Changelog.** `CHANGELOG.md` lists every behavior change per release; each PR's section is titled with the version it releases (this change: `0.2.0`; the sections that shipped in the first npm release: `0.1.0`), since every merge to `main` publishes
+
+- **Graph filters and fan-out (0.14.0).**
+  - SPEC §8.1 `get_mindplan_graph`: the `state`, `type`, `change`, and `fields` inputs; AND across filters, OR inside one array; filtering before paging (`total_nodes`, `offset`, `limit`, `next_offset` describe the filtered set); `edges` keeps its source-in-page rule and `total_edges` counts the filtered set's edges; nodes stay sorted by id; `id` always returned; the unknown-field `Blocked:` listing the valid fields; no parameters keeps the previous output; and a sentence telling agents to filter and project instead of reading the whole graph
+  - SPEC §8.1 `orient_for_work`: `fan_out: { count, changes }` in the full reply's `stability` block for a pre-ship Foundation, Interaction, or Interface
+  - SPEC §9.6 (and the `run_check` entry in §8.1): the `fan-out:` warning, its counting rule (distinct other change ids among a pre-ship node's unshipped `depends_on` targets; own-change and shipped targets ignored), its wording, its threshold, that `keep_whole: true` silences it, and that it never Blocks
+  - SPEC §1.2.1 config keys and §8.2 `patch_config`: `fan_out: { warn_at? }` (default 3, a positive integer, unknown keys Blocked)
+  - Playbook "Breaking down work" gains one step before "Then create what's missing": "Invert nodes that must know every feature. When one action has to handle every feature of a kind (erase a site, export an account, index for search, check a permission), do not add a depends_on per feature. Define the contract once on the Foundation those features already use: a schema convention (every per-site table cascades from the site) or a record they react to (a deleted/restored state). State it as a node rule there, so every dependent sees it in orient_for_work, and link the test that enforces it with set_test_files. The action then depends only on that Foundation."
+  - plan-project skill: the same step in its Classify scope list, next to "Prefer additive over reopening", naming the `fan-out:` warning and `keep_whole`; define-entities skill: the same rule in Step 0's rules and its Reuse rule, plus a Common mistakes row (a `depends_on` per feature on a node that must know every feature → `fan-out:` warning; invert onto a Foundation contract)
+  - README: the `get_mindplan_graph` row names the filters, the `run_check` row names `fan-out:`, and the config section lists `fan_out.warn_at`; `CHANGELOG.md` gets the 0.14.0 section for both features; `package.json` and `package-lock.json` go to 0.14.0
+  - The pointer (`templates/agent/agents-stub.md`, and this repository's `MINDPLAN.md`, kept identical so `upgrade_project` does not report it outdated) says why reads of `mindplan/**` go through MCP too: a raw node file lacks the rules its Journey and Foundations pass down, decision status, the active slot, and the orientation that unlocks writes. SPEC §1.1.1 says the same (it said only "never edit"), and `CHANGELOG.md` notes it
 
 Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section
@@ -99,6 +109,15 @@ Depends on: `f-domain-model`.
 - Change: hotspot-splits
 - Date: 2026-10-31
 - Keep whole: true
+
+### d-filters-fan-out-one-change
+
+- Decision: Graph filters and the fan-out warning ship as one change (graph-filters-fan-out) with one docs revision and one 0.14.0 release.
+- Alternatives:
+  - Two changes in sequence (a shipped node holds one open revision, so the second feature's docs revision would wait for the first to ship)
+- Why: Both features edit SPEC and the skills; the owner chose one PR over sequencing the docs revision.
+- Change: graph-filters-fan-out
+- Date: 2026-10-31
 
 ## Attachments
 

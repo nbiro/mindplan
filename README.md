@@ -147,7 +147,7 @@ Then register `node /absolute/path/to/mindplan/dist/index.js` (with `MINDPLAN_RO
 <project-root>/
 ├── .mindplan-cache/               # derived graph and search caches (gitignored, safe to delete)
 ├── mindplan/
-│   ├── config.json                # { sources, exclude } — coverage universe; optional decisions, search
+│   ├── config.json                # { sources, exclude } — coverage universe; optional decisions, hotspots, fan_out, search
 │   ├── project.md                 # description + rules only (playbook via get_project)
 │   ├── version.json               # { package, graph, migrations } — written by setup_project / upgrade_project; drives the version gate
 │   ├── journeys/<id>/<id>.mdx
@@ -210,14 +210,14 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 
 | Tool | Kind | Description |
 |------|------|-------------|
-| `orient_for_work` | read | Summary first: a query returns ranked rows (the full node only for a clear winner, `auto_focus`); `change` orients on every member of a change at once; `node_id` returns `record`/`body` context, `shape`, owned files, blast radius (grouped files; retired omitted; Interaction focus includes `reachability`), and `stability` (direct fan-in, recent ship rate against the project's median, hotspot); writes on a node wait until it was oriented on (`Blocked: Orientation`); the `rules` that apply to the focus and its own `decisions` (inherited ones counted in `inherited_decisions`, listed with `include_inherited_decisions`); `depth: rules\|body\|full` trims it; the body is the active slot's (the open revision's while one is open), `slot` picks one, `section` returns one section; the `decisions` block is the reply's only copy |
+| `orient_for_work` | read | Summary first: a query returns ranked rows (the full node only for a clear winner, `auto_focus`); `change` orients on every member of a change at once; `node_id` returns `record`/`body` context, `shape`, owned files, blast radius (grouped files; retired omitted; Interaction focus includes `reachability`), and `stability` (direct fan-in, recent ship rate against the project's median, hotspot, and `fan_out` on a pre-ship node: the other unshipped changes its `depends_on` reaches); writes on a node wait until it was oriented on (`Blocked: Orientation`); the `rules` that apply to the focus and its own `decisions` (inherited ones counted in `inherited_decisions`, listed with `include_inherited_decisions`); `depth: rules\|body\|full` trims it; the body is the active slot's (the open revision's while one is open), `slot` picks one, `section` returns one section; the `decisions` block is the reply's only copy |
 | `get_rules` | read | The mandatory project rules with a `rules_version` tag; `known_version` returns `{ unchanged: true }` without the text when nothing changed |
-| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`, `info`); unclaimed files and illegal imports come with their fix; `hotspot:` warnings name shipped nodes that ship far more often than the project's median; `change` also gates every member of a change (revisions and labeled neighbors) and prints its additivity; `merge` (`true` or `"strict"`) runs the merge gate |
+| `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`, `info`); unclaimed files and illegal imports come with their fix; `hotspot:` warnings name shipped nodes that ship far more often than the project's median; `fan-out:` warnings name pre-ship nodes whose `depends_on` reaches `fan_out.warn_at` (default 3) other unshipped changes, a node that may need to know every feature of a kind (invert it onto a Foundation contract, or keep it with `record_decision({ keep_whole: true })`); `change` also gates every member of a change (revisions and labeled neighbors) and prints its additivity; `merge` (`true` or `"strict"`) runs the merge gate |
 | `get_spec` | read | One section of the running server's own SPEC.md by stable topic id (`territory-shape`, `lifecycle`, `change-ids`, `neighbors`, `decisions`, …) or tool name; no topic lists them |
 | `get_skill` | read | The skills this server serves (`plan-project`, `define-entities`): no name lists them with their description and files; `name` returns the SKILL.md text without frontmatter; `name` + `file` returns one supporting file |
 | `list_areas` | read | Every Journey (area) as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
 | `find_related_nodes` | read | Hybrid search by query (keyword + semantic; exact id first); focus + 1-hop |
-| `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset` |
+| `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset`; optional filters `state`, `type`, `change` (AND across filters, OR inside an array; totals and paging describe the filtered set) and `fields` to project node records (`id` always kept). Filter and project for a question about part of the graph instead of reading all of it; use `orient_for_work` for one piece of work |
 | `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts; `output` writes to a file; over-budget diagrams are Blocked with the fix |
 | `list_decisions` | read | Decision records of a node, a change, or the graph; superseded ones on request |
 | `get_blast_radius` | read | Reverse-`depends_on` affected + grouped `affected_files` for a node or a whole `change` (with `additivity`: new nodes vs reopened shipped ones); cancelled/deprecated omitted unless `include_retired`; the focus's decisions plus `dependent_decisions` (rows with `include_dependent_decisions`) |
@@ -230,7 +230,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `record_decision` | mutation | Append a decision record (what was chosen, the alternatives, why) to the node it shapes; supersede instead of editing |
 | `patch_project_description` | mutation | Write the `mindplan/project.md` description |
 | `patch_project_rules` | mutation | Write the `mindplan/project.md` rules |
-| `patch_config` | mutation | Write `mindplan/config.json` sources/exclude, decision-gate settings, hotspot thresholds, and search settings |
+| `patch_config` | mutation | Write `mindplan/config.json` sources/exclude, decision-gate settings, hotspot thresholds, the fan-out threshold (`fan_out.warn_at`), and search settings |
 | `put_attachment` / `remove_attachment` | mutation | Node attachment files |
 | `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold); returns `shape`, the sections its first move checks, each `present`, `missing`, or `stub` |
 | `open_next` / `discard_next` | mutation | Write `<id>.next.mdx` from live (fresh Atomic Ops; a warning and a decision prompt on a hotspot) / delete it |
