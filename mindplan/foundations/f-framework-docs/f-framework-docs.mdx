@@ -4,11 +4,11 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and tests, decisions, and host install docs."
 state: stable
-shipped_at: 2026-10-31T21:15:36.083Z
-revisions: 48
-churn: 24.476
+shipped_at: 2026-10-31T23:34:22.063Z
+revisions: 49
+churn: 25.422
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-31T22:52:14.572Z
+updated_at: 2026-10-31T23:34:22.063Z
 depends_on:
   - f-domain-model
 implements:
@@ -60,6 +60,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
   - The pointer (`templates/agent/agents-stub.md`, and this repository's `MINDPLAN.md`, kept identical so `upgrade_project` does not report it outdated) says why reads of `mindplan/**` go through MCP too: a raw node file lacks the rules its Journey and Foundations pass down, decision status, the active slot, and the orientation that unlocks writes. SPEC §1.1.1 says the same (it said only "never edit"), and `CHANGELOG.md` notes it
 
 - **Lighter graph reads and no stale change labels (0.15.0).** SPEC §8.1 specifies the `get_mindplan_graph` `edges` input (`true`, `false`, or edge types; the unknown-type `Blocked:`) and that `orient_for_work({ change })` also lists the nodes holding a decision recorded under the change (`kind: "decision"`), which join no other change-wide tool; §3.7 removes neighbor labels: only a revision carries a change id, `change` / `change_ref` on a shipped node with no open next is `Blocked:` in `patch_node_territory`, `set_implementation_files`, and `set_test_files`, a change's members are revisions and planned sources, and no result carries `neighbor_of`, `replaced_change`, `cleared_neighbors`, or `cleared_change` (§8.1, §8.2 outputs); §9.6 gives a shipped node whose claimed files changed against the base every stale-text signal; §1.1.2 and §8.2 specify migration level 2 (strip every shipped node's label, `staleChangeLabelsCleared`). The source / neighbor / unaffected classes stay as guidance (§3.7 Pull-in, Classes). The playbook's rule 3, the plan-project and define-entities skills, and README say a neighbor takes no change id. `CHANGELOG.md` has the 0.15.0 section, with one removal entry
+
+- **Type names only (0.16.0).** The plain-word layer (area, action, entry point, building block) is gone: SPEC §2.0.0 is a type glossary (question and example per type) that tells README, playbook, map legend, and skills to use the type names and no synonym; the playbook's Taxonomy table, Breaking down work sentence, and "Talking to the user" use Journey, Interaction, Interface, Foundation, and Bug with the user too; the plan-project and define-entities skills and their examples (breakdown sentence, reuse rule, refusal message, entity table, common mistakes) say the same; the setup guide says "one part" and "the first Journeys"; README's first section is "Five kinds of node" with the rules reworded in type names and the breakfast example labeled by type; `CHANGELOG.md` has the 0.16.0 section. Tool names (`list_areas`), parameters (`area`), result fields, ids, states, edges, and `Blocked:` codes do not change
 
 Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section
@@ -119,6 +121,17 @@ Depends on: `f-domain-model`.
   - Two changes in sequence (a shipped node holds one open revision, so the second feature's docs revision would wait for the first to ship)
 - Why: Both features edit SPEC and the skills; the owner chose one PR over sequencing the docs revision.
 - Change: graph-filters-fan-out
+- Date: 2026-10-31
+
+### d-type-names-only
+
+- Decision: The type names (Journey, Interaction, Interface, Foundation, Bug) are the only vocabulary for node types, in docs, skills, warnings, and with the user; no plain-word synonyms.
+- Alternatives:
+  - Keep the plain-word glossary (area, action, entry point, building block) beside the type names: two names per type confused the owner and let agents drift between them
+  - Rename list_areas and the area parameter to Journey wording too: a breaking tool-contract change, kept out of this release
+- Why: One name per type is easier to follow than two layers, and the spec already fixes the type names.
+- Consequences: Prose must say Journey, Interaction, Interface, Foundation, or Bug even where a plain word would read more naturally; list_areas and area keep their names until a tool-contract change renames them.
+- Change: spec-type-names
 - Date: 2026-10-31
 
 ## Attachments
