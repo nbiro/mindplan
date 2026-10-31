@@ -54,6 +54,13 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
+import { hotspotSettings } from "../../foundations/f-source-index/config.js";
+import {
+  changeAdditivity,
+  hotspots,
+  hotspotWarning,
+  type ChangeAdditivity,
+} from "../../foundations/f-compiler-rules/open-closed.js";
 import { defaultBaseRef, repoPrefix } from "../../foundations/f-source-index/git.js";
 import {
   drainRemovedLegacyFiles,
@@ -133,6 +140,8 @@ export interface ChangeCheck {
   failures: string[];
   warnings: string[];
   info: string[];
+  /** New nodes, reopened shipped nodes (with fan-in), neighbors, and planned revisions. */
+  additivity: ChangeAdditivity;
 }
 
 export interface CheckResult {
@@ -210,8 +219,11 @@ function checkChange(
     state: n.state,
     next_state: n.next?.state ?? null,
   });
+  const additivity = changeAdditivity(graph, change, { revisions, neighbors, planned });
+  if (revisions.length + neighbors.length + planned.length > 0) info.push(`additivity: ${additivity.summary}`);
   return {
     id: change,
+    additivity,
     members: [
       ...revisions.map(member("revision")),
       ...neighbors.map(member("neighbor")),
@@ -551,6 +563,14 @@ function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): st
   const warnings: string[] = [];
   for (const node of graph.nodes) warnings.push(...decisionWarnings(graph, node, ctx));
   return warnings;
+}
+
+/**
+ * Hotspot warnings, highest rank first: each shipped node that ships far more often than the
+ * graph's median lately (config `hotspots`), with its recent change groups as candidate cuts.
+ */
+function collectHotspotWarnings(graph: MindPlanGraph, root: string): string[] {
+  return hotspots(graph, hotspotSettings(loadProjectConfig(root))).map(hotspotWarning);
 }
 
 function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
@@ -1027,6 +1047,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...routeFamilySplits(graph, buckets, universe));
     const decisionCtx = createDecisionContext(root);
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
+    warnings.push(...collectHotspotWarnings(graph, root));
     const version = projectVersionStatus();
     if (version.warning) warnings.push(`version: ${version.warning}`);
     const probe = dirtyProbe(root);
@@ -1095,7 +1116,7 @@ export function runCheckHandler(
     warnings: result.warnings,
     info: result.info,
     ...(result.change
-      ? { change: { id: result.change.id, members: result.change.members } }
+      ? { change: { id: result.change.id, members: result.change.members, additivity: result.change.additivity } }
       : {}),
     ...(result.merge ? { merge: result.merge } : {}),
     ...(result.removedLegacyFiles.length

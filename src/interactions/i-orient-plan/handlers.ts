@@ -36,6 +36,15 @@ import {
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
+import { hotspotSettings } from "../../foundations/f-source-index/config.js";
+import {
+  changeAdditivity,
+  fanIn,
+  hotspotFor,
+  hotspotWarning,
+  recentRate,
+  hotspotContext,
+} from "../../foundations/f-compiler-rules/open-closed.js";
 import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
 import {
   RETIRED_STATES,
@@ -627,6 +636,7 @@ export function buildChangeBlastRadiusPayload(
   }
   return {
     change,
+    additivity: changeAdditivity(graph, change, { revisions, neighbors, planned }),
     members: members.map((m) => ({
       id: m.id,
       type: m.type,
@@ -911,8 +921,28 @@ export async function orientForWork(args: {
     reply.nodes = nodes;
     reply.edges = edges;
     reply.blast_radius = isPipelineNodeType(node.type) ? buildBlastRadiusPayload(graph, node) : null;
+    if (isPipelineNodeType(node.type)) reply.stability = stabilityPayload(graph, node);
   }
   return reply;
+}
+
+/**
+ * Whether reopening the node is costly: its direct fan-in, how often it shipped lately against the
+ * graph's median, its revision count and split record, and the `hotspot:` line when it is one.
+ */
+function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<string, unknown> {
+  const settings = hotspotSettings(loadProjectConfig(projectRoot()));
+  const ctx = hotspotContext(graph, settings);
+  const hotspot = hotspotFor(graph, node, settings, ctx);
+  const round = (n: number) => Math.round(n * 10) / 10;
+  return {
+    fan_in: fanIn(graph, node, ctx.index).count,
+    rate: round(recentRate(node, settings, ctx.now)),
+    median_rate: round(ctx.median),
+    ...(node.revisions !== undefined ? { revisions: node.revisions } : {}),
+    ...(node.split_into?.length ? { split_at: node.split_at, split_into: [...node.split_into] } : {}),
+    ...(hotspot ? { hotspot: hotspotWarning(hotspot) } : {}),
+  };
 }
 
 /** An area row's description is cut to this many characters (the full one comes with orient). */

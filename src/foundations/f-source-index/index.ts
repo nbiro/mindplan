@@ -6,16 +6,25 @@ export {
   CONFIG_FILENAME,
   DEFAULT_DECISION_SETTINGS,
   decisionGateSettings,
+  DEFAULT_HOTSPOT_SETTINGS,
+  hotspotSettings,
   loadProjectConfig,
   projectConfigPath,
   projectConfigRelativePath,
   writeProjectConfig,
   type DecisionGateSettings,
+  type HotspotSettings,
   type MindPlanProjectConfig,
   type WriteProjectConfigResult,
 } from "./config.js";
 
-export { defaultBaseRef, matchesSchemaFile, newFilesSinceBase } from "./git.js";
+export {
+  defaultBaseRef,
+  fileHistory,
+  matchesSchemaFile,
+  newFilesSinceBase,
+  type FileVersion,
+} from "./git.js";
 
 export {
   claimCoversPath,

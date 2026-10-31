@@ -2,11 +2,16 @@
 id: f-compiler-rules
 type: Foundation
 title: "Compiler rules"
-description: "Infra — transition rules: Minimum Territory Shape (one constant, section report, one-message Blocked, draft warning, doc table), the import matrix, the in-review and ship gate, the decision gate, change members and neighbors, checklist completion, and stale-text warnings with planned paths as info."
+description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, change additivity), change members and neighbors, checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-10-30T12:50:12.084Z
+shipped_at: 2026-10-31T11:40:11.554Z
+revisions: 22
+churn: 10.856
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-30T12:50:12.084Z
+updated_at: 2026-10-31T11:40:11.554Z
+split_at: 8
+split_into:
+  - f-source-index
 depends_on:
   - f-domain-model
   - f-territory-store
@@ -20,6 +25,7 @@ tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
 role: infra
@@ -79,6 +85,19 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `shapeTableMarkdown()` — the per-type table that the define-entities skill and SPEC embed (the playbook, which stays one screen, points to them) between `<!-- shape-table:start -->` / `<!-- shape-table:end -->` markers; a test fails when an embedded copy differs from it, so the docs cannot drift from the gate
 - **Planned edges.** `plannedEdges(graph, change?)` lists `{ source, change, type, target }` for every planned entry of a shipped, non-retired node, leaving out the entries an open revision of their change has already applied to its next slot (an entry that revision lacks stays pending). `changePlannedSources(graph, change)` returns those sources: members of the change with `kind: "planned"`, never walked by status moves. `changeMembership(graph, change)` returns `{ revisions, neighbors, planned }`, each node once, for the check, the change blast radius, and change-wide orientation. `plannedEdgeProblems(graph, change)` checks each entry as `link_nodes` would — the target exists and is active, `validateLink` accepts the shape (Interaction Independence included), the edge does not already exist on the slot it will land in, and a planned `depends_on` closes no cycle in the effective graph plus the change's planned `depends_on` (`withPlannedDependsOn`) — and returns one problem string each. `validatePlannedLink(graph, source, target, type, change)` is the same check for one new entry
 - **Attributed files in the decision gate.** `newSchemaFiles` also reads the active slot's `attributed` list: an attributed file matching `decisions.schema_files` is new when the branch adds it (`newFilesSinceBase`), or always outside git, so a schema node's revision that adds a migration in the composition root's folder is decision-worthy
+- **Open–closed signals** (`open-closed.ts`). Graph facts only, never code; every signal is a warning or an informational field:
+  - `fanInIndex(graph)` — target id → its fan-in sources from one pass over the live edges; the check and orient build it once per call
+  - `fanIn(graph, node, index?)` → `{ count, nodes }` — the distinct non-retired nodes with a direct live edge into the node that a change to it reaches: `depends_on` (any source), `exposes` (an Interface showing an Interaction), and `mounts` (a composition root importing an Interface)
+  - `nodeChurn(node)` → `{ change, date?, reasons }[]` — the distinct change ids that revised the node, oldest first: the `change` of each of its decisions (live and open next, superseded included, since a superseded decision still records a revision; the first build's change counts like any other) plus a shipped node's open revision's change. `reasons` are the decision sentences recorded under that change; the open revision's change with no decision yet has none. The node holds no revision log: decisions are the record, and git keeps the rest
+  - `recentRate(node, settings, now?)` — how often the node shipped lately: its stored `churn` (a decayed ship count, f-territory-store) decayed from its `shipped_at` to now with `hotspots.half_life_days`, plus 1 while a revision is open; 0 for a node with no `churn` yet. A split resets the stored value, so a root that split its parts out starts again from zero
+  - `graphRateMedian(graph, settings, now?)` — the median `recentRate` of the shipped, active Foundations, Interactions, and Interfaces: the project's own pace
+  - `keepsWhole(node)` — true while the node (live or open next) holds an active decision with `keep_whole: true`: the owner decided it stays one node, so it is never a hotspot
+  - `hotspotFor(graph, node, settings, ctx?)` → `{ node_id, rate, median, fan_in, changes, split_into? }` or null — a shipped, active pipeline node, not `keepsWhole`, whose `recentRate` is at least `hotspots.min_rate` and at least `hotspots.outlier_ratio` times the graph median (a median of 0 counts as 1). Fan-in never decides it; it ranks hotspots (`rate × max(1, fan_in)`). `changes` are the most recent change groups of `nodeChurn` (at most three). `ctx` carries one fan-in index and the median, so the check computes them once
+  - `hotspots(graph, settings)` — every hotspot, highest rank first — a shipped, non-retired Foundation, Interaction, or Interface whose fan-in is at least `hotspots.fan_in` and whose churn is at least `hotspots.churn` (`hotspotSettings`, f-source-index)
+  - `hotspotWarning(h)` → `hotspot: "<id>" ships R times as often as the median node lately (rate X vs Y)[ since it split into <ids>], and N nodes depend on it directly; it may change for several reasons. Its recent changes fall into these groups: change "a" (<reason>; <reason>), change "b" (no decision recorded), … Move each group into its own Foundation that "<id>" depends_on, so a later feature revises one part and the rest stays closed.` The split it suggests keeps imports downward: the node stays the composition root and imports the parts
+  - `openClosedWarning(graph, node, settings)` — for `open_next` on a shipped node that is a hotspot counting the revision it opens (and is not `keepsWhole`): `Warning: "<id>" has N direct dependents, and this revision reaches every one. Prefer extending it: add a new node that depends_on "<id>", or split it so this change revises a smaller part. If revising it is still right, record why with record_decision and name the additive alternative you rejected.` (plus the hotspot groups when it is one); null below the threshold
+  - `changeAdditivity(graph, change)` → `{ summary, new_nodes, revised, neighbors, planned }` from `changeMembership`: `new_nodes` are revisions never shipped, `revised` the shipped nodes with an open next (`{ id, state, fan_in }`), `planned` the planned sources (`{ id, state, fan_in }`), `neighbors` the neighbor ids. `summary` reads `change "<id>": 5 new nodes, 1 revised shipped node (f-payload, fan-in 43), 3 neighbors`, plus `, 1 planned revision (…)` when there are planned sources, and ends `; purely additive` when nothing shipped is revised or planned
+- **Decision gate wording.** When a shipped node's revision is decision-worthy because it revises a shipped Foundation or has a wide blast radius, the `Blocked: Decision` message also names the open–closed alternative: `An additive alternative leaves "<id>" closed: a new node that depends_on it, or a split of it; name it in alternatives if you rejected it.`
 - **Planned paths.** `staleTextWarnings` returns `{ warnings, info }`. For a node whose active slot is `draft` or `ready` and none of whose claimed files exist on disk yet, missing named paths are not `stale:`: they are one `planned: "<id>" names N path(s) not on disk yet (…)` info line per node. A path named on a line that says "at build time" is planned on every node.
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
@@ -128,6 +147,13 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - A planned `depends_on` that would close a cycle, a planned `exposes` from a Foundation, and a planned edge to a missing node are each a problem; a legal planned edge is none
 - A planned entry of a change already open on its node is not listed
 - A revision attributing a new migration file in another node's folder trips `schema`; without the attribution it does not
+
+- A node shipping several times as often as the graph median is a hotspot whatever its fan-in; a node with 40 dependents that ships at the median rate is not; `hotspotWarning` lists its recent change groups
+- A pre-ship node, a retired node, a node below `min_rate`, and a node with an active `keep_whole` decision are never hotspots; superseding that decision makes it one again
+- `changeAdditivity` counts never-shipped revisions as new nodes and shipped revisions with their fan-in, and says "purely additive" when no shipped node is revised or planned
+- `openClosedWarning` is null for a node at the graph's pace and names the depends_on alternative for an outlier
+- A stored `churn` decays by half every `half_life_days`, so a node busy a year ago and quiet since is no hotspot
+- The `Blocked: Decision` message for a shipped Foundation or a wide blast radius names the additive alternative; other triggers keep their wording
 
 ## Decisions
 
@@ -224,6 +250,57 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Supersedes: d-shape-one-constant-docs-embed
 - Change: agent-guidance
 - Date: 2026-10-30
+
+### d-churn-from-decision-changes
+
+- Decision: A node's churn is the number of distinct change ids on its decisions (live and open next, superseded included) plus its open revision's change; the node stores no revision log.
+- Alternatives:
+  - Store a revision log on each node (change id, date, sections, files): the owner's rule is that a node holds its current state and git holds history
+  - Count commits that changed shipped_at in git log of <id>.mdx (needs git and history depth in every caller, and a shallow CI clone would read churn 0)
+- Why: Decisions already persist with their change id after ship and are written at exactly the revisions that mattered (the gate asks for one on every shipped Foundation revision and wide-radius change), so they count churn and name the reasons with no new state.
+- Consequences: A revision that recorded no decision does not count; churn is a lower bound. Hotspot groups are per change and list decision sentences, not files or sections.
+- Change: open-closed
+- Date: 2026-10-31
+
+### d-open-closed-signals-warn-only
+
+- Decision: Fan-in counts direct incoming depends_on, exposes, and mounts edges from active nodes, and every open–closed signal (hotspot, open_next fan-in, additivity) is a warning or an informational field that never Blocks.
+- Alternatives:
+  - Use the transitive blast radius as fan-in (the decision gate already uses it; a node deep in the graph would look widely depended on through one dependent)
+  - Block open_next on a high fan-in node until a decision is recorded (the in-review decision gate already asks for one; a Block at open_next would stop legitimate revisions before the design exists)
+  - Defer slot contention and extension points with this change (no graph concept for a planned change yet; deferred until a second project needs it)
+- Why: Direct dependents are the nodes whose code a contract change touches first and what a split would rewire; the signals are heuristics over graph facts, and existing graphs must keep passing.
+- Consequences: This repo's own check may print hotspot warnings for its core Foundations; config hotspots thresholds tune them.
+- Change: open-closed
+- Date: 2026-10-31
+
+### d-churn-from-revision-count
+
+- Decision: Hotspot churn is the node's server-written `revisions` count since its last split (`split_at`), with decision change ids only as the fallback for a node init has not backfilled; decisions still supply the reasons the warning groups.
+- Alternatives:
+  - Keep counting distinct decision change ids (a revision that recorded no decision is invisible, so churn is only a lower bound)
+  - Store a per-revision log on the node (change, date, files): the owner's rule is current state on the node, history in git
+  - Count recent revisions in a time window (old churn fades even when nothing was split, and a split node stays flagged until it ages out)
+  - Let the agent mark a split with a flag on record_decision (easy to forget or misuse; the depends_on gained on new parts is a graph fact the server can see)
+- Why: A counter is a fact about the node now, like shipped_at, and is exact; the split record lets a root that already split its parts out stop being flagged for revisions it had before the split, which is the fix the warning asks for.
+- Consequences: Three server-owned frontmatter fields (revisions, split_at, split_into); one more changed line per ship; init backfills them from git, and nodes outside git start at 1.
+- Supersedes: d-churn-from-decision-changes
+- Change: open-closed
+- Date: 2026-10-31
+
+### d-hotspot-recent-rate-outlier
+
+- Decision: A hotspot is a shipped node whose recent ship rate (a stored, exponentially decayed ship count) is an outlier against the graph's own median rate; fan-in only ranks hotspots, and an active keep_whole decision exempts a node. The revision count and split record stay as facts; a split resets the rate.
+- Alternatives:
+  - Fixed thresholds on revisions since the split and on direct fan-in (on a long project most nodes ship more than a handful of times, and a widely used node such as auth is depended on by everything without being a problem)
+  - Count revisions in a time window (needs per-ship dates on the node, which is history; the decayed count gives recency with one number)
+  - A hotspots.ignore list in config.json (the reason for keeping a node whole would live nowhere; a decision records it on the node and can be superseded)
+  - Detect slot contention now (needs a graph concept for planned changes; deferred)
+- Why: The owner's point: change frequency is only a smell relative to the project's own pace, and a node depended on by everything is normal. An outlier against the median adapts to project age and speed, decay lets old busy periods fade, and the opt-out keeps a deliberate design from being nagged.
+- Consequences: A fourth server-owned field (churn) written at every ship; hotspot output depends on the date the check runs; record_decision gains keep_whole.
+- Supersedes: d-churn-from-revision-count
+- Change: open-closed
+- Date: 2026-10-31
 
 ## Attachments
 

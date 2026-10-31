@@ -1,7 +1,8 @@
 /**
  * Project-level MindPlan config (`mindplan/config.json`).
  * Declares which repo paths form the ownership universe (`sources` / `exclude`), and optionally
- * when the decision gate asks for a decision (`decisions`) and how search ranks (`search`).
+ * when the decision gate asks for a decision (`decisions`), when a node counts as a hotspot
+ * (`hotspots`), and how search ranks (`search`).
  */
 
 import * as fs from "fs";
@@ -16,6 +17,19 @@ export type DecisionGateSettings = {
   schema_files: string[];
 };
 
+/**
+ * When a shipped node ships unusually often for this project: its recent ship rate fades by half
+ * every `half_life_days`, and it is a hotspot at `outlier_ratio` times the graph's median rate and
+ * no less than `min_rate`.
+ */
+export type HotspotSettings = {
+  half_life_days: number;
+  outlier_ratio: number;
+  min_rate: number;
+};
+
+const HOTSPOT_KEYS = ["half_life_days", "outlier_ratio", "min_rate"] as const;
+
 /** Search settings: `enabled: false` turns semantic ranking off; `model` names the embedding model. */
 export type SearchConfigSettings = {
   enabled: boolean;
@@ -27,6 +41,8 @@ export type MindPlanProjectConfig = {
   exclude: string[];
   /** Stored decision-gate settings; absent fields take `DEFAULT_DECISION_SETTINGS`. */
   decisions?: Partial<DecisionGateSettings>;
+  /** Stored hotspot thresholds; absent fields take `DEFAULT_HOTSPOT_SETTINGS`. */
+  hotspots?: Partial<HotspotSettings>;
   /** Stored search settings; absent fields take the search index's defaults. */
   search?: Partial<SearchConfigSettings>;
 };
@@ -54,6 +70,17 @@ export function decisionGateSettings(config: MindPlanProjectConfig): DecisionGat
     blast_radius: config.decisions?.blast_radius ?? DEFAULT_DECISION_SETTINGS.blast_radius,
     schema_files: [...(config.decisions?.schema_files ?? DEFAULT_DECISION_SETTINGS.schema_files)],
   };
+}
+
+export const DEFAULT_HOTSPOT_SETTINGS: HotspotSettings = {
+  half_life_days: 30,
+  outlier_ratio: 3,
+  min_rate: 2,
+};
+
+/** The hotspot settings in effect: stored values over the defaults. */
+export function hotspotSettings(config: MindPlanProjectConfig): HotspotSettings {
+  return { ...DEFAULT_HOTSPOT_SETTINGS, ...config.hotspots };
 }
 
 const DEFAULT_CONFIG: MindPlanProjectConfig = {
@@ -112,6 +139,25 @@ function parseDecisionSettings(value: unknown): Partial<DecisionGateSettings> {
   }
   if (obj.schema_files !== undefined) {
     out.schema_files = parseStringArray(obj.schema_files, "decisions.schema_files");
+  }
+  return out;
+}
+
+/** Validates the optional `hotspots` object; unknown keys are Blocked like `decisions`. */
+function parseHotspotSettings(value: unknown): Partial<HotspotSettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw blockedConfig(`"hotspots" must be an object with optional ${HOTSPOT_KEYS.join(", ")}.`);
+  }
+  const out: Partial<HotspotSettings> = {};
+  for (const [key, n] of Object.entries(value as Record<string, unknown>)) {
+    if (!(HOTSPOT_KEYS as readonly string[]).includes(key)) {
+      throw blockedConfig(`"hotspots" has unknown key "${key}" (allowed: ${HOTSPOT_KEYS.join(", ")}).`);
+    }
+    if (n === undefined) continue;
+    if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) {
+      throw blockedConfig(`"hotspots.${key}" must be a positive number.`);
+    }
+    out[key as keyof HotspotSettings] = n;
   }
   return out;
 }
@@ -180,6 +226,7 @@ export function loadProjectConfig(root?: string): MindPlanProjectConfig {
     exclude: parseStringArray(obj.exclude, "exclude"),
   };
   if ("decisions" in obj) config.decisions = parseDecisionSettings(obj.decisions);
+  if ("hotspots" in obj) config.hotspots = parseHotspotSettings(obj.hotspots);
   if ("search" in obj) config.search = parseSearchSettings(obj.search);
   return config;
 }
@@ -191,7 +238,7 @@ export type WriteProjectConfigResult = {
 };
 
 /**
- * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions` and `search` when the
+ * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions`, `hotspots`, and `search` when the
  * config has them.
  * - When `force` is false: create only if missing.
  * - When `force` is true: always overwrite.
@@ -209,6 +256,10 @@ export function writeProjectConfig(
   if (config.decisions) {
     const decisions = parseDecisionSettings(config.decisions);
     if (Object.keys(decisions).length > 0) next.decisions = decisions;
+  }
+  if (config.hotspots) {
+    const hotspots = parseHotspotSettings(config.hotspots);
+    if (Object.keys(hotspots).length > 0) next.hotspots = hotspots;
   }
   if (config.search) {
     const search = parseSearchSettings(config.search);

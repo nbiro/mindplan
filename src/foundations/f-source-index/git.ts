@@ -168,3 +168,57 @@ export function treeChanges(fromTree: string, toTree: string, root?: string): Se
 export function matchesSchemaFile(filePath: string, globs: string[]): boolean {
   return globs.some((g) => matchGlob(g, filePath));
 }
+
+/** One version of a file in git: the commit, its committer date, and the file's text then. */
+export type FileVersion = { commit: string; date: string; text: string };
+
+/**
+ * Every committed version of one file, oldest first (following renames): one `git log` and one
+ * `git cat-file --batch`. `null` outside git; `[]` when git has never seen the path (for example a
+ * file renamed but not yet committed). The caller parses the texts.
+ */
+export function fileHistory(relPath: string, root?: string): FileVersion[] | null {
+  const cwd = resolveProjectRoot(root);
+  if (git(["rev-parse", "--is-inside-work-tree"], cwd) === null) return null;
+  // quotepath off: --name-only would otherwise C-quote a non-ASCII path, and cat-file would miss it.
+  const log = git(
+    ["-c", "core.quotepath=off", "log", "--follow", "--format=%x00%H%x09%cI", "--name-only", "--", relPath],
+    cwd
+  );
+  if (log === null) return null;
+  const commits: { commit: string; date: string; path: string }[] = [];
+  for (const chunk of log.split("\0")) {
+    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) continue;
+    const [commit, date] = lines[0].split("\t");
+    commits.push({ commit, date, path: lines[lines.length - 1] });
+  }
+  if (commits.length === 0) return [];
+  commits.reverse();
+  let out: Buffer;
+  try {
+    out = execFileSync("git", ["cat-file", "--batch"], {
+      cwd,
+      input: commits.map((c) => `${c.commit}:${c.path}`).join("\n") + "\n",
+      stdio: ["pipe", "pipe", "pipe"],
+      maxBuffer: 256 * 1024 * 1024,
+    });
+  } catch {
+    return null;
+  }
+  // Each object is "<sha> <type> <size>\n<content>\n", or "<name> missing\n".
+  const versions: FileVersion[] = [];
+  let pos = 0;
+  for (const c of commits) {
+    if (pos >= out.length) break;
+    const eol = out.indexOf(0x0a, pos);
+    if (eol < 0) break;
+    const header = out.subarray(pos, eol).toString("utf-8").match(/^[0-9a-f]+ \S+ (\d+)$/);
+    pos = eol + 1;
+    if (!header) continue; // "<name> missing" (the name may hold spaces)
+    const size = Number(header[1]);
+    versions.push({ commit: c.commit, date: c.date, text: out.subarray(pos, pos + size).toString("utf-8") });
+    pos += size + 1;
+  }
+  return versions;
+}

@@ -287,6 +287,12 @@ function printInitReport(report: ReturnType<typeof runInit>): void {
   for (const skip of report.mirrorTwinSkips) {
     console.log(`Could not remove the mirror twin of ${skip.node_id}: ${skip.reason}`);
   }
+  if (report.revisionsBackfilled.length > 0) {
+    console.log(`Wrote the revision count of ${report.revisionsBackfilled.length} shipped node(s) from git history`);
+  }
+  for (const [id, parts] of Object.entries(report.splitsFound)) {
+    console.log(`Found a split in git: ${id} split into ${parts.join(", ")}`);
+  }
 
   if (!report.agentsMd.installed) {
     console.log(

@@ -281,9 +281,15 @@ export function assertDecisionForReview(
   const gap = decisionGap(graph, node, ctx);
   if (!gap) return;
   const where = gap.change ? `under change "${gap.change}" or on the node` : "on the node";
+  // Reopening a shipped, shared contract is where an additive design was most likely possible.
+  const additive =
+    node.shipped_at && gap.triggers.some((t) => t.kind === "foundation_contract" || t.kind === "blast_radius")
+    ? `An additive alternative leaves "${gap.node_id}" closed: a new node that depends_on it, or a split of it; ` +
+      `name it in alternatives if you rejected it. `
+    : "";
   throw blocked(
     `Decision. ${describeTriggers(gap)}, and no decision is recorded for this revision (${where}). ` +
-      `Record the choice and the alternative you rejected. ` +
+      `Record the choice and the alternative you rejected. ${additive}` +
       `Fix: record_decision(${JSON.stringify(gap.fix.args)}).`
   );
 }

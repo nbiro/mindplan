@@ -40,6 +40,7 @@ import type {
 import {
   BUG_SEVERITIES,
   CHANGE_ID_PATTERN,
+  churnAfterShip,
   DECISION_ID_PATTERN,
   GRAPH_VERSION,
   isFoundationRole,
@@ -53,7 +54,7 @@ import {
   PLANNED_EDGE_TYPES,
 } from "../f-domain-model/types.js";
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
-import { loadProjectConfig } from "../f-source-index/config.js";
+import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
@@ -95,10 +96,19 @@ type EdgeField = (typeof EDGE_FIELDS)[number];
 
 /**
  * Array fields parsed like edges (YAML list or inline). `added_claims`, `tests`, `aliases`,
- * `planned`, and `attributed` are parsed here but are not stripped by `stripListFieldLines`, so
- * frontmatter rewriters that do not know them keep them verbatim.
+ * `planned`, `attributed`, and `split_into` are parsed here but are not stripped by
+ * `stripListFieldLines`, so frontmatter rewriters that do not know them keep them verbatim.
  */
-const LIST_FIELDS = [...EDGE_FIELDS, "implements", "added_claims", "tests", "aliases", "planned", "attributed"] as const;
+const LIST_FIELDS = [
+  ...EDGE_FIELDS,
+  "implements",
+  "added_claims",
+  "tests",
+  "aliases",
+  "planned",
+  "attributed",
+  "split_into",
+] as const;
 type ListField = (typeof LIST_FIELDS)[number];
 
 export const MINDPLAN_DIR = "mindplan";
@@ -434,6 +444,8 @@ export type ParsedFrontmatter = {
   planned: PlannedEdge[];
   /** Files the slot's revision adds in another node's claimed folder. */
   attributed: string[];
+  /** The parts a shipped node split into (live file). */
+  split_into: string[];
 };
 
 /** One `planned:` item: `<change> <edge_type> <target>`; null when it does not parse. */
@@ -488,6 +500,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
   let aliasesList: string[] = [];
   let plannedList: PlannedEdge[] = [];
   let attributedList: string[] = [];
+  let splitIntoList: string[] = [];
   const toPlanned = (items: string[]) =>
     items.map(parsePlannedItem).filter((e): e is PlannedEdge => e !== null);
   const unquote = (item: string) => {
@@ -519,6 +532,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
       else if (field === "aliases") aliasesList = items.map(unquote);
       else if (field === "planned") plannedList = toPlanned(items);
       else if (field === "attributed") attributedList = items;
+      else if (field === "split_into") splitIntoList = items;
       else arrays[field] = items;
       continue;
     }
@@ -536,6 +550,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
       else if (field === "aliases") aliasesList = items.map(unquote);
       else if (field === "planned") plannedList = toPlanned(items);
       else if (field === "attributed") attributedList = items;
+      else if (field === "split_into") splitIntoList = items;
       else arrays[field] = items;
       i++;
       continue;
@@ -565,6 +580,7 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
     aliases: aliasesList,
     planned: plannedList,
     attributed: attributedList,
+    split_into: splitIntoList,
   };
 }
 
@@ -603,7 +619,7 @@ function formatImplementsLines(entries: string[]): string {
 }
 
 /** A list field written by name and kept verbatim by rewriters that do not know it. */
-type NamedListField = "added_claims" | "tests" | "aliases" | "planned" | "attributed";
+type NamedListField = "added_claims" | "tests" | "aliases" | "planned" | "attributed" | "split_into";
 
 /** Removes one named list field (`added_claims`, `tests`, `aliases`, …) and its items from frontmatter lines. */
 function stripNamedListLines(inner: string, field: NamedListField): string {
@@ -662,6 +678,19 @@ function stripEdgeFieldLines(inner: string): string {
   return stripListFieldLines(inner);
 }
 
+/** A non-negative number scalar (`churn`); undefined when absent or malformed. */
+function nonNegativeNumber(value: string | undefined): number | undefined {
+  if (value === undefined || !/^\d+(\.\d+)?$/.test(value.trim())) return undefined;
+  return Number(value.trim());
+}
+
+/** A positive integer scalar (`revisions`, `split_at`); undefined when absent or malformed. */
+function positiveInt(value: string | undefined): number | undefined {
+  if (value === undefined || !/^\d+$/.test(value.trim())) return undefined;
+  const n = Number(value.trim());
+  return n >= 1 ? n : undefined;
+}
+
 function parseNodeFromFrontmatter(
   folderId: string,
   expectedType: NodeType,
@@ -709,6 +738,14 @@ function parseNodeFromFrontmatter(
   const ownDecisions = parseDecisions(splitNodeDecisions(raw).section);
   if (ownDecisions.length > 0) node.decisions = ownDecisions;
   if (fm.shipped_at) node.shipped_at = fm.shipped_at;
+  const revisions = positiveInt(fm.revisions);
+  if (revisions !== undefined) node.revisions = revisions;
+  const splitAt = positiveInt(fm.split_at);
+  if (splitAt !== undefined) node.split_at = splitAt;
+  if (parsed.split_into.length > 0) node.split_into = [...parsed.split_into];
+  const churn = nonNegativeNumber(fm.churn);
+  if (churn !== undefined) node.churn = churn;
+  if (fm.churn_at) node.churn_at = fm.churn_at;
   if (fm.change) node.change = fm.change;
   if (fm.change_ref) node.change_ref = fm.change_ref;
   if (fm.severity && (BUG_SEVERITIES as readonly string[]).includes(fm.severity)) {
@@ -783,6 +820,7 @@ function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
   if (parsed.arrays.mounts.length > 0) slot.mounts = [...parsed.arrays.mounts];
   if (parsed.implements.length > 0) slot.implements = [...parsed.implements];
   if (parsed.attributed.length > 0) slot.attributed = [...parsed.attributed];
+  if (parsed.split_into.length > 0) slot.split_into = [...parsed.split_into];
   if (fm.role) {
     if (!isFoundationRole(fm.role)) {
       throw new Error(
@@ -1046,6 +1084,64 @@ export function patchFrontmatter(
   if (patched !== fence) {
     writeTerritoryFile(file, raw.replace(fence, () => patched));
   }
+}
+
+/**
+ * Writes the live revision count and split record of a shipped node (first ship, init backfill).
+ * `split_at` / `split_into` are left as they are when not passed; `split_into: []` clears both.
+ * Returns whether the file changed.
+ */
+export function writeRevisionFields(
+  node: MindPlanNode,
+  fields: { revisions: number; churn?: number; churn_at?: string | null; split_at?: number; split_into?: string[] }
+): boolean {
+  const { file, raw, fence } = requireMutableFrontmatter(node, "current");
+  const match = fence.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)$/);
+  if (!match) return false;
+  const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
+  let inner = match[2].replace(/\r\n/g, "\n");
+  // Each scalar goes after the one before it in promotion's order: shipped_at, revisions, split_at.
+  const setScalar = (key: string, value: number, after: string) => {
+    const line = `${key}: ${value}`;
+    const re = new RegExp(`^${key}:.*$`, "m");
+    const anchor = new RegExp(`^(${after}:.*)$`, "m");
+    if (re.test(inner)) inner = inner.replace(re, line);
+    else if (anchor.test(inner)) inner = inner.replace(anchor, `$1\n${line}`);
+    else inner = `${inner}\n${line}`;
+  };
+  setScalar("revisions", fields.revisions, "shipped_at");
+  if (fields.churn !== undefined) setScalar("churn", fields.churn, "revisions");
+  // churn_at: the rate's reference time while the node is unshipped (force_unship); cleared at ship.
+  if (fields.churn_at === null) inner = inner.replace(/^churn_at:.*\n?/m, "").replace(/\n$/, "");
+  else if (fields.churn_at !== undefined) {
+    const line = `churn_at: ${fields.churn_at}`;
+    if (/^churn_at:.*$/m.test(inner)) inner = inner.replace(/^churn_at:.*$/m, line);
+    else if (/^churn:.*$/m.test(inner)) inner = inner.replace(/^(churn:.*)$/m, `$1\n${line}`);
+    else inner = `${inner}\n${line}`;
+  }
+  if (fields.split_at !== undefined) setScalar("split_at", fields.split_at, /^churn:/m.test(inner) ? "churn" : "revisions");
+  if (fields.split_into?.length === 0) inner = inner.replace(/^split_at:.*(\n|$)/m, "").replace(/\n$/, "");
+  if (fields.split_into !== undefined) {
+    inner = stripNamedListLines(inner, "split_into");
+    const lines = formatNamedListLines("split_into", fields.split_into);
+    if (lines) inner = `${inner}\n${lines}`;
+  }
+  const patched = `${match[1]}${inner.replace(/\n/g, nl)}${match[3]}`;
+  node.revisions = fields.revisions;
+  if (fields.churn !== undefined) node.churn = fields.churn;
+  if (fields.churn_at === null) delete node.churn_at;
+  else if (fields.churn_at !== undefined) node.churn_at = fields.churn_at;
+  if (fields.split_at !== undefined) node.split_at = fields.split_at;
+  if (fields.split_into !== undefined) {
+    if (fields.split_into.length > 0) node.split_into = [...fields.split_into];
+    else {
+      delete node.split_into;
+      delete node.split_at;
+    }
+  }
+  if (patched === fence) return false;
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
+  return true;
 }
 
 /** Patches MCP-owned outgoing edge arrays in `<id>.mdx` or `<id>.next.mdx` frontmatter. */
@@ -1566,7 +1662,7 @@ export function joinNodeDecisions(body: string, section: string): string {
 }
 
 const DECISION_ENTRY_HEADING = /^###[ \t]+(\S+)[ \t]*$/;
-const DECISION_FIELD_LINE = /^[-*][ \t]+([A-Za-z]+):[ \t]*(.*)$/;
+const DECISION_FIELD_LINE = /^[-*][ \t]+([A-Za-z][A-Za-z ]*):[ \t]*(.*)$/;
 const DECISION_ALTERNATIVE_LINE = /^[ \t]+[-*][ \t]+(.+)$/;
 
 /**
@@ -1623,6 +1719,9 @@ export function parseDecisions(section: string): DecisionRecord[] {
       case "date":
         if (value) current.date = value;
         break;
+      case "keep whole":
+        if (value.toLowerCase() === "true" || value.toLowerCase() === "yes") current.keep_whole = true;
+        break;
     }
   }
   if (current?.decision) out.push(current);
@@ -1647,6 +1746,7 @@ export function formatDecisionEntry(record: DecisionRecord): string {
   if (record.supersedes) lines.push(`- Supersedes: ${record.supersedes}`);
   if (record.change) lines.push(`- Change: ${record.change}`);
   if (record.date) lines.push(`- Date: ${record.date}`);
+  if (record.keep_whole) lines.push("- Keep whole: true");
   return lines.join("\n");
 }
 
@@ -1738,6 +1838,11 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
     updated_at: node.updated_at,
   };
   if (node.shipped_at) record.shipped_at = node.shipped_at;
+  if (node.revisions !== undefined) record.revisions = node.revisions;
+  if (node.split_at !== undefined) record.split_at = node.split_at;
+  if (node.split_into?.length) record.split_into = [...node.split_into];
+  if (node.churn !== undefined) record.churn = node.churn;
+  if (node.churn_at) record.churn_at = node.churn_at;
   if (node.severity) record.severity = node.severity;
   if (node.role) record.role = node.role;
   if (node.belongs_to?.length) record.belongs_to = [...node.belongs_to];
@@ -2561,7 +2666,8 @@ export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): string
 export function promoteNextSlot(
   node: MindPlanNode,
   productionState: string,
-  shippedAt: string
+  shippedAt: string,
+  opts: { splitInto?: string[] } = {}
 ): void {
   if (!node.next) {
     throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to promote.`);
@@ -2592,9 +2698,21 @@ export function promoteNextSlot(
       : node.next.role ?? node.role;
   // The shipped change's planned edges are now real (or were dropped on purpose); other changes keep theirs.
   const shippedChange = nextParsed.scalars.change ?? node.next.change;
-  const plannedKept = (parseFrontmatter(readMarkdown(node, "current"))?.planned ?? []).filter(
-    (e) => e.change !== shippedChange
-  );
+  const liveParsed = parseFrontmatter(readMarkdown(node, "current"));
+  const plannedKept = (liveParsed?.planned ?? []).filter((e) => e.change !== shippedChange);
+  // One more ship; a revision that split parts out of the node records where the split happened.
+  const revisions = (positiveInt(liveParsed?.scalars.revisions) ?? 1) + 1;
+  const splitInto = [...new Set([...(liveParsed?.split_into ?? []), ...(opts.splitInto ?? [])])];
+  const splitAt = opts.splitInto?.length ? revisions : positiveInt(liveParsed?.scalars.split_at);
+  // A split hands the reasons for change to the parts, so the root's recent rate starts over.
+  const churn = opts.splitInto?.length
+    ? 0
+    : churnAfterShip(
+        nonNegativeNumber(liveParsed?.scalars.churn),
+        liveParsed?.scalars.shipped_at,
+        shippedAt,
+        hotspotSettings(loadProjectConfig()).half_life_days
+      );
 
   const frontmatterLines = [
     "---",
@@ -2604,9 +2722,16 @@ export function promoteNextSlot(
     `description: ${JSON.stringify(description)}`,
     `state: ${productionState}`,
     `shipped_at: ${shippedAt}`,
+    `revisions: ${revisions}`,
+    `churn: ${churn}`,
     `created_at: ${node.created_at}`,
     `updated_at: ${shippedAt}`,
   ];
+  if (splitAt !== undefined) frontmatterLines.push(`split_at: ${splitAt}`);
+  if (splitInto.length > 0) {
+    frontmatterLines.push("split_into:");
+    for (const id of splitInto) frontmatterLines.push(`  - ${id}`);
+  }
   if (belongs_to.length > 0) {
     frontmatterLines.push("belongs_to:");
     for (const id of belongs_to) frontmatterLines.push(`  - ${id}`);
@@ -2676,6 +2801,10 @@ export function promoteNextSlot(
   node.state = productionState as MindPlanNode["state"];
   node.shipped_at = shippedAt;
   node.updated_at = shippedAt;
+  node.revisions = revisions;
+  node.churn = churn;
+  if (splitAt !== undefined) node.split_at = splitAt;
+  if (splitInto.length > 0) node.split_into = splitInto;
   if (belongs_to.length > 0) node.belongs_to = [...belongs_to];
   else delete node.belongs_to;
   if (depends_on.length > 0) node.depends_on = [...depends_on];
@@ -2894,6 +3023,23 @@ export function writeAliasesFrontmatter(
   if (normalized.length > 0) node.aliases = normalized;
   else delete node.aliases;
   return { paths, changed, aliases: normalized };
+}
+
+/**
+ * Marks the parts an open revision splits out of its Foundation: the next file's `split_into`
+ * becomes the live list plus `ids` (the live file is untouched until the revision ships, when the
+ * promotion records `split_at`). Returns the paths written and the next list.
+ */
+export function writeNextSplitInto(node: MindPlanNode, ids: string[]): { paths: string[]; split_into: string[] } {
+  if (!node.next) throw new Error(`Blocked: "${node.id}" has no open revision to mark a split on.`);
+  const list = [...new Set([...(node.split_into ?? []), ...ids.map((id) => id.trim()).filter(Boolean)])];
+  const { file, raw, fence } = requireMutableFrontmatter(node, "next");
+  const patched = replaceNamedListInFence(fence, "split_into", list);
+  if (list.length > 0) node.next.split_into = list;
+  else delete node.next.split_into;
+  if (patched === fence) return { paths: [], split_into: list };
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
+  return { paths: [markdownRelativePath(node, "next")], split_into: list };
 }
 
 /**

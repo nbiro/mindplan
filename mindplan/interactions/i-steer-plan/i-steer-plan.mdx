@@ -2,11 +2,13 @@
 id: i-steer-plan
 type: Interaction
 title: "Steer the plan"
-description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review and a ship that drops the shipped Atomic Ops, links including mounts, open_next with a change id and a fresh ops list, territory patches by body, section, or replace, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), linked test files written in place on live and an open next alike without resetting readiness, neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession, separate project description and rules writes, config including decision-gate and search settings, and attachments; small results unless verbose; each write refreshes the map and the search cache."
+description: "Compiler-gated mutate tools: status (single, ordered, scoped, or by change, with dry_run listing every transition and skip_review required to jump to ship) with the decision gate on moves to in-review and a ship that drops the shipped Atomic Ops and counts revisions, links including mounts, open_next with a change id, a fresh ops list, and a hotspot warning with a decision prompt, territory patches by body, section, or replace, declared splits, contract writes that send a ready revision back to draft, additive in-place claims on a shipped node in a folder it dominates (never a migration or schema file), linked test files written in place on live and an open next alike without resetting readiness, neighbor labels that tie a shipped node edited in place to a change (cleared once per write when the change closes), per-node rules writes, decision records with supersession and keep_whole, separate project description and rules writes, config including decision-gate, hotspot, and search settings, and attachments; small results unless verbose; each write refreshes the map and the search cache."
 state: stable
-shipped_at: 2026-10-30T12:50:12.282Z
+shipped_at: 2026-10-31T11:40:11.808Z
+revisions: 25
+churn: 15.196
 created_at: 2026-07-15T18:51:48.233Z
-updated_at: 2026-10-30T12:50:12.282Z
+updated_at: 2026-10-31T11:40:11.808Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -29,6 +31,7 @@ tests:
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/shipped-claims.test.mjs
@@ -90,6 +93,10 @@ Intended files: `src/interactions/i-steer-plan/`
 
 Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territory-store`, `f-source-index`.
 
+**Open–closed warning on `open_next`.** Reopening a shipped node that many nodes depend on is where a feature should most often have been additive, so `open_next` warns at once rather than at in-review: when the node is a hotspot counting the revision it opens (`openClosedWarning`: its recent ship rate an outlier against the graph's median, not `keep_whole`), the result carries `warnings: [openClosedWarning(...)]` and `decision_prompt`, the `record_decision` call whose `alternatives` names the additive option (a new node that depends_on it). It never Blocks; the in-review decision gate still applies.
+
+**Revision count and splits at ship.** First ship writes `revisions`; promotion adds one. A split is declared on the revision: `patch_node_territory({ node_id, split_into: [parts] })` on a Foundation with an open revision (each part another active Foundation; Blocked otherwise) writes the next file's `split_into` as the live list plus the parts, without a readiness reset. When the revision ships, the marked parts it `depends_on` by then are recorded: `split_at` becomes the new count, the parts join `split_into`, and `churn` resets to 0. A revision that only starts using a new building block marks nothing and records no split. A reship after `force_unship` adds one to `revisions` and carries `churn` decayed from `churn_at` (written by the unship). Marking a part the revision does not `depends_on` yet returns a `split_into:` warning, since only parts it depends on at ship are recorded.
+
 ## Acceptance Criteria
 
 - Description and rules are separate project-brief writes
@@ -141,6 +148,11 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - `open_next` with that change adds the planned edge to the next slot and returns `applied_planned`; shipping the revision makes it live and drops the planned entry; a discard leaves it planned; a planned edge whose target was cancelled Blocks `open_next` with the `unlink_nodes` fix
 - Shipping the change's last revision drops another node's unopened planned entries and lists them in `cleared_planned`
 - `set_implementation_files` with `attributed` on a schema node's revision writes the list; a path no other node claims, a glob, or a shipped node with no open next is Blocked
+- `record_decision` with `keep_whole: true` writes it on the record, and the node stops being a hotspot until the decision is superseded
+- `open_next` on a shipped node that ships far more often than the graph's median returns `warnings` with the open–closed line and `decision_prompt` (the `record_decision` call with the node, the change, and the depends_on alternative filled in); below the threshold the result has neither; the revision opens either way
+- First ship writes `revisions: 1` and `churn: 1`, and each promotion adds one; shipping a root revision marked with `split_into` and depending on the part writes `split_at`, the part in `split_into`, and `churn: 0`, and `run_check` stops reporting the root as a hotspot; a revision that gains a new dependency without `split_into` records no split
+- `split_into` on the node itself, on a node with no open revision, or on a non-Foundation is Blocked
+- `patch_config` with `hotspots` writes them and leaves the other settings unchanged; an unknown `hotspots` key or a threshold below 1 is rejected
 
 ## Decisions
 
@@ -173,6 +185,18 @@ Depends on: `f-compiler-rules`, `f-graph-search`, `f-view-projection`, `f-territ
 - Consequences: A new write tool that can end a membership must run inside withNeighborCleanup; the store keeps the invariant that an open revision's live label names its own change, so discard_next needs no special case.
 - Change: shipped-claims-and-neighbors
 - Date: 2026-10-25
+
+### d-split-declared-on-revision
+
+- Decision: A split is declared on the root's open revision with patch_node_territory split_into and recorded when it ships (for the marked parts it depends_on); live ships never infer one. Only init infers past splits from git, best-effort.
+- Alternatives:
+  - Infer a split when a Foundation's revision adds depends_on to Foundations first shipped while it was open (a revision that only starts using a new building block looks the same, and the false split would silence a real hotspot)
+  - Infer it from claims moving from the root to the part (this repo's convention gives each node its own folder, so moved code never shows as moved claims)
+  - A separate split tool (one more tool for a field that belongs with the revision's other territory metadata)
+- Why: The owner asked for a split-into record that marks the revision; only the agent knows whether a new dependency is an extracted part, and a wrong split resets the hotspot rate.
+- Consequences: An agent that splits a node must mark the parts, or the root keeps its rate; the hotspot warning and the plan-project skill say so.
+- Change: open-closed
+- Date: 2026-10-31
 
 ## Attachments
 

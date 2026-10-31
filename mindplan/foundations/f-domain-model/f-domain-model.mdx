@@ -2,15 +2,18 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types and edges (with `mounts`), planned edges a shipped node gains when its change opens it, implements claims, files a revision adds in another node's folder, `added_claims`, `tests`, Foundation roles, rules and decision types, and change ids that group revisions or label a neighbor."
+description: "Infra — node types and edges (with `mounts`), planned edges, implements claims, attributed files, `added_claims`, `tests`, Foundation roles, rules and decision types, change ids that group revisions or label a neighbor, and the revision count with the last split."
 state: stable
-shipped_at: 2026-10-30T12:50:11.817Z
+shipped_at: 2026-10-31T11:40:11.346Z
+revisions: 17
+churn: 10.299
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-30T12:50:11.817Z
+updated_at: 2026-10-31T11:40:11.346Z
 implements:
   - src/foundations/f-domain-model/
 tests:
   - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
 role: infra
@@ -54,6 +57,9 @@ Depends on: none.
 - **Planned edges.** `PlannedEdge = { change, type, target }`, and `MindPlanNode.planned?: PlannedEdge[]`, read from the live file only: wiring a shipped Foundation, Interaction, or Interface will gain when the named change opens it (`belongs_to`, `depends_on`, `exposes`, `leads_to`, or `mounts`). Planned edges are not graph edges: `graph.edges` never contains them, so no rule, search, or projection treats them as real until the change opens the node
 - **Attributed files.** `MindPlanNode.attributed?: string[]` and `NextSlot.attributed?: string[]`: exact files in another node's claimed folder that this slot's revision adds (a migration in a composition root's single migrations folder). Ownership stays with the folder's claimant; attribution only says which revision a file belongs to
 
+- **Revision count and split record.** `MindPlanNode.revisions?: number` — how many times the node shipped (first ship and each promotion), on the live file of a shipped Foundation, Interaction, or Interface; absent on a node that never shipped or predates the field until init backfills it. `split_at?: number` — the revision at which the node last split parts out of itself; `split_into?: string[]` — the ids of the parts it split into, across every split. `churn?: number` — a decayed ship count as of `shipped_at`: each ship sets it to `previous × ½^(days since the previous ship / half-life) + 1`, and a split sets it to 0. All four are server-owned frontmatter, written only by ship and init; current state, not a log (git keeps the history). Not edges: `split_into` changes no import rule and no blast radius.
+- **`keep_whole` decisions.** `DecisionRecord.keep_whole?: boolean` — the owner decided the node stays one node (for example auth, where every change is a security change). While such a decision is active, hotspot detection skips the node; superseding it turns detection back on.
+
 ## Acceptance Criteria
 
 - `mirror` is a typed next-file state distinct from pipeline states
@@ -76,6 +82,8 @@ Depends on: none.
 - A node record carries `aliases` when its frontmatter has them
 
 - `planned` and `attributed` round-trip through the graph load and the graph cache; no planned edge appears in `graph.edges`
+
+- A node with `revisions: 4`, `split_at: 3`, and `split_into: [f-a, f-b]` loads them as a number, a number, and a list, and its record returns them
 
 ## Decisions
 
