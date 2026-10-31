@@ -1,0 +1,60 @@
+---
+id: i-revise-node
+type: Interaction
+title: "Revise a shipped node"
+description: "Agent opens a revision of a shipped node, with its planned edges applied and a hotspot warning when it ships far above the graph's pace, or discards the revision."
+state: stable
+shipped_at: 2026-10-31T12:20:49.431Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:58:03.620Z
+updated_at: 2026-10-31T12:20:49.431Z
+belongs_to:
+  - j-territory-sdlc
+  - j-plan-console
+depends_on:
+  - f-plan-writes
+  - f-tool-kit
+implements:
+  - src/interactions/i-revise-node/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/lean-replies.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
+  - src/foundations/f-test-harness/twins.test.mjs
+---
+
+# Revise a shipped node
+
+## Purpose
+
+Opens a revision of a shipped Foundation, Interaction, or Interface while the live node keeps serving, or discards it, and warns at the moment of reopening when the node ships far more often than the rest of the graph, since that is when an additive design is still cheap.
+
+## Actor & Trigger
+
+Agent calls `open_next` when a shipped node's contract changes, before editing that contract, and `discard_next` to abandon the revision.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-revise-node/` (`handlers.ts`, `tools.ts`).
+
+- **open_next** validates Rule 10 and writes `<id>.next.mdx` from the live file in state `draft` (optional title and description) with a fresh list of unticked default Atomic Ops and an empty `next-attachments/`; takes `change` / `change_ref`; a live neighbor label is inherited as the revision's change unless `change` names another, which clears it (`replaced_change`)
+- **Planned edges.** With a change, open_next is Blocked while any of that change's planned entries on the node is no longer legal (with the `unlink_nodes` fix); otherwise it applies them to the next slot and returns `applied_planned` (and the `rules` they bring)
+- **Hotspot warning.** When the node is a hotspot counting the revision it opens (`openClosedWarning`, `f-compiler-rules`), the result carries `warnings` and `decision_prompt`, the `record_decision` call naming a new node that depends on it as the alternative. It never Blocks
+- **discard_next** deletes `<id>.next.mdx` and `next-attachments/`, leaves the live file untouched, and closes its change when it was the change's last revision (`withNeighborCleanup`, `f-plan-writes`)
+- Orientation gate on `node_id`
+
+Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- `open_next` creates `<id>.next.mdx` with unticked default ops; `discard_next` deletes it and `next-attachments/` and lists each deleted path; no write creates a `state: mirror` file
+- `open_next` with a different change clears the live label, and a later `discard_next` does not bring it back
+- `open_next` with a change adds its planned edges to the next slot and returns `applied_planned`; a planned edge whose target was cancelled Blocks `open_next` with the `unlink_nodes` fix
+- `open_next` on a node shipping far above the graph's median returns `warnings` and `decision_prompt`; on a node at the graph's pace it returns neither
+- Verified via `npm test`
+
+## Attachments
+
+_None._

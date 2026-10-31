@@ -1,0 +1,75 @@
+---
+id: f-plan-writes
+type: Foundation
+title: "Plan writes"
+description: "Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and neighbor-label cleanup when a write closes a change."
+state: stable
+shipped_at: 2026-10-31T12:20:48.464Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:57:22.450Z
+updated_at: 2026-10-31T12:20:48.464Z
+role: infra
+depends_on:
+  - f-territory-store
+  - f-compiler-rules
+  - f-graph-search
+  - f-view-projection
+  - f-orientation-ledger
+implements:
+  - src/foundations/f-plan-writes/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/orient-gate.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+---
+
+# Plan writes
+
+Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and neighbor-label cleanup when a write closes a change.
+
+## Purpose
+
+Infra — the plumbing every graph-write action shares, so the write actions (status, shape, territory, revision, claims, decisions, brief) can live apart without copying it. Split out of `i-steer-plan`, which held all of them in one module that changed for every write feature.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-plan-writes/` (`writes.ts`)
+
+- `gateWrite(graph, ids, tool)` — `Blocked: Orientation` unless each node was oriented on with the rules that reach it now (`f-orientation-ledger`); free when the gate is off
+- `rulesReachingAfterWrite(id, before)` — after a write that can change the rules reaching a node, return them as a `rules` block and count the node as oriented
+- `syncNodes(nodes)`, `territoryPath(node, slot?)`, `changedFiles(paths, withMap?)`, `MAP_REL`, `refreshPersistedMap()` — persist recomputed states and build `changed_files` (the persisted map included)
+- `buildMutationAnchor`, `mutationTail(graph, id, verbose)` — the small default write result, the record and 1-hop neighborhood only with `verbose`
+- `ReadinessReset`, `readinessFields`, `readinessResult`, `READINESS_NOTE` — the `readiness_reset` fields a contract write on a ready slot returns
+- `labelNeighbor`, `clearOrphanedNeighbors`, `withNeighborCleanup(fn)` — neighbor labels, cleared once per call when a write leaves a change with no revisions
+
+No tool handlers live here; each write action owns its own.
+
+Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-orientation-ledger`, `f-view-projection`.
+
+## Acceptance Criteria
+
+- Every write action imports its gate, result envelope, and neighbor cleanup from here; no write action imports another
+- Write results keep their shape (`changed_files`, `readiness_reset`, `cleared_neighbors`, verbose anchor) — the existing suites pass unchanged
+- Verified via `npm test`
+
+## Decisions
+
+### d-neighbor-cleanup-once-per-write
+
+- Decision: Neighbor labels are cleared by one wrapper (withNeighborCleanup) around every write that can end a change membership, comparing the changes with open revisions before and after the write (carried over from d-neighbor-cleanup-by-before-after on the deprecated i-steer-plan).
+- Alternatives:
+  - Call the cleanup from each handler path that ends a membership (eight call sites across several actions; a new path that forgets it leaves stale labels)
+  - Validate labels when reading neighbors (a neighbor-only change has no revisions by design, so it would lose its neighbors)
+- Why: Only an event (a change losing its last revision during a call) tells an orphaned label apart, and one wrapper here covers every write action that can end a membership.
+- Consequences: A new write action that can end a membership must run inside withNeighborCleanup.
+- Change: hotspot-splits
+- Date: 2026-10-31
+
+## Attachments
+
+_Schemas, OpenAPI exports, ER diagrams, design tokens, etc. go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}

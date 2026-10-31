@@ -1,0 +1,80 @@
+---
+id: i-edit-territory
+type: Interaction
+title: "Edit a node's territory"
+description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, change ids, aliases, declared splits, node rules, and attachments."
+state: stable
+shipped_at: 2026-10-31T12:20:49.012Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:58:03.545Z
+updated_at: 2026-10-31T12:20:49.012Z
+belongs_to:
+  - j-territory-sdlc
+  - j-plan-console
+depends_on:
+  - f-plan-writes
+  - f-tool-kit
+implements:
+  - src/interactions/i-edit-territory/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
+  - src/foundations/f-test-harness/search-index.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/transient-io.test.mjs
+---
+
+# Edit a node's territory
+
+## Purpose
+
+The one writer of a node's prose and territory metadata through MCP: body, sections, exact replacements, checkboxes, title, description, role, change ids, aliases, declared splits, node rules, and attachments. Contract edits on a ready slot send it back to draft, so readiness always means reviewed.
+
+## Actor & Trigger
+
+Agent calls `patch_node_territory`, `patch_node_rules`, `put_attachment`, or `remove_attachment` when a node's text or files should match the work, before the feature code.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`).
+
+- **patch_node_territory** preserves `## Rules` and Blocks a body containing one (naming `patch_node_rules`), and Blocks `## Decisions` (use `record_decision`). Besides `body` it takes `section` + `text` and `replace { find, with, all? }`; `body` cannot be combined with them; `section` without `text` is Blocked. `toggle_checkboxes` items take `all`, `note`, and `not_applicable` and return `toggled`. Title, description, and role write the pre-ship live slot or an open next; on a shipped live slot they are Blocked
+- **Readiness reset.** A contract write to a `ready` slot (title, description, role, body, section, replace, checkboxes) moves it back to `draft` and returns `readiness_reset`; `change` / `change_ref`, aliases, `split_into`, rules, and attachments never reset
+- **Change ids and neighbor labels.** `change` / `change_ref` set the active slot's change; on a shipped node with no open next `change` labels it a neighbor (`neighbor_of`, `replaced_change`), and `change_ref` there is Blocked. A write that passes `change` runs inside `withNeighborCleanup` (`f-plan-writes`)
+- **Aliases** on any active node, shipped ones included, live and next alike, without `open_next` or a readiness reset
+- **Declared splits.** `split_into` on a node with an open revision writes the next file's `split_into` as the live list plus the parts (`writeNextSplitInto`), validated first (`validateSplitInto`): a Foundation splits into other active Foundations (recorded at ship for the parts it then `depends_on`); an Interaction into other active Interactions that share one of its Journeys; an Interface into the Interactions it exposes. A marked part that will not count at ship yet returns a `split_into:` warning
+- **patch_node_rules({ node_id, rules })** replaces `## Rules` on any active node (live and an open next alike), never changes state or readiness, Blocks a heading line, and returns `rules_impact` (`rulesImpact`, `f-graph-search`) so the author sees whose work the edit reaches
+- **Attachments.** `put_attachment` / `remove_attachment` write or remove a file under the node's attachments folder (next-attachments while a revision is open)
+- Orientation gate on `node_id` (`gateWrite`, `f-plan-writes`)
+
+Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- `section` rewrites one section and leaves the rest; `replace` is Blocked unless the text matches exactly once (or `all`)
+- Each contract write on a `ready` next slot returns `next_state: "draft"` and `readiness_reset`; the same write on an in-progress slot changes no state; `patch_node_rules` and change writes never reset readiness
+- `patch_node_rules` then `patch_node_territory` leaves the rules intact; with an open evolution the rules appear in both files; Blocked on unknown id, retired node, closed Bug, or a heading line
+- `change` on a shipped node with no open next returns `neighbor_of`; a second id returns `replaced_change`; `change_ref` there is Blocked
+- `aliases` are written, `[]` clears them, an alias over 60 characters is rejected
+- `split_into` on the node itself, on a node with no open revision, or naming a node of the wrong kind is Blocked; an Interaction may mark Interactions in one of its Journeys and an Interface the Interactions it exposes
+- Verified via `npm test`
+
+## Decisions
+
+### d-split-declared-by-type
+
+- Decision: A split is declared on the node's open revision with patch_node_territory split_into and recorded when it ships, for every node type: a Foundation's parts are Foundations it depends_on, an Interaction's are Interactions sharing one of its Journeys, an Interface's are Interactions it exposes. Live ships never infer one; only init infers past Foundation splits from git.
+- Alternatives:
+  - Foundations only, as in 0.10.0 (an Interaction or Interface whose behavior moved into new actions kept its hotspot rate even though the split was the fix)
+  - Deprecate the old action instead (works when every behavior leaves, as with i-steer-plan; not when the root keeps a core, as with i-orient-plan)
+  - Infer a split from new edges (a new dependency and an extracted part look the same; a false split silences a real hotspot)
+- Why: Only the agent knows a part was extracted; the edge each type needs keeps the import rules intact (a root imports its Foundation parts, sibling actions share an area, an entry point mounts the actions it exposes). Supersedes the Foundation-only rule carried in d-split-declared-on-revision on the deprecated i-steer-plan.
+- Change: hotspot-splits
+- Date: 2026-10-31
+
+## Attachments
+
+_None._

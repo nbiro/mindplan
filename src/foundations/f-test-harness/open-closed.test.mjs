@@ -58,13 +58,13 @@ function check(label, condition, detail = "") {
       { id: "d-old", decision: "No change id.", alternatives: ["x"], why: "y" },
     ],
   };
-  // Forty dependents that each shipped once, a month ago: the project's ordinary pace.
+  // Forty established dependents, last shipped a month ago: the project's ordinary pace.
   const dependents = Array.from({ length: 40 }, (_, i) => ({
     id: `f-dep-${String(i).padStart(2, "0")}`,
     type: "Foundation",
     state: "stable",
     shipped_at: "2026-10-01T00:00:00.000Z",
-    revisions: 1,
+    revisions: 3,
     churn: 1,
   }));
   // Auth: everything depends on it, and it ships at the same pace as the rest.
@@ -108,6 +108,19 @@ function check(label, condition, detail = "") {
   check("a node with no stored churn has rate 0", oc.recentRate({ ...core, churn: undefined }, defaults, NOW) === 0);
   const median = oc.graphRateMedian(graph, defaults, NOW);
   check("the median rate is the project's ordinary pace", Math.abs(median - 0.5) < 0.01, String(median));
+  const fresh = Array.from({ length: 60 }, (_, i) => ({
+    id: `i-new-${i}`,
+    type: "Interaction",
+    state: "stable",
+    shipped_at: "2026-10-31T00:00:00.000Z",
+    revisions: 1,
+    churn: 1,
+  }));
+  const justSplit = { id: "f-root", type: "Foundation", state: "stable", shipped_at: "2026-10-31T00:00:00.000Z", revisions: 5, split_at: 5, churn: 0 };
+  check(
+    "nodes shipped once and a root that just split leave the median alone",
+    Math.abs(oc.graphRateMedian({ ...graph, nodes: [...graph.nodes, ...fresh, justSplit] }, defaults, NOW) - median) < 0.001
+  );
 
   const churn = oc.nodeChurn(core);
   check(
@@ -203,6 +216,24 @@ function check(label, condition, detail = "") {
       additiveOnly.revised.length === 0,
     additiveOnly.summary
   );
+}
+
+// --- what each type splits into ---
+{
+  const journey = { id: "j-a", type: "Journey", state: "stable" };
+  const root = { id: "i-root", type: "Interaction", state: "stable", shipped_at: "2026-10-01T00:00:00.000Z", belongs_to: ["j-a"], next: { state: "draft", belongs_to: ["j-a"], split_into: ["i-part", "i-far"] } };
+  const part = { id: "i-part", type: "Interaction", state: "stable", shipped_at: "2026-10-30T00:00:00.000Z", belongs_to: ["j-a"] };
+  const far = { id: "i-far", type: "Interaction", state: "stable", shipped_at: "2026-10-30T00:00:00.000Z", belongs_to: ["j-b"] };
+  const lib = { id: "f-lib", type: "Foundation", state: "stable", shipped_at: "2026-10-30T00:00:00.000Z" };
+  const entry = { id: "if-entry", type: "Interface", state: "stable", shipped_at: "2026-10-01T00:00:00.000Z", exposes: ["i-root"], next: { state: "draft", exposes: ["i-root", "i-part"] } };
+  const g = { version: 1, nodes: [journey, root, part, far, lib, entry], edges: [] };
+  check("an Interaction splits into Interactions", oc.splitPartProblem(g, root, "i-part") === null);
+  check("an Interaction cannot split into a Foundation", oc.splitPartProblem(g, root, "f-lib")?.includes("not another active Interaction"));
+  check("an Interface splits into Interactions", oc.splitPartProblem(g, entry, "i-part") === null);
+  check("a part sharing the Interaction's area counts at ship", oc.splitPartLinked(g, root, "i-part") === true);
+  check("a part in another area does not count yet", oc.splitPartLinked(g, root, "i-far") === false);
+  check("an Interface's part counts once it exposes it", oc.splitPartLinked(g, entry, "i-part") === true && oc.splitPartLinked(g, entry, "i-far") === false);
+  check("the hint names the edge each type needs", oc.splitLinkHint(root).includes("belongs_to") && oc.splitLinkHint(entry).includes("exposes"));
 }
 
 // --- config validation ---
@@ -340,7 +371,7 @@ try {
   check(
     "run_check warns about the hotspot with its recent change groups, and ok stays true",
     hotCheck.ok &&
-      hot?.includes("(rate 2 against a median of 1)") &&
+      hot?.includes("(rate 2 against a median of 0)") &&
       hot.includes('change "c-2" (Media goes through the core.)') &&
       hotCheck.output.includes("Warning: hotspot:"),
     JSON.stringify(hotCheck.warnings)
@@ -351,7 +382,7 @@ try {
     "a full orient reply carries stability with the rate, the median, and the hotspot line",
     oriented.stability?.fan_in === 2 &&
       oriented.stability?.rate === 2 &&
-      oriented.stability?.median_rate === 1 &&
+      oriented.stability?.median_rate === 0 &&
       oriented.stability?.revisions === 1 &&
       oriented.stability?.hotspot?.startsWith("hotspot:"),
     JSON.stringify(oriented.stability)
@@ -416,7 +447,7 @@ try {
   await foundation("f-part");
   await ship("f-part");
   const early = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-part"] });
-  check("marking a part the revision does not depend_on yet warns", early.warnings?.[0]?.includes('does not depend_on "f-part" yet'), JSON.stringify(early));
+  check("marking a part the revision does not depend_on yet warns", early.warnings?.[0]?.includes('does not yet depend_on it (link_nodes depends_on) for "f-part"'), JSON.stringify(early));
   await call("link_nodes", { source_id: "f-core", target_id: "f-part", edge_type: "depends_on" });
   const notFoundation = await raw("patch_node_territory", { node_id: "f-core", split_into: ["f-core"] });
   check("split_into on the node itself is Blocked", notFoundation.error && notFoundation.text.includes("not another active Foundation"), notFoundation.text);

@@ -1,0 +1,56 @@
+---
+id: i-read-brief
+type: Interaction
+title: "Read the brief"
+description: "Agent reads the playbook, the project description, and the versioned rules, and SPEC sections by topic."
+state: stable
+shipped_at: 2026-10-31T12:20:49.265Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:58:04.718Z
+updated_at: 2026-10-31T12:20:49.265Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-plan-views
+  - f-tool-kit
+implements:
+  - src/interactions/i-read-brief/
+tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
+  - src/foundations/f-test-harness/rules-version.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
+---
+
+# Read the brief
+
+## Purpose
+
+Gives the agent the systems dialect (playbook), the product description, and the mandatory project rules at session start, the rules again before each action (as a cheap `unchanged` reply when they still hold), and one SPEC section at a time from the running package, so rules are looked up instead of guessed.
+
+## Actor & Trigger
+
+Agent calls `get_project` before the first answer or code change in a session, `get_rules` before each action, and `get_spec` when it needs a specific MindPlan rule.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-read-brief/` (`handlers.ts`, `spec.ts`, `tools.ts`).
+
+- `get_project` returns `{ path, description, rules, rules_version, playbook, check, version? }`: the bundled playbook (`templates/agent/playbook.md`), the brief from `mindplan/project.md`, the rules tagged with `rulesVersion` (`f-plan-views`), a `check` sentence naming `run_check`, and `version` only when `mindplan/version.json` is missing, unreadable, behind, or ahead of the running package
+- `get_rules({ known_version? })` returns `{ path, rules, rules_version }`, or `{ path, rules_version, unchanged: true }` when `known_version` still matches
+- `get_spec({ topic? })` serves one part of the running package's SPEC.md by stable topic id (`SPEC_TOPICS`, matched by heading text without section numbers) or by tool name; without a topic it lists them; an unknown topic is Blocked and lists the valid ones (`findPackageFile` locates the bundled files)
+- Reads with no drift; no orientation gate
+
+Depends on: `f-plan-views`, `f-territory-store`, `f-compiler-rules`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- `get_rules` returns the current rules, path, and `rules_version`; with the current tag as `known_version` it returns `unchanged: true` without the text, under 150 bytes; after `patch_project_rules` the tag changes
+- `get_project` returns the playbook, brief, `rules_version`, and a `check` sentence naming `run_check`; it adds a `version` warning when the stamp is missing, unreadable, behind, or ahead, and omits it when current
+- `get_spec({ topic: "territory-shape" })` returns under 3 KB with the generated shape table; every topic resolves against the bundled SPEC.md; an unknown topic is Blocked and lists the valid ones
+- Verified via `npm test`
+
+## Attachments
+
+_None._

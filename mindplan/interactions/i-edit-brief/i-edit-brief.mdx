@@ -1,0 +1,56 @@
+---
+id: i-edit-brief
+type: Interaction
+title: "Edit the brief and config"
+description: "Agent edits the project brief (description and rules) and mindplan/config.json (sources, exclude, decision gate, hotspots, search)."
+state: stable
+shipped_at: 2026-10-31T12:20:48.934Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:58:04.467Z
+updated_at: 2026-10-31T12:20:48.934Z
+belongs_to:
+  - j-territory-sdlc
+  - j-plan-console
+depends_on:
+  - f-plan-writes
+  - f-tool-kit
+implements:
+  - src/interactions/i-edit-brief/
+tests:
+  - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
+  - src/foundations/f-test-harness/rules-version.test.mjs
+  - src/foundations/f-test-harness/search-index.test.mjs
+---
+
+# Edit the brief and config
+
+## Purpose
+
+Writes the project brief's description and rules and `mindplan/config.json` through MCP, each piece separately, so a rules edit never rewrites the description and a config edit keeps every setting it does not pass.
+
+## Actor & Trigger
+
+Agent calls `patch_project_description` when the product summary changes, `patch_project_rules` when a rule that applies everywhere changes, and `patch_config` when source roots, exclusions, decision-gate, hotspot, or search settings change.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-edit-brief/` (`handlers.ts`, `tools.ts`).
+
+- `patch_project_description` replaces only the brief description; `patch_project_rules` replaces only the brief rules (global; an empty string clears); each leaves the other section unchanged and lists `mindplan/project.md` in `changed_files`
+- `patch_config` takes `sources`, `exclude`, `decisions: { blast_radius?, schema_files? }`, `hotspots: { half_life_days?, outlier_ratio?, min_rate? }`, and `search: { enabled?, model? }`; a field it does not pass keeps its stored value; at least one is required; unknown keys inside an object are rejected
+- No orientation gate: the brief and config belong to no node
+
+Depends on: `f-plan-writes`, `f-territory-store`, `f-compiler-rules`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- Description and rules are separate project-brief writes
+- `patch_config` with `decisions` writes them and leaves `sources` and `exclude` unchanged; with `search` or `hotspots` it writes them and a later `sources` write keeps them
+- An unknown key inside `decisions`, `hotspots`, or `search` is rejected
+- Verified via `npm test`
+
+## Attachments
+
+_None._

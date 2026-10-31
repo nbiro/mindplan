@@ -1,13 +1,9 @@
 /**
- * Read/orient MCP tool handlers — owned by i-orient-plan.
- * Return plain payloads; if-mcp-tools wraps with ok/guarded.
+ * Orient on the plan — owned by i-orient-plan: orient_for_work (ranked rows, a full node, a whole
+ * change), get_node_context, get_node_implementation, and find_related_nodes.
  */
 
-import { createHash } from "crypto";
-import * as fs from "fs";
-import * as path from "path";
 import {
-  isInactiveNode,
   isPipelineNodeType,
   type DecisionEntry,
   type MindPlanGraph,
@@ -15,8 +11,6 @@ import {
   type NodeType,
   type RuleEntry,
 } from "../../foundations/f-domain-model/types.js";
-import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
-import { projectVersionStatus } from "../../foundations/f-territory-store/version.js";
 import {
   ATTACHMENTS_DIR,
   NEXT_ATTACHMENTS_DIR,
@@ -31,64 +25,42 @@ import {
   readSectionFromBody,
   normalizeHeadingName,
   splitContext,
-  summarizeGraphNode,
   territoryBodyReader,
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
-import { expandClaims } from "../../foundations/f-source-index/claims.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import {
-  changeAdditivity,
   fanIn,
   hotspotFor,
   hotspotWarning,
   recentRate,
   hotspotContext,
 } from "../../foundations/f-compiler-rules/open-closed.js";
-import { listResolvedImports } from "../../foundations/f-source-index/imports.js";
-import {
-  RETIRED_STATES,
-  buildOwnershipIndex,
-  exclusiveOwner,
-  nodeOwnedFiles,
-} from "../../foundations/f-source-index/ownership.js";
-import {
-  blocked,
-  blastRadiusDependents,
-  changeMembers,
-  changeNeighbors,
-  findNode,
-  interactionReachability,
-  interfacesExposing,
-} from "../../foundations/f-compiler-rules/rules.js";
+import { buildOwnershipIndex, exclusiveOwner, nodeOwnedFiles } from "../../foundations/f-source-index/ownership.js";
+import { blocked, findNode, interfacesExposing } from "../../foundations/f-compiler-rules/rules.js";
 import {
   DEFAULT_FIND_LIMIT,
-  areaMembers,
   expandNeighborhood,
   findRelatedNodes,
   searchNodes,
 } from "../../foundations/f-graph-search/search.js";
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
-import { changeMembership, plannedEdges } from "../../foundations/f-compiler-rules/planned.js";
+import { changeMembership } from "../../foundations/f-compiler-rules/planned.js";
 import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
-import { findPackageFile } from "./spec.js";
-import { resolveNodeRules, rulesImpact } from "../../foundations/f-graph-search/rules.js";
+import { resolveNodeRules } from "../../foundations/f-graph-search/rules.js";
 import {
-  listDecisions,
   nodeDecisions,
   resolveNodeDecisions,
   slotDecisions,
   supersessionIndex,
   type DecisionQueryOptions,
 } from "../../foundations/f-graph-search/decisions.js";
-
-export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
-
-const VIA_ORDER: AffectedFileVia[] = ["focus", "dependent", "exposing", "importer"];
-
-function isRetired(node: MindPlanNode): boolean {
-  return RETIRED_STATES.has(node.state);
-}
+import * as fs from "fs";
+import * as path from "path";
+import {
+  buildBlastRadiusPayload,
+  rulesVersion,
+} from "../../foundations/f-plan-views/views.js";
 
 function fileExists(rel: string, root?: string): boolean {
   const cwd = root ?? projectRoot();
@@ -115,197 +87,6 @@ function taggedFiles(
     exists: fileExists(p, root),
   }));
   return out;
-}
-
-/** Reverse-depends_on blast radius; Interaction focus also includes reachability + affected_files. */
-export function buildBlastRadiusPayload(
-  graph: MindPlanGraph,
-  node: MindPlanNode,
-  opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
-): Record<string, unknown> {
-  const includeRetired = opts.include_retired === true;
-  const { affected: entries } = blastRadiusDependents(graph, node.id);
-  const visibleEntries = includeRetired
-    ? entries
-    : entries.filter(({ node: n }) => !isRetired(n));
-
-  const journeysAtRisk = new Set<string>();
-  for (const { node: affected } of visibleEntries) {
-    if (affected.type !== "Interaction") continue;
-    for (const edge of graph.edges) {
-      if (edge.source === affected.id && edge.type === "belongs_to") {
-        journeysAtRisk.add(edge.target);
-      }
-    }
-  }
-
-  const root = projectRoot();
-  type Group = {
-    owner_id: string;
-    owner_type: string;
-    via: Set<AffectedFileVia>;
-    files: Set<string>;
-  };
-  const groups = new Map<string, Group>();
-  // The linked tests of every owner listed below: the suites a change to the focus should run.
-  const tests = new Set<string>();
-
-  const pushFiles = (owner: MindPlanNode, via: AffectedFileVia) => {
-    if (!includeRetired && isRetired(owner)) return;
-    for (const p of expandClaims(owner.tests, root)) tests.add(p);
-    let group = groups.get(owner.id);
-    if (!group) {
-      group = {
-        owner_id: owner.id,
-        owner_type: owner.type,
-        via: new Set(),
-        files: new Set(),
-      };
-      groups.set(owner.id, group);
-    }
-    group.via.add(via);
-    for (const p of expandClaims(owner.implements, root)) {
-      group.files.add(p);
-    }
-    if (owner.next) {
-      for (const p of expandClaims(owner.next.implements, root)) {
-        group.files.add(p);
-      }
-    }
-    // Files the revision adds in another node's folder count as the revision's own.
-    if (via === "focus") {
-      for (const p of (owner.next ? owner.next.attributed : owner.attributed) ?? []) group.files.add(p);
-    }
-  };
-
-  if (isPipelineNodeType(node.type)) {
-    pushFiles(node, "focus");
-  }
-  // Walk all BFS entries (including retired) so importers/dependents behind them stay visible;
-  // pushFiles skips retired owners unless include_retired.
-  for (const { node: dep } of entries) {
-    if (isPipelineNodeType(dep.type)) pushFiles(dep, "dependent");
-  }
-
-  if (node.type === "Interaction") {
-    for (const iface of interfacesExposing(graph, node.id)) {
-      pushFiles(iface, "exposing");
-    }
-  }
-
-  // Importers: other nodes whose files import focus-owned files
-  const focusFiles = new Set([
-    ...expandClaims(node.implements, root),
-    ...(node.next ? expandClaims(node.next.implements, root) : []),
-  ]);
-  if (focusFiles.size > 0) {
-    for (const other of graph.nodes) {
-      if (other.id === node.id || !isPipelineNodeType(other.type)) continue;
-      const otherFiles = [
-        ...expandClaims(other.implements, root),
-        ...(other.next ? expandClaims(other.next.implements, root) : []),
-      ];
-      let importsFocus = false;
-      for (const f of otherFiles) {
-        if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f)) continue;
-        for (const edge of listResolvedImports(f, root)) {
-          if (focusFiles.has(edge.to)) {
-            importsFocus = true;
-            break;
-          }
-        }
-        if (importsFocus) break;
-      }
-      if (importsFocus) pushFiles(other, "importer");
-    }
-  }
-
-  const affected_files = [...groups.values()]
-    .map((g) => ({
-      owner_id: g.owner_id,
-      owner_type: g.owner_type,
-      via: VIA_ORDER.filter((v) => g.via.has(v)),
-      files: [...g.files].sort((a, b) => a.localeCompare(b)),
-    }))
-    .sort((a, b) => a.owner_id.localeCompare(b.owner_id));
-
-  const payload: Record<string, unknown> = {
-    node_id: node.id,
-    affected: visibleEntries.map(({ node: n, distance }) => ({
-      id: n.id,
-      type: n.type,
-      state: n.state,
-      distance,
-    })),
-    journeys_at_risk: [...journeysAtRisk].sort(),
-    affected_files,
-    tests: [...tests].sort((a, b) => a.localeCompare(b)),
-    rules_impact: rulesImpact(graph, node),
-    ...blastRadiusDecisions(graph, node, visibleEntries, opts.include_dependent_decisions === true),
-  };
-  if (node.type === "Interaction") {
-    const reach = interactionReachability(graph, node.id);
-    const keep = (n: MindPlanNode) => includeRetired || !isRetired(n);
-    payload.reachability = {
-      exposing_interfaces: reach.exposing_interfaces
-        .filter(keep)
-        .map(summarizeGraphNode),
-      containing_journeys: reach.containing_journeys
-        .filter(keep)
-        .map(summarizeGraphNode),
-      leads_to_downstream: reach.leads_to_downstream
-        .filter(({ node: n }) => keep(n))
-        .map(({ node: n, distance }) => ({
-          ...summarizeGraphNode(n),
-          distance,
-        })),
-    };
-  }
-  return payload;
-}
-
-/** One active decision a change to the focus would reach. */
-export type BlastRadiusDecision = {
-  id: string;
-  node_id: string;
-  via: "focus" | "dependent";
-  distance: number;
-  decision: string;
-};
-
-/** How many active decisions the dependents hold, and on which nodes (nearest first). */
-export type DependentDecisionsSummary = { count: number; nodes: string[] };
-
-/**
- * Active decisions held by the focus (`focus`, 0), plus `dependent_decisions` (the count and holding
- * nodes of every visible dependent's). The dependents' own rows (`dependent`) join `decisions` only
- * with `includeDependents`: the summary says whose reasoning a change reaches, the rows on request.
- */
-function blastRadiusDecisions(
-  graph: MindPlanGraph,
-  focus: MindPlanNode,
-  dependents: { node: MindPlanNode; distance: number }[],
-  includeDependents: boolean
-): { decisions: BlastRadiusDecision[]; dependent_decisions: DependentDecisionsSummary } {
-  const index = supersessionIndex(graph);
-  const rows: BlastRadiusDecision[] = [];
-  const summary: DependentDecisionsSummary = { count: 0, nodes: [] };
-  const push = (n: MindPlanNode, via: "focus" | "dependent", distance: number) => {
-    // A retired node's decisions constrain no live code, even when include_retired shows the node.
-    if (isInactiveNode(n)) return;
-    const held = nodeDecisions(graph, n, {}, index);
-    if (via === "dependent" && held.length > 0) {
-      summary.count += held.length;
-      summary.nodes.push(n.id);
-      if (!includeDependents) return;
-    }
-    for (const d of held) {
-      rows.push({ id: d.id, node_id: n.id, via, distance, decision: d.decision });
-    }
-  };
-  push(focus, "focus", 0);
-  for (const { node: n, distance } of dependents) push(n, "dependent", distance);
-  return { decisions: rows, dependent_decisions: summary };
 }
 
 /** Inherited decisions of a node: how many, on which nodes (nearest first), and the entries on request. */
@@ -354,6 +135,7 @@ function splitNodeDecisions(
 
 /** Which territory slot a node read returns; omitted means both (get_node_context). */
 export const CONTEXT_SLOTS = ["current", "next"] as const;
+
 export type ContextSlot = (typeof CONTEXT_SLOTS)[number];
 
 /**
@@ -447,46 +229,6 @@ export function buildNodeContextPayload(
   return payload;
 }
 
-/** Default and maximum node count per `get_mindplan_graph` page. */
-export const GRAPH_PAGE_DEFAULT = 200;
-export const GRAPH_PAGE_MAX = 500;
-
-export type GraphPage = MindPlanGraph & {
-  total_nodes: number;
-  total_edges: number;
-  offset: number;
-  limit: number;
-  /** Present only when nodes remain after this page. */
-  next_offset?: number;
-};
-
-/**
- * One page of the graph: nodes sorted by id and sliced by offset/limit, plus every edge whose
- * source is in the page, so a walk over all pages sees each node and each edge exactly once.
- * The default page keeps one result under a host's size limit; a graph that fits returns the
- * whole graph plus the totals.
- */
-export function getMindPlanGraph(args: { offset?: number; limit?: number } = {}): GraphPage {
-  const graph = loadGraph();
-  const offset = Math.max(0, Math.floor(args.offset ?? 0));
-  const limit = Math.min(GRAPH_PAGE_MAX, Math.max(1, Math.floor(args.limit ?? GRAPH_PAGE_DEFAULT)));
-  const sorted = [...graph.nodes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const nodes = sorted.slice(offset, offset + limit);
-  const inPage = new Set(nodes.map((n) => n.id));
-  const edges = graph.edges.filter((e) => inPage.has(e.source));
-  const page: GraphPage = {
-    version: graph.version,
-    nodes,
-    edges,
-    total_nodes: sorted.length,
-    total_edges: graph.edges.length,
-    offset,
-    limit,
-  };
-  if (offset + nodes.length < sorted.length) page.next_offset = offset + nodes.length;
-  return page;
-}
-
 /** The Journey an `area` names; Blocked when it is not a Journey. */
 function assertArea(graph: MindPlanGraph, area: string | undefined): void {
   if (area === undefined) return;
@@ -535,140 +277,6 @@ export async function findRelatedNodesHandler(args: {
     limit: args.limit ?? DEFAULT_FIND_LIMIT,
     matches: await rankedMatches(graph, q, args),
   });
-}
-
-export function getBlastRadius(args: {
-  node_id?: string;
-  change?: string;
-  include_retired?: boolean;
-  include_dependent_decisions?: boolean;
-}): Record<string, unknown> {
-  if ((args.node_id === undefined) === (args.change === undefined)) {
-    throw blocked('get_blast_radius takes exactly one of "node_id" or "change".');
-  }
-  const graph = loadGraph();
-  if (args.change !== undefined) {
-    return buildChangeBlastRadiusPayload(graph, args.change, {
-      include_retired: args.include_retired,
-      include_dependent_decisions: args.include_dependent_decisions,
-    });
-  }
-  const node = findNode(graph, args.node_id!);
-  return buildBlastRadiusPayload(graph, node, {
-    include_retired: args.include_retired,
-    include_dependent_decisions: args.include_dependent_decisions,
-  });
-}
-
-/**
- * Blast radius of a whole change: the radii of its members (open revisions and neighbors, the
- * shipped nodes it edits in place) merged. `affected` keeps each node's smallest distance and
- * leaves out the members themselves; files group by owner.
- */
-export function buildChangeBlastRadiusPayload(
-  graph: MindPlanGraph,
-  change: string,
-  opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
-): Record<string, unknown> {
-  // A shipped node with planned wiring under the change is a member too: its contract will change.
-  const { revisions, neighbors, planned } = changeMembership(graph, change);
-  const neighborIds = new Set(neighbors.map((n) => n.id));
-  const plannedIds = new Set(planned.map((n) => n.id));
-  const members = [...revisions, ...neighbors, ...planned];
-  if (members.length === 0) {
-    throw blocked(
-      `change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
-    );
-  }
-  const memberIds = new Set(members.map((m) => m.id));
-  const affected = new Map<string, { id: string; type: string; state: string; distance: number }>();
-  const journeys = new Set<string>();
-  const files = new Map<string, { owner_id: string; owner_type: string; via: Set<string>; files: Set<string> }>();
-  const rulesReach = new Map<string, unknown>();
-  const decisions = new Map<string, BlastRadiusDecision>();
-  const dependentHolders = new Map<string, { count: number; distance: number }>();
-  const tests = new Set<string>();
-  for (const member of members) {
-    const one = buildBlastRadiusPayload(graph, member, opts);
-    for (const row of one.affected as { id: string; type: string; state: string; distance: number }[]) {
-      if (memberIds.has(row.id)) continue;
-      const prev = affected.get(row.id);
-      if (!prev || row.distance < prev.distance) affected.set(row.id, row);
-    }
-    for (const j of one.journeys_at_risk as string[]) journeys.add(j);
-    for (const group of one.affected_files as {
-      owner_id: string;
-      owner_type: string;
-      via: string[];
-      files: string[];
-    }[]) {
-      let merged = files.get(group.owner_id);
-      if (!merged) {
-        merged = { owner_id: group.owner_id, owner_type: group.owner_type, via: new Set(), files: new Set() };
-        files.set(group.owner_id, merged);
-      }
-      for (const v of group.via) merged.via.add(v);
-      for (const f of group.files) merged.files.add(f);
-    }
-    for (const t of one.tests as string[]) tests.add(t);
-    rulesReach.set(member.id, one.rules_impact);
-    // Each holder that is not a member counts once, at its smallest distance from any member.
-    const distances = new Map(
-      (one.affected as { id: string; distance: number }[]).map((row) => [row.id, row.distance])
-    );
-    const counts = new Map<string, number>();
-    for (const row of one.decisions as BlastRadiusDecision[]) {
-      if (row.via === "dependent") counts.set(row.node_id, (counts.get(row.node_id) ?? 0) + 1);
-    }
-    for (const id of (one.dependent_decisions as DependentDecisionsSummary).nodes) {
-      if (memberIds.has(id)) continue;
-      const distance = distances.get(id) ?? Number.MAX_SAFE_INTEGER;
-      const prev = dependentHolders.get(id);
-      const count = counts.get(id) ?? prev?.count ?? nodeDecisions(graph, findNode(graph, id)).length;
-      if (!prev || distance < prev.distance) dependentHolders.set(id, { count, distance });
-    }
-    for (const row of one.decisions as BlastRadiusDecision[]) {
-      // A member's own decisions are "focus"; otherwise keep the smallest distance.
-      const asFocus = memberIds.has(row.node_id) ? { ...row, via: "focus" as const, distance: 0 } : row;
-      const prev = decisions.get(row.id);
-      if (!prev || asFocus.distance < prev.distance) decisions.set(row.id, asFocus);
-    }
-  }
-  return {
-    change,
-    additivity: changeAdditivity(graph, change, { revisions, neighbors, planned }),
-    members: members.map((m) => ({
-      id: m.id,
-      type: m.type,
-      kind: neighborIds.has(m.id) ? "neighbor" : plannedIds.has(m.id) ? "planned" : "revision",
-      state: m.state,
-      next_state: m.next?.state ?? null,
-    })),
-    planned_edges: plannedEdges(graph, change).map(({ source, type, target }) => ({ source, type, target })),
-    affected: [...affected.values()].sort(
-      (a, b) => a.distance - b.distance || a.id.localeCompare(b.id)
-    ),
-    journeys_at_risk: [...journeys].sort(),
-    affected_files: [...files.values()]
-      .map((g) => ({
-        owner_id: g.owner_id,
-        owner_type: g.owner_type,
-        via: VIA_ORDER.filter((v) => g.via.has(v)),
-        files: [...g.files].sort((a, b) => a.localeCompare(b)),
-      }))
-      .sort((a, b) => a.owner_id.localeCompare(b.owner_id)),
-    tests: [...tests].sort((a, b) => a.localeCompare(b)),
-    rules_impact: Object.fromEntries(rulesReach),
-    decisions: [...decisions.values()].sort(
-      (a, b) => a.distance - b.distance || a.node_id.localeCompare(b.node_id)
-    ),
-    dependent_decisions: {
-      count: [...dependentHolders.values()].reduce((sum, h) => sum + h.count, 0),
-      nodes: [...dependentHolders.entries()]
-        .sort((a, b) => a[1].distance - b[1].distance || a[0].localeCompare(b[0]))
-        .map(([id]) => id),
-    },
-  };
 }
 
 export function getNodeContext(args: {
@@ -773,10 +381,12 @@ function orientDecisionEntries(entries: DecisionEntry[], depth: OrientDepth): un
 
 /** How much orient_for_work returns: rules + record, plus the body, or everything. */
 export const ORIENT_DEPTHS = ["rules", "body", "full"] as const;
+
 export type OrientDepth = (typeof ORIENT_DEPTHS)[number];
 
 /** Rows a query-only orient_for_work returns by default. */
 export const ORIENT_SUMMARY_LIMIT = 8;
+
 /** A summary row's description is cut to this many characters (descriptions are search rows). */
 export const ROW_DESCRIPTION_CHARS = 70;
 
@@ -945,65 +555,6 @@ function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<stri
   };
 }
 
-/** An area row's description is cut to this many characters (the full one comes with orient). */
-export const AREA_DESCRIPTION_CHARS = 60;
-export const AREA_COLUMNS = ["id", "title", "description", "interactions", "interfaces", "foundations", "open_bugs"] as const;
-
-/**
- * Every Journey as one compact row: `{ columns, rows, count }`, a row being `[id, title,
- * description (60 characters), interactions, interfaces, foundations, open_bugs]` over the area's
- * live members (`areaMembers`): its active Interactions, the Interfaces exposing them, the
- * Foundations they depend on, and the open Bugs affecting any of those. Rows sort by id. Small
- * enough to call before orienting (30 areas stay under 4 KB); pass a row's id as `area`.
- */
-export function listAreas(): Record<string, unknown> {
-  const graph = loadGraph();
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const journeys = graph.nodes
-    .filter((n) => n.type === "Journey" && !isInactiveNode(n))
-    .sort((a, b) => a.id.localeCompare(b.id));
-  const rows = journeys.map((j) => {
-    const members = [...areaMembers(graph, j.id)]
-      .map((id) => byId.get(id))
-      .filter((n): n is MindPlanNode => n !== undefined && !isInactiveNode(n));
-    const count = (type: NodeType) => members.filter((n) => n.type === type).length;
-    const memberIds = new Set(members.map((n) => n.id));
-    const openBugs = graph.nodes.filter(
-      (n) => n.type === "Bug" && !isInactiveNode(n) && (n.affects ?? []).some((id) => memberIds.has(id))
-    ).length;
-    const title = j.next?.title ?? j.title;
-    const full = j.next?.description ?? j.description;
-    const description =
-      full.length > AREA_DESCRIPTION_CHARS ? `${full.slice(0, AREA_DESCRIPTION_CHARS - 1).trimEnd()}…` : full;
-    return [j.id, title, description, count("Interaction"), count("Interface"), count("Foundation"), openBugs];
-  });
-  return { columns: AREA_COLUMNS, rows, count: rows.length };
-}
-
-/**
- * Decision records by node (its own, active slot), by change, or for the whole graph.
- * Superseded entries only with `include_superseded`, each naming `superseded_by`.
- */
-export function listDecisionsHandler(args: {
-  node_id?: string;
-  change?: string;
-  include_superseded?: boolean;
-}): Record<string, unknown> {
-  const graph = loadGraph();
-  if (args.node_id) findNode(graph, args.node_id);
-  const decisions = listDecisions(graph, {
-    node_id: args.node_id,
-    change: args.change,
-    include_superseded: args.include_superseded,
-  });
-  return {
-    ...(args.node_id ? { node_id: args.node_id } : {}),
-    ...(args.change ? { change: args.change } : {}),
-    decisions,
-    count: decisions.length,
-  };
-}
-
 /**
  * Declared file ownership query. Optional `path` returns the owning node.
  */
@@ -1097,40 +648,6 @@ export function getNodeImplementationHandler(args: {
 }
 
 /**
- * Resolve the bundled systems dialect at templates/agent/playbook.md.
- * Walks up from this module to the package root (same layout as the npm package).
- */
-function loadBundledPlaybook(): string {
-  const file = findPackageFile("templates", "agent", "playbook.md");
-  if (!file) {
-    throw blocked(
-      "get_project could not find templates/agent/playbook.md. Reinstall mindplan-mcp so the systems dialect ships with the package."
-    );
-  }
-  try {
-    return fs.readFileSync(file, "utf-8");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw blocked(
-      `get_project could not read the bundled playbook (${message}). Reinstall mindplan-mcp so templates/agent/playbook.md is present.`
-    );
-  }
-}
-
-/** Names the integrity check where an agent cannot miss it: get_project is read first. */
-export const CHECK_HINT =
-  "Run the check with the run_check tool (CLI: mindplan-mcp check) before self-ready, in-review, ship / resolved, " +
-  "and before saying the work is done. It must pass; moves to in-review and ship also run its import and ownership rules on the node's files.";
-
-/**
- * Short tag of a rules text (12 hex chars of its SHA-256): equal tags mean equal text, so a caller
- * that already holds the text can skip it.
- */
-export function rulesVersion(text: string): string {
-  return createHash("sha256").update(text, "utf-8").digest("hex").slice(0, 12);
-}
-
-/**
  * Node rule entries with their `version`; an entry whose version the caller already knows
  * (`known[node_id]`) leaves its text out and says `unchanged: true`.
  */
@@ -1146,42 +663,4 @@ function versionedRuleEntries(
     }
     return { ...entry, version };
   });
-}
-
-/**
- * Project brief (description + rules) plus the bundled systems dialect (playbook).
- * `rules_version` tags the rules, so the first `get_rules` of a session can already pass it.
- * `version` is the stamp warning, present only when mindplan/version.json is not current.
- * Call before the first answer or code change; call again after description/rules change.
- */
-export function getProject(): Record<string, unknown> {
-  const brief = loadProjectBrief();
-  const version = projectVersionStatus();
-  return {
-    path: brief.path,
-    description: brief.description,
-    rules: brief.rules,
-    rules_version: rulesVersion(brief.rules),
-    playbook: loadBundledPlaybook(),
-    check: CHECK_HINT,
-    ...(version.warning ? { version: version.warning } : {}),
-  };
-}
-
-/**
- * Mandatory project rules only — call before each action, before orient_for_work.
- * `{ path, rules, rules_version }`; with a `known_version` equal to the current tag, the text is
- * left out: `{ path, rules_version, unchanged: true }`.
- */
-export function getRules(args: { known_version?: string } = {}): Record<string, unknown> {
-  const brief = loadProjectBrief();
-  const rules_version = rulesVersion(brief.rules);
-  if (args.known_version !== undefined && args.known_version === rules_version) {
-    return { path: brief.path, rules_version, unchanged: true };
-  }
-  return {
-    path: brief.path,
-    rules: brief.rules,
-    rules_version,
-  };
 }

@@ -97,11 +97,23 @@ export function recentRate(
   return base + (node.next || opening ? 1 : 0);
 }
 
+/**
+ * The nodes whose rate says something about the project's pace: shipped, active, and shipped at
+ * least twice since their last split. A node shipped once, or a root that just split, has no pace
+ * yet; counting them would let a refactor that adds many nodes drag the median down and make every
+ * established node look busy. A node with no count (not backfilled) is counted.
+ */
 function rateCandidates(graph: MindPlanGraph): MindPlanNode[] {
-  return graph.nodes.filter((n) => isPipelineNodeType(n.type) && n.shipped_at && !isRetired(n));
+  return graph.nodes.filter(
+    (n) =>
+      isPipelineNodeType(n.type) &&
+      n.shipped_at &&
+      !isRetired(n) &&
+      (n.revisions === undefined || n.revisions - (n.split_at ?? 0) >= 2)
+  );
 }
 
-/** The median recent rate of the shipped, active pipeline nodes: the project's own pace. */
+/** The median recent rate of the established nodes (`rateCandidates`): the project's own pace. */
 export function graphRateMedian(graph: MindPlanGraph, settings: HotspotSettings, now: Date = new Date()): number {
   // Open revisions are not ships yet: a change that opens many nodes must not raise the bar for all.
   const rates = rateCandidates(graph)
@@ -234,10 +246,16 @@ function dependents(n: number): string {
  */
 function splitAdvice(h: Hotspot): string {
   if (h.type === "Interaction") {
-    return `split it into separate Interactions, one behavior each, sharing state through Foundations`;
+    return (
+      `split it into separate Interactions, one behavior each, sharing state through Foundations ` +
+      `(mark them on the revision with patch_node_territory split_into, so its ship records the split)`
+    );
   }
   if (h.type === "Interface") {
-    return `move the behavior into the Interactions it exposes and leave the entry point mounting them`;
+    return (
+      `move the behavior into the Interactions it exposes and leave the entry point mounting them ` +
+      `(mark them with patch_node_territory split_into, so its ship records the split)`
+    );
   }
   return (
     `move each into its own Foundation that "${h.node_id}" depends_on (mark them on the revision with ` +
@@ -328,4 +346,45 @@ export function changeAdditivity(
     neighbors: neighborIds,
     planned: plannedRows,
   };
+}
+
+/** What a node of each type splits into: a Foundation into Foundations, the rest into Interactions. */
+export function splitPartType(type: MindPlanNode["type"]): "Foundation" | "Interaction" | null {
+  if (type === "Foundation") return "Foundation";
+  if (type === "Interaction" || type === "Interface") return "Interaction";
+  return null;
+}
+
+/** Why `partId` cannot be marked as a part `node` splits into, or null when it can. */
+export function splitPartProblem(graph: MindPlanGraph, node: MindPlanNode, partId: string): string | null {
+  const kind = splitPartType(node.type);
+  if (!kind) return `"${node.id}" is a ${node.type}; only a Foundation, Interaction, or Interface splits.`;
+  const part = graph.nodes.find((n) => n.id === partId);
+  if (!part || part.type !== kind || isInactiveNode(part) || part.id === node.id) {
+    return `split_into names "${partId}", which is not another active ${kind}.`;
+  }
+  return null;
+}
+
+/**
+ * Whether a marked part counts when `node`'s open revision ships, by the edge that keeps imports
+ * legal: a Foundation depends_on its parts (it stays the composition root), an Interaction shares
+ * a Journey with them (the behavior moved to sibling actions), an Interface exposes them.
+ */
+export function splitPartLinked(graph: MindPlanGraph, node: MindPlanNode, partId: string): boolean {
+  const next = node.next;
+  if (!next) return false;
+  if (node.type === "Foundation") return (next.depends_on ?? []).includes(partId);
+  if (node.type === "Interface") return (next.exposes ?? []).includes(partId);
+  const part = graph.nodes.find((n) => n.id === partId);
+  // The revision's own Journeys, as its ship will write them.
+  const areas = new Set(next.belongs_to ?? []);
+  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => areas.has(j));
+}
+
+/** The edge a marked part still needs before the ship records it, for the split_into warning. */
+export function splitLinkHint(node: MindPlanNode): string {
+  if (node.type === "Foundation") return `depend_on it (link_nodes depends_on)`;
+  if (node.type === "Interface") return `expose it (link_nodes exposes)`;
+  return `share one of its areas (link_nodes belongs_to from the part to one of its Journeys)`;
 }

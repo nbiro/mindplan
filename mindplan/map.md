@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (40 nodes, 109 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (52 nodes, 155 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -20,10 +20,13 @@ flowchart TB
     f_nextjs["f-nextjs · Next.js assembler · ready"]
     f_npm_registry["f-npm-registry · npm registry adapter · stable"]
     f_orientation_ledger["f-orientation-ledger · Orientation ledger · stable"]
+    f_plan_views["f-plan-views · Plan views · stable"]
+    f_plan_writes["f-plan-writes · Plan writes · stable"]
     f_search_index["f-search-index · Search index · stable"]
     f_source_index["f-source-index · Source index · stable"]
     f_territory_store["f-territory-store · Territory store · stable"]
     f_test_harness["f-test-harness · Test harness · stable"]
+    f_tool_kit["f-tool-kit · Tool kit · stable"]
     f_view_projection["f-view-projection · View projection · stable"]
     f_xyflow["f-xyflow · XYFlow adapter · ready"]
   end
@@ -45,16 +48,31 @@ flowchart TB
   end
   subgraph journey_j_plan_console["j-plan-console · See and steer the plan · stable"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]
+    i_change_status__in__j_plan_console["i-change-status · Change a node's status · stable"]
+    i_claim_files__in__j_plan_console["i-claim-files · Claim files · stable"]
+    i_edit_brief__in__j_plan_console["i-edit-brief · Edit the brief and config · stable"]
+    i_edit_territory__in__j_plan_console["i-edit-territory · Edit a node's territory · stable"]
     i_explore_graph__in__j_plan_console["i-explore-graph · Explore the graph · ready"]
     i_model_plan__in__j_plan_console["i-model-plan · Model the plan · ready"]
-    i_steer_plan__in__j_plan_console["i-steer-plan · Steer the plan · stable"]
+    i_record_decision__in__j_plan_console["i-record-decision · Record a decision · stable"]
+    i_revise_node__in__j_plan_console["i-revise-node · Revise a shipped node · stable"]
+    i_shape_graph__in__j_plan_console["i-shape-graph · Shape the graph · stable"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
   subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
+    i_assess_impact__in__j_territory_sdlc["i-assess-impact · Assess impact · stable"]
+    i_browse_graph__in__j_territory_sdlc["i-browse-graph · Browse the graph · stable"]
+    i_change_status__in__j_territory_sdlc["i-change-status · Change a node's status · stable"]
     i_check_integrity__in__j_territory_sdlc["i-check-integrity · Check integrity · stable"]
+    i_claim_files__in__j_territory_sdlc["i-claim-files · Claim files · stable"]
+    i_edit_brief__in__j_territory_sdlc["i-edit-brief · Edit the brief and config · stable"]
+    i_edit_territory__in__j_territory_sdlc["i-edit-territory · Edit a node's territory · stable"]
     i_export_map__in__j_territory_sdlc["i-export-map · See the map · stable"]
     i_orient_plan__in__j_territory_sdlc["i-orient-plan · Orient on the plan · stable"]
-    i_steer_plan__in__j_territory_sdlc["i-steer-plan · Steer the plan · stable"]
+    i_read_brief__in__j_territory_sdlc["i-read-brief · Read the brief · stable"]
+    i_record_decision__in__j_territory_sdlc["i-record-decision · Record a decision · stable"]
+    i_revise_node__in__j_territory_sdlc["i-revise-node · Revise a shipped node · stable"]
+    i_shape_graph__in__j_territory_sdlc["i-shape-graph · Shape the graph · stable"]
   end
   f_compiler_rules --> f_domain_model
   f_compiler_rules --> f_source_index
@@ -74,6 +92,13 @@ flowchart TB
   f_mcp_runtime --> f_territory_store
   f_orientation_ledger --> f_domain_model
   f_orientation_ledger --> f_graph_search
+  f_plan_views --> f_compiler_rules
+  f_plan_views --> f_graph_search
+  f_plan_writes --> f_compiler_rules
+  f_plan_writes --> f_graph_search
+  f_plan_writes --> f_orientation_ledger
+  f_plan_writes --> f_territory_store
+  f_plan_writes --> f_view_projection
   f_search_index --> f_source_index
   f_source_index --> f_domain_model
   f_territory_store --> f_domain_model
@@ -84,19 +109,42 @@ flowchart TB
   f_view_projection --> f_graph_search
   f_view_projection --> f_territory_store
   f_xyflow --> f_design_system
+  i_assess_impact__in__j_territory_sdlc --> f_plan_views
+  i_assess_impact__in__j_territory_sdlc --> f_tool_kit
+  i_browse_graph__in__j_territory_sdlc --> f_compiler_rules
+  i_browse_graph__in__j_territory_sdlc --> f_graph_search
+  i_browse_graph__in__j_territory_sdlc --> f_tool_kit
   i_browse_territory__in__j_plan_console --> f_console_client
   i_browse_territory__in__j_plan_console --> f_console_shell
   i_browse_territory__in__j_plan_console --> f_design_system
+  i_change_status__in__j_plan_console --> f_plan_writes
+  i_change_status__in__j_territory_sdlc --> f_plan_writes
+  i_change_status__in__j_plan_console --> f_tool_kit
+  i_change_status__in__j_territory_sdlc --> f_tool_kit
   i_check_integrity__in__j_territory_sdlc --> f_compiler_rules
   i_check_integrity__in__j_territory_sdlc --> f_mcp_runtime
   i_check_integrity__in__j_territory_sdlc --> f_source_index
   i_check_integrity__in__j_territory_sdlc --> f_territory_store
+  i_check_integrity__in__j_territory_sdlc --> f_tool_kit
+  i_claim_files__in__j_plan_console --> f_plan_writes
+  i_claim_files__in__j_territory_sdlc --> f_plan_writes
+  i_claim_files__in__j_plan_console --> f_tool_kit
+  i_claim_files__in__j_territory_sdlc --> f_tool_kit
+  i_edit_brief__in__j_plan_console --> f_plan_writes
+  i_edit_brief__in__j_territory_sdlc --> f_plan_writes
+  i_edit_brief__in__j_plan_console --> f_tool_kit
+  i_edit_brief__in__j_territory_sdlc --> f_tool_kit
+  i_edit_territory__in__j_plan_console --> f_plan_writes
+  i_edit_territory__in__j_territory_sdlc --> f_plan_writes
+  i_edit_territory__in__j_plan_console --> f_tool_kit
+  i_edit_territory__in__j_territory_sdlc --> f_tool_kit
   i_explore_graph__in__j_plan_console --> f_console_client
   i_explore_graph__in__j_plan_console --> f_console_shell
   i_explore_graph__in__j_plan_console --> f_design_system
   i_explore_graph__in__j_plan_console --> f_xyflow
   i_export_map__in__j_territory_sdlc --> f_compiler_rules
   i_export_map__in__j_territory_sdlc --> f_territory_store
+  i_export_map__in__j_territory_sdlc --> f_tool_kit
   i_export_map__in__j_territory_sdlc --> f_view_projection
   i_init_project__in__j_agent_onboarding --> f_source_index
   i_init_project__in__j_agent_onboarding --> f_territory_store
@@ -113,23 +161,25 @@ flowchart TB
   i_orient_plan__in__j_territory_sdlc --> f_compiler_rules
   i_orient_plan__in__j_territory_sdlc --> f_graph_search
   i_orient_plan__in__j_territory_sdlc --> f_orientation_ledger
+  i_orient_plan__in__j_territory_sdlc --> f_plan_views
   i_orient_plan__in__j_territory_sdlc --> f_source_index
   i_orient_plan__in__j_territory_sdlc --> f_territory_store
-  i_orient_plan__in__j_territory_sdlc -.->|leads_to| i_steer_plan__in__j_plan_console
-  i_steer_plan__in__j_plan_console --> f_compiler_rules
-  i_steer_plan__in__j_territory_sdlc --> f_compiler_rules
-  i_steer_plan__in__j_plan_console --> f_graph_search
-  i_steer_plan__in__j_territory_sdlc --> f_graph_search
-  i_steer_plan__in__j_plan_console --> f_orientation_ledger
-  i_steer_plan__in__j_territory_sdlc --> f_orientation_ledger
-  i_steer_plan__in__j_plan_console --> f_source_index
-  i_steer_plan__in__j_territory_sdlc --> f_source_index
-  i_steer_plan__in__j_plan_console --> f_territory_store
-  i_steer_plan__in__j_territory_sdlc --> f_territory_store
-  i_steer_plan__in__j_plan_console --> f_view_projection
-  i_steer_plan__in__j_territory_sdlc --> f_view_projection
-  i_steer_plan__in__j_plan_console -.->|leads_to| i_export_map__in__j_territory_sdlc
-  i_steer_plan__in__j_territory_sdlc -.->|leads_to| i_export_map__in__j_territory_sdlc
+  i_orient_plan__in__j_territory_sdlc --> f_tool_kit
+  i_orient_plan__in__j_territory_sdlc -.->|leads_to| i_edit_territory__in__j_plan_console
+  i_read_brief__in__j_territory_sdlc --> f_plan_views
+  i_read_brief__in__j_territory_sdlc --> f_tool_kit
+  i_record_decision__in__j_plan_console --> f_plan_writes
+  i_record_decision__in__j_territory_sdlc --> f_plan_writes
+  i_record_decision__in__j_plan_console --> f_tool_kit
+  i_record_decision__in__j_territory_sdlc --> f_tool_kit
+  i_revise_node__in__j_plan_console --> f_plan_writes
+  i_revise_node__in__j_territory_sdlc --> f_plan_writes
+  i_revise_node__in__j_plan_console --> f_tool_kit
+  i_revise_node__in__j_territory_sdlc --> f_tool_kit
+  i_shape_graph__in__j_plan_console --> f_plan_writes
+  i_shape_graph__in__j_territory_sdlc --> f_plan_writes
+  i_shape_graph__in__j_plan_console --> f_tool_kit
+  i_shape_graph__in__j_territory_sdlc --> f_tool_kit
   i_view_status__in__j_plan_console --> f_console_client
   i_view_status__in__j_plan_console --> f_console_shell
   i_view_status__in__j_plan_console --> f_design_system
@@ -139,7 +189,6 @@ flowchart TB
   if_cli -->|exposes| i_init_project__in__j_agent_onboarding
   if_console_api --> f_nextjs
   if_console_api -->|exposes| i_orient_plan__in__j_territory_sdlc
-  if_console_api -->|exposes| i_steer_plan__in__j_plan_console
   if_console --> f_console_shell
   if_console --> f_design_system
   if_console --> f_nextjs
@@ -147,16 +196,23 @@ flowchart TB
   if_console -->|exposes| i_browse_territory__in__j_plan_console
   if_console -->|exposes| i_explore_graph__in__j_plan_console
   if_console -->|exposes| i_model_plan__in__j_plan_console
-  if_console -->|exposes| i_steer_plan__in__j_plan_console
   if_console -->|exposes| i_view_status__in__j_plan_console
-  if_mcp_tools --> f_domain_model
-  if_mcp_tools --> f_graph_search
   if_mcp_tools --> f_mcp_runtime
-  if_mcp_tools --> f_view_projection
+  if_mcp_tools --> f_territory_store
+  if_mcp_tools --> f_tool_kit
+  if_mcp_tools -->|exposes| i_assess_impact__in__j_territory_sdlc
+  if_mcp_tools -->|exposes| i_browse_graph__in__j_territory_sdlc
+  if_mcp_tools -->|exposes| i_change_status__in__j_plan_console
   if_mcp_tools -->|exposes| i_check_integrity__in__j_territory_sdlc
+  if_mcp_tools -->|exposes| i_claim_files__in__j_plan_console
+  if_mcp_tools -->|exposes| i_edit_brief__in__j_plan_console
+  if_mcp_tools -->|exposes| i_edit_territory__in__j_plan_console
   if_mcp_tools -->|exposes| i_export_map__in__j_territory_sdlc
   if_mcp_tools -->|exposes| i_orient_plan__in__j_territory_sdlc
-  if_mcp_tools -->|exposes| i_steer_plan__in__j_plan_console
+  if_mcp_tools -->|exposes| i_read_brief__in__j_territory_sdlc
+  if_mcp_tools -->|exposes| i_record_decision__in__j_plan_console
+  if_mcp_tools -->|exposes| i_revise_node__in__j_plan_console
+  if_mcp_tools -->|exposes| i_shape_graph__in__j_plan_console
   if_publish_script --> f_npm_registry
   if_publish_script -->|exposes| i_npm_publish__in__j_agent_onboarding
   if_release_tag --> f_github_actions

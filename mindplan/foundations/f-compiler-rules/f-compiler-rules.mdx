@@ -4,11 +4,11 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, change additivity), change members and neighbors, checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-10-31T11:40:11.554Z
-revisions: 22
-churn: 10.856
+shipped_at: 2026-10-31T12:26:09.583Z
+revisions: 24
+churn: 12.848
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-10-31T11:40:11.554Z
+updated_at: 2026-10-31T12:26:09.583Z
 split_at: 8
 split_into:
   - f-source-index
@@ -90,13 +90,14 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `fanIn(graph, node, index?)` → `{ count, nodes }` — the distinct non-retired nodes with a direct live edge into the node that a change to it reaches: `depends_on` (any source), `exposes` (an Interface showing an Interaction), and `mounts` (a composition root importing an Interface)
   - `nodeChurn(node)` → `{ change, date?, reasons }[]` — the distinct change ids that revised the node, oldest first: the `change` of each of its decisions (live and open next, superseded included, since a superseded decision still records a revision; the first build's change counts like any other) plus a shipped node's open revision's change. `reasons` are the decision sentences recorded under that change; the open revision's change with no decision yet has none. The node holds no revision log: decisions are the record, and git keeps the rest
   - `recentRate(node, settings, now?)` — how often the node shipped lately: its stored `churn` (a decayed ship count, f-territory-store) decayed from its `shipped_at` to now with `hotspots.half_life_days`, plus 1 while a revision is open; 0 for a node with no `churn` yet. A split resets the stored value, so a root that split its parts out starts again from zero
-  - `graphRateMedian(graph, settings, now?)` — the median `recentRate` of the shipped, active Foundations, Interactions, and Interfaces: the project's own pace
+  - `graphRateMedian(graph, settings, now?)` — the median `recentRate` (open revisions not counted) of the established nodes: shipped, active Foundations, Interactions, and Interfaces that shipped at least twice since their last split (a node with no count yet is counted). A node shipped once or a root that just split has no pace yet, so a change that adds many nodes does not drag the median down
   - `keepsWhole(node)` — true while the node (live or open next) holds an active decision with `keep_whole: true`: the owner decided it stays one node, so it is never a hotspot
   - `hotspotFor(graph, node, settings, ctx?)` → `{ node_id, rate, median, fan_in, changes, split_into? }` or null — a shipped, active pipeline node, not `keepsWhole`, whose `recentRate` is at least `hotspots.min_rate` and at least `hotspots.outlier_ratio` times the graph median (a median of 0 counts as 1). Fan-in never decides it; it ranks hotspots (`rate × max(1, fan_in)`). `changes` are the most recent change groups of `nodeChurn` (at most three). `ctx` carries one fan-in index and the median, so the check computes them once
   - `hotspots(graph, settings)` — every hotspot, highest rank first — a shipped, non-retired Foundation, Interaction, or Interface whose fan-in is at least `hotspots.fan_in` and whose churn is at least `hotspots.churn` (`hotspotSettings`, f-source-index)
   - `hotspotWarning(h)` → `hotspot: "<id>" ships R times as often as the median node lately (rate X vs Y)[ since it split into <ids>], and N nodes depend on it directly; it may change for several reasons. Its recent changes fall into these groups: change "a" (<reason>; <reason>), change "b" (no decision recorded), … Move each group into its own Foundation that "<id>" depends_on, so a later feature revises one part and the rest stays closed.` The split it suggests keeps imports downward: the node stays the composition root and imports the parts
   - `openClosedWarning(graph, node, settings)` — for `open_next` on a shipped node that is a hotspot counting the revision it opens (and is not `keepsWhole`): `Warning: "<id>" has N direct dependents, and this revision reaches every one. Prefer extending it: add a new node that depends_on "<id>", or split it so this change revises a smaller part. If revising it is still right, record why with record_decision and name the additive alternative you rejected.` (plus the hotspot groups when it is one); null below the threshold
   - `changeAdditivity(graph, change)` → `{ summary, new_nodes, revised, neighbors, planned }` from `changeMembership`: `new_nodes` are revisions never shipped, `revised` the shipped nodes with an open next (`{ id, state, fan_in }`), `planned` the planned sources (`{ id, state, fan_in }`), `neighbors` the neighbor ids. `summary` reads `change "<id>": 5 new nodes, 1 revised shipped node (f-payload, fan-in 43), 3 neighbors`, plus `, 1 planned revision (…)` when there are planned sources, and ends `; purely additive` when nothing shipped is revised or planned
+- **What each type splits into** (`open-closed.ts`): `splitPartType(type)` — a Foundation splits into Foundations, an Interaction or Interface into Interactions; `splitPartProblem(graph, node, partId)` — why a part cannot be marked (wrong kind, inactive, the node itself), or null; `splitPartLinked(graph, node, partId)` — whether a marked part counts when the node's open revision ships, by the edge that keeps imports legal (a Foundation `depends_on` it, an Interaction shares one of its Journeys, an Interface `exposes` it); `splitLinkHint(node)` — the edge the warning names. `hotspotWarning`'s advice for an Interaction and an Interface also tells the agent to mark the parts with `split_into`
 - **Decision gate wording.** When a shipped node's revision is decision-worthy because it revises a shipped Foundation or has a wide blast radius, the `Blocked: Decision` message also names the open–closed alternative: `An additive alternative leaves "<id>" closed: a new node that depends_on it, or a split of it; name it in alternatives if you rejected it.`
 - **Planned paths.** `staleTextWarnings` returns `{ warnings, info }`. For a node whose active slot is `draft` or `ready` and none of whose claimed files exist on disk yet, missing named paths are not `stale:`: they are one `planned: "<id>" names N path(s) not on disk yet (…)` info line per node. A path named on a line that says "at build time" is planned on every node.
 
@@ -154,6 +155,8 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - `openClosedWarning` is null for a node at the graph's pace and names the depends_on alternative for an outlier
 - A stored `churn` decays by half every `half_life_days`, so a node busy a year ago and quiet since is no hotspot
 - The `Blocked: Decision` message for a shipped Foundation or a wide blast radius names the additive alternative; other triggers keep their wording
+
+- `splitPartProblem` accepts an Interaction for an Interaction or Interface and refuses a Foundation; `splitPartLinked` counts an Interaction's part that shares its Journey and an Interface's part it exposes, and not one elsewhere
 
 ## Decisions
 
@@ -300,6 +303,17 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - Consequences: A fourth server-owned field (churn) written at every ship; hotspot output depends on the date the check runs; record_decision gains keep_whole.
 - Supersedes: d-churn-from-revision-count
 - Change: open-closed
+- Date: 2026-10-31
+
+### d-median-of-established-nodes
+
+- Decision: The hotspot baseline is the median rate of established nodes only: those shipped at least twice since their last split.
+- Alternatives:
+  - Every shipped node (the hotspot-splits refactor added 13 nodes shipped once and reset two roots, which dropped the median from 4.8 to 1 and flagged nine ordinary nodes)
+  - Nodes older than one half-life (a young node that ships often is a real pace sample, and age needs a creation date the rate does not carry)
+  - A fixed floor instead of the median (back to static thresholds the owner rejected)
+- Why: A node shipped once, or a root whose rate a split just reset, says nothing yet about how often things change here; counting them lets structure changes, not change frequency, move the baseline.
+- Change: hotspot-baseline
 - Date: 2026-10-31
 
 ## Attachments

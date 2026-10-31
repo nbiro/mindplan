@@ -1,0 +1,49 @@
+---
+id: f-tool-kit
+type: Foundation
+title: "Tool kit"
+description: "Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape, defineTool, and the schema fragments several actions share."
+state: stable
+shipped_at: 2026-10-31T12:20:48.519Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:57:22.631Z
+updated_at: 2026-10-31T12:20:48.519Z
+role: infra
+implements:
+  - src/foundations/f-tool-kit/
+tests:
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+---
+
+# Tool kit
+
+Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape, defineTool, and the schema fragments several actions share.
+
+## Purpose
+
+Infra — what an action needs to define its own MCP tools, so each action owns its tool names, descriptions, and input schemas and the MCP entry point only mounts them. Before this, one Interface file held every tool definition and changed for every tool.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-tool-kit/` (`tool.ts`)
+
+- `ToolKind` (`read` | `write` | `destructive`) — one kind per tool drives its MCP annotations, drift, and verbose behavior (the entry point maps it)
+- `ToolConfig<Args>` — `{ kind, title, description, inputSchema, drift? }`
+- `ToolDef`, `defineTool(name, config, handler)` — a tool definition whose handler is typed from its input schema; each action exports `TOOLS: ToolDef[]` from its `tools.ts`
+- Schema fragments several actions share: `VERBOSE`, `NODE_ID`, `CHANGE_ID`, `CHANGE_REF`, `AREA`, `ALIASES`, `INCLUDE_INHERITED_DECISIONS`, `SECTION_READ`, and the `READINESS_HINT` sentence
+
+Depends on: none inside the graph (zod and the MCP SDK types).
+
+## Acceptance Criteria
+
+- Every exposed action defines its tools with `defineTool` in its own `tools.ts`; the MCP entry point holds no tool schema
+- `tools/list` shows the same thirty tools, in the same order, with the same annotations and descriptions as before
+- Verified via `npm test` (smoke)
+
+## Attachments
+
+_Schemas, OpenAPI exports, ER diagrams, design tokens, etc. go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}
