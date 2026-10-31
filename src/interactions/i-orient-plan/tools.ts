@@ -134,7 +134,7 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call before each action, after get_rules. Not only at session start. Summary first: " +
         "with only a query it returns ranked rows ({ id, type, state, title, description, area?, score }, default 8, no body, rules, or decisions); " +
-        "pick one and call again with node_id, or pass change alone to orient on every member of a change in one reply (each member's rules_from, each rule source's text once, the members holding decisions), which clears the write gate for all of them. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
+        "pick one and call again with node_id, or pass change alone to orient on every member of a change in one reply (open revisions, planned sources, and the nodes holding a decision recorded under it as kind \"decision\"; each member's rules_from, each rule source's text once, the members holding decisions), which clears the write gate for all of them. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
         "With node_id it returns the full node at depth: record and body (get_node_context), owned files, " +
         "the body being the active slot's (the open next while a revision is open; slot picks one, section cuts it to one section), " +
         "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface, plus stability ({ fan_in, rate, median_rate, revisions?, split_at?, split_into?, hotspot?, fan_out? }): how many nodes depend on it directly and how often it shipped lately against the project's median; check it before choosing open_next. A pre-ship node's fan_out ({ count, changes }) names the other unshipped changes it depends on; several mean it may need to know every feature of a kind. " +
@@ -154,7 +154,7 @@ export const TOOLS: ToolDef[] = [
           .describe("Free-text query to rank nodes. Required if node_id and change are omitted."),
         node_id: NODE_ID.optional().describe("Force focus to this node when present."),
         change: CHANGE_ID.optional().describe(
-          "Orient on every member of this change (open revisions and neighbors) in one reply; pass it without query or node_id."
+          "Orient on every member of this change (open revisions, planned sources, and nodes holding a decision under it) in one reply; pass it without query or node_id."
         ),
         type: z.enum(NODE_TYPES).optional().describe("Optional type filter before ranking."),
         limit: z

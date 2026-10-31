@@ -46,7 +46,6 @@ import {
   isFoundationRole,
   isInactiveNode,
   isMirrorState,
-  isNeighborNode,
   isNextPipelineState,
   isPipelineNodeType,
   MIRROR_STATE,
@@ -2260,8 +2259,6 @@ export function patchNodeTerritory(
   slot: TerritorySlot;
   readinessReset: boolean;
   toggled?: string[];
-  /** A stale live neighbor label dropped because the next slot's change moved off it. */
-  replaced_change?: string;
 } {
   const slot = resolveTerritorySlot(node, input.slot);
   const raw = readMarkdown(node, slot);
@@ -2389,9 +2386,6 @@ export function patchNodeTerritory(
     `${frontmatter}${separator}${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
     slot
   );
-  // Moving the revision's change id off a live neighbor label leaves that label stale.
-  const replacedLabel =
-    slot === "next" && input.change !== undefined ? dropStaleLiveLabel(node) : undefined;
   // Change ids are grouping metadata; every other field is the contract readiness was judged on.
   const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref");
   const readinessReset = contractWrite && demoteReadySlot(node, slot);
@@ -2400,7 +2394,6 @@ export function patchNodeTerritory(
     slot,
     readinessReset,
     ...(toggled ? { toggled } : {}),
-    ...(replacedLabel ? { replaced_change: replacedLabel } : {}),
   };
 }
 
@@ -2477,16 +2470,14 @@ function assignChange(
 
 /**
  * Set or clear (empty string) the change id and ref on one slot's frontmatter.
- * Grouping metadata: never touches state or `updated_at`. A write to the next slot also drops a
- * live neighbor label that no longer matches the revision's change (`dropStaleLiveLabel`) and
- * returns the dropped id.
+ * Grouping metadata: never touches state or `updated_at`.
  */
 export function writeChangeFrontmatter(
   node: MindPlanNode,
   input: { change?: string; change_ref?: string },
   slot: TerritorySlot = "current"
-): string | undefined {
-  if (input.change === undefined && input.change_ref === undefined) return undefined;
+): void {
+  if (input.change === undefined && input.change_ref === undefined) return;
   if (slot === "next" && !node.next) {
     throw new Error(`Blocked: node "${node.id}" has no open evolution to carry a change id.`);
   }
@@ -2494,42 +2485,6 @@ export function writeChangeFrontmatter(
   const patched = applyChangeScalars(fence, input);
   if (patched !== fence) writeTerritoryFile(file, raw.replace(fence, () => patched));
   assignChange(slot === "next" && node.next ? node.next : node, input);
-  return slot === "next" ? dropStaleLiveLabel(node) : undefined;
-}
-
-/**
- * While a shipped node has an open next, its live `change` (the neighbor label it carried before
- * the revision opened) may only name the revision's own change. Any other id is stale: the node is
- * that change's revision now, not another change's neighbor, and `discard_next` would restore the
- * label after its change may have closed. Clears such a label from the live file (no other file
- * exists while next is open). Returns the cleared id.
- */
-export function dropStaleLiveLabel(node: MindPlanNode): string | undefined {
-  if (!node.shipped_at || !node.next || !node.change) return undefined;
-  if (node.change === node.next.change) return undefined;
-  const cleared = node.change;
-  writeChangeFrontmatter(node, { change: "" }, "current");
-  return cleared;
-}
-
-/**
- * Label a neighbor node (`isNeighborNode`: shipped, not retired, no open next) as a neighbor of
- * `change` (the live `change` scalar; an empty string clears it). One label per node: a different
- * id replaces the old one, returned as `replaced`. `changed` is false when nothing was written.
- */
-export function writeNeighborLabel(
-  node: MindPlanNode,
-  change: string
-): { changed: boolean; replaced?: string } {
-  if (!isNeighborNode(node)) {
-    throw new Error(
-      `Blocked: "${node.id}" is not a shipped, active node with no open next; only those take a neighbor label.`
-    );
-  }
-  const previous = node.change;
-  if ((previous ?? "") === change) return { changed: false };
-  writeChangeFrontmatter(node, { change }, "current");
-  return { changed: true, ...(previous && change ? { replaced: previous } : {}) };
 }
 
 /**

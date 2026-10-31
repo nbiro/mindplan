@@ -2,13 +2,13 @@
 id: i-browse-graph
 type: Interaction
 title: "Browse the graph"
-description: "Agent pages through the whole graph or a filtered slice of it (by state, type, or change, with chosen fields), lists areas with their member counts, and lists decisions by node or change."
+description: "Agent pages through the whole graph or a filtered slice of it (by state, type, or change, with chosen fields and edge types or none), lists areas with their member counts, and lists decisions by node or change."
 state: stable
-shipped_at: 2026-10-31T21:15:36.254Z
-revisions: 2
-churn: 1.991
+shipped_at: 2026-10-31T21:55:15.067Z
+revisions: 3
+churn: 2.99
 created_at: 2026-10-31T11:58:04.820Z
-updated_at: 2026-10-31T21:15:36.254Z
+updated_at: 2026-10-31T22:56:50.407Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -38,19 +38,20 @@ Agent calls `get_mindplan_graph` to see the plan's structure (with `state`, `typ
 
 Intended files: `src/interactions/i-browse-graph/` (`handlers.ts`, `tools.ts`).
 
-- `get_mindplan_graph({ offset?, limit?, state?, type?, change?, fields? })` pages nodes (default `GRAPH_PAGE_DEFAULT` 200, max `GRAPH_PAGE_MAX` 500) and returns the edges whose source is in the page, the totals, and `next_offset` while more remain
+- `get_mindplan_graph({ offset?, limit?, state?, type?, change?, fields?, edges? })` pages nodes (default `GRAPH_PAGE_DEFAULT` 200, max `GRAPH_PAGE_MAX` 500) and returns the edges whose source is in the page, the totals, and `next_offset` while more remain
 - **Filters.** All four are optional; leaving them all out returns exactly today's output.
   - `state`: one state or an array of them (any node state: the build pipeline's and the Bug lifecycle's); matches the node record's `state` field (a shipped node with an open revision keeps its live state there)
   - `type`: one node type or an array of them (`Journey`, `Interaction`, `Interface`, `Foundation`, `Bug`)
-  - `change`: one change id; matches the node's change: an open revision's change (`next.change`), else the record's `change` field (a pre-ship node's change, or a shipped node's neighbor label), so the change's new nodes, revisions, and neighbors all match
+  - `change`: one change id; matches the node's change: an open revision's change (`next.change`), else a pre-ship node's `change` (`activeChange`, so a leftover live change on a shipped node never matches), so the change's new nodes and revisions match
   - Filters combine with AND; the values inside one array combine with OR. `state` and `type` values are validated by the tool schema
   - Filtering happens before paging: nodes are filtered, then sorted by id, then sliced, so `total_nodes`, `offset`, `limit`, and `next_offset` describe the filtered set
   - `edges` keeps its rule (the edges whose source is in the page); `total_edges` counts the edges whose source is in the filtered set (with no filter, every edge, as before)
+- **Edge selection.** `edges`: `true` (default; today's output), `false` (the reply carries neither `edges` nor `total_edges`), or an array of edge types (`EDGE_TYPES`: belongs_to, depends_on, exposes, leads_to, affects, mounts; OR within) keeping only edges of those types whose source is in the page, with `total_edges` counting those types over the filtered set. An unknown type fails before any node is read with `Blocked: get_mindplan_graph edges: unknown edge type "<name>". Valid edge types: <list>.` Node filtering, sorting, and paging never depend on `edges`
 - **Projection.** `fields`: an array of node record fields to return (e.g. `["id", "type", "title", "change"]`); `id` is always included, and each node carries only the listed fields it has. The valid names are `GRAPH_NODE_FIELDS` (the keys of a node record, `MindPlanNode`); an unknown name fails before any node is read with `Blocked: get_mindplan_graph fields: unknown field "<name>". Valid fields: <list>.` Projection never changes which nodes or edges come back
 - `list_areas()` returns `{ columns, rows, count }`, a row per active Journey: id, title, description cut to 60 characters, and counts of its active Interactions, the Interfaces exposing them, the Foundations they depend on, and open Bugs
 - `list_decisions({ node_id? | change? , include_superseded? })` returns `{ decisions, count }` for one node, one change, or the whole graph, each with node, status, and `superseded_by`; superseded entries only with `include_superseded`
 - Reads; no orientation gate
-- **Tool description.** `get_mindplan_graph`'s description tells the agent to filter (`state`, `type`, `change`) and project (`fields`) for a question about part of the graph instead of reading every node, and to prefer `orient_for_work` for one piece of work
+- **Tool description.** `get_mindplan_graph`'s description tells the agent to filter (`state`, `type`, `change`), project (`fields`), and drop edges it does not need (`edges`) for a question about part of the graph instead of reading every node, with the example `state: ["draft", "ready"]`, `fields: ["id", "type", "title", "change"]`, `edges: false` for what is planned but not built, and to prefer `orient_for_work` for one piece of work
 
 Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-domain-model`, `f-tool-kit`.
 
@@ -61,6 +62,7 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-domain
 - `state` (one value and an array), `type` (one value and an array), and `change` each return only the matching nodes, sorted by id
 - `state` + `type` + `change` together return only the nodes matching all three
 - `fields` returns only the listed fields plus `id`; `fields` without `id` still returns `id`; an unknown field is Blocked naming the valid fields
+- `edges` omitted returns the same edges as before; `edges: false` returns no `edges` and no `total_edges`; `edges: ["depends_on"]` returns only depends_on edges from the page and counts them over the filtered set; an unknown edge type is Blocked naming the valid ones; `edges` combines with `state`, `type`, `change`, and `fields` without changing the nodes returned
 - Paging over a filtered set: `total_nodes` is the filtered count, `next_offset` walks the filtered set, every filtered node comes back exactly once, and `total_edges` counts the edges whose source is in the filtered set
 - `list_areas` lists 30 areas under 4 KB with member and open-Bug counts
 - `list_decisions` returns a node's, a change's, and the graph's decisions; with `include_superseded` the superseded entry carries `superseded_by`
@@ -77,6 +79,17 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-domain
 - Why: A filtered call should answer a question in one page that fits the host's result limit; totals that describe the answer let the agent trust it.
 - Consequences: total_edges no longer means every edge once a filter is passed; with no filter the output is unchanged.
 - Change: graph-filters-fan-out
+- Date: 2026-10-31
+
+### d-graph-edges-option
+
+- Decision: get_mindplan_graph takes edges: true (default) | false | edge types; false drops both edges and total_edges, an array keeps only those types and counts them over the filtered set, and unknown types fail in the handler with the valid list.
+- Alternatives:
+  - Keep total_edges with edges: false (a count of edges the reply does not carry invites a second call for nothing)
+  - Validate edge types with a zod enum (the schema error is harder to read than the fields-style Blocked line)
+  - Drop edges whenever fields is passed (couples projection to edge selection; some slices need depends_on)
+- Why: On real graphs edges are most of a filtered reply; an explicit option keeps the default output unchanged while letting a question about nodes skip them.
+- Change: graph-edges-stale-labels
 - Date: 2026-10-31
 
 ## Attachments

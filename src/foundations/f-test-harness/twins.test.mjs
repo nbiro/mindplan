@@ -1,8 +1,8 @@
 /**
  * No mirror twin: a shipped Foundation/Interaction/Interface has no `<id>.next.mdx` unless a
  * revision is open. Live writes on a shipped node (stability recompute on link/unlink and status
- * moves, live territory patches, live edge writes, rules, tests, aliases, decisions, neighbor
- * labels) touch only `<id>.mdx`; no write ever creates a `state: mirror` file. open_next creates
+ * moves, live territory patches, live edge writes, rules, tests, aliases, decisions) touch only
+ * `<id>.mdx`; no write ever creates a `state: mirror` file. open_next creates
  * the next file; ship and discard_next delete it and list every deleted path. A hand-written
  * leftover `state: mirror` file loads as no revision, warns in run_check, is replaced by
  * open_next, and is deleted by force_unship. Every write here is also diffed against the sandbox
@@ -290,10 +290,6 @@ check(
   liveOnly("patch_node_rules on a shipped node writes no next file", ruled, "foundations", "f-core");
   const tested = await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.ts"] });
   liveOnly("set_test_files on a shipped node writes no next file", tested, "foundations", "f-core");
-  const labeled = await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.ts"], change: "ch-neighbor" });
-  liveOnly("a neighbor label on a shipped node writes no next file", labeled, "foundations", "f-core");
-  const unlabeled = await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.ts"], change: "" });
-  liveOnly("clearing a neighbor label writes no next file", unlabeled, "foundations", "f-core");
 }
 
 // --- live edge writes on a shipped source node ---

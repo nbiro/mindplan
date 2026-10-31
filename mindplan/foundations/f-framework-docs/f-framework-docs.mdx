@@ -8,7 +8,7 @@ shipped_at: 2026-10-31T21:15:36.083Z
 revisions: 48
 churn: 24.476
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-31T21:15:36.083Z
+updated_at: 2026-10-31T22:52:14.572Z
 depends_on:
   - f-domain-model
 implements:
@@ -58,6 +58,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
   - plan-project skill: the same step in its Classify scope list, next to "Prefer additive over reopening", naming the `fan-out:` warning and `keep_whole`; define-entities skill: the same rule in Step 0's rules and its Reuse rule, plus a Common mistakes row (a `depends_on` per feature on a node that must know every feature → `fan-out:` warning; invert onto a Foundation contract)
   - README: the `get_mindplan_graph` row names the filters, the `run_check` row names `fan-out:`, and the config section lists `fan_out.warn_at`; `CHANGELOG.md` gets the 0.14.0 section for both features; `package.json` and `package-lock.json` go to 0.14.0
   - The pointer (`templates/agent/agents-stub.md`, and this repository's `MINDPLAN.md`, kept identical so `upgrade_project` does not report it outdated) says why reads of `mindplan/**` go through MCP too: a raw node file lacks the rules its Journey and Foundations pass down, decision status, the active slot, and the orientation that unlocks writes. SPEC §1.1.1 says the same (it said only "never edit"), and `CHANGELOG.md` notes it
+
+- **Lighter graph reads and no stale change labels (0.15.0).** SPEC §8.1 specifies the `get_mindplan_graph` `edges` input (`true`, `false`, or edge types; the unknown-type `Blocked:`) and that `orient_for_work({ change })` also lists the nodes holding a decision recorded under the change (`kind: "decision"`), which join no other change-wide tool; §3.7 removes neighbor labels: only a revision carries a change id, `change` / `change_ref` on a shipped node with no open next is `Blocked:` in `patch_node_territory`, `set_implementation_files`, and `set_test_files`, a change's members are revisions and planned sources, and no result carries `neighbor_of`, `replaced_change`, `cleared_neighbors`, or `cleared_change` (§8.1, §8.2 outputs); §9.6 gives a shipped node whose claimed files changed against the base every stale-text signal; §1.1.2 and §8.2 specify migration level 2 (strip every shipped node's label, `staleChangeLabelsCleared`). The source / neighbor / unaffected classes stay as guidance (§3.7 Pull-in, Classes). The playbook's rule 3, the plan-project and define-entities skills, and README say a neighbor takes no change id. `CHANGELOG.md` has the 0.15.0 section, with one removal entry
 
 Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section

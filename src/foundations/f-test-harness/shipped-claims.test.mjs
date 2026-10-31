@@ -383,7 +383,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   );
 }
 
-// --- force_unship drops the neighbor label and the in-place claim marker ---
+// --- force_unship drops the in-place claim marker ---
 {
   await call("create_node", { id: "f-solo", type: "Foundation", title: "Solo", description: "Infra — solo", role: "infra" });
   write("src/solo/a.ts", "export const a = 1;\n");
@@ -391,17 +391,17 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   fillAndTick("foundations", "f-solo");
   await walk("f-solo", ["ready", "in-progress", "in-review", "ship"]);
   write("src/solo/b.ts", "export const b = 1;\n");
-  await call("set_implementation_files", { node_id: "f-solo", files: ["src/solo/a.ts", "src/solo/b.ts"], change: "solo-fix" });
+  await call("set_implementation_files", { node_id: "f-solo", files: ["src/solo/a.ts", "src/solo/b.ts"] });
   check(
-    "the shipped node carries a label and an in-place marker",
-    /^change: "solo-fix"$/m.test(readRel(liveOf("foundations", "f-solo"))) &&
+    "the shipped node carries an in-place marker and no change id",
+    !/^change:/m.test(readRel(liveOf("foundations", "f-solo"))) &&
       JSON.stringify(addedClaims("foundations", "f-solo")) === JSON.stringify(["src/solo/b.ts"])
   );
   const unshipped = await call("force_unship", { node_id: "f-solo", confirm: "unship:f-solo" });
   const live = readRel(liveOf("foundations", "f-solo"));
   check(
-    "force_unship clears the live label and added_claims and lists the live file",
-    unshipped.cleared_change === "solo-fix" &&
+    "force_unship clears added_claims, reports no cleared_change, and lists the live file",
+    !("cleared_change" in unshipped) &&
       unshipped.changed_files.includes(liveOf("foundations", "f-solo")) &&
       !/^change:/m.test(live) &&
       !/^added_claims:/m.test(live),
@@ -409,7 +409,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   );
   const record = (await call("get_node_context", { node_id: "f-solo" })).record;
   check(
-    "the unshipped node is not a revision of the old change",
+    "the unshipped node has no change id and no added_claims",
     record.change === undefined && record.added_claims === undefined,
     JSON.stringify(record)
   );

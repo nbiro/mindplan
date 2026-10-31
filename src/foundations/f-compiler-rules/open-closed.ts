@@ -299,7 +299,6 @@ export type ChangeAdditivity = {
   summary: string;
   new_nodes: string[];
   revised: AdditivityRow[];
-  neighbors: string[];
   planned: AdditivityRow[];
 };
 
@@ -313,27 +312,25 @@ function listRows(rows: AdditivityRow[]): string {
 
 /**
  * Whether a change is additive: its never-shipped revisions are new nodes, its shipped revisions
- * reopen closed ones (with their fan-in), its neighbors are edited in place, and its planned
- * sources will be reopened when the change opens them.
+ * reopen closed ones (with their fan-in), and its planned sources will be reopened when the change
+ * opens them.
  */
 export function changeAdditivity(
   graph: MindPlanGraph,
   change: string,
   membership: ReturnType<typeof changeMembership> = changeMembership(graph, change)
 ): ChangeAdditivity {
-  const { revisions, neighbors, planned } = membership;
+  const { revisions, planned } = membership;
   const index = fanInIndex(graph);
   const row = (n: MindPlanNode): AdditivityRow => ({ id: n.id, state: n.state, fan_in: fanIn(graph, n, index).count });
   const byFanIn = (a: AdditivityRow, b: AdditivityRow) => b.fan_in - a.fan_in || a.id.localeCompare(b.id);
   const new_nodes = revisions.filter((n) => !n.shipped_at).map((n) => n.id).sort();
   const revised = revisions.filter((n) => n.shipped_at).map(row).sort(byFanIn);
   const plannedRows = planned.map(row).sort(byFanIn);
-  const neighborIds = neighbors.map((n) => n.id).sort();
   const parts = [
     count(new_nodes.length, "new node", "new nodes"),
     count(revised.length, "revised shipped node", "revised shipped nodes") +
       (revised.length > 0 ? ` (${listRows(revised)})` : ""),
-    count(neighborIds.length, "neighbor", "neighbors"),
   ];
   if (plannedRows.length > 0) {
     parts.push(`${count(plannedRows.length, "planned revision", "planned revisions")} (${listRows(plannedRows)})`);
@@ -343,7 +340,6 @@ export function changeAdditivity(
     summary: `change "${change}": ${parts.join(", ")}${additive ? "; purely additive" : ""}`,
     new_nodes,
     revised,
-    neighbors: neighborIds,
     planned: plannedRows,
   };
 }

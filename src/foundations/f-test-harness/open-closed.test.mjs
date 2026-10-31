@@ -197,25 +197,24 @@ function check(label, condition, detail = "") {
   );
   check("openClosedWarning is null for auth at the ordinary pace", oc.openClosedWarning(graph, auth, defaults) === null);
 
-  // Additivity: f-new is a new node of c-split, f-core a reopened shipped node, f-dep-00 a neighbor.
+  // Additivity: f-new is a new node of c-split, f-core a reopened shipped node.
   const split = {
     ...graph,
     nodes: graph.nodes.map((n) => {
       if (n.id === "f-core") return { ...n, next: { state: "draft", change: "c-split" } };
-      if (n.id === "f-dep-00") return { ...n, change: "c-split" };
       return n;
     }),
   };
   const add = oc.changeAdditivity(split, "c-split");
   check(
-    "the additivity summary counts new nodes, revised shipped nodes with fan-in, and neighbors",
-    add.summary === 'change "c-split": 1 new node, 1 revised shipped node (f-core, fan-in 41), 1 neighbor',
+    "the additivity summary counts new nodes and revised shipped nodes with fan-in",
+    add.summary === 'change "c-split": 1 new node, 1 revised shipped node (f-core, fan-in 41)' && !("neighbors" in add),
     add.summary
   );
   const additiveOnly = oc.changeAdditivity(graph, "c-split");
   check(
     "a change that reopens nothing shipped is purely additive",
-    additiveOnly.summary === 'change "c-split": 1 new node, 0 revised shipped nodes, 0 neighbors; purely additive' &&
+    additiveOnly.summary === 'change "c-split": 1 new node, 0 revised shipped nodes; purely additive' &&
       additiveOnly.revised.length === 0,
     additiveOnly.summary
   );
@@ -324,7 +323,6 @@ try {
   }
   await call("record_decision", { node_id: "f-core", decision: "Accounts live in the core.", alternatives: ["A separate node"], why: "One schema.", change: "c-1" });
   await call("record_decision", { node_id: "f-core", decision: "Media goes through the core.", alternatives: ["A media node"], why: "One adapter.", change: "c-2" });
-  await call("patch_node_territory", { node_id: "f-core", change: "" });
 
   const record = (await call("orient_for_work", { node_id: "f-core", depth: "rules" })).context.record;
   check("first ship writes revisions: 1 and churn: 1", record.revisions === 1 && record.churn === 1, JSON.stringify(record));
@@ -395,11 +393,10 @@ try {
 
   await foundation("f-new");
   await call("patch_node_territory", { node_id: "f-new", change: "c-3" });
-  await call("patch_node_territory", { node_id: "f-a", change: "c-3" });
   const radius = await call("get_blast_radius", { change: "c-3" });
   check(
     "the change blast radius carries the additivity summary",
-    radius.additivity?.summary === 'change "c-3": 1 new node, 1 revised shipped node (f-core, fan-in 2), 1 neighbor' &&
+    radius.additivity?.summary === 'change "c-3": 1 new node, 1 revised shipped node (f-core, fan-in 2)' &&
       radius.additivity.new_nodes[0] === "f-new",
     JSON.stringify(radius.additivity)
   );

@@ -37,7 +37,6 @@ import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import {
   blocked,
   changeMembers,
-  changeNeighbors,
   findNode,
   recomputeJourneyStates,
   recomputeStability,
@@ -49,13 +48,12 @@ import { assertDecisionForReview, createDecisionContext, type DecisionContext } 
 import * as fs from "fs";
 import {
   changedFiles,
-  clearOrphanedNeighbors,
   gateWrite,
   mutationTail,
   refreshPersistedMap,
   syncNodes,
   territoryPath,
-  withNeighborCleanup,
+  withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
 
 /**
@@ -82,10 +80,6 @@ export function nextSlotFsChangedFiles(
     }
   }
   return files;
-}
-
-function clearedFields(cleared: string[]): Record<string, unknown> {
-  return cleared.length ? { cleared_neighbors: cleared } : {};
 }
 
 const STATUS_TIER: Record<string, number> = {
@@ -230,9 +224,8 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode
   if (args.scope === "all_open_updates") {
     selected = graph.nodes.filter((n) => isOpenUpdate(n));
   } else if (args.scope === "change") {
-    // Revisions only: neighbors have nothing to transition (a walk to ship clears their labels).
     selected = changeMembers(graph, args.change!);
-    if (selected.length === 0 && changeNeighbors(graph, args.change!).length === 0) {
+    if (selected.length === 0) {
       throw blocked(
         `change "${args.change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
       );
@@ -449,7 +442,7 @@ function statusLine(row: Record<string, unknown>): string {
 
 export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
   // A ship, promotion, or retirement ends a revision's membership; a dry run writes nothing.
-  return args.dry_run ? applyStatusUpdate(args) : withNeighborCleanup(() => applyStatusUpdate(args));
+  return args.dry_run ? applyStatusUpdate(args) : withChangeCleanup(() => applyStatusUpdate(args));
 }
 
 function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
@@ -496,7 +489,6 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     );
     const lines: string[] = [];
     const changed = new Set<string>();
-    const cleared = new Set<string>();
     const warnings = new Set<string>(sim.warnings);
     let last: Record<string, unknown> = {};
     for (const row of plan) {
@@ -508,23 +500,12 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       }
       lines.push(statusLine({ ...last, previous_state: first!.previous_state }));
     }
-    // A change walked to ship is done. A change that had revisions is cleaned up by
-    // withNeighborCleanup; a neighbor-only change never had one, so close it here.
-    const plannedCleared: string[] = [];
-    if (args.scope === "change" && args.new_status === "ship") {
-      const orphaned = clearOrphanedNeighbors(loadGraph(), [args.change!]);
-      for (const f of orphaned.files) changed.add(f);
-      for (const id of orphaned.cleared) cleared.add(id);
-      plannedCleared.push(...orphaned.planned);
-    }
     return {
       ordered: true,
       scope: args.scope,
       ...(args.scope === "change" ? { change: args.change } : {}),
       lines,
       ...skipped,
-      ...clearedFields([...cleared]),
-      ...(plannedCleared.length ? { cleared_planned: plannedCleared } : {}),
       changed_files: [...changed],
       ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
       ...(verbose
@@ -644,7 +625,6 @@ function applyOneStatus(args: {
   let promoted = false;
   let promoteSlotFiles: string[] = [];
   let removedNext: string[] = [];
-  let clearedLabel: string | undefined;
 
   if (resolved.promote_next) {
     promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
@@ -687,11 +667,6 @@ function applyOneStatus(args: {
   } else {
     const retiring =
       resolved.state === "deprecated" || resolved.state === "cancelled";
-    // A retired shipped node is nobody's neighbor: drop its live label.
-    if (retiring && node.shipped_at && node.change) {
-      clearedLabel = node.change;
-      writeChangeFrontmatter(node, { change: "" }, "current");
-    }
     node.state = resolved.state;
     node.updated_at = now;
     patchFrontmatter(node);
@@ -726,7 +701,6 @@ function applyOneStatus(args: {
     next_state: node.next?.state ?? null,
     shipped_at: node.shipped_at,
     promoted_next: promoted,
-    ...(clearedLabel ? { cleared_change: clearedLabel } : {}),
     ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
@@ -753,17 +727,13 @@ export function forceUnship(args: {
   // was, so a still-shipped node never keeps ops it did not ship with.
   const liveBefore = readMarkdown(node, "current");
   const freshOps = freshLiveAtomicOps(node);
-  const clearedChange = node.change;
   const now = new Date().toISOString();
   let wroteRate = false;
   const rateBefore = { revisions: node.revisions, churn: node.churn, churn_at: node.churn_at };
   try {
     resolveForceUnship(graph, node, target, confirm);
 
-    // A pre-ship node's live `change` is a revision's membership: drop the shipped node's neighbor
-    // label so the unshipped node is not silently a revision of that change. The in-place claim
-    // marker belongs to shipped nodes only.
-    if (clearedChange) writeChangeFrontmatter(node, { change: "" }, "current");
+    // The in-place claim marker belongs to shipped nodes only.
     if (node.added_claims?.length) clearAddedClaims(node);
     // The node keeps its count (at least the ship being undone); shipped_at, the rate's reference
     // time, goes away, so the rate is kept as of now, with now.
@@ -781,7 +751,7 @@ export function forceUnship(args: {
     node.updated_at = now;
     patchFrontmatter(node, "current", { clearShippedAt: true });
   } catch (err) {
-    if (freshOps || clearedChange || wroteRate) writeMarkdown(node, liveBefore, "current");
+    if (freshOps || wroteRate) writeMarkdown(node, liveBefore, "current");
     Object.assign(node, rateBefore);
     throw err;
   }
@@ -800,7 +770,6 @@ export function forceUnship(args: {
     new_state: node.state,
     shipped_at: null,
     force_unship: true,
-    ...(clearedChange ? { cleared_change: clearedChange } : {}),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
     changed_files: changedFiles(files, true),

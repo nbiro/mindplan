@@ -60,7 +60,7 @@ export const TOOLS: ToolDef[] = [
         change: CHANGE_ID.or(z.literal(""))
           .optional()
           .describe(
-            "Change id for the written slot; on a shipped node with no open next it labels the node a neighbor (returns neighbor_of). Empty string clears it."
+            "Change id for the written slot; empty string clears it. Blocked on a shipped node with no open next (edit its files in place; it needs no change id)."
           ),
       },
     },
@@ -90,7 +90,7 @@ export const TOOLS: ToolDef[] = [
         change: CHANGE_ID.or(z.literal(""))
           .optional()
           .describe(
-            "Change id for the active slot; on a shipped node with no open next it labels the node a neighbor (returns neighbor_of). Empty string clears it."
+            "Change id for the active slot; empty string clears it. Blocked on a shipped node with no open next (edit its files in place; it needs no change id)."
           ),
       },
     },

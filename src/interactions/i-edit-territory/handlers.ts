@@ -10,7 +10,7 @@ import { splitLinkHint, splitPartLinked, splitPartProblem, splitPartType } from 
 import {
   isFoundationRole,
   isInactiveNode,
-  isNeighborNode,
+  isShippedWithoutNext,
   isPipelineNodeType,
   type FoundationRole,
   type MindPlanGraph,
@@ -50,7 +50,8 @@ import {
   readinessResult,
   refreshPersistedMap,
   territoryPath,
-  withNeighborCleanup,
+  shippedChangeBlocked,
+  withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
 
 /**
@@ -169,7 +170,7 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
     result =
       territory.change === undefined
         ? writeNodeTerritory(territory)
-        : withNeighborCleanup(() => writeNodeTerritory(territory));
+        : withChangeCleanup(() => writeNodeTerritory(territory));
   }
   if (aliases === undefined && split_into === undefined) return result!;
   const fields: string[] = [];
@@ -256,25 +257,18 @@ function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
     assertPipelineTerritoryScalarsEditable(node, "role", resolvedSlot);
   }
   const changeWrite = args.change !== undefined || args.change_ref !== undefined;
-  // change on a shipped live slot with no open next labels the node a neighbor of that change.
-  const neighborWrite = resolvedSlot === "current" && isNeighborNode(node);
   if (changeWrite) {
     if (!isPipelineNodeType(node.type)) {
       throw blocked(`change applies to Foundations, Interactions, and Interfaces; "${node_id}" is a ${node.type}.`);
     }
-    if (neighborWrite && args.change_ref !== undefined) {
-      throw blocked(
-        `change_ref belongs to a revision; "${node_id}" is shipped with no open next. Pass change alone to label it a neighbor, or open_next (it takes change_ref).`
-      );
-    }
-    if (resolvedSlot === "current" && node.shipped_at && !neighborWrite) {
+    // Only a revision carries a change id; a shipped node with no open next is edited in place.
+    if (isShippedWithoutNext(node)) throw shippedChangeBlocked(node);
+    if (resolvedSlot === "current" && node.shipped_at) {
       throw blocked(
         `"${node_id}" is shipped; a change id belongs to an open revision. Call open_next (it takes change) or patch the next slot.`
       );
     }
   }
-  const replacedChange =
-    neighborWrite && args.change && node.change && node.change !== args.change ? node.change : undefined;
   if (
     body !== undefined ||
     args.section !== undefined ||
@@ -301,17 +295,13 @@ function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   const pathWritten = territoryPath(node, result.slot);
   const { readinessReset, ...written } = result;
   const readiness = readinessResult(node, result.slot, readinessReset);
-  // The store dropped a stale live label when the revision's change moved off it.
-  const liveLabelFile = written.replaced_change ? territoryPath(node, "current") : null;
   return {
     node_id,
     ...written,
     path: pathWritten,
-    ...(neighborWrite && args.change ? { neighbor_of: args.change } : {}),
-    ...(replacedChange ? { replaced_change: replacedChange } : {}),
     ...readinessFields(readiness.reset),
     changed_files: changedFiles(
-      [pathWritten, liveLabelFile, ...readiness.files],
+      [pathWritten, ...readiness.files],
       readiness.reset !== null
     ),
     ...mutationTail(loadGraph(), node_id, args.verbose),

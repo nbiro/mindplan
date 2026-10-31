@@ -1,20 +1,24 @@
 /**
- * Change neighbors: a shipped node with no open next that a change edits in place carries the
- * change id on its live file. Labeling (patch_node_territory, record_decision,
- * set_implementation_files), relabel and clear, the change-scoped check and blast radius, and the
- * labels clearing when the change's last revision ships, is discarded, or is cancelled, or when a
- * neighbor-only change is walked to ship. Every write is diffed against the sandbox on disk: each
- * mindplan/ file it created, changed, or deleted must be in its changed_files.
+ * Change ids on shipped nodes: only a revision carries one. A shipped node with no open next is
+ * edited in place: change (or change_ref) on patch_node_territory, set_implementation_files, and
+ * set_test_files is Blocked and writes nothing, while the same writes without change pass.
+ * record_decision tags its decision only. A decision-only change has no members for the check,
+ * the graph filter, or a scoped walk, and orient_for_work({ change }) lists its decision holders.
+ * In a git sandbox the plain check gives a shipped node whose claimed file changed against main
+ * the full stale-text pass. Every write is diffed against the sandbox on disk: each mindplan/ file
+ * it created, changed, or deleted must be in its changed_files.
  * Run via npm test.
  */
 // Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
 process.env.MINDPLAN_VERSION_GATE ??= "off";
+import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SHIP, fillAndTick as fillScaffold } from "./ship-fixture.mjs";
 // Spawned servers rank by keyword only: no model download or load during tests.
 process.env.MINDPLAN_SEARCH ??= "keyword";
 
@@ -22,7 +26,7 @@ const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)
 const serverEntry = path.join(toolRoot, "dist/index.js");
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-neighbors-"));
-console.log("Change-neighbors sandbox:", root);
+console.log("Change-ids sandbox:", root);
 
 const transport = new StdioClientTransport({
   command: process.execPath,
@@ -112,20 +116,14 @@ function liveOnly(changed, kind, id) {
   return Array.isArray(changed) && changed.includes(liveOf(kind, id)) && !changed.includes(nextOf(kind, id));
 }
 
-/** The live `change` label of a node, read from its record. */
-async function labelOf(id) {
+/** The live `change` of a node, read from its record. */
+async function changeOf(id) {
   return (await call("get_node_context", { node_id: id })).record.change;
 }
 
 /** Fill create_node scaffold stubs with real text and tick every checkbox (before first ship). */
 function fillAndTick(kind, id) {
-  const file = path.join(root, "mindplan", kind, id, `${id}.mdx`);
-  let text = fs.readFileSync(file, "utf-8");
-  text = text.replace(/^_.*?_$/gm, (line) => (line.includes("attachments/") ? line : "Neighbors-test filled territory."));
-  text = text.replace(/^## Checklist\s*$/m, "## Atomic Ops");
-  if (!/^\s*[-*+]\s+\[[ xX]\]/m.test(text)) text += "\n- [ ] Done\n";
-  text = text.replaceAll("- [ ]", "- [x]");
-  fs.writeFileSync(file, text);
+  fillScaffold(path.join(root, "mindplan", kind, id, `${id}.mdx`), "Change-ids test filled territory.");
 }
 
 function write(rel, content) {
@@ -134,7 +132,6 @@ function write(rel, content) {
   fs.writeFileSync(abs, content);
 }
 
-const SHIP = ["ready", "in-progress", "in-review", "ship"];
 async function walk(id, steps) {
   let last;
   for (const new_status of steps) last = await call("update_node_status", { node_id: id, new_status });
@@ -151,13 +148,31 @@ async function newRevision(id, change) {
   fillAndTick("interactions", id);
 }
 
+/** git in the sandbox, with its own identity and no commit signing. */
+function git(...args) {
+  const r = spawnSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args], {
+    cwd: root,
+    encoding: "utf-8",
+  });
+  if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+  return r.stdout;
+}
+
+/** Push a file's mtime into the future, so it is newer than its owner's territory file. */
+function touchAhead(rel) {
+  const when = new Date(Date.now() + 60_000);
+  fs.utimesSync(path.join(root, ...rel.split("/")), when, when);
+}
+
+const IN_PLACE = "is shipped with no open next: edit its files in place; it needs no change id (open_next if its contract changes).";
+
 fs.mkdirSync(path.join(root, "mindplan"), { recursive: true });
 fs.writeFileSync(
   path.join(root, "mindplan", "config.json"),
   JSON.stringify({ sources: ["src/**"], exclude: [] }, null, 2) + "\n"
 );
 
-// --- base graph: shipped Foundations and Interactions, none with a next file ---
+// --- base graph: shipped Foundations and Interactions, committed on main ---
 await call("create_node", { id: "j-app", type: "Journey", title: "App", description: "App area" });
 await call("create_node", { id: "f-core", type: "Foundation", title: "Core", description: "Infra — core", role: "infra" });
 await call("create_node", { id: "f-util", type: "Foundation", title: "Util", description: "Infra — util", role: "infra" });
@@ -185,384 +200,203 @@ for (const [kind, id] of [
 }
 for (const id of ["f-core", "f-util", "i-a", "i-b"]) await walk(id, SHIP);
 check(
-  "shipped nodes start with no next file",
+  "shipped nodes start with no next file and no change id",
   ["f-core", "f-util"].every((id) => noNextFile("foundations", id)) &&
-    ["i-a", "i-b"].every((id) => noNextFile("interactions", id))
+    ["i-a", "i-b"].every((id) => noNextFile("interactions", id)) &&
+    (await changeOf("f-util")) === undefined
 );
+git("init", "-q", "-b", "main");
+git("add", "-A");
+git("commit", "-q", "-m", "base");
+git("switch", "-q", "-c", "feature");
 
-// --- patch_node_territory labels a shipped node with no open next ---
-await newRevision("i-new", "feat");
-await newRevision("i-new2", "feat");
+// --- change on a shipped node with no open next is Blocked and writes nothing ---
 {
-  const labeled = await call("patch_node_territory", { node_id: "f-util", change: "feat" });
+  const liveBefore = readRel(liveOf("foundations", "f-util"));
+  for (const [tool, args] of [
+    ["patch_node_territory", { node_id: "f-util", change: "feat" }],
+    ["patch_node_territory", { node_id: "f-util", change: "" }],
+    ["patch_node_territory", { node_id: "f-util", change_ref: "feat/x" }],
+    ["patch_node_territory", { node_id: "f-util", replace: { find: "Change-ids test", with: "Edited" }, change: "feat" }],
+    ["set_implementation_files", { node_id: "f-util", files: ["src/f-util/index.ts"], change: "feat" }],
+    ["set_implementation_files", { node_id: "f-util", files: ["src/f-util/index.ts"], change: "" }],
+    ["set_test_files", { node_id: "f-util", files: ["tests/util.test.mjs"], change: "feat" }],
+  ]) {
+    const text = await blocked(tool, args);
+    check(
+      `${tool} ${JSON.stringify(args)} on a shipped node with no open next is Blocked naming in-place edits`,
+      text?.includes(`"f-util" ${IN_PLACE}`),
+      String(text)
+    );
+  }
   check(
-    "change on a shipped live slot labels it a neighbor and lists only the live file",
-    labeled.neighbor_of === "feat" &&
-      labeled.replaced_change === undefined &&
-      liveOnly(labeled.changed_files, "foundations", "f-util"),
-    JSON.stringify(labeled)
-  );
-  check(
-    "the label is on the live file and no next file is written",
-    (await labelOf("f-util")) === "feat" &&
-      /^change: "feat"$/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      noNextFile("foundations", "f-util")
-  );
-
-  const ref = await blocked("patch_node_territory", { node_id: "f-util", change_ref: "feat/x" });
-  check("change_ref on a neighbor is Blocked", ref?.includes("change_ref belongs to a revision"), String(ref));
-  const both = await blocked("patch_node_territory", { node_id: "f-util", change: "feat", change_ref: "feat/x" });
-  check(
-    "change with change_ref on a neighbor is Blocked and writes nothing",
-    !!both && !/^change_ref:/m.test(readRel(liveOf("foundations", "f-util"))),
-    String(both)
+    "the Blocked writes left the live file untouched and opened no revision",
+    readRel(liveOf("foundations", "f-util")) === liveBefore && noNextFile("foundations", "f-util")
   );
 
-  const relabeled = await call("patch_node_territory", { node_id: "f-util", change: "other" });
+  const tested = await call("set_test_files", { node_id: "f-util", files: ["tests/util.test.mjs"] });
+  const claimed = await call("set_implementation_files", { node_id: "f-util", files: ["src/f-util/index.ts"] });
   check(
-    "labeling with another id replaces the label and reports replaced_change",
-    relabeled.neighbor_of === "other" && relabeled.replaced_change === "feat" && (await labelOf("f-util")) === "other",
-    JSON.stringify(relabeled)
+    "the same writes without change pass in place, with no label fields",
+    liveOnly(tested.changed_files, "foundations", "f-util") &&
+      [tested, claimed].every((r) => !("neighbor_of" in r) && !("replaced_change" in r)) &&
+      (await changeOf("f-util")) === undefined,
+    `${JSON.stringify(tested)} | ${JSON.stringify(claimed)}`
   );
-  const cleared = await call("patch_node_territory", { node_id: "f-util", change: "" });
-  check(
-    "an empty change clears the label and writes no next file",
-    cleared.neighbor_of === undefined &&
-      (await labelOf("f-util")) === undefined &&
-      !/^change:/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      noNextFile("foundations", "f-util"),
-    JSON.stringify(cleared)
-  );
-  await call("patch_node_territory", { node_id: "f-util", change: "feat" });
-
-  await call("open_next", { node_id: "i-b" });
-  const explicitCurrent = await blocked("patch_node_territory", { node_id: "i-b", slot: "current", change: "feat" });
-  check(
-    "change on the live slot of a node with an open next stays Blocked",
-    explicitCurrent?.includes("belongs to an open revision"),
-    String(explicitCurrent)
-  );
-  const discarded = await call("discard_next", { node_id: "i-b" });
-  check("discarding a revision with no change clears nothing", discarded.cleared_neighbors === undefined, JSON.stringify(discarded));
+  await call("set_test_files", { node_id: "f-util", files: [] });
 }
 
-// --- run_check and get_blast_radius see the neighbor ---
+// --- a revision carries the change id; the live file never does ---
 {
+  await newRevision("i-new", "feat");
+  const opened = await call("open_next", { node_id: "i-b", change: "feat" });
+  check(
+    "open_next writes the change to the next file only, with no replaced_change",
+    !("replaced_change" in opened) && opened.next.change === "feat" && !/^change:/m.test(readRel(liveOf("interactions", "i-b"))),
+    JSON.stringify(opened)
+  );
+  const moved = await call("patch_node_territory", { node_id: "i-b", change: "feat2" });
+  check(
+    "moving the revision's change writes the next file only",
+    !moved.changed_files.includes(liveOf("interactions", "i-b")) && !("replaced_change" in moved),
+    JSON.stringify(moved)
+  );
+  await call("patch_node_territory", { node_id: "i-b", change: "feat" });
   const report = await call("run_check", { change: "feat" });
   const kinds = Object.fromEntries((report.change?.members ?? []).map((m) => [m.id, m.kind]));
   check(
-    "run_check with change lists revisions and the neighbor with kind",
-    report.ok && kinds["i-new"] === "revision" && kinds["i-new2"] === "revision" && kinds["f-util"] === "neighbor",
-    JSON.stringify(report)
+    "run_check with change lists only revisions",
+    report.ok && kinds["i-new"] === "revision" && kinds["i-b"] === "revision" && Object.keys(kinds).length === 2,
+    JSON.stringify(report.change)
   );
-
-  write("src/f-util/index.ts", 'import { a } from "../i-a/a.js";\nexport const util = a;\n');
-  const violated = await call("run_check", { change: "feat" });
-  check(
-    "run_check with change reports the neighbor's import violation",
-    !violated.ok && violated.failures.some((f) => f.includes("src/f-util/index.ts")),
-    JSON.stringify(violated.failures)
-  );
-  write("src/f-util/index.ts", "export const util = 1;\n");
-
   const radius = await call("get_blast_radius", { change: "feat" });
-  const neighborMember = radius.members.find((m) => m.id === "f-util");
-  const utilFiles = radius.affected_files.find((g) => g.owner_id === "f-util");
   check(
-    "get_blast_radius with change includes the neighbor (kind) and its files",
-    neighborMember?.kind === "neighbor" &&
-      radius.members.find((m) => m.id === "i-new")?.kind === "revision" &&
-      utilFiles?.files.includes("src/f-util/index.ts"),
-    JSON.stringify(radius)
+    "the change radius lists revisions, and its additivity names no neighbors",
+    radius.members.every((m) => m.kind === "revision") && !("neighbors" in radius.additivity) && !/neighbor/.test(radius.additivity.summary),
+    JSON.stringify(radius.additivity)
   );
 }
 
-// --- record_decision and set_implementation_files label neighbors too ---
+// --- record_decision tags the decision only ---
 {
-  const decided = await call("record_decision", {
-    node_id: "i-a",
-    decision: "A reads core in place.",
-    alternatives: ["Copy core into A (drifts)"],
+  const onRevision = await call("record_decision", {
+    node_id: "i-b",
+    decision: "B reads core in place.",
+    alternatives: ["Copy core into B (drifts)"],
     why: "One source of truth.",
+  });
+  check(
+    "record_decision without change on a revision records under the revision's change",
+    onRevision.decision.change === "feat",
+    JSON.stringify(onRevision)
+  );
+  const untagged = await call("record_decision", {
+    node_id: "f-util",
+    decision: "Util stays one module.",
+    alternatives: ["Split util (no second reason to change)"],
+    why: "It changes for one reason.",
+  });
+  check(
+    "record_decision without change on a shipped node with no open next records no change",
+    untagged.decision.change === undefined && (await changeOf("f-util")) === undefined,
+    JSON.stringify(untagged)
+  );
+  const tagged = await call("record_decision", {
+    node_id: "i-a",
+    decision: "A keeps its own copy of the label text.",
+    alternatives: ["Read it from core (one more import)"],
+    why: "It is one string.",
     change: "feat",
   });
   check(
-    "record_decision with change on a shipped node with no open next labels it",
-    decided.neighbor_of === "feat" &&
-      decided.decision.change === "feat" &&
-      liveOnly(decided.changed_files, "interactions", "i-a") &&
-      (await labelOf("i-a")) === "feat" &&
-      noNextFile("interactions", "i-a"),
-    JSON.stringify(decided)
+    "record_decision with change on a shipped node tags the decision and writes no change id on the node",
+    tagged.decision.change === "feat" &&
+      !("neighbor_of" in tagged) &&
+      liveOnly(tagged.changed_files, "interactions", "i-a") &&
+      (await changeOf("i-a")) === undefined &&
+      !(await call("run_check", { change: "feat" })).change.members.some((m) => m.id === "i-a"),
+    JSON.stringify(tagged)
   );
-
-  const claimed = await call("set_implementation_files", { node_id: "i-b", files: ["src/i-b/b.ts"], change: "feat" });
+  const oriented = await call("orient_for_work", { change: "feat" });
+  const kinds = Object.fromEntries(oriented.members.map((m) => [m.id, m.kind]));
   check(
-    "set_implementation_files with change on a shipped node with no open next labels it",
-    claimed.neighbor_of === "feat" &&
-      liveOnly(claimed.changed_files, "interactions", "i-b") &&
-      (await labelOf("i-b")) === "feat" &&
-      noNextFile("interactions", "i-b"),
-    JSON.stringify(claimed)
-  );
-  const members = (await call("run_check", { change: "feat" })).change.members;
-  check(
-    "the change now has three neighbors",
-    members.filter((m) => m.kind === "neighbor").map((m) => m.id).sort().join() === "f-util,i-a,i-b",
-    JSON.stringify(members)
+    "orient_for_work({ change }) keeps a revision that holds the change's decision a revision and lists a shipped holder as a decision member",
+    kinds["i-b"] === "revision" && kinds["i-a"] === "decision" && oriented.members.filter((m) => m.id === "i-b").length === 1,
+    JSON.stringify(oriented.members)
   );
 }
 
-// --- the last revision out clears the labels ---
+// --- the change ships: no label fields, the shipped nodes carry no change id ---
 {
-  const first = await walk("i-new", SHIP);
+  await call("patch_node_territory", { node_id: "i-b", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  const walked = await call("update_node_status", { scope: "change", change: "feat", new_status: "ship", skip_review: true });
   check(
-    "shipping an earlier revision keeps the labels",
-    first.cleared_neighbors === undefined && (await labelOf("f-util")) === "feat",
-    JSON.stringify(first)
+    "a change walked to ship reports no cleared_neighbors and leaves no change id on its nodes",
+    !("cleared_neighbors" in walked) && (await changeOf("i-b")) === undefined && (await changeOf("i-new")) === undefined,
+    JSON.stringify(walked)
   );
-  const last = await walk("i-new2", SHIP);
-  check(
-    "shipping the last revision clears every neighbor's label",
-    [...(last.cleared_neighbors ?? [])].sort().join() === "f-util,i-a,i-b" &&
-      (await labelOf("f-util")) === undefined &&
-      (await labelOf("i-a")) === undefined &&
-      (await labelOf("i-b")) === undefined,
-    JSON.stringify(last)
-  );
-  check(
-    "no cleared neighbor gains a next file",
-    noNextFile("foundations", "f-util") && noNextFile("interactions", "i-a") && noNextFile("interactions", "i-b")
-  );
-  check("a change with no members fails run_check", !(await call("run_check", { change: "feat" })).ok);
+  const empty = await blocked("update_node_status", { scope: "change", change: "feat", new_status: "ship" });
+  check("a scoped walk over a change with no open revision is Blocked", empty?.includes("has no members"), String(empty));
 }
 
-// --- discarding the last revision clears the labels ---
+// --- a decision-only change has no members, but orients on its decision holders ---
 {
-  await call("open_next", { node_id: "i-a", change: "fix" });
-  await call("patch_node_territory", { node_id: "f-util", change: "fix" });
-  const discarded = await call("discard_next", { node_id: "i-a" });
+  for (const id of ["i-a", "f-core"]) {
+    await call("record_decision", {
+      node_id: id,
+      decision: `${id} stays whole.`,
+      alternatives: ["Split it (no second reason to change)"],
+      why: "It changes for one reason.",
+      keep_whole: true,
+      change: "hotspot-triage",
+    });
+  }
+  const graph = await call("get_mindplan_graph", { change: "hotspot-triage", edges: false });
+  const checked = await call("run_check", { change: "hotspot-triage" });
   check(
-    "discard_next of the last revision clears the labels",
-    discarded.cleared_neighbors?.join() === "f-util" && (await labelOf("f-util")) === undefined,
-    JSON.stringify(discarded)
+    "the decision-only change has no graph members and its change check is Blocked with no members",
+    graph.total_nodes === 0 && checked.failures.some((f) => f.includes('change "hotspot-triage" has no members')),
+    `${JSON.stringify(graph)} | ${JSON.stringify(checked.failures)}`
   );
-}
-
-// --- cancelling the last revision clears the labels ---
-{
-  await call("create_node", { id: "i-drop", type: "Interaction", title: "Drop", description: "Dropped action", change: "drop" });
-  await call("patch_node_territory", { node_id: "f-core", change: "drop" });
-  const cancelled = await call("update_node_status", { node_id: "i-drop", new_status: "cancelled" });
+  const oriented = await call("orient_for_work", { change: "hotspot-triage" });
   check(
-    "cancelling the last revision clears the labels",
-    cancelled.cleared_neighbors?.join() === "f-core" && (await labelOf("f-core")) === undefined,
-    JSON.stringify(cancelled)
+    "orient_for_work on the decision-only change lists its decision holders with kind decision",
+    oriented.members.map((m) => `${m.id}:${m.kind}`).sort().join() === "f-core:decision,i-a:decision" &&
+      oriented.decisions.nodes.slice().sort().join() === "f-core,i-a",
+    JSON.stringify(oriented)
   );
 }
 
-// --- a neighbor-only change ---
+// --- the plain check gives a shipped node edited in place the full stale-text pass ---
 {
-  await call("patch_node_territory", { node_id: "f-core", change: "tidy" });
-  const report = await call("run_check", { change: "tidy" });
+  git("add", "-A");
+  git("commit", "-q", "-m", "plan");
+  // Both claimed files end up newer than their territory files; only f-util's changed against main.
+  write("src/f-util/index.ts", "export const util = 2;\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "edit util in place");
+  touchAhead("src/f-util/index.ts");
+  touchAhead("src/f-core/index.ts");
+  const stale = (warnings, id) => warnings.some((w) => w.startsWith(`stale: 1 claimed file(s) of "${id}" changed after its body`));
+  const ran = await call("run_check", {});
   check(
-    "run_check works on a change with only neighbors",
-    report.ok && report.change.members.length === 1 && report.change.members[0].kind === "neighbor",
-    JSON.stringify(report)
+    "a shipped node whose claimed file changed against main gets the changed-file stale warning; an untouched one does not",
+    ran.ok && stale(ran.warnings, "f-util") && !stale(ran.warnings, "f-core"),
+    JSON.stringify(ran.warnings)
   );
-  const radius = await call("get_blast_radius", { change: "tidy" });
+  fs.rmSync(path.join(root, ".git"), { recursive: true, force: true });
+  const noGit = await call("run_check", {});
   check(
-    "get_blast_radius works on a change with only neighbors",
-    radius.members.map((m) => m.id).join() === "f-core" && radius.affected.some((n) => n.id === "i-a"),
-    JSON.stringify(radius)
-  );
-  const toReady = await call("update_node_status", { scope: "change", change: "tidy", new_status: "ready" });
-  check(
-    "a scoped walk of it to ready is not Blocked and keeps the label",
-    toReady.lines.length === 0 && toReady.cleared_neighbors === undefined && (await labelOf("f-core")) === "tidy",
-    JSON.stringify(toReady)
-  );
-  const dry = await call("update_node_status", { scope: "change", change: "tidy", new_status: "ship", dry_run: true });
-  check(
-    "a dry run to ship writes nothing",
-    dry.blocked === null && (await labelOf("f-core")) === "tidy",
-    JSON.stringify(dry)
-  );
-  const shipped = await call("update_node_status", { scope: "change", change: "tidy", new_status: "ship" });
-  check(
-    "a scoped walk of it to ship clears its labels",
-    shipped.cleared_neighbors?.join() === "f-core" &&
-      (await labelOf("f-core")) === undefined &&
-      noNextFile("foundations", "f-core"),
-    JSON.stringify(shipped)
-  );
-  const empty = await blocked("update_node_status", { scope: "change", change: "tidy", new_status: "ship" });
-  check("a change with no members is Blocked", empty?.includes("has no members"), String(empty));
-}
-
-// --- open_next drops a live label that differs from the revision's change ---
-{
-  await call("patch_node_territory", { node_id: "f-util", change: "m1" });
-  const opened = await call("open_next", { node_id: "f-util", change: "m1b" });
-  check(
-    "open_next with another change clears the live label and reports replaced_change",
-    opened.replaced_change === "m1" &&
-      opened.changed_files.includes(liveOf("foundations", "f-util")) &&
-      !/^change:/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      /^change: "m1b"$/m.test(readRel(nextOf("foundations", "f-util"))),
-    JSON.stringify(opened)
-  );
-  await call("discard_next", { node_id: "f-util" });
-  check(
-    "discard_next after it does not restore the stale label",
-    (await labelOf("f-util")) === undefined && noNextFile("foundations", "f-util")
-  );
-
-  await call("patch_node_territory", { node_id: "f-util", change: "m1" });
-  const inherited = await call("open_next", { node_id: "f-util" });
-  check(
-    "open_next with no change inherits the label and keeps it on live",
-    inherited.replaced_change === undefined &&
-      inherited.next.change === "m1" &&
-      /^change: "m1"$/m.test(readRel(liveOf("foundations", "f-util"))) &&
-      /^change: "m1"$/m.test(readRel(nextOf("foundations", "f-util"))),
-    JSON.stringify(inherited)
-  );
-  const dropped = await call("discard_next", { node_id: "f-util" });
-  check(
-    "discarding that revision clears the change's labels, its own included",
-    dropped.cleared_neighbors?.join() === "f-util" &&
-      (await labelOf("f-util")) === undefined &&
-      noNextFile("foundations", "f-util"),
-    JSON.stringify(dropped)
-  );
-
-  // Moving the revision's change off an inherited label drops that label from live at once, so a
-  // later close of the label's change and a discard cannot bring the node back into it.
-  await call("create_node", { id: "i-m1r", type: "Interaction", title: "M1 R", description: "Keeps m2 open", change: "m2" });
-  await call("patch_node_territory", { node_id: "f-util", change: "m2" });
-  await call("open_next", { node_id: "f-util" });
-  const movedOff = await call("patch_node_territory", { node_id: "f-util", change: "m2c" });
-  check(
-    "moving the revision's change off an inherited label drops the live label and reports it",
-    movedOff.replaced_change === "m2" &&
-      movedOff.changed_files.includes(liveOf("foundations", "f-util")) &&
-      !/^change:/m.test(readRel(liveOf("foundations", "f-util"))),
-    JSON.stringify(movedOff)
-  );
-  await call("update_node_status", { node_id: "i-m1r", new_status: "cancelled" });
-  const moved = await call("discard_next", { node_id: "f-util" });
-  check(
-    "discard_next after the label's change closed restores no label",
-    (await labelOf("f-util")) === undefined && noNextFile("foundations", "f-util"),
-    JSON.stringify(moved)
-  );
-  await call("patch_node_territory", { node_id: "f-util", change: "m3" });
-  const reopened = await call("open_next", { node_id: "f-util" });
-  const movedSet = await call("set_implementation_files", {
-    node_id: "f-util",
-    files: reopened.next.implements ?? [],
-    change: "m3b",
-  });
-  check(
-    "set_implementation_files moving the next slot's change off the label drops it and reports it",
-    movedSet.replaced_change === "m3" &&
-      movedSet.changed_files.includes(liveOf("foundations", "f-util")) &&
-      (await labelOf("f-util")) === undefined,
-    JSON.stringify(movedSet)
-  );
-  await call("discard_next", { node_id: "f-util" });
-}
-
-// --- moving a revision off its change clears the labels it leaves behind ---
-{
-  await call("create_node", { id: "i-l2", type: "Interaction", title: "L2", description: "Moved action", change: "l2" });
-  await call("patch_node_territory", { node_id: "f-core", change: "l2" });
-  const moved = await call("patch_node_territory", { node_id: "i-l2", change: "l2b" });
-  check(
-    "patch_node_territory moving the last revision to another change clears the old change's labels",
-    moved.cleared_neighbors?.join() === "f-core" &&
-      liveOnly(moved.changed_files, "foundations", "f-core") &&
-      (await labelOf("f-core")) === undefined &&
-      noNextFile("foundations", "f-core"),
-    JSON.stringify(moved)
-  );
-  const same = await call("patch_node_territory", { node_id: "i-l2", change: "l2b" });
-  check("rewriting the same change clears nothing", same.cleared_neighbors === undefined, JSON.stringify(same));
-
-  await call("create_node", { id: "i-l3", type: "Interaction", title: "L3", description: "Unchanged action", change: "l3" });
-  write("src/i-l3/x.ts", "export const x = 1;\n");
-  await call("patch_node_territory", { node_id: "f-core", change: "l3" });
-  const unset = await call("set_implementation_files", { node_id: "i-l3", files: ["src/i-l3/x.ts"], change: "" });
-  check(
-    "set_implementation_files clearing the last revision's change clears its labels",
-    unset.cleared_neighbors?.join() === "f-core" &&
-      (await labelOf("f-core")) === undefined &&
-      noNextFile("foundations", "f-core"),
-    JSON.stringify(unset)
-  );
-}
-
-// --- deprecating a labeled shipped node drops its label ---
-{
-  await call("patch_node_territory", { node_id: "f-util", change: "dep" });
-  const deprecated = await call("update_node_status", { node_id: "f-util", new_status: "deprecated" });
-  check(
-    "deprecating a shipped neighbor clears its live label and lists the file",
-    deprecated.new_state === "deprecated" &&
-      deprecated.cleared_change === "dep" &&
-      deprecated.changed_files.includes(liveOf("foundations", "f-util")) &&
-      !/^change:/m.test(readRel(liveOf("foundations", "f-util"))),
-    JSON.stringify(deprecated)
-  );
-}
-
-// --- record_decision on a labeled neighbor defaults to its label ---
-{
-  await call("create_node", { id: "i-rd", type: "Interaction", title: "RD", description: "Keeps rd open", change: "rd" });
-  await call("patch_node_territory", { node_id: "f-core", change: "rd" });
-  const decided = await call("record_decision", {
-    node_id: "f-core",
-    decision: "Core keeps a single export.",
-    alternatives: ["Split core into several modules (more churn for dependents)"],
-    why: "Dependents import one name.",
-  });
-  const listed = await call("list_decisions", { change: "rd" });
-  check(
-    "record_decision on a labeled neighbor without change records it under the label",
-    decided.decision.change === "rd" &&
-      listed.decisions.some((d) => d.node_id === "f-core" && d.decision === "Core keeps a single export.") &&
-      (await labelOf("f-core")) === "rd" &&
-      noNextFile("foundations", "f-core"),
-    `${JSON.stringify(decided)} | ${JSON.stringify(listed)}`
-  );
-}
-
-// --- a revisions batch that ships a change's last revisions clears its labels once ---
-{
-  await newRevision("i-b1", "bt");
-  await newRevision("i-b2", "bt");
-  await call("patch_node_territory", { node_id: "f-core", change: "bt" });
-  for (const id of ["i-b1", "i-b2"]) await walk(id, ["ready", "in-progress", "in-review"]);
-  const batch = await call("update_node_status", {
-    revisions: [
-      { node_id: "i-b1", new_status: "ship" },
-      { node_id: "i-b2", new_status: "ship" },
-    ],
-  });
-  check(
-    "a batch shipping both revisions lists the neighbor once in cleared_neighbors",
-    JSON.stringify(batch.cleared_neighbors) === JSON.stringify(["f-core"]) &&
-      batch.changed_files.includes(liveOf("foundations", "f-core")) &&
-      (await labelOf("f-core")) === undefined &&
-      noNextFile("foundations", "f-core"),
-    JSON.stringify(batch)
+    "without git the check falls back to the path signals and reports nothing about git",
+    noGit.ok && !stale(noGit.warnings, "f-util") && !/git/i.test(noGit.output),
+    JSON.stringify(noGit.warnings)
   );
 }
 
 check(`each of ${diffedWrites} writes listed every mindplan/ file it touched`, diffMisses === 0, `${diffMisses} write(s) missed files`);
 
 await client.close();
+fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {
   console.log(`\nchange-neighbors.test.mjs: ${failures} failure(s)`);
   process.exit(1);

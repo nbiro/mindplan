@@ -5,7 +5,7 @@
 
 import {
   isInactiveNode,
-  isNeighborNode,
+  isShippedWithoutNext,
   isPipelineNodeType,
   isProductionState,
   type MindPlanGraph,
@@ -45,13 +45,13 @@ import * as path from "path";
 import {
   changedFiles,
   gateWrite,
-  labelNeighbor,
+  shippedChangeBlocked,
   mutationTail,
   readinessFields,
   readinessResult,
   refreshPersistedMap,
   territoryPath,
-  withNeighborCleanup,
+  withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
 
 /**
@@ -167,7 +167,7 @@ export function setImplementationFiles(args: SetImplementationArgs): Record<stri
   // A change id moved off a revision may leave its old change with no revisions.
   return args.change === undefined
     ? writeImplementationFiles(args)
-    : withNeighborCleanup(() => writeImplementationFiles(args));
+    : withChangeCleanup(() => writeImplementationFiles(args));
 }
 
 function writeImplementationFiles(args: SetImplementationArgs): Record<string, unknown> {
@@ -183,6 +183,7 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
   if (args.change !== undefined && isInactiveNode(node)) {
     throw blocked(`"${node.id}" is ${node.state}; a retired node takes no change id.`);
   }
+  if (args.change !== undefined && isShippedWithoutNext(node)) throw shippedChangeBlocked(node);
 
   if (args.files === undefined && args.attributed === undefined) {
     throw blocked("set_implementation_files needs files, attributed, or both.");
@@ -290,26 +291,13 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
     ...(v.fix ? { fix: v.fix } : { not_allowed: v.not_allowed }),
   }));
   const folderClaims = folderClaimSuggestions(claimedGraph, node.id, normalized, projectRoot());
-  // A shipped node with no open next is edited in place: change labels it a neighbor.
-  // Otherwise change is the written slot's change id.
-  let changeWrite: { fields: Record<string, unknown>; files: string[] } = { fields: {}, files: [] };
-  if (args.change !== undefined) {
-    if (isNeighborNode(node)) {
-      changeWrite = labelNeighbor(node, args.change);
-    } else {
-      // On the next slot the store also drops a live label the revision's change moved off.
-      const replaced = writeChangeFrontmatter(node, { change: args.change }, slot);
-      if (replaced) {
-        changeWrite = { fields: { replaced_change: replaced }, files: [territoryPath(node, "current")] };
-      }
-    }
-  }
+  // change is the written slot's change id (a shipped node with no open next was Blocked above).
+  if (args.change !== undefined) writeChangeFrontmatter(node, { change: args.change }, slot);
   return {
     node_id: node.id,
     slot,
     implements: normalized,
     ...(attributed ? { attributed } : {}),
-    ...changeWrite.fields,
     ...(inPlace ? { added_in_place: addedInPlace } : {}),
     ...(addedInPlace.length
       ? {
@@ -322,7 +310,7 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
     ...(importViolations.length ? { import_violations: importViolations } : {}),
     ...readinessFields(readiness.reset),
     changed_files: changedFiles(
-      [pathWritten, ...readiness.files, ...changeWrite.files],
+      [pathWritten, ...readiness.files],
       true
     ),
     ...mutationTail(loadGraph(), node.id, args.verbose),
@@ -345,34 +333,27 @@ export function setTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
   // A change id moved off a revision may leave its old change with no revisions.
   return args.change === undefined
     ? writeTestFiles(args)
-    : withNeighborCleanup(() => writeTestFiles(args));
+    : withChangeCleanup(() => writeTestFiles(args));
 }
 
 function writeTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
   validateChangeInput({ change: args.change });
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
+  // Only a revision carries a change id; a shipped node with no open next is edited in place.
+  if (args.change !== undefined && isShippedWithoutNext(node)) throw shippedChangeBlocked(node);
   const testsWrite = writeTestsFrontmatter(node, args.files);
-  // A shipped node with no open next is edited in place: change labels it a neighbor.
-  // Otherwise change is the active slot's change id.
-  let changeWrite: { fields: Record<string, unknown>; files: string[] } = { fields: {}, files: [] };
+  // change is the active slot's change id.
+  const changeFiles: string[] = [];
   if (args.change !== undefined) {
-    if (isNeighborNode(node)) {
-      changeWrite = labelNeighbor(node, args.change);
-    } else {
-      const slot: TerritorySlot = node.next ? "next" : "current";
-      const replaced = writeChangeFrontmatter(node, { change: args.change }, slot);
-      changeWrite = {
-        fields: replaced ? { replaced_change: replaced } : {},
-        files: [territoryPath(node, slot), ...(replaced ? [territoryPath(node, "current")] : [])],
-      };
-    }
+    const slot: TerritorySlot = node.next ? "next" : "current";
+    writeChangeFrontmatter(node, { change: args.change }, slot);
+    changeFiles.push(territoryPath(node, slot));
   }
   return {
     node_id: node.id,
     tests: node.tests ?? [],
-    ...changeWrite.fields,
-    changed_files: changedFiles([...testsWrite.paths, ...changeWrite.files]),
+    changed_files: changedFiles([...testsWrite.paths, ...changeFiles]),
     ...mutationTail(loadGraph(), node.id, args.verbose),
   };
 }

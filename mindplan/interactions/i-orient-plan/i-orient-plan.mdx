@@ -4,11 +4,11 @@ type: Interaction
 title: "Orient on the plan"
 description: "Agent orients before work: ranked rows or a full node (versioned rules, own decisions, body by slot and section, files, blast radius, stability, shape), a whole change in one call, node context and implementation, and related-node search."
 state: stable
-shipped_at: 2026-10-31T21:15:36.492Z
-revisions: 22
-churn: 1
+shipped_at: 2026-10-31T23:05:25.579Z
+revisions: 23
+churn: 1.998
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-31T21:15:36.492Z
+updated_at: 2026-10-31T23:05:25.579Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -73,7 +73,7 @@ This action covers `orient_for_work`, `get_node_context`, `get_node_implementati
 - **One slot, one section.** Both tools take `slot` (`orient_for_work` defaults to the active slot, `get_node_context` to both; `slot: "next"` without a revision is Blocked) and `section` (each returned body cut to that `## heading`; a missing heading is Blocked and lists the sections); `depth: "rules"` ignores both
 - **Decisions.** `orient_for_work` returns `decisions` at every depth: `{ node_id, entries, inherited_decisions }`, the focus's own (`via: self`; a Bug: the nodes it affects) and `{ count, nodes }` for the inherited ones, with `include_inherited_decisions` adding them (whole at distance 1, one line beyond) and `include_superseded` adding superseded ones; compact entries at `depth: "rules"`. Its `context` leaves decisions out (the block is the reply's only copy). `get_node_context` keeps `decisions` and `next.decisions` (superseded left out unless asked), adds `inherited_decisions`, and returns `body` without `## Rules` and `## Decisions`
 - **Shape up front.** Every full reply and `get_node_context` carry `shape` (`shapeReport`) while the node has a transition ahead
-- **Change-wide orientation.** `orient_for_work({ change, known_rules_versions? })` returns `{ change, members, rules, decisions }` over `changeMembership` (revisions, neighbors, planned sources, each with `kind` and `rules_from`), each rule source once, and records every member, so one call clears the gate for a scoped walk; a change with no members, or `change` with `query` or `node_id`, is Blocked
+- **Change-wide orientation.** `orient_for_work({ change, known_rules_versions? })` returns `{ change, members, rules, decisions }` over `changeMembership` (revisions and planned sources, each with `kind` and `rules_from`) plus the other active nodes holding an active decision recorded under the change (`kind: "decision"`, from `listDecisions`; a decision gives its node no change id, so these are not change members elsewhere), each rule source once, and records every member, so one call clears the gate for a scoped walk; a change with none of these, or `change` with `query` or `node_id`, is Blocked
 - **Implementation.** `get_node_implementation` expands glob claims to concrete files (`files` / `next_files`) and finds a path's owner through a glob claim; node records carry `change` / `change_ref` and `tests`
 
 Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`, `f-orientation-ledger`, `f-tool-kit`, `f-fan-out`.
@@ -93,6 +93,7 @@ Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-r
 - `section` returns only that section of each returned body and Blocks on a missing heading, listing the sections
 - A full reply on a scaffolded draft lists every required section with `missing` or `stub`; a shipped node with no open revision has no `shape`
 - `orient_for_work({ change })` on a change with three members returns their rules once per source and records all three; a known version leaves its text out
+- `orient_for_work({ change })` lists a shipped node that holds a decision under the change once, with `kind: "decision"`, and records it; a node that is already a revision keeps that kind; a change whose only trace is decisions returns those holders instead of Blocked
 - A glob claim expands to concrete files in `get_node_implementation`, and a path under it resolves to its owner; `get_node_context` returns a node's `tests` list
 - A full reply on a pipeline node carries `stability` with `fan_in`, `rate`, and `median_rate`, plus `hotspot` when the node is one; on a pre-ship Foundation, Interaction, or Interface it also carries `fan_out: { count, changes }` (count 0 when none), and a shipped node's has no `fan_out`
 - Verified via `npm test`
@@ -211,6 +212,29 @@ Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-r
 - Consequences: A SPEC heading rename must update SPEC_TOPICS; a test resolves every topic so a rename fails the suite.
 - Change: agent-guidance
 - Date: 2026-10-30
+
+### d-orient-change-decision-holders
+
+- Decision: orient_for_work({ change }) also lists and records the active nodes holding an active decision under the change, as kind "decision", without making them change members anywhere else (check, blast radius, graph filter, scoped walks).
+- Alternatives:
+  - Add decision holders to changeMembership (run_check and get_blast_radius would treat a node a decision only describes as edited, undoing d-decision-sets-no-label)
+  - Leave them out (after a reconnect a second record_decision or rules read on that node needs its own orient call, and the change's reasoning trail is invisible in the change-wide reply)
+- Why: A decision is part of the change's reasoning, so orienting on the change should surface it and its rules, but only an in-place edit makes a node a member that the check and walks act on.
+- Consequences: A closed change whose decisions remain still orients (on its decision holders) instead of being Blocked; a holder that is also a revision or neighbor keeps that kind.
+- Change: graph-edges-stale-labels
+- Date: 2026-10-31
+
+### d-orient-change-holders-no-labels
+
+- Decision: orient_for_work({ change }) lists and records its revisions, planned sources, and the other active nodes holding an active decision under the change (kind "decision"); decision holders are members of the change-wide orientation only, not of the check, blast radius, graph filter, or scoped walks.
+- Alternatives:
+  - Add decision holders to changeMembership (run_check and get_blast_radius would treat a node a decision only describes as edited)
+  - Leave them out (after a reconnect a second record_decision or rules read on that node needs its own orient call, and the change's reasoning trail is invisible in the change-wide reply)
+- Why: A decision is part of the change's reasoning, so orienting on the change should surface it and its rules; with neighbor labels gone, it is also the only way a shipped node a change touched in place shows up in that reply.
+- Consequences: A closed change whose decisions remain still orients (on its decision holders) instead of being Blocked; a holder that is also a revision keeps that kind.
+- Supersedes: d-orient-change-decision-holders
+- Change: graph-edges-stale-labels
+- Date: 2026-10-31
 
 ## Attachments
 

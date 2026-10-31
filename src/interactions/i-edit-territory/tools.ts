@@ -38,9 +38,8 @@ export const TOOLS: ToolDef[] = [
         "Do not edit mindplan/ MDX with host file tools. " +
         "When a shipped node has an open evolution, patches default to next. Optional slot: current|next. " +
         READINESS_HINT +
-        " change / change_ref set the revision's change id (grouping only: never resets readiness); moving the last revision off a change clears its neighbor labels (cleared_neighbors). " +
-        "On a shipped node with no open next, change labels it a neighbor of that change (edited in place; returns neighbor_of, " +
-        "and replaced_change when it had another label); change_ref is Blocked there. " +
+        " change / change_ref set the revision's change id (grouping only: never resets readiness); moving the last revision off a change drops its planned edges (cleared_planned). " +
+        "On a shipped node with no open next both are Blocked: edit its files in place, it needs no change id. " +
         "aliases replaces the node's search aliases on any node, shipped included, live and an open next alike, without open_next or a readiness reset.",
       inputSchema: {
         verbose: VERBOSE,
@@ -109,7 +108,7 @@ export const TOOLS: ToolDef[] = [
           .string()
           .optional()
           .describe(
-            "Set this revision's change id (a slug), or label a shipped node with no open next a neighbor; empty string clears it."
+            "Set this revision's change id (a slug); empty string clears it. Blocked on a shipped node with no open next."
           ),
         change_ref: CHANGE_REF,
         slot: z

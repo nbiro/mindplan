@@ -2,20 +2,22 @@
 id: f-domain-model
 type: Foundation
 title: "Domain model"
-description: "Infra — node types and edges (with `mounts`), planned edges, implements claims, attributed files, `added_claims`, `tests`, Foundation roles, rules and decision types, change ids that group revisions or label a neighbor, and the revision count with the last split."
+description: "Infra — node types and edges (with `mounts`), planned edges, implements claims, attributed files, `added_claims`, `tests`, Foundation roles, rules and decision types, change ids that group open revisions, and the revision count with the last split."
 state: stable
-shipped_at: 2026-10-31T11:40:11.346Z
-revisions: 17
-churn: 10.299
+shipped_at: 2026-10-31T23:05:24.702Z
+revisions: 18
+churn: 11.186
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-10-31T11:40:11.346Z
+updated_at: 2026-10-31T23:05:24.702Z
 implements:
   - src/foundations/f-domain-model/
 tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
   - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
 role: infra
 ---
 
@@ -23,7 +25,7 @@ role: infra
 
 ## Purpose
 
-Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, open evolutions, per-node rules, and decision records. `node.next` means an open evolution only; a standing twin does not populate it. Rules are prose attached to a node but are not frontmatter: they live in the node's `## Rules` body section (owned by `f-territory-store`), so the §9 frontmatter schema and `GRAPH_VERSION` (`1`) do not change. Decision records use the same storage idea in a `## Decisions` section, but they belong to a slot: a revision records why its design looks the way it does on its own file, and the record ships or is discarded with it. A record's status is never stored: it is computed from whether another active decision supersedes it, so abandoning the revision that superseded a decision makes it active again instead of leaving a stale mark on another node's file. One shared predicate says which nodes no longer carry live work, so the store and the rules queries cannot disagree about it. A sixth edge, `mounts` (Foundation → Interface), names a composition root: the one module that has to import several Interface entry points (a template registry, a route dispatcher) and has no legal home on `depends_on` alone. A shipped node's live change id doubles as a neighbor label: a change that edits a shipped node in place, without a contract change, still groups it, and no new field is needed. A shipped node that claims a new file in place keeps that entry in `added_claims` until its body names it, so an addition made without a revision stays visible in review.
+Infra — shared TypeScript taxonomy for MindPlan nodes, edges, pipeline states, the standing next-file `mirror` twin, open evolutions, per-node rules, and decision records. `node.next` means an open evolution only; a standing twin does not populate it. Rules are prose attached to a node but are not frontmatter: they live in the node's `## Rules` body section (owned by `f-territory-store`), so the §9 frontmatter schema and `GRAPH_VERSION` (`1`) do not change. Decision records use the same storage idea in a `## Decisions` section, but they belong to a slot: a revision records why its design looks the way it does on its own file, and the record ships or is discarded with it. A record's status is never stored: it is computed from whether another active decision supersedes it, so abandoning the revision that superseded a decision makes it active again instead of leaving a stale mark on another node's file. One shared predicate says which nodes no longer carry live work, so the store and the rules queries cannot disagree about it. A sixth edge, `mounts` (Foundation → Interface), names a composition root: the one module that has to import several Interface entry points (a template registry, a route dispatcher) and has no legal home on `depends_on` alone. A change id belongs to an open revision only: a shipped node with no open next carries none, so editing its files in place (no contract change) needs no change id and leaves no state to clear. A shipped node that claims a new file in place keeps that entry in `added_claims` until its body names it, so an addition made without a revision stays visible in review.
 
 ## Shared Substrate Spec
 
@@ -40,7 +42,7 @@ Intended files: `src/foundations/f-domain-model/`
 - `RulesImpactEntry` — `{ id, type, state, via: RuleVia, distance }`: a node that inherits some other node's rules
 - `isInactiveNode(node)` — true for `cancelled`, `deprecated`, and closed Bugs (`resolved`, `wontfix`): such nodes neither take nor give rules
 - **Change groups.** `MindPlanNode.change?` / `change_ref?` and `NextSlot.change?` / `change_ref?`: a change id (`CHANGE_ID_PATTERN`, a slug) that ties revisions into one change, and an optional branch or PR reference. `activeChange(node)` is the open revision's change: `next.change` while a shipped node evolves, the live `change` before first ship, and nothing for a shipped node with no open next
-- **Neighbor label.** On a shipped Foundation, Interaction, or Interface with no open next, the live `change` is a neighbor label instead: the change edits that node in place, with no contract change. `activeChange` ignores it, so a neighbor is never a revision of its change. One label per node; a neighbor carries no `change_ref`. `isNeighborNode(node)` is the one test for a node that can carry a label (a shipped, non-retired Foundation, Interaction, or Interface with no open next), shared by the store's label writer, `changeNeighbors`, and the steer handlers. While a revision is open, the live label is absent or names the revision's own change
+- **No change id on a shipped node with no open next.** Such a node's live file carries no `change` / `change_ref`; editing its files in place needs none. `isShippedWithoutNext(node)` (a shipped, non-retired Foundation, Interaction, or Interface with no open next) is the one test for such a node, shared by the writers that Block `change` on it and by migration level 2, which strips a leftover scalar. `activeChange` ignores a leftover live `change` on such a node
 - **In-place claims.** `MindPlanNode.added_claims?: string[]` — MCP-only, live slot only: claim entries a shipped node added in place without a revision, kept as a review marker until the live body names each one verbatim or the entry is no longer claimed. A promotion rebuilds the live frontmatter and drops it. `GRAPH_VERSION` stays `1`: a graph without it loads exactly as before
 - **Decision records.** `DecisionRecord` — `{ id, decision, alternatives: string[], why, consequences?, supersedes?, change?, date? }`: what was chosen (one sentence), what else was considered (one line each), the constraint or trade-off that decided it, what it makes harder or forbids, the id of the decision it replaces, and the change id and date (`YYYY-MM-DD`) it was recorded under. `DECISION_ID_PATTERN` is `d-` followed by a slug
   - `MindPlanNode.decisions?` (from the live `<id>.mdx`) and `NextSlot.decisions?` (from an open `<id>.next.mdx`), in recorded order; omitted when empty
@@ -74,9 +76,9 @@ Depends on: none.
 - `MindPlanNode.decisions` is optional; a graph with no `## Decisions` sections loads exactly as before
 - `activeDecisions` returns the next slot's decisions while a node evolves and the live ones otherwise
 - No stored decision field carries a status
-- `activeChange` of a shipped node with no open next is nothing even when its live `change` holds a neighbor label
+- `activeChange` of a shipped node with no open next is nothing even when its live file still holds a leftover `change`
 - `MindPlanNode.added_claims` is optional; a graph without it loads exactly as before
-- `isNeighborNode` is false for a retired node, a node with an open next, a pre-ship node, and a Journey or Bug
+- `isShippedWithoutNext` is false for a retired node, a node with an open next, a pre-ship node, and a Journey or Bug
 - `MindPlanNode.tests` is optional; a graph without it loads exactly as before, and `NextSlot` has no `tests`
 
 - A node record carries `aliases` when its frontmatter has them
@@ -163,6 +165,27 @@ Depends on: none.
 - Consequences: An agent has to attribute the migration explicitly; an unattributed migration in the root's folder still counts only for the root, as before.
 - Change: agent-guidance
 - Date: 2026-10-30
+
+### d-no-neighbor-labels
+
+- Decision: A node's change id belongs to an open revision only (the next slot's, or a pre-ship node's live change); a shipped node with no open next carries no change id, and editing its files in place needs none.
+- Alternatives:
+  - Keep neighbor labels and fix how they clear (stored state that every write path must set, replace, and clear; the stale-label bug came from exactly that, and the label bought only a full stale-text pass and listings)
+  - Keep the label but ignore it everywhere except the change check (dead state on disk that agents would still be told to write)
+- Why: Editing a shipped node's files is already legal and the plain check already runs import and ownership rules on every node's files; the only real benefit (a full stale-text pass on files the change touched) can be derived from the git diff instead of stored.
+- Consequences: A change's members are its open revisions and planned sources; in-place edits are invisible to change-scoped tools. Migration level 2 strips existing labels. change on a shipped node with no open next is Blocked.
+- Supersedes: d-neighbor-label-in-live-change
+- Change: graph-edges-stale-labels
+- Date: 2026-10-31
+
+### d-domain-model-revise-for-label-removal
+
+- Decision: This revision reopens f-domain-model because it removes a field meaning (the neighbor label) rather than adding behavior.
+- Alternatives:
+  - A new node that depends_on f-domain-model (a removal cannot be added beside the node it removes from)
+- Why: The change field's documented meaning and the shared predicate live here; leaving them would keep the removed concept in the model every node reads.
+- Change: graph-edges-stale-labels
+- Date: 2026-10-31
 
 ## Attachments
 

@@ -29,7 +29,7 @@ export const TOOLS: ToolDef[] = [
         "Warnings flag draft nodes missing required sections (shape:), stale territory text, next-slot imports (one release before they Block), split route families, revisions in review with no linked tests, hotspots (hotspot: a shipped node shipping far more often than the project's median lately, ranked by fan-in, with its recent change groups), fan-out (fan-out: a pre-ship node whose depends_on targets sit in several other unshipped changes, so it may need to know every feature of a kind; invert it onto a Foundation contract, or record keep_whole), and leftover mirror twins from releases before 0.8.0 (upgrade_project removes them), and never fail the check; info lists paths a plan names before building them (planned:), one line per node. " +
         "A graph that needs setup_project or upgrade_project fails with Blocked: Version. " +
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
-        "Pass change to also run the in-review gate on every member of that change: its open revisions and its neighbors (shipped nodes it edits in place; decision warnings for revisions only), with an additivity: info line and change.additivity (new nodes, reopened shipped nodes with their fan-in, neighbors). " +
+        "Pass change to also run the in-review gate on every member of that change: its open revisions (shipped nodes with planned edges are listed, not gated), with an additivity: info line and change.additivity (new nodes, reopened shipped nodes with their fan-in). A shipped node with no open next whose claimed files changed against the base gets every stale-text signal. " +
         "Pass merge before telling the user a PR is ready to merge: it Blocks every node still in review (ship its change, or move it back to in-progress), and with \"strict\" also in-progress nodes whose claimed files changed against base; results carry merge grouped by change. " +
         "Moves to in-review and ship run this check on the node's files themselves.",
       inputSchema: {
@@ -38,7 +38,7 @@ export const TOOLS: ToolDef[] = [
           .optional()
           .describe("Opt-in: also enforce dirty-src ownership against this git ref (not used by CI)."),
         change: CHANGE_ID.optional().describe(
-          "Also check every member of this change (imports, ownership, stale text) and list its members, each with kind revision | neighbor."
+          "Also check every member of this change (imports, ownership, stale text) and list its members, each with kind revision | planned."
         ),
         merge: z
           .union([z.literal(true), z.literal("strict")])

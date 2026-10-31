@@ -10,7 +10,7 @@ import {
   NODE_ID,
   CHANGE_ID,
 } from "../../foundations/f-tool-kit/tool.js";
-import { NODE_TYPES } from "../../foundations/f-domain-model/types.js";
+import { EDGE_TYPES, NODE_TYPES } from "../../foundations/f-domain-model/types.js";
 import {
   GRAPH_NODE_FIELDS,
   GRAPH_NODE_STATES,
@@ -31,10 +31,11 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call when you need the graph's nodes and edges, or a slice of them. Prefer orient_for_work for one piece of work. " +
         "For a question about part of the graph, filter and project instead of reading every node: " +
-        'e.g. state: ["draft", "ready"] with fields: ["id", "type", "title", "change"] lists what is planned but not built. ' +
+        'e.g. state: ["draft", "ready"] with fields: ["id", "type", "title", "change"] and edges: false lists what is planned but not built. ' +
         "state, type, and change combine with AND; values inside one array combine with OR. " +
         "Returns one page of the MindPlan graph assembled from <id>.mdx frontmatter: nodes sorted by id, " +
         "the edges whose source is in the page, total_nodes, total_edges, and next_offset while nodes remain, all over the filtered set. " +
+        'edges: false leaves out edges and total_edges; an array (e.g. ["depends_on"]) keeps only those edge types. ' +
         `A graph of up to ${GRAPH_PAGE_DEFAULT} nodes fits one page; walk offset = next_offset for the rest.`,
       inputSchema: {
         offset: z.number().int().min(0).optional().describe("First node index (default 0)."),
@@ -54,7 +55,7 @@ export const TOOLS: ToolDef[] = [
           .optional()
           .describe("Only nodes of this type, or of any of these types."),
         change: CHANGE_ID.optional().describe(
-          "Only the nodes of this change: an open revision's change id, else the node's change field (new nodes and neighbors)."
+          "Only the nodes of this change: an open revision's change id, else a pre-ship node's change field."
         ),
         fields: z
           .array(z.string())
@@ -62,9 +63,17 @@ export const TOOLS: ToolDef[] = [
           .describe(
             `Node fields to return (id is always included), e.g. ["id", "type", "title", "change"]. Valid: ${GRAPH_NODE_FIELDS.join(", ")}.`
           ),
+        edges: z
+          .union([z.boolean(), z.array(z.string())])
+          .optional()
+          .describe(
+            `true (default): every edge whose source is in the page. false: no edges and no total_edges. ` +
+              `An array: only edges of those types (OR); total_edges counts them. Valid types: ${EDGE_TYPES.join(", ")}.`
+          ),
       },
     },
-    ({ offset, limit, state, type, change, fields }) => getMindPlanGraph({ offset, limit, state, type, change, fields })
+    ({ offset, limit, state, type, change, fields, edges }) =>
+      getMindPlanGraph({ offset, limit, state, type, change, fields, edges })
   ),
   defineTool(
     "list_areas",

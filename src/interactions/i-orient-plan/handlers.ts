@@ -50,6 +50,7 @@ import { changeMembership } from "../../foundations/f-compiler-rules/planned.js"
 import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
 import { resolveNodeRules } from "../../foundations/f-graph-search/rules.js";
 import {
+  listDecisions,
   nodeDecisions,
   resolveNodeDecisions,
   slotDecisions,
@@ -305,17 +306,22 @@ export function getNodeContext(args: {
 }
 
 /**
- * orient_for_work({ change }): every member of a change (its open revisions and its neighbors) with
- * the nodes whose rules reach it, each source's rules once, and the members that hold decisions.
- * Every member is recorded as oriented, so one call clears the gate for a walk over the change.
+ * orient_for_work({ change }): every member of a change (its open revisions, its planned sources,
+ * and the other nodes holding a decision recorded under it) with the nodes whose
+ * rules reach it, each source's rules once, and the members that hold decisions. Every member is
+ * recorded as oriented, so one call clears the gate for a walk over the change. A decision gives
+ * its node no change id, so decision holders are members here only, not in changeMembership.
  */
 function orientForChange(
   graph: MindPlanGraph,
   change: string,
   known: Record<string, string> | undefined
 ): Record<string, unknown> {
-  const { revisions, neighbors, planned } = changeMembership(graph, change);
-  if (revisions.length === 0 && neighbors.length === 0 && planned.length === 0) {
+  const { revisions, planned } = changeMembership(graph, change);
+  const listed = new Set([...revisions, ...planned].map((n) => n.id));
+  const holderIds = new Set(listDecisions(graph, { change }).map((d) => d.node_id));
+  const deciders = graph.nodes.filter((n) => holderIds.has(n.id) && !listed.has(n.id));
+  if (listed.size === 0 && deciders.length === 0) {
     throw blocked(
       `change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
@@ -325,8 +331,8 @@ function orientForChange(
   let decisionCount = 0;
   const members = [
     ...revisions.map((n) => [n, "revision"] as const),
-    ...neighbors.map((n) => [n, "neighbor"] as const),
     ...planned.map((n) => [n, "planned"] as const),
+    ...deciders.map((n) => [n, "decision"] as const),
   ].map(([n, kind]) => {
     const entries = reachingRules(graph, n.id);
     for (const e of entries) if (!sources.has(e.node_id)) sources.set(e.node_id, e);
