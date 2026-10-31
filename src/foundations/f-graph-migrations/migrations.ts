@@ -1,7 +1,8 @@
 /**
  * Graph migrations — the ordered, idempotent passes that bring a mindplan/ tree to the server's
  * migration level: legacy territory filenames, legacy config, shipped Atomic Ops, mirror twins,
- * revision backfill from git, and the agent files the retired init installed under mindplan/agent/.
+ * revision backfill from git, the agent files the retired init installed under mindplan/agent/, and
+ * change labels no open revision backs.
  * upgrade_project runs them; setup_project writes the default config through
  * migrateImplementationPackages. Owned by Foundation f-graph-migrations.
  */
@@ -9,6 +10,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import {
+  isInactiveNode,
   isPipelineNodeType,
   type FoundationRole,
 } from "../f-domain-model/types.js";
@@ -42,6 +44,7 @@ import {
   removeLegacyMirror,
   writeImplementsFrontmatter,
   stripLiveAtomicOps,
+  writeChangeFrontmatter,
   writeRevisionFields,
   writeRoleFrontmatter,
 } from "../f-territory-store/store.js";
@@ -510,11 +513,49 @@ export function removeRetiredAgentFiles(): string[] {
   return removed.sort();
 }
 
+/** A change label the label migration removed. */
+export type ClearedChangeLabel = { node_id: string; change: string };
+
+/**
+ * Level 2. Strips the `change` and `change_ref` scalars from the live file of every shipped,
+ * active pipeline node, with or without an open next: the change labels releases before 0.15.0
+ * wrote (an open next's own change lives on the next file, and `open_next` used to copy a label
+ * there while leaving it on live). Only revisions carry a change id now, so every such scalar is
+ * leftover state. Idempotent: once none is left it changes nothing. Returns the cleared labels, sorted by
+ * node id.
+ */
+export function clearStaleChangeLabels(): ClearedChangeLabel[] {
+  let graph;
+  try {
+    graph = loadGraph();
+  } catch {
+    return [];
+  }
+  const cleared: ClearedChangeLabel[] = [];
+  const labeled = graph.nodes
+    .filter((n) => isPipelineNodeType(n.type) && n.shipped_at && !isInactiveNode(n) && (n.change || n.change_ref))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const node of labeled) {
+    const change = node.change ?? "";
+    try {
+      writeChangeFrontmatter(
+        node,
+        { ...(node.change ? { change: "" } : {}), ...(node.change_ref ? { change_ref: "" } : {}) },
+        "current"
+      );
+      cleared.push({ node_id: node.id, change });
+    } catch {
+      continue; // An unreadable live file fails the check; there is nothing to clear.
+    }
+  }
+  return cleared;
+}
+
 /**
  * The level a graph reaches after runMigrations. Raise it by one in the release that adds a
  * migration to runMigrations; a release that adds none leaves it, so projects need no upgrade.
  */
-export const MIGRATION_LEVEL = 1;
+export const MIGRATION_LEVEL = 2;
 
 export type MigrationReport = {
   territoryFilenames: LegacyTerritoryRename[];
@@ -525,12 +566,13 @@ export type MigrationReport = {
   revisionsBackfilled: string[];
   splitsFound: Record<string, string[]>;
   agentFilesRemoved: string[];
+  staleChangeLabelsCleared: ClearedChangeLabel[];
 };
 
 /**
  * Runs every migration in order. Each is idempotent, so a graph already at MIGRATION_LEVEL is left
- * as it is, and a node a stale branch merged in an old format is brought up to date. Throws
- * LegacyTerritoryMigrationError when a rename fails after others were applied.
+ * as it is, and a node a stale branch merged in an old format is brought up to date.
+ * Throws LegacyTerritoryMigrationError when a rename fails after others were applied.
  */
 export function runMigrations(): MigrationReport {
   const territoryFilenames = migrateLegacyTerritoryFilenames();
@@ -539,6 +581,7 @@ export function runMigrations(): MigrationReport {
   const mirrorRemoval = removeLegacyMirrorTwins();
   const backfill = backfillRevisions();
   const agentFilesRemoved = removeRetiredAgentFiles();
+  const staleChangeLabelsCleared = clearStaleChangeLabels();
   drainRemovedLegacyFiles();
   return {
     territoryFilenames,
@@ -554,5 +597,6 @@ export function runMigrations(): MigrationReport {
     revisionsBackfilled: backfill.revisionsBackfilled,
     splitsFound: backfill.splitsFound,
     agentFilesRemoved,
+    staleChangeLabelsCleared,
   };
 }

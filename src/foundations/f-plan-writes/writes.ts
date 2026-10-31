@@ -1,7 +1,7 @@
 /**
  * Plan writes — the plumbing every graph-write action shares: the orientation write gate, the
  * small write result (changed_files, anchor, readiness reset), stability sync, the persisted map
- * refresh, and neighbor-label cleanup when a write closes a change. Owned by f-plan-writes.
+ * refresh, and dropping a change's planned edges when a write closes it. Owned by f-plan-writes.
  */
 
 import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
@@ -13,12 +13,10 @@ import {
   patchFrontmatter,
   territoryBodyReader,
   writePlannedEdges,
-  writeNeighborLabel,
   type TerritorySlot,
 } from "../../foundations/f-territory-store/store.js";
 import {
   changeMembers,
-  changeNeighbors,
   changesWithRevisions,
   findNode,
 } from "../../foundations/f-compiler-rules/rules.js";
@@ -191,41 +189,27 @@ export function readinessFields(reset: ReadinessReset | null): Record<string, un
 }
 
 /**
- * Label a neighbor of `change` (the live `change` scalar). Returns the result fields
- * (`neighbor_of`, `replaced_change`) and the files written.
+ * The Blocked for `change` / `change_ref` on a shipped node with no open next
+ * (`isShippedWithoutNext`): its files are edited in place, and only a revision carries a change id.
  */
-export function labelNeighbor(
-  node: MindPlanNode,
-  change: string
-): { fields: Record<string, unknown>; files: string[] } {
-  const label = writeNeighborLabel(node, change);
-  return {
-    fields: {
-      ...(change ? { neighbor_of: change } : {}),
-      ...(label.replaced ? { replaced_change: label.replaced } : {}),
-    },
-    files: label.changed ? [territoryPath(node)] : [],
-  };
+export function shippedChangeBlocked(node: Pick<MindPlanNode, "id">): Error {
+  return new Error(
+    `Blocked: "${node.id}" is shipped with no open next: edit its files in place; it needs no change id (open_next if its contract changes).`
+  );
 }
 
 /**
- * A change with no open revisions left has no neighbors either: clear each of these changes'
- * labels from every neighbor in `graph`. Returns the cleared node ids and
- * the files.
+ * A change with no open revisions left is closed: drop the planned edges recorded under each of
+ * these changes from every node in `graph`. Returns the dropped entries and the files.
  */
-export function clearOrphanedNeighbors(
+export function clearClosedChanges(
   graph: MindPlanGraph,
   changes: string[]
-): { cleared: string[]; planned: string[]; files: string[] } {
-  const cleared: string[] = [];
+): { planned: string[]; files: string[] } {
   const planned: string[] = [];
   const files: string[] = [];
   for (const change of new Set(changes)) {
     if (changeMembers(graph, change).length > 0) continue;
-    for (const neighbor of changeNeighbors(graph, change)) {
-      files.push(...labelNeighbor(neighbor, "").files);
-      cleared.push(neighbor.id);
-    }
     // Wiring planned under a closed change was never opened: it goes with the change.
     for (const node of graph.nodes) {
       const dropped = (node.planned ?? []).filter((e) => e.change === change);
@@ -235,18 +219,17 @@ export function clearOrphanedNeighbors(
       for (const e of dropped) planned.push(`${node.id} -${e.type}-> ${e.target} (${change})`);
     }
   }
-  return { cleared, planned, files };
+  return { planned, files };
 }
 
 /**
- * Run a write that can end change memberships (a status move, a discard, a change id moved or
- * cleared), then clear the neighbor labels of every change that had an open revision before the
- * write and has none after. Every such write goes through here, so a new write path cannot forget
- * the cleanup, and a neighbor-only change (no revisions before either) keeps its labels. The
+ * Run a write that can end a change (a status move, a discard, a change id moved or cleared), then
+ * drop the planned edges of every change that had an open revision before the write and has none
+ * after. Every such write goes through here, so a new write path cannot forget the cleanup. The
  * cleanup also runs when the write throws part-way (a batch keeps its earlier transitions); the
  * result then carries nothing, as before.
  */
-export function withNeighborCleanup(write: () => Record<string, unknown>): Record<string, unknown> {
+export function withChangeCleanup(write: () => Record<string, unknown>): Record<string, unknown> {
   const before = changesWithRevisions(loadGraph());
   let result: Record<string, unknown> | undefined;
   try {
@@ -256,19 +239,14 @@ export function withNeighborCleanup(write: () => Record<string, unknown>): Recor
       const graph = loadGraph();
       const after = changesWithRevisions(graph);
       const closed = [...before].filter((c) => !after.has(c));
-      const orphaned = closed.length
-        ? clearOrphanedNeighbors(graph, closed)
-        : { cleared: [], planned: [], files: [] };
-      if (result && (orphaned.cleared.length > 0 || orphaned.planned.length > 0)) {
-        const prior = (result.cleared_neighbors as string[] | undefined) ?? [];
+      const dropped = closed.length ? clearClosedChanges(graph, closed) : { planned: [], files: [] };
+      if (result && dropped.planned.length > 0) {
+        const prior = (result.cleared_planned as string[] | undefined) ?? [];
         const files = (result.changed_files as string[] | undefined) ?? [];
         result = {
           ...result,
-          ...(orphaned.cleared.length || prior.length
-            ? { cleared_neighbors: [...new Set([...prior, ...orphaned.cleared])] }
-            : {}),
-          ...(orphaned.planned.length ? { cleared_planned: orphaned.planned } : {}),
-          changed_files: [...new Set([...files, ...orphaned.files])],
+          cleared_planned: [...new Set([...prior, ...dropped.planned])],
+          changed_files: [...new Set([...files, ...dropped.files])],
         };
       }
     }

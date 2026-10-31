@@ -37,8 +37,8 @@ export const TOOLS: ToolDef[] = [
         "A move to in-review of a decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, or a depends_on change) with no decision recorded is Blocked: Decision with the record_decision call. " +
         "A Blocked: Orientation names every unoriented node of the call at once (a scope change walk names orient_for_work({ change })). " +
         "A batch returns one line per node. " +
-        "When a ship or cancel leaves a change with no open revisions, its neighbor labels are cleared (cleared_neighbors); " +
-        "scope change walks revisions only, and a walk of it to ship clears its labels. " +
+        "When a ship or cancel leaves a change with no open revisions, its planned edges are dropped (cleared_planned); " +
+        "scope change walks the change's open revisions. " +
         "Journey and production stable/unstable are computed automatically.",
       inputSchema: {
         verbose: VERBOSE,
@@ -101,7 +101,7 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call only after the user confirms a mistaken ship; recovery only. " +
         "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
-        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while an open evolution exists or shipped dependents exist. Deletes any next file and clears a neighbor label (cleared_change) and added_claims.',
+        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while an open evolution exists or shipped dependents exist. Deletes any next file and clears added_claims.',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(

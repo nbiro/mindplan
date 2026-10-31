@@ -4,11 +4,11 @@ type: Interaction
 title: "Record a decision"
 description: "Agent records a design decision on the node it shapes, with the rejected alternatives, supersession, and keep_whole."
 state: stable
-shipped_at: 2026-10-31T12:20:49.347Z
-revisions: 1
-churn: 1
+shipped_at: 2026-10-31T23:05:25.678Z
+revisions: 3
+churn: 2.989
 created_at: 2026-10-31T11:58:04.384Z
-updated_at: 2026-10-31T12:20:49.347Z
+updated_at: 2026-10-31T23:05:25.678Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -18,6 +18,7 @@ depends_on:
 implements:
   - src/interactions/i-record-decision/
 tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/open-closed.test.mjs
 ---
@@ -38,7 +39,7 @@ Intended files: `src/interactions/i-record-decision/` (`handlers.ts`, `tools.ts`
 
 - `record_decision({ node_id, decision, alternatives, why, consequences?, supersedes?, change?, id?, keep_whole? })` appends one entry (`appendDecision`) to the node's active slot: the open next file while a shipped node evolves, else the live file. `decision`, `why`, and `consequences` are trimmed to one line; `alternatives` needs at least one non-empty item
 - `id` defaults to one generated from the decision's first words; a given id must be `d-` plus a slug and unused anywhere in the graph (an id a `supersedes` still names is taken)
-- `change` defaults to the node's active change, or a neighbor's label; on a shipped node with no open next an explicit `change` also labels it a neighbor (`labelNeighbor`, `f-plan-writes`). `date` is today in UTC
+- `change` defaults to the node's open revision's change (`activeChange`), else none. It tags the decision only: the node's own change id is never written, so a decision on a shipped node with no open next records its change on the record and the node stays outside the change's members. `date` is today in UTC
 - `supersedes` must name an active decision held by the node or by a node it inherits decisions from (its Journeys, its transitive Foundations); the old entry stays as written and becomes `superseded`
 - `keep_whole: true` writes `- Keep whole: true` on the record
 - Blocked: unknown node; inactive node; a Bug (record the decision on the node the fix shapes); empty decision or why; no alternative; a bad or taken id; an invalid change id; a `supersedes` that is unknown, already superseded, or out of reach
@@ -52,7 +53,8 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-s
 - `record_decision` writes a structured entry that `list_decisions` returns; on a node with an open evolution it lands in the next file only
 - Superseding marks the old decision superseded; superseding an unknown, already-superseded, or out-of-reach decision is Blocked, and so is a taken id
 - `record_decision` on a `ready` revision does not reset readiness
-- `record_decision` on a labeled neighbor without `change` records the decision under the label
+- `record_decision` without `change` on a node with an open revision records under that revision's change; on a shipped node with no open next it records with no change
+- `record_decision({ change })` on a shipped node with no open next records the decision under that change and writes no change id on the node; `get_mindplan_graph({ change })` and `run_check({ change })` do not list the node
 - `keep_whole: true` is written and read back, and the node stops being a hotspot until the decision is superseded
 - A Bug is refused with the nodes it affects named
 - Verified via `npm test`
@@ -76,6 +78,27 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-s
   - Always generate (no stable, readable names like d-capacity-on-booking)
 - Why: Readable ids matter for supersedes, but a missing id should not block recording the reason.
 - Change: hotspot-splits
+- Date: 2026-10-31
+
+### d-decision-sets-no-label
+
+- Decision: record_decision never writes the node's change label: a decision on a shipped node with no open next records its change id on the decision only and does not make the node a neighbor of that change.
+- Alternatives:
+  - Keep labeling and have run_check --merge and the merge gate clear neighbor labels of every change with no open revision (a check would start writing the graph, and in-flight neighbor-only changes would lose their labels at every merge check)
+  - Keep labeling and rely on users clearing stale labels by hand with patch_node_territory change: "" (the stale-label bug stays the default)
+- Why: A label groups live work; a decision on a shipped node is reasoning, not an in-place edit, and a change that only records decisions never opens a revision, so nothing ever cleared its labels and finished changes kept listing shipped nodes as members.
+- Consequences: A neighbor that should join a change while only a decision is recorded on it is labeled explicitly with patch_node_territory, set_implementation_files, or set_test_files (change). list_decisions({ change }) still finds the decision.
+- Change: graph-edges-stale-labels
+- Date: 2026-10-31
+
+### d-decision-change-from-revision-only
+
+- Decision: record_decision tags a decision with its change argument, else the node's open revision's change, else none; it never reads or writes a label.
+- Alternatives:
+  - Keep the fallback to a neighbor's label (labels are removed)
+- Why: Labels no longer exist; the change argument still lets a decision on a shipped node join a change's reasoning trail.
+- Supersedes: d-decision-sets-no-label
+- Change: graph-edges-stale-labels
 - Date: 2026-10-31
 
 ## Attachments

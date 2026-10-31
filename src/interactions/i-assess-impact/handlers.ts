@@ -40,8 +40,8 @@ export function getBlastRadius(args: {
 }
 
 /**
- * Blast radius of a whole change: the radii of its members (open revisions and neighbors, the
- * shipped nodes it edits in place) merged. `affected` keeps each node's smallest distance and
+ * Blast radius of a whole change: the radii of its members (open revisions and the shipped nodes
+ * with planned edges under it) merged. `affected` keeps each node's smallest distance and
  * leaves out the members themselves; files group by owner.
  */
 export function buildChangeBlastRadiusPayload(
@@ -50,10 +50,9 @@ export function buildChangeBlastRadiusPayload(
   opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
 ): Record<string, unknown> {
   // A shipped node with planned wiring under the change is a member too: its contract will change.
-  const { revisions, neighbors, planned } = changeMembership(graph, change);
-  const neighborIds = new Set(neighbors.map((n) => n.id));
+  const { revisions, planned } = changeMembership(graph, change);
   const plannedIds = new Set(planned.map((n) => n.id));
-  const members = [...revisions, ...neighbors, ...planned];
+  const members = [...revisions, ...planned];
   if (members.length === 0) {
     throw blocked(
       `change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
@@ -115,11 +114,11 @@ export function buildChangeBlastRadiusPayload(
   }
   return {
     change,
-    additivity: changeAdditivity(graph, change, { revisions, neighbors, planned }),
+    additivity: changeAdditivity(graph, change, { revisions, planned }),
     members: members.map((m) => ({
       id: m.id,
       type: m.type,
-      kind: neighborIds.has(m.id) ? "neighbor" : plannedIds.has(m.id) ? "planned" : "revision",
+      kind: plannedIds.has(m.id) ? "planned" : "revision",
       state: m.state,
       next_state: m.next?.state ?? null,
     })),

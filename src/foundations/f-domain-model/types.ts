@@ -205,8 +205,8 @@ export interface MindPlanNode {
    */
   rules?: string;
   /**
-   * Change id grouping this pre-ship revision with others (cleared on first ship). On a shipped
-   * node with no open next it is a neighbor label instead: the change edits this node in place.
+   * Change id grouping this pre-ship revision with others (cleared on first ship). A shipped node
+   * with no open next carries none: its files are edited in place without a change id.
    */
   change?: string;
   /** Branch or PR reference for the change. */
@@ -289,8 +289,8 @@ export function activeDecisions(node: MindPlanNode): DecisionRecord[] {
 
 /**
  * The change an open revision belongs to: the next slot's while a shipped node evolves,
- * the live one before first ship, and none for a shipped node with no open next (its live
- * `change` is a neighbor label, not a revision: see `changeNeighbors`).
+ * the live one before first ship, and none for a shipped node with no open next (a leftover
+ * live `change` there, from releases before 0.15.0, is ignored until the migration strips it).
  */
 export function activeChange(node: MindPlanNode): string | undefined {
   if (node.next) return node.next.change;
@@ -400,11 +400,11 @@ export function isPipelineNodeType(type: NodeType): boolean {
  * (`resolved`, `wontfix`). Their rules are neither written, inherited, nor reported.
  */
 /**
- * A shipped Foundation, Interaction, or Interface with no open next that is not retired: the kind
- * of node a change edits in place, labeled its neighbor through the live `change`. The one test
- * the store, the rules, and the handlers share.
+ * A shipped Foundation, Interaction, or Interface with no open next that is not retired: a node
+ * whose files are edited in place, which takes no change id. The one test the writers that Block
+ * `change` and the label migration share.
  */
-export function isNeighborNode(node: MindPlanNode): boolean {
+export function isShippedWithoutNext(node: MindPlanNode): boolean {
   return isPipelineNodeType(node.type) && Boolean(node.shipped_at) && !node.next && !isInactiveNode(node);
 }
 

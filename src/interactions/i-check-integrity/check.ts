@@ -28,7 +28,7 @@ import {
   testPresenceFailures,
   untestedWarning,
 } from "../../foundations/f-compiler-rules/integrity.js";
-import { changeMembers, changeNeighbors } from "../../foundations/f-compiler-rules/rules.js";
+import { changeMembers } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
 import {
   changeMembership,
@@ -127,21 +127,21 @@ export interface MergeReport {
 
 /**
  * One change's members and what the in-review gate finds on them. A member is a revision (an open
- * revision under the change) or a neighbor (a shipped node the change edits in place).
+ * revision under the change) or a planned source (a shipped node with planned edges under it).
  */
 export interface ChangeCheck {
   id: string;
   members: {
     id: string;
     type: string;
-    kind: "revision" | "neighbor" | "planned";
+    kind: "revision" | "planned";
     state: string;
     next_state: string | null;
   }[];
   failures: string[];
   warnings: string[];
   info: string[];
-  /** New nodes, reopened shipped nodes (with fan-in), neighbors, and planned revisions. */
+  /** New nodes, reopened shipped nodes (with fan-in), and planned revisions. */
   additivity: ChangeAdditivity;
 }
 
@@ -161,9 +161,9 @@ export interface CheckResult {
 }
 
 /**
- * The in-review gate on every member of a change: import and ownership violations on each
- * revision's active-slot files and each neighbor's live files (Blocked), and every stale-text
- * signal (warnings; planned paths go to info). Decision and fan-out warnings apply to revisions only.
+ * The in-review gate on every revision of a change: import and ownership violations on its
+ * active-slot files (Blocked), every stale-text signal (warnings; planned paths go to info), and
+ * its decision and fan-out warnings.
  */
 function checkChange(
   graph: MindPlanGraph,
@@ -172,16 +172,16 @@ function checkChange(
   decisionCtx: DecisionContext
 ): ChangeCheck {
   // Planned sources are listed, not gated: their files do not change until the change opens them.
-  const { revisions, neighbors, planned } = changeMembership(graph, change);
+  const { revisions, planned } = changeMembership(graph, change);
   const failures: string[] = [];
   const warnings: string[] = [];
   const info: string[] = [];
-  if (revisions.length === 0 && neighbors.length === 0 && planned.length === 0) {
+  if (revisions.length === 0 && planned.length === 0) {
     failures.push(
       `Blocked: change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
   }
-  for (const node of [...revisions, ...neighbors]) {
+  for (const node of revisions) {
     for (const v of findImportViolationsForNode(graph, root, node)) {
       failures.push(`Blocked: change "${change}": ${v.message}`);
     }
@@ -217,21 +217,20 @@ function checkChange(
     const untested = untestedWarning(node);
     if (untested) warnings.push(untested);
   }
-  const member = (kind: "revision" | "neighbor" | "planned") => (n: MindPlanNode) => ({
+  const member = (kind: "revision" | "planned") => (n: MindPlanNode) => ({
     id: n.id,
     type: n.type,
     kind,
     state: n.state,
     next_state: n.next?.state ?? null,
   });
-  const additivity = changeAdditivity(graph, change, { revisions, neighbors, planned });
-  if (revisions.length + neighbors.length + planned.length > 0) info.push(`additivity: ${additivity.summary}`);
+  const additivity = changeAdditivity(graph, change, { revisions, planned });
+  if (revisions.length + planned.length > 0) info.push(`additivity: ${additivity.summary}`);
   return {
     id: change,
     additivity,
     members: [
       ...revisions.map(member("revision")),
-      ...neighbors.map(member("neighbor")),
       ...planned.map(member("planned")),
     ],
     failures,
@@ -532,11 +531,19 @@ function checkImports(
 
 /**
  * Stale-text warnings. A node in review gets every signal (it is about to ship). A shipped node
- * with no open update gets only the missing-path signal. Nodes still being built are skipped:
- * they are expected to name files they have not written yet. A draft slot, or a Bug before
- * review, with shape gaps gets one `shape:` warning, so the sections are known before the gate.
+ * with no open update gets only the missing-path signal, unless one of its claimed files is in
+ * `changed` (the paths changed against the base): the branch edited it in place, so it gets every
+ * signal too. Nodes still being built are skipped: they are expected to name files they have not
+ * written yet. A draft slot, or a Bug before review, with shape gaps gets one `shape:` warning, so
+ * the sections are known before the gate.
  */
-function collectWarnings(graph: MindPlanGraph, root: string): { warnings: string[]; info: string[] } {
+function collectWarnings(
+  graph: MindPlanGraph,
+  root: string,
+  changed: string[] | null
+): { warnings: string[]; info: string[] } {
+  const editedInPlace = (node: MindPlanNode): boolean =>
+    changed !== null && (node.implements ?? []).some((claim) => changed.some((rel) => claimCoversPath(claim, rel)));
   const warnings: string[] = [];
   const info: string[] = [];
   for (const node of graph.nodes) {
@@ -548,7 +555,13 @@ function collectWarnings(graph: MindPlanGraph, root: string): { warnings: string
     if (RETIRED_STATES.has(node.state)) continue;
     const active = node.next ? node.next.state : node.state;
     const scope =
-      active === "in-review" ? STALE_ALL : !node.next && isProductionState(node.state) ? STALE_PATHS_ONLY : null;
+      active === "in-review"
+        ? STALE_ALL
+        : !node.next && isProductionState(node.state)
+          ? editedInPlace(node)
+            ? STALE_ALL
+            : STALE_PATHS_ONLY
+          : null;
     if (scope) {
       const stale = staleTextWarnings(graph, root, node, undefined, scope);
       warnings.push(...stale.warnings);
@@ -601,7 +614,7 @@ function ownerAllowsWorkingTree(graph: MindPlanGraph, node: MindPlanNode): boole
     return bugAllowsDirty(graph, node.id);
   }
   if (ACTIVE_BUILD.has(node.state)) return true;
-  // Neighbors edit shipped files in place: stable/unstable with no open next.
+  // A shipped node's files are edited in place: stable/unstable with no open next.
   if (isProductionState(node.state)) return true;
   return bugAllowsDirty(graph, node.id);
 }
@@ -620,25 +633,46 @@ function describeOwner(node: MindPlanNode): string {
 }
 
 /**
- * One run's git probe of the changed paths, memoized per base: dirty-src and the strict merge gate
- * share one `git status` / `git diff`, and a failed probe is reported once (`repeat` on later calls).
+ * One run's git probe of the changed paths, memoized per base: dirty-src, the strict merge gate,
+ * and the in-place stale-text pass share one `git status` / `git diff`, and a failed probe is
+ * reported once (`repeat` on later calls). A `quiet` caller ignores failures, so its call does not
+ * count as the report.
  */
-type DirtyProbe = (base: string) => { dirty: DirtySrcPaths } | { error: string; repeat: boolean };
+type DirtyProbe = (
+  base: string,
+  opts?: { quiet?: boolean }
+) => { dirty: DirtySrcPaths } | { error: string; repeat: boolean };
 
 function dirtyProbe(cwd: string): DirtyProbe {
   const results = new Map<string, { dirty: DirtySrcPaths } | { error: string }>();
-  return (base) => {
-    const known = results.get(base);
-    if (known) return "error" in known ? { ...known, repeat: true } : known;
-    let result: { dirty: DirtySrcPaths } | { error: string };
-    try {
-      result = { dirty: collectDirtySrcPaths(cwd, base) };
-    } catch (err) {
-      result = { error: err instanceof Error ? err.message : String(err) };
+  const reported = new Set<string>();
+  return (base, opts = {}) => {
+    let result = results.get(base);
+    if (!result) {
+      try {
+        result = { dirty: collectDirtySrcPaths(cwd, base) };
+      } catch (err) {
+        result = { error: err instanceof Error ? err.message : String(err) };
+      }
+      results.set(base, result);
     }
-    results.set(base, result);
-    return "error" in result ? { ...result, repeat: false } : result;
+    if (!("error" in result)) return result;
+    const repeat = reported.has(base);
+    if (!opts.quiet) reported.add(base);
+    return { ...result, repeat };
   };
+}
+
+/**
+ * The paths changed against the base (`base`, else the default-branch merge base), committed and
+ * uncommitted, for the in-place stale-text pass; null without git or a base, which reports nothing.
+ */
+function changedAgainstBase(root: string, probe: DirtyProbe, base: string | undefined): string[] | null {
+  const ref = base ?? defaultBaseRef(root);
+  if (!ref) return null;
+  const probed = probe(ref, { quiet: true });
+  if ("error" in probed) return null;
+  return [...new Set([...probed.dirty.commits, ...probed.dirty.workingTree])];
 }
 
 function checkDirtySrc(
@@ -1066,7 +1100,8 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
-    const collected = collectWarnings(graph, root);
+    const probe = dirtyProbe(root);
+    const collected = collectWarnings(graph, root, changedAgainstBase(root, probe, options.base));
     warnings.push(...collected.warnings);
     info.push(...collected.info);
     warnings.push(...legacyMirrorWarnings(graph));
@@ -1075,7 +1110,6 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     warnings.push(...collectHotspotWarnings(graph, root));
     warnings.push(...collectFanOutWarnings(graph, root));
-    const probe = dirtyProbe(root);
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, probe, options.base, failures);
     }

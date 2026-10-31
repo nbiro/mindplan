@@ -27,7 +27,7 @@ import {
   refreshPersistedMap,
   rulesReachingAfterWrite,
   territoryPath,
-  withNeighborCleanup,
+  withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
 
 /**
@@ -66,7 +66,7 @@ export function openNext(args: {
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
   const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
   // The revision takes its change's planned edges: each must still be legal before it opens.
-  const revisionChange = args.change !== undefined ? args.change || undefined : node.change;
+  const revisionChange = args.change || undefined;
   if (revisionChange) {
     const problems = plannedEdgeProblems(graph, revisionChange).filter((p) =>
       p.startsWith(`planned edge ${node_id} -`)
@@ -80,15 +80,7 @@ export function openNext(args: {
   }
   const next = openNextSlot(node, { title, description });
   node.next = next;
-  // The next slot is a copy of live, so it inherits a neighbor label unless change says otherwise.
-  if (args.change === undefined && node.change) next.change = node.change;
-  // A live neighbor label that differs from the revision's change is stale: the node is now a
-  // revision, not a neighbor. The store clears it so discard_next does not restore it.
-  const replacedChange = writeChangeFrontmatter(
-    node,
-    { change: args.change, change_ref: args.change_ref },
-    "next"
-  );
+  writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref }, "next");
   const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, node_id) : null;
   const applied = applyPlannedEdges(node);
   const rel = entityRelativePath(node);
@@ -102,7 +94,6 @@ export function openNext(args: {
     folder: rel,
     current,
     next_path,
-    ...(replacedChange ? { replaced_change: replacedChange } : {}),
     ...(applied.length ? { applied_planned: applied } : {}),
     ...(openClosed
       ? {
@@ -124,7 +115,7 @@ export function openNext(args: {
     // Applied belongs_to / depends_on can bring new rules: return them so the node stays oriented.
     ...(applied.length ? rulesReachingAfterWrite(node_id, rulesBefore) : {}),
     changed_files: changedFiles(
-      [next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`, replacedChange ? current : null],
+      [next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`],
       true
     ),
     ...mutationTail(loadGraph(), node_id, args.verbose),
@@ -132,9 +123,8 @@ export function openNext(args: {
 }
 
 export function discardNext(args: { node_id: string; verbose?: boolean }): Record<string, unknown> {
-  // Discarding a change's last revision closes it. The live label left after the discard can only
-  // name the revision's own change (the store drops any other), so that closing clears it too.
-  return withNeighborCleanup(() => discardNextSlotWrite(args));
+  // Discarding a change's last revision closes it: its planned edges go with it.
+  return withChangeCleanup(() => discardNextSlotWrite(args));
 }
 
 function discardNextSlotWrite(args: { node_id: string; verbose?: boolean }): Record<string, unknown> {

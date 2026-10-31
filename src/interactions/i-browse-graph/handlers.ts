@@ -4,7 +4,9 @@
  */
 
 import {
+  activeChange,
   BUG_STATES,
+  EDGE_TYPES,
   EXECUTION_STATES,
   isInactiveNode,
   JOURNEY_STATES,
@@ -79,21 +81,26 @@ export type GraphQuery = {
   type?: NodeType | NodeType[];
   change?: string;
   fields?: string[];
+  /** true (default): every edge from the page; false: none; an array: only those edge types. */
+  edges?: boolean | string[];
 };
 
-export type GraphPage = Omit<MindPlanGraph, "nodes"> & {
+export type GraphPage = Omit<MindPlanGraph, "nodes" | "edges"> & {
   nodes: Partial<MindPlanNode>[];
+  /** Absent with `edges: false`. */
+  edges?: MindPlanGraph["edges"];
+  /** Absent with `edges: false`. */
+  total_edges?: number;
   total_nodes: number;
-  total_edges: number;
   offset: number;
   limit: number;
   /** Present only when nodes remain after this page. */
   next_offset?: number;
 };
 
-/** The node's change as the change tools read it: an open revision's, else the record's. */
+/** The node's change as the change tools read it: an open revision's (`activeChange`). */
 function nodeChange(node: MindPlanNode): string | undefined {
-  return node.next ? node.next.change : node.change;
+  return activeChange(node);
 }
 
 /** Unknown names fail before any node is read, listing the valid ones. */
@@ -108,6 +115,22 @@ function projectionFields(fields: string[]): Set<string> {
   return new Set(["id", ...fields]);
 }
 
+/**
+ * The edge types an `edges` array keeps; null for `true`, `false`, or omitted (the caller drops every
+ * edge on `false`). Unknown names fail before any node is read, listing the valid ones.
+ */
+function edgeSelection(edges: boolean | string[] | undefined): Set<string> | null {
+  if (!Array.isArray(edges)) return null;
+  for (const name of edges) {
+    if (!(EDGE_TYPES as readonly string[]).includes(name)) {
+      throw new Error(
+        `Blocked: get_mindplan_graph edges: unknown edge type "${name}". Valid edge types: ${EDGE_TYPES.join(", ")}.`
+      );
+    }
+  }
+  return new Set(edges);
+}
+
 const asList = <T>(value: T | T[] | undefined): T[] | undefined =>
   value === undefined ? undefined : Array.isArray(value) ? value : [value];
 
@@ -115,12 +138,15 @@ const asList = <T>(value: T | T[] | undefined): T[] | undefined =>
  * One page of the graph: nodes filtered (`state`, `type`, `change`: AND across filters, OR inside
  * one array), sorted by id, and sliced by offset/limit, plus every edge whose source is in the
  * page, so a walk over all pages sees each node and each edge exactly once. Totals describe the
- * filtered set. `fields` keeps only the named fields (and `id`) on each node. The default page
- * keeps one result under a host's size limit; with no filter a graph that fits returns the whole
- * graph plus the totals.
+ * filtered set. `fields` keeps only the named fields (and `id`) on each node. `edges: false` drops
+ * `edges` and `total_edges`; an array of edge types keeps only those (and counts only those). The
+ * default page keeps one result under a host's size limit; with no filter a graph that fits returns
+ * the whole graph plus the totals.
  */
 export function getMindPlanGraph(args: GraphQuery = {}): GraphPage {
   const keep = args.fields ? projectionFields(args.fields) : null;
+  const edgeTypes = edgeSelection(args.edges);
+  const omitEdges = args.edges === false;
   const states = asList(args.state);
   const types = asList(args.type);
   const graph = loadGraph();
@@ -135,20 +161,27 @@ export function getMindPlanGraph(args: GraphQuery = {}): GraphPage {
   const unfiltered = filtered.length === graph.nodes.length;
   const sorted = filtered.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const slice = sorted.slice(offset, offset + limit);
-  const inPage = new Set(slice.map((n) => n.id));
-  const edges = graph.edges.filter((e) => inPage.has(e.source));
-  const inSet = new Set(sorted.map((n) => n.id));
   const nodes = keep
     ? slice.map(
         (n) => Object.fromEntries(Object.entries(n).filter(([key]) => keep.has(key))) as Partial<MindPlanNode>
       )
     : slice;
+  let edges: GraphPage["edges"];
+  let totalEdges: number | undefined;
+  if (!omitEdges) {
+    const typed = edgeTypes ? graph.edges.filter((e) => edgeTypes.has(e.type)) : graph.edges;
+    const inPage = new Set(slice.map((n) => n.id));
+    const inSet = new Set(sorted.map((n) => n.id));
+    edges = typed.filter((e) => inPage.has(e.source));
+    totalEdges = unfiltered ? typed.length : typed.filter((e) => inSet.has(e.source)).length;
+  }
+  // Key order matches the reply before `edges` existed.
   const page: GraphPage = {
     version: graph.version,
     nodes,
-    edges,
+    ...(edges ? { edges } : {}),
     total_nodes: sorted.length,
-    total_edges: unfiltered ? graph.edges.length : graph.edges.filter((e) => inSet.has(e.source)).length,
+    ...(totalEdges !== undefined ? { total_edges: totalEdges } : {}),
     offset,
     limit,
   };

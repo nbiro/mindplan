@@ -240,6 +240,28 @@ const FOUNDATION_SECTIONS = {
   check("a known version leaves the rules text out", again.rules[0].unchanged === true && again.rules[0].rules === undefined, JSON.stringify(again.rules));
   const walked = await raw("update_node_status", { scope: "change", change: "cards", new_status: "ready" });
   check("after one change-wide orient the scoped walk passes the gate", !walked.error, walked.text);
+  // A decision under another change tags only the decision: f-fees stays a member of cards alone.
+  await call("record_decision", {
+    node_id: "f-fees",
+    decision: "Fees stay in one module.",
+    alternatives: ["Split fees per card brand (no second reason to change)"],
+    why: "They change together.",
+    change: "fees-triage",
+  });
+  await client.close();
+}
+{
+  const { client, raw, call } = await session();
+  const gated = await raw("patch_node_territory", { node_id: "f-fees", description: "Infra — card fees and refunds" });
+  check("a decision holder is not oriented in a new session", gated.error && gated.text.includes("Orientation"), gated.text);
+  const oriented = await call("orient_for_work", { change: "fees-triage" });
+  check(
+    "orient_for_work({ change }) on a decision-only change lists the holder with kind decision",
+    oriented.members?.length === 1 && oriented.members[0].id === "f-fees" && oriented.members[0].kind === "decision",
+    JSON.stringify(oriented)
+  );
+  const written = await raw("patch_node_territory", { node_id: "f-fees", description: "Infra — card fees and refunds" });
+  check("the change-wide orient records the decision holder as oriented", !written.error, written.text);
   await client.close();
 }
 

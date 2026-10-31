@@ -11,7 +11,7 @@ import type {
   PlannedEdgeType,
 } from "../f-domain-model/types.js";
 import { activeChange, isInactiveNode, isPipelineNodeType } from "../f-domain-model/types.js";
-import { assertAcyclicDependsOn, blocked, changeMembers, changeNeighbors, validateLink } from "./rules.js";
+import { assertAcyclicDependsOn, blocked, changeMembers, validateLink } from "./rules.js";
 
 /** One pending planned edge, with its source. */
 export type PlannedEdgeRow = { source: string; change: string; type: PlannedEdgeType; target: string };
@@ -45,19 +45,18 @@ export function changePlannedSources(graph: MindPlanGraph, change: string): Mind
 }
 
 /**
- * Every member of a change, each once: its open revisions, its neighbors, and the shipped nodes
- * with pending planned edges under it (a node already listed as a revision or neighbor keeps
- * that kind). The check, the change blast radius, and change-wide orientation share it.
+ * Every member of a change, each once: its open revisions and the shipped nodes with pending
+ * planned edges under it (a node already listed as a revision keeps that kind). The check, the
+ * change blast radius, and change-wide orientation share it.
  */
 export function changeMembership(
   graph: MindPlanGraph,
   change: string
-): { revisions: MindPlanNode[]; neighbors: MindPlanNode[]; planned: MindPlanNode[] } {
+): { revisions: MindPlanNode[]; planned: MindPlanNode[] } {
   const revisions = changeMembers(graph, change);
-  const neighbors = changeNeighbors(graph, change);
-  const listed = new Set([...revisions, ...neighbors].map((n) => n.id));
+  const listed = new Set(revisions.map((n) => n.id));
   const planned = changePlannedSources(graph, change).filter((n) => !listed.has(n.id));
-  return { revisions, neighbors, planned };
+  return { revisions, planned };
 }
 
 /**

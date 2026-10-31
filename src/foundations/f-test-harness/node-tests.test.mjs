@@ -266,17 +266,16 @@ await foundation("f-dep");
     ]),
     JSON.stringify(radius.tests)
   );
-  const labeled = await call("set_test_files", { node_id: "f-bare", files: [], change: "c-tests" });
-  check("change on a shipped node labels it a neighbor", labeled.neighbor_of === "c-tests", JSON.stringify(labeled));
-  await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs"], change: "c-tests" });
+  const labeled = await blocked("set_test_files", { node_id: "f-bare", files: [], change: "c-tests" });
+  check("change on a shipped node with no open next is Blocked", labeled?.includes("needs no change id"), String(labeled));
+  await call("open_next", { node_id: "f-dep", change: "c-tests" });
   const merged = await call("get_blast_radius", { change: "c-tests" });
   check(
     "the change blast radius merges its members' tests",
     same(merged.tests, ["tests/dep.test.mjs"]),
     JSON.stringify(merged.tests)
   );
-  await call("set_test_files", { node_id: "f-bare", files: [], change: "" });
-  await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs"], change: "" });
+  await call("discard_next", { node_id: "f-dep" });
 }
 
 // --- an open revision: both files, kept through body and claim writes, and through ship ---

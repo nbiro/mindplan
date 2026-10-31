@@ -2,20 +2,13 @@
 id: f-graph-migrations
 type: Foundation
 title: "Graph migrations"
-description: "Infra — the ordered, idempotent graph migrations (legacy filenames and config, shipped Atomic Ops, mirror twins, revision backfill, retired agent files), the migration level and stamp, the version gate every gated tool passes, and the tree diff setup and upgrade report."
+description: "Infra — the ordered, idempotent graph migrations (legacy filenames and config, shipped Atomic Ops, mirror twins, revision backfill, retired agent files, change labels on shipped nodes), the migration level and stamp, the version gate, and the tree diff setup and upgrade report."
 state: stable
-shipped_at: 2026-10-31T20:33:28.768Z
-revisions: 1
-churn: 1
+shipped_at: 2026-10-31T23:05:24.935Z
+revisions: 3
+churn: 2.997
 created_at: 2026-10-31T19:40:48.290Z
-updated_at: 2026-10-31T20:33:28.768Z
-role: infra
-aliases:
-  - "upgrade"
-  - "migrate"
-  - "migration level"
-  - "version gate"
-  - "stamp"
+updated_at: 2026-10-31T23:05:24.935Z
 depends_on:
   - f-territory-store
   - f-source-index
@@ -29,6 +22,13 @@ tests:
   - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/version.test.mjs
+aliases:
+  - "upgrade"
+  - "migrate"
+  - "migration level"
+  - "version gate"
+  - "stamp"
+role: infra
 ---
 
 # Graph migrations
@@ -41,9 +41,9 @@ Infra — the one place that knows which migrations a graph needs and whether to
 
 Intended files: `src/foundations/f-graph-migrations/` (`migrations.ts`, `status.ts`, `tree.ts`)
 
-- **Migrations (`migrations.ts`).** Moved from the retired init, unchanged in behavior: `migrateLegacyTerritoryFilenames` (legacy `current.mdx` / `next.mdx` → `<id>.mdx` / `<id>.next.mdx`, with `LegacyTerritoryMigrationError` carrying the renames applied before a failure; runs before any graph load), `migrateImplementationPackages` (legacy `implementation_packages` → `{ sources, exclude }`, seeding `implements` and `role`; writes the default config when none exists), `dropShippedAtomicOps`, `removeLegacyMirrorTwins`, `backfillRevisions` (revision counts, churn, and splits from git, `f-compiler-rules` ship history), and new `removeRetiredAgentFiles` (deletes `mindplan/agent/`, the copies the retired init installed, through the lock-tolerant `f-source-index` I/O)
-- `runMigrations(): MigrationReport` runs them in that order and returns `{ territoryFilenames, config, atomicOpsDropped, mirrorTwinsRemoved, mirrorTwinSkips, revisionsBackfilled, splitsFound, agentFilesRemoved }`. A graph that cannot load is skipped by each graph pass (as before)
-- `MIGRATION_LEVEL` (now `1`): the level a graph reaches after `runMigrations`. A release that adds a migration raises it by one; a release that adds none leaves it
+- **Migrations (`migrations.ts`).** Moved from the retired init, unchanged in behavior: `migrateLegacyTerritoryFilenames` (legacy `current.mdx` / `next.mdx` → `<id>.mdx` / `<id>.next.mdx`, with `LegacyTerritoryMigrationError` carrying the renames applied before a failure; runs before any graph load), `migrateImplementationPackages` (legacy `implementation_packages` → `{ sources, exclude }`, seeding `implements` and `role`; writes the default config when none exists), `dropShippedAtomicOps`, `removeLegacyMirrorTwins`, `backfillRevisions` (revision counts, churn, and splits from git, `f-compiler-rules` ship history), `removeRetiredAgentFiles` (deletes `mindplan/agent/`, the copies the retired init installed, through the lock-tolerant `f-source-index` I/O), and `clearStaleChangeLabels` (level 2: strips the `change` and `change_ref` scalars from the live file of every shipped, non-retired pipeline node, with or without an open next (a revision's own change lives on its next file; `open_next` before 0.15.0 copied a label there and left it on live), the neighbor labels releases before 0.15.0 wrote). Like the others it is idempotent and runs on every upgrade: once no such scalar exists it changes nothing
+- `runMigrations(): MigrationReport` runs them in that order and returns `{ territoryFilenames, config, atomicOpsDropped, mirrorTwinsRemoved, mirrorTwinSkips, revisionsBackfilled, splitsFound, agentFilesRemoved, staleChangeLabelsCleared }` (`staleChangeLabelsCleared`: `{ node_id, change }` per cleared label, sorted by node id). A graph that cannot load is skipped by each graph pass (as before)
+- `MIGRATION_LEVEL` (now `2`): the level a graph reaches after `runMigrations`. A release that adds a migration raises it by one; a release that adds none leaves it
 - `stampGraph()` writes `mindplan/version.json` with the running package, `GRAPH_VERSION`, and `migrations: MIGRATION_LEVEL` (`writeProjectVersion`, `f-territory-store`) and returns its repo-relative path
 - **Status (`status.ts`).** `graphStatus()` never throws and returns `{ state, level, required, warning?, call? }`:
   - `setup` — no `mindplan/` directory, or one with no stamp and no node folder (the empty folders a 0.12 server created at boot, or a setup that stopped before its stamp); `call: "setup_project"`
@@ -62,6 +62,7 @@ Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain
 - `versionGate()` Blocks in every state but `current` and never with `MINDPLAN_VERSION_GATE=off`
 - `runMigrations()` on a migrated graph changes nothing; on legacy fixtures it renames, migrates config, drops shipped Atomic Ops, removes mirror twins, backfills revisions and splits, and removes `mindplan/agent/` (the suites that covered init now cover it)
 - `changedSince` lists every file a migration wrote or deleted
+- `clearStaleChangeLabels` strips and reports the live `change` of every shipped node, whatever its change and whether or not a revision is open; it leaves a pre-ship node's change and an open revision's next-slot change alone; a second run clears nothing
 - Verified via `npm test`
 
 ## Decisions
@@ -77,4 +78,37 @@ Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain
 - Consequences: A release that adds a migration must raise MIGRATION_LEVEL; every project then runs upgrade_project once in its own commit. A branch opened before an upgrade that adds an old-format node is caught by the check, and rerunning upgrade_project fixes it. Test fixtures without a stamp set MINDPLAN_VERSION_GATE=off.
 - Supersedes: d-version-stamp-file
 - Change: setup-upgrade
+- Date: 2026-10-31
+
+### d-migrate-stale-change-labels
+
+- Decision: Migration level 2 clears the change label of every shipped neighbor whose change has no open revision and no pre-ship member, and reports each { node_id, change } in staleChangeLabelsCleared.
+- Alternatives:
+  - Clear only labels whose change also holds a decision on that node (misses labels left by older decision-then-claim sequences, and cannot tell which write set the label)
+  - No migration: leave existing stale labels for users to clear by hand (every repo keeps finished changes listing shipped nodes)
+- Why: A label with no open revision behind it cannot be told apart from the stale labels record_decision left, and upgrade_project is a reviewed commit of its own, so the report shows what was cleared.
+- Consequences: A neighbor-only change in flight at upgrade time (shipped nodes labeled, no revision yet) loses its labels; relabel with patch_node_territory change. Raises MIGRATION_LEVEL to 2, so every project runs upgrade_project once.
+- Change: graph-edges-stale-labels
+- Date: 2026-10-31
+
+### d-migrate-strip-change-labels
+
+- Decision: Migration level 2 strips the change scalar (and any change_ref) from every shipped, non-retired node with no open next and reports each { node_id, change } in staleChangeLabelsCleared; it runs on every upgrade (idempotent, a no-op once no label exists).
+- Alternatives:
+  - Clear only labels whose change has no open revision (labels no longer exist as a concept, so a live one is as meaningless as a stale one)
+  - Rename the report field to changeLabelsCleared (0.15.0 is unreleased, but the existing name already reached tests and docs; keeping it avoids churn)
+- Why: With labels removed, any change scalar on such a node is leftover state; stripping all of them makes the invariant hold, and an old branch merged later is cleaned on the next upgrade instead of keeping its labels.
+- Supersedes: d-migrate-stale-change-labels
+- Change: graph-edges-stale-labels
+- Date: 2026-10-31
+
+### d-migrate-strip-all-live-labels
+
+- Decision: Migration level 2 strips the live change and change_ref from every shipped, non-retired pipeline node, with or without an open next, and reports each { node_id, change } in staleChangeLabelsCleared; it runs on every upgrade.
+- Alternatives:
+  - Only nodes with no open next (open_next before 0.15.0 left the label on live beside the revision; after a discard that label could no longer be cleared, since change on such a node is Blocked)
+  - Also make discard_next drop a live change (covers only that path; the migration already makes the invariant hold everywhere)
+- Why: A shipped node's live change is never read while a revision is open (activeChange and promotion use the next slot's), so stripping it everywhere is safe and closes the gap the review found.
+- Supersedes: d-migrate-strip-change-labels
+- Change: graph-edges-stale-labels
 - Date: 2026-10-31

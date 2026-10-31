@@ -2,14 +2,13 @@
 id: f-plan-writes
 type: Foundation
 title: "Plan writes"
-description: "Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and neighbor-label cleanup when a write closes a change."
+description: "Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it."
 state: stable
-shipped_at: 2026-10-31T12:20:48.464Z
-revisions: 1
-churn: 1
+shipped_at: 2026-10-31T23:05:25.005Z
+revisions: 2
+churn: 1.99
 created_at: 2026-10-31T11:57:22.450Z
-updated_at: 2026-10-31T12:20:48.464Z
-role: infra
+updated_at: 2026-10-31T23:05:25.005Z
 depends_on:
   - f-territory-store
   - f-compiler-rules
@@ -24,11 +23,12 @@ tests:
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
+role: infra
 ---
 
 # Plan writes
 
-Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and neighbor-label cleanup when a write closes a change.
+Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it.
 
 ## Purpose
 
@@ -43,7 +43,8 @@ Intended files: `src/foundations/f-plan-writes/` (`writes.ts`)
 - `syncNodes(nodes)`, `territoryPath(node, slot?)`, `changedFiles(paths, withMap?)`, `MAP_REL`, `refreshPersistedMap()` — persist recomputed states and build `changed_files` (the persisted map included)
 - `buildMutationAnchor`, `mutationTail(graph, id, verbose)` — the small default write result, the record and 1-hop neighborhood only with `verbose`
 - `ReadinessReset`, `readinessFields`, `readinessResult`, `READINESS_NOTE` — the `readiness_reset` fields a contract write on a ready slot returns
-- `labelNeighbor`, `clearOrphanedNeighbors`, `withNeighborCleanup(fn)` — neighbor labels, cleared once per call when a write leaves a change with no revisions
+- `clearClosedChanges(graph, changes)`, `withChangeCleanup(fn)` — when a write leaves a change with no open revision, drop the planned edges recorded under it (`cleared_planned`), once per call
+- `shippedChangeBlocked(node, tool)` — the one `Blocked:` for `change` on a shipped node with no open next (`isShippedWithoutNext`): `"<id>" is shipped with no open next: edit its files in place; it needs no change id (open_next if its contract changes).`
 
 No tool handlers live here; each write action owns its own.
 
@@ -51,8 +52,9 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-
 
 ## Acceptance Criteria
 
-- Every write action imports its gate, result envelope, and neighbor cleanup from here; no write action imports another
-- Write results keep their shape (`changed_files`, `readiness_reset`, `cleared_neighbors`, verbose anchor) — the existing suites pass unchanged
+- Every write action imports its gate, result envelope, and change cleanup from here; no write action imports another
+- A write that ships, cancels, discards, or moves the last revision off a change drops that change's planned edges and reports them in `cleared_planned`
+- No write result carries `neighbor_of`, `cleared_neighbors`, or `replaced_change`
 - Verified via `npm test`
 
 ## Decisions
@@ -66,6 +68,16 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-
 - Why: Only an event (a change losing its last revision during a call) tells an orphaned label apart, and one wrapper here covers every write action that can end a membership.
 - Consequences: A new write action that can end a membership must run inside withNeighborCleanup.
 - Change: hotspot-splits
+- Date: 2026-10-31
+
+### d-planned-cleanup-once-per-write
+
+- Decision: Planned edges of a change are dropped by one wrapper (withChangeCleanup) around every write that can end a change's last open revision, comparing the changes with open revisions before and after the write; it no longer touches labels.
+- Alternatives:
+  - Delete the wrapper with the labels and drop planned edges in each closing path (eight call sites; one forgotten path leaves planned wiring for a closed change)
+- Why: Planned edges still close with their change, and the before/after comparison is still the only event that tells a closed change apart.
+- Supersedes: d-neighbor-cleanup-once-per-write
+- Change: graph-edges-stale-labels
 - Date: 2026-10-31
 
 ## Attachments

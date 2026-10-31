@@ -50,7 +50,7 @@ export const TOOLS: ToolDef[] = [
           .optional()
           .describe("Id of an active decision on this node, its Journey, or its Foundations that this one replaces."),
         change: CHANGE_ID.optional().describe(
-          "Change id to record it under (default: the node's open revision's change, or a neighbor's label). On a shipped node with no open next it also labels the node a neighbor of that change."
+          "Change id to record it under (default: the node's open revision's change). It tags the decision only: the node's own change id is never set, so a decision alone does not make a shipped node a member of the change."
         ),
         id: z
           .string()

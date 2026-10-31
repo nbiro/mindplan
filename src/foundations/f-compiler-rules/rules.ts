@@ -23,7 +23,6 @@ import {
   EXECUTION_TRANSITIONS,
   isBugState,
   isExecutionState,
-  isNeighborNode,
   isNextPipelineState,
   isOpenBugState,
   isPipelineNodeType,
@@ -85,15 +84,6 @@ export function changesWithRevisions(graph: MindPlanGraph): Set<string> {
     if (isOpenChangeRevision(n)) out.add(activeChange(n)!);
   }
   return out;
-}
-
-/**
- * Neighbors of a change: shipped Foundations, Interactions, and Interfaces with no open next that
- * the change edits in place (no contract change). The label is the live file's `change` scalar,
- * which `activeChange` ignores, so neighbors are never members.
- */
-export function changeNeighbors(graph: MindPlanGraph, change: string): MindPlanNode[] {
-  return graph.nodes.filter((n) => isNeighborNode(n) && n.change === change);
 }
 
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {

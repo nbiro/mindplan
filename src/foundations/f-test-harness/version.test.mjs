@@ -13,6 +13,7 @@ import * as path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SHIP, fillAndTick } from "./ship-fixture.mjs";
 // Spawned servers rank by keyword only: no model download or load during tests.
 process.env.MINDPLAN_SEARCH ??= "keyword";
 // This suite is about the gate, so it is on.
@@ -205,6 +206,107 @@ function runCheck(root) {
   check("once MINDPLAN.md matches and the stub is gone, the pointer is current", wired.json?.pointer_outdated === false, wired.text.slice(0, 200));
   await client.close();
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+// --- level 2: change labels on shipped nodes are stripped on upgrade ---
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-stale-labels-"));
+  const env = { MINDPLAN_ORIENT_GATE: "off" };
+  const prior = process.env.MINDPLAN_ORIENT_GATE;
+  Object.assign(process.env, env);
+  let client;
+  let call;
+  try {
+  ({ client, call } = await session(root));
+  const must = async (name, args) => {
+    const res = await call(name, args);
+    if (res.error) throw new Error(`${name}: ${res.text}`);
+    return res.json;
+  };
+  /** Write a live `change:` scalar the way releases before 0.15.0 labeled a neighbor. */
+  const label = (id, change) => {
+    const file = path.join(root, "mindplan", "foundations", id, `${id}.mdx`);
+    const text = fs.readFileSync(file, "utf-8");
+    fs.writeFileSync(file, text.replace(/^(id: .*)$/m, (line) => `${line}\nchange: "${change}"`));
+  };
+  await must("setup_project");
+  fs.writeFileSync(path.join(root, "mindplan", "config.json"), JSON.stringify({ sources: ["src/**"], exclude: [] }) + "\n");
+  // Three shipped Foundations: f-stale (label of a change with no revision), f-live (label of a
+  // change with a pre-ship member), f-plain (no label); f-new is that pre-ship member.
+  for (const id of ["f-stale", "f-live", "f-plain"]) {
+    await must("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
+    fs.mkdirSync(path.join(root, "src", id), { recursive: true });
+    fs.writeFileSync(path.join(root, "src", id, "index.ts"), "export const x = 1;\n");
+    await must("set_implementation_files", { node_id: id, files: [`src/${id}/index.ts`] });
+    fillAndTick(path.join(root, "mindplan", "foundations", id, `${id}.mdx`));
+    for (const new_status of SHIP) await must("update_node_status", { node_id: id, new_status });
+  }
+  await must("create_node", { id: "f-new", type: "Foundation", title: "New", description: "Infra — new", role: "infra", change: "live" });
+  // f-live also has an open revision: older releases left the label on live beside it.
+  await must("open_next", { node_id: "f-live", change: "rev" });
+  await client.close();
+  client = undefined;
+  label("f-live", "live");
+  label("f-stale", "hotspot-triage");
+  // Back to level 1, as a graph a 0.14 server left.
+  const stampFile = path.join(root, "mindplan", "version.json");
+  fs.writeFileSync(stampFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(stampFile, "utf-8")), migrations: 1 }) + "\n");
+  ({ client, call } = await session(root));
+  const blocked = await call("list_areas");
+  check("a level-1 graph is Blocked naming upgrade_project", blocked.error && blocked.text.includes("upgrade_project"), blocked.text);
+  const up = await call("upgrade_project");
+  const changeOf = async (id) => (await call("get_node_context", { node_id: id })).json?.record?.change;
+  check(
+    "upgrade strips every shipped node's change label, whatever its change, and reports each",
+    !up.error &&
+      JSON.stringify(up.json.migrations.staleChangeLabelsCleared) ===
+        JSON.stringify([
+          { node_id: "f-live", change: "live" },
+          { node_id: "f-stale", change: "hotspot-triage" },
+        ]) &&
+      up.json.changed_files.includes("mindplan/foundations/f-stale/f-stale.mdx") &&
+      up.json.changed_files.includes("mindplan/foundations/f-live/f-live.mdx") &&
+      (await changeOf("f-stale")) === undefined &&
+      (await changeOf("f-live")) === undefined,
+    up.text.slice(0, 600)
+  );
+  check(
+    "the label on a node with an open revision is stripped from live and the revision keeps its own change",
+    (await call("get_node_context", { node_id: "f-live" })).json?.next?.record?.change === "rev",
+    ""
+  );
+  check(
+    "upgrade keeps a pre-ship node's change and leaves an unlabeled node alone",
+    (await changeOf("f-new")) === "live" &&
+      !up.json.changed_files.includes("mindplan/foundations/f-new/f-new.mdx") &&
+      !up.json.changed_files.includes("mindplan/foundations/f-plain/f-plain.mdx"),
+    JSON.stringify(up.json.changed_files)
+  );
+  const quiet = await call("upgrade_project");
+  check(
+    "a second upgrade clears nothing",
+    !quiet.error && quiet.json.migrations.staleChangeLabelsCleared.length === 0 && quiet.json.changed_files.length === 0,
+    quiet.text.slice(0, 300)
+  );
+  // A branch from an older release merged later brings a label back; the next upgrade strips it.
+  await client.close();
+  client = undefined;
+  label("f-plain", "old-branch");
+  ({ client, call } = await session(root));
+  const again = await call("upgrade_project");
+  check(
+    "an upgrade of a graph already at level 2 strips a label merged in later",
+    !again.error &&
+      JSON.stringify(again.json.migrations.staleChangeLabelsCleared) === JSON.stringify([{ node_id: "f-plain", change: "old-branch" }]) &&
+      (await changeOf("f-plain")) === undefined,
+    again.text.slice(0, 300)
+  );
+  } finally {
+    await client?.close();
+    if (prior === undefined) delete process.env.MINDPLAN_ORIENT_GATE;
+    else process.env.MINDPLAN_ORIENT_GATE = prior;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 // --- graph ahead of the server ---

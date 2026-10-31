@@ -1,7 +1,8 @@
 /**
  * get_mindplan_graph filters and projection: state, type, and change alone and together, fields
- * (id always present, unknown names rejected), paging over a filtered set, and no parameters
- * returning the unfiltered output. Run via npm test.
+ * (id always present, unknown names rejected), edges (true, false, or edge types; unknown types
+ * rejected), paging over a filtered set, and no parameters returning the unfiltered output. Run via
+ * npm test.
  */
 // Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
 process.env.MINDPLAN_VERSION_GATE ??= "off";
@@ -134,6 +135,58 @@ try {
     "every filtered node comes back exactly once and the last page has no next_offset",
     [first, second, third].flatMap((p) => p.nodes.map((n) => n.id)).join(",") === draftIds.join(",") && third.next_offset === undefined,
     ids(third)
+  );
+
+  // --- edges: true (default) | false | edge types ---
+  const edgesTrue = await call("get_mindplan_graph", { edges: true });
+  check("edges omitted and edges: true return the same reply", JSON.stringify(edgesTrue) === JSON.stringify(all));
+  const noEdges = await call("get_mindplan_graph", { edges: false });
+  check(
+    "edges: false returns the same nodes with no edges and no total_edges",
+    !("edges" in noEdges) && !("total_edges" in noEdges) && JSON.stringify(noEdges.nodes) === JSON.stringify(all.nodes) && noEdges.total_nodes === 8,
+    Object.keys(noEdges).join(",")
+  );
+  const dependsOn = await call("get_mindplan_graph", { edges: ["depends_on"] });
+  const allDependsOn = all.edges.filter((e) => e.type === "depends_on");
+  check(
+    'edges: ["depends_on"] keeps only depends_on edges and counts them',
+    dependsOn.edges.length === allDependsOn.length && dependsOn.edges.length > 0 && dependsOn.edges.every((e) => e.type === "depends_on") && dependsOn.total_edges === allDependsOn.length && ids(dependsOn) === ids(all),
+    JSON.stringify(dependsOn.edges)
+  );
+  const twoTypes = await call("get_mindplan_graph", { edges: ["depends_on", "affects"] });
+  check(
+    "edge types combine with OR",
+    twoTypes.edges.length === all.edges.filter((e) => e.type === "depends_on" || e.type === "affects").length && twoTypes.edges.some((e) => e.type === "affects"),
+    JSON.stringify(twoTypes.edges)
+  );
+  const badEdge = await raw("get_mindplan_graph", { edges: ["depends_on", "calls"] });
+  check(
+    "an unknown edge type is Blocked naming the valid ones",
+    badEdge.error && badEdge.text.includes('unknown edge type "calls"') && badEdge.text.includes("Valid edge types: depends_on, belongs_to, exposes, leads_to, affects, mounts"),
+    badEdge.text
+  );
+  const planned = await call("get_mindplan_graph", { state: ["draft", "ready"], fields: ["id", "type", "title", "change"], edges: false });
+  const plannedWithEdges = await call("get_mindplan_graph", { state: ["draft", "ready"], fields: ["id", "type", "title", "change"] });
+  check(
+    "edges: false with state and fields keeps the node rows and paging",
+    !("edges" in planned) && JSON.stringify(planned.nodes) === JSON.stringify(plannedWithEdges.nodes) && planned.total_nodes === 7,
+    JSON.stringify(planned)
+  );
+  const payDeps = await call("get_mindplan_graph", { change: "c-pay", type: "Interaction", edges: ["depends_on"], fields: ["state"] });
+  check(
+    "edge types with change, type, and fields: only those types from the filtered set",
+    ids(payDeps) === "i-buy,i-refund" &&
+      payDeps.nodes.every((n) => Object.keys(n).sort().join(",") === "id,state") &&
+      payDeps.edges.every((e) => e.type === "depends_on" && ["i-buy", "i-refund"].includes(e.source)) &&
+      payDeps.edges.length === 3 &&
+      payDeps.total_edges === 3,
+    JSON.stringify(payDeps)
+  );
+  const pagedDeps = await call("get_mindplan_graph", { edges: ["depends_on"], limit: 3 });
+  check(
+    "edge types with paging: edges from the page, total_edges over the whole set",
+    pagedDeps.edges.every((e) => pagedDeps.nodes.some((n) => n.id === e.source)) && pagedDeps.total_edges === allDependsOn.length && pagedDeps.next_offset === 3,
+    JSON.stringify(pagedDeps)
   );
 } finally {
   await client.close();

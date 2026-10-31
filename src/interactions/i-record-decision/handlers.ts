@@ -7,7 +7,6 @@ import {
   DECISION_ID_PATTERN,
   activeChange,
   isInactiveNode,
-  isNeighborNode,
   type DecisionRecord,
 } from "../../foundations/f-domain-model/types.js";
 import { appendDecision, loadGraph, validateChangeInput } from "../../foundations/f-territory-store/store.js";
@@ -20,12 +19,7 @@ import {
   listDecisions,
   supersessionIndex,
 } from "../../foundations/f-graph-search/decisions.js";
-import {
-  changedFiles,
-  gateWrite,
-  labelNeighbor,
-  mutationTail,
-} from "../../foundations/f-plan-writes/writes.js";
+import { changedFiles, gateWrite, mutationTail } from "../../foundations/f-plan-writes/writes.js";
 
 /** Trims a value and collapses its line breaks: decision fields are single lines. */
 function oneLine(value: string | undefined): string {
@@ -72,8 +66,7 @@ export function recordDecision(args: {
   }
   const consequences = oneLine(args.consequences);
   validateChangeInput({ change: args.change });
-  // A neighbor has no open revision, so its change is the live label it carries.
-  const change = args.change || activeChange(node) || (isNeighborNode(node) ? node.change : undefined);
+  const change = args.change || activeChange(node);
 
   let id: string;
   if (args.id !== undefined) {
@@ -127,12 +120,9 @@ export function recordDecision(args: {
     date: new Date().toISOString().slice(0, 10),
     ...(args.keep_whole ? { keep_whole: true } : {}),
   };
+  // The record carries its change id; the node's change label is left alone. A label groups live
+  // work, and a change that only records decisions never opens a revision, so nothing would clear it.
   const written = appendDecision(node, record);
-  // A decision under a change on a shipped node with no open next: the change edits it in place.
-  const neighbor =
-    args.change && isNeighborNode(node)
-      ? labelNeighbor(node, args.change)
-      : { fields: {}, files: [] };
   const after = loadGraph();
   const entry = listDecisions(after, { node_id: node.id, include_superseded: true }).find(
     (d) => d.id === id
@@ -142,8 +132,7 @@ export function recordDecision(args: {
     slot: written.slot,
     decision: entry ?? record,
     ...(superseded ? { supersedes: superseded } : {}),
-    ...neighbor.fields,
-    changed_files: changedFiles([...written.paths, ...neighbor.files]),
+    changed_files: changedFiles(written.paths),
     ...mutationTail(after, node.id, args.verbose),
   };
 }
