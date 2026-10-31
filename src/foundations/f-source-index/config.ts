@@ -190,7 +190,7 @@ function parseSearchSettings(value: unknown): Partial<SearchConfigSettings> {
 /**
  * Load config.
  * - Missing file → sources: ["src/**"], exclude: []
- * - Present with legacy `implementation_packages` → Blocked → mindplan-mcp init
+ * - Present with legacy `implementation_packages` → Blocked → upgrade_project
  * - Invalid JSON / shape → throws Blocked
  */
 export function loadProjectConfig(root?: string): MindPlanProjectConfig {
@@ -213,7 +213,7 @@ export function loadProjectConfig(root?: string): MindPlanProjectConfig {
   if ("implementation_packages" in obj) {
     throw new Error(
       `Blocked: ${projectConfigRelativePath()} still uses "implementation_packages". ` +
-        `Run \`mindplan-mcp init\` to migrate to { sources, exclude }.`
+        `Call upgrade_project (MCP) to migrate to { sources, exclude }.`
     );
   }
 

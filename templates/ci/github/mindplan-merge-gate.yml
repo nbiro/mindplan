@@ -1,4 +1,4 @@
-# MindPlan merge gate, installed by `mindplan-mcp init --ci github`.
+# MindPlan merge gate, written by the setup_project MCP tool (ci: "github").
 #
 # The default branch holds work that is done (stable / unstable) or still being built
 # (in-progress), never work that is in review. This job fails a pull request to the default

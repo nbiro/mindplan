@@ -1,0 +1,82 @@
+---
+id: i-setup-project
+type: Interaction
+title: "Set up the project"
+description: "Agent calls setup_project on a repo with no graph: it creates the graph and stamps it, optionally writes the merge-gate workflow, and returns the setup guide for wiring the agent files and filling the brief with the user."
+state: stable
+shipped_at: 2026-10-31T20:33:29.094Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T19:40:48.412Z
+updated_at: 2026-10-31T20:33:29.094Z
+aliases:
+  - "init"
+  - "install"
+  - "adopt"
+  - "onboard"
+  - "setup"
+tests:
+  - src/foundations/f-test-harness/merge-gate.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-graph-migrations
+  - f-tool-kit
+  - f-source-index
+  - f-territory-store
+leads_to:
+  - i-orient-plan
+implements:
+  - src/interactions/i-setup-project/
+---
+
+# Set up the project
+
+## Purpose
+
+Agent sets up MindPlan in a repo that has no graph yet, from inside the session, with no CLI step. The tool creates only what MCP must own (the graph tree, the default config, the empty brief, the stamp, and the merge-gate workflow when the user asked for it) and hands the agent a guide for the rest: wiring the agent instruction files, the ignores, and filling the brief with the user. It never edits a file the user owns, because only the user and their agent can judge an existing `CLAUDE.md` or `AGENTS.md`.
+
+## Actor & Trigger
+
+- **Actor:** agent (asked by the user, or sent by `get_project`'s `version` field and every `Blocked: Version` while no graph exists)
+- **Trigger:** MCP `setup_project({ ci? })`
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-setup-project/` (`handlers.ts`, `tools.ts`, `workflow.ts`)
+
+- `setupProject({ ci? })` (handler, MCP tool `setup_project`, kind `write`, not version-gated):
+  - `server-behind` → Blocked naming the package to upgrade to; `upgrade` (a graph exists but is behind) → Blocked: call `upgrade_project` first
+  - Otherwise: `ensureDirectories()` (`f-territory-store`), the default `mindplan/config.json` when missing (`migrateImplementationPackages`, `f-graph-migrations`), `mindplan/project.md` from `templates/agent/project.md` when missing (never overwritten), and `stampGraph()` when the graph was just created. On a current graph it writes nothing and returns the guide again (re-wiring after a clone)
+  - `ci: "github"` → `installMergeGateWorkflow` (`workflow.ts`, moved from init unchanged): copies `templates/ci/github/mindplan-merge-gate.yml` into the repository top's `.github/workflows/` folder (`MERGE_GATE_WORKFLOW`) (`repoTop`, `f-source-index`; outside git under the project root), replacing `{{MINDPLAN_DIR}}` and `{{MINDPLAN_VERSION}}` (the package's `major.minor`). An existing workflow is kept and reported `installed: false`
+  - Returns `{ created, changed_files, ci?, pointer, guide }`: `changed_files` from `snapshotTree` / `changedSince` plus the workflow path when written; `pointer` is `templates/agent/agents-stub.md` (the text the agent writes to `MINDPLAN.md`); `guide` is `templates/agent/setup-guide.md`
+- The guide (owned by `f-framework-docs`) tells the agent to: write `MINDPLAN.md` from `pointer`; add `@MINDPLAN.md` to `CLAUDE.md` (created when missing) and a one-line "read and follow MINDPLAN.md" to `AGENTS.md` when the repo has one; add `mindplan/**` to `.cursorignore` for Cursor and `.mindplan-cache/` to `.gitignore`; read the existing agent instruction files and propose which rules move into the brief (`patch_project_rules`) or onto nodes later, showing the user the diff and removing moved rules from their source only on approval; interview the user for the description (`patch_project_description`); offer the CI workflow; finish with `run_check`
+- `tools.ts` defines `setup_project` with `gate: false`
+
+Depends on: `f-graph-migrations`, `f-territory-store`, `f-source-index`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- A `mindplan/` with empty type folders and no stamp (left by a 0.12 server) reads as `setup`, and `setup_project` finishes it
+- In an empty directory `setup_project` creates `mindplan/` with config, brief, and a current stamp, lists those paths in `changed_files`, and returns `pointer` and `guide`; after it, gated tools work
+- A second call writes nothing and returns the guide
+- On a graph behind the server it is Blocked naming `upgrade_project`; on a stamp ahead of the server it is Blocked naming the package
+- `ci: "github"` writes the workflow with the project path and the package's minor version; a second call keeps an edited workflow
+- It never writes `CLAUDE.md`, `AGENTS.md`, `MINDPLAN.md`, `.gitignore`, or `.cursorignore`
+- Verified via `npm test`
+
+## Decisions
+
+### d-setup-upgrade-mcp-tools
+
+- Decision: Setup and upgrade are two MCP tools (setup_project, upgrade_project) with no CLI init command: each runs its deterministic part in code and returns a guide for the judgment part (wiring CLAUDE.md / AGENTS.md, moving rules into the brief with the user's approval, the product description), and the server writes nothing outside mindplan/ except the merge-gate workflow when asked.
+- Alternatives:
+  - Keep mindplan-mcp init (or a deprecated alias): an extra install step, and it either skips or overwrites repo-owned files like CLAUDE.md because it cannot judge them
+  - A setup skill only: an agent cannot create mindplan/ (MCP is its only writer) and must not hand-run the git-history backfill
+  - One tool for setup and upgrade: the Block message would point at a tool whose behavior depends on state, and setup's interview has no place in an upgrade
+- Why: Registering the MCP server is already a manual step, and its instructions route every session to get_project, which can name the right tool; code keeps migrations exact, the agent and user keep the decisions about their own files.
+- Consequences: Projects without an agent (CI only) cannot migrate; the check fails until an agent runs upgrade_project. Every "run mindplan-mcp init" message becomes a setup_project or upgrade_project call. Host skill copies and mindplan/agent/ are no longer installed.
+- Change: setup-upgrade
+- Date: 2026-10-31

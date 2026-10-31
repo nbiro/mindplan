@@ -2,17 +2,16 @@
 id: if-cli
 type: Interface
 title: "CLI"
-description: "CLI for init (--host, --ci github), check (--base, --merge, --merge=strict), and view: parses argv, prints the shared check output and warnings, prints legacy renames and removals, and sets the exit code."
+description: "CLI for check (--base, --merge, --merge=strict) and view: parses argv, prints the shared check output and warnings, prints legacy removals, and sets the exit code; setup and upgrade are MCP tools, not commands."
 state: stable
-shipped_at: 2026-10-28T16:39:50.182Z
-revisions: 9
-churn: 6.016
+shipped_at: 2026-10-31T20:33:29.232Z
+revisions: 10
+churn: 6.592
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-28T16:39:50.182Z
+updated_at: 2026-10-31T20:33:29.232Z
 depends_on:
   - f-mcp-runtime
 exposes:
-  - i-init-project
   - i-check-integrity
   - i-export-map
 implements:
@@ -28,7 +27,7 @@ tests:
 
 ## Purpose
 
-CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help, output, and exit codes only. Init takes `--host cursor|claude|all` to choose which host copies it installs. `check` prints exactly what the `run_check` tool returns, so the CLI and the agent tool cannot drift apart.
+CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help, output, and exit codes only. There is no `init`: setting up and upgrading a project are the MCP tools `setup_project` and `upgrade_project`, because the judgment parts (agent files, the brief) need an agent and the migrations need the server anyway. `check` prints exactly what the `run_check` tool returns, so the CLI and the agent tool cannot drift apart, and CI fails on a graph that needs setup or upgrade.
 
 ## Kind
 
@@ -36,36 +35,26 @@ CLI command surface.
 
 ## Exposed Interactions
 
-- `i-init-project` — `init` (`-f` / `--force`, `--host cursor|claude|all`; no `--layout`)
-- `i-check-integrity` — `check` (default ownership; `--base` opt-in)
+- `i-check-integrity` — `check` (default ownership; `--base` opt-in; `--merge`, `--merge=strict`)
 - `i-export-map` — `view` / `export`
 
 ## Spec
 
 Intended files: `src/interfaces/if-cli/`
 
-- `--host` accepts `cursor`, `claude`, or `all`; default `cursor`; any other value is `Blocked: unknown init host`
-- Print one line per installed host copy, grouped by host
-- Remove `--layout` parsing and help
-- Print init migration report from `runInit` when applicable, including the `.gitignore` entry for `.mindplan-cache/` (`searchCacheIgnore`)
-- When init stops after applying some renames, print those lines before the error
+- Commands: no argument starts the MCP server (`f-mcp-runtime`); `check`, `view` / `export`, `help`. Any other command, `init` included, is `Unknown command` and exit 1; for `init` the message adds that setup and upgrade are now the MCP tools `setup_project` and `upgrade_project`
 - `check` prints `renderCheckOutput(result)`: `mindplan-mcp check: ok` on stdout, or the `Blocked:` lines on stderr and exit 1; `Warning:` lines follow either way and never change the exit code
 - `check --merge` runs the merge gate (`merge: true`); `--merge=strict` the strict level (`merge: "strict"`), with `--base <ref>` as its base (an explicit `--base` also runs dirty-src, as without `--merge`). Any other `--merge=` value is `Blocked: unknown merge level`, and `--merge` with `--merge=strict` is `Blocked:` (pass one level). Help documents both
-- `init --ci github` (also `--ci=github`) passes `ci: "github"` to `runInit` and prints the workflow line (installed, or already present) with a reminder to make the job a required status check; any other value is `Blocked: unknown init ci`
 - `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
+- Help lists the commands and says how to set up or upgrade a project (register the MCP server, then `setup_project` / `upgrade_project`)
 
 ## Acceptance Criteria
 
-- `--host claude` and `--host all` work; an unknown host exits non-zero with a Blocked message
-- Help documents `--host`
-- `--layout` is an unknown option
+- `mindplan-mcp init` exits non-zero and names `setup_project` and `upgrade_project`
+- Help has no `init` section and names both tools
 - `check` output matches the `run_check` tool's `output`; warnings print without failing the check
 - No domain logic under this Interface
 - Verified via smoke
-
-## Impact
-
-Init gains the `--host` flag. Existing invocations behave as before because the default host is Cursor. `check` additionally prints `Warning:` lines; its exit code is unchanged.
 
 ## Attachments
 

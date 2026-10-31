@@ -21,6 +21,10 @@ export const SPEC_TOPICS: Record<string, { title: string; headings: string[] }> 
     headings: ["Build pipeline (Foundation / Interaction / Interface)"],
   },
   bugs: { title: "Bug lifecycle", headings: ["Bug lifecycle", "Bug initial state"] },
+  version: {
+    title: "The version stamp, migration level, and the version gate (setup_project, upgrade_project)",
+    headings: ["Version stamp (`mindplan/version.json`)", "Version gate"],
+  },
   "atomic-ops": {
     title: "Atomic Ops and the Completion Check",
     headings: ["Atomic Operations", "Rule 5 — The Completion Check"],

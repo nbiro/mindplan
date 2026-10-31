@@ -11,7 +11,6 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import {
   drainRemovedLegacyFiles,
-  ensureDirectories,
   loadGraph,
   projectRoot,
   territoryBodyReader,
@@ -30,7 +29,7 @@ export const SERVER_INSTRUCTIONS =
   "Before answering any questions or writing any code for this project, call get_project and read the response. " +
   "Follow the playbook (systems dialect) and the project description and rules it returns. " +
   "Project rules are mandatory: before each action, call get_rules then orient_for_work. " +
-  "Before any new-feature code change, update or create the matching nodes using the plan-project skill: " +
+  "Before any new-feature code change, update or create the matching nodes using the plan-project skill (load it with get_skill): " +
   "it covers every graph write (create_node, open_next, discard_next, link_nodes, unlink_nodes, patch_node_territory, " +
   "patch_node_rules, patch_project_description, patch_project_rules, patch_config, and attachments).";
 
@@ -58,7 +57,8 @@ async function runMcpServer(): Promise<void> {
   guardStdout();
   // One server process is one agent session: writes on a node wait for its orientation.
   enableOrientationGate();
-  ensureDirectories();
+  // No directory is created here: mindplan/ appears only through setup_project, so graphStatus can
+  // tell a repo without a graph from one with an empty graph.
   const server = new McpServer(
     {
       name: "mindplan",

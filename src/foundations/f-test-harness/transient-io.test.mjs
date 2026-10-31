@@ -4,6 +4,8 @@
  * other error at once; and open_next followed by patch_node_territory and record_decision sent
  * together, over and over, always succeeds with the decision on the new next file.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

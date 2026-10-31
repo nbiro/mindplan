@@ -22,6 +22,9 @@ import { TOOLS as DECISION_TOOLS } from "../../interactions/i-record-decision/to
 import { TOOLS as BRIEF_EDIT_TOOLS } from "../../interactions/i-edit-brief/tools.js";
 import { TOOLS as CHECK_TOOLS } from "../../interactions/i-check-integrity/tools.js";
 import { TOOLS as EXPORT_TOOLS } from "../../interactions/i-export-map/tools.js";
+import { TOOLS as SETUP_TOOLS } from "../../interactions/i-setup-project/tools.js";
+import { TOOLS as UPGRADE_TOOLS } from "../../interactions/i-upgrade-graph/tools.js";
+import { versionGate } from "../../foundations/f-graph-migrations/status.js";
 import {
   drainRemovedLegacyFiles,
   restoreRemovedLegacyFiles,
@@ -69,12 +72,24 @@ const ANNOTATIONS: Record<ToolKind, ToolAnnotations> = {
   destructive: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
 };
 
-/** Mounts one tool: annotations from its kind, handler wrapped in the guarded envelope. */
+/**
+ * Mounts one tool: annotations from its kind, handler wrapped in the guarded envelope. Unless the
+ * tool says `gate: false`, the version gate runs first, so a graph that needs setup or an upgrade
+ * is never read or written by code that expects the current format.
+ */
 function mount(server: McpServer, def: ToolDef): void {
-  const { kind, drift, ...rest } = def.config;
+  const { kind, drift, gate, ...rest } = def.config;
   // The definition erased its handler's argument type; the SDK validates the input schema before
   // the call, so the handler receives exactly what its schema describes.
-  const callback = guarded(def.handler as (args: unknown) => unknown, { write: kind !== "read", drift });
+  const handler = def.handler as (args: unknown) => unknown;
+  const gated =
+    gate === false
+      ? handler
+      : (args: unknown) => {
+          versionGate();
+          return handler(args);
+        };
+  const callback = guarded(gated, { write: kind !== "read", drift });
   server.registerTool(def.name, { ...rest, annotations: ANNOTATIONS[kind] }, callback as unknown as ToolCallback<typeof rest.inputSchema>);
 }
 
@@ -139,6 +154,7 @@ const TOOL_ORDER = [
   "orient_for_work",
   "get_project",
   "get_spec",
+  "get_skill",
   "get_rules",
   "patch_node_territory",
   "patch_node_rules",
@@ -159,6 +175,8 @@ const TOOL_ORDER = [
   "unlink_nodes",
   "update_node_status",
   "force_unship",
+  "setup_project",
+  "upgrade_project",
 ];
 
 /** Register every MindPlan MCP tool onto the given server. */
@@ -177,6 +195,8 @@ export function registerMindPlanTools(server: McpServer): void {
     ...BRIEF_EDIT_TOOLS,
     ...CHECK_TOOLS,
     ...EXPORT_TOOLS,
+    ...SETUP_TOOLS,
+    ...UPGRADE_TOOLS,
   ];
   const byName = new Map(defs.map((d) => [d.name, d]));
   if (byName.size !== defs.length || byName.size !== TOOL_ORDER.length) {

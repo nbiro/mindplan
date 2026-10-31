@@ -3,9 +3,12 @@
  * by change, and `--merge=strict` also Blocks in-progress nodes whose claimed files changed
  * against the base. The CLI, runCheckHandler, and run_check over MCP agree. Changed paths are
  * project-relative when the project sits below the repository top, the default base is the newer
- * of the local and remote default branch, and init --ci github writes the workflow at the
- * repository top. Run via npm test.
+ * of the local and remote default branch, and setup_project({ ci: "github" }) writes the workflow
+ * at the repository top. Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
+import { runSetup, runUpgrade } from "./upgrade-run.mjs";
 import assert from "assert/strict";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
@@ -415,60 +418,48 @@ function subfolderProject(label, nodes) {
   ok("the default base is the newer of main and origin/main, so already-merged commits do not count");
 }
 
-// --- init --ci github ------------------------------------------------------------------------------
+// --- setup_project({ ci: "github" }) -------------------------------------------------------------
 {
-  const init = (root, args) =>
-    spawnSync(process.execPath, [serverEntry, "init", ...args], {
-      cwd: root,
-      env: { ...process.env, MINDPLAN_ROOT: root },
-      encoding: "utf-8",
-    });
   const workflow = (root) => path.join(root, ".github", "workflows", "mindplan-merge-gate.yml");
   const pkg = JSON.parse(fs.readFileSync(path.join(toolRoot, "package.json"), "utf-8"));
   const minor = pkg.version.split(".").slice(0, 2).join(".");
 
-  const plainRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-merge-init-plain-"));
-  const plain = init(plainRoot, []);
+  const plainRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-merge-setup-plain-"));
+  const plain = runSetup(plainRoot);
   assert.equal(plain.status, 0, plain.stderr);
   assert.equal(fs.existsSync(workflow(plainRoot)), false);
-  ok("plain init writes no workflow");
+  assert.equal(plain.result.ci, undefined);
+  ok("a plain setup writes no workflow");
 
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-merge-init-"));
-  const first = init(root, ["--ci", "github"]);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-merge-setup-"));
+  const first = runSetup(root, { args: { ci: "github" } });
   assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /Installed merge-gate workflow at \.github\/workflows\/mindplan-merge-gate\.yml/);
-  assert.match(first.stdout, /required status check/);
+  assert.deepEqual(first.result.ci, { installed: true, path: ".github/workflows/mindplan-merge-gate.yml" });
+  assert.ok(first.result.changed_files.includes(".github/workflows/mindplan-merge-gate.yml"));
   const text = fs.readFileSync(workflow(root), "utf-8");
   assert.ok(text.includes(`npx -y mindplan-mcp@${minor} check --merge`), text);
   assert.ok(!text.includes("{{MINDPLAN_VERSION}}"), "the version placeholder is replaced");
   assert.match(text, /pull_request:/);
   assert.match(text, /if: github\.base_ref == github\.event\.repository\.default_branch/);
   assert.match(text, /working-directory: \.\r?\n/);
-  ok(`init --ci github writes the workflow running check --merge at mindplan-mcp@${minor}`);
+  ok(`setup_project with ci github writes the workflow running check --merge at mindplan-mcp@${minor}`);
 
   fs.writeFileSync(workflow(root), "# edited\n");
-  const again = init(root, ["--ci=github"]);
+  const again = runSetup(root, { args: { ci: "github" } });
   assert.equal(again.status, 0, again.stderr);
-  assert.match(again.stdout, /merge-gate workflow already present/);
+  assert.deepEqual(again.result.ci, { installed: false, path: ".github/workflows/mindplan-merge-gate.yml" });
   assert.equal(fs.readFileSync(workflow(root), "utf-8"), "# edited\n");
-  const forced = init(root, ["--ci", "github", "--force"]);
-  assert.equal(forced.status, 0, forced.stderr);
-  assert.notEqual(fs.readFileSync(workflow(root), "utf-8"), "# edited\n");
-  ok("a rerun keeps an edited workflow; --force rewrites it");
+  ok("a second setup keeps an edited workflow");
 
-  const bad = init(root, ["--ci", "gitlab"]);
-  assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /unknown init ci "gitlab"/);
-  ok("an unknown --ci value is Blocked");
-
-  const { repo, root: subRoot } = subfolderProject("init-subdir", []);
+  const { repo, root: subRoot } = subfolderProject("setup-subdir", []);
   gitIn(repo)("init", "-q", "-b", "main");
-  const nested = init(subRoot, ["--ci", "github"]);
+  // The fixture is a config with no node and no stamp: setup finishes it.
+  const nested = runSetup(subRoot, { args: { ci: "github" } });
   assert.equal(nested.status, 0, nested.stderr);
-  assert.match(nested.stdout, /Installed merge-gate workflow at \.\.\/\.github\/workflows\/mindplan-merge-gate\.yml/);
+  assert.deepEqual(nested.result.ci, { installed: true, path: "../.github/workflows/mindplan-merge-gate.yml" });
   assert.equal(fs.existsSync(workflow(subRoot)), false, "no workflow below the repository top");
   assert.match(fs.readFileSync(workflow(repo), "utf-8"), /working-directory: sub\r?\n/);
-  ok("init --ci github in a project below the repository top writes the workflow at the top, running in the project");
+  ok("setup_project with ci github below the repository top writes the workflow at the top, running in the project");
 }
 
 console.log("merge-gate tests passed");

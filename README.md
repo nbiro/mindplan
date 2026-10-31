@@ -111,17 +111,9 @@ Requires Node.js 22.13 or later (the first 22.x release with `node:sqlite` unfla
      npm install -D mindplan-mcp
      ```
 
-   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.5` (a version range) in the commands below.
+   - **Any other project** (Python, Go, …): nothing to install; use `npx -y mindplan-mcp@0.13` (a version range) in the config below.
 
-2. From your project root, scaffold:
-
-```bash
-npx mindplan-mcp init --host claude   # or cursor (default) / all
-```
-
-`init` installs `mindplan/agent/` (playbook + skills), `mindplan/project.md` (a copy of `templates/agent/project.md` — description + rules, not the playbook) when missing, a short MindPlan stub in `AGENTS.md` when missing, and a `.mindplan-cache/` line in `.gitignore`. Host copies depend on `--host cursor|claude|all` (default `cursor`): Cursor gets `.cursorignore`, `.cursor/permissions.json`, `.cursor/rules/mindplan.mdc` and `.cursor/skills/`; Claude Code gets `CLAUDE.md` (an `@AGENTS.md` import) and `.claude/skills/`. It also renames legacy `current.mdx` / `next.mdx` territory files to `<id>.mdx` / `<id>.next.mdx`, and stamps `mindplan/version.json` with the package version. With `--ci github` it also installs the merge-gate workflow (see [Merge gate](#merge-gate)). The stub requires `get_project` before planning or code, `get_rules` then `orient_for_work` before each action, and the `plan-project` skill before new-feature graph work; when tools are hidden, use the init-installed host copies under `.cursor/` or `.claude/` and `AGENTS.md`.
-
-3. Register the MCP server. It runs over stdio, so the host starts it from the project root. For Claude Code, commit a `.mcp.json`:
+2. Register the MCP server. It runs over stdio, so the host starts it from the project root. For Claude Code, run `claude mcp add mindplan -- npx mindplan-mcp`, or commit a `.mcp.json` so everyone who opens the repo gets it (the package ships the same snippet as `templates/agent/mcp.json.example`; Cursor reads it from `.cursor/mcp.json`):
 
 ```json
 {
@@ -131,19 +123,13 @@ npx mindplan-mcp init --host claude   # or cursor (default) / all
 }
 ```
 
-With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.5"]`. Other hosts: `mindplan/agent/integrations/` (or [templates/agent/integrations/README.md](templates/agent/integrations/README.md)).
+With a dev dependency, `npx mindplan-mcp` runs the locked copy from `node_modules/.bin` (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.13"]`. Other hosts: [templates/agent/integrations/README.md](templates/agent/integrations/README.md). Reload MCP servers after config changes.
 
-4. Reload MCP servers after config changes.
+3. Ask your agent to **set up MindPlan**. It calls the `setup_project` tool, which creates `mindplan/` (a default `config.json` with `sources: ["src/**"]`, an empty `project.md` from `templates/agent/project.md`, and the `version.json` stamp) and returns a guide plus `pointer`, the short instructions every session must see first. Following the guide, the agent writes the pointer to `MINDPLAN.md` at the root and wires it into the files your agent reads (`@MINDPLAN.md` in `CLAUDE.md`, a line in `AGENTS.md`, or the host's rules file), adds `.mindplan-cache/` to `.gitignore` (and `mindplan/**` to `.cursorignore` for Cursor), proposes moving your existing standing rules into the project brief, asks for a product description, and offers the [merge gate](#merge-gate). The server never writes those repository files itself; the agent shows you each change. The skills (`plan-project`, `define-entities`) are served by the server through `get_skill`, so nothing is copied into `.claude/` or `.cursor/`.
 
 ### Upgrading
 
-Bump the package (`npm update mindplan-mcp`, Dependabot, or a new `npx` range), then rerun init with the same `--host`:
-
-```bash
-npx mindplan-mcp init --host claude
-```
-
-`mindplan/version.json` records the package version that last ran init. When it is missing or older than the running server, `get_project` returns a `version` warning and `mindplan-mcp check` prints `Warning: version: …` until init runs. Init then rewrites the package-owned files (playbook, skills, integrations, MCP example, host skill copies, Cursor rule) and applies graph migrations; it leaves `AGENTS.md`, `CLAUDE.md`, `.cursorignore`, `.cursor/permissions.json`, and `mindplan/project.md` alone unless `--force`. Read [CHANGELOG.md](CHANGELOG.md) for breaking changes before upgrading across a minor version while on 0.x. A stamp newer than the server (a teammate upgraded, you did not) warns too, and init refuses it until you upgrade or pass `--force`.
+Bump the package (`npm update mindplan-mcp`, Dependabot, or a new `npx` range) and reload the MCP server. `mindplan/version.json` is `{ package, graph, migrations }`: `migrations` is the graph migration level it was last brought to. A release that adds a graph migration raises the server's level; a release that adds none needs no upgrade step. While the stamp is below the server's level (or missing: graphs stamped by the removed `init` command read as level 0), every graph tool answers `Blocked: Version`, `get_project` returns a `version` field naming the fix, and `mindplan-mcp check` fails. Ask your agent to upgrade MindPlan: it calls `upgrade_project`, which runs every migration (all idempotent), stamps the new level, and returns a guide. The agent then deletes the old host copies it reports as `leftovers` (`.claude/skills/mindplan-*`, `.cursor/skills/mindplan-*`, `.cursor/rules/mindplan.mdc`), refreshes `MINDPLAN.md` when `pointer_outdated`, and commits the upgrade on its own. A stamp newer than the server (a teammate upgraded, you did not) blocks too, until you upgrade `mindplan-mcp`. Read [CHANGELOG.md](CHANGELOG.md) for breaking changes before upgrading across a minor version while on 0.x.
 
 ### From source (contributors)
 
@@ -151,8 +137,9 @@ npx mindplan-mcp init --host claude
 git clone https://github.com/nbiro/mindplan.git
 cd mindplan
 npm install && npm run build
-node /absolute/path/to/mindplan/dist/index.js init   # from your project root
 ```
+
+Then register `node /absolute/path/to/mindplan/dist/index.js` (with `MINDPLAN_ROOT` set to your project root) as the MCP server command instead of `npx mindplan-mcp`.
 
 ## File system layout (consumer project)
 
@@ -162,8 +149,7 @@ node /absolute/path/to/mindplan/dist/index.js init   # from your project root
 ├── mindplan/
 │   ├── config.json                # { sources, exclude } — coverage universe; optional decisions, search
 │   ├── project.md                 # description + rules only (playbook via get_project)
-│   ├── version.json               # { package, graph } — written by init; drives the upgrade warning
-│   ├── agent/                     # playbook + skills (installed by init)
+│   ├── version.json               # { package, graph, migrations } — written by setup_project / upgrade_project; drives the version gate
 │   ├── journeys/<id>/<id>.mdx
 │   ├── foundations/<id>/<id>.mdx  # + optional <id>.next.mdx
 │   ├── interactions/<id>/<id>.mdx # + optional <id>.next.mdx
@@ -220,7 +206,7 @@ Every tool call loads the graph. Parsing every `.mdx` file costs about a millise
 
 ## MCP Tools
 
-The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are defined in each action's `tools.ts` under [`src/interactions/`](src/interactions/) and mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract). Every tool carries MCP annotations derived from its kind (`readOnlyHint` on read tools, `destructiveHint` on `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`; `openWorldHint` always false), so a host can auto-approve reads and prompt on destructive calls. Results are compact JSON text plus `structuredContent`. Results that grow with the graph stay under the host's size limit: `get_mindplan_graph` pages (`offset` / `limit`, `next_offset`), and `export_mindplan_view` refuses a diagram over 80,000 characters unless you pass `focus` or `output`.
+The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are defined in each action's `tools.ts` under [`src/interactions/`](src/interactions/) and mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract). Every tool carries MCP annotations derived from its kind (`readOnlyHint` on read tools, `destructiveHint` on `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`; `openWorldHint` always false), so a host can auto-approve reads and prompt on destructive calls. The server has 33 tools. Every tool except `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `setup_project`, and `upgrade_project` is gated on the graph version: with no `mindplan/` it answers `Blocked: Version` naming `setup_project`, with a stamp below the server's migration level it names `upgrade_project`, and with a stamp or graph newer than the server it asks you to upgrade `mindplan-mcp` (see [Upgrading](#upgrading)). Results are compact JSON text plus `structuredContent`. Results that grow with the graph stay under the host's size limit: `get_mindplan_graph` pages (`offset` / `limit`, `next_offset`), and `export_mindplan_view` refuses a diagram over 80,000 characters unless you pass `focus` or `output`.
 
 | Tool | Kind | Description |
 |------|------|-------------|
@@ -228,6 +214,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `get_rules` | read | The mandatory project rules with a `rules_version` tag; `known_version` returns `{ unchanged: true }` without the text when nothing changed |
 | `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`, `info`); unclaimed files and illegal imports come with their fix; `hotspot:` warnings name shipped nodes that ship far more often than the project's median; `change` also gates every member of a change (revisions and labeled neighbors) and prints its additivity; `merge` (`true` or `"strict"`) runs the merge gate |
 | `get_spec` | read | One section of the running server's own SPEC.md by stable topic id (`territory-shape`, `lifecycle`, `change-ids`, `neighbors`, `decisions`, …) or tool name; no topic lists them |
+| `get_skill` | read | The skills this server serves (`plan-project`, `define-entities`): no name lists them with their description and files; `name` returns the SKILL.md text without frontmatter; `name` + `file` returns one supporting file |
 | `list_areas` | read | Every Journey (area) as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
 | `find_related_nodes` | read | Hybrid search by query (keyword + semantic; exact id first); focus + 1-hop |
 | `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset` |
@@ -250,15 +237,16 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent`; with `change` on a shipped node, plan (or drop) an edge under that change without `open_next`, applied when `open_next` opens it with that change |
 | `update_node_status` | mutation | One node, or a `revisions` list ordered Foundation → Interaction → Interface → Bug; stops on the first `Blocked:` |
 | `force_unship` | mutation, destructive | Mistaken-ship recovery (`confirm: "unship:<id>"`) |
+| `setup_project` | mutation | Create `mindplan/` on a repository without one (graph folders, default `config.json`, empty `project.md`, `version.json`); returns the `pointer` text for `MINDPLAN.md` and the setup guide the agent follows for the files you own; `ci: "github"` also writes the merge-gate workflow. On a current graph it writes nothing and returns the guide again |
+| `upgrade_project` | mutation | Run every graph migration (idempotent) and stamp the server's migration level; returns `changed_files`, `migrations`, old host copies as `leftovers` (reported, not deleted), `pointer_outdated`, `pointer`, and the upgrade guide |
 
 ## CLI
 
 | Command | Description |
 |---------|-------------|
 | `mindplan-mcp` | Start MCP server (stdio) |
-| `mindplan-mcp init` | Scaffold territory + agent assets; stamp `mindplan/version.json`; rerun after upgrading |
 | `mindplan-mcp view` | Print Mermaid/DOT (`export` alias) |
-| `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix); `--base` opt-in dirty-src; `--merge` merge gate (see [Merge gate](#merge-gate)); also the `run_check` MCP tool |
+| `mindplan-mcp check` | Offline integrity (graph + file ownership + import matrix; fails with `Blocked: Version` while the graph needs setup or an upgrade); `--base` opt-in dirty-src; `--merge` merge gate (see [Merge gate](#merge-gate)); also the `run_check` MCP tool |
 | `mindplan-mcp help` | Usage |
 
 ### Merge gate
@@ -273,15 +261,15 @@ It fails with one `Blocked: Merge` line per Foundation, Interaction, or Interfac
 
 `--merge=strict` (with `--base <ref>`, default the merge base with the newer of `main` and `origin/main`, else `master`) also fails an `in-progress` node whose claimed files changed against the base: a finished feature left at `in-progress`. It is opt-in because it blocks the incremental PRs of a large feature. An explicit `--base` also turns on the dirty-src ownership check, as it does without `--merge`.
 
-To run the gate in CI, install the GitHub Actions workflow:
+To run the gate in CI, ask your agent to install the GitHub Actions workflow; it calls:
 
-```bash
-npx mindplan-mcp init --ci github
+```
+setup_project({ ci: "github" })
 ```
 
-It writes `.github/workflows/mindplan-merge-gate.yml` at the repository top (a project in a subfolder gets the workflow at the top, running in that folder), which runs `check --merge` on every pull request to the default branch. Then make its **mindplan merge gate** job a required status check for the default branch (Settings → Branches, or a ruleset); otherwise a red gate does not stop the merge. Init keeps an edited workflow unless `--force`.
+It writes `.github/workflows/mindplan-merge-gate.yml` at the repository top (a project in a subfolder gets the workflow at the top, running in that folder), which runs `check --merge` on every pull request to the default branch. Then make its **mindplan merge gate** job a required status check for the default branch (Settings → Branches, or a ruleset); otherwise a red gate does not stop the merge. An existing workflow file is kept as it is.
 
-Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`). Search reads `MINDPLAN_SEARCH`, `MINDPLAN_SEARCH_OFFLINE`, and `MINDPLAN_MODEL_CACHE` (see [Search](#search)); the graph cache reads `MINDPLAN_GRAPH_CACHE` (see [Graph cache](#graph-cache)).
+Set `MINDPLAN_ROOT` to override the project root (default `process.cwd()`). Search reads `MINDPLAN_SEARCH`, `MINDPLAN_SEARCH_OFFLINE`, and `MINDPLAN_MODEL_CACHE` (see [Search](#search)); the graph cache reads `MINDPLAN_GRAPH_CACHE` (see [Graph cache](#graph-cache)). `MINDPLAN_VERSION_GATE=off` turns the version gate off for one process (for test fixtures without a stamp), as `MINDPLAN_ORIENT_GATE=off` does for the orientation gate.
 
 ## Development
 

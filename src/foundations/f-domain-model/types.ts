@@ -67,7 +67,7 @@ export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
 
 /**
  * State of a next file a release before 0.8.0 kept beside a shipped node. Not an evolution:
- * discover must not set `node.next`, and init removes the file.
+ * discover must not set `node.next`, and upgrade_project removes the file.
  */
 export const MIRROR_STATE = "mirror" as const;
 export type MirrorState = typeof MIRROR_STATE;

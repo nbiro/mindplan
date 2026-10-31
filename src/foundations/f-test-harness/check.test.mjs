@@ -1,6 +1,9 @@
 /**
  * Integrity check CLI coverage for declared file ownership. Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
+import { runUpgrade } from "./upgrade-run.mjs";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
@@ -428,31 +431,27 @@ if (legacy.status === 0 || !legacyOut.includes("implementation_packages")) {
   console.log(`FAIL legacy config should Blocked: ${legacyOut}`);
 } else console.log("ok   legacy implementation_packages Blocks check");
 
-const migrate = spawnSync(process.execPath, [serverEntry, "init"], {
-  cwd: root,
-  env: { ...process.env, MINDPLAN_ROOT: root },
-  encoding: "utf-8",
-});
+const migrate = runUpgrade(root);
 if (migrate.status !== 0) {
   failures++;
-  console.log(`FAIL init migration: ${migrate.stderr || migrate.stdout}`);
+  console.log(`FAIL upgrade_project migration: ${migrate.stderr}`);
 } else {
   const cfg = JSON.parse(fs.readFileSync(path.join(root, "mindplan", "config.json"), "utf-8"));
-  if (!Array.isArray(cfg.sources) || !("exclude" in cfg)) {
+  if (!Array.isArray(cfg.sources) || !("exclude" in cfg) || migrate.result?.migrations?.config?.migrated !== true) {
     failures++;
-    console.log(`FAIL init should write sources/exclude: ${JSON.stringify(cfg)}`);
-  } else console.log("ok   init migrates to sources/exclude");
+    console.log(`FAIL upgrade_project should write sources/exclude: ${JSON.stringify(cfg)}`);
+  } else console.log("ok   upgrade_project migrates to sources/exclude");
 }
 
-const layoutRejected = spawnSync(process.execPath, [serverEntry, "init", "--layout", "free"], {
+const initGone = spawnSync(process.execPath, [serverEntry, "init"], {
   cwd: root,
   env: { ...process.env, MINDPLAN_ROOT: root },
   encoding: "utf-8",
 });
-if (layoutRejected.status === 0 || !(layoutRejected.stderr || "").includes("--layout")) {
+if (initGone.status === 0 || !(initGone.stderr || "").includes("setup_project") || !(initGone.stderr || "").includes("upgrade_project")) {
   failures++;
-  console.log(`FAIL --layout should be rejected: ${layoutRejected.stderr || layoutRejected.stdout}`);
-} else console.log("ok   --layout is rejected");
+  console.log(`FAIL mindplan-mcp init should be gone and name the MCP tools: ${initGone.stderr || initGone.stdout}`);
+} else console.log("ok   mindplan-mcp init is gone and names setup_project / upgrade_project");
 
 // Foundation create requires role
 try {

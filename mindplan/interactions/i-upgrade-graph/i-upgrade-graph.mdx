@@ -1,0 +1,64 @@
+---
+id: i-upgrade-graph
+type: Interaction
+title: "Upgrade the graph"
+description: "Agent calls upgrade_project when the graph is behind the server: it runs the pending migrations, stamps the new level, and returns what changed plus the agent-file leftovers to remove."
+state: stable
+shipped_at: 2026-10-31T20:33:29.158Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T19:40:48.514Z
+updated_at: 2026-10-31T20:33:51.261Z
+aliases:
+  - "migrate"
+  - "upgrade"
+  - "update graph"
+  - "version mismatch"
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-graph-migrations
+  - f-tool-kit
+implements:
+  - src/interactions/i-upgrade-graph/
+tests:
+  - src/foundations/f-test-harness/check.test.mjs
+  - src/foundations/f-test-harness/lean-replies.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
+---
+
+# Upgrade the graph
+
+## Purpose
+
+Agent brings a graph up to the server's migration level when a tool says it is behind. Every other tool is Blocked until then, because new code must not read or write an old-format graph. The migrations run in code (`f-graph-migrations`); the tool also names the agent files the retired init left outside `mindplan/`, since the server does not delete files there.
+
+## Actor & Trigger
+
+- **Actor:** agent, sent by `get_project`'s `version` field, a `Blocked: Version` reply, or a failing check
+- **Trigger:** MCP `upgrade_project()`
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-upgrade-graph/` (`handlers.ts`, `tools.ts`)
+
+- `upgradeProject()` (handler, MCP tool `upgrade_project`, kind `write`, not version-gated):
+  - No `mindplan/` → Blocked: no graph, call `setup_project` (a folder with no stamp and no node reads as `setup` but migrates safely, so it is upgraded); `server-behind` → Blocked naming the package to upgrade to
+  - Otherwise runs `runMigrations()` and `stampGraph()` even when already current (every migration is idempotent, so this also fixes an old-format node a stale branch merged in)
+  - Returns `{ from_level, to_level, changed_files, migrations, leftovers, pointer_outdated, guide }`: `changed_files` from `snapshotTree` / `changedSince`; `migrations` is the `MigrationReport`; `leftovers` lists the files the retired init installed that still exist (`RETIRED_HOST_COPIES`: the two `mindplan-*` skill folders under the Claude Code and Cursor skill directories, and Cursor's `mindplan.mdc` rule); `pointer_outdated` is true when `MINDPLAN.md` is missing or differs from `templates/agent/agents-stub.md`, or `AGENTS.md` / `CLAUDE.md` still holds the retired stub; `guide` is `templates/agent/upgrade-guide.md`
+  - A `LegacyTerritoryMigrationError` reports the renames applied before it in the Blocked text
+- The guide (owned by `f-framework-docs`) tells the agent to delete the leftovers, replace the retired stub in `AGENTS.md` / `CLAUDE.md` with the `MINDPLAN.md` wiring from the setup guide, commit the upgrade on its own, and run `run_check`
+- `tools.ts` defines `upgrade_project` with `gate: false`
+
+Depends on: `f-graph-migrations`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- A graph with no stamp, or a stamp without `migrations`, is Blocked for gated tools; `upgrade_project` migrates it, stamps `migrations: MIGRATION_LEVEL`, and lists every `mindplan/` path it changed; gated tools then work
+- A second call reports no changes
+- Without `mindplan/` it is Blocked naming `setup_project`; on a stamp ahead of the server it is Blocked naming the package
+- Legacy fixtures (renames, config, Atomic Ops, mirror twins, revision backfill, `mindplan/agent/`) are migrated through this tool
+- `leftovers` lists an existing Claude Code `mindplan-plan-project` skill copy and the tool does not delete it
+- Verified via `npm test`

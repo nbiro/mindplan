@@ -2,6 +2,8 @@
  * Unit tests for graph view projections (Mermaid / DOT).
  * Run via: npm test (after build).
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import assert from "node:assert/strict";
 import {
   exportMindPlanView,

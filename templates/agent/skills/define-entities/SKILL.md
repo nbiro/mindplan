@@ -15,7 +15,7 @@ description: >-
 
 Use this skill when adding or restructuring nodes in `mindplan/`. All graph mutations go through the **MindPlan MCP server** — never edit server-owned frontmatter fields directly.
 
-Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. Normative reference: `SPEC.md` (plain-language glossary §2.0.0). For executing work through the build pipeline and Bug lifecycle (always-on process), follow `get_project.playbook`. For plan-only sessions that must not write application code, follow the `plan-project` skill (it calls this skill for create/link steps).
+Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. The server serves this skill: `get_skill({ name: "define-entities" })` returns it, and `get_skill({ name: "define-entities", file: "examples.md" })` its examples. Normative reference: `SPEC.md` (plain-language glossary §2.0.0). For executing work through the build pipeline and Bug lifecycle (always-on process), follow `get_project.playbook`. For plan-only sessions that must not write application code, follow the `plan-project` skill (`get_skill({ name: "plan-project" })`; it calls this skill for create/link steps).
 
 ## Step 0 — Break the request down
 
@@ -356,4 +356,4 @@ A shipped node is one file, `<id>.mdx`. `open_next` writes `<id>.next.mdx` from 
 
 ## Examples
 
-See [examples.md](examples.md) for full greenfield and bug-filing walkthroughs.
+See [examples.md](examples.md) (`get_skill({ name: "define-entities", file: "examples.md" })`) for full greenfield and bug-filing walkthroughs.

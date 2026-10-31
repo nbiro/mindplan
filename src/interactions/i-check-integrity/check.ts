@@ -71,7 +71,7 @@ import {
   projectRoot,
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
-import { projectVersionStatus } from "../../foundations/f-territory-store/version.js";
+import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 const MID_PIPELINE = new Set(["in-progress", "in-review"]);
@@ -468,7 +468,7 @@ function legacyMirrorWarnings(graph: MindPlanGraph): string[] {
     if (!isLegacyMirror(node)) continue;
     warnings.push(
       `legacy: "${node.id}" has a leftover mirror twin (${markdownRelativePath(node, "next")}); ` +
-        `run mindplan-mcp init to remove it.`
+        `call upgrade_project to remove it.`
     );
   }
   return warnings;
@@ -1018,6 +1018,19 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     process.env.MINDPLAN_ROOT = root;
   }
 
+  // A graph that needs setup or an upgrade is not checked: the code may misread it.
+  if (process.env.MINDPLAN_VERSION_GATE !== "off") {
+    const status = graphStatus();
+    if (status.state !== "current") {
+      fail(failures, `Blocked: Version — ${status.warning}`);
+      if (options.cwd) {
+        if (prev === undefined) delete process.env.MINDPLAN_ROOT;
+        else process.env.MINDPLAN_ROOT = prev;
+      }
+      return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
+    }
+  }
+
   let graph: MindPlanGraph;
   try {
     // Config must load (Blocked on legacy implementation_packages).
@@ -1048,8 +1061,6 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     const decisionCtx = createDecisionContext(root);
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     warnings.push(...collectHotspotWarnings(graph, root));
-    const version = projectVersionStatus();
-    if (version.warning) warnings.push(`version: ${version.warning}`);
     const probe = dirtyProbe(root);
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, probe, options.base, failures);

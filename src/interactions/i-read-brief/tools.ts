@@ -15,6 +15,9 @@ import {
 import {
   getSpec,
 } from "./spec.js";
+import {
+  getSkill,
+} from "./skills.js";
 
 /** The MCP tools i-read-brief owns; if-mcp-tools mounts them. */
 export const TOOLS: ToolDef[] = [
@@ -23,13 +26,14 @@ export const TOOLS: ToolDef[] = [
     {
       kind: "read",
       drift: false,
+      gate: false,
       title: "Get project brief",
       description:
         "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
         "Returns the systems dialect and this product's description and standing rules " +
         "({ path, description, rules, rules_version, playbook, check, version? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
         "rules_version tags the rules: pass it to get_rules as known_version. " +
-        "version appears only when mindplan/version.json is missing or does not match this server, and names the fix.",
+        "version appears only when the graph needs setup or an upgrade, or the server is older than the graph, and names the fix (setup_project, upgrade_project, or the package to install); until then every other graph tool is Blocked.",
       inputSchema: {},
     },
     () => getProject()
@@ -39,6 +43,7 @@ export const TOOLS: ToolDef[] = [
     {
       kind: "read",
       drift: false,
+      gate: false,
       title: "Read the specification",
       description:
         "Call when you need a specific MindPlan rule (lifecycle, required sections, change ids, neighbors, decisions, imports, orientation) instead of guessing or retrying. " +
@@ -59,6 +64,7 @@ export const TOOLS: ToolDef[] = [
     {
       kind: "read",
       drift: false,
+      gate: false,
       title: "Get project rules",
       description:
         "Call before each action, before orient_for_work. Returns the mandatory project rules " +
@@ -75,5 +81,23 @@ export const TOOLS: ToolDef[] = [
       },
     },
     ({ known_version }) => getRules({ known_version })
+  ),
+  defineTool(
+    "get_skill",
+    {
+      kind: "read",
+      drift: false,
+      gate: false,
+      title: "Load a MindPlan skill",
+      description:
+        "Call when the playbook or the server instructions name a skill, before acting on it. " +
+        "Returns the skill served by this server: { name, text, files } (text is SKILL.md without frontmatter; files are its supporting files). " +
+        "Pass file to read one supporting file ({ name, file, text }). Without name it lists the skills ({ name, description, files }).",
+      inputSchema: {
+        name: z.string().min(1).optional().describe("Skill name, e.g. plan-project or define-entities. Omit to list them."),
+        file: z.string().min(1).optional().describe("A supporting file of the skill, as listed in files (e.g. examples.md). Needs name."),
+      },
+    },
+    ({ name, file }) => getSkill({ name, file })
   ),
 ];

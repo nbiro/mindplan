@@ -3,6 +3,8 @@
  * the current tag returns a short unchanged reply; patch_project_rules changes the tag; orient's
  * node-rule entries carry a version and leave out text the caller already holds.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

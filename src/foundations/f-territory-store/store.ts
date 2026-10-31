@@ -347,7 +347,7 @@ export function readNextFileState(node: Pick<MindPlanNode, "id" | "type">): stri
 
 /**
  * True when the next file is a `state: mirror` twin a release before 0.8.0 left beside a shipped
- * node. It is not a revision (discover does not set `node.next`); init removes it.
+ * node. It is not a revision (discover does not set `node.next`); upgrade_project removes it.
  */
 export function isLegacyMirror(node: Pick<MindPlanNode, "id" | "type">): boolean {
   const state = readNextFileState(node);
@@ -1029,7 +1029,7 @@ export function writeMarkdown(
     if (state && isMirrorState(state)) {
       throw new Error(
         `Blocked: "${node.id}" has a leftover ${MIRROR_STATE} next file, not an open revision. ` +
-          `Run mindplan-mcp init to remove it, or call open_next first.`
+          `Call upgrade_project to remove it, or call open_next first.`
       );
     }
   }

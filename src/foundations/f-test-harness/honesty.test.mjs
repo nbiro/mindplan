@@ -5,6 +5,8 @@
  * line below the frontmatter (collapsing older runs) and keep CRLF, and split route families.
  * Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

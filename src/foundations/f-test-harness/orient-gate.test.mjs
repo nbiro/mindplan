@@ -5,6 +5,8 @@
  * that acts on a node is Blocked: Orientation until that node was oriented on, and again after the
  * rules that reach it changed; create_node is never blocked and counts as oriented.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";

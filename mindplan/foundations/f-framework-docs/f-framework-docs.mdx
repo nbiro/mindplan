@@ -2,13 +2,13 @@
 id: f-framework-docs
 type: Foundation
 title: "Framework docs"
-description: "Infra — SPEC, playbook, skills, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and linked tests, decision records, next files only while a revision is open, Atomic Ops only until ship, and host install docs."
+description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and tests, decisions, and host install docs."
 state: stable
-shipped_at: 2026-10-30T12:50:11.881Z
-revisions: 46
-churn: 23.189
+shipped_at: 2026-10-31T20:33:28.650Z
+revisions: 47
+churn: 23.492
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-10-30T12:50:11.881Z
+updated_at: 2026-10-31T20:33:28.650Z
 depends_on:
   - f-domain-model
 implements:
@@ -41,8 +41,7 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 - Playbook / stub: get_rules then orient_for_work before each action; both global rules and the node `rules` block are mandatory; graph-first new features via plan-project; `run_check` before handoff
 - Playbook / plan-project skill: a rule that applies everywhere goes in `patch_project_rules`; a rule about one area goes on that node with `patch_node_rules`; editing a node's rules is a blast-radius question (read `rules_impact`)
 - define-entities skill and examples: the `mounts` edge and the multi-template example
-- The stub's offline fallback names the host copies for both hosts (`.cursor/` or `.claude/` plus `CLAUDE.md`)
-- README, SPEC, and the Claude Code integration guide document `init --host cursor|claude|all` and what each host receives
+- **Setup and upgrade, no init.** `templates/agent/agents-stub.md` is the pointer `setup_project` returns for `MINDPLAN.md`: call `get_project` first, `get_rules` + `orient_for_work` before each action, the plan-project skill through `get_skill` before new-feature graph work, never host file tools on `mindplan/**`. `templates/agent/setup-guide.md` (returned by `setup_project`) walks the agent through writing `MINDPLAN.md`, `@MINDPLAN.md` in `CLAUDE.md`, the `AGENTS.md` line, `.cursorignore` and `.gitignore` entries, moving rules into the brief with the user's approval, the description interview, the CI offer, and `run_check`. `templates/agent/upgrade-guide.md` (returned by `upgrade_project`) covers deleting the `leftovers`, replacing the retired stub, committing the upgrade alone, and `run_check`. The Cursor ignore and permissions templates are removed (the guide carries the ignore line; permissions were Cursor-only). SPEC §1.1.2 defines the `setup` status as no `mindplan/`, or one with no stamp and no node folder. The integration guides and `mcp.json.example` register the server and then say: ask the agent to set up MindPlan (`setup_project`). The playbook names `get_skill` where it names the skills, `setup_project` / `upgrade_project` where it names the `version` field, and drops every `init`. The skills' prerequisite lines say they are served by `get_skill`. SPEC drops the `init` command and the host-copy sections and specifies `setup_project`, `upgrade_project`, `get_skill`, the version gate and its ungated tools, the stamp's `migrations` level, `MINDPLAN_VERSION_GATE`, and thirty-three tools; README's install section is: register the MCP server, ask the agent to set up MindPlan; `CHANGELOG.md` gets the 0.13.0 section, which says `init` is gone and how existing projects upgrade
 - plan-project skill description: load when creating or patching the graph, including before new-feature code
 - Never paste rules, playbook, or description into MCP instructions
 - **Honesty behavior in SPEC and the playbook.** SPEC documents: which writes reset a `ready` revision to `draft` (and which never do); `Blocked: Coverage` with its probable owner and fix; the import rule over next-slot and released claims (warnings for one release); `skip_review` and the per-step dry run; unambiguous `toggle_checkboxes` with `all`, `note`, and `not_applicable`; change ids (`change`, `change_ref`, `scope: "change"`, change blast radius, change check); glob claims; and the shared-route rule (the Assembler owns routes that dispatch to the active template; a template's entry point owns only its own routes) with its split-family warning. The bundled playbook names readiness reset, skip_review, notes, and change ids
@@ -76,7 +75,7 @@ Depends on: `f-domain-model`.
 - SPEC §8 lists `patch_node_rules`, `run_check`, and the changed outputs of `orient_for_work`, `get_blast_radius`, `get_node_context`, the write tools, and `update_node_status`
 - The playbook names `run_check` and `mindplan-mcp check`, and stays one screen
 - SPEC §2.2 and the define-entities skill document `mounts` with the multi-template example
-- Host install docs match what `init --host` writes
+- No template, guide, skill, README, or SPEC text tells anyone to run `mindplan-mcp init`; the setup and upgrade guides exist and the tools return them; SPEC counts thirty-three tools
 - Tool when-clauses documented in SPEC §8
 - Verified via `npm test`
 - SPEC, the playbook, and the changelog describe every behavior change in this revision

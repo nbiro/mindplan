@@ -4,6 +4,8 @@
  * keyword search (a word the node's text lacks, a word in another language), and run_check warns,
  * never fails, on each kind of bad description.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

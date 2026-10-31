@@ -143,7 +143,7 @@ function discardNextSlotWrite(args: { node_id: string; verbose?: boolean }): Rec
   const node = findNode(graph, node_id);
   if (!node.next) {
     throw blocked(
-      `node "${node_id}" has no open evolution to discard (a leftover mirror file is not a revision; mindplan-mcp init removes it).`
+      `node "${node_id}" has no open evolution to discard (a leftover mirror file is not a revision; upgrade_project removes it).`
     );
   }
   const removed = discardNextSlot(node);

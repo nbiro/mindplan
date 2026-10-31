@@ -5,6 +5,8 @@
  * clearing a whole change, blast-radius decisions, map counts, and the gate settings in config.
  * Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";

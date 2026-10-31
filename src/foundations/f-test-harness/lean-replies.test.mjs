@@ -1,10 +1,13 @@
 /**
  * Lean node replies: a shipped node keeps no Atomic Ops (ship drops them, open_next starts a fresh
- * unticked list, force_unship gives the live file one again, init drops the ledgers an older
+ * unticked list, force_unship gives the live file one again, upgrade_project drops the ledgers an older
  * release left), and the node reads return one copy of the decisions, one slot, or one section.
  * Every write here is also diffed against the sandbox: each mindplan/ file it touched must be in
  * its changed_files. Run via npm test.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
+import { runUpgrade } from "./upgrade-run.mjs";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -337,18 +340,12 @@ await foundation("f-chk");
 }
 
 const final = await call("run_check", {});
-check("the sandbox passes the check before init", final.ok, JSON.stringify(final.failures));
+check("the sandbox passes the check before the upgrade", final.ok, JSON.stringify(final.failures));
 check("every write listed every mindplan/ file it touched", diffMisses === 0, `${diffMisses} write(s) missed files`);
 await client.close();
 
-// --- init drops the ledgers an older release left on shipped nodes ---
+// --- upgrade_project drops the ledgers an older release left on shipped nodes ---
 {
-  const runCli = (args) =>
-    spawnSync(process.execPath, [serverEntry, ...args], {
-      cwd: root,
-      env: { ...process.env, MINDPLAN_ROOT: root },
-      encoding: "utf-8",
-    });
   /** Puts a ticked ledger back on a file by hand, as a release before 0.7.0 left it. */
   const addLedger = (rel, item) => {
     const abs = path.join(root, ...rel.split("/"));
@@ -359,31 +356,40 @@ await client.close();
 ## Attachments`));
   };
   addLedger(liveOf("f-core"), "Old work");
-  const first = runCli(["init", "--host", "claude"]);
-  check("init succeeds", first.status === 0, first.stderr);
-  check("init reports the dropped ledger", first.stdout.includes("Dropped the shipped Atomic Ops of 1 node(s)"), first.stdout);
+  const first = runUpgrade(root);
+  check("upgrade_project succeeds", first.status === 0, first.stderr);
   check(
-    "init strips the live ledger and writes no next file",
+    "upgrade_project reports the dropped ledger and lists the file",
+    JSON.stringify(first.result?.migrations?.atomicOpsDropped) === JSON.stringify(["f-core"]) &&
+      first.result.changed_files.includes(liveOf("f-core")),
+    JSON.stringify(first.result)
+  );
+  check(
+    "upgrade_project strips the live ledger and writes no next file",
     !readRel(liveOf("f-core")).includes("## Atomic Ops") && noNextFile("f-core"),
     readRel(liveOf("f-core"))
   );
 
-  // An open revision keeps its own list while init strips the live file.
+  // An open revision keeps its own list while the upgrade strips the live file.
   addLedger(liveOf("f-chk"), "Old chk work");
   fs.writeFileSync(
     path.join(root, ...nextOf("f-chk").split("/")),
     readRel(liveOf("f-chk")).replace(/^state:.*$/m, "state: draft").replace("- [x] Old chk work", "- [ ] Revision work")
   );
-  const second = runCli(["init", "--host", "claude"]);
+  const second = runUpgrade(root);
   check(
-    "init strips a live ledger and leaves the open revision's list alone",
+    "upgrade_project strips a live ledger and leaves the open revision's list alone",
     second.status === 0 &&
       !readRel(liveOf("f-chk")).includes("## Atomic Ops") &&
       readRel(nextOf("f-chk")).includes("- [ ] Revision work"),
-    second.stdout + second.stderr
+    second.stderr
   );
-  const again = runCli(["init", "--host", "claude"]);
-  check("a rerun drops nothing", again.status === 0 && !again.stdout.includes("Dropped the shipped"), again.stdout);
+  const again = runUpgrade(root);
+  check(
+    "a rerun drops nothing",
+    again.status === 0 && again.result.migrations.atomicOpsDropped.length === 0 && again.result.changed_files.length === 0,
+    JSON.stringify(again.result)
+  );
 }
 
 if (failures > 0) {

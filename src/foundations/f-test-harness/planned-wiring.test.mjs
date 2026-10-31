@@ -5,6 +5,8 @@
  * closes drops the rest. A revision attributes the migration it adds in another node's folder, so
  * the decision gate and the blast radius count it.
  */
+// Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
+process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";

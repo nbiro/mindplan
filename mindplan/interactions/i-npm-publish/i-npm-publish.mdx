@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T20:14:46.359Z
 revisions: 1
 churn: 1
 created_at: 2026-07-15T18:51:52.964Z
-updated_at: 2026-10-25T20:14:46.359Z
+updated_at: 2026-10-31T20:13:18.925Z
 belongs_to:
   - j-agent-onboarding
   - j-npm-publish
@@ -35,9 +35,8 @@ Ship `mindplan-mcp` to the public npm registry so consumers can install without 
 A maintainer can run one scripted path; afterward any consumer can:
 
 ```bash
-npm install -g mindplan-mcp
-# or
-npx mindplan-mcp init
+npm install -D mindplan-mcp
+# then register `npx mindplan-mcp` as an MCP server and ask the agent to set up MindPlan
 ```
 
 and get a working CLI + MCP server whose `templates/` and `dist/` match this repo’s contract.
@@ -90,7 +89,7 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 2. **Dry-run:** `npm pack --dry-run` / `npm publish --dry-run` — assert allowlisted tarball paths; no secrets, no `.cursor/`, no local `mindplan/` territory, no `src/`.
 3. **Test:** `npm test` green (required in both maintainer and CI modes).
 4. **Publish:** `npm publish` (`prepublishOnly` builds `dist/`). Interactive login/OTP only in maintainer mode; CI mode skips login and relies on OIDC.
-5. **Verify:** wait for the registry to list the version, then a fresh install. npm accepts a publish before it lists it ("may take a few minutes to become available"; `0.2.0` took about 2.5 minutes), so the script polls `npm view mindplan-mcp@<version>` every 15 seconds for up to 10 minutes and fails only when the version is still missing then; it does not sleep after the last poll. In CI a too-short wait failed the job after a successful publish and skipped the tag step. Then the fresh install — `mindplan-mcp help` + `mindplan-mcp init` in a temp directory (maintainer mode; CI may use a lighter post-publish check).
+5. **Verify:** wait for the registry to list the version, then a fresh install. npm accepts a publish before it lists it ("may take a few minutes to become available"; `0.2.0` took about 2.5 minutes), so the script polls `npm view mindplan-mcp@<version>` every 15 seconds for up to 10 minutes and fails only when the version is still missing then; it does not sleep after the last poll. In CI a too-short wait failed the job after a successful publish and skipped the tag step. Then the fresh install — `mindplan-mcp help`, and `mindplan-mcp check` in an empty temp directory, which must fail naming `setup_project` (maintainer mode; CI may use a lighter post-publish check).
 
 ### First publish runbook
 
@@ -102,7 +101,7 @@ Package: `src/interactions/i-npm-publish/`. Depends on: `f-mcp-runtime`, `f-npm-
 ### Docs sync
 
 - README Quick start: npm / `npx` primary. Two consumer paths: a project with a `package.json` adds `mindplan-mcp` as a devDependency (version pinned by its lockfile, upgraded with `npm update`) and registers `npx mindplan-mcp`; any other project registers `npx -y mindplan-mcp@<range>`.
-- README upgrade section: after a version bump, rerun `npx mindplan-mcp init` (the `mindplan/version.json` stamp makes `get_project` and `check` warn until it runs).
+- README upgrade section: after a version bump that raises the migration level, the agent calls `upgrade_project` (until then the graph tools and `check` are `Blocked: Version`).
 - `templates/agent/mcp.json.example` and `templates/agent/integrations/*.md` register `npx mindplan-mcp`, not a local `dist/index.js` path.
 - CONTRIBUTING: first publish = run the script after `npm login`; later = bump the version in a PR and merge to main (`i-npm-tag-publish` publishes and tags).
 

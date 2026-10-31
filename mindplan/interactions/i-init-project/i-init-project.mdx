@@ -3,12 +3,19 @@ id: i-init-project
 type: Interaction
 title: "Init project"
 description: "Human runs init: it installs the playbook, brief, and host copies for Cursor, Claude Code, or both, optionally the merge-gate workflow, ignores mindplan/ in Cursor and the search cache in git, drops leftovers older releases left, backfills revision counts and splits from git, and stamps the version."
-state: stable
+state: deprecated
 shipped_at: 2026-10-31T13:02:30.905Z
 revisions: 10
 churn: 8.521
 created_at: 2026-07-19T18:33:36.816Z
-updated_at: 2026-10-31T13:02:30.905Z
+updated_at: 2026-10-31T20:13:35.210Z
+tests:
+  - src/foundations/f-test-harness/lean-replies.test.mjs
+  - src/foundations/f-test-harness/merge-gate.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
+  - src/foundations/f-test-harness/search-index.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -17,15 +24,6 @@ depends_on:
   - f-compiler-rules
 leads_to:
   - i-orient-plan
-implements:
-  - src/interactions/i-init-project/
-tests:
-  - src/foundations/f-test-harness/lean-replies.test.mjs
-  - src/foundations/f-test-harness/merge-gate.test.mjs
-  - src/foundations/f-test-harness/open-closed.test.mjs
-  - src/foundations/f-test-harness/search-index.test.mjs
-  - src/foundations/f-test-harness/smoke.mjs
-  - src/foundations/f-test-harness/version.test.mjs
 ---
 
 # Init project
