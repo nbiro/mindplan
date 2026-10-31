@@ -1,0 +1,59 @@
+---
+id: i-assess-impact
+type: Interaction
+title: "Assess impact"
+description: "Agent asks what a change to a node, or a whole change, reaches: dependents, affected files, tests, rules impact, decisions, planned edges, and additivity."
+state: stable
+shipped_at: 2026-10-31T12:20:48.582Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:58:04.548Z
+updated_at: 2026-10-31T12:20:48.582Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-plan-views
+  - f-tool-kit
+implements:
+  - src/interactions/i-assess-impact/
+tests:
+  - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/node-tests.test.mjs
+  - src/foundations/f-test-harness/open-closed.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
+---
+
+# Assess impact
+
+## Purpose
+
+Answers what a change to a shipped node, or a whole change, reaches before anyone edits it: which nodes depend on it, which files and tests are involved, whose rules and decisions are in play, and whether the change only adds nodes or reopens shipped ones. Source, neighbor, or unaffected is decided from this reply.
+
+## Actor & Trigger
+
+Agent calls `get_blast_radius` with `node_id` before changing a shipped node, or with `change` to see a whole change at once.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-assess-impact/` (`handlers.ts`, `tools.ts`).
+
+- `get_blast_radius({ node_id })` returns `buildBlastRadiusPayload` (`f-plan-views`): dependents with hop distance, `journeys_at_risk`, `affected_files` grouped by owner (`via`: focus, dependent, exposing, importer), `tests`, `rules_impact`, the focus's decisions and `dependent_decisions`; an Interaction focus adds reachability; retired nodes omitted unless `include_retired`; `include_dependent_decisions` adds the dependents' one-line decisions
+- `get_blast_radius({ change })` merges the radii of every member (open revisions, neighbors, and shipped nodes with planned edges; `members` carry `kind`), keeping each node's smallest distance and leaving out the members, and returns `planned_edges` and `additivity` (`changeAdditivity`, `f-compiler-rules`: new nodes, reopened shipped nodes with fan-in, neighbors, planned revisions, "purely additive"). A change with no members is Blocked
+- Exactly one of `node_id` or `change`; a read: no orientation gate, drift attached
+
+Depends on: `f-plan-views`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-domain-model`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- Change blast radius lists the union of the members' dependents without the members; a neighbor's dependents are included and it is listed with `kind: "neighbor"`; a change with only neighbors is not Blocked
+- `get_blast_radius` on a Foundation lists its own decisions and names its dependents that hold decisions; with `include_dependent_decisions` it lists theirs too
+- `get_blast_radius` lists the expanded tests of the focus and its affected owners, and the change radius merges them
+- A change with a planned edge lists it in `planned_edges` and its source as a `planned` member; a revision's attributed migration appears under the revision in `affected_files`
+- The change radius carries `additivity` with the summary line
+- Without `node_id` or `change` it is Blocked
+- Verified via `npm test`
+
+## Attachments
+
+_None._

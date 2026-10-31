@@ -1,0 +1,59 @@
+---
+id: i-shape-graph
+type: Interaction
+title: "Shape the graph"
+description: "Agent creates nodes and links or unlinks edges, including mounts and planned edges on shipped nodes, and gets back the rules a new edge brings."
+state: stable
+shipped_at: 2026-10-31T12:20:49.515Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:58:03.472Z
+updated_at: 2026-10-31T12:20:49.515Z
+belongs_to:
+  - j-territory-sdlc
+  - j-plan-console
+depends_on:
+  - f-plan-writes
+  - f-tool-kit
+implements:
+  - src/interactions/i-shape-graph/
+tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/planned-wiring.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+---
+
+# Shape the graph
+
+## Purpose
+
+Creates nodes and adds or removes the edges between them, so the graph's structure only changes through calls that validate taxonomy, Interaction Independence, and cycles, and so a new edge's rules reach the agent in the same result.
+
+## Actor & Trigger
+
+Agent calls `create_node` when reuse found no node, and `link_nodes` / `unlink_nodes` when two nodes should be connected or disconnected (with `change`: plan the edge on a shipped node).
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-shape-graph/` (`handlers.ts`, `tools.ts`).
+
+- **create_node** scaffolds the folder and `<id>.mdx` (a Foundation requires `role`), takes `change` / `change_ref` and `aliases` (validated before any write), is never orientation-gated, and returns `rules` (the rules that reach the new node) and `shape` (`shapeReport`: each required section `present`, `missing`, or `stub`, and the gates that read them)
+- **link_nodes / unlink_nodes** add or remove one edge (`belongs_to`, `depends_on`, `exposes`, `leads_to`, `affects`, `mounts`) after `validateLink` and the cycle check; while the source evolves the edge goes to its next slot; a ready slot goes back to draft (`readiness_reset`); stability and Journey states are recomputed and each node written lists its live path. A link or unlink that changes the rules reaching its source returns them as `rules` and records the source as oriented
+- **Planned edges.** With `change`, on a shipped source with no open revision of that change, `link_nodes` writes a planned edge instead (`validatePlannedLink`, then the live `planned:` list; result `planned`); the live graph, the map, and the search cache do not change, and readiness never resets. A duplicate planned entry is Blocked. `unlink_nodes` with `change` removes that change's planned entries from source to target and is Blocked when there are none
+- Orientation gate on the source (`gateWrite`, `f-plan-writes`); `create_node` is never gated
+
+Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- `create_node` returns `shape` listing every required section of its type as `stub` or `missing`; a Journey's result has none; `aliases` are written and searchable on the next call
+- `link_nodes` with `change` on a shipped Interface writes a planned `exposes`: the live `exposes` list and `graph.edges` are unchanged; an illegal or cyclic planned edge is Blocked; `unlink_nodes` with `change` removes it
+- A link on a `ready` next slot returns `next_state: "draft"` and `readiness_reset`
+- An Interaction → Interaction `depends_on` is Blocked
+- Verified via `npm test`
+
+## Attachments
+
+_None._

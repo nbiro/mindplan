@@ -1,0 +1,56 @@
+---
+id: i-browse-graph
+type: Interaction
+title: "Browse the graph"
+description: "Agent pages through the whole graph, lists areas with their member counts, and lists decisions by node or change."
+state: stable
+shipped_at: 2026-10-31T12:20:48.648Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T11:58:04.820Z
+updated_at: 2026-10-31T12:20:48.648Z
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-compiler-rules
+  - f-graph-search
+  - f-tool-kit
+implements:
+  - src/interactions/i-browse-graph/
+tests:
+  - src/foundations/f-test-harness/areas.test.mjs
+  - src/foundations/f-test-harness/decisions.test.mjs
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+---
+
+# Browse the graph
+
+## Purpose
+
+Lets an agent look across the plan rather than at one node: the whole graph a page at a time (so no result is silently cut), the areas with their member counts (cheap enough to call before orienting), and the decisions of a node, a change, or the whole graph.
+
+## Actor & Trigger
+
+Agent calls `get_mindplan_graph` to see the plan's structure, `list_areas` when unsure where work lands, and `list_decisions` before reshaping a design someone else chose.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-browse-graph/` (`handlers.ts`, `tools.ts`).
+
+- `get_mindplan_graph({ offset?, limit? })` pages nodes (default `GRAPH_PAGE_DEFAULT` 200, max `GRAPH_PAGE_MAX` 500) and returns the edges whose source is in the page, the totals, and `next_offset` while more remain
+- `list_areas()` returns `{ columns, rows, count }`, a row per active Journey: id, title, description cut to 60 characters, and counts of its active Interactions, the Interfaces exposing them, the Foundations they depend on, and open Bugs
+- `list_decisions({ node_id? | change? , include_superseded? })` returns `{ decisions, count }` for one node, one change, or the whole graph, each with node, status, and `superseded_by`; superseded entries only with `include_superseded`
+- Reads; no orientation gate
+
+Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-domain-model`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- `get_mindplan_graph` on a graph larger than `limit` returns `limit` nodes, only edges from those nodes, the totals, and `next_offset`; walking every page yields every node and edge exactly once; `limit` above 500 is rejected
+- `list_areas` lists 30 areas under 4 KB with member and open-Bug counts
+- `list_decisions` returns a node's, a change's, and the graph's decisions; with `include_superseded` the superseded entry carries `superseded_by`
+- Verified via `npm test`
+
+## Attachments
+
+_None._

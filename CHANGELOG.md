@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.0 — splits for actions and entry points
+
+- **`split_into` for Interactions and Interfaces.** A split was recordable only for a Foundation, so an action or entry point whose behavior moved out kept its hotspot rate. Now an Interaction marks the Interactions it splits into (they must share one of its Journeys when it ships), and an Interface marks the Interactions it moves behavior into (it must expose them). Shipping the revision records the split and resets the rate, as for a Foundation. Marking a part whose edge is not in place yet returns a warning naming the edge. [§5.15, §8.1]
+- **Hotspot advice** for an Interaction or Interface tells the agent to mark the parts with `split_into`. [§5.15]
+- **The median counts established nodes only.** Nodes shipped once and roots that just split no longer count toward the graph's median rate, so a refactor that adds many nodes no longer flags every established node as a hotspot. [§5.15]
+- **Tool definitions live with their actions.** Each action's `tools.ts` now defines its MCP tools (name, description, schema, handler); the MCP entry point only mounts them. `tools/list` is unchanged: the same thirty tools, in the same order, with the same descriptions and annotations.
+
 ## 0.10.0 — keep shipped nodes closed
 
 - **Hotspot warnings.** A shipped node that changes for several reasons makes every feature queue on its one next slot. The check now warns `hotspot: "<id>" ships far more often than the rest of the graph lately (rate X against a median of Y), and N nodes depend on it directly; …`, listing its recent changes with the decisions recorded under them as the candidate cuts and a split that fits the node's type. A node is a hotspot when its recent ship rate is an outlier against the project's own median, not past a fixed count: changing often is normal on a long project, and a node everything depends on (auth) is fine at the project's pace. Fan-in only ranks hotspots. Settings are config `hotspots: { half_life_days, outlier_ratio, min_rate }` (default 30, 3, 2), written with `patch_config`. Warnings only. [§5.15, §1.2.1]

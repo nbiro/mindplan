@@ -4,11 +4,11 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, and missing tests, warns about stale text, shape gaps, missing decisions, hotspots, and mirror leftovers, checks one change with its additivity, and runs the merge gate."
 state: stable
-shipped_at: 2026-10-31T11:40:11.614Z
-revisions: 22
-churn: 14.502
+shipped_at: 2026-10-31T12:20:48.794Z
+revisions: 23
+churn: 15.493
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-31T11:40:11.614Z
+updated_at: 2026-10-31T12:20:48.794Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,6 +16,7 @@ depends_on:
   - f-compiler-rules
   - f-mcp-runtime
   - f-source-index
+  - f-tool-kit
 implements:
   - src/interactions/i-check-integrity/
 tests:
@@ -76,6 +77,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 
 **Open–closed signals.** The default check warns `hotspot:` for each shipped node whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, naming its recent change groups as candidate cuts; a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
 
+**Tool definition.** `run_check` is defined in this action's `tools.ts` (`defineTool`, `f-tool-kit`) and mounted by `if-mcp-tools`.
+
 ## Acceptance Criteria
 
 - `run_check` output equals the CLI check output
@@ -124,6 +127,17 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - Consequences: CI must opt in (the init workflow, or a required status check the repository configures); strict needs git history and a resolvable base.
 - Change: merge-gate
 - Date: 2026-10-28
+
+### d-check-stays-whole
+
+- Decision: The integrity check stays one action: every level (default, change, merge, strict) is a level of one check with one output for the CLI, run_check, and CI.
+- Alternatives:
+  - Split the merge gate into its own action (d-merge-gate-opt-level-existing chose one check so the output format cannot drift)
+  - Split the change check out (it reuses every default rule; a second action would duplicate them)
+- Why: Its revisions add checks to one behavior; the rules themselves already live in f-compiler-rules, so new checks mostly land there.
+- Change: hotspot-splits
+- Date: 2026-10-31
+- Keep whole: true
 
 ## Attachments
 

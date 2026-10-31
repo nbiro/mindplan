@@ -4,17 +4,18 @@ type: Interaction
 title: "See the map"
 description: "Owns the export_mindplan_view MCP handler (optionally with per-node decision counts, writable to a file, and refusing with a fix instead of returning a diagram the host would truncate) and the view export used by the CLI view/export command."
 state: stable
-shipped_at: 2026-10-20T15:10:03.542Z
-revisions: 4
-churn: 2.65
+shipped_at: 2026-10-31T12:20:49.088Z
+revisions: 5
+churn: 3.061
 created_at: 2026-07-19T18:33:36.804Z
-updated_at: 2026-10-20T15:10:03.542Z
+updated_at: 2026-10-31T12:20:49.088Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-territory-store
   - f-view-projection
   - f-compiler-rules
+  - f-tool-kit
 implements:
   - src/interactions/i-export-map/
 tests:
@@ -47,6 +48,8 @@ Package: `src/interactions/i-export-map/`
 - **Size budget.** `EXPORT_RESULT_BUDGET` = 80,000 characters, exported from this package (under Claude Code's 25,000-token result limit and claude.ai's 150,000 characters). Without `output`, a diagram longer than the budget is not returned: the handler throws `Blocked: the diagram is <n> characters, over the <budget> MCP result budget. Pass focus for one node's neighborhood, or output to write it to a file.` The CLI path never applies the budget (stdout and files have no such limit)
 
 Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
+
+**Tool definition.** `export_mindplan_view` is defined in this action's `tools.ts` (`defineTool`, `f-tool-kit`) and mounted by `if-mcp-tools`.
 
 ## Acceptance Criteria
 

@@ -89,6 +89,18 @@ Depends on: `f-domain-model`.
 - SPEC, README, and the skills describe a next file that exists only while a revision is open (no standing twin), the check's leftover-twin warning, and init's removal of twins; CHANGELOG has a 0.8.0 section
 - The shape table embedded in SPEC §6.5 and the define-entities skill equals `shapeTableMarkdown()` (`agent-guidance.test.mjs`); every `get_spec` topic resolves against SPEC.md; the playbook stays one screen with no checklist text; SPEC counts thirty tools; CHANGELOG has a 0.9.0 section
 
+## Decisions
+
+### d-docs-stay-whole
+
+- Decision: The framework docs (SPEC, CHANGELOG, README, skills, playbook) stay one node: they change with every release because they describe every behavior.
+- Alternatives:
+  - Split SPEC from the skills and templates (each release still edits both, so both parts would be hotspots and every feature would revise two nodes)
+- Why: A docs node's ship rate tracks the project's release rate by design, so a high rate here is not a smell.
+- Change: hotspot-splits
+- Date: 2026-10-31
+- Keep whole: true
+
 ## Attachments
 
 _None._
