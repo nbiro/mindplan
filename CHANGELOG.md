@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.0 — splits from moved files only
+
+- **`init` infers a split only when files move.** The git backfill recorded a split whenever a Foundation gained `depends_on` on a newly shipped Foundation, so starting to use a new building block counted as a split and reset the node's hotspot rate (10 false splits on one project). Now a split is inferred only when one of the new Foundation's claims was covered by the node's claims before that ship and no longer is after it. [§5.15]
+- **Clear a wrong split record.** `patch_node_territory({ node_id, split_into: [] })` on a shipped node with no open revision removes `split_at` and `split_into`, keeps `revisions`, and replays `churn` from git without the reset. Graphs backfilled by 0.10 or 0.11 keep the splits init wrote then; clear each false one this way. [§5.15, §8.1]
+
 ## 0.11.0 — splits for actions and entry points
 
 - **`split_into` for Interactions and Interfaces.** A split was recordable only for a Foundation, so an action or entry point whose behavior moved out kept its hotspot rate. Now an Interaction marks the Interactions it splits into (they must share one of its Journeys when it ships), and an Interface marks the Interactions it moves behavior into (it must expose them). Shipping the revision records the split and resets the rate, as for a Foundation. Marking a part whose edge is not in place yet returns a warning naming the edge. [§5.15, §8.1]

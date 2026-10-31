@@ -4,11 +4,11 @@ type: Interaction
 title: "Edit a node's territory"
 description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, change ids, aliases, declared splits, node rules, and attachments."
 state: stable
-shipped_at: 2026-10-31T12:20:49.012Z
-revisions: 1
-churn: 1
+shipped_at: 2026-10-31T13:02:30.836Z
+revisions: 2
+churn: 1.999
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-10-31T12:20:49.012Z
+updated_at: 2026-10-31T13:02:30.836Z
 belongs_to:
   - j-territory-sdlc
   - j-plan-console
@@ -45,7 +45,7 @@ Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`)
 - **Readiness reset.** A contract write to a `ready` slot (title, description, role, body, section, replace, checkboxes) moves it back to `draft` and returns `readiness_reset`; `change` / `change_ref`, aliases, `split_into`, rules, and attachments never reset
 - **Change ids and neighbor labels.** `change` / `change_ref` set the active slot's change; on a shipped node with no open next `change` labels it a neighbor (`neighbor_of`, `replaced_change`), and `change_ref` there is Blocked. A write that passes `change` runs inside `withNeighborCleanup` (`f-plan-writes`)
 - **Aliases** on any active node, shipped ones included, live and next alike, without `open_next` or a readiness reset
-- **Declared splits.** `split_into` on a node with an open revision writes the next file's `split_into` as the live list plus the parts (`writeNextSplitInto`), validated first (`validateSplitInto`): a Foundation splits into other active Foundations (recorded at ship for the parts it then `depends_on`); an Interaction into other active Interactions that share one of its Journeys; an Interface into the Interactions it exposes. A marked part that will not count at ship yet returns a `split_into:` warning
+- **Declared splits.** `split_into` on a node with an open revision writes the next file's `split_into` as the live list plus the parts (`writeNextSplitInto`), validated first (`validateSplitInto`): a Foundation splits into other active Foundations (recorded at ship for the parts it then `depends_on`); an Interaction into other active Interactions that share one of its Journeys; an Interface into the Interactions it exposes. A marked part that will not count at ship yet returns a `split_into:` warning. **Clearing a wrong split.** `split_into: []` on a shipped node with no open revision removes its `split_at` and `split_into` in place (no `open_next`, no readiness reset) and recounts `churn` from the node file's git history without the split reset (`shipHistory`, `replayChurn`, f-compiler-rules); outside git the stored `churn` is kept. A node with no split record is Blocked (nothing to clear); a non-empty list without an open revision stays Blocked with `open_next`
 - **patch_node_rules({ node_id, rules })** replaces `## Rules` on any active node (live and an open next alike), never changes state or readiness, Blocks a heading line, and returns `rules_impact` (`rulesImpact`, `f-graph-search`) so the author sees whose work the edit reaches
 - **Attachments.** `put_attachment` / `remove_attachment` write or remove a file under the node's attachments folder (next-attachments while a revision is open)
 - Orientation gate on `node_id` (`gateWrite`, `f-plan-writes`)
@@ -61,6 +61,8 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-s
 - `aliases` are written, `[]` clears them, an alias over 60 characters is rejected
 - `split_into` on the node itself, on a node with no open revision, or naming a node of the wrong kind is Blocked; an Interaction may mark Interactions in one of its Journeys and an Interface the Interactions it exposes
 - Verified via `npm test`
+
+- `split_into: []` on a shipped node with a split record and no open revision clears `split_at` and `split_into`, keeps `revisions`, and recounts `churn` without the reset; on a node with no split record it is Blocked
 
 ## Decisions
 

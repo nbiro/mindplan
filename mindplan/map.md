@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (52 nodes, 155 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (52 nodes, 156 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -146,6 +146,7 @@ flowchart TB
   i_export_map__in__j_territory_sdlc --> f_territory_store
   i_export_map__in__j_territory_sdlc --> f_tool_kit
   i_export_map__in__j_territory_sdlc --> f_view_projection
+  i_init_project__in__j_agent_onboarding --> f_compiler_rules
   i_init_project__in__j_agent_onboarding --> f_source_index
   i_init_project__in__j_agent_onboarding --> f_territory_store
   i_init_project__in__j_agent_onboarding -.->|leads_to| i_orient_plan__in__j_territory_sdlc
