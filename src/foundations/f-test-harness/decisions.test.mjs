@@ -149,7 +149,7 @@ fs.writeFileSync(
   JSON.stringify({ sources: ["src/**"], exclude: [] }, null, 2) + "\n"
 );
 
-// --- base graph: an area, two building blocks, two actions, an entry point, a bug ---
+// --- base graph: a Journey, two Foundations, two Interactions, an Interface, a Bug ---
 await call("create_node", { id: "j-book", type: "Journey", title: "Booking", description: "Book a table" });
 await call("create_node", { id: "f-bookings", type: "Foundation", title: "Bookings", description: "Infra — bookings", role: "infra" });
 await call("create_node", { id: "f-db", type: "Foundation", title: "Database", description: "Infra — database", role: "infra" });

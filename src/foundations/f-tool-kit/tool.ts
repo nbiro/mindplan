@@ -65,9 +65,9 @@ export const CHANGE_REF = z
   .optional()
   .describe("Optional branch name or PR URL for the change. Empty string clears it.");
 
-/** An area (a Journey id from list_areas) that limits ranking to that area's members. */
+/** A Journey id (from list_areas) that limits ranking to that Journey's members. */
 export const AREA = NODE_ID.optional().describe(
-  "A Journey id (list_areas): rank only that area's Interactions, the Interfaces exposing them, and the Foundations they depend on. Omit for a question that cuts across areas."
+  "A Journey id (list_areas): rank only that Journey's Interactions, the Interfaces exposing them, and the Foundations they depend on. Omit for a question that cuts across Journeys."
 );
 
 /** Search aliases: the words people will use for a node that its text does not contain. */

@@ -156,7 +156,7 @@ export interface MindPlanNode {
   leads_to?: string[];
   /**
    * MCP-only. Foundation → Interface ids. Declares a composition root: the Foundation
-   * may import exactly those Interfaces (e.g. a registry mounting several template entry points).
+   * may import exactly those Interfaces (e.g. a registry mounting several template Interfaces).
    */
   mounts?: string[];
   /** MCP-only. Bug → Interaction|Interface|Foundation ids. */

@@ -6,9 +6,9 @@
 
 **Agent action:** `get_mindplan_graph` → no Journeys in graph (or none matching "ordering"/"checkout" capability).
 
-**Do not** call `create_node` for the Interaction. Respond in plain words:
+**Do not** call `create_node` for the Interaction. Respond:
 
-> This needs an **area** first — every action belongs to one. Is it part of an existing area (e.g. Billing / Ordering), or something new? Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
+> This needs a **Journey** first — every Interaction belongs to one. Is it part of an existing Journey (e.g. Billing / Ordering), or something new? Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
 
 **Next step (after user agrees):** define Journey `j-ordering`, then proceed with the greenfield example below.
 
@@ -20,18 +20,18 @@
 
 **Breakdown:**
 
-> Managers can **split the check** in the **Ordering** area, from the **back-office** entry point, using existing building blocks (`f-db-core`, …).
+> Managers can **split the check** in the **Ordering** Journey, from the **back-office** Interface, using existing Foundations (`f-db-core`, …).
 
 **Reuse before create:**
 
 ```
 find_related_nodes({ query: "split check checkout" })
-→ i-checkout-split already exists (action)
+→ i-checkout-split already exists (Interaction)
 find_related_nodes({ query: "back office manager console" })
 → no back-office Interface yet
 ```
 
-**Confirm with the user (plain words):** "I'll show the existing *split the check* action from a new *back-office* entry point — no second action."
+**Confirm with the user:** "I'll expose the existing *split the check* Interaction from a new *back-office* Interface — no second Interaction."
 
 **Do not** create `i-checkout-split-backoffice` or a second Interaction. Link:
 
@@ -40,14 +40,14 @@ create_node({
   id: "if-back-office",
   type: "Interface",
   title: "Back office",
-  description: "Page — manager back-office app exposing checkout and related actions"
+  description: "Page — manager back-office app exposing checkout and related Interactions"
 })
 link_nodes({ source_id: "if-back-office", target_id: "i-checkout-split", edge_type: "exposes" })
 # optional Foundation deps for the Assembler / shell the back-office runs on:
 link_nodes({ source_id: "if-back-office", target_id: "f-nextjs", edge_type: "depends_on" })
 ```
 
-Same action, new entry point = new `exposes` (+ mount/wire), not a new Interaction. One Interface for the back-office **app**, not one Interface per back-office page.
+Same Interaction, new Interface = new `exposes` (+ mount/wire), not a new Interaction. One Interface for the back-office **app**, not one Interface per back-office page.
 
 ---
 
@@ -402,11 +402,11 @@ update_node_status({ node_id: "i-checkout-split", new_status: "ship" })
 
 ## Example — multi-template platform with a composition root
 
-A platform serves two site templates. Each template is its own entry point (Interface) over the shared actions; one module registers both.
+A platform serves two site templates. Each template is its own Interface over the shared Interactions; one module registers both.
 
 ```
 create_node({ id: "f-template-registry", type: "Foundation", role: "infra",
-  title: "Template registry", description: "Infra — imports every template entry point for the route dispatcher and redirect list" })
+  title: "Template registry", description: "Infra — imports every template Interface for the route dispatcher and redirect list" })
 set_implementation_files({ node_id: "f-template-registry", files: ["src/foundations/f-template-registry/"] })
 → import_violations: [
     { file: ".../registry.ts", imports: "src/interfaces/if-template-a/index.ts",

@@ -15,29 +15,29 @@ description: >-
 
 Use this skill when adding or restructuring nodes in `mindplan/`. All graph mutations go through the **MindPlan MCP server** — never edit server-owned frontmatter fields directly.
 
-Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. The server serves this skill: `get_skill({ name: "define-entities" })` returns it, and `get_skill({ name: "define-entities", file: "examples.md" })` its examples. Normative reference: `SPEC.md` (plain-language glossary §2.0.0). For executing work through the build pipeline and Bug lifecycle (always-on process), follow `get_project.playbook`. For plan-only sessions that must not write application code, follow the `plan-project` skill (`get_skill({ name: "plan-project" })`; it calls this skill for create/link steps).
+Prerequisite: MindPlan MCP is registered and `get_mindplan_graph` works. The server serves this skill: `get_skill({ name: "define-entities" })` returns it, and `get_skill({ name: "define-entities", file: "examples.md" })` its examples. Normative reference: `SPEC.md` (type glossary §2.0.0). For executing work through the build pipeline and Bug lifecycle (always-on process), follow `get_project.playbook`. For plan-only sessions that must not write application code, follow the `plan-project` skill (`get_skill({ name: "plan-project" })`; it calls this skill for create/link steps).
 
 ## Step 0 — Break the request down
 
 Before creating any node, rewrite the user's ask as one or more sentences:
 
-> *"<who> can <verb> <object> in <area>, from <entry point>, using <building blocks>."*
+> *"<who> can <verb> <object> in <Journey>, from <Interface>, using <Foundations>."*
 
-| Slot | Becomes | Plain word |
-|------|---------|------------|
-| area | Journey | area |
-| verb + object | Interaction | action |
-| entry point | Interface | entry point |
-| building blocks | Foundation(s) | building block |
-| what's broken | Bug | bug |
+| Slot | Becomes |
+|------|---------|
+| verb + object | Interaction |
+| Journey | Journey (must exist first) |
+| Interface | Interface |
+| Foundations | Foundation(s) |
+| what's broken | Bug |
 
 Rules:
 
 1. Each distinct *verb + object* is one Interaction candidate.
-2. **Reuse before create.** Run `find_related_nodes` (or inspect `get_mindplan_graph`) for each area, action, entry point, and building block. Same action on a new entry point → new `exposes` (and mount/wire), **not** a new Interaction.
-3. State which nodes you will add, in plain words. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
+2. **Reuse before create.** Run `find_related_nodes` (or inspect `get_mindplan_graph`) for each Journey, Interaction, Interface, and Foundation. Same Interaction on a new Interface → new `exposes` (and mount/wire), **not** a new Interaction.
+3. State which nodes you will add, by type name. Example: "I'll add *split the check* as a new Interaction in the Billing Journey and expose it from the back-office Interface."
 4. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call. Neither is a new Journey. Call `get_project` again to re-read (includes the playbook).
-5. **Invert nodes that must know every feature.** When one action has to handle every feature of a kind (erase a site, export an account, index for search, check a permission), do not add a `depends_on` per feature. Define the contract once on the Foundation those features already use: a schema convention (every per-site table cascades from the site) or a record they react to (a deleted/restored state). State it as a node rule there, so every dependent sees it in `orient_for_work`, and link the test that enforces it with `set_test_files`. The action then depends only on that Foundation.
+5. **Invert nodes that must know every feature.** When one Interaction has to handle every feature of a kind (erase a site, export an account, index for search, check a permission), do not add a `depends_on` per feature. Define the contract once on the Foundation those features already use: a schema convention (every per-site table cascades from the site) or a record they react to (a deleted/restored state). State it as a node rule there, so every dependent sees it in `orient_for_work`, and link the test that enforces it with `set_test_files`. The Interaction then depends only on that Foundation.
 6. Then create what's missing, in the definition order below.
 
 ## Step 1 — Orient
@@ -46,7 +46,7 @@ Rules:
 get_mindplan_graph({ type: ["Journey", "Foundation"], fields: ["id", "type", "title", "change"] })
 ```
 
-Note existing Journeys, Foundations, Interactions, Interfaces, Bugs, and edges before creating duplicates. Filter and project for a question about part of the graph (`state: ["draft", "ready"]`, `type`, `change`, `fields`) instead of reading the whole graph. Prefer `find_related_nodes` when checking reuse for a specific action or surface, and `orient_for_work` for one piece of work.
+Note existing Journeys, Foundations, Interactions, Interfaces, Bugs, and edges before creating duplicates. Filter and project for a question about part of the graph (`state: ["draft", "ready"]`, `type`, `change`, `fields`) instead of reading the whole graph. Prefer `find_related_nodes` when checking reuse for a specific Interaction or Interface, and `orient_for_work` for one piece of work.
 
 ## Journey first (mandatory)
 
@@ -58,9 +58,9 @@ When the user asks for an Interaction (behavior, use case, actor-triggered flow 
 2. Decide whether the request maps to an **existing** Journey (by title, description, or user-stated parent Journey id)
 3. If **no** matching Journey exists → **stop and refuse**. Do **not** call `create_node` for the Interaction. Do **not** silently create a Journey on the user's behalf unless they explicitly ask to define one
 
-**Refusal message** (plain words with the user; keep type names when talking graph):
+**Refusal message:**
 
-> This needs an **area** first — every action belongs to one. Is it part of an existing area (e.g. Billing), or something new? Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
+> This needs a **Journey** first — every Interaction belongs to one. Is it part of an existing Journey (e.g. Billing), or something new? Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
 
 If the user names a Journey that is not in the graph, same refusal — define that Journey first.
 
@@ -70,10 +70,10 @@ If the user names a Journey that is not in the graph, same refusal — define th
 
 | If the work is… | Type | Why |
 |-----------------|------|-----|
-| A domain capability the product is about (e.g. "Table ordering", "Billing") | **Journey** | Area; architecture scream; permanent container; state computed from Interactions |
-| Shared substrate with no standalone behavior (assembler, DB, auth, design system, adapters) | **Foundation** | Building block; pick a role (§ below); consumed via `depends_on`; must ship before dependent Interactions |
-| Self-contained **behavior** by any actor — human, system, or agent — independent of how it is surfaced (e.g. "Split & pay", "Orient on plan", "Check integrity") | **Interaction** | Action; `belongs_to` Journeys; `depends_on` Foundations only; MAY `leads_to` other Interactions |
-| An **actor + delivery mechanism** that exposes Interactions — console web app, Waiter POS, CLI, MCP toolset, Webhook, Cron, script — **not** one node per page/tab/command | **Interface** | Entry point; `exposes` Interactions; optional Foundation `depends_on` |
+| A domain capability the product is about (e.g. "Table ordering", "Billing") | **Journey** | Architecture scream; permanent container; state computed from Interactions |
+| Shared substrate with no standalone behavior (assembler, DB, auth, design system, adapters) | **Foundation** | Pick a role (§ below); consumed via `depends_on`; must ship before dependent Interactions |
+| Self-contained **behavior** by any actor — human, system, or agent — independent of how it is surfaced (e.g. "Split & pay", "Orient on plan", "Check integrity") | **Interaction** | `belongs_to` Journeys; `depends_on` Foundations only; MAY `leads_to` other Interactions |
+| An **actor + delivery mechanism** that exposes Interactions — console web app, Waiter POS, CLI, MCP toolset, Webhook, Cron, script — **not** one node per page/tab/command | **Interface** | `exposes` Interactions; optional Foundation `depends_on` |
 | A defect on shipped or in-flight substrate/behavior/surface | **Bug** | Dedicated lifecycle; links via `affects` only |
 
 **Classification litmus** (in order):
@@ -114,7 +114,7 @@ Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth i
 
 **Assembler linking:** Interactions/Interfaces that run on a given backbone SHOULD `depends_on` that Assembler Foundation (e.g. page Interfaces → `f-nextjs`; cron Interfaces → `f-vercel-cron`). This is guidance, not a compiler gate — Ghost Interactions still only require any Foundation `depends_on`. A Journey's assembler(s) are derived from member Interactions' and Interfaces' `depends_on` — never give Journeys outgoing edges. Different Journeys MAY use different assemblers. Assemblers may import Interfaces/Interactions that depend_on them.
 
-**Shared routes (multi-template apps):** a route that exists for every template and dispatches to whichever template is active (e.g. `app/sites/[site]/[lang]/blog/*`) belongs to the **Assembler**; a template's entry point (its Interface) owns only routes that exist for that template alone. Keep one owner per route family — the check warns when one is split. An action whose views live in every template may claim them with one glob: `src/templates/*/actions/i-read-post/`.
+**Shared routes (multi-template apps):** a route that exists for every template and dispatches to whichever template is active (e.g. `app/sites/[site]/[lang]/blog/*`) belongs to the **Assembler**; a template's Interface owns only routes that exist for that template alone. Keep one owner per route family — the check warns when one is split. An Interaction whose views live in every template may claim them with one glob: `src/templates/*/actions/i-read-post/`.
 
 **Reuse rule:** Before inventing shared UI or shared state inside an Interaction, find or create the right Foundation and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node. Cross-Interaction flow uses `leads_to`, never `depends_on` (Interaction Independence).
 
@@ -143,7 +143,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Interface | `if-` | `if-waiter-pos`, `if-mcp-tools`, `if-cli` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Naming rule:** the **title** is the stable name of the thing — an action phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `<id>.next.mdx` body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Keep the description to one or two sentences (under 300 characters): it is the row search ranks and orientation shows; detail goes in the body. For an Interaction, say who does what ("Visitor sends …"). **Aliases:** add `aliases` for the words users will say that the title and description do not contain (`quote` for an enquiry form, the product's other-language terms such as `ofertă`), with `create_node({ …, aliases })` or later `patch_node_territory({ node_id, aliases })`; aliases never need `open_next`. Both title and description are written to `<id>.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then patch the `next` slot.
+**Naming rule:** the **title** is the stable name of the thing — a verb phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Journeys, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `<id>.next.mdx` body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Keep the description to one or two sentences (under 300 characters): it is the row search ranks and orientation shows; detail goes in the body. For an Interaction, say who does what ("Visitor sends …"). **Aliases:** add `aliases` for the words users will say that the title and description do not contain (`quote` for an enquiry form, the product's other-language terms such as `ofertă`), with `create_node({ …, aliases })` or later `patch_node_territory({ node_id, aliases })`; aliases never need `open_next`. Both title and description are written to `<id>.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then patch the `next` slot.
 
 ## Step 4 — Create via MCP
 
@@ -175,7 +175,7 @@ link_nodes({ source_id: "i-orient-plan", target_id: "i-steer-plan", edge_type: "
 
 ### Composition roots (`mounts`)
 
-A Foundation may not import an Interface, so a module whose job is to import several entry points — a template registry, a route dispatcher, a redirect list — has no legal home on `depends_on` alone. Put it on a Foundation and declare what it mounts:
+A Foundation may not import an Interface, so a module whose job is to import several Interfaces — a template registry, a route dispatcher, a redirect list — has no legal home on `depends_on` alone. Put it on a Foundation and declare what it mounts:
 
 ```
 link_nodes({ source_id: "f-registry", target_id: "if-template-a", edge_type: "mounts" })
@@ -247,7 +247,7 @@ Section guidance:
 
 ### Interaction
 
-- **Purpose** — one sentence: what the action does, and the constraint a later session would otherwise simplify away. If there is no such constraint, the outcome sentence is enough.
+- **Purpose** — one sentence: what the Interaction does, and the constraint a later session would otherwise simplify away. If there is no such constraint, the outcome sentence is enough.
 - **Actor & Trigger** — who/what starts it (human, system, agent, schedule)
 - **Inputs & Outputs** — data in/out (not UI layout)
 - **PRD / Execution Logic** — step-by-step behavior. When a Page/UI Interface will `exposes` this Interaction, name the **mountable view**. When Kind is CLI/MCP/Webhook/Cron, name the **exportable handler/module** (not a `*-view.tsx`).
@@ -336,14 +336,14 @@ A shipped node is one file, `<id>.mdx`. `open_next` writes `<id>.next.mdx` from 
 
 | Mistake | Result |
 |---------|--------|
-| Create Interaction with no Journey in graph | **Refuse** — ask for the area first in plain words |
+| Create Interaction with no Journey in graph | **Refuse** — ask for the Journey first |
 | Interaction → `ready` without links | `Blocked: Ghost Interaction` |
 | Interface → `ready` without `exposes` | `Blocked: Ghost Interface` |
 | Interaction → Interaction `depends_on` | `Blocked: Interaction Independence` — use Foundation or `leads_to` |
 | Bug → `triaged` without `affects` | `Blocked: Ghost Bug` |
 | Modeling a Page as an Interaction | Wrong taxonomy — Interface exposes Interaction(s); Interaction still owns the screen body |
 | One Interface per screen/tab/page | Wrong — one Interface per actor + channel; each route mounts the matching Interaction surface |
-| Duplicate Interaction per entry point (e.g. MCP steer + console steer) | Wrong — reuse the Interaction; add `exposes` from the new Interface |
+| Duplicate Interaction per Interface (e.g. MCP steer + console steer) | Wrong — reuse the Interaction; add `exposes` from the new Interface |
 | Changelog titles / descriptions (e.g. "Orient (slim context…)") | Wrong — title is the stable name; revision notes go in `<id>.next.mdx` body |
 | Hybrid or forced role tags (`"Assembler/docs"`) | Wrong — Assembler only for runtimes; misfits → Infra |
 | Fat screens owned by an Interface | Inverted ownership — move domain + view to the Interaction; Interface only mounts |

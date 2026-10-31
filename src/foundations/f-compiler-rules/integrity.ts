@@ -391,13 +391,13 @@ function describeRouteOwner(node: MindPlanNode): string {
     const role = effectiveRole(node);
     return `"${node.id}" (${role === "assembler" ? "Assembler" : `Foundation${role ? ` ${role}` : ""}`})`;
   }
-  return `"${node.id}" (${node.type === "Interface" ? "entry point" : node.type})`;
+  return `"${node.id}" (${node.type})`;
 }
 
 /**
  * Warnings for route families whose route files have more than one owner. The rule: the
- * Assembler owns routes that dispatch to whichever template is active; a template's entry
- * point owns only routes that exist for that template alone.
+ * Assembler owns routes that dispatch to whichever template is active; a template's
+ * Interface owns only routes that exist for that template alone.
  */
 export function routeFamilySplits(
   graph: MindPlanGraph,
@@ -434,7 +434,7 @@ export function routeFamilySplits(
     warnings.push(
       `routes: route family "${family}" is split: ${list}. ` +
         `The Assembler owns routes that dispatch to whichever template is active; ` +
-        `a template's entry point owns only routes that exist for that template alone. ` +
+        `a template's Interface owns only routes that exist for that template alone. ` +
         `Move the family's routes to one owner with set_implementation_files.`
     );
   }

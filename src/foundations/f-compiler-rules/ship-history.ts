@@ -57,7 +57,7 @@ const covered = (claims: string[], entry: string) => claims.some((c) => claimsOv
  * judged from claims rather than edges: at ship j it gained `depends_on` on a Foundation that first
  * shipped after ship j-1 and no later than ship j, and some claim that part had at its first ship
  * was covered by the node's claims at ship j-1 and is no longer covered at ship j. A node that only
- * starts using a new building block moved nothing, so it did not split. `partShips` holds the
+ * starts using a new Foundation moved nothing, so it did not split. `partShips` holds the
  * history of each candidate part (missing: its live claims and live `shipped_at` stand in).
  */
 export function inferredSplits(

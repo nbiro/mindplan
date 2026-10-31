@@ -21,7 +21,7 @@ The `pointer` field of the `setup_project` result is the text every agent sessio
 Read the agent instruction files the repository already has: `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/*`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.github/copilot-instructions.md`. Sort what they say into three groups:
 
 - **Rules for the whole repository** (how to test, branch, review, release; language and style rules that apply everywhere) → candidates for `patch_project_rules`.
-- **Rules about one area** (one service, one package, one feature) → keep a list; once that area is a node in the graph, they go on it with `patch_node_rules`.
+- **Rules about one part** (one service, one package, one feature) → keep a list; once that part is a node in the graph, they go on it with `patch_node_rules`.
 - **Information** (what the project is, how to run it, links) → stays where it is.
 
 Show the user the proposed rules list and, for each source file, the lines you would remove. Write the approved rules with `patch_project_rules`, then remove the moved lines from their source files only after the user approves that diff. A rule must live in one place, or the copies drift.
@@ -36,4 +36,4 @@ Ask whether the repository uses GitHub pull requests. If it does and the user wa
 
 ## 6. Check and hand off
 
-Run `run_check` and fix every `Blocked:` line. Then tell the user what changed (the files you wrote, the rules you moved) and suggest the next step: map the first areas with the `plan-project` skill (`get_skill({ name: "plan-project" })`).
+Run `run_check` and fix every `Blocked:` line. Then tell the user what changed (the files you wrote, the rules you moved) and suggest the next step: map the first Journeys with the `plan-project` skill (`get_skill({ name: "plan-project" })`).
