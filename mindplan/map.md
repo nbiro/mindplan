@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (54 nodes, 168 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (55 nodes, 173 edges). Do not edit by hand._
 
 _How to read this:_ Journey = area · Interaction = action · Interface = entry point · Foundation = building block · Bug = bug.
 
@@ -12,6 +12,7 @@ flowchart TB
     f_console_shell["f-console-shell · Console shell · ready"]
     f_design_system["f-design-system · Console design system · ready"]
     f_domain_model["f-domain-model · Domain model · stable"]
+    f_fan_out["f-fan-out · Fan-out signal · stable"]
     f_framework_docs["f-framework-docs · Framework docs · stable"]
     f_github_actions["f-github-actions · GitHub Actions · stable"]
     f_graph_cache["f-graph-cache · Graph cache · stable"]
@@ -82,6 +83,9 @@ flowchart TB
   f_console_shell --> f_console_client
   f_console_shell --> f_design_system
   f_console_shell --> f_nextjs
+  f_fan_out --> f_compiler_rules
+  f_fan_out --> f_domain_model
+  f_fan_out --> f_source_index
   f_framework_docs --> f_domain_model
   f_github_actions --> f_npm_registry
   f_graph_cache --> f_domain_model
@@ -128,6 +132,7 @@ flowchart TB
   i_change_status__in__j_plan_console --> f_tool_kit
   i_change_status__in__j_territory_sdlc --> f_tool_kit
   i_check_integrity__in__j_territory_sdlc --> f_compiler_rules
+  i_check_integrity__in__j_territory_sdlc --> f_fan_out
   i_check_integrity__in__j_territory_sdlc --> f_graph_migrations
   i_check_integrity__in__j_territory_sdlc --> f_mcp_runtime
   i_check_integrity__in__j_territory_sdlc --> f_source_index
@@ -163,6 +168,7 @@ flowchart TB
   i_npm_tag_publish__in__j_npm_publish --> f_github_actions
   i_npm_tag_publish__in__j_npm_publish --> f_npm_registry
   i_orient_plan__in__j_territory_sdlc --> f_compiler_rules
+  i_orient_plan__in__j_territory_sdlc --> f_fan_out
   i_orient_plan__in__j_territory_sdlc --> f_graph_search
   i_orient_plan__in__j_territory_sdlc --> f_orientation_ledger
   i_orient_plan__in__j_territory_sdlc --> f_plan_views

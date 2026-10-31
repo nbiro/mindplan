@@ -38,7 +38,8 @@ Each type answers one question (plain words from SPEC §2.0.0; type names stay f
 2. Each distinct verb + object is one Interaction candidate (size: one behavior).
 3. **Reuse before create** — `find_related_nodes` for each piece. Same action from a new entry point → new `exposes`, not a new Interaction.
 4. Titles are stable names; descriptions say what the node does *now*, in one or two sentences (search ranks them; `run_check` warns on empty, title-repeating, over-300-character, actor-less Interaction, or revision wording); revision notes stay in `<id>.next.mdx` body. Give a node `aliases` for the words users will say that its text lacks.
-5. Then create what's missing via `define-entities` / `plan-project`.
+5. **Invert nodes that must know every feature.** When one action has to handle every feature of a kind (erase a site, export an account, index for search, check a permission), do not add a depends_on per feature. Define the contract once on the Foundation those features already use: a schema convention (every per-site table cascades from the site) or a record they react to (a deleted/restored state). State it as a node rule there, so every dependent sees it in orient_for_work, and link the test that enforces it with set_test_files. The action then depends only on that Foundation.
+6. Then create what's missing via `define-entities` / `plan-project`.
 
 ## Talking to the user
 

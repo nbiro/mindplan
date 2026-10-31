@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T21:13:07.604Z
 revisions: 23
 churn: 11.268
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-10-31T20:29:06.824Z
+updated_at: 2026-10-31T20:59:57.806Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -79,6 +79,7 @@ Depends on: `f-mcp-runtime`.
 - `decisions.test.mjs` asserts the own-decisions default of `orient_for_work`, `get_node_context`, and `get_blast_radius`, the inherited entries' shapes with `include_inherited_decisions`, the one-decision reply on a node shaped like skyloom's `i-contact-platform`, a Bug's context listing the affected node's decisions, and superseded one-line entries
 
 - **Merge gate.** `src/foundations/f-test-harness/merge-gate.test.mjs` writes fixture graphs on disk and covers `check --merge` for every state, a change spanning several nodes (one group), in-review Bugs, `--merge=strict` against a git base, `runCheckHandler` and `run_check` over MCP matching the CLI, a project below the repository top (project-relative changed paths, the workflow at the top with its working directory), a stale local `main`, one git probe per check, conflicting merge levels, and `init --ci github`. `src/foundations/f-test-harness/transient-io.test.mjs` covers the plan-file retry in `f-source-index/io.ts` (which codes are retried on which platform, other errors thrown at once, a lock outlasting the back-off) and 25 rounds of `open_next` then `patch_node_territory` plus `record_decision` in one batch
+- **Graph filters and fan-out.** `src/foundations/f-test-harness/graph-filters.test.mjs` covers `get_mindplan_graph` `state`, `type`, and `change` alone and together, `fields` (id always present, unknown names Blocked), paging over a filtered set, and no parameters equal to the unfiltered output. `src/foundations/f-test-harness/fan-out.test.mjs` covers the `f-fan-out` counting rules (own-change, shipped, retired, and unlabeled targets ignored), `keep_whole` and its supersession, `fan_out.warn_at` validation and threshold, the `fan-out:` line in `run_check` and in a change's warnings, `stability.fan_out` in `orient_for_work`, and `patch_config({ fan_out })`. `npm test` runs both
 
 ## Attachments
 

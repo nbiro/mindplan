@@ -56,8 +56,8 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Patch project config",
       description:
-        "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, or search settings change. " +
-        "Writes mindplan/config.json sources, exclude, decisions, hotspots, and/or search via the territory store. " +
+        "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, the fan-out threshold, or search settings change. " +
+        "Writes mindplan/config.json sources, exclude, decisions, hotspots, fan_out, and/or search via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -104,6 +104,17 @@ export const TOOLS: ToolDef[] = [
           })
           .optional()
           .describe("Hotspot settings, used by run_check warnings and the open_next warning. A field not passed keeps its stored value."),
+        fan_out: z
+          .strictObject({
+            warn_at: z
+              .number()
+              .int()
+              .positive()
+              .optional()
+              .describe("A pre-ship node depending on nodes in this many other unshipped changes gets a fan-out: warning (default 3)."),
+          })
+          .optional()
+          .describe("Fan-out settings, used by run_check warnings. A field not passed keeps its stored value."),
         search: z
           .strictObject({
             enabled: z
@@ -120,7 +131,7 @@ export const TOOLS: ToolDef[] = [
           .describe("Search settings. A field not passed keeps its stored value."),
       },
     },
-    ({ sources, exclude, decisions, hotspots, search }) =>
-      patchConfig({ sources, exclude, decisions, hotspots, search })
+    ({ sources, exclude, decisions, hotspots, fan_out, search }) =>
+      patchConfig({ sources, exclude, decisions, hotspots, fan_out, search })
   ),
 ];

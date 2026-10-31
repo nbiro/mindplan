@@ -37,15 +37,16 @@ Rules:
 2. **Reuse before create.** Run `find_related_nodes` (or inspect `get_mindplan_graph`) for each area, action, entry point, and building block. Same action on a new entry point → new `exposes` (and mount/wire), **not** a new Interaction.
 3. State which nodes you will add, in plain words. Example: "I'll add *split the check* as a new action in the Billing area and show it from the back-office app."
 4. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call. Neither is a new Journey. Call `get_project` again to re-read (includes the playbook).
-5. Then create what's missing, in the definition order below.
+5. **Invert nodes that must know every feature.** When one action has to handle every feature of a kind (erase a site, export an account, index for search, check a permission), do not add a `depends_on` per feature. Define the contract once on the Foundation those features already use: a schema convention (every per-site table cascades from the site) or a record they react to (a deleted/restored state). State it as a node rule there, so every dependent sees it in `orient_for_work`, and link the test that enforces it with `set_test_files`. The action then depends only on that Foundation.
+6. Then create what's missing, in the definition order below.
 
 ## Step 1 — Orient
 
 ```
-get_mindplan_graph
+get_mindplan_graph({ type: ["Journey", "Foundation"], fields: ["id", "type", "title", "change"] })
 ```
 
-Note existing Journeys, Foundations, Interactions, Interfaces, Bugs, and edges before creating duplicates. Prefer `find_related_nodes` when checking reuse for a specific action or surface.
+Note existing Journeys, Foundations, Interactions, Interfaces, Bugs, and edges before creating duplicates. Filter and project for a question about part of the graph (`state: ["draft", "ready"]`, `type`, `change`, `fields`) instead of reading the whole graph. Prefer `find_related_nodes` when checking reuse for a specific action or surface, and `orient_for_work` for one piece of work.
 
 ## Journey first (mandatory)
 
@@ -53,7 +54,7 @@ Note existing Journeys, Foundations, Interactions, Interfaces, Bugs, and edges b
 
 When the user asks for an Interaction (behavior, use case, actor-triggered flow — **not** a UI page by itself):
 
-1. Run `get_mindplan_graph` and inspect existing Journeys
+1. Run `get_mindplan_graph({ type: "Journey", fields: ["id", "title", "description"] })` and inspect existing Journeys
 2. Decide whether the request maps to an **existing** Journey (by title, description, or user-stated parent Journey id)
 3. If **no** matching Journey exists → **stop and refuse**. Do **not** call `create_node` for the Interaction. Do **not** silently create a Journey on the user's behalf unless they explicitly ask to define one
 
@@ -116,6 +117,8 @@ Role litmus: Assembler → Adapter → Design system → otherwise Infra. Auth i
 **Shared routes (multi-template apps):** a route that exists for every template and dispatches to whichever template is active (e.g. `app/sites/[site]/[lang]/blog/*`) belongs to the **Assembler**; a template's entry point (its Interface) owns only routes that exist for that template alone. Keep one owner per route family — the check warns when one is split. An action whose views live in every template may claim them with one glob: `src/templates/*/actions/i-read-post/`.
 
 **Reuse rule:** Before inventing shared UI or shared state inside an Interaction, find or create the right Foundation and link `depends_on`. Membership across Journeys uses multiple `belongs_to` edges — not a new node. Cross-Interaction flow uses `leads_to`, never `depends_on` (Interaction Independence).
+
+**Fan-out rule:** A node that must handle every feature of a kind (erase a site, export an account, index for search, check a permission) does not `depends_on` each feature. Put the contract on the Foundation those features already use — a schema convention or a record they react to — as a node rule with `patch_node_rules`, link the test that enforces it with `set_test_files`, and depend only on that Foundation. `run_check` warns `fan-out:` when a pre-ship node's `depends_on` reaches `fan_out.warn_at` (default 3) other unshipped changes; a decision with `keep_whole: true` keeps the edges on purpose and silences it.
 
 **Anti-patterns:**
 - Journey named after tech (`API`, `Frontend`, `Database`) — wrong; use domain language
@@ -352,6 +355,7 @@ A shipped node is one file, `<id>.mdx`. `open_next` writes `<id>.next.mdx` from 
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
 | `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |
 | `open_next` while a `<id>.next.mdx` is already open | `Blocked` — `discard_next` or ship it first |
+| A `depends_on` per feature on a node that must know every feature (erase, export, index, permission) | `fan-out:` warning in `run_check` — invert onto a Foundation contract (schema convention or lifecycle record) with a node rule and a linked test |
 | Expecting `link_dependent` / Dependency Closure | Removed — Interactions do not depend on each other |
 
 ## Examples

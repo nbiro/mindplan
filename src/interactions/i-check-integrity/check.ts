@@ -54,7 +54,8 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
-import { hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import {
   changeAdditivity,
   hotspots,
@@ -162,7 +163,7 @@ export interface CheckResult {
 /**
  * The in-review gate on every member of a change: import and ownership violations on each
  * revision's active-slot files and each neighbor's live files (Blocked), and every stale-text
- * signal (warnings; planned paths go to info). Decision warnings apply to revisions only.
+ * signal (warnings; planned paths go to info). Decision and fan-out warnings apply to revisions only.
  */
 function checkChange(
   graph: MindPlanGraph,
@@ -207,8 +208,12 @@ function checkChange(
         `(applied when open_next opens it with this change).`
     );
   }
+  const fanOut = fanOutSettings(loadProjectConfig(root));
+  const fanOutCtx = fanOutContext(graph);
   for (const node of revisions) {
     warnings.push(...decisionWarnings(graph, node, decisionCtx));
+    const f = fanOutFor(graph, node, fanOut, fanOutCtx);
+    if (f) warnings.push(fanOutWarning(f));
     const untested = untestedWarning(node);
     if (untested) warnings.push(untested);
   }
@@ -571,6 +576,14 @@ function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): st
  */
 function collectHotspotWarnings(graph: MindPlanGraph, root: string): string[] {
   return hotspots(graph, hotspotSettings(loadProjectConfig(root))).map(hotspotWarning);
+}
+
+/**
+ * Fan-out warnings, highest count first: each pre-ship node whose depends_on targets sit in at
+ * least `fan_out.warn_at` other unshipped changes, so it may have to know every feature of a kind.
+ */
+function collectFanOutWarnings(graph: MindPlanGraph, root: string): string[] {
+  return fanOuts(graph, fanOutSettings(loadProjectConfig(root))).map(fanOutWarning);
 }
 
 function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
@@ -1061,6 +1074,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     const decisionCtx = createDecisionContext(root);
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     warnings.push(...collectHotspotWarnings(graph, root));
+    warnings.push(...collectFanOutWarnings(graph, root));
     const probe = dirtyProbe(root);
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, probe, options.base, failures);

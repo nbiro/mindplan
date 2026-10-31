@@ -2,19 +2,20 @@
 id: f-source-index
 type: Foundation
 title: "Source index"
-description: "Infra — ownership universe, claim expansion (files, directories, globs), folder dominance for in-place claims, the decision-gate, hotspot, and search settings in mindplan/config.json and their MCP write, and read-only git probes for files a branch adds and the plan's tree and dirty paths."
+description: "Infra — ownership universe, claim expansion (files, directories, globs), folder dominance for in-place claims, the decision-gate, hotspot, fan-out, and search settings in mindplan/config.json and their MCP write, and read-only git probes for files a branch adds and the plan's tree and dirty paths."
 state: stable
-shipped_at: 2026-10-31T11:40:11.424Z
-revisions: 10
-churn: 7.26
+shipped_at: 2026-10-31T21:15:36.146Z
+revisions: 11
+churn: 8.193
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-10-31T11:40:11.424Z
+updated_at: 2026-10-31T21:15:36.146Z
 depends_on:
   - f-domain-model
 implements:
   - src/foundations/f-source-index/
 tests:
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/fan-out.test.mjs
   - src/foundations/f-test-harness/graph-cache.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
@@ -49,6 +50,7 @@ Intended files: `src/foundations/f-source-index/`
 - **Decision-gate settings.** `mindplan/config.json` may carry `decisions: { blast_radius?, schema_files? }`. `loadProjectConfig` validates it (`blast_radius` a non-negative integer, `schema_files` an array of non-empty glob strings, unknown keys Blocked) and keeps it as stored; `decisionGateSettings(config)` fills the defaults: `blast_radius: 5`; `schema_files`: `**/migrations/**`, `**/migration/**`, `**/*.prisma`, `**/schema.sql`, `**/structure.sql`, `**/db/schema.rb` (database migrations and schema dumps only: a generic `schema.*` would also match JSON Schema, zod, and GraphQL modules). `writeProjectConfig` writes `decisions` only when the config it is given has them, so a config without them loads and writes exactly as before
 - `matchesSchemaFile(path, globs)` — whether a repo path is a migration or schema file under those globs (the universe glob syntax)
 - **Hotspot settings.** `mindplan/config.json` may carry `hotspots: { half_life_days?, outlier_ratio?, min_rate? }` (`HotspotSettings`): how fast a node's ship rate fades (`half_life_days`, default `30`), how many times the graph's median rate makes a node an outlier (`outlier_ratio`, default `3`), and the lowest rate that can be one (`min_rate`, default `2`). `loadProjectConfig` validates it (each a positive number, unknown keys Blocked) and keeps it as stored; `hotspotSettings(config)` fills the defaults. `writeProjectConfig` writes `hotspots` only when the config it is given has them
+- **Fan-out settings.** `mindplan/config.json` may carry `fan_out: { warn_at? }` (`FanOutSettings`): how many other unshipped changes a pre-ship node may reach through `depends_on` before the check warns `fan-out:` (`warn_at`, default `3`). `loadProjectConfig` validates it (`warn_at` a positive integer, unknown keys Blocked like `decisions` and `hotspots`) and keeps it as stored; `fanOutSettings(config)` fills the default. `writeProjectConfig` writes `fan_out` only when the config it is given has it, so a config without it loads and writes exactly as before
 - **Search settings.** `mindplan/config.json` may carry `search: { enabled?, model? }` (`SearchConfigSettings`). `loadProjectConfig` validates it (`enabled` a boolean, `model` a non-empty string, unknown keys Blocked) and keeps it as stored; `f-search-index` fills the defaults. `writeProjectConfig` writes `search` only when the config it is given has it
 - **Search cache.** The no-git walk of the universe skips the top-level `.mindplan-cache/` folder (the derived search cache) as it skips `.git/`; in a git repo the cache's own `.gitignore` keeps it out of `ls-files`
 - **Files a branch adds.** `newFilesSinceBase(root)` — files that are untracked, staged as added, or added (`--diff-filter=A`) since `defaultBaseRef(cwd)` (the merge base of `HEAD` with `main`, else `master`; when both the local branch and `origin/<branch>` resolve, the newer of the two merge bases, so a local branch that was never pulled cannot count already-merged commits; dirty-src and the strict merge gate use the same helper), or only untracked and staged ones when no base resolves; paths are read with `-z`, so non-ASCII names come back unquoted; `null` when the root is not a git repository. Read-only; the caller decides when to probe
@@ -70,6 +72,7 @@ Depends on: `f-domain-model`.
 - A negative or non-integer `blast_radius`, or a non-string schema glob, is Blocked as invalid config
 - A `search` object with an unknown key, a non-boolean `enabled`, or an empty `model` is Blocked as invalid config; a config without `search` writes back without it
 - A config without `hotspots` loads with `half_life_days: 30`, `outlier_ratio: 3`, `min_rate: 2` and writes back without it; a zero, negative, or non-number setting, or an unknown `hotspots` key, is Blocked as invalid config
+- A config without `fan_out` loads with `warn_at: 3` and writes back without it; a stored `warn_at` is kept; a zero, negative, or non-integer `warn_at`, or an unknown `fan_out` key, is Blocked as invalid config
 - `.mindplan-cache/` is never part of the universe
 - `newFilesSinceBase` lists an untracked file and a file added on the branch, not a file only modified on the branch, and returns `null` outside git
 - A folder where the node owns a file directly and no other node claims anything is dominated; another node's file, directory, or glob claim under it, or a glob above it that can reach beneath it, makes it not dominated, and so does owning files only in its subfolders
@@ -124,6 +127,15 @@ Depends on: `f-domain-model`.
 - Consequences: A new fs call on a file under mindplan/ should use these wrappers; directory removal passes RM_MAX_RETRIES to fs.rmSync.
 - Change: merge-gate
 - Date: 2026-10-28
+
+### d-fan-out-config-nested
+
+- Decision: The fan-out threshold is stored as fan_out: { warn_at } in mindplan/config.json, default 3, validated like decisions and hotspots.
+- Alternatives:
+  - A top-level fanOutWarnAt key (the only camelCase top-level key; the owner chose the nested form)
+- Why: Every config setting is a nested snake_case object that patch_config merges by key; one more object keeps the shape and the unknown-key rule uniform.
+- Change: graph-filters-fan-out
+- Date: 2026-10-31
 
 ## Attachments
 

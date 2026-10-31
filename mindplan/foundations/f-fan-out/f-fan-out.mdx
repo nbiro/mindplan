@@ -1,0 +1,86 @@
+---
+id: f-fan-out
+type: Foundation
+title: "Fan-out signal"
+description: "Infra — counts the other unshipped changes a pre-ship node depends_on and words the fan-out warning that suggests inverting it onto a Foundation contract."
+state: stable
+shipped_at: 2026-10-31T21:15:36.198Z
+revisions: 1
+churn: 1
+created_at: 2026-10-31T20:45:24.389Z
+updated_at: 2026-10-31T21:15:36.198Z
+role: infra
+aliases:
+  - "fan-out"
+  - "fan out"
+  - "knows every feature"
+  - "invert dependency"
+  - "depends on many changes"
+depends_on:
+  - f-domain-model
+  - f-source-index
+  - f-compiler-rules
+implements:
+  - src/foundations/f-fan-out/
+tests:
+  - src/foundations/f-test-harness/fan-out.test.mjs
+---
+
+# Fan-out signal
+
+## Purpose
+
+Infra — flags a planned node that has to know every feature of a kind. In a real project a planned "delete a site" action depended on nodes in four other unbuilt changes (billing, site analytics, the AI builder, site teams), because erasing a site had to clean up after each of them, so every new feature that stores per-site data would have had to edit its plan too. Every `depends_on` edge was individually correct and the hotspot signal only looks at shipped nodes, so nothing flagged it. This Foundation counts how many other unshipped changes a pre-ship node reaches through `depends_on` and, past a threshold, words a warning that suggests the fix: invert the design so the features meet a contract on a shared Foundation (a schema convention, or a lifecycle record they react to), enforced by a node rule and a test, and the node depends on none of them. It is its own Foundation, not another open–closed signal in `f-compiler-rules`, so this feature leaves that hotspot closed. It is graph facts only, and it only ever warns.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-fan-out/` (`fan-out.ts`, `index.ts`).
+
+- `fanOut(graph, node)` → `{ count, changes }` or `null`:
+  - `null` unless the node is a Foundation, Interaction, or Interface that has never shipped (no `shipped_at`) and is not retired (`isInactiveNode`, `f-domain-model`)
+  - Reads the node's `depends_on` targets. A target counts when it exists, is not retired, has never shipped (no `shipped_at`), and has a change id (`activeChange`, `f-domain-model`) that differs from the node's own `activeChange`. Targets in the node's own change, shipped targets, retired targets, and targets with no change id never count
+  - `changes` are the distinct counted change ids in the order their first target appears in `depends_on`; `count` is their number (0 when none)
+- `fanOutFor(graph, node, settings)` → `{ node_id, count, changes }` or `null` — the warning case: `fanOut` has `count` at least `settings.warn_at` (`FanOutSettings`, `f-source-index`), and the node is not kept whole (`keepsWhole`, `f-compiler-rules`: an active decision with `keep_whole: true`, the same switch the hotspot signal honours)
+- `fanOutWarning(f)` → the warning text (the check prefixes `Warning: `):
+  `fan-out: <id> depends on <N> other changes (<a>, <b>, …). It may need to know every feature of a kind. Consider inverting: put a contract on a Foundation those changes meet (a schema convention, or a record they react to), enforce it with a node rule and a test, and drop these depends_on edges.`
+- `fanOuts(graph, settings)` → every `fanOutFor` result, highest `count` first, then by id, for the check
+- Never throws on a missing target and never Blocks anything
+
+Depends on: `f-domain-model`, `f-source-index`, `f-compiler-rules`.
+
+## Acceptance Criteria
+
+- A pre-ship node whose `depends_on` targets sit in 3 other unshipped changes yields a `fan-out:` warning naming the count and the change ids; 2 yields none
+- Targets in the node's own change, shipped targets, retired targets, and targets with no change id do not count
+- A shipped node and a Journey or Bug yield `null` from `fanOut`
+- An active `keep_whole: true` decision on the node silences `fanOutFor`; superseding it brings the warning back
+- `warn_at` from `fanOutSettings` changes the threshold (e.g. 2 warns on 2 changes)
+- The warning text matches the wording above
+- Verified via `npm test` (`src/foundations/f-test-harness/fan-out.test.mjs`)
+
+## Decisions
+
+### d-fan-out-own-foundation
+
+- Decision: The fan-out signal is its own Foundation (f-fan-out) that depends_on f-compiler-rules for keepsWhole, not another open–closed signal inside f-compiler-rules.
+- Alternatives:
+  - Add fanOut beside hotspotFor in f-compiler-rules/open-closed.ts (reopens a hotspot shipping at 13.7 against a median of 3.4)
+- Why: f-compiler-rules is a hotspot; a new Foundation keeps this change additive there, and the check and orient only need two functions from it.
+- Consequences: The check and orient gain a depends_on on f-fan-out; a later graph-fact signal can follow the same pattern.
+- Change: graph-filters-fan-out
+- Date: 2026-10-31
+
+### d-fan-out-pre-ship-only
+
+- Decision: Fan-out is counted only for never-shipped Foundations, Interactions, and Interfaces; a shipped node's open revision is not counted, and a target counts only when it has never shipped and carries a change id other than the node's own.
+- Alternatives:
+  - Also count a shipped node's open revision over its next depends_on (no measured case yet; the reported problem was a planned node)
+  - Count every unshipped depends_on target, change id or not (a target with no change id is not part of another feature's change)
+- Why: The case that motivated it was a planned action wired to four unbuilt features; shipped targets are settled substrate, and same-change targets are one feature.
+- Consequences: A revision that adds many cross-change depends_on edges is still caught by the depends_on decision trigger, not by fan-out.
+- Change: graph-filters-fan-out
+- Date: 2026-10-31
+
+## Attachments
+
+_None._

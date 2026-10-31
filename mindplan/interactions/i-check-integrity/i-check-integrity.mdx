@@ -2,13 +2,13 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, and hotspots, checks one change, and runs the merge gate."
+description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, hotspots, and fan-out, checks one change, and runs the merge gate."
 state: stable
-shipped_at: 2026-10-31T20:33:28.956Z
-revisions: 24
-churn: 16.371
+shipped_at: 2026-10-31T21:15:36.320Z
+revisions: 25
+churn: 17.36
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-31T20:33:28.956Z
+updated_at: 2026-10-31T21:15:36.320Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -18,6 +18,7 @@ depends_on:
   - f-source-index
   - f-tool-kit
   - f-graph-migrations
+  - f-fan-out
 implements:
   - src/interactions/i-check-integrity/
 tests:
@@ -25,6 +26,7 @@ tests:
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/check.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/fan-out.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
@@ -64,7 +66,7 @@ Intended files: `src/interactions/i-check-integrity/`
 - **Version.** When `graphStatus()` (`f-graph-migrations`) is not `current`, the check fails with `Blocked: Version — <warning>` (naming `setup_project`, `upgrade_project`, or the package to upgrade to), before the graph checks run. `MINDPLAN_VERSION_GATE=off` skips it, like the tool gate
 - **Linked tests.** `checkPresence` also reports `testPresenceFailures` (`f-compiler-rules`): `Blocked: presence: "<id>" tests entry missing on disk: "<entry>".` for a node in review or shipped. Each in-review revision with no linked tests adds its `untestedWarning` as `Warning: tests: …`; it never changes `ok`. The change check reports both for its members
 
-Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`.
+Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`, `f-fan-out`.
 
 - **Merge gate.** `CheckOptions.merge` (`true` or `"strict"`; off by default) adds the rule that the default branch holds only done (`stable` / `unstable`) or still-building (`in-progress`, and the plan states `draft` / `ready`) work. `checkMerge` walks the pipeline nodes and Bugs: a Foundation, Interaction, or Interface whose active slot (the open next while one exists, else live; a mirror twin is not an open next) is `in-review`, and a Bug in `in-review`, are each `Blocked: Merge: …` naming the id, type, state (with `(next)` for a next slot), the change id, and the fix: `update_node_status({ scope: "change", change, new_status: "ship" })` for a node with a change, `update_node_status({ node_id, new_status: "ship" })` without one (a Bug: `"resolved"`), or move it back (`"in-progress"`; a Bug: `"fixing"`) if the work is unfinished. Lines are ordered by change id, then node id, so a change's lines sit together, and the result carries `merge: { level, base?, changes: [{ change, nodes: [{ id, type, state, slot, files? }] }] }` with one group per change (`change: null` for the nodes with none). Cancelled and deprecated nodes pass
 - **Strict merge gate.** With `merge: "strict"`, an `in-progress` active slot whose claims cover a path that changed against the base is also `Blocked: Merge (strict): …` listing up to five changed paths: the work looks finished but was never moved to review. Changed paths are `git diff --name-only --relative <base>...HEAD` plus the working tree under the project root (`collectDirtySrcPaths`, `git status -- .` with the root's repository prefix stripped, so a project below the repository top gets project-relative paths), deleted paths included, matched with `claimCoversPath` against the active slot's claims. One memoized probe per run serves dirty-src and strict, so `--merge=strict --base` runs git once and reports a failed probe once. The base is `options.base`, else `defaultBaseRef`; strict outside git or with no resolvable base is `Blocked: Merge (strict): …` with the fix (`--base <ref>`). Strict stays opt-in because it blocks the incremental PRs of a large feature
@@ -77,6 +79,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - **Planned paths.** `runIntegrityCheck` and `run_check` return `info: string[]` next to `warnings`; `renderCheckOutput` prints them as `Info:` lines after the warnings. With `change`, a member's `planned:` lines from `staleTextWarnings` go to `info`, not `warnings`, so a plan-only change shows one `planned:` line per node and no `stale:` lines for paths it has not built yet. `info` never changes `ok`
 
 **Open–closed signals.** The default check warns `hotspot:` for each shipped node whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, naming its recent change groups as candidate cuts; a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
+
+**Fan-out.** The default check warns `fan-out:` for each pre-ship Foundation, Interaction, or Interface whose `depends_on` targets sit in at least `fan_out.warn_at` other unshipped changes (`fanOuts` with `fanOutSettings`, `f-fan-out` and `f-source-index`), one `Warning: fan-out: …` line per node in `fanOuts` order, so a planned node that would have to know every feature of a kind is flagged before it is built; a node kept whole by a `keep_whole` decision is skipped. The settings are loaded once per run. With `change`, a member's `fan-out:` line is also part of the change's warnings. It never changes `ok` or the exit code, and is never Blocked.
 
 **Tool definition.** `run_check` is defined in this action's `tools.ts` (`defineTool`, `f-tool-kit`) and mounted by `if-mcp-tools`.
 
@@ -114,6 +118,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - `run_check({ change })` lists a planned source as a `planned` member with an `Info: planned edges:` line, and fails on a planned edge whose target was cancelled
 - A shipped node shipping well above the graph's median prints one `hotspot:` warning listing its recent change groups, and `ok` stays true; an active `keep_whole` decision removes it and superseding that decision brings it back; nodes at one pace print none
 - `run_check({ change })` prints one `Info: additivity:` line with the change's summary and carries `change.additivity`
+- A pre-ship node depending on nodes in 3 other unshipped changes prints one `Warning: fan-out:` line naming them and `ok` stays true; 2 changes print none; `keep_whole: true` on the node removes it; `fan_out.warn_at: 2` in `mindplan/config.json` makes 2 changes warn
 
 ## Decisions
 

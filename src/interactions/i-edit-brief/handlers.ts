@@ -44,6 +44,7 @@ export function patchConfig(args: {
   exclude?: string[];
   decisions?: { blast_radius?: number; schema_files?: string[] };
   hotspots?: { half_life_days?: number; outlier_ratio?: number; min_rate?: number };
+  fan_out?: { warn_at?: number };
   search?: { enabled?: boolean; model?: string };
 }): Record<string, unknown> {
   if (
@@ -51,24 +52,27 @@ export function patchConfig(args: {
     args.exclude === undefined &&
     args.decisions === undefined &&
     args.hotspots === undefined &&
+    args.fan_out === undefined &&
     args.search === undefined
   ) {
-    throw blocked("patch_config requires sources, exclude, decisions, hotspots, and/or search.");
+    throw blocked("patch_config requires sources, exclude, decisions, hotspots, fan_out, and/or search.");
   }
   const current = loadProjectConfig();
-  // A decision, hotspot, or search setting that is not passed keeps its stored value.
+  // A decision, hotspot, fan-out, or search setting that is not passed keeps its stored value.
   const merged = <T extends object>(stored: T | undefined, passedArgs: T | undefined): Partial<T> => ({
     ...(stored ?? {}),
     ...Object.fromEntries(Object.entries(passedArgs ?? {}).filter(([, v]) => v !== undefined)),
   });
   const decisions = merged(current.decisions, args.decisions);
   const hotspots = merged(current.hotspots, args.hotspots);
+  const fanOut = merged(current.fan_out, args.fan_out);
   const search = merged(current.search, args.search);
   const next = {
     sources: args.sources ?? current.sources,
     exclude: args.exclude ?? current.exclude,
     ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
     ...(Object.keys(hotspots).length > 0 ? { hotspots } : {}),
+    ...(Object.keys(fanOut).length > 0 ? { fan_out: fanOut } : {}),
     ...(Object.keys(search).length > 0 ? { search } : {}),
   };
   const written = writeProjectConfig(next, { force: true });

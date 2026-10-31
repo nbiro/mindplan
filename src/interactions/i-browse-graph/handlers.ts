@@ -4,9 +4,14 @@
  */
 
 import {
+  BUG_STATES,
+  EXECUTION_STATES,
   isInactiveNode,
+  JOURNEY_STATES,
+  PRODUCTION_STATES,
   type MindPlanGraph,
   type MindPlanNode,
+  type NodeState,
   type NodeType,
 } from "../../foundations/f-domain-model/types.js";
 import { loadGraph } from "../../foundations/f-territory-store/store.js";
@@ -19,7 +24,65 @@ export const GRAPH_PAGE_DEFAULT = 200;
 
 export const GRAPH_PAGE_MAX = 500;
 
-export type GraphPage = MindPlanGraph & {
+/** Every node state a `state` filter may name: the build pipeline's, production's, Journeys', and Bugs'. */
+export const GRAPH_NODE_STATES = [
+  ...new Set<NodeState>([...EXECUTION_STATES, ...PRODUCTION_STATES, ...JOURNEY_STATES, ...BUG_STATES]),
+] as [NodeState, ...NodeState[]];
+
+/** The node record fields `fields` may name: every key of a `MindPlanNode`. */
+export const GRAPH_NODE_FIELDS = [
+  "id",
+  "type",
+  "title",
+  "description",
+  "state",
+  "created_at",
+  "updated_at",
+  "shipped_at",
+  "revisions",
+  "split_at",
+  "split_into",
+  "churn",
+  "churn_at",
+  "severity",
+  "belongs_to",
+  "depends_on",
+  "exposes",
+  "leads_to",
+  "mounts",
+  "affects",
+  "implements",
+  "added_claims",
+  "tests",
+  "aliases",
+  "planned",
+  "attributed",
+  "role",
+  "next",
+  "rules",
+  "change",
+  "change_ref",
+  "decisions",
+] as const satisfies readonly (keyof MindPlanNode)[];
+
+// Fails to compile when MindPlanNode gains a key the list does not name.
+const _allFieldsListed: Exclude<keyof MindPlanNode, (typeof GRAPH_NODE_FIELDS)[number]> extends never ? true : never =
+  true;
+void _allFieldsListed;
+
+export type GraphNodeField = (typeof GRAPH_NODE_FIELDS)[number];
+
+export type GraphQuery = {
+  offset?: number;
+  limit?: number;
+  state?: NodeState | NodeState[];
+  type?: NodeType | NodeType[];
+  change?: string;
+  fields?: string[];
+};
+
+export type GraphPage = Omit<MindPlanGraph, "nodes"> & {
+  nodes: Partial<MindPlanNode>[];
   total_nodes: number;
   total_edges: number;
   offset: number;
@@ -28,26 +91,64 @@ export type GraphPage = MindPlanGraph & {
   next_offset?: number;
 };
 
+/** The node's change as the change tools read it: an open revision's, else the record's. */
+function nodeChange(node: MindPlanNode): string | undefined {
+  return node.next ? node.next.change : node.change;
+}
+
+/** Unknown names fail before any node is read, listing the valid ones. */
+function projectionFields(fields: string[]): Set<string> {
+  for (const name of fields) {
+    if (!(GRAPH_NODE_FIELDS as readonly string[]).includes(name)) {
+      throw new Error(
+        `Blocked: get_mindplan_graph fields: unknown field "${name}". Valid fields: ${GRAPH_NODE_FIELDS.join(", ")}.`
+      );
+    }
+  }
+  return new Set(["id", ...fields]);
+}
+
+const asList = <T>(value: T | T[] | undefined): T[] | undefined =>
+  value === undefined ? undefined : Array.isArray(value) ? value : [value];
+
 /**
- * One page of the graph: nodes sorted by id and sliced by offset/limit, plus every edge whose
- * source is in the page, so a walk over all pages sees each node and each edge exactly once.
- * The default page keeps one result under a host's size limit; a graph that fits returns the
- * whole graph plus the totals.
+ * One page of the graph: nodes filtered (`state`, `type`, `change`: AND across filters, OR inside
+ * one array), sorted by id, and sliced by offset/limit, plus every edge whose source is in the
+ * page, so a walk over all pages sees each node and each edge exactly once. Totals describe the
+ * filtered set. `fields` keeps only the named fields (and `id`) on each node. The default page
+ * keeps one result under a host's size limit; with no filter a graph that fits returns the whole
+ * graph plus the totals.
  */
-export function getMindPlanGraph(args: { offset?: number; limit?: number } = {}): GraphPage {
+export function getMindPlanGraph(args: GraphQuery = {}): GraphPage {
+  const keep = args.fields ? projectionFields(args.fields) : null;
+  const states = asList(args.state);
+  const types = asList(args.type);
   const graph = loadGraph();
   const offset = Math.max(0, Math.floor(args.offset ?? 0));
   const limit = Math.min(GRAPH_PAGE_MAX, Math.max(1, Math.floor(args.limit ?? GRAPH_PAGE_DEFAULT)));
-  const sorted = [...graph.nodes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const nodes = sorted.slice(offset, offset + limit);
-  const inPage = new Set(nodes.map((n) => n.id));
+  const filtered = graph.nodes.filter(
+    (n) =>
+      (!states || states.includes(n.state)) &&
+      (!types || types.includes(n.type)) &&
+      (args.change === undefined || nodeChange(n) === args.change)
+  );
+  const unfiltered = filtered.length === graph.nodes.length;
+  const sorted = filtered.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const slice = sorted.slice(offset, offset + limit);
+  const inPage = new Set(slice.map((n) => n.id));
   const edges = graph.edges.filter((e) => inPage.has(e.source));
+  const inSet = new Set(sorted.map((n) => n.id));
+  const nodes = keep
+    ? slice.map(
+        (n) => Object.fromEntries(Object.entries(n).filter(([key]) => keep.has(key))) as Partial<MindPlanNode>
+      )
+    : slice;
   const page: GraphPage = {
     version: graph.version,
     nodes,
     edges,
     total_nodes: sorted.length,
-    total_edges: graph.edges.length,
+    total_edges: unfiltered ? graph.edges.length : graph.edges.filter((e) => inSet.has(e.source)).length,
     offset,
     limit,
   };

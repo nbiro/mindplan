@@ -29,6 +29,7 @@ import {
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { fanOut } from "../../foundations/f-fan-out/index.js";
 import {
   fanIn,
   hotspotFor,
@@ -539,12 +540,15 @@ export async function orientForWork(args: {
 /**
  * Whether reopening the node is costly: its direct fan-in, how often it shipped lately against the
  * graph's median, its revision count and split record, and the `hotspot:` line when it is one.
+ * A pre-ship node also carries `fan_out`: the other unshipped changes it reaches through
+ * depends_on, so a node that would have to know every feature of a kind shows while it is planned.
  */
 function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<string, unknown> {
   const settings = hotspotSettings(loadProjectConfig(projectRoot()));
   const ctx = hotspotContext(graph, settings);
   const hotspot = hotspotFor(graph, node, settings, ctx);
   const round = (n: number) => Math.round(n * 10) / 10;
+  const fan = fanOut(graph, node);
   return {
     fan_in: fanIn(graph, node, ctx.index).count,
     rate: round(recentRate(node, settings, ctx.now)),
@@ -552,6 +556,7 @@ function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<stri
     ...(node.revisions !== undefined ? { revisions: node.revisions } : {}),
     ...(node.split_into?.length ? { split_at: node.split_at, split_into: [...node.split_into] } : {}),
     ...(hotspot ? { hotspot: hotspotWarning(hotspot) } : {}),
+    ...(fan ? { fan_out: fan } : {}),
   };
 }
 
