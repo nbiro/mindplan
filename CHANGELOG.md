@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.0 — type names only
+
+- **Removed: the plain-word layer over the type names.** Journey, Interaction, Interface, Foundation, and Bug are the vocabulary everywhere: SPEC §2.0.0 is now a type glossary (question and example per type, no "area", "action", "entry point", or "building block" column), and the playbook, the `plan-project` and `define-entities` skills with their examples, the setup guide, and the README use the type names in prose and in the wording agents use with the user (the playbook's "Talking to the user" says so). The map (`mindplan/map.md`) drops its plain-word legend line. The route-family warning labels an Interface owner `(Interface)` instead of `(entry point)`, the split hints say Interface and Journeys, and the `list_areas` and `area` descriptions say Journey. Tool names, parameters, result fields, ids, states, edges, and `Blocked:` codes do not change: `list_areas` and `area` keep their names. [§2.0.0, §1.2.3, §9.6]
+
 ## 0.15.0 — lighter graph reads and no neighbor labels
 
 - **`get_mindplan_graph` `edges`.** A new optional input: `true` (default, unchanged output), `false` (the reply carries neither `edges` nor `total_edges`), or an array of edge types (`["depends_on"]`; values combine with OR) that keeps only those edges whose source is in the page, with `total_edges` counting them over the filtered set. An unknown type is `Blocked: get_mindplan_graph edges: unknown edge type "<name>". Valid edge types: <list>.` before any node is read. Node filtering, sorting, and paging do not change. The tool description's "planned but not built" example now passes `edges: false`: on a real graph the edges were most of that reply. [§8.1]

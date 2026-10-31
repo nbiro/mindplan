@@ -8,7 +8,7 @@ shipped_at: 2026-10-20T13:04:10.795Z
 revisions: 8
 churn: 4.427
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-10-20T13:35:49.568Z
+updated_at: 2026-10-31T23:27:44.619Z
 depends_on:
   - f-domain-model
   - f-graph-search
@@ -33,7 +33,7 @@ Package: `src/foundations/f-view-projection/`
 - `view.ts` — `exportMindPlanView`, `persistMindPlanMap`, `graphToMermaid` / `graphToDot`, `VIEW_FORMATS`
 - Uses `expandNeighborhood` from `f-graph-search` and `mindplanRoot` from `f-territory-store`
 - Interaction-centric styling: Interaction clusters, `exposes` + `leads_to` edge styles; a `mounts` edge is a bold labeled arrow (Mermaid `==>|mounts|`, DOT `style=bold, label="mounts"`)
-- `persistMindPlanMap` writes `# MindPlan map`, auto-generated note, **How to read this** legend line, then the mermaid fence
+- `persistMindPlanMap` writes `# MindPlan map`, the auto-generated note, then the mermaid fence; no legend line, since the type names are the vocabulary (SPEC §2.0.0)
 - MUST NOT own MCP tool handlers; `i-export-map` and `i-steer-plan` call into this package
 - **Decision counts.** `ViewOptions.decisions?: boolean`: when true, Mermaid and DOT labels add ` · N decision(s)` to every node with at least one active decision (its active slot's decisions minus superseded ones, from `f-graph-search`); nodes with none are unchanged. Default false; `persistMindPlanMap` never sets it
 
@@ -41,7 +41,7 @@ Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
 
 ## Acceptance Criteria
 
-- `persistMindPlanMap` includes a one-line How to read this legend using the plain-language glossary
+- `persistMindPlanMap` writes no legend line; the map names Journeys, Interactions, Interfaces, Foundations, and Bugs by their type names
 - A graph with a `mounts` edge renders it in Mermaid and DOT
 - Mermaid/DOT export APIs unchanged for callers
 - Smoke / view tests that assert on `map.md` still pass

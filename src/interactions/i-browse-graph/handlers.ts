@@ -189,17 +189,17 @@ export function getMindPlanGraph(args: GraphQuery = {}): GraphPage {
   return page;
 }
 
-/** An area row's description is cut to this many characters (the full one comes with orient). */
+/** A Journey row's description is cut to this many characters (the full one comes with orient). */
 export const AREA_DESCRIPTION_CHARS = 60;
 
 export const AREA_COLUMNS = ["id", "title", "description", "interactions", "interfaces", "foundations", "open_bugs"] as const;
 
 /**
  * Every Journey as one compact row: `{ columns, rows, count }`, a row being `[id, title,
- * description (60 characters), interactions, interfaces, foundations, open_bugs]` over the area's
+ * description (60 characters), interactions, interfaces, foundations, open_bugs]` over the Journey's
  * live members (`areaMembers`): its active Interactions, the Interfaces exposing them, the
  * Foundations they depend on, and the open Bugs affecting any of those. Rows sort by id. Small
- * enough to call before orienting (30 areas stay under 4 KB); pass a row's id as `area`.
+ * enough to call before orienting (30 Journeys stay under 4 KB); pass a row's id as `area`.
  */
 export function listAreas(): Record<string, unknown> {
   const graph = loadGraph();

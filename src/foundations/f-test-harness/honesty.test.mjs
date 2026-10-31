@@ -616,11 +616,11 @@ fillAndTick("interactions", "i-b");
   let r = await call("run_check", {});
   const split = r.warnings.filter((w) => w.startsWith("routes:"));
   check(
-    "a route family owned by the Assembler and an entry point warns once",
+    "a route family owned by the Assembler and an Interface warns once",
     split.length === 1 &&
       split[0].includes('"app/sites/[site]/[lang]/blog/"') &&
       split[0].includes('"f-asm" (Assembler)') &&
-      split[0].includes('"if-blog" (entry point)'),
+      split[0].includes('"if-blog" (Interface)'),
     JSON.stringify(r.warnings)
   );
   await call("set_implementation_files", { node_id: "if-blog", files: ["src/templates/blog/layout.tsx"] });

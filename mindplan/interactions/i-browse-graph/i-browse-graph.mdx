@@ -8,7 +8,7 @@ shipped_at: 2026-10-31T21:55:15.067Z
 revisions: 3
 churn: 2.99
 created_at: 2026-10-31T11:58:04.820Z
-updated_at: 2026-10-31T22:56:50.407Z
+updated_at: 2026-10-31T23:27:45.016Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -28,7 +28,7 @@ tests:
 
 ## Purpose
 
-Lets an agent look across the plan rather than at one node: the whole graph or a filtered slice of it a page at a time (so no result is silently cut, and a question like "which nodes are planned but not built?" is one call that fits the host's result limit), the areas with their member counts (cheap enough to call before orienting), and the decisions of a node, a change, or the whole graph.
+Lets an agent look across the plan rather than at one node: the whole graph or a filtered slice of it a page at a time (so no result is silently cut, and a question like "which nodes are planned but not built?" is one call that fits the host's result limit), the Journeys with their member counts (`list_areas`, cheap enough to call before orienting), and the decisions of a node, a change, or the whole graph.
 
 ## Actor & Trigger
 
@@ -64,7 +64,7 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-domain
 - `fields` returns only the listed fields plus `id`; `fields` without `id` still returns `id`; an unknown field is Blocked naming the valid fields
 - `edges` omitted returns the same edges as before; `edges: false` returns no `edges` and no `total_edges`; `edges: ["depends_on"]` returns only depends_on edges from the page and counts them over the filtered set; an unknown edge type is Blocked naming the valid ones; `edges` combines with `state`, `type`, `change`, and `fields` without changing the nodes returned
 - Paging over a filtered set: `total_nodes` is the filtered count, `next_offset` walks the filtered set, every filtered node comes back exactly once, and `total_edges` counts the edges whose source is in the filtered set
-- `list_areas` lists 30 areas under 4 KB with member and open-Bug counts
+- `list_areas` lists 30 Journeys under 4 KB with member and open-Bug counts
 - `list_decisions` returns a node's, a change's, and the graph's decisions; with `include_superseded` the superseded entry carries `superseded_by`
 - Verified via `npm test`
 

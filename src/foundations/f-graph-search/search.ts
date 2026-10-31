@@ -435,7 +435,7 @@ export function fuseRankings(
 export interface SearchOptions {
   type?: NodeType;
   limit?: number;
-  /** A Journey id: rank only that area's members (`areaMembers`). */
+  /** A Journey id: rank only that Journey's members (`areaMembers`). */
   area?: string;
   /**
    * The keyword half: FTS5 when the cache has it (`auto`, the default), else the JS BM25; `js`
@@ -530,7 +530,7 @@ export async function searchNodes(
 }
 
 /**
- * The members of an area (a Journey): the Journey, the active Interactions that belong to it, the
+ * The members of a Journey: the Journey, the active Interactions that belong to it, the
  * active Interfaces that expose them, and the active Foundations they depend on transitively. Live
  * and proposed (open next) edges count; the walk never passes through a retired node, so a
  * Foundation only a deprecated Interaction used is not a member. Bugs are not members.

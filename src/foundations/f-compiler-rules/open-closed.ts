@@ -253,7 +253,7 @@ function splitAdvice(h: Hotspot): string {
   }
   if (h.type === "Interface") {
     return (
-      `move the behavior into the Interactions it exposes and leave the entry point mounting them ` +
+      `move the behavior into the Interactions it exposes and leave the Interface mounting them ` +
       `(mark them with patch_node_territory split_into, so its ship records the split)`
     );
   }
@@ -374,13 +374,13 @@ export function splitPartLinked(graph: MindPlanGraph, node: MindPlanNode, partId
   if (node.type === "Interface") return (next.exposes ?? []).includes(partId);
   const part = graph.nodes.find((n) => n.id === partId);
   // The revision's own Journeys, as its ship will write them.
-  const areas = new Set(next.belongs_to ?? []);
-  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => areas.has(j));
+  const journeys = new Set(next.belongs_to ?? []);
+  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => journeys.has(j));
 }
 
 /** The edge a marked part still needs before the ship records it, for the split_into warning. */
 export function splitLinkHint(node: MindPlanNode): string {
   if (node.type === "Foundation") return `depend_on it (link_nodes depends_on)`;
   if (node.type === "Interface") return `expose it (link_nodes exposes)`;
-  return `share one of its areas (link_nodes belongs_to from the part to one of its Journeys)`;
+  return `share one of its Journeys (link_nodes belongs_to from the part to one of them)`;
 }

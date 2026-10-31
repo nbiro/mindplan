@@ -4,21 +4,21 @@
 
 Without them you get a 5,000-line app file; MindPlan keeps your product’s structure in git and rejects any agent move that crosses it.
 
-## In plain words
+## Five kinds of node
 
-MindPlan names five kinds of thing. Type names stay for the graph and tools; plain words help humans and agents talk about them:
+MindPlan names five kinds of thing. The type names are the vocabulary, in the graph, in the tools, and in conversation:
 
-| Type | Plain word | Question | Example |
-|------|------------|----------|---------|
-| **Journey** | area | What does the product do? | Billing |
-| **Interaction** | action | What can someone do? | Split the check |
-| **Interface** | entry point | Where do they do it? | Checkout page, CLI, MCP tools |
-| **Foundation** | building block | What does it all run on? | Database, design system, Stripe |
-| **Bug** | bug | What's broken? | Double charge on split |
+| Type | Question | Example |
+|------|----------|---------|
+| **Journey** | What does the product do? | Billing |
+| **Interaction** | What can someone do? | Split the check |
+| **Interface** | Where do they do it? | Checkout page, CLI, MCP tools |
+| **Foundation** | What does it all run on? | Database, design system, Stripe |
+| **Bug** | What's broken? | Double charge on split |
 
-Links in plain words: `belongs_to` = is part of · `exposes` = shows · `depends_on` = needs · `leads_to` = then goes to · `affects` = breaks.
+Links: `belongs_to` = is part of · `exposes` = shows · `depends_on` = needs · `leads_to` = then goes to · `affects` = breaks.
 
-Rules in plain words: **Infrastructure First** — build the building blocks before the action that needs them. **Behavior First** — an action has to work before you put it on a page. **Completion Check** — finish the checklist before going live. **No Ghosts** — every action lives in an area and stands on a building block.
+Rules: **Infrastructure First** — ship the Foundations before the Interaction that needs them. **Behavior First** — an Interaction has to work before an Interface shows it. **Completion Check** — finish the checklist before going live. **No Ghosts** — every Interaction belongs to a Journey and depends on a Foundation.
 
 ## Think in systems
 
@@ -51,7 +51,7 @@ Today's map is an **architecture + state** projection. A richer status board is 
 
 ## Worked example: scrambled eggs
 
-An **area** (make breakfast), a **building block** (the stove), **actions** (crack, whisk, cook), and an **entry point** (the breakfast CLI):
+A **Journey** (make breakfast), a **Foundation** (the stove), **Interactions** (crack, whisk, cook), and an **Interface** (the breakfast CLI):
 
 ```mermaid
 flowchart TB
@@ -72,17 +72,17 @@ flowchart TB
   ifCli -->|"exposes"| iCook
 ```
 
-- **Journey** `j-breakfast` — area: permanent capability (make breakfast)
-- **Foundation** `f-stove` — building block; cook cannot ship until the stove is `stable`
-- **Interactions** — actions (crack, whisk, cook); they share state via Foundations, never `depends_on` each other. `leads_to` is "then goes to" only (cycles allowed, not a ship gate)
-- **Interface** `if-breakfast-cli` — entry point: how an actor starts cooking; ship needs exposed Interactions `stable` (**Behavior First**)
+- **Journey** `j-breakfast` — permanent capability (make breakfast)
+- **Foundation** `f-stove` — cook cannot ship until the stove is `stable`
+- **Interactions** — crack, whisk, cook; they share state via Foundations, never `depends_on` each other. `leads_to` is "then goes to" only (cycles allowed, not a ship gate)
+- **Interface** `if-breakfast-cli` — how an actor starts cooking; ship needs exposed Interactions `stable` (**Behavior First**)
 
 ```
 Blocked: Infrastructure First. Interaction "i-cook-scramble" cannot ship while
 linked Foundations are not stable: "f-stove" (ready).
 ```
 
-In plain words: you cannot go live with *cook scramble* while the *stove* building block is still only ready to build, not live.
+In other words: you cannot go live with *cook scramble* while the *stove* Foundation is still only ready to build, not live.
 
 ## How it's built
 
@@ -206,7 +206,7 @@ Every tool call loads the graph. Parsing every `.mdx` file costs about a millise
 
 ## MCP Tools
 
-The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are defined in each action's `tools.ts` under [`src/interactions/`](src/interactions/) and mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract). Every tool carries MCP annotations derived from its kind (`readOnlyHint` on read tools, `destructiveHint` on `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`; `openWorldHint` always false), so a host can auto-approve reads and prompt on destructive calls. The server has 33 tools. Every tool except `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `setup_project`, and `upgrade_project` is gated on the graph version: with no `mindplan/` it answers `Blocked: Version` naming `setup_project`, with a stamp below the server's migration level it names `upgrade_project`, and with a stamp or graph newer than the server it asks you to upgrade `mindplan-mcp` (see [Upgrading](#upgrading)). Results are compact JSON text plus `structuredContent`. Results that grow with the graph stay under the host's size limit: `get_mindplan_graph` pages (`offset` / `limit`, `next_offset`), and `export_mindplan_view` refuses a diagram over 80,000 characters unless you pass `focus` or `output`.
+The descriptions the MCP server sends to clients — each tool's `description` and each argument's `.describe()` — are defined in each Interaction's `tools.ts` under [`src/interactions/`](src/interactions/) and mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts). Inputs, outputs, effects, and errors are specified in [SPEC.md §8](SPEC.md#8-mcp-tool-contract). Every tool carries MCP annotations derived from its kind (`readOnlyHint` on read tools, `destructiveHint` on `unlink_nodes`, `remove_attachment`, `discard_next`, and `force_unship`; `openWorldHint` always false), so a host can auto-approve reads and prompt on destructive calls. The server has 33 tools. Every tool except `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `setup_project`, and `upgrade_project` is gated on the graph version: with no `mindplan/` it answers `Blocked: Version` naming `setup_project`, with a stamp below the server's migration level it names `upgrade_project`, and with a stamp or graph newer than the server it asks you to upgrade `mindplan-mcp` (see [Upgrading](#upgrading)). Results are compact JSON text plus `structuredContent`. Results that grow with the graph stay under the host's size limit: `get_mindplan_graph` pages (`offset` / `limit`, `next_offset`), and `export_mindplan_view` refuses a diagram over 80,000 characters unless you pass `focus` or `output`.
 
 | Tool | Kind | Description |
 |------|------|-------------|
@@ -215,7 +215,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`, `info`); unclaimed files and illegal imports come with their fix; `hotspot:` warnings name shipped nodes that ship far more often than the project's median; `fan-out:` warnings name pre-ship nodes whose `depends_on` reaches `fan_out.warn_at` (default 3) other unshipped changes, a node that may need to know every feature of a kind (invert it onto a Foundation contract, or keep it with `record_decision({ keep_whole: true })`); a shipped node whose claimed files changed against the base gets every stale-text signal; `change` also gates every revision of a change and prints its additivity; `merge` (`true` or `"strict"`) runs the merge gate |
 | `get_spec` | read | One section of the running server's own SPEC.md by stable topic id (`territory-shape`, `lifecycle`, `change-ids`, `neighbors`, `decisions`, …) or tool name; no topic lists them |
 | `get_skill` | read | The skills this server serves (`plan-project`, `define-entities`): no name lists them with their description and files; `name` returns the SKILL.md text without frontmatter; `name` + `file` returns one supporting file |
-| `list_areas` | read | Every Journey (area) as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
+| `list_areas` | read | Every Journey as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
 | `find_related_nodes` | read | Hybrid search by query (keyword + semantic; exact id first); focus + 1-hop |
 | `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset`; optional filters `state`, `type`, `change` (AND across filters, OR inside an array; totals and paging describe the filtered set) and `fields` to project node records (`id` always kept). Filter and project for a question about part of the graph instead of reading all of it; use `orient_for_work` for one piece of work |
 | `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts; `output` writes to a file; over-budget diagrams are Blocked with the fix |
