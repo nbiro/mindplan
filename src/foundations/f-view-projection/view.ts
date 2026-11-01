@@ -110,7 +110,7 @@ function nodeLabel(node: MindPlanNode, counts: DecisionCounts = null): string {
   return escapeLabel(`${node.id} · ${node.title} · ${node.state}${decisionSuffix(node, counts)}`);
 }
 
-function belongsToJourneys(node: MindPlanNode, edges: MindPlanEdge[]): string[] {
+function belongsToCapabilities(node: MindPlanNode, edges: MindPlanEdge[]): string[] {
   if (node.type !== "Interaction") return [];
   const fromEdges = edges
     .filter((e) => e.source === node.id && e.type === "belongs_to")
@@ -120,11 +120,11 @@ function belongsToJourneys(node: MindPlanNode, edges: MindPlanEdge[]): string[] 
 }
 
 /**
- * Mermaid node id for an Interaction placed in a Journey cluster.
- * Multi-membership: one visual instance per Journey.
+ * Mermaid node id for an Interaction placed in a Capability cluster.
+ * Multi-membership: one visual instance per Capability.
  */
-function interactionInstanceId(interactionId: string, journeyId: string): string {
-  return mermaidSafeId(`${interactionId}__in__${journeyId}`);
+function interactionInstanceId(interactionId: string, capabilityId: string): string {
+  return mermaidSafeId(`${interactionId}__in__${capabilityId}`);
 }
 
 function interactionCanonicalId(interactionId: string): string {
@@ -136,12 +136,12 @@ function resolveEndpointId(
   nodeId: string,
   byId: Map<string, MindPlanNode>,
   instanceMap: Map<string, string[]>,
-  preferJourney?: string
+  preferCapability?: string
 ): string {
   const instances = instanceMap.get(nodeId);
   if (instances && instances.length > 0) {
-    if (preferJourney) {
-      const match = instances.find((i) => i.endsWith(`__in__${mermaidSafeId(preferJourney)}`));
+    if (preferCapability) {
+      const match = instances.find((i) => i.endsWith(`__in__${mermaidSafeId(preferCapability)}`));
       if (match) return match;
     }
     return instances[0];
@@ -157,7 +157,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
   const counts = decisionCounts(graph, options);
   const lines: string[] = ["flowchart TB"];
 
-  const journeys = view.nodes.filter((n) => n.type === "Journey").sort((a, b) => a.id.localeCompare(b.id));
+  const capabilities = view.nodes.filter((n) => n.type === "Capability").sort((a, b) => a.id.localeCompare(b.id));
   const foundations = view.nodes
     .filter((n) => n.type === "Foundation")
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -188,16 +188,16 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
     lines.push(`  end`);
   }
 
-  const journeyIds = new Set(journeys.map((j) => j.id));
+  const capabilityIds = new Set(capabilities.map((j) => j.id));
   const unassigned: MindPlanNode[] = [];
 
-  for (const j of journeys) {
-    const sgId = mermaidSafeId(`journey_${j.id}`);
+  for (const j of capabilities) {
+    const sgId = mermaidSafeId(`capability_${j.id}`);
     lines.push(
       `  subgraph ${sgId}["${escapeLabel(`${j.id} · ${j.title} · ${j.state}${decisionSuffix(j, counts)}`)}"]`
     );
     for (const ix of interactions) {
-      const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
+      const owners = belongsToCapabilities(ix, view.edges).filter((id) => capabilityIds.has(id));
       if (!owners.includes(j.id)) continue;
       const inst = interactionInstanceId(ix.id, j.id);
       const list = instanceMap.get(ix.id) ?? [];
@@ -209,7 +209,7 @@ export function graphToMermaid(graph: MindPlanGraph, options: ViewOptions = {}):
   }
 
   for (const ix of interactions) {
-    const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
+    const owners = belongsToCapabilities(ix, view.edges).filter((id) => capabilityIds.has(id));
     if (owners.length === 0) {
       unassigned.push(ix);
       const inst = interactionCanonicalId(ix.id);
@@ -297,7 +297,7 @@ function dotLabel(node: MindPlanNode, counts: DecisionCounts = null): string {
 
 function shapeFor(type: NodeType): string {
   switch (type) {
-    case "Journey":
+    case "Capability":
       return "folder";
     case "Foundation":
       return "box";
@@ -322,7 +322,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     '  edge [fontname="Helvetica"];',
   ];
 
-  const journeys = view.nodes.filter((n) => n.type === "Journey").sort((a, b) => a.id.localeCompare(b.id));
+  const capabilities = view.nodes.filter((n) => n.type === "Capability").sort((a, b) => a.id.localeCompare(b.id));
   const foundations = view.nodes
     .filter((n) => n.type === "Foundation")
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -333,7 +333,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     .filter((n) => n.type === "Interface")
     .sort((a, b) => a.id.localeCompare(b.id));
   const bugs = view.nodes.filter((n) => n.type === "Bug").sort((a, b) => a.id.localeCompare(b.id));
-  const journeyIds = new Set(journeys.map((j) => j.id));
+  const capabilityIds = new Set(capabilities.map((j) => j.id));
 
   if (foundations.length > 0) {
     lines.push("  subgraph cluster_foundations {");
@@ -359,19 +359,19 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
     lines.push("  }");
   }
 
-  for (const j of journeys) {
+  for (const j of capabilities) {
     const clusterId = j.id.replace(/[^a-zA-Z0-9_]/g, "_");
     const clusterLabel = `${j.id} · ${j.title} · ${j.state}`.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
     lines.push(`  subgraph cluster_${clusterId} {`);
     lines.push(`    label="${clusterLabel}";`);
     lines.push("    style=rounded;");
     lines.push(
-      `    ${dotSafeId(j.id)} [label="${dotLabel(j, counts)}", shape=${shapeFor("Journey")}, style=dashed];`
+      `    ${dotSafeId(j.id)} [label="${dotLabel(j, counts)}", shape=${shapeFor("Capability")}, style=dashed];`
     );
     for (const ix of interactions) {
-      const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
+      const owners = belongsToCapabilities(ix, view.edges).filter((id) => capabilityIds.has(id));
       if (!owners.includes(j.id)) continue;
-      // DOT cluster membership is exclusive — place in lexicographically first owning Journey.
+      // DOT cluster membership is exclusive — place in lexicographically first owning Capability.
       const primary = owners[0];
       if (primary !== j.id) continue;
       const multi =
@@ -385,7 +385,7 @@ export function graphToDot(graph: MindPlanGraph, options: ViewOptions = {}): str
 
   const assigned = new Set<string>();
   for (const ix of interactions) {
-    const owners = belongsToJourneys(ix, view.edges).filter((id) => journeyIds.has(id));
+    const owners = belongsToCapabilities(ix, view.edges).filter((id) => capabilityIds.has(id));
     if (owners.length > 0) {
       assigned.add(ix.id);
     }

@@ -129,7 +129,7 @@ const decisionWarnings = (result, id) =>
     created_at: stamp("2026-03-05"), updated_at: stamp("2026-03-05"), change: "multi",
   };
   const oldChange = {
-    id: "j-old", type: "Journey", title: "Old", description: "Old", state: "stable",
+    id: "j-old", type: "Capability", title: "Old", description: "Old", state: "stable",
     created_at: stamp("2025-01-01"), updated_at: stamp("2025-01-01"),
     decisions: [{ id: "d-old", decision: "x", alternatives: ["y"], why: "z", change: "multi", date: "2025-06-01" }],
   };
@@ -149,8 +149,8 @@ fs.writeFileSync(
   JSON.stringify({ sources: ["src/**"], exclude: [] }, null, 2) + "\n"
 );
 
-// --- base graph: a Journey, two Foundations, two Interactions, an Interface, a Bug ---
-await call("create_node", { id: "j-book", type: "Journey", title: "Booking", description: "Book a table" });
+// --- base graph: a Capability, two Foundations, two Interactions, an Interface, a Bug ---
+await call("create_node", { id: "j-book", type: "Capability", title: "Booking", description: "Book a table" });
 await call("create_node", { id: "f-bookings", type: "Foundation", title: "Bookings", description: "Infra — bookings", role: "infra" });
 await call("create_node", { id: "f-db", type: "Foundation", title: "Database", description: "Infra — database", role: "infra" });
 await call("create_node", { id: "i-reschedule", type: "Interaction", title: "Reschedule", description: "Reschedule a booking" });
@@ -195,7 +195,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- record and list on live files ---
 {
-  const journey = await call("record_decision", {
+  const capability = await call("record_decision", {
     node_id: "j-book",
     id: "d-evening-bookings",
     decision: "Bookings are made per evening, not per table.",
@@ -203,12 +203,12 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     why: "Capacity changes per evening.",
   });
   check(
-    "record_decision on a Journey writes its live file with a date",
-    journey.slot === "current" &&
-      journey.decision.status === "active" &&
-      /^\d{4}-\d{2}-\d{2}$/.test(journey.decision.date ?? "") &&
-      read(territory("journeys", "j-book")).includes("### d-evening-bookings"),
-    JSON.stringify(journey)
+    "record_decision on a Capability writes its live file with a date",
+    capability.slot === "current" &&
+      capability.decision.status === "active" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(capability.decision.date ?? "") &&
+      read(territory("capabilities", "j-book")).includes("### d-evening-bookings"),
+    JSON.stringify(capability)
   );
 
   const shipped = await call("record_decision", {
@@ -273,7 +273,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   const oriented = await call("orient_for_work", { node_id: "i-reschedule", depth: "rules", include_inherited_decisions: true });
   const labels = oriented.decisions.inherited_decisions.entries.map((e) => `${e.node_id}:${e.id}:${e.via}`);
   check(
-    "include_inherited_decisions returns the Journey's and the Foundation's decisions, labeled by source, at depth rules",
+    "include_inherited_decisions returns the Capability's and the Foundation's decisions, labeled by source, at depth rules",
     labels.includes("j-book:d-evening-bookings:belongs_to") &&
       labels.includes("f-bookings:d-capacity-on-booking:depends_on") &&
       !labels.some((l) => l.startsWith("i-cancel:")),
@@ -310,7 +310,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   await call("patch_node_territory", { node_id: "j-book", section: "## Overview", text: "Evening bookings." });
   check(
     "a section patch keeps the decisions section",
-    read(territory("journeys", "j-book")).includes("### d-evening-bookings") &&
+    read(territory("capabilities", "j-book")).includes("### d-evening-bookings") &&
       (await call("list_decisions", { node_id: "j-book" })).count === 1
   );
   const bodyBlock = await blocked("patch_node_territory", {
@@ -538,10 +538,10 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     why: "It fit the earlier change.",
   });
   // Back-date it, as if that change shipped years ago.
-  const journeyFile = territory("journeys", "j-book");
+  const capabilityFile = territory("capabilities", "j-book");
   fs.writeFileSync(
-    journeyFile,
-    read(journeyFile).replace(/(### d-legacy-choice[\s\S]*?- Date: )\d{4}-\d{2}-\d{2}/, (_, head) => `${head}2020-01-01`)
+    capabilityFile,
+    read(capabilityFile).replace(/(### d-legacy-choice[\s\S]*?- Date: )\d{4}-\d{2}-\d{2}/, (_, head) => `${head}2020-01-01`)
   );
   await call("open_next", { node_id: "f-db", change: "legacy" });
   const opened = (await call("get_node_context", { node_id: "f-db" })).next.record.opened_at;
@@ -825,7 +825,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 {
   const decide = (node_id, n) =>
     call("record_decision", { node_id, id: `d-${node_id}-${n}`, decision: `${node_id} choice ${n}.`, alternatives: ["Other"], why: "Because." });
-  await call("create_node", { id: "j-host", type: "Journey", title: "Hosting", description: "Serve many sites" });
+  await call("create_node", { id: "j-host", type: "Capability", title: "Hosting", description: "Serve many sites" });
   await call("create_node", { id: "f-mail", type: "Foundation", title: "Mail", description: "Adapter — mail", role: "adapter" });
   await call("create_node", { id: "f-build", type: "Foundation", title: "Build", description: "Assembler — build", role: "assembler" });
   await call("create_node", { id: "f-blob", type: "Foundation", title: "Blob store", description: "Adapter — blob store", role: "adapter" });

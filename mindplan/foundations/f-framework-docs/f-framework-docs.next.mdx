@@ -3,12 +3,12 @@ id: f-framework-docs
 type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and tests, decisions, and host install docs."
-state: in-progress
+state: in-review
 shipped_at: 2026-10-31T23:34:22.063Z
 revisions: 49
 churn: 25.422
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-01T10:44:02.546Z
+updated_at: 2026-11-01T11:09:05.493Z
 depends_on:
   - f-domain-model
 implements:
@@ -66,7 +66,7 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 
 - **Type names only (0.16.0).** The plain-word layer (area, action, entry point, building block) is gone: SPEC §2.0.0 is a type glossary (question and example per type) that tells README, playbook, map legend, and skills to use the type names and no synonym; the playbook's Taxonomy table, Breaking down work sentence, and "Talking to the user" use Capability, Interaction, Interface, Foundation, and Bug with the user too; the plan-project and define-entities skills and their examples (breakdown sentence, reuse rule, refusal message, entity table, common mistakes) say the same; the setup guide says "one part" and "the first Capabilities"; README's first section is "Five kinds of node" with the rules reworded in type names and the breakfast example labeled by type; `CHANGELOG.md` has the 0.16.0 section. Tool names (`list_areas`), parameters (`area`), result fields, ids, states, edges, and `Blocked:` codes do not change
 
-- **Capability and established equivalents (0.17.0).** The top-level type is Capability everywhere a type is named: SPEC (§2 taxonomy, §2.2 edge shapes, §4 Computed Capability States, the rules, the `mindplan/capabilities/` layout in §1.1, every tool input and output), the playbook, the stub, both skills and their examples, the setup and upgrade guides, README, and the map legend. Result fields say capability (`capabilities_at_risk`, `containing_capabilities`, `capabilities_recomputed`); the recommended id prefix is `c-`. SPEC §2.0.0 gains an **Established equivalents** table: for each type, its closest established architecture term (business capability or bounded context; use case; driving adapter or C4 container; driven adapter, infrastructure, or shared kernel by role; defect) and where MindPlan differs, plus the same for each edge, marked non-normative and not a list of synonyms. SPEC §1.1.2 and §8.2 specify migration level 3 (`capabilitiesMoved`). README's "Five kinds of node" table gains the established-term column. `CHANGELOG.md` has the 0.17.0 section, which tells consumers to run `upgrade_project`
+- **Capability and established equivalents (0.17.0).** The top-level type is Capability everywhere a type is named: SPEC (§2 taxonomy, §2.2 edge shapes, §4 Computed Capability States, the rules, the `mindplan/capabilities/` layout in §1.1, every tool input and output), the playbook, the stub, both skills and their examples, the setup and upgrade guides, README, and the map legend. Result fields say capability (`capabilities_at_risk`, `containing_capabilities`, `capabilities_recomputed`); the recommended id prefix is `c-`. SPEC §2.0.0 gains an **Established equivalents** table: for each type, its closest established architecture term (business capability or bounded context; use case; driving adapter or C4 container; driven adapter, infrastructure, or shared kernel by role; defect) and where MindPlan differs, plus the same for each edge, marked non-normative and not a list of synonyms. SPEC §1.1.2 and §8.2 specify migration level 3 (`capabilitiesMoved`). The playbook's Taxonomy table and README's "Five kinds of node" table gain the same term as a column, each with a sentence that it is not a synonym; the playbook keeps its line count. `CHANGELOG.md` has the 0.17.0 section, which tells consumers to run `upgrade_project`
 
 Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section
@@ -106,13 +106,13 @@ Depends on: `f-domain-model`.
 - SPEC §5.6 says Atomic Ops live only on unshipped slots (ship drops them, `open_next` starts a fresh list) and §6.3 / the scaffold section say the same; the define-entities skill and README say a shipped node keeps no ledger; SPEC and README describe `slot` and `section` on `orient_for_work` / `get_node_context` and the single decisions block; CHANGELOG has a 0.7.0 section
 - SPEC, README, and the skills describe a next file that exists only while a revision is open (no standing twin), the check's leftover-twin warning, and init's removal of twins; CHANGELOG has a 0.8.0 section
 - The shape table embedded in SPEC §6.5 and the define-entities skill equals `shapeTableMarkdown()` (`agent-guidance.test.mjs`); every `get_spec` topic resolves against SPEC.md; the playbook stays one screen with no checklist text; SPEC counts thirty tools; CHANGELOG has a 0.9.0 section
-- No SPEC, README, playbook, stub, guide, or skill text names Journey as a type; SPEC §2.0.0 has the established-equivalents table for every type and edge, marked non-normative; README's type table names the established term; CHANGELOG has a 0.17.0 section that says to run `upgrade_project`
+- No SPEC, README, playbook, stub, guide, or skill text names Journey as a type; SPEC §2.0.0 has the established-equivalents table for every type and edge, marked non-normative; the playbook's and README's type tables name the established term; CHANGELOG has a 0.17.0 section that says to run `upgrade_project`
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment — note: full npm test passes
 
 ## Decisions
 

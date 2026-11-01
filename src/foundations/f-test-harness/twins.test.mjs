@@ -184,7 +184,7 @@ fs.writeFileSync(
 );
 
 // --- base graph: a shipped Foundation and a shipped Interaction; first ship writes no next file ---
-await call("create_node", { id: "j-app", type: "Journey", title: "App", description: "App area" });
+await call("create_node", { id: "j-app", type: "Capability", title: "App", description: "App area" });
 await call("create_node", { id: "f-core", type: "Foundation", title: "Core", description: "Infra — core", role: "infra" });
 await call("create_node", { id: "i-a", type: "Interaction", title: "A", description: "Action A" });
 await call("create_node", { id: "i-b", type: "Interaction", title: "B", description: "Action B" });

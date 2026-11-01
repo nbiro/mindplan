@@ -3,12 +3,12 @@ id: f-territory-store
 type: Foundation
 title: "Territory store"
 description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, revision change ids, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
-state: in-progress
+state: in-review
 shipped_at: 2026-10-31T23:05:24.775Z
 revisions: 20
 churn: 6.776
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-01T10:44:02.685Z
+updated_at: 2026-11-01T11:09:05.835Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -116,7 +116,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 - **Declared splits.** `writeNextSplitInto(node, ids)` writes the open next file's `split_into` as the live list plus `ids` (the live file is untouched until the revision ships); `NextSlot.split_into` reads it back.
 - **`keep_whole` in decision records.** `record_decision` writes a `keep_whole: true` line in the record when given; the parser reads it back, and a record without it has none.
 
-- **Type folders.** One folder per type under `mindplan/`: `capabilities/`, `foundations/`, `interactions/`, `interfaces/`, `bugs/`. A node's type comes from its folder. The store never reads `journeys/`; only migration level 3 (`f-graph-migrations`) knows it
+- **Type folders.** One folder per type under `mindplan/`: `capabilities/`, `foundations/`, `interactions/`, `interfaces/`, `bugs/`. A node's type comes from its folder. The store never reads `journeys/`; only migration level 3 (`f-graph-migrations`) knows it. A live file whose type is `Journey` (a folder moved by hand) is `Blocked:` naming `upgrade_project`, which rewrites it
 
 ## Acceptance Criteria
 
@@ -163,9 +163,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment — note: full npm test passes
 
 ## Decisions
 

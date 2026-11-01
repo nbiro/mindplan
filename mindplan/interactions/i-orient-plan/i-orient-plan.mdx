@@ -8,7 +8,7 @@ shipped_at: 2026-10-31T23:05:25.579Z
 revisions: 23
 churn: 1.998
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-10-31T23:05:25.579Z
+updated_at: 2026-11-01T10:53:13.005Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -65,7 +65,7 @@ Intended files: `src/interactions/i-orient-plan/` (`handlers.ts`, `tools.ts`).
 
 This action covers `orient_for_work`, `get_node_context`, `get_node_implementation`, and `find_related_nodes`. The blast radius is `i-assess-impact`'s (`get_blast_radius`), the brief `i-read-brief`'s (`get_project`, `get_rules`, `get_spec`), and the paged graph, areas, and decision lists `i-browse-graph`'s; the payloads they share live in `f-plan-views`.
 
-- **Hybrid ranking.** `find_related_nodes` and `orient_for_work` rank through `searchNodes` (`f-graph-search`) with the project root and `territoryBodyReader()` (`f-territory-store`), and are async (the query embedding); both take `area` (a Journey id; anything else is Blocked) and rank only its members
+- **Hybrid ranking.** `find_related_nodes` and `orient_for_work` rank through `searchNodes` (`f-graph-search`) with the project root and `territoryBodyReader()` (`f-territory-store`), and are async (the query embedding); both take `area` (a Capability id; anything else is Blocked) and rank only its members
 - **Summary first.** `orient_for_work({ query })` without `node_id` returns `{ query, matches, focus: null, next }`: rows `{ id, type, state, title, description (70 characters), area?, score }`, default 8, no body, rules, or decisions. A clear winner (`clearWinner`: its exact id, the only match, or twice the next score, looking one match past the limit) comes back in full with `auto_focus: true`. `orient_for_work({ node_id })` returns the full node: `rules`, `decisions`, `context`, from `depth: "body"` on `files` (`nodeOwnedFiles`) for a pipeline node; `full` adds the 1-hop `nodes` / `edges`, `blast_radius` (`buildBlastRadiusPayload`, `f-plan-views`), and for a pipeline node `stability` (`{ fan_in, rate, median_rate, revisions?, split_at?, split_into?, hotspot?, fan_out? }`, `f-compiler-rules`); `fan_out` (`{ count, changes }`, `fanOut`, `f-fan-out`) is present for a pre-ship Foundation, Interaction, or Interface, even at 0 and whether or not the node is kept whole, so an agent planning a node sees how many other unshipped changes it already reaches before the check warns
 - **Rules block.** `{ node_id, entries }` from `reachingRules` (live edges plus an open revision's proposed ones), ordered self, `belongs_to`, `depends_on`, `affects`; each entry carries `version` (`rulesVersion`, `f-plan-views`); `known_rules_versions` leaves out known text (`unchanged: true`); `null` without a focus; never the project brief rules
 - **Orientation ledger.** Every full reply and every `get_node_context` records the node with `recordOriented` (`f-orientation-ledger`), which is what lets the write actions' gate pass; `get_node_context` returns `resolved_rules` because it counts as orienting
@@ -82,9 +82,9 @@ Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-r
 
 - A query-only `orient_for_work` returns rows only, under 2 KB for 10 rows; an exact id query auto-focuses; `orient_for_work({ node_id })` returns record, body, rules, own decisions, owned files, blast radius, and stability
 - A full reply and `get_node_context` count as orienting on the node
-- A search with `area` returns only that area's members and is at least as fast as a whole-graph search; a non-Journey `area` is Blocked
+- A search with `area` returns only that area's members and is at least as fast as a whole-graph search; a non-Capability `area` is Blocked
 - Each `orient_for_work` rules entry carries `version`; a known version leaves out that entry's text, and a changed node rules text comes back with a new version
-- `orient_for_work` on an Interaction returns its own rules, its Journey's, and its Foundations' (transitive), each naming its source and `via`; on a Journey only the Journey's own; on a Bug the resolved rules of the nodes it affects; siblings never appear in each other's `rules`; `rules` is `null` without a focus and `entries` is `[]` when no rules apply
+- `orient_for_work` on an Interaction returns its own rules, its Capability's, and its Foundations' (transitive), each naming its source and `via`; on a Capability only the Capability's own; on a Bug the resolved rules of the nodes it affects; siblings never appear in each other's `rules`; `rules` is `null` without a focus and `entries` is `[]` when no rules apply
 - `depth: rules` returns rules and the record only; `depth: body` adds the body; neither returns `blast_radius`, `nodes`, `edges`, or `stability`
 - `get_node_context` `body` excludes the Rules and Decisions sections, which come back as `rules` and `decisions`; a superseded decision is left out unless `include_superseded`
 - `orient_for_work` on an Interaction returns only its own decisions by default, with `inherited_decisions.count` and `nodes`; with `include_inherited_decisions` it returns its Foundation's decision labeled with the Foundation's id, and one-line entries past distance 1; on a node shaped like skyloom's `i-contact-platform` the default reply carries one decision and `inherited_decisions.count` 12; on a Bug it returns the decisions of the nodes it affects

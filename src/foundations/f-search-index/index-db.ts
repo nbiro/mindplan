@@ -23,7 +23,7 @@ export interface SearchDoc {
   state: string;
   title: string;
   description: string;
-  /** Titles of the Journeys the node belongs to (directly or through what it exposes or affects). */
+  /** Titles of the Capabilities the node belongs to (directly or through what it exposes or affects). */
   area: string[];
   /** Titles of the Interfaces that expose the node (an Interaction's entry points). */
   entry: string[];

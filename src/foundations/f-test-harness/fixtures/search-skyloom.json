@@ -1426,7 +1426,7 @@
   },
   {
    "id": "j-book-show",
-   "type": "Journey",
+   "type": "Capability",
    "title": "Enquiries",
    "description": "A visitor sends a form enquiry. The template owns the form.",
    "state": "stable",
@@ -1436,7 +1436,7 @@
   },
   {
    "id": "j-company-presence",
-   "type": "Journey",
+   "type": "Capability",
    "title": "Sites",
    "description": "A site has locales, legal pages, a public identity, and pages machines can cite.",
    "state": "stable",
@@ -1446,7 +1446,7 @@
   },
   {
    "id": "j-host-sites",
-   "type": "Journey",
+   "type": "Capability",
    "title": "Hosting",
    "description": "The platform serves many sites from one deployment, each on its own domains, and shows its own landing page on the platform domain.",
    "state": "stable",
@@ -1456,7 +1456,7 @@
   },
   {
    "id": "j-journal",
-   "type": "Journey",
+   "type": "Capability",
    "title": "Stories",
    "description": "A site publishes dated stories a visitor can browse and read.",
    "state": "stable",
@@ -1466,7 +1466,7 @@
   },
   {
    "id": "j-show-offering",
-   "type": "Journey",
+   "type": "Capability",
    "title": "Pages",
    "description": "A visitor reads the pages a template composes from its blocks.",
    "state": "stable",

@@ -231,12 +231,12 @@ export function buildNodeContextPayload(
   return payload;
 }
 
-/** The Journey an `area` names; Blocked when it is not a Journey. */
+/** The Capability an `area` names; Blocked when it is not a Capability. */
 function assertArea(graph: MindPlanGraph, area: string | undefined): void {
   if (area === undefined) return;
   const node = findNode(graph, area);
-  if (node.type !== "Journey") {
-    throw blocked(`area must be a Journey id (list_areas lists them); "${area}" is a ${node.type}.`);
+  if (node.type !== "Capability") {
+    throw blocked(`area must be a Capability id (list_areas lists them); "${area}" is a ${node.type}.`);
   }
 }
 
@@ -404,7 +404,7 @@ export type OrientRow = {
   state: string;
   title: string;
   description: string;
-  /** Journey titles; omitted when the node belongs to none. */
+  /** Capability titles; omitted when the node belongs to none. */
   area?: string[];
   score: number;
 };
@@ -602,7 +602,7 @@ export function getNodeImplementationHandler(args: {
 
   const node = findNode(graph, args.node_id);
 
-  if (node.type === "Journey") {
+  if (node.type === "Capability") {
     const interactions = graph.edges
       .filter((e) => e.type === "belongs_to" && e.target === node.id)
       .map((e) => findNode(graph, e.source))
@@ -622,7 +622,7 @@ export function getNodeImplementationHandler(args: {
         files.push(...taggedFiles(iface, root));
       }
     }
-    return { node_id: node.id, type: "Journey", files };
+    return { node_id: node.id, type: "Capability", files };
   }
 
   if (node.type === "Bug") {

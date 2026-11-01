@@ -18,7 +18,7 @@ const baseGraph = {
   nodes: [
     {
       id: "j-ordering",
-      type: "Journey",
+      type: "Capability",
       title: "Ordering",
       description: "Orders",
       state: "stable",
@@ -27,7 +27,7 @@ const baseGraph = {
     },
     {
       id: "j-admin",
-      type: "Journey",
+      type: "Capability",
       title: "Admin",
       description: "Admin",
       state: "incubation",
@@ -88,7 +88,7 @@ const baseGraph = {
       id: "i-orphan",
       type: "Interaction",
       title: "Orphan",
-      description: "No journey",
+      description: "No capability",
       state: "draft",
       created_at: "2026-01-01T00:00:00.000Z",
       updated_at: "2026-01-01T00:00:00.000Z",
@@ -180,13 +180,13 @@ check("focus slices to 1-hop neighborhood", () => {
   assert.equal(ids.has("i-orphan"), false);
 });
 
-check("mermaid clusters journeys, foundations, and interfaces", () => {
+check("mermaid clusters capabilities, foundations, and interfaces", () => {
   const out = graphToMermaid(baseGraph);
   assert.match(out, /^flowchart TB\n/);
   assert.match(out, /subgraph foundations\["Foundations"\]/);
   assert.match(out, /subgraph interfaces\["Interfaces"\]/);
-  assert.match(out, /subgraph journey_j_ordering\[/);
-  assert.match(out, /subgraph journey_j_admin\[/);
+  assert.match(out, /subgraph capability_j_ordering\[/);
+  assert.match(out, /subgraph capability_j_admin\[/);
   assert.match(out, /subgraph unassigned\["Unassigned interactions"\]/);
   assert.match(out, /i_orphan\["i-orphan · Orphan · draft"\]/);
 });

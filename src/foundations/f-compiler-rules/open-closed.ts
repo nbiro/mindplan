@@ -365,7 +365,7 @@ export function splitPartProblem(graph: MindPlanGraph, node: MindPlanNode, partI
 /**
  * Whether a marked part counts when `node`'s open revision ships, by the edge that keeps imports
  * legal: a Foundation depends_on its parts (it stays the composition root), an Interaction shares
- * a Journey with them (the behavior moved to sibling actions), an Interface exposes them.
+ * a Capability with them (the behavior moved to sibling actions), an Interface exposes them.
  */
 export function splitPartLinked(graph: MindPlanGraph, node: MindPlanNode, partId: string): boolean {
   const next = node.next;
@@ -373,14 +373,14 @@ export function splitPartLinked(graph: MindPlanGraph, node: MindPlanNode, partId
   if (node.type === "Foundation") return (next.depends_on ?? []).includes(partId);
   if (node.type === "Interface") return (next.exposes ?? []).includes(partId);
   const part = graph.nodes.find((n) => n.id === partId);
-  // The revision's own Journeys, as its ship will write them.
-  const journeys = new Set(next.belongs_to ?? []);
-  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => journeys.has(j));
+  // The revision's own Capabilities, as its ship will write them.
+  const capabilities = new Set(next.belongs_to ?? []);
+  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => capabilities.has(j));
 }
 
 /** The edge a marked part still needs before the ship records it, for the split_into warning. */
 export function splitLinkHint(node: MindPlanNode): string {
   if (node.type === "Foundation") return `depend_on it (link_nodes depends_on)`;
   if (node.type === "Interface") return `expose it (link_nodes exposes)`;
-  return `share one of its Journeys (link_nodes belongs_to from the part to one of them)`;
+  return `share one of its Capabilities (link_nodes belongs_to from the part to one of them)`;
 }

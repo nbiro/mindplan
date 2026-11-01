@@ -5,7 +5,7 @@ title: "Adopt MindPlan"
 description: "Adopt MindPlan in a consumer project and keep it current: register the MCP server, set the project up and upgrade its graph through MCP tools, and wire agents through the served playbook and skills."
 state: stable
 created_at: 2026-07-15T18:51:13.072Z
-updated_at: 2026-10-31T20:33:29.164Z
+updated_at: 2026-11-01T10:53:15.444Z
 ---
 
 # Adopt MindPlan
@@ -18,7 +18,7 @@ Domain capability: adopt MindPlan in a consumer project and wire it into coding 
 
 A consumer runs `mindplan-mcp init` (or installs from npm once published) and gets territory layout, an always-on playbook (`AGENTS.md` / `mindplan/agent/playbook.md`), the define-entities skill, `.cursorignore`, and integration guides for major agent hosts. Brownfield repos can opt into layout-free mode (`--layout free`) so they keep their existing `src/` layout while still using the MindPlan graph and lifecycle. Framework docs (SPEC, README, roles, Territory Completeness) are shared with Plan software so consumers and this repo speak the same language.
 
-Journey state is **computed** from member Interactions. Assembler for init/runtime paths: `f-mcp-runtime` (via Interaction `depends_on`).
+Capability state is **computed** from member Interactions. Assembler for init/runtime paths: `f-mcp-runtime` (via Interaction `depends_on`).
 
 ## Linked Interactions
 

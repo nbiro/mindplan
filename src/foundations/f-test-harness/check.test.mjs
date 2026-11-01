@@ -65,9 +65,9 @@ fs.writeFileSync(
 
 await call("create_node", {
   id: "j-app",
-  type: "Journey",
+  type: "Capability",
   title: "App",
-  description: "App journey",
+  description: "App capability",
 });
 await call("create_node", {
   id: "f-core",

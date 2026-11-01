@@ -14,7 +14,7 @@ import {
   readProjectVersion,
   writeProjectVersion,
 } from "../f-territory-store/version.js";
-import { MIGRATION_LEVEL } from "./migrations.js";
+import { LEGACY_CAPABILITY_DIR, MIGRATION_LEVEL, hasLegacyCapabilityFolders } from "./migrations.js";
 
 export type GraphState = "setup" | "upgrade" | "server-behind" | "current";
 
@@ -35,8 +35,11 @@ export function stampGraph(): string {
   return writeProjectVersion({ package: packageVersion(), graph: GRAPH_VERSION, migrations: MIGRATION_LEVEL });
 }
 
-/** Folders a node can live in, one per type (legacy current.mdx folders count as nodes too). */
-const NODE_TYPE_DIRS = ["journeys", "foundations", "interactions", "interfaces", "bugs"];
+/**
+ * Folders a node can live in, one per type, plus the pre-level-3 journeys/ (legacy current.mdx
+ * folders count as nodes too).
+ */
+const NODE_TYPE_DIRS = ["capabilities", LEGACY_CAPABILITY_DIR, "foundations", "interactions", "interfaces", "bugs"];
 
 /** True when mindplan/ holds no node folder at all, whatever its files are named. */
 function graphIsEmpty(): boolean {
@@ -82,6 +85,17 @@ export function graphStatus(): GraphStatus {
     };
   }
   const level = stamp !== null && stamp !== "invalid" ? stamp.migrations : 0;
+  const stampCurrent = stamp !== null && stamp !== "invalid" && stamp.graph >= GRAPH_VERSION && level >= required;
+  // A branch from before level 3 can merge a node into journeys/ after the stamp says 3.
+  if (stampCurrent && hasLegacyCapabilityFolders()) {
+    return {
+      state: "upgrade",
+      level,
+      required,
+      call: "upgrade_project",
+      warning: `This graph needs an upgrade: mindplan/${LEGACY_CAPABILITY_DIR}/ still holds a node folder, and mindplan-mcp ${packageVersion()} reads Capabilities only from mindplan/capabilities/. Call upgrade_project, then commit the upgrade on its own.`,
+    };
+  }
   if (stamp === null || stamp === "invalid" || stamp.graph < GRAPH_VERSION || level < required) {
     const why =
       stamp === null

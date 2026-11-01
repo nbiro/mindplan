@@ -48,7 +48,7 @@ export const TOOLS: ToolDef[] = [
         supersedes: z
           .string()
           .optional()
-          .describe("Id of an active decision on this node, its Journey, or its Foundations that this one replaces."),
+          .describe("Id of an active decision on this node, its Capability, or its Foundations that this one replaces."),
         change: CHANGE_ID.optional().describe(
           "Change id to record it under (default: the node's open revision's change). It tags the decision only: the node's own change id is never set, so a decision alone does not make a shipped node a member of the change."
         ),

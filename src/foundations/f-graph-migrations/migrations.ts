@@ -1,6 +1,6 @@
 /**
  * Graph migrations — the ordered, idempotent passes that bring a mindplan/ tree to the server's
- * migration level: legacy territory filenames, legacy config, shipped Atomic Ops, mirror twins,
+ * migration level: Journey folders moved to capabilities/, legacy territory filenames, legacy config, shipped Atomic Ops, mirror twins,
  * revision backfill from git, the agent files the retired init installed under mindplan/agent/, and
  * change labels no open revision backs.
  * upgrade_project runs them; setup_project writes the default config through
@@ -20,7 +20,12 @@ import {
   writeProjectConfig,
   type MindPlanProjectConfig,
 } from "../f-source-index/config.js";
-import { RM_MAX_RETRIES } from "../f-source-index/io.js";
+import {
+  RM_MAX_RETRIES,
+  readFileRetry,
+  withTransientRetry,
+  writeFileRetry,
+} from "../f-source-index/io.js";
 import {
   inferredSplits,
   nodeShipHistory,
@@ -202,11 +207,11 @@ export function migrateImplementationPackages(): {
 const LEGACY_LIVE_FILENAME = "current.mdx";
 const LEGACY_NEXT_FILENAME = "next.mdx";
 
-/** Type folders that may hold an evolution file. Journeys and Bugs must not. */
+/** Type folders that may hold an evolution file. Capabilities and Bugs must not. */
 const EVOLUTION_TYPE_DIRS = new Set(["foundations", "interactions", "interfaces"]);
 
 const TERRITORY_TYPE_DIRS = [
-  "journeys",
+  "capabilities",
   "foundations",
   "interactions",
   "interfaces",
@@ -281,7 +286,7 @@ function directoryEntries(typePath: string): fs.Dirent[] {
 }
 
 /**
- * Evolution filenames under journeys/bugs. The live file is skipped when its name
+ * Evolution filenames under capabilities/bugs. The live file is skipped when its name
  * collides with `next.mdx` (id `next`).
  */
 function illegalEvolutionRels(folder: string, dirName: string, id: string): string[] {
@@ -323,7 +328,7 @@ export function migrateLegacyTerritoryFilenames(): LegacyTerritoryRename[] {
       const listed = [...illegal].sort().join(", ");
       const fix = illegal.length === 1 ? illegal[0] : "these files";
       throw new LegacyTerritoryMigrationError(
-        `Blocked: cannot rename ${listed}. Evolution files are not allowed under journeys or bugs. Fix ${fix} by hand, then call upgrade_project again.`,
+        `Blocked: cannot rename ${listed}. Evolution files are not allowed under capabilities or bugs. Fix ${fix} by hand, then call upgrade_project again.`,
         []
       );
     }
@@ -365,6 +370,126 @@ export function migrateLegacyTerritoryFilenames(): LegacyTerritoryRename[] {
   } finally {
     drainRemovedLegacyFiles();
   }
+}
+
+/** The folder Capabilities lived in before migration level 3, when the type was named Journey. */
+export const LEGACY_CAPABILITY_DIR = "journeys";
+const CAPABILITY_DIR = "capabilities";
+
+/** Scaffold stubs create_node wrote before level 3, and what they read now (the shape check matches the new ones). */
+const LEGACY_CAPABILITY_STUBS: [string, string][] = [
+  [
+    "_Name the domain capability this Journey owns and which use cases belong inside it. Journey titles alone should scream the product purpose — not the tech stack._",
+    "_Say what the product does in this Capability and which use cases belong inside it. Capability titles alone should scream the product purpose — not the tech stack._",
+  ],
+  [
+    "_Interactions link here via `belongs_to` in their frontmatter. The Journey state is computed automatically from member Interactions._",
+    "_Interactions link here via `belongs_to` in their frontmatter. The Capability state is computed automatically from member Interactions._",
+  ],
+];
+
+/** The live file of a node folder (<id>.mdx, or legacy current.mdx), or null when it has none. */
+function liveFileIn(folder: string, id: string): string | null {
+  for (const name of [liveMdxFilename(id), LEGACY_LIVE_FILENAME]) {
+    const abs = path.join(folder, name);
+    if (fs.existsSync(abs)) return abs;
+  }
+  return null;
+}
+
+/** Folders under mindplan/journeys/ that hold a live file: folders without one are not nodes. */
+function legacyCapabilityFolders(): fs.Dirent[] {
+  const legacy = path.join(mindplanRoot(), LEGACY_CAPABILITY_DIR);
+  if (!fs.existsSync(legacy)) return [];
+  return directoryEntries(legacy).filter((e) => liveFileIn(path.join(legacy, e.name), e.name) !== null);
+}
+
+/** True when mindplan/journeys/ holds at least one node folder (one with a live file). */
+export function hasLegacyCapabilityFolders(): boolean {
+  try {
+    return legacyCapabilityFolders().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Rewrites the type line of the first frontmatter block and the old scaffold stubs; keeps line endings. */
+function rewriteCapabilityFile(abs: string): void {
+  const raw = readFileRetry(abs);
+  const fm = /^(---\r?\n)([\s\S]*?)(\r?\n---)/.exec(raw);
+  let next = raw;
+  if (fm) {
+    const head = fm[2]!.replace(/^type:[ \t]*(["']?)Journey\1[ \t]*$/m, "type: Capability");
+    next = fm[1]! + head + fm[3]! + raw.slice(fm[0].length);
+  }
+  for (const [from, to] of LEGACY_CAPABILITY_STUBS) next = next.split(from).join(to);
+  if (next !== raw) writeFileRetry(abs, next);
+}
+
+/**
+ * Level 3. Moves every mindplan/journeys/<id>/ node folder, attachments included, to
+ * mindplan/capabilities/<id>/, rewriting \`type: Journey\` in its live file to \`type: Capability\`
+ * (and the scaffold stubs create_node wrote) before the move, and removes journeys/ once it holds
+ * no node folder and nothing but \`.gitkeep\` or empty folders. Every run also repairs the live
+ * file of every capabilities/<id>/ folder, so a folder moved by hand, or one whose rewrite failed,
+ * is fixed by the next upgrade. Ids and other body text stay as they are. Runs before any graph
+ * load, since the store reads only capabilities/. An id in both folders, or a failed rewrite or
+ * move, throws LegacyTerritoryMigrationError carrying the moves made before it. Idempotent.
+ * Returns the moved ids, sorted.
+ */
+export function migrateJourneysToCapabilities(): string[] {
+  const root = mindplanRoot();
+  const legacy = path.join(root, LEGACY_CAPABILITY_DIR);
+  const target = path.join(root, CAPABILITY_DIR);
+  const moved: LegacyTerritoryRename[] = [];
+  for (const entry of legacyCapabilityFolders()) {
+    const id = entry.name;
+    const fromRel = path.posix.join(MINDPLAN_DIR, LEGACY_CAPABILITY_DIR, id);
+    const toRel = path.posix.join(MINDPLAN_DIR, CAPABILITY_DIR, id);
+    const fromAbs = path.join(legacy, id);
+    const toAbs = path.join(target, id);
+    if (fs.existsSync(toAbs)) {
+      throw new LegacyTerritoryMigrationError(
+        `Blocked: cannot move ${fromRel} to ${toRel}: a Capability with id "${id}" already exists. Keep one of the two folders, delete the other by hand, then call upgrade_project again.`,
+        moved
+      );
+    }
+    try {
+      rewriteCapabilityFile(liveFileIn(fromAbs, id)!);
+      fs.mkdirSync(target, { recursive: true });
+      withTransientRetry(() => fs.renameSync(fromAbs, toAbs));
+    } catch (err) {
+      throw new LegacyTerritoryMigrationError(manualRenameFailure(fromRel, toRel, err).message, moved);
+    }
+    moved.push({ from: fromRel, to: toRel, action: "renamed" });
+  }
+  if (fs.existsSync(target)) {
+    for (const entry of directoryEntries(target)) {
+      const live = liveFileIn(path.join(target, entry.name), entry.name);
+      if (!live) continue;
+      try {
+        rewriteCapabilityFile(live);
+      } catch (err) {
+        const rel = path.posix.join(MINDPLAN_DIR, CAPABILITY_DIR, entry.name, path.basename(live));
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new LegacyTerritoryMigrationError(
+          `Blocked: could not rewrite ${rel} (${detail}). Close what holds it, then call upgrade_project again.`,
+          moved
+        );
+      }
+    }
+  }
+  if (fs.existsSync(legacy) && legacyLeftoversOnly(legacy)) {
+    fs.rmSync(legacy, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
+  }
+  return moved.map((m) => path.posix.basename(m.to)).sort();
+}
+
+/** True when a folder holds only \`.gitkeep\` files and folders that hold nothing else. */
+function legacyLeftoversOnly(dir: string): boolean {
+  return fs.readdirSync(dir, { withFileTypes: true }).every((e) =>
+    e.isDirectory() ? legacyLeftoversOnly(path.join(dir, e.name)) : e.name === ".gitkeep"
+  );
 }
 
 export type MirrorRemovalSkip = {
@@ -555,9 +680,10 @@ export function clearStaleChangeLabels(): ClearedChangeLabel[] {
  * The level a graph reaches after runMigrations. Raise it by one in the release that adds a
  * migration to runMigrations; a release that adds none leaves it, so projects need no upgrade.
  */
-export const MIGRATION_LEVEL = 2;
+export const MIGRATION_LEVEL = 3;
 
 export type MigrationReport = {
+  capabilitiesMoved: string[];
   territoryFilenames: LegacyTerritoryRename[];
   config: { migrated: boolean; sources: string[]; seeded_implements: number; seeded_roles: number };
   atomicOpsDropped: string[];
@@ -575,6 +701,7 @@ export type MigrationReport = {
  * Throws LegacyTerritoryMigrationError when a rename fails after others were applied.
  */
 export function runMigrations(): MigrationReport {
+  const capabilitiesMoved = migrateJourneysToCapabilities();
   const territoryFilenames = migrateLegacyTerritoryFilenames();
   const config = migrateImplementationPackages();
   const atomicOpsDropped = dropShippedAtomicOps();
@@ -584,6 +711,7 @@ export function runMigrations(): MigrationReport {
   const staleChangeLabelsCleared = clearStaleChangeLabels();
   drainRemovedLegacyFiles();
   return {
+    capabilitiesMoved,
     territoryFilenames,
     config: {
       migrated: config.migrated,

@@ -66,7 +66,7 @@ function check(label, condition, detail = "") {
   check("3 other changes warn", fo.fanOutFor(graph, three, defaults) !== null);
   check("2 other changes do not warn", fo.fanOutFor(graph, two, defaults) === null && fo.fanOut(graph, two).count === 2);
   check("a shipped node has no fan-out", fo.fanOut(graph, done) === null);
-  check("a Journey has no fan-out", fo.fanOut(graph, { id: "j-x", type: "Journey", state: "draft" }) === null);
+  check("a Capability has no fan-out", fo.fanOut(graph, { id: "j-x", type: "Capability", state: "draft" }) === null);
   check("keep_whole: true silences the warning", fo.fanOutFor(graph, kept, defaults) === null);
   const superseding = {
     ...node("f-other"),
@@ -138,7 +138,7 @@ try {
     await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra", change });
   }
   await call("create_node", { id: "f-site", type: "Foundation", title: "Site", description: "Infra — sites", role: "infra", change: "delete-site" });
-  await call("create_node", { id: "j-sites", type: "Journey", title: "Sites", description: "Owners manage sites." });
+  await call("create_node", { id: "j-sites", type: "Capability", title: "Sites", description: "Owners manage sites." });
   await call("create_node", { id: "i-delete-site", type: "Interaction", title: "Delete a site", description: "Owner deletes a site.", change: "delete-site" });
   for (const target of ["f-site", "f-billing", "f-analytics"]) {
     await call("link_nodes", { source_id: "i-delete-site", target_id: target, edge_type: "depends_on" });

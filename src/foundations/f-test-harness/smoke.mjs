@@ -359,12 +359,12 @@ function nextTerritoryPath(...parts) {
 }
 
 // --- create nodes ---
-const createdJourney = JSON.parse(
-  await expectOk("create journey", "create_node", { id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
+const createdCapability = JSON.parse(
+  await expectOk("create capability", "create_node", { id: "j-ordering", type: "Capability", title: "Ordering", description: "Diner orders food" })
 );
-if (!createdJourney.changed_files?.includes("mindplan/journeys/j-ordering/j-ordering.mdx") || !createdJourney.changed_files?.includes("mindplan/map.md")) {
-  failures++; console.log(`FAIL create_node changed_files journey: ${JSON.stringify(createdJourney.changed_files)}`);
-} else console.log("ok   create_node changed_files (journey)");
+if (!createdCapability.changed_files?.includes("mindplan/capabilities/j-ordering/j-ordering.mdx") || !createdCapability.changed_files?.includes("mindplan/map.md")) {
+  failures++; console.log(`FAIL create_node changed_files capability: ${JSON.stringify(createdCapability.changed_files)}`);
+} else console.log("ok   create_node changed_files (capability)");
 await expectOk("create foundation", "create_node", {
   id: "f-db",
   type: "Foundation",
@@ -437,10 +437,10 @@ const fImplDir = path.join(root, "src", "foundations", "f-db");
 if (fs.existsSync(ixImplDir) || fs.existsSync(fImplDir)) {
   failures++; console.log("FAIL create_node must not scaffold src packages");
 } else console.log("ok   create_node skips package scaffolds");
-const jImplDir = path.join(root, "src", "journeys");
+const jImplDir = path.join(root, "src", "capabilities");
 if (fs.existsSync(jImplDir)) {
-  failures++; console.log("FAIL journey must not have implementation package tree");
-} else console.log("ok   journey has no implementation package");
+  failures++; console.log("FAIL capability must not have implementation package tree");
+} else console.log("ok   capability has no implementation package");
 
 // Claim implementation files for pipeline nodes that will reach in-review/ship
 fs.mkdirSync(ixImplDir, { recursive: true });
@@ -502,12 +502,12 @@ fillMinimumTerritoryShape(territoryPath("interfaces", "if-web"));
 await expectOk("interface -> ready", "update_node_status", { node_id: "if-web", new_status: "ready" });
 
 // --- taxonomy: legal / illegal edge shapes ---
-await expectBlocked("journey depends_on foundation", "link_nodes", { source_id: "j-ordering", target_id: "f-db", edge_type: "depends_on" });
-await expectBlocked("foundation belongs_to journey", "link_nodes", { source_id: "f-db", target_id: "j-ordering", edge_type: "belongs_to" });
+await expectBlocked("capability depends_on foundation", "link_nodes", { source_id: "j-ordering", target_id: "f-db", edge_type: "depends_on" });
+await expectBlocked("foundation belongs_to capability", "link_nodes", { source_id: "f-db", target_id: "j-ordering", edge_type: "belongs_to" });
 await expectBlocked("foundation exposes interaction", "link_nodes", {
   source_id: "f-db", target_id: "i-checkout", edge_type: "exposes",
 });
-await expectBlocked("leads_to to journey", "link_nodes", {
+await expectBlocked("leads_to to capability", "link_nodes", {
   source_id: "i-checkout", target_id: "j-ordering", edge_type: "leads_to",
 });
 await expectBlocked("interface leads_to interaction", "link_nodes", {
@@ -517,7 +517,7 @@ await expectBlocked("interface leads_to interaction", "link_nodes", {
 await expectOk("create i-tips early for leads_to", "create_node", {
   id: "i-tips", type: "Interaction", title: "Tips", description: "Tipping flow",
 });
-await expectOk("link tips journey", "link_nodes", {
+await expectOk("link tips capability", "link_nodes", {
   source_id: "i-tips", target_id: "j-ordering", edge_type: "belongs_to",
 });
 await expectOk("link tips foundation", "link_nodes", {
@@ -599,7 +599,7 @@ const viewFull = JSON.parse(await expectOk("export mermaid full", "export_mindpl
 if (viewFull.format !== "mermaid" || typeof viewFull.diagram !== "string" || !viewFull.diagram.startsWith("flowchart TB")) {
   failures++; console.log(`FAIL export full mermaid: ${JSON.stringify(viewFull).slice(0, 200)}`);
 } else console.log("ok   export_mindplan_view mermaid full");
-if (!viewFull.diagram.includes("subgraph foundations") || !viewFull.diagram.includes("journey_j_ordering")) {
+if (!viewFull.diagram.includes("subgraph foundations") || !viewFull.diagram.includes("capability_j_ordering")) {
   failures++; console.log(`FAIL export missing clusters: ${viewFull.diagram.slice(0, 300)}`);
 } else console.log("ok   export_mindplan_view clusters");
 if (!viewFull.diagram.includes("subgraph interfaces") || !viewFull.diagram.includes("exposes")) {
@@ -617,14 +617,14 @@ if (viewDot.format !== "dot" || !viewDot.diagram.startsWith("digraph MindPlan"))
 } else console.log("ok   export_mindplan_view dot");
 await expectBlocked("export unknown focus", "export_mindplan_view", { focus: "i-missing" });
 
-// --- journey computed states ---
+// --- capability computed states ---
 await expectOk("interaction -> in-progress", "update_node_status", { node_id: "i-checkout", new_status: "in-progress" });
 let graph = JSON.parse(await expectOk("read graph", "get_mindplan_graph", {}));
-const journey = graph.nodes.find((n) => n.id === "j-ordering");
-if (journey.state !== "incubation") { failures++; console.log(`FAIL journey state: expected incubation, got ${journey.state}`); }
-else console.log("ok   journey computed as incubation");
+const capability = graph.nodes.find((n) => n.id === "j-ordering");
+if (capability.state !== "incubation") { failures++; console.log(`FAIL capability state: expected incubation, got ${capability.state}`); }
+else console.log("ok   capability computed as incubation");
 
-await expectBlocked("manual journey state", "update_node_status", { node_id: "j-ordering", new_status: "stable" });
+await expectBlocked("manual capability state", "update_node_status", { node_id: "j-ordering", new_status: "stable" });
 
 // --- open checklist while building + Completion Check at ship ---
 const ixPath = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx");
@@ -692,16 +692,16 @@ const ix = graph.nodes.find((n) => n.id === "i-checkout");
 const j2 = graph.nodes.find((n) => n.id === "j-ordering");
 if (ix.state !== "stable") { failures++; console.log(`FAIL i-checkout state: expected stable, got ${ix.state}`); }
 else console.log("ok   interaction shipped as stable");
-if (j2.state !== "stable") { failures++; console.log(`FAIL journey state: expected stable, got ${j2.state}`); }
-else console.log("ok   journey computed as stable");
+if (j2.state !== "stable") { failures++; console.log(`FAIL capability state: expected stable, got ${j2.state}`); }
+else console.log("ok   capability computed as stable");
 
-const journeyBeforeBug = j2.state;
+const capabilityBeforeBug = j2.state;
 
 // --- Behavior First: Interface ship blocked until exposed Interaction is stable ---
 await expectOk("create i-pending", "create_node", {
   id: "i-pending", type: "Interaction", title: "Pending", description: "Not shipped yet",
 });
-await expectOk("link pending journey", "link_nodes", {
+await expectOk("link pending capability", "link_nodes", {
   source_id: "i-pending", target_id: "j-ordering", edge_type: "belongs_to",
 });
 await expectOk("link pending foundation", "link_nodes", {
@@ -764,8 +764,8 @@ if (ixAfterLink.state !== "unstable") { failures++; console.log(`FAIL interactio
 else console.log("ok   interaction unstable when open bug linked");
 
 const jAfterBug = graph.nodes.find((n) => n.id === "j-ordering");
-if (jAfterBug.state !== journeyBeforeBug) { failures++; console.log(`FAIL journey changed on bug link: ${journeyBeforeBug} -> ${jAfterBug.state}`); }
-else console.log("ok   journey unchanged by bug activity");
+if (jAfterBug.state !== capabilityBeforeBug) { failures++; console.log(`FAIL capability changed on bug link: ${capabilityBeforeBug} -> ${jAfterBug.state}`); }
+else console.log("ok   capability unchanged by bug activity");
 
 await expectOk("bug -> triaged", "update_node_status", { node_id: "bug-race", new_status: "triaged" });
 await expectOk("bug -> fixing", "update_node_status", { node_id: "bug-race", new_status: "fixing" });
@@ -809,11 +809,11 @@ else console.log("ok   interaction stable after bug resolved");
 fillMinimumTerritoryShape(territoryPath("interactions", "i-tips"));
 await expectOk("i-tips -> ready", "update_node_status", { node_id: "i-tips", new_status: "ready" });
 const res = JSON.parse(await expectOk("i-tips -> in-progress", "update_node_status", { node_id: "i-tips", new_status: "in-progress" }));
-if (res.journeys_recomputed?.[0]?.state !== "evolving") { failures++; console.log(`FAIL journey evolving: ${JSON.stringify(res.journeys_recomputed)}`); }
-else console.log("ok   journey computed as evolving");
+if (res.capabilities_recomputed?.[0]?.state !== "evolving") { failures++; console.log(`FAIL capability evolving: ${JSON.stringify(res.capabilities_recomputed)}`); }
+else console.log("ok   capability computed as evolving");
 
 await expectBlocked("skip to ship", "update_node_status", { node_id: "i-tips", new_status: "ship" });
-await expectBlocked("bug affects journey", "link_nodes", { source_id: "bug-race", target_id: "j-ordering", edge_type: "affects" });
+await expectBlocked("bug affects capability", "link_nodes", { source_id: "bug-race", target_id: "j-ordering", edge_type: "affects" });
 
 const ctx = JSON.parse(await expectOk("get_node_context bug", "get_node_context", { node_id: "bug-race" }));
 if (ctx.current_path !== "mindplan/bugs/bug-race/bug-race.mdx") { failures++; console.log("FAIL bug current_path"); }
@@ -847,7 +847,7 @@ if (!oriented.blast_radius?.node_id || oriented.blast_radius.node_id !== "i-chec
 const orientReach = oriented.blast_radius?.reachability;
 if (
   !orientReach?.exposing_interfaces?.some((n) => n.id === "if-web") ||
-  !orientReach?.containing_journeys?.some((n) => n.id === "j-ordering") ||
+  !orientReach?.containing_capabilities?.some((n) => n.id === "j-ordering") ||
   !orientReach?.leads_to_downstream?.some((n) => n.id === "i-tips")
 ) {
   failures++; console.log(`FAIL orient reachability: ${JSON.stringify(orientReach)}`);
@@ -868,7 +868,7 @@ const blastIx = JSON.parse(
 );
 if (
   !blastIx.reachability?.exposing_interfaces?.some((n) => n.id === "if-web") ||
-  !blastIx.reachability?.containing_journeys?.some((n) => n.id === "j-ordering") ||
+  !blastIx.reachability?.containing_capabilities?.some((n) => n.id === "j-ordering") ||
   !blastIx.reachability?.leads_to_downstream?.some((n) => n.id === "i-tips" && n.distance === 1)
 ) {
   failures++; console.log(`FAIL get_blast_radius reachability: ${JSON.stringify(blastIx.reachability)}`);
@@ -955,12 +955,12 @@ const pathLookup = JSON.parse(
 if (pathLookup.owner?.node_id !== "f-db") {
   failures++; console.log(`FAIL path lookup: ${JSON.stringify(pathLookup)}`);
 } else console.log("ok   get_node_implementation path lookup");
-const journeyImpl = JSON.parse(
-  await expectOk("get_node_implementation journey", "get_node_implementation", { node_id: "j-ordering" })
+const capabilityImpl = JSON.parse(
+  await expectOk("get_node_implementation capability", "get_node_implementation", { node_id: "j-ordering" })
 );
-if (!Array.isArray(journeyImpl.files)) {
-  failures++; console.log(`FAIL journey rollup: ${JSON.stringify(journeyImpl)}`);
-} else console.log("ok   get_node_implementation journey rollup");
+if (!Array.isArray(capabilityImpl.files)) {
+  failures++; console.log(`FAIL capability rollup: ${JSON.stringify(capabilityImpl)}`);
+} else console.log("ok   get_node_implementation capability rollup");
 const tipsCreate = JSON.parse(
   await expectOk("get tips implementation", "get_node_implementation", { node_id: "i-tips" })
 );
@@ -1093,7 +1093,7 @@ await expectOk("i-tips -> ship while next draft", "update_node_status", {
 });
 console.log("ok   sibling interaction can ship while next evolution is still draft");
 
-// Foundation reverse-depends_on blast radius (transitive Foundation chain + journeys_at_risk)
+// Foundation reverse-depends_on blast radius (transitive Foundation chain + capabilities_at_risk)
 await expectOk("create f-a", "create_node", { id: "f-a", type: "Foundation", title: "A", description: "Infra — base", role: "infra" });
 await expectOk("create f-b", "create_node", { id: "f-b", type: "Foundation", title: "B", description: "Infra — mid", role: "infra" });
 await expectOk("create f-c", "create_node", { id: "f-c", type: "Foundation", title: "C", description: "Infra — top", role: "infra" });
@@ -1102,7 +1102,7 @@ await expectOk("link f-c depends_on f-b", "link_nodes", { source_id: "f-c", targ
 await expectOk("create i-on-a", "create_node", {
   id: "i-on-a", type: "Interaction", title: "On A", description: "uses f-a",
 });
-await expectOk("link i-on-a journey", "link_nodes", {
+await expectOk("link i-on-a capability", "link_nodes", {
   source_id: "i-on-a", target_id: "j-ordering", edge_type: "belongs_to",
 });
 await expectOk("link i-on-a f-a", "link_nodes", {
@@ -1116,9 +1116,9 @@ const iOnA = radius.affected?.find((a) => a.id === "i-on-a");
 if (!fB || fB.distance !== 1 || !fC || fC.distance !== 2 || !iOnA || iOnA.distance !== 1) {
   failures++; console.log(`FAIL blast radius distances: ${JSON.stringify(radius.affected)}`);
 } else console.log("ok   get_blast_radius transitive distances");
-if (!radius.journeys_at_risk?.includes("j-ordering")) {
-  failures++; console.log(`FAIL journeys_at_risk: ${JSON.stringify(radius.journeys_at_risk)}`);
-} else console.log("ok   get_blast_radius journeys_at_risk");
+if (!radius.capabilities_at_risk?.includes("j-ordering")) {
+  failures++; console.log(`FAIL capabilities_at_risk: ${JSON.stringify(radius.capabilities_at_risk)}`);
+} else console.log("ok   get_blast_radius capabilities_at_risk");
 
 // --- blast radius omits cancelled by default; include_retired restores; traverse through retired ---
 await expectOk("create f-retired-mid", "create_node", {
@@ -1888,23 +1888,23 @@ if (migrateInit.status !== 0) {
 {
   const renameRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-rename-"));
   const ixDir = path.join(renameRoot, "mindplan", "interactions", "i-old");
-  const journeyDir = path.join(renameRoot, "mindplan", "journeys", "j-old");
+  const capabilityDir = path.join(renameRoot, "mindplan", "capabilities", "j-old");
   fs.mkdirSync(ixDir, { recursive: true });
-  fs.mkdirSync(journeyDir, { recursive: true });
+  fs.mkdirSync(capabilityDir, { recursive: true });
   fs.writeFileSync(path.join(ixDir, "current.mdx"), "---\nid: i-old\n---\n\n# Old\n", "utf-8");
   fs.writeFileSync(path.join(ixDir, "next.mdx"), "---\nid: i-old\n---\n\n# Next\n", "utf-8");
-  fs.writeFileSync(path.join(journeyDir, "current.mdx"), "---\nid: j-old\n---\n\n# Journey\n", "utf-8");
+  fs.writeFileSync(path.join(capabilityDir, "current.mdx"), "---\nid: j-old\n---\n\n# Capability\n", "utf-8");
   const renameInit = upgradeLike(renameRoot);
   const live = path.join(ixDir, "i-old.mdx");
   const evolved = path.join(ixDir, "i-old.next.mdx");
-  const journey = path.join(journeyDir, "j-old.mdx");
+  const capability = path.join(capabilityDir, "j-old.mdx");
   if (renameInit.status !== 0) {
     failures++;
     console.log(`FAIL upgrade_project rename exit ${renameInit.status}: ${renameInit.stderr || renameInit.stdout}`);
   } else if (
     !fs.existsSync(live) ||
     !fs.existsSync(evolved) ||
-    !fs.existsSync(journey) ||
+    !fs.existsSync(capability) ||
     fs.existsSync(path.join(ixDir, "current.mdx")) ||
     fs.existsSync(path.join(ixDir, "next.mdx")) ||
     !renameInit.stdout.includes("Renamed mindplan/interactions/i-old/current.mdx → mindplan/interactions/i-old/i-old.mdx") ||
@@ -1977,7 +1977,7 @@ if (migrateInit.status !== 0) {
   ) {
     failures++;
     console.log(`FAIL upgrade_project should stop before renaming when a bug has an id-named evolution file:\n${preflight.stdout}\n${preflight.stderr}`);
-  } else console.log("ok   upgrade_project stops before renaming when a journey or bug has an id-named evolution file");
+  } else console.log("ok   upgrade_project stops before renaming when a capability or bug has an id-named evolution file");
 
   const partialRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-partial-"));
   const okDir = path.join(partialRoot, "mindplan", "foundations", "a-ok");
@@ -2086,7 +2086,7 @@ await expectOk("create if-ord", "create_node", {
   title: "Ordered surface",
   description: "Mounts i-ord",
 });
-await expectOk("link i-ord journey", "link_nodes", {
+await expectOk("link i-ord capability", "link_nodes", {
   source_id: "i-ord",
   target_id: "j-ordering",
   edge_type: "belongs_to",
@@ -2540,7 +2540,7 @@ role: infra
     id: "f-rules-top", type: "Foundation", title: "Rules top", description: "Infra — rules top", role: "infra",
   });
   await expectOk("create j-rules", "create_node", {
-    id: "j-rules", type: "Journey", title: "Rules area", description: "Area for node rules smoke",
+    id: "j-rules", type: "Capability", title: "Rules area", description: "Area for node rules smoke",
   });
   for (const id of ["i-rules-a", "i-rules-b"]) {
     await expectOk(`create ${id}`, "create_node", {
@@ -2587,7 +2587,7 @@ role: infra
     console.log(`FAIL shipped node rules: stays stable, body excludes Rules, no next file written`);
   } else console.log("ok   shipped node stays stable, get_node_context splits rules from body, no next file written");
 
-  await expectOk("patch_node_rules j-rules", "patch_node_rules", { node_id: "j-rules", rules: "- Journey rule." });
+  await expectOk("patch_node_rules j-rules", "patch_node_rules", { node_id: "j-rules", rules: "- Capability rule." });
   await expectOk("patch_node_rules i-rules-a", "patch_node_rules", { node_id: "i-rules-a", rules: "- Own rule A." });
 
   // Inheritance and labels.
@@ -2596,7 +2596,7 @@ role: infra
   if (JSON.stringify(viaA) !== JSON.stringify(["i-rules-a:self:0", "j-rules:belongs_to:1", "f-rules-base:depends_on:1"])) {
     failures++;
     console.log(`FAIL Interaction rules: ${JSON.stringify(viaA)}`);
-  } else console.log("ok   orient_for_work Interaction gets own, Journey, and Foundation rules, labeled by source");
+  } else console.log("ok   orient_for_work Interaction gets own, Capability, and Foundation rules, labeled by source");
   const orientB = await json("orient_for_work", { node_id: "i-rules-b" });
   if (JSON.stringify(ids(orientB.rules.entries)) !== JSON.stringify(["j-rules", "f-rules-base"])) {
     failures++;
@@ -2605,8 +2605,8 @@ role: infra
   const orientJ = await json("orient_for_work", { node_id: "j-rules" });
   if (JSON.stringify(ids(orientJ.rules.entries)) !== '["j-rules"]') {
     failures++;
-    console.log(`FAIL Journey must not inherit downward: ${JSON.stringify(ids(orientJ.rules.entries))}`);
-  } else console.log("ok   Journey gets only its own rules");
+    console.log(`FAIL Capability must not inherit downward: ${JSON.stringify(ids(orientJ.rules.entries))}`);
+  } else console.log("ok   Capability gets only its own rules");
   const orientT = await json("orient_for_work", { node_id: "f-rules-top" });
   if (JSON.stringify(orientT.rules.entries.map((e) => `${e.node_id}:${e.via}`)) !== '["f-rules-base:depends_on"]') {
     failures++;
@@ -2634,7 +2634,7 @@ role: infra
     blast.affected?.length !== 0
   ) {
     failures++;
-    console.log(`FAIL Journey rules_impact: ${JSON.stringify(blast)}`);
+    console.log(`FAIL Capability rules_impact: ${JSON.stringify(blast)}`);
   } else console.log("ok   get_blast_radius reports rules_impact independent of affected");
   const blastNone = await json("get_blast_radius", { node_id: "i-rules-b" });
   if (blastNone.rules_impact?.has_rules !== false || blastNone.rules_impact.inherited_by.length !== 0) {
@@ -2647,7 +2647,7 @@ role: infra
     node_id: "j-rules", body: "# Rules area\n\nA new body.\n",
   });
   const jCtx = await json("get_node_context", { node_id: "j-rules" });
-  if (jCtx.rules !== "- Journey rule." || !jCtx.body.includes("A new body.") || jCtx.body.includes("## Rules")) {
+  if (jCtx.rules !== "- Capability rule." || !jCtx.body.includes("A new body.") || jCtx.body.includes("## Rules")) {
     failures++;
     console.log(`FAIL body write must preserve rules: ${JSON.stringify(jCtx)}`);
   } else console.log("ok   patch_node_territory preserves the Rules section");
@@ -2676,7 +2676,7 @@ role: infra
   // Clearing removes the section.
   await expectOk("clear j-rules rules", "patch_node_rules", { node_id: "j-rules", rules: "" });
   const cleared = await json("get_node_context", { node_id: "j-rules" });
-  if (cleared.rules !== "" || readFile("journeys", "j-rules", "j-rules.mdx").includes("## Rules")) {
+  if (cleared.rules !== "" || readFile("capabilities", "j-rules", "j-rules.mdx").includes("## Rules")) {
     failures++;
     console.log("FAIL empty rules must remove the section");
   } else console.log("ok   empty rules removes the section");

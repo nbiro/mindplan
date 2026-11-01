@@ -27,9 +27,9 @@ function nodeFile(id, title) {
   return [
     "---",
     `id: ${id}`,
-    "type: Journey",
+    "type: Capability",
     `title: ${title}`,
-    "description: A journey.",
+    "description: A capability.",
     "state: draft",
     "created_at: 2026-01-01T00:00:00.000Z",
     "updated_at: 2026-01-01T00:00:00.000Z",
@@ -43,7 +43,7 @@ function nodeFile(id, title) {
 }
 
 function writeNode(root, id, title, { old = false } = {}) {
-  const dir = path.join(root, "mindplan", "journeys", id);
+  const dir = path.join(root, "mindplan", "capabilities", id);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${id}.mdx`);
   fs.writeFileSync(file, nodeFile(id, title), "utf-8");
@@ -51,9 +51,9 @@ function writeNode(root, id, title, { old = false } = {}) {
   return file;
 }
 
-/** A plan of `n` journeys whose files are an hour old (outside the racy window). */
+/** A plan of `n` capabilities whose files are an hour old (outside the racy window). */
 function makePlan(root, n) {
-  for (let i = 0; i < n; i++) writeNode(root, `j-${String(i).padStart(5, "0")}`, `Journey ${i}`, { old: true });
+  for (let i = 0; i < n; i++) writeNode(root, `j-${String(i).padStart(5, "0")}`, `Capability ${i}`, { old: true });
 }
 
 function use(root, mode) {
@@ -122,13 +122,13 @@ function loadInChild(root, mode = "stamps") {
   ok("stamps: a second load re-parses nothing");
 
   // Same size, recent mtime, mtime restored after the edit: only the hash can see it.
-  const file = writeNode(root, "j-00003", "Journey A");
+  const file = writeNode(root, "j-00003", "Capability A");
   loadGraph();
   const st = fs.statSync(file);
-  fs.writeFileSync(file, nodeFile("j-00003", "Journey B"), "utf-8");
+  fs.writeFileSync(file, nodeFile("j-00003", "Capability B"), "utf-8");
   fs.utimesSync(file, st.atime, st.mtime);
   assert.equal(fs.statSync(file).size, st.size);
-  assert.equal(title("j-00003"), "Journey B");
+  assert.equal(title("j-00003"), "Capability B");
   assert.equal(stats().parsed, 1);
   ok("stamps: a same-size edit with the mtime restored is re-parsed (racy stamp → hash)");
 
@@ -141,13 +141,13 @@ function loadInChild(root, mode = "stamps") {
   ok("stamps: mutating a loaded record does not reach the cache");
 
   writeNode(root, "j-new", "New");
-  fs.rmSync(path.join(root, "mindplan", "journeys", "j-00000"), { recursive: true });
+  fs.rmSync(path.join(root, "mindplan", "capabilities", "j-00000"), { recursive: true });
   const ids = loadGraph().nodes.map((n) => n.id);
   assert.ok(ids.includes("j-new") && !ids.includes("j-00000"));
   assert.equal(stats().parsed, 1);
   ok("stamps: added folders appear and deleted folders drop");
 
-  fs.writeFileSync(path.join(root, "mindplan", "journeys", "j-new", "j-new.mdx"), nodeFile("j-other", "X"), "utf-8");
+  fs.writeFileSync(path.join(root, "mindplan", "capabilities", "j-new", "j-new.mdx"), nodeFile("j-other", "X"), "utf-8");
   assert.throws(() => loadGraph(), /Blocked: folder "j-new" does not match frontmatter id "j-other"/);
   assert.throws(() => loadGraph(), /Blocked: folder "j-new"/);
   writeNode(root, "j-new", "New again");
@@ -155,14 +155,14 @@ function loadInChild(root, mode = "stamps") {
   ok("stamps: a Blocked parse stays Blocked on every load until fixed");
 
   // A file appearing inside a folder (a next slot or a legacy name) changes its stamps.
-  const live = path.join(root, "mindplan", "journeys", "j-00001");
+  const live = path.join(root, "mindplan", "capabilities", "j-00001");
   fs.writeFileSync(path.join(live, "notes.mdx"), "x", "utf-8");
   loadGraph();
   assert.equal(stats().parsed, 1);
   ok("stamps: a new .mdx file in a folder re-parses that folder");
 
   // Windows and macOS open `j-up.MDX` for `j-up.mdx`, so its stamps must count.
-  const upDir = path.join(root, "mindplan", "journeys", "j-up");
+  const upDir = path.join(root, "mindplan", "capabilities", "j-up");
   fs.mkdirSync(upDir);
   const upFile = path.join(upDir, "j-up.MDX");
   fs.writeFileSync(upFile, nodeFile("j-up", "Upper"), "utf-8");
@@ -177,9 +177,9 @@ function loadInChild(root, mode = "stamps") {
   fs.rmSync(upDir, { recursive: true });
 
   // A legacy current.mdx next to <id>.mdx is deleted by the parse that sees it; the result is cached after.
-  const legacy = path.join(root, "mindplan", "journeys", "j-00005");
+  const legacy = path.join(root, "mindplan", "capabilities", "j-00005");
   fs.writeFileSync(path.join(legacy, "current.mdx"), nodeFile("j-00005", "Legacy"), "utf-8");
-  assert.equal(title("j-00005"), "Journey 5");
+  assert.equal(title("j-00005"), "Capability 5");
   assert.equal(fs.existsSync(path.join(legacy, "current.mdx")), false);
   loadGraph();
   assert.equal(stats().parsed, 1);
@@ -203,7 +203,7 @@ function loadInChild(root, mode = "stamps") {
   ok("persist: a second process reuses the records the first one parsed");
 
   // A child edits a node; this process, whose memory predates the edit, still sees it.
-  fs.writeFileSync(path.join(root, "mindplan", "journeys", "j-00002", "j-00002.mdx"), nodeFile("j-00002", "Changed elsewhere"), "utf-8");
+  fs.writeFileSync(path.join(root, "mindplan", "capabilities", "j-00002", "j-00002.mdx"), nodeFile("j-00002", "Changed elsewhere"), "utf-8");
   assert.equal(loadInChild(root).titles["j-00002"], "Changed elsewhere");
   assert.equal(title("j-00002"), "Changed elsewhere");
   ok("persist: an edit seen first by another process is seen here too");
@@ -222,8 +222,8 @@ function loadInChild(root, mode = "stamps") {
   closeGraphCaches();
   const other = new GraphCache(root, "999.0.0");
   const folders = fs
-    .readdirSync(path.join(root, "mindplan", "journeys"))
-    .map((id) => ({ rel: `mindplan/journeys/${id}`, abs: path.join(root, "mindplan", "journeys", id) }));
+    .readdirSync(path.join(root, "mindplan", "capabilities"))
+    .map((id) => ({ rel: `mindplan/capabilities/${id}`, abs: path.join(root, "mindplan", "capabilities", id) }));
   let parses = 0;
   other.load(folders, () => (parses++, null), "mindplan");
   other.close();
@@ -235,14 +235,14 @@ function loadInChild(root, mode = "stamps") {
   // Two versions sharing the file (one server mid-upgrade): neither reads the other's rows.
   closeGraphCaches();
   const tagged = (tag) => (folder) => ({
-    id: path.basename(folder.abs), type: "Journey", title: tag, description: "", state: "draft",
+    id: path.basename(folder.abs), type: "Capability", title: tag, description: "", state: "draft",
     created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z",
   });
   const oldServer = new GraphCache(root, "0.0.1-old");
   oldServer.load(folders, tagged("old"), "mindplan");
   const newServer = new GraphCache(root, "0.0.2-new");
   newServer.load(folders, tagged("new"), "mindplan");
-  const edited = path.join(root, "mindplan", "journeys", "j-00010", "j-00010.mdx");
+  const edited = path.join(root, "mindplan", "capabilities", "j-00010", "j-00010.mdx");
   fs.writeFileSync(edited, nodeFile("j-00010", "Edited while both run"), "utf-8");
   oldServer.load(folders, tagged("old"), "mindplan");
   oldServer.close();
@@ -285,7 +285,7 @@ function loadInChild(root, mode = "stamps") {
   assert.deepEqual([stats().trusted, stats().parsed, stats().verified], [25, 0, 0]);
   ok("git: a clean committed plan is reused without touching its files");
 
-  const file = path.join(root, "mindplan", "journeys", "j-00004", "j-00004.mdx");
+  const file = path.join(root, "mindplan", "capabilities", "j-00004", "j-00004.mdx");
   fs.writeFileSync(file, nodeFile("j-00004", "Edited J4"), "utf-8");
   assert.equal(title("j-00004"), "Edited J4");
   assert.deepEqual([stats().trusted, stats().parsed], [24, 1]);
@@ -300,31 +300,31 @@ function loadInChild(root, mode = "stamps") {
   ok("git: after a commit the edited folder is trusted again");
 
   git(repo, "checkout", "-q", "HEAD~1");
-  assert.equal(title("j-00004"), "Journey 4");
+  assert.equal(title("j-00004"), "Capability 4");
   assert.equal(stats().parsed, 1);
   git(repo, "checkout", "-q", "-");
   assert.equal(title("j-00004"), "Edited J4");
   ok("git: checking out another commit re-parses exactly the folders that differ");
 
   writeNode(root, "j-untracked", "Untracked", { old: true });
-  fs.rmSync(path.join(root, "mindplan", "journeys", "j-00007"), { recursive: true });
+  fs.rmSync(path.join(root, "mindplan", "capabilities", "j-00007"), { recursive: true });
   const ids = loadGraph().nodes.map((n) => n.id);
   assert.ok(ids.includes("j-untracked") && !ids.includes("j-00007"));
   assert.equal(stats().parsed, 1);
   ok("git: untracked folders appear and deleted folders drop");
 
   // Staged but not committed: the index differs from HEAD, so the folder is not clean.
-  const f8 = path.join(root, "mindplan", "journeys", "j-00008", "j-00008.mdx");
-  fs.writeFileSync(f8, nodeFile("j-00008", "Journey Staged"), "utf-8");
+  const f8 = path.join(root, "mindplan", "capabilities", "j-00008", "j-00008.mdx");
+  fs.writeFileSync(f8, nodeFile("j-00008", "Capability Staged"), "utf-8");
   git(repo, "add", "--", path.relative(repo, f8).split(path.sep).join("/"));
   ageFiles(root);
-  assert.equal(title("j-00008"), "Journey Staged");
+  assert.equal(title("j-00008"), "Capability Staged");
   loadGraph();
   assert.equal(stats().trusted, 23);
   ok("git: a staged edit keeps its folder out of the trusted set");
 
   // Git keeps vouching for tracked files under an ignore pattern, but not for ignored new ones.
-  fs.appendFileSync(path.join(repo, ".gitignore"), "app/mindplan/journeys/j-00009/\nj-hidden/\n", "utf-8");
+  fs.appendFileSync(path.join(repo, ".gitignore"), "app/mindplan/capabilities/j-00009/\nj-hidden/\n", "utf-8");
   loadGraph();
   assert.equal(stats().mode, "git");
   writeNode(root, "j-hidden", "Hidden", { old: true });
@@ -345,12 +345,12 @@ function loadInChild(root, mode = "stamps") {
   loadGraph();
   loadGraph();
   assert.deepEqual([stats().mode, stats().trusted], ["git", 10]);
-  fs.writeFileSync(path.join(root, "mindplan", "journeys", "j-00001", "j-00001.mdx"), nodeFile("j-00001", "Top edit"), "utf-8");
+  fs.writeFileSync(path.join(root, "mindplan", "capabilities", "j-00001", "j-00001.mdx"), nodeFile("j-00001", "Top edit"), "utf-8");
   commitAll(root, "edit");
   ageFiles(root);
   assert.equal(title("j-00001"), "Top edit");
   git(root, "checkout", "-q", "HEAD~1");
-  assert.equal(title("j-00001"), "Journey 1");
+  assert.equal(title("j-00001"), "Capability 1");
   assert.equal(stats().parsed, 1);
   ok("git: a project at the repository top tracks edits and checkouts");
 }

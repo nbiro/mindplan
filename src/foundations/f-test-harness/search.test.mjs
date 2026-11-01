@@ -54,7 +54,7 @@ const graph = {
     },
     {
       id: "j-sdlc",
-      type: "Journey",
+      type: "Capability",
       title: "Plan software",
       description: "Territory SDLC",
       state: "stable",
@@ -117,7 +117,7 @@ assert.equal(forced.focus, "i-query-graph-v2");
 const nbr = expandNeighborhood(graph, "i-query-graph");
 assert.ok(nbr.nodes.some((n) => n.id === "if-mcp-tools"), "exposes neighbor Interface included");
 assert.ok(nbr.nodes.some((n) => n.id === "i-steer"), "leads_to neighbor Interaction included");
-assert.ok(nbr.nodes.some((n) => n.id === "j-sdlc"), "belongs_to Journey included");
+assert.ok(nbr.nodes.some((n) => n.id === "j-sdlc"), "belongs_to Capability included");
 assert.ok(
   nbr.edges.some((e) => e.type === "exposes" && e.source === "if-mcp-tools"),
   "exposes edge in neighborhood"
@@ -153,7 +153,7 @@ console.log("ok   Interface ranking + exposes/leads_to neighborhoods");
     version: GRAPH_VERSION,
     edges: [],
     nodes: [
-      mk("j-a", "Journey", { rules: "J" }),
+      mk("j-a", "Capability", { rules: "J" }),
       mk("f-low", "Foundation", { rules: "LOW" }),
       mk("f-mid", "Foundation", { rules: "MID", depends_on: ["f-low"] }),
       mk("f-dead", "Foundation", { rules: "DEAD", state: "deprecated" }),
@@ -177,7 +177,7 @@ console.log("ok   Interface ranking + exposes/leads_to neighborhoods");
 
   assert.deepEqual(label("i-x"), ["i-x:self:0", "j-a:belongs_to:1", "f-mid:depends_on:1", "f-low:depends_on:2"]);
   assert.deepEqual(label("i-y"), ["i-y:self:0", "j-a:belongs_to:1"], "leads_to / siblings are not inherited");
-  assert.deepEqual(label("j-a"), ["j-a:self:0"], "nothing flows down to a Journey");
+  assert.deepEqual(label("j-a"), ["j-a:self:0"], "nothing flows down to a Capability");
   assert.deepEqual(label("f-mid"), ["f-mid:self:0", "f-low:depends_on:1"], "nothing flows up to a Foundation");
   assert.deepEqual(label("if-p"), ["if-p:self:0", "f-mid:depends_on:1", "f-low:depends_on:2"], "exposes is not inherited");
   assert.equal(label("i-x").some((e) => e.startsWith("f-dead")), false, "retired nodes are omitted");

@@ -137,7 +137,7 @@ function runCheck(root) {
 // --- empty folders a 0.12 server left at boot (no stamp, no node): still setup ---
 {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-setup-leftover-"));
-  for (const dir of ["journeys", "foundations", "interactions", "interfaces", "bugs", "components"]) {
+  for (const dir of ["capabilities", "foundations", "interactions", "interfaces", "bugs", "components"]) {
     fs.mkdirSync(path.join(root, "mindplan", dir), { recursive: true });
   }
   fs.writeFileSync(path.join(root, "mindplan", "components", ".gitkeep"), "");
@@ -166,10 +166,10 @@ function runCheck(root) {
   const project = await call("get_project");
   check("get_project names upgrade_project for a stamp from init", /upgrade_project/.test(project.json?.version ?? ""), project.text.slice(0, 300));
   for (const tool of ["orient_for_work", "create_node", "list_areas"]) {
-    const res = await call(tool, tool === "orient_for_work" ? { query: "x" } : tool === "create_node" ? { id: "j-x", type: "Journey", title: "X", description: "Someone does x." } : {});
+    const res = await call(tool, tool === "orient_for_work" ? { query: "x" } : tool === "create_node" ? { id: "j-x", type: "Capability", title: "X", description: "Someone does x." } : {});
     check(`${tool} is Blocked: Version naming upgrade_project`, res.error && res.text.startsWith("Blocked: Version") && res.text.includes("upgrade_project"), res.text);
   }
-  check("a Blocked write created nothing", !fs.existsSync(path.join(root, "mindplan", "journeys", "j-x")));
+  check("a Blocked write created nothing", !fs.existsSync(path.join(root, "mindplan", "capabilities", "j-x")));
   const behindCheck = runCheck(root);
   check("the check fails on a graph behind the server, naming upgrade_project", behindCheck.status === 1 && behindCheck.stderr.includes("upgrade_project"), behindCheck.stderr);
   const setupBlocked = await call("setup_project");
@@ -301,6 +301,163 @@ function runCheck(root) {
       (await changeOf("f-plain")) === undefined,
     again.text.slice(0, 300)
   );
+  } finally {
+    await client?.close();
+    if (prior === undefined) delete process.env.MINDPLAN_ORIENT_GATE;
+    else process.env.MINDPLAN_ORIENT_GATE = prior;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+// --- level 3: Journey folders move to capabilities/ on upgrade ---
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-capabilities-"));
+  const prior = process.env.MINDPLAN_ORIENT_GATE;
+  process.env.MINDPLAN_ORIENT_GATE = "off";
+  const mp = (...parts) => path.join(root, "mindplan", ...parts);
+  const stampFile = mp("version.json");
+  const setLevel = (migrations) =>
+    fs.writeFileSync(stampFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(stampFile, "utf-8")), migrations }) + "\n");
+  const OLD_STUB =
+    "_Name the domain capability this Journey owns and which use cases belong inside it. Journey titles alone should scream the product purpose — not the tech stack._";
+  /** Turn a Capability folder into the Journey folder a level-2 server wrote. */
+  const toLegacy = (id) => {
+    fs.mkdirSync(mp("journeys"), { recursive: true });
+    fs.renameSync(mp("capabilities", id), mp("journeys", id));
+    const file = mp("journeys", id, `${id}.mdx`);
+    const text = fs.readFileSync(file, "utf-8");
+    fs.writeFileSync(
+      file,
+      text
+        .replace(/^type: Capability$/m, "type: Journey")
+        .replace(/_Say what the product does in this Capability[^\n]*_/, OLD_STUB)
+        .replace("The Capability state is computed automatically", "The Journey state is computed automatically")
+        .replace(/\n/g, "\r\n")
+    );
+  };
+  let client;
+  let call;
+  try {
+    ({ client, call } = await session(root));
+    const must = async (name, args) => {
+      const res = await call(name, args);
+      if (res.error) throw new Error(`${name}: ${res.text}`);
+      return res.json;
+    };
+    await must("setup_project");
+    await must("create_node", { id: "j-pay", type: "Capability", title: "Payments", description: "Customers pay for orders." });
+    await must("create_node", { id: "j-late", type: "Capability", title: "Refunds", description: "Staff refund an order." });
+    await must("create_node", { id: "i-pay", type: "Interaction", title: "Pay", description: "Customer pays the bill." });
+    await must("link_nodes", { source_id: "i-pay", target_id: "j-pay", edge_type: "belongs_to" });
+    check(
+      "create_node scaffolds a Capability under capabilities/ with the new stub",
+      fs.readFileSync(mp("capabilities", "j-pay", "j-pay.mdx"), "utf-8").includes("_Say what the product does in this Capability"),
+      ""
+    );
+    await client.close();
+    client = undefined;
+    toLegacy("j-pay");
+    fs.mkdirSync(mp("journeys", "j-pay", "attachments"), { recursive: true });
+    fs.writeFileSync(mp("journeys", "j-pay", "attachments", "flow.md"), "flow\n");
+    fs.writeFileSync(mp("journeys", ".gitkeep"), "");
+    // j-late arrives later, from a branch cut before the upgrade.
+    fs.renameSync(mp("capabilities", "j-late"), path.join(root, "j-late"));
+    setLevel(2);
+
+    ({ client, call } = await session(root));
+    const blocked = await call("list_areas");
+    check("a level-2 graph is Blocked naming upgrade_project", blocked.error && blocked.text.includes("upgrade_project"), blocked.text);
+    const up = await call("upgrade_project");
+    const moved = fs.existsSync(mp("capabilities", "j-pay", "j-pay.mdx")) ? fs.readFileSync(mp("capabilities", "j-pay", "j-pay.mdx"), "utf-8") : "";
+    check(
+      "upgrade moves the Journey folder to capabilities/ with its attachments and reports the id",
+      !up.error &&
+        JSON.stringify(up.json.migrations.capabilitiesMoved) === JSON.stringify(["j-pay"]) &&
+        fs.existsSync(mp("capabilities", "j-pay", "attachments", "flow.md")) &&
+        !fs.existsSync(mp("journeys")) &&
+        up.json.changed_files.includes("mindplan/capabilities/j-pay/j-pay.mdx") &&
+        up.json.changed_files.includes("mindplan/journeys/j-pay/j-pay.mdx"),
+      up.text.slice(0, 600)
+    );
+    check(
+      "upgrade rewrites the type and the old scaffold stub, keeps the id and line endings",
+      /^type: Capability\r$/m.test(moved) && !moved.includes("Journey") && moved.includes("_Say what the product does in this Capability") && /^id: j-pay\r$/m.test(moved),
+      moved.slice(0, 400)
+    );
+    const ctx = await call("get_node_context", { node_id: "i-pay" });
+    const area = await call("orient_for_work", { query: "pay", area: "j-pay" });
+    check(
+      "after the upgrade the moved Capability keeps its members",
+      !ctx.error && (ctx.json?.record?.belongs_to ?? []).includes("j-pay") && !area.error,
+      ctx.text.slice(0, 300) + area.text.slice(0, 300)
+    );
+    const quiet = await call("upgrade_project");
+    check(
+      "a second upgrade moves nothing",
+      !quiet.error && quiet.json.migrations.capabilitiesMoved.length === 0 && quiet.json.changed_files.length === 0,
+      quiet.text.slice(0, 300)
+    );
+    await client.close();
+    client = undefined;
+
+    // A branch from before level 3 merges a Journey folder into a level-3 graph.
+    fs.mkdirSync(mp("journeys"), { recursive: true });
+    fs.renameSync(path.join(root, "j-late"), mp("journeys", "j-late"));
+    ({ client, call } = await session(root));
+    const late = await call("list_areas");
+    const lateCheck = runCheck(root);
+    check(
+      "a level-3 stamp with a node under journeys/ is Blocked naming upgrade_project, in tools and the check",
+      late.error && late.text.includes("mindplan/journeys/") && late.text.includes("upgrade_project") && lateCheck.status === 1,
+      late.text + lateCheck.stderr
+    );
+    const lateUp = await call("upgrade_project");
+    check(
+      "upgrade moves the merged-in folder",
+      !lateUp.error && JSON.stringify(lateUp.json.migrations.capabilitiesMoved) === JSON.stringify(["j-late"]) && !(await call("list_areas")).error,
+      lateUp.text.slice(0, 300)
+    );
+    await client.close();
+    client = undefined;
+
+    // A folder moved by hand keeps type: Journey until the next upgrade repairs it; a leftover
+    // folder with no live file under journeys/ is not a node and does not block.
+    const handFile = mp("capabilities", "j-late", "j-late.mdx");
+    fs.writeFileSync(handFile, fs.readFileSync(handFile, "utf-8").replace(/^type: Capability$/m, "type: Journey"));
+    fs.mkdirSync(mp("journeys", "j-ghost", "attachments"), { recursive: true });
+    fs.writeFileSync(mp("journeys", "j-ghost", "attachments", ".DS_Store"), "x");
+    ({ client, call } = await session(root));
+    const stuck = await call("list_areas");
+    check(
+      "a hand-moved Capability that still says Journey is Blocked naming upgrade_project",
+      stuck.error && stuck.text.includes('type "Journey"') && stuck.text.includes("upgrade_project"),
+      stuck.text
+    );
+    const repair = await call("upgrade_project");
+    check(
+      "a leftover folder with no live file does not block, and upgrade repairs a hand-moved Capability's type",
+      !repair.error &&
+        repair.json.migrations.capabilitiesMoved.length === 0 &&
+        /^type: Capability$/m.test(fs.readFileSync(handFile, "utf-8")) &&
+        fs.existsSync(mp("journeys", "j-ghost")) &&
+        !fs.existsSync(mp("capabilities", "j-ghost")),
+      repair.text.slice(0, 300)
+    );
+    check("after the repair the gated tools answer", !(await call("list_areas")).error);
+    await client.close();
+    client = undefined;
+    fs.rmSync(mp("journeys"), { recursive: true, force: true });
+
+    // The same id in both folders cannot be moved.
+    fs.mkdirSync(mp("journeys", "j-pay"), { recursive: true });
+    fs.writeFileSync(mp("journeys", "j-pay", "j-pay.mdx"), "---\nid: j-pay\ntype: Journey\ntitle: Old\n---\n");
+    ({ client, call } = await session(root));
+    const clash = await call("upgrade_project");
+    check(
+      "an id in both folders is Blocked naming both paths",
+      clash.error && clash.text.includes("mindplan/journeys/j-pay") && clash.text.includes("mindplan/capabilities/j-pay"),
+      clash.text
+    );
   } finally {
     await client?.close();
     if (prior === undefined) delete process.env.MINDPLAN_ORIENT_GATE;

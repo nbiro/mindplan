@@ -39,12 +39,12 @@ export function buildBlastRadiusPayload(
     ? entries
     : entries.filter(({ node: n }) => !isRetired(n));
 
-  const journeysAtRisk = new Set<string>();
+  const capabilitiesAtRisk = new Set<string>();
   for (const { node: affected } of visibleEntries) {
     if (affected.type !== "Interaction") continue;
     for (const edge of graph.edges) {
       if (edge.source === affected.id && edge.type === "belongs_to") {
-        journeysAtRisk.add(edge.target);
+        capabilitiesAtRisk.add(edge.target);
       }
     }
   }
@@ -147,7 +147,7 @@ export function buildBlastRadiusPayload(
       state: n.state,
       distance,
     })),
-    journeys_at_risk: [...journeysAtRisk].sort(),
+    capabilities_at_risk: [...capabilitiesAtRisk].sort(),
     affected_files,
     tests: [...tests].sort((a, b) => a.localeCompare(b)),
     rules_impact: rulesImpact(graph, node),
@@ -160,7 +160,7 @@ export function buildBlastRadiusPayload(
       exposing_interfaces: reach.exposing_interfaces
         .filter(keep)
         .map(summarizeGraphNode),
-      containing_journeys: reach.containing_journeys
+      containing_capabilities: reach.containing_capabilities
         .filter(keep)
         .map(summarizeGraphNode),
       leads_to_downstream: reach.leads_to_downstream

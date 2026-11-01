@@ -9,7 +9,7 @@ import {
   EDGE_TYPES,
   EXECUTION_STATES,
   isInactiveNode,
-  JOURNEY_STATES,
+  CAPABILITY_STATES,
   PRODUCTION_STATES,
   type MindPlanGraph,
   type MindPlanNode,
@@ -26,9 +26,9 @@ export const GRAPH_PAGE_DEFAULT = 200;
 
 export const GRAPH_PAGE_MAX = 500;
 
-/** Every node state a `state` filter may name: the build pipeline's, production's, Journeys', and Bugs'. */
+/** Every node state a `state` filter may name: the build pipeline's, production's, Capabilities', and Bugs'. */
 export const GRAPH_NODE_STATES = [
-  ...new Set<NodeState>([...EXECUTION_STATES, ...PRODUCTION_STATES, ...JOURNEY_STATES, ...BUG_STATES]),
+  ...new Set<NodeState>([...EXECUTION_STATES, ...PRODUCTION_STATES, ...CAPABILITY_STATES, ...BUG_STATES]),
 ] as [NodeState, ...NodeState[]];
 
 /** The node record fields `fields` may name: every key of a `MindPlanNode`. */
@@ -189,25 +189,25 @@ export function getMindPlanGraph(args: GraphQuery = {}): GraphPage {
   return page;
 }
 
-/** A Journey row's description is cut to this many characters (the full one comes with orient). */
+/** A Capability row's description is cut to this many characters (the full one comes with orient). */
 export const AREA_DESCRIPTION_CHARS = 60;
 
 export const AREA_COLUMNS = ["id", "title", "description", "interactions", "interfaces", "foundations", "open_bugs"] as const;
 
 /**
- * Every Journey as one compact row: `{ columns, rows, count }`, a row being `[id, title,
- * description (60 characters), interactions, interfaces, foundations, open_bugs]` over the Journey's
+ * Every Capability as one compact row: `{ columns, rows, count }`, a row being `[id, title,
+ * description (60 characters), interactions, interfaces, foundations, open_bugs]` over the Capability's
  * live members (`areaMembers`): its active Interactions, the Interfaces exposing them, the
  * Foundations they depend on, and the open Bugs affecting any of those. Rows sort by id. Small
- * enough to call before orienting (30 Journeys stay under 4 KB); pass a row's id as `area`.
+ * enough to call before orienting (30 Capabilities stay under 4 KB); pass a row's id as `area`.
  */
 export function listAreas(): Record<string, unknown> {
   const graph = loadGraph();
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const journeys = graph.nodes
-    .filter((n) => n.type === "Journey" && !isInactiveNode(n))
+  const capabilities = graph.nodes
+    .filter((n) => n.type === "Capability" && !isInactiveNode(n))
     .sort((a, b) => a.id.localeCompare(b.id));
-  const rows = journeys.map((j) => {
+  const rows = capabilities.map((j) => {
     const members = [...areaMembers(graph, j.id)]
       .map((id) => byId.get(id))
       .filter((n): n is MindPlanNode => n !== undefined && !isInactiveNode(n));

@@ -53,7 +53,7 @@ async function call(tool, args) {
 const ids = (page) => page.nodes.map((n) => n.id).join(",");
 
 try {
-  await call("create_node", { id: "j-shop", type: "Journey", title: "Shop", description: "Visitors buy things." });
+  await call("create_node", { id: "j-shop", type: "Capability", title: "Shop", description: "Visitors buy things." });
   for (const [id, change] of [["f-db", "c-core"], ["f-pay", "c-pay"], ["f-ui", undefined]]) {
     await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra", ...(change ? { change } : {}) });
   }
@@ -94,7 +94,7 @@ try {
   check("an array of states combines with OR", ids(states) === "bug-double-charge,f-ui,i-buy", ids(states));
   const foundations = await call("get_mindplan_graph", { type: "Foundation" });
   check("type alone", ids(foundations) === "f-db,f-pay,f-ui", ids(foundations));
-  const types = await call("get_mindplan_graph", { type: ["Journey", "Bug"] });
+  const types = await call("get_mindplan_graph", { type: ["Capability", "Bug"] });
   check("an array of types combines with OR", ids(types) === "bug-double-charge,j-shop", ids(types));
   const pay = await call("get_mindplan_graph", { change: "c-pay" });
   check("change alone", ids(pay) === "f-pay,i-buy,i-refund", ids(pay));

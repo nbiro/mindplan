@@ -75,7 +75,7 @@ const FOUNDATION_ROLE_TAG = /^(Assembler|Infra|Design system|Adapter)\b/i;
 
 /** Known create_node scaffold italic stubs — leaving these unedited fails Minimum Territory Shape. */
 const SCAFFOLD_PLACEHOLDER_MARKERS = [
-  "Name the domain capability this Journey owns",
+  "Say what the product does in this Capability",
   "Self-contained unit of behavior initiated by an actor",
   "Who initiates this Interaction and how",
   "Inputs consumed and outputs produced",
@@ -285,7 +285,7 @@ function activeShapeSlot(node: MindPlanNode): "current" | "next" | null {
 
 /**
  * Required sections of the slot a node's next transition checks, each present, missing, or stub.
- * Null for a Journey, a retired node, a closed Bug, and a shipped node with no open revision.
+ * Null for a Capability, a retired node, a closed Bug, and a shipped node with no open revision.
  */
 export function shapeReport(node: MindPlanNode): ShapeReport | null {
   const slot = activeShapeSlot(node);
@@ -345,6 +345,6 @@ export function shapeTableMarkdown(): string {
     "|---|---|---|",
     ...rows,
     "",
-    "A prose section must not be empty or hold only `create_node` placeholder text. An optional `## Impact` must not be a stub. Journeys have no required sections. `create_node` and `orient_for_work` return `shape`: each required section marked `present`, `missing`, or `stub`.",
+    "A prose section must not be empty or hold only `create_node` placeholder text. An optional `## Impact` must not be a stub. Capabilities have no required sections. `create_node` and `orient_for_work` return `shape`: each required section marked `present`, `missing`, or `stub`.",
   ].join("\n");
 }

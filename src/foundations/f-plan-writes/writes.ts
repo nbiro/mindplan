@@ -169,7 +169,7 @@ export const READINESS_NOTE =
 
 /**
  * Report a readiness reset the store made during a contract write (`demoteReadySlot`).
- * A ready → draft move never changes a Journey state, so only the map is refreshed.
+ * A ready → draft move never changes a Capability state, so only the map is refreshed.
  */
 export function readinessResult(
   node: Pick<MindPlanNode, "id" | "type">,

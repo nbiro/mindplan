@@ -3,7 +3,7 @@
  * returns only that area's members (its Interactions, the Interfaces exposing them, the
  * Foundations they depend on) and is faster than a whole-graph search; over MCP, list_areas stays
  * under 4 KB for 30 areas, counts each area's members, and `area` reaches orient_for_work and
- * find_related_nodes (a non-Journey area is Blocked).
+ * find_related_nodes (a non-Capability area is Blocked).
  */
 // Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
 process.env.MINDPLAN_VERSION_GATE ??= "off";
@@ -25,10 +25,10 @@ const ok = (label) => console.log(`ok   ${label}`);
 const t = "2026-01-01T00:00:00.000Z";
 const mk = (id, type, title, description, extra = {}) => ({ id, type, title, description, state: "stable", created_at: t, updated_at: t, ...extra });
 
-// --- 30 areas x (1 Journey, 8 Interactions, 1 Interface, 1 Foundation) + 1 shared Foundation = 331 nodes ---
+// --- 30 areas x (1 Capability, 8 Interactions, 1 Interface, 1 Foundation) + 1 shared Foundation = 331 nodes ---
 const nodes = [mk("f-shared", "Foundation", "Shared ledger", "Infra — the ledger every area writes to.")];
 for (let a = 0; a < 30; a++) {
-  nodes.push(mk(`j-area-${a}`, "Journey", `Area ${a}`, `Customers do business of kind ${a}.`));
+  nodes.push(mk(`j-area-${a}`, "Capability", `Area ${a}`, `Customers do business of kind ${a}.`));
   nodes.push(mk(`f-area-${a}`, "Foundation", `Store ${a}`, `Infra — records for area ${a}.`, { depends_on: ["f-shared"] }));
   const ix = [];
   for (let i = 0; i < 8; i++) {
@@ -47,13 +47,13 @@ assert.deepEqual(
   [...members].sort(),
   ["f-area-7", "f-shared", "if-area-7", "j-area-7", ...Array.from({ length: 8 }, (_, i) => `i-area-7-${i}`)].sort()
 );
-ok("areaMembers: the Journey, its Interactions, the Interfaces exposing them, their Foundations (transitively)");
+ok("areaMembers: the Capability, its Interactions, the Interfaces exposing them, their Foundations (transitively)");
 {
   const retired = {
     version: 1,
     edges: [],
     nodes: [
-      mk("j-r", "Journey", "R", "Area."),
+      mk("j-r", "Capability", "R", "Area."),
       mk("f-only-old", "Foundation", "Old store", "Infra — used only by the old action."),
       mk("i-old", "Interaction", "Old", "Visitor did the old thing.", { state: "deprecated", belongs_to: ["j-r"], depends_on: ["f-only-old"] }),
       mk("if-old", "Interface", "Old app", "Exposes only the old action.", { exposes: ["i-old"] }),
@@ -111,7 +111,7 @@ fs.rmSync(root, { recursive: true, force: true });
   for (let a = 0; a < 30; a++) {
     await call("create_node", {
       id: `j-area-${a}`,
-      type: "Journey",
+      type: "Capability",
       title: `Area number ${a}`,
       description: `Customers of segment ${a} browse, book, pay, and review their bookings in this area.`,
     });
@@ -142,8 +142,8 @@ fs.rmSync(root, { recursive: true, force: true });
   const scopedFind = await call("find_related_nodes", { query: "deposit", area: "j-area-3" });
   assert.ok(scopedFind.matches.every((m) => ["i-pay", "f-pay", "if-app", "j-area-3"].includes(m.id)) && scopedFind.matches.length > 0);
   const wrong = await raw("orient_for_work", { query: "deposit", area: "i-pay" });
-  assert.ok(wrong.error && wrong.text.includes("must be a Journey"), wrong.text);
-  ok("area reaches orient_for_work and find_related_nodes; a non-Journey area is Blocked");
+  assert.ok(wrong.error && wrong.text.includes("must be a Capability"), wrong.text);
+  ok("area reaches orient_for_work and find_related_nodes; a non-Capability area is Blocked");
   await client.close();
   fs.rmSync(sandbox, { recursive: true, force: true });
 }

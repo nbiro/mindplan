@@ -88,7 +88,7 @@ fs.writeFileSync(
 );
 
 // --- graph: a core Foundation, one Interaction, two template Interfaces, a registry Foundation ---
-await call("create_node", { id: "j-app", type: "Journey", title: "App", description: "App area" });
+await call("create_node", { id: "j-app", type: "Capability", title: "App", description: "App area" });
 await call("create_node", { id: "f-core", type: "Foundation", title: "Core", description: "Infra — core", role: "infra" });
 await call("create_node", { id: "f-reg", type: "Foundation", title: "Registry", description: "Infra — template registry", role: "infra" });
 await call("create_node", { id: "i-feature", type: "Interaction", title: "Feature", description: "A feature" });
@@ -559,10 +559,10 @@ for (const status of ["ready", "in-progress"]) {
   check("output outside the root is Blocked", outside !== null && outside.includes("inside the project root"), outside);
   check("output under mindplan/ is Blocked", underMindplan !== null && underMindplan.includes("mindplan/"), underMindplan);
 
-  // Grow the graph past the budget: many Journeys with long titles (labels carry the title).
+  // Grow the graph past the budget: many Capabilities with long titles (labels carry the title).
   const filler = "x".repeat(900);
   for (let i = 0; i < 120; i++) {
-    await call("create_node", { id: `j-big-${i}`, type: "Journey", title: `Big ${i} ${filler}`, description: `Big ${i}` });
+    await call("create_node", { id: `j-big-${i}`, type: "Capability", title: `Big ${i} ${filler}`, description: `Big ${i}` });
   }
   const refused = await blocked("export_mindplan_view", {});
   check(
