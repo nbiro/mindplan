@@ -60,7 +60,7 @@ flowchart TB
     i_shape_graph__in__j_plan_console["i-shape-graph · Shape the graph · stable"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
+  subgraph journey_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
     i_assess_impact__in__j_territory_sdlc["i-assess-impact · Assess impact · stable"]
     i_browse_graph__in__j_territory_sdlc["i-browse-graph · Browse the graph · stable"]
     i_change_status__in__j_territory_sdlc["i-change-status · Change a node's status · stable"]
