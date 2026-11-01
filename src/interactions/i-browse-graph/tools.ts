@@ -82,9 +82,9 @@ export const TOOLS: ToolDef[] = [
       title: "List areas",
       description:
         "Call when you are unsure where work lands, before orient_for_work. " +
-        "Returns every Journey as one row of a compact table: { columns, rows, count } with " +
+        "Returns every Capability as one row of a compact table: { columns, rows, count } with " +
         "[id, title, description (60 characters), interactions, interfaces, foundations, open_bugs]. " +
-        "Pick a row and pass its id as area to orient_for_work or find_related_nodes; for a question that cuts across Journeys, search without area.",
+        "Pick a row and pass its id as area to orient_for_work or find_related_nodes; for a question that cuts across Capabilities, search without area.",
       inputSchema: {},
     },
     () => listAreas()

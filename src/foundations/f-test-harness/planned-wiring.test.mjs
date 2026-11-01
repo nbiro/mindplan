@@ -73,8 +73,8 @@ async function complete(id, type) {
   await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
 }
 
-// --- a shipped base: a Journey, two Foundations, an Interaction, and the Interface exposing it ---
-await call("create_node", { id: "j-site", type: "Journey", title: "Site", description: "Visitors use the site." });
+// --- a shipped base: a Capability, two Foundations, an Interaction, and the Interface exposing it ---
+await call("create_node", { id: "j-site", type: "Capability", title: "Site", description: "Visitors use the site." });
 await call("create_node", { id: "f-db", type: "Foundation", title: "Database", description: "Adapter — database access", role: "adapter", change: "base" });
 await call("create_node", { id: "f-root", type: "Foundation", title: "Root", description: "Assembler — composition root with the migrations folder", role: "assembler", change: "base" });
 await call("create_node", { id: "i-old", type: "Interaction", title: "Read a page", description: "Visitor reads a page.", change: "base" });

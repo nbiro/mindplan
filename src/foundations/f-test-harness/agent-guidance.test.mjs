@@ -83,8 +83,8 @@ const FOUNDATION_SECTIONS = {
 // --- session 1: shape up front, one Blocked with every gap, get_spec ---
 {
   const { client, raw, call } = await session();
-  const journey = await call("create_node", { id: "j-pay", type: "Journey", title: "Payments", description: "Customers pay." });
-  check("a Journey's create_node result has no shape", journey.shape === undefined);
+  const capability = await call("create_node", { id: "j-pay", type: "Capability", title: "Payments", description: "Customers pay." });
+  check("a Capability's create_node result has no shape", capability.shape === undefined);
   const ledger = await call("create_node", { id: "f-ledger", type: "Foundation", title: "Ledger", description: "Infra — money ledger", role: "infra" });
   check(
     "create_node returns shape: scaffold sections are stub, the default ops are present",

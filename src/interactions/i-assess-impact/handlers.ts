@@ -60,7 +60,7 @@ export function buildChangeBlastRadiusPayload(
   }
   const memberIds = new Set(members.map((m) => m.id));
   const affected = new Map<string, { id: string; type: string; state: string; distance: number }>();
-  const journeys = new Set<string>();
+  const capabilities = new Set<string>();
   const files = new Map<string, { owner_id: string; owner_type: string; via: Set<string>; files: Set<string> }>();
   const rulesReach = new Map<string, unknown>();
   const decisions = new Map<string, BlastRadiusDecision>();
@@ -73,7 +73,7 @@ export function buildChangeBlastRadiusPayload(
       const prev = affected.get(row.id);
       if (!prev || row.distance < prev.distance) affected.set(row.id, row);
     }
-    for (const j of one.journeys_at_risk as string[]) journeys.add(j);
+    for (const j of one.capabilities_at_risk as string[]) capabilities.add(j);
     for (const group of one.affected_files as {
       owner_id: string;
       owner_type: string;
@@ -126,7 +126,7 @@ export function buildChangeBlastRadiusPayload(
     affected: [...affected.values()].sort(
       (a, b) => a.distance - b.distance || a.id.localeCompare(b.id)
     ),
-    journeys_at_risk: [...journeys].sort(),
+    capabilities_at_risk: [...capabilities].sort(),
     affected_files: [...files.values()]
       .map((g) => ({
         owner_id: g.owner_id,

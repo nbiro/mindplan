@@ -74,11 +74,11 @@ const empty = await call("get_rules", {});
 check("empty rules still carry a version", empty.rules === "" && /^[0-9a-f]{12}$/.test(empty.rules_version));
 
 // Node rules in orient carry a version; known versions leave the text out.
-await call("create_node", { id: "j-shop", type: "Journey", title: "Shop", description: "Buying things." });
+await call("create_node", { id: "j-shop", type: "Capability", title: "Shop", description: "Buying things." });
 await call("create_node", { id: "i-pay", type: "Interaction", title: "Pay", description: "Shopper pays." });
 await call("link_nodes", { source_id: "i-pay", target_id: "j-shop", edge_type: "belongs_to" });
 await call("patch_node_rules", { node_id: "j-shop", rules: "- Prices include VAT." });
-// The Journey's new rules reach i-pay, so the orientation gate asks to orient on it again.
+// The Capability's new rules reach i-pay, so the orientation gate asks to orient on it again.
 await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
 await call("patch_node_rules", { node_id: "i-pay", rules: "- Never store card numbers." });
 const oriented = await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
@@ -88,20 +88,20 @@ check(
   oriented.rules.entries.length === 2 && oriented.rules.entries.every((e) => /^[0-9a-f]{12}$/.test(e.version) && e.rules)
 );
 const known = await call("orient_for_work", { node_id: "i-pay", depth: "rules", known_rules_versions: { "j-shop": versions["j-shop"] } });
-const journey = known.rules.entries.find((e) => e.node_id === "j-shop");
+const capability = known.rules.entries.find((e) => e.node_id === "j-shop");
 const own = known.rules.entries.find((e) => e.node_id === "i-pay");
 check(
   "a known rules version leaves out that entry's text; the others keep theirs",
-  journey.unchanged === true && !("rules" in journey) && journey.via === "belongs_to" && own.rules.includes("card numbers") && !own.unchanged,
+  capability.unchanged === true && !("rules" in capability) && capability.via === "belongs_to" && own.rules.includes("card numbers") && !own.unchanged,
   JSON.stringify(known.rules)
 );
 await call("orient_for_work", { node_id: "j-shop", depth: "rules" });
 await call("patch_node_rules", { node_id: "j-shop", rules: "- Prices include VAT.\n- Show the currency." });
 const changed = await call("orient_for_work", { node_id: "i-pay", depth: "rules", known_rules_versions: versions });
-const journeyAfter = changed.rules.entries.find((e) => e.node_id === "j-shop");
+const capabilityAfter = changed.rules.entries.find((e) => e.node_id === "j-shop");
 check(
   "changed node rules come back with text and a new version",
-  journeyAfter.rules.includes("currency") && journeyAfter.version !== versions["j-shop"] && !journeyAfter.unchanged
+  capabilityAfter.rules.includes("currency") && capabilityAfter.version !== versions["j-shop"] && !capabilityAfter.unchanged
 );
 
 await client.close();

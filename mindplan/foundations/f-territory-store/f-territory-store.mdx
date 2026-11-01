@@ -4,11 +4,11 @@ type: Foundation
 title: "Territory store"
 description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, revision change ids, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-10-31T23:05:24.775Z
-revisions: 20
-churn: 6.776
+shipped_at: 2026-11-01T11:12:14.105Z
+revisions: 21
+churn: 7.697
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-10-31T23:05:24.775Z
+updated_at: 2026-11-01T11:12:14.105Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -90,7 +90,7 @@ Intended files: `src/foundations/f-territory-store/`
 - **Search body reader.** `territoryBodyReader()` is `readMarkdown` plus a `stamp(node, slot)`: the graph cache's `contentKey` for a node a load returned (no file access), else the slot file's size and mtime. `f-graph-search` keys its heading memo on it, so a body edited outside MCP is re-read
 - **Cached load.** `discoverNodes()` lists every node folder (`{ id, type, abs, rel }`) and hands `parseNodeFolder` (the live file, the optional next slot, the same Blocked errors) to `graphCacheFor(projectRoot(), parserVersion()).load`, where `parserVersion()` is the package version plus a hash of the built `store.js`, `types.js`, `claims.js`, and `cache.js`, so a rebuild that changes the parser without a version bump drops the old build's records; with the cache off it parses every folder. Records come back as copies the caller may mutate, sorted by id. A legacy duplicate is still removed by the parse that first sees it
 - **Legacy removal log.** `restoreRemovedLegacyFiles(entries)` puts drained entries back at the head of the log, so an async tool result reports the legacy files its own graph load removed (`if-mcp-tools`)
-- **Linked tests.** `tests` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.tests`, `nodeToRecord`) and, like `added_claims`, kept verbatim by frontmatter rewriters that do not know it. `writeTestsFrontmatter(node, entries)` is its only writer: it validates each entry as a claim path (`validateClaimPath`: no `..`, no absolute path, nothing under `mindplan/`), dedupes and sorts, writes the same list to the live `<id>.mdx` and, while a revision is open, to `<id>.next.mdx`, and returns `{ paths, changed }`. An empty list removes the field. It never touches state, `updated_at`, or readiness. Blocked on a Journey, a Bug, or a retired node. `openNextSlot` copies the list with the live file, and `promoteNextSlot` writes the next file's list (equal to live) into the rebuilt live frontmatter
+- **Linked tests.** `tests` is a frontmatter list parsed like `implements` (`parseFrontmatter`, `node.tests`, `nodeToRecord`) and, like `added_claims`, kept verbatim by frontmatter rewriters that do not know it. `writeTestsFrontmatter(node, entries)` is its only writer: it validates each entry as a claim path (`validateClaimPath`: no `..`, no absolute path, nothing under `mindplan/`), dedupes and sorts, writes the same list to the live `<id>.mdx` and, while a revision is open, to `<id>.next.mdx`, and returns `{ paths, changed }`. An empty list removes the field. It never touches state, `updated_at`, or readiness. Blocked on a Capability, a Bug, or a retired node. `openNextSlot` copies the list with the live file, and `promoteNextSlot` writes the next file's list (equal to live) into the rebuilt live frontmatter
 
 Depends on: `f-domain-model`, `f-source-index`.
 
@@ -113,7 +113,11 @@ Depends on: `f-domain-model`, `f-source-index`.
 - **Declared splits.** `writeNextSplitInto(node, ids)` writes the open next file's `split_into` as the live list plus `ids` (the live file is untouched until the revision ships); `NextSlot.split_into` reads it back.
 - **`keep_whole` in decision records.** `record_decision` writes a `keep_whole: true` line in the record when given; the parser reads it back, and a record without it has none.
 
+- **Type folders.** One folder per type under `mindplan/`: `capabilities/`, `foundations/`, `interactions/`, `interfaces/`, `bugs/`. A node's type comes from its folder. The store never reads `journeys/`; only migration level 3 (`f-graph-migrations`) knows it. A live file whose type is `Journey` (a folder moved by hand) is `Blocked:` naming `upgrade_project`, which rewrites it
+
 ## Acceptance Criteria
+
+- A Capability loads from `mindplan/capabilities/<id>/<id>.mdx` and is written there; a folder under `mindplan/journeys/` is not loaded
 
 - After first ship a node has no next file; `open_next` writes one from live with a fresh Atomic Ops list, and ship and discard delete it with `next-attachments/`
 - A shipped node's live file has no Atomic Ops section after first ship and after promotion; Rules, Decisions, and Attachments survive; `open_next` gives the next file one `## Atomic Ops` section of unticked defaults (a Foundation's `## Checklist` is replaced too), placed before Decisions / Rules / Attachments; a Bug's Fix Checklist is never touched

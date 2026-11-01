@@ -39,7 +39,7 @@ export const TOOLS: ToolDef[] = [
         "A batch returns one line per node. " +
         "When a ship or cancel leaves a change with no open revisions, its planned edges are dropped (cleared_planned); " +
         "scope change walks the change's open revisions. " +
-        "Journey and production stable/unstable are computed automatically.",
+        "Capability and production stable/unstable are computed automatically.",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.optional().describe(

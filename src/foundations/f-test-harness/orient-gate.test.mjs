@@ -62,7 +62,7 @@ async function session() {
 // --- session 1: build the plan; every write here acts on nodes this session created ---
 {
   const { client, call } = await session();
-  const created = await call("create_node", { id: "j-pay", type: "Journey", title: "Payments", description: "Customers pay." });
+  const created = await call("create_node", { id: "j-pay", type: "Capability", title: "Payments", description: "Customers pay." });
   check("create_node is never blocked and returns the rules that reach the new node", created.rules?.node_id === "j-pay");
   await call("create_node", { id: "f-ledger", type: "Foundation", title: "Ledger", description: "Infra — money ledger", role: "infra" });
   await call("create_node", { id: "f-cards", type: "Foundation", title: "Cards", description: "Adapter — card processor", role: "adapter" });

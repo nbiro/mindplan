@@ -96,14 +96,14 @@ export function recordDecision(args: {
         `"${args.supersedes}" is already superseded by "${by}". Supersede "${by}" instead if it no longer holds.`
       );
     }
-    // Reach: the node itself and the nodes it inherits decisions from (its Journeys and Foundations).
+    // Reach: the node itself and the nodes it inherits decisions from (its Capabilities and Foundations).
     const reach = inheritanceSources(graph, node.id)
       .filter((s) => s.via !== "affects")
       .map((s) => s.node.id);
     if (!reach.includes(target.node.id)) {
       throw blocked(
         `"${args.supersedes}" is held by "${target.node.id}", which "${node.id}" does not inherit decisions from. ` +
-          `A decision may supersede only one on the same node, its Journeys, or its Foundations.`
+          `A decision may supersede only one on the same node, its Capabilities, or its Foundations.`
       );
     }
     superseded = { id: args.supersedes, node_id: target.node.id };

@@ -4,7 +4,7 @@
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
  *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation)
  *   /mindplan/components/                  — project-specific MDX components (opaque to the compiler)
- *   /mindplan/journeys/<id>/<id>.mdx          (legacy: current.mdx)
+ *   /mindplan/capabilities/<id>/<id>.mdx          (legacy: current.mdx)
  *   /mindplan/foundations/<id>/<id>.mdx       (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
  *   /mindplan/interactions/<id>/<id>.mdx      (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
  *   /mindplan/interfaces/<id>/<id>.mdx        (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
@@ -68,7 +68,7 @@ export {
   type WriteProjectConfigResult,
 } from "../f-source-index/config.js";
 const TYPE_DIRS: Record<NodeType, string> = {
-  Journey: "journeys",
+  Capability: "capabilities",
   Foundation: "foundations",
   Interaction: "interactions",
   Interface: "interfaces",
@@ -76,7 +76,7 @@ const TYPE_DIRS: Record<NodeType, string> = {
 };
 
 const DIR_TO_TYPE: Record<string, NodeType> = {
-  journeys: "Journey",
+  capabilities: "Capability",
   foundations: "Foundation",
   interactions: "Interaction",
   interfaces: "Interface",
@@ -711,6 +711,12 @@ function parseNodeFromFrontmatter(
     );
   }
   if (!NODE_TYPES.includes(type)) {
+    // Journey is the pre-level-3 name of Capability; upgrade_project rewrites it in place.
+    if (fm.type === "Journey") {
+      throw new Error(
+        `Blocked: type "Journey" in ${contextFile} is the old name of Capability. Call upgrade_project, which rewrites it, then commit the upgrade on its own.`
+      );
+    }
     throw new Error(`Blocked: invalid type "${fm.type}" in ${contextFile}.`);
   }
   if (type !== expectedType) {
@@ -1286,7 +1292,7 @@ export function scaffoldEntity(
 
   let body: string;
   switch (node.type) {
-    case "Journey":
+    case "Capability":
       body = [
         `# ${meta.title}`,
         "",
@@ -1294,11 +1300,11 @@ export function scaffoldEntity(
         "",
         "## Overview",
         "",
-        "_Name the domain capability this Journey owns and which use cases belong inside it. Journey titles alone should scream the product purpose — not the tech stack._",
+        "_Say what the product does in this Capability and which use cases belong inside it. Capability titles alone should scream the product purpose — not the tech stack._",
         "",
         "## Linked Interactions",
         "",
-        "_Interactions link here via `belongs_to` in their frontmatter. The Journey state is computed automatically from member Interactions._",
+        "_Interactions link here via `belongs_to` in their frontmatter. The Capability state is computed automatically from member Interactions._",
         "",
         "## Attachments",
         "",
@@ -1990,7 +1996,7 @@ function atomicOpsHeadings(type: NodeType): string[] {
   return [];
 }
 
-/** The scaffold's default checklist lines for a pipeline node (empty for a Journey or a Bug). */
+/** The scaffold's default checklist lines for a pipeline node (empty for a Capability or a Bug). */
 export function defaultAtomicOps(type: NodeType): string[] {
   switch (type) {
     case "Foundation":

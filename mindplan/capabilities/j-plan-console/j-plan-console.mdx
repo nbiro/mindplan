@@ -1,11 +1,11 @@
 ---
 id: j-plan-console
-type: Journey
+type: Capability
 title: "See and steer the plan"
 description: "Human console to see, mutate, and model a repo's MindPlan — status, interactive graph, territory, and compiler-gated edits."
 state: stable
 created_at: 2026-07-20T21:15:08.291Z
-updated_at: 2026-10-31T23:05:25.787Z
+updated_at: 2026-11-01T10:53:16.738Z
 ---
 
 # See and steer the plan
@@ -20,9 +20,9 @@ Humans open a Next.js console pointed at a project root. Three pillars share one
 
 1. **See** — status board, interactive XYFlow graph, territory viewer
 2. **Mutate** — lifecycle and edge edits via the same compiler agents use
-3. **Model** — create and link Journeys, Foundations, Interactions, Bugs (human define-entities)
+3. **Model** — create and link Capabilities, Foundations, Interactions, Bugs (human define-entities)
 
-Journey state is **computed** from member Interactions. Assembler: `f-nextjs` (via Interaction `depends_on`). Data path: browser → `f-console-bridge` → MindPlan store/compiler (no second authority).
+Capability state is **computed** from member Interactions. Assembler: `f-nextjs` (via Interaction `depends_on`). Data path: browser → `f-console-bridge` → MindPlan store/compiler (no second authority).
 
 ## Linked Interactions
 

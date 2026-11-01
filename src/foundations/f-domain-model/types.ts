@@ -6,7 +6,7 @@
 /** Schema generation reported by get_mindplan_graph (no file on disk). */
 export const GRAPH_VERSION = 1;
 
-export const NODE_TYPES = ["Journey", "Interaction", "Interface", "Foundation", "Bug"] as const;
+export const NODE_TYPES = ["Capability", "Interaction", "Interface", "Foundation", "Bug"] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
 /** Manual build pipeline for Foundations, Interactions, and Interfaces (pre-production). */
@@ -36,13 +36,13 @@ export const OPEN_BUG_STATES = ["open", "triaged", "fixing", "in-review"] as con
 export type OpenBugState = (typeof OPEN_BUG_STATES)[number];
 
 /**
- * Computed-only states for Journeys. Never set manually.
+ * Computed-only states for Capabilities. Never set manually.
  * "draft" is the resting state when no Interaction is in-progress/in-review/shipped.
  */
-export const JOURNEY_STATES = ["draft", "incubation", "stable", "evolving"] as const;
-export type JourneyState = (typeof JOURNEY_STATES)[number];
+export const CAPABILITY_STATES = ["draft", "incubation", "stable", "evolving"] as const;
+export type CapabilityState = (typeof CAPABILITY_STATES)[number];
 
-export type NodeState = ExecutionState | ProductionState | JourneyState | BugState;
+export type NodeState = ExecutionState | ProductionState | CapabilityState | BugState;
 
 export const EDGE_TYPES = [
   "depends_on",
@@ -80,7 +80,7 @@ export interface NextSlot {
   updated_at: string;
   /** When open_next opened this revision (dropped on ship and discard). */
   opened_at?: string;
-  /** Proposed Interaction → Journey ids; applied to current on ship. */
+  /** Proposed Interaction → Capability ids; applied to current on ship. */
   belongs_to?: string[];
   /** Proposed depends_on targets; applied to current on ship. */
   depends_on?: string[];
@@ -146,7 +146,7 @@ export interface MindPlanNode {
   /** MCP-only. While a force-unshipped node has no `shipped_at`: the time `churn` is as of. */
   churn_at?: string;
   severity?: BugSeverity;
-  /** MCP-only. Interaction → Journey ids. */
+  /** MCP-only. Interaction → Capability ids. */
   belongs_to?: string[];
   /** MCP-only. Interaction/Interface → Foundation ids; Foundation → Foundation ids. */
   depends_on?: string[];

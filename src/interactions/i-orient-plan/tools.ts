@@ -86,7 +86,7 @@ export const TOOLS: ToolDef[] = [
         "Call before editing a file, to see who owns it, or when you need a node's claimed files. " +
         "Returns declared owned files for a node (`implements`), or looks up the owner of a path. " +
         "Interaction/Interface/Foundation: { node_id, files: [{path,exists}], next_files? }. " +
-        "Journey/Bug: tagged files of members/affects targets. Pass path for path→owner lookup.",
+        "Capability/Bug: tagged files of members/affects targets. Pass path for path→owner lookup.",
       inputSchema: {
         node_id: NODE_ID.optional().describe(
           "Node id whose implements list to read. Required unless path is set."
@@ -141,12 +141,12 @@ export const TOOLS: ToolDef[] = [
         "A full reply carries shape while the node has a transition ahead: the required sections of its active slot, each present, missing, or stub, and the gates that check them. " +
         "Writes that act on a node (set_implementation_files, set_test_files, update_node_status, patch_node_territory, patch_node_rules, open_next, record_decision, attachments, force_unship, link_nodes / unlink_nodes on the source) " +
         "are Blocked: Orientation until that node had a full reply in this session (or get_node_context), and again after the rules that reach it changed; create_node is never blocked. " +
-        "Also returns a rules block: the node rules that apply to the focus (its own, its Journey's, its Foundations', " +
+        "Also returns a rules block: the node rules that apply to the focus (its own, its Capability's, its Foundations', " +
         "or an affected node's for a Bug), each labeled with the node it came from and tagged with a version; pass known_rules_versions ({ node_id: version }) only for entries whose text you still hold, to leave that text out (they come back with unchanged: true). Those rules are mandatory. " +
         "And a decisions block, at every depth: the focus node's own recorded design decisions (a Bug: those of the nodes it affects), the reply's only copy of them; read them before reshaping that design. " +
-        "inherited_decisions ({ count, nodes }) names the Journeys and Foundations whose decisions also apply; include_inherited_decisions adds them (whole at distance 1, one line beyond). Superseded ones only with include_superseded. " +
+        "inherited_decisions ({ count, nodes }) names the Capabilities and Foundations whose decisions also apply; include_inherited_decisions adds them (whole at distance 1, one line beyond). Superseded ones only with include_superseded. " +
         "Blast radius groups affected_files by owner and omits cancelled/deprecated by default. " +
-        "Interaction focus also includes reachability (exposing Interfaces, containing Journeys, leads_to downstream).",
+        "Interaction focus also includes reachability (exposing Interfaces, containing Capabilities, leads_to downstream).",
       inputSchema: {
         query: z
           .string()

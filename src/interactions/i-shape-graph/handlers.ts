@@ -42,7 +42,7 @@ import {
   assertAcyclicDependsOn,
   blocked,
   findNode,
-  recomputeJourneyStates,
+  recomputeCapabilityStates,
   recomputeStability,
   validateLink,
 } from "../../foundations/f-compiler-rules/rules.js";
@@ -207,16 +207,16 @@ export function linkNodes(args: {
   }
   const edgeWrite = addEdgeToFrontmatter(source, edge_type, target_id);
 
-  const changedJourneys = recomputeJourneyStates(graph);
+  const changedCapabilities = recomputeCapabilityStates(graph);
   const changedStability = recomputeStability(graph);
-  const synced = syncNodes([...changedJourneys, ...changedStability]);
+  const synced = syncNodes([...changedCapabilities, ...changedStability]);
   refreshPersistedMap();
   const readiness = readinessResult(source, writeSlot, edgeWrite.readinessReset);
   const files = [territoryPath(source, writeSlot), ...synced, ...readiness.files];
   return {
     linked: { source: source_id, target: target_id, type: edge_type },
     slot: writeSlot,
-    journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
+    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     ...readinessFields(readiness.reset),
     ...rulesReachingAfterWrite(source_id, rulesBefore),
@@ -314,9 +314,9 @@ export function unlinkNodes(args: {
     throw blocked(`no edge exists between "${source_id}" and "${target_id}".`);
   }
   const edgeWrite = removeEdgesFromFrontmatter(source, target_id);
-  const changedJourneys = recomputeJourneyStates(graph);
+  const changedCapabilities = recomputeCapabilityStates(graph);
   const changedStability = recomputeStability(graph);
-  const synced = syncNodes([...changedJourneys, ...changedStability]);
+  const synced = syncNodes([...changedCapabilities, ...changedStability]);
   refreshPersistedMap();
   const sourceFiles = [territoryPath(source, "current")];
   if (source.next) sourceFiles.push(territoryPath(source, "next"));
@@ -324,7 +324,7 @@ export function unlinkNodes(args: {
   const files = [...sourceFiles, ...synced, ...readiness.files];
   return {
     removed,
-    journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
+    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     ...readinessFields(readiness.reset),
     ...rulesReachingAfterWrite(source_id, rulesBefore),

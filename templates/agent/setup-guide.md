@@ -36,4 +36,4 @@ Ask whether the repository uses GitHub pull requests. If it does and the user wa
 
 ## 6. Check and hand off
 
-Run `run_check` and fix every `Blocked:` line. Then tell the user what changed (the files you wrote, the rules you moved) and suggest the next step: map the first Journeys with the `plan-project` skill (`get_skill({ name: "plan-project" })`).
+Run `run_check` and fix every `Blocked:` line. Then tell the user what changed (the files you wrote, the rules you moved) and suggest the next step: map the first Capabilities with the `plan-project` skill (`get_skill({ name: "plan-project" })`).

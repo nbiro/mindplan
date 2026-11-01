@@ -31,7 +31,7 @@ export interface RankedMatch {
   title: string;
   description: string;
   score: number;
-  /** Journey titles of the node (`searchDocs` area); set by `searchNodes`, absent from `rankNodes`. */
+  /** Capability titles of the node (`searchDocs` area); set by `searchNodes`, absent from `rankNodes`. */
   area?: string[];
 }
 
@@ -287,22 +287,22 @@ function edgeTargets(n: MindPlanNode, field: SearchEdgeField): string[] {
 
 /**
  * One `SearchDoc` per node: the open next slot's title and description while a revision is open
- * (so a node being reshaped is found by its new wording), its area (Journey titles reached through
+ * (so a node being reshaped is found by its new wording), its area (Capability titles reached through
  * belongs_to, through the Interactions an Interface exposes, or through the Interactions a Bug
  * affects), its entry points (the Interfaces that expose it), its aliases, its section headings
  * (minus those most nodes share), and its claimed paths.
  */
 export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchDoc[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const journeysOf = (n: MindPlanNode): string[] =>
+  const capabilitiesOf = (n: MindPlanNode): string[] =>
     edgeTargets(n, "belongs_to")
       .map((id) => byId.get(id))
-      .filter((j): j is MindPlanNode => j?.type === "Journey")
+      .filter((j): j is MindPlanNode => j?.type === "Capability")
       .map((j) => j.title);
   const areaOf = (n: MindPlanNode): string[] => {
     const titles = new Set<string>();
     const add = (ix: MindPlanNode | undefined) => {
-      if (ix?.type === "Interaction") for (const t of journeysOf(ix)) titles.add(t);
+      if (ix?.type === "Interaction") for (const t of capabilitiesOf(ix)) titles.add(t);
     };
     if (n.type === "Interaction") add(n);
     if (n.type === "Interface") for (const id of edgeTargets(n, "exposes")) add(byId.get(id));
@@ -435,7 +435,7 @@ export function fuseRankings(
 export interface SearchOptions {
   type?: NodeType;
   limit?: number;
-  /** A Journey id: rank only that Journey's members (`areaMembers`). */
+  /** A Capability id: rank only that Capability's members (`areaMembers`). */
   area?: string;
   /**
    * The keyword half: FTS5 when the cache has it (`auto`, the default), else the JS BM25; `js`
@@ -530,16 +530,16 @@ export async function searchNodes(
 }
 
 /**
- * The members of a Journey: the Journey, the active Interactions that belong to it, the
+ * The members of a Capability: the Capability, the active Interactions that belong to it, the
  * active Interfaces that expose them, and the active Foundations they depend on transitively. Live
  * and proposed (open next) edges count; the walk never passes through a retired node, so a
  * Foundation only a deprecated Interaction used is not a member. Bugs are not members.
  */
-export function areaMembers(graph: MindPlanGraph, journeyId: string): Set<string> {
+export function areaMembers(graph: MindPlanGraph, capabilityId: string): Set<string> {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-  const members = new Set<string>([journeyId]);
+  const members = new Set<string>([capabilityId]);
   const interactions = graph.nodes.filter(
-    (n) => n.type === "Interaction" && !isRetired(n) && edgeTargets(n, "belongs_to").includes(journeyId)
+    (n) => n.type === "Interaction" && !isRetired(n) && edgeTargets(n, "belongs_to").includes(capabilityId)
   );
   for (const ix of interactions) members.add(ix.id);
   const interfaces = graph.nodes.filter(

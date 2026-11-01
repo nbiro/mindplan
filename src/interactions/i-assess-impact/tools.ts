@@ -24,7 +24,7 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call before changing a shipped node. " +
         "Returns nodes that depend on the given node (transitive reverse depends_on closure), " +
-        "with hop distance, journeys_at_risk, and affected_files grouped by owner " +
+        "with hop distance, capabilities_at_risk, and affected_files grouped by owner " +
         "({ owner_id, owner_type, via[], files[] }; via ∈ focus|dependent|exposing|importer). " +
         "Cancelled and deprecated nodes are omitted by default; set include_retired to see them " +
         "(BFS still traverses through retired nodes so live dependents keep true distances). " +

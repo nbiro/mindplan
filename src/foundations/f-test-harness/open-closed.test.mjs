@@ -222,13 +222,13 @@ function check(label, condition, detail = "") {
 
 // --- what each type splits into ---
 {
-  const journey = { id: "j-a", type: "Journey", state: "stable" };
+  const capability = { id: "j-a", type: "Capability", state: "stable" };
   const root = { id: "i-root", type: "Interaction", state: "stable", shipped_at: "2026-10-01T00:00:00.000Z", belongs_to: ["j-a"], next: { state: "draft", belongs_to: ["j-a"], split_into: ["i-part", "i-far"] } };
   const part = { id: "i-part", type: "Interaction", state: "stable", shipped_at: "2026-10-30T00:00:00.000Z", belongs_to: ["j-a"] };
   const far = { id: "i-far", type: "Interaction", state: "stable", shipped_at: "2026-10-30T00:00:00.000Z", belongs_to: ["j-b"] };
   const lib = { id: "f-lib", type: "Foundation", state: "stable", shipped_at: "2026-10-30T00:00:00.000Z" };
   const entry = { id: "if-entry", type: "Interface", state: "stable", shipped_at: "2026-10-01T00:00:00.000Z", exposes: ["i-root"], next: { state: "draft", exposes: ["i-root", "i-part"] } };
-  const g = { version: 1, nodes: [journey, root, part, far, lib, entry], edges: [] };
+  const g = { version: 1, nodes: [capability, root, part, far, lib, entry], edges: [] };
   check("an Interaction splits into Interactions", oc.splitPartProblem(g, root, "i-part") === null);
   check("an Interaction cannot split into a Foundation", oc.splitPartProblem(g, root, "f-lib")?.includes("not another active Interaction"));
   check("an Interface splits into Interactions", oc.splitPartProblem(g, entry, "i-part") === null);

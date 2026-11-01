@@ -34,13 +34,13 @@ export const TOOLS: ToolDef[] = [
       title: "Create node",
       description:
         "Call when reuse found no node, before any new-feature code. " +
-        "Creates a Journey, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
+        "Creates a Capability, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
         "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold). " +
         "Returns shape for a Foundation, Interaction, Interface, or Bug: the sections its first transition checks, each present, missing, or stub (the scaffold), so you write them before moving it.",
       inputSchema: {
         verbose: VERBOSE,
         id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
-        type: z.enum(NODE_TYPES).describe("Journey | Interaction | Interface | Foundation | Bug"),
+        type: z.enum(NODE_TYPES).describe("Capability | Interaction | Interface | Foundation | Bug"),
         title: z.string().min(1).describe("Human-readable title (written to <id>.mdx frontmatter)."),
         description: z.string().describe("Short description (written to <id>.mdx frontmatter)."),
         role: z
@@ -65,7 +65,7 @@ export const TOOLS: ToolDef[] = [
       title: "Link nodes",
       description:
         "Call when two existing nodes should be connected. " +
-        "Adds an edge to the DAG. Legal shapes: Interaction -belongs_to-> Journey, " +
+        "Adds an edge to the DAG. Legal shapes: Interaction -belongs_to-> Capability, " +
         "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
         "Interface -exposes-> Interaction, Foundation -mounts-> Interface (a composition root that imports Interfaces), Interaction -leads_to-> Interaction, " +
         "Bug -affects-> Interaction|Interface|Foundation. " +

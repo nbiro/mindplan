@@ -9,7 +9,7 @@ revisions: 9
 churn: 0
 split_at: 9
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-10-26T00:31:07.970Z
+updated_at: 2026-11-01T10:53:08.431Z
 depends_on:
   - f-domain-model
   - f-search-index
@@ -29,7 +29,7 @@ split_into:
 
 ## Purpose
 
-Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`, plus the pure graph queries that say whose rules apply to a node and whose work a node's rules reach. Keeps retired nodes out of default ranking so agents focus on the live architecture. Rules flow only toward the work that needs them: up `belongs_to`, along `depends_on`, and from affected nodes into Bugs — never downward and never across siblings, otherwise a Journey's local rule would constrain unrelated Interactions. Finished work does not count: a resolved Bug must not pad the list of whose work a Foundation's rules reach. Decisions reach a node along exactly the same walk, so an agent about to reshape an Interaction sees why its Foundation's contract looks the way it does before it simplifies it back; one walk serves both, so rules and decisions can never disagree about who inherits from whom. Whether a decision is superseded is computed here from the decisions of active nodes, never stored.
+Infra — orientation ranking and 1-hop neighborhood expansion for `find_related_nodes` / `orient_for_work`, plus the pure graph queries that say whose rules apply to a node and whose work a node's rules reach. Keeps retired nodes out of default ranking so agents focus on the live architecture. Rules flow only toward the work that needs them: up `belongs_to`, along `depends_on`, and from affected nodes into Bugs — never downward and never across siblings, otherwise a Capability's local rule would constrain unrelated Interactions. Finished work does not count: a resolved Bug must not pad the list of whose work a Foundation's rules reach. Decisions reach a node along exactly the same walk, so an agent about to reshape an Interaction sees why its Foundation's contract looks the way it does before it simplifies it back; one walk serves both, so rules and decisions can never disagree about who inherits from whom. Whether a decision is superseded is computed here from the decisions of active nodes, never stored.
 
 ## Shared Substrate Spec
 
@@ -37,12 +37,12 @@ Package: `src/foundations/f-graph-search/`
 
 - `search.ts` — `tokenize` / `scoreNode` / `rankNodes` (token scoring: the keyword fallback, pure); `expandNeighborhood`; `findRelatedNodes` (focus + linked summaries; takes `matches` already ranked by `searchNodes`, else ranks by tokens); default/max find limits (`DEFAULT_FIND_LIMIT` / `MAX_FIND_LIMIT`); excludes `deprecated`/`cancelled` nodes and closed Bugs from ranking by default (aligned with map export policy)
 - **Hybrid search** (`search.ts`, over `f-search-index`):
-  - `searchDocs(graph, readBody?)` — one `SearchDoc` per node: the open next slot's title and description while a revision is open, area (Journey titles through `belongs_to`; an Interface's through the Interactions it exposes; a Bug's through the Interactions it affects), entry points (titles of the Interfaces exposing it), section headings from `sectionHeadings(body)` (scaffold headings and any heading shared by more than 8% of nodes left out; memoized by id, slot, `updated_at`, and the reader's optional `stamp`, the file's size and mtime, so a body edited outside MCP is re-read), claimed paths, edges, and the retired flag
+  - `searchDocs(graph, readBody?)` — one `SearchDoc` per node: the open next slot's title and description while a revision is open, area (Capability titles through `belongs_to`; an Interface's through the Interactions it exposes; a Bug's through the Interactions it affects), entry points (titles of the Interfaces exposing it), section headings from `sectionHeadings(body)` (scaffold headings and any heading shared by more than 8% of nodes left out; memoized by id, slot, `updated_at`, and the reader's optional `stamp`, the file's size and mtime, so a body edited outside MCP is re-read), claimed paths, edges, and the retired flag
   - `searchNodes(graph, query, { type?, limit?, root, readBody?, embedder? })` → `RankedMatch[]` — the type filter applies first and retired nodes never rank; keyword half = `SearchIndex.keyword` (FTS5 bm25, with the type filter in SQL), or `keywordRankDocs` (`f-search-index`, the same BM25 in JS) when there is no index, no FTS5 (Node 22.13's SQLite), or the query throws (another server rebuilding the file); `keywordEngine: "js"` forces the JS half (the eval measures both); semantic half = cosine top 50 within `SEMANTIC_WINDOW` (0.12) of the best hit once the model is ready; a cache or model problem never fails the search
   - `fuseRankings(lists, { docs, exact?, paths? })` — reciprocal rank fusion (`Σ 1/(RRF_K + rank)`, `RRF_K` = 60, `FUSION_DEPTH` = 50 per half), then `GRAPH_BOOST` (one rank step at the top) once for each already-found node one `belongs_to` / `depends_on` / `exposes` / `mounts` link from a top-3 node (top-3 nodes linked to each other included), then path matches (a single-word query with a slash or a file extension, matched against claims: exact, directory prefix, or glob) above every fused score, and an exact id above everything
-  - `score` is the fused score, comparable only within one reply; each `RankedMatch` from `searchNodes` also carries `area` (the doc's Journey titles), which `rankNodes` leaves out
+  - `score` is the fused score, comparable only within one reply; each `RankedMatch` from `searchNodes` also carries `area` (the doc's Capability titles), which `rankNodes` leaves out
   - `refreshSearchIndex(graph, root, readBody?)` (after a write) and `warmSearchIndex(root, loadGraph, readBody?)` (server start) — never throw, never block a call
-- `areaMembers(graph, journeyId)` — the Journey, the active Interactions that belong to it, the active Interfaces that expose them, and the active Foundations they depend on transitively (live and proposed edges; the walk never passes through a retired node); `searchNodes` takes `area` and keeps candidates to those members, passing them to the keyword query as `ids`
+- `areaMembers(graph, capabilityId)` — the Capability, the active Interactions that belong to it, the active Interfaces that expose them, and the active Foundations they depend on transitively (live and proposed edges; the walk never passes through a retired node); `searchNodes` takes `area` and keeps candidates to those members, passing them to the keyword query as `ids`
 - `scoreNode` (the token fallback) scores alias hits like title hits
 - `searchDocs` fills `aliases` from the node's `aliases` list: they go into the FTS5 `aliases` column (weight 8) and the embedded text (`Aliases: …`)
 - Ranking covers all node types including Interaction and Interface (no Interaction-specific branches — ranking is type-agnostic aside from retired filters and the type filter)
@@ -53,7 +53,7 @@ Package: `src/foundations/f-graph-search/`
   2. rules of nodes reached by following `belongs_to` upward (`via: belongs_to`), ascending distance
   3. rules of nodes reached by the transitive closure of `depends_on` (`via: depends_on`), ascending distance
   4. for a Bug only: every node it `affects`, plus everything that node would itself resolve (own, `belongs_to`, `depends_on`), all with `via: affects` and distance offset by 1
-  - Not inherited: `exposes` / `leads_to` neighbors, siblings, and anything downward (a Journey gets no Interaction rules; a Foundation gets no dependent's rules; an Interface gets no exposed Interaction's rules)
+  - Not inherited: `exposes` / `leads_to` neighbors, siblings, and anything downward (a Capability gets no Interaction rules; a Foundation gets no dependent's rules; an Interface gets no exposed Interaction's rules)
   - A node reached twice keeps its smallest distance; nodes with empty rules and inactive nodes (`isInactiveNode`: `cancelled`, `deprecated`, closed Bugs) are omitted; ties order by node id
 - `rulesAudience(graph, nodeId): RulesImpactEntry[]` — exactly the other active nodes whose `resolveNodeRules` includes an entry from `nodeId`, with the `via` and `distance` of that entry; empty when `nodeId` has no rules
 - `rulesImpact(graph, node)` → `{ has_rules, inherited_by }`: the one builder of the `rules_impact` payload used by `get_blast_radius` and `patch_node_rules`
@@ -76,12 +76,12 @@ Depends on: `f-domain-model`, `f-search-index`.
 - Limits respect DEFAULT_FIND_LIMIT / MAX_FIND_LIMIT
 - Queries matching Interaction/Interface titles return them as focus candidates
 - 1-hop neighborhoods include `exposes` and `leads_to` neighbors
-- An Interaction resolves its own, its Journey's, and its Foundations' (transitive) rules, each labeled with its source node
-- A Journey resolves only its own; a Foundation resolves its own and its Foundation dependencies'; sibling Interactions never see each other's rules
+- An Interaction resolves its own, its Capability's, and its Foundations' (transitive) rules, each labeled with its source node
+- A Capability resolves only its own; a Foundation resolves its own and its Foundation dependencies'; sibling Interactions never see each other's rules
 - A Bug resolves the full resolution of every node it `affects`
-- `rulesAudience` of a Foundation lists its transitive dependents; of a Journey lists its Interactions; both agree with `resolveNodeRules`
+- `rulesAudience` of a Foundation lists its transitive dependents; of a Capability lists its Interactions; both agree with `resolveNodeRules`
 - Resolved and wontfix Bugs appear in no audience and contribute no rules
-- An Interaction resolves its own, its Journey's, and its Foundations' (transitive) decisions, each labeled with its source node; a Bug resolves the decisions of the nodes it affects; siblings never see each other's
+- An Interaction resolves its own, its Capability's, and its Foundations' (transitive) decisions, each labeled with its source node; a Bug resolves the decisions of the nodes it affects; siblings never see each other's
 - A decision named in another active node's `supersedes` is `superseded` and left out unless `include_superseded`; once the superseding decision is gone (its revision discarded) it is active again
 - A decision superseded only by a cancelled node's decision stays active; one superseded by a deprecated node's decision stays superseded
 - `listDecisions` by change returns the decisions of every node recorded under that change id

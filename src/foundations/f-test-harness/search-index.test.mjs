@@ -65,7 +65,7 @@ function fakeEmbedder(dims = 32) {
 const graph = {
   version: 1,
   nodes: [
-    mkNode("j-enquiries", "Journey", "Enquiries", "A visitor sends a form enquiry."),
+    mkNode("j-enquiries", "Capability", "Enquiries", "A visitor sends a form enquiry."),
     mkNode("i-send-enquiry", "Interaction", "Send an enquiry", "Visitor sends the business a message from the contact form.", {
       belongs_to: ["j-enquiries"],
       depends_on: ["f-mail"],
@@ -272,7 +272,7 @@ ok("cache: type filter before the row limit, rowid reuse across connections, no 
   const r = (q, opts = {}) => searchNodes(graph, q, { root, embedder, ...opts }).then((m) => m.map((x) => x.id));
   assert.equal((await r("i-send-enquiry"))[0], "i-send-enquiry", "exact id first");
   assert.equal((await r("src/foundations/f-mail/mail.ts"))[0], "f-mail", "a file path ranks its claim's owner first");
-  assert.equal((await r("enquiry", { type: "Journey" }))[0], "j-enquiries", "the type filter applies before ranking");
+  assert.equal((await r("enquiry", { type: "Capability" }))[0], "j-enquiries", "the type filter applies before ranking");
   assert.equal((await r("old enquiry form")).includes("i-old"), false, "retired nodes never rank");
   const keywordOnly = await searchNodes(graph, "send enquiry", { root, embedder: null });
   assert.equal(keywordOnly[0].id, "i-send-enquiry", "keyword-only mode still ranks");
@@ -340,7 +340,7 @@ ok("timing: incremental update < 200 ms and search < 50 ms on 1,000 nodes");
     if (res.isError) throw new Error(`${name}: ${res.content[0].text}`);
     return JSON.parse(res.content[0].text);
   };
-  const created = await call("create_node", { id: "j-shop", type: "Journey", title: "Shop", description: "Buying things." });
+  const created = await call("create_node", { id: "j-shop", type: "Capability", title: "Shop", description: "Buying things." });
   assert.equal(created.changed_files.some((f) => f.includes(".mindplan-cache")), false, "the cache is never a changed file");
   await call("create_node", { id: "i-checkout", type: "Interaction", title: "Check out", description: "Shopper pays for the basket." });
   let found = await call("find_related_nodes", { query: "pay for basket" });
@@ -399,7 +399,7 @@ ok("MCP: outside edits reach search on the next call; async Blocked envelope; se
     if (res.isError) throw new Error(`${name}: ${res.content[0].text}`);
     return JSON.parse(res.content[0].text);
   };
-  await call("create_node", { id: "j-dining", type: "Journey", title: "Dining", description: "Eating out." });
+  await call("create_node", { id: "j-dining", type: "Capability", title: "Dining", description: "Eating out." });
   await call("create_node", { id: "i-book-table", type: "Interaction", title: "Book a table", description: "Guest books a table." });
   // Offline: a cached model loads in the background, a missing one fails quietly to stderr.
   // Either way every call answers, and a stray stdout line would break the JSON-RPC stream.

@@ -8,7 +8,7 @@ import type {
   EdgeType,
   ExecutionState,
   FoundationRole,
-  JourneyState,
+  CapabilityState,
   MindPlanGraph,
   MindPlanNode,
   NextPipelineState,
@@ -100,17 +100,17 @@ function edgesFrom(graph: MindPlanGraph, sourceId: string, type: EdgeType): Mind
     .map((e) => findNode(graph, e.target));
 }
 
-/** Interactions linked to a Journey via belongs_to edges. */
-export function interactionsOfJourney(graph: MindPlanGraph, journeyId: string): MindPlanNode[] {
+/** Interactions linked to a Capability via belongs_to edges. */
+export function interactionsOfCapability(graph: MindPlanGraph, capabilityId: string): MindPlanNode[] {
   return graph.edges
-    .filter((e) => e.type === "belongs_to" && e.target === journeyId)
+    .filter((e) => e.type === "belongs_to" && e.target === capabilityId)
     .map((e) => findNode(graph, e.source))
     .filter((n) => n.type === "Interaction");
 }
 
-/** @deprecated Use interactionsOfJourney */
-export function workflowsOfJourney(graph: MindPlanGraph, journeyId: string): MindPlanNode[] {
-  return interactionsOfJourney(graph, journeyId);
+/** @deprecated Use interactionsOfCapability */
+export function workflowsOfCapability(graph: MindPlanGraph, capabilityId: string): MindPlanNode[] {
+  return interactionsOfCapability(graph, capabilityId);
 }
 
 function isShipped(node: MindPlanNode): boolean {
@@ -336,7 +336,7 @@ export function importAllowed(
 
 /**
  * Taxonomy rules for link_nodes:
- *   Interaction --belongs_to--> Journey
+ *   Interaction --belongs_to--> Capability
  *   Interaction|Interface --depends_on--> Foundation
  *   Foundation --depends_on--> Foundation
  *   Interface --exposes--> Interaction
@@ -377,9 +377,9 @@ export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeTyp
     return;
   }
   if (edgeType === "belongs_to") {
-    if (source.type !== "Interaction" || target.type !== "Journey") {
+    if (source.type !== "Interaction" || target.type !== "Capability") {
       throw blocked(
-        `belongs_to edges must go Interaction -> Journey. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
+        `belongs_to edges must go Interaction -> Capability. Got ${source.type} "${source.id}" -> ${target.type} "${target.id}".`
       );
     }
     return;
@@ -405,7 +405,7 @@ export function validateLink(source: MindPlanNode, target: MindPlanNode, edgeTyp
     throw blocked(
       `Interaction Independence. Interactions must not depend_on each other. ` +
         `"${source.id}" -> "${target.id}" is illegal — share application state through a Foundation instead. ` +
-        `Use leads_to for Journey navigation/progression only.`
+        `Use leads_to for Capability navigation/progression only.`
     );
   }
   if (target.type !== "Foundation") {
@@ -696,20 +696,20 @@ export function interfacesExposing(
   return result.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** Journeys that contain the given Interaction via belongs_to. */
-export function journeysContaining(
+/** Capabilities that contain the given Interaction via belongs_to. */
+export function capabilitiesContaining(
   graph: MindPlanGraph,
   interactionId: string
 ): MindPlanNode[] {
   const interaction = findNode(graph, interactionId);
-  const journeyIds = effectiveBelongsTo(interaction);
+  const capabilityIds = effectiveBelongsTo(interaction);
   const fromEdges = graph.edges
     .filter((e) => e.type === "belongs_to" && e.source === interactionId)
     .map((e) => e.target);
-  const all = new Set([...journeyIds, ...fromEdges]);
+  const all = new Set([...capabilityIds, ...fromEdges]);
   return [...all]
     .map((id) => findNode(graph, id))
-    .filter((n) => n.type === "Journey")
+    .filter((n) => n.type === "Capability")
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -719,12 +719,12 @@ export function interactionReachability(
   interactionId: string
 ): {
   exposing_interfaces: MindPlanNode[];
-  containing_journeys: MindPlanNode[];
+  containing_capabilities: MindPlanNode[];
   leads_to_downstream: ReachabilityEntry[];
 } {
   return {
     exposing_interfaces: interfacesExposing(graph, interactionId),
-    containing_journeys: journeysContaining(graph, interactionId),
+    containing_capabilities: capabilitiesContaining(graph, interactionId),
     leads_to_downstream: leadsToDownstream(graph, interactionId),
   };
 }
@@ -867,7 +867,7 @@ function validateInteractionRulesForEdges(
   if (newStatus === "ready" || newStatus === "in-progress") {
     if (belongsTo.length === 0) {
       throw blocked(
-        `Ghost Interaction. "${interaction.id}" has no belongs_to edge to a Journey. Link it with link_nodes before moving it to "${newStatus}".`
+        `Ghost Interaction. "${interaction.id}" has no belongs_to edge to a Capability. Link it with link_nodes before moving it to "${newStatus}".`
       );
     }
     const foundations = dependsOn
@@ -909,7 +909,7 @@ function validateInteractionRules(
   interaction: MindPlanNode,
   newStatus: ExecutionState
 ): void {
-  const journeys = graph.edges
+  const capabilities = graph.edges
     .filter((e) => e.source === interaction.id && e.type === "belongs_to")
     .map((e) => e.target);
 
@@ -917,7 +917,7 @@ function validateInteractionRules(
     .filter((e) => e.source === interaction.id && e.type === "depends_on")
     .map((e) => e.target);
 
-  validateInteractionRulesForEdges(interaction, newStatus, journeys, dependsOn, graph);
+  validateInteractionRulesForEdges(interaction, newStatus, capabilities, dependsOn, graph);
   runMinimumTerritoryShape(interaction, newStatus, "current");
   runImplementsGate(interaction, newStatus, "current");
 }
@@ -1059,9 +1059,9 @@ export function resolveStatusChange(
   node: MindPlanNode,
   newStatus: string
 ): StatusChangeResult {
-  if (node.type === "Journey") {
+  if (node.type === "Capability") {
     throw blocked(
-      `Journey states are computed automatically from their Interactions and cannot be set manually.`
+      `Capability states are computed automatically from their Interactions and cannot be set manually.`
     );
   }
 
@@ -1218,14 +1218,14 @@ export function resolveForceUnship(
 }
 
 /**
- * Computed Journey States (Interaction activity only; Bugs do not affect Journeys):
+ * Computed Capability States (Interaction activity only; Bugs do not affect Capabilities):
  *   evolving   — shipped Interactions (stable/unstable) + in-progress/in-review building (incl. next)
  *   stable     — shipped Interactions, 0 in-progress/in-review
  *   incubation — in-progress/in-review, 0 shipped
  *   draft      — otherwise
  */
-export function computeJourneyState(graph: MindPlanGraph, journeyId: string): JourneyState {
-  const interactions = interactionsOfJourney(graph, journeyId);
+export function computeCapabilityState(graph: MindPlanGraph, capabilityId: string): CapabilityState {
+  const interactions = interactionsOfCapability(graph, capabilityId);
   const shipped = interactions.filter(
     (w) => w.shipped_at && (w.state === "stable" || w.state === "unstable")
   ).length;
@@ -1242,12 +1242,12 @@ export function computeJourneyState(graph: MindPlanGraph, journeyId: string): Jo
   return "draft";
 }
 
-export function recomputeJourneyStates(graph: MindPlanGraph): MindPlanNode[] {
+export function recomputeCapabilityStates(graph: MindPlanGraph): MindPlanNode[] {
   const changed: MindPlanNode[] = [];
   const now = new Date().toISOString();
   for (const node of graph.nodes) {
-    if (node.type !== "Journey") continue;
-    const next: NodeState = computeJourneyState(graph, node.id);
+    if (node.type !== "Capability") continue;
+    const next: NodeState = computeCapabilityState(graph, node.id);
     if (node.state !== next) {
       node.state = next;
       node.updated_at = now;

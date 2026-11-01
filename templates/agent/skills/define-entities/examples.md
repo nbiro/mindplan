@@ -1,16 +1,16 @@
 # MindPlan Entity Definition Examples
 
-## Refused Interaction (no Journey)
+## Refused Interaction (no Capability)
 
 **User request:** "Define an interaction for split & pay checkout."
 
-**Agent action:** `get_mindplan_graph` → no Journeys in graph (or none matching "ordering"/"checkout" capability).
+**Agent action:** `get_mindplan_graph` → no Capabilities in graph (or none matching "ordering"/"checkout" capability).
 
 **Do not** call `create_node` for the Interaction. Respond:
 
-> This needs a **Journey** first — every Interaction belongs to one. Is it part of an existing Journey (e.g. Billing / Ordering), or something new? Once the Journey exists, I can create the Interaction and link it with `belongs_to`.
+> This needs a **Capability** first — every Interaction belongs to one. Is it part of an existing Capability (e.g. Billing / Ordering), or something new? Once the Capability exists, I can create the Interaction and link it with `belongs_to`.
 
-**Next step (after user agrees):** define Journey `j-ordering`, then proceed with the greenfield example below.
+**Next step (after user agrees):** define Capability `c-ordering`, then proceed with the greenfield example below.
 
 ---
 
@@ -20,7 +20,7 @@
 
 **Breakdown:**
 
-> Managers can **split the check** in the **Ordering** Journey, from the **back-office** Interface, using existing Foundations (`f-db-core`, …).
+> Managers can **split the check** in the **Ordering** Capability, from the **back-office** Interface, using existing Foundations (`f-db-core`, …).
 
 **Reuse before create:**
 
@@ -53,13 +53,13 @@ Same Interaction, new Interface = new `exposes` (+ mount/wire), not a new Intera
 
 ## Greenfield feature
 
-**Goal:** Add "Split & pay" behavior plus a checkout Page Interface to an "Ordering" Journey.
+**Goal:** Add "Split & pay" behavior plus a checkout Page Interface to an "Ordering" Capability.
 Behavior-first: draft the Interaction, then mint Interfaces and Foundations from what its PRD needs.
 
-### 1. Create Journey, then draft Interaction
+### 1. Create Capability, then draft Interaction
 
 ```
-create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders and pays for food" })
+create_node({ id: "c-ordering", type: "Capability", title: "Ordering", description: "Diner orders and pays for food" })
 create_node({ id: "i-checkout-split", type: "Interaction", title: "Split & pay", description: "Diner splits bill and pays" })
 ```
 
@@ -108,13 +108,13 @@ From that PRD, shared needs are: order/payment tables, UI primitives, an app she
 create_node({ id: "if-checkout-page", type: "Interface", title: "Checkout page", description: "Page — exposes split & pay in the ordering console" })
 create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables for orders and payments" })
 create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
-create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router composing journeys, interactions, and interfaces" })
+create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router composing capabilities, interactions, and interfaces" })
 ```
 
 ### 4. Link Interaction, Interface, Foundations
 
 ```
-link_nodes({ source_id: "i-checkout-split", target_id: "j-ordering", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-checkout-split", target_id: "c-ordering", edge_type: "belongs_to" })
 link_nodes({ source_id: "i-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
 link_nodes({ source_id: "i-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
 link_nodes({ source_id: "if-checkout-page", target_id: "i-checkout-split", edge_type: "exposes" })
@@ -247,7 +247,7 @@ Ship `f-design-system` to `stable` before dependent Interactions/Interfaces can 
 create_node({ id: "i-user-picker", type: "Interaction", title: "User picker", description: "Search and select a user" })
 create_node({ id: "i-checkout-split", type: "Interaction", title: "Split & pay", description: "Diner splits bill and pays" })
 create_node({ id: "if-ordering-console", type: "Interface", title: "Ordering console", description: "Page — waiter/diner surface exposing checkout and picker" })
-link_nodes({ source_id: "i-user-picker", target_id: "j-ordering", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-user-picker", target_id: "c-ordering", edge_type: "belongs_to" })
 link_nodes({ source_id: "i-user-picker", target_id: "f-design-system", edge_type: "depends_on" })
 link_nodes({ source_id: "if-ordering-console", target_id: "i-user-picker", edge_type: "exposes" })
 link_nodes({ source_id: "if-ordering-console", target_id: "i-checkout-split", edge_type: "exposes" })
@@ -261,7 +261,7 @@ link_nodes({ source_id: "i-checkout-split", target_id: "i-user-picker", edge_typ
 → Blocked: Interaction Independence
 ```
 
-If the picker also serves Admin, add a second `belongs_to` to `j-admin` (membership reuse). Shared state goes through Foundations, not Interaction→Interaction deps.
+If the picker also serves Admin, add a second `belongs_to` to `c-admin` (membership reuse). Shared state goes through Foundations, not Interaction→Interaction deps.
 
 ---
 
@@ -279,21 +279,21 @@ Ship `f-config` before `f-auth`. Interactions depending on `f-auth` cannot ship 
 
 ---
 
-## Interaction spanning multiple Journeys
+## Interaction spanning multiple Capabilities
 
-**Goal:** A shared "User profile" Interaction belongs to both "Ordering" and "Loyalty" Journeys.
+**Goal:** A shared "User profile" Interaction belongs to both "Ordering" and "Loyalty" Capabilities.
 
 ```
-create_node({ id: "j-ordering", type: "Journey", title: "Ordering", description: "Diner orders food" })
-create_node({ id: "j-loyalty", type: "Journey", title: "Loyalty", description: "Points and rewards" })
+create_node({ id: "c-ordering", type: "Capability", title: "Ordering", description: "Diner orders food" })
+create_node({ id: "c-loyalty", type: "Capability", title: "Loyalty", description: "Points and rewards" })
 create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables" })
 create_node({ id: "i-user-profile", type: "Interaction", title: "User profile", description: "Shared profile across domain capabilities" })
-link_nodes({ source_id: "i-user-profile", target_id: "j-ordering", edge_type: "belongs_to" })
-link_nodes({ source_id: "i-user-profile", target_id: "j-loyalty", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-user-profile", target_id: "c-ordering", edge_type: "belongs_to" })
+link_nodes({ source_id: "i-user-profile", target_id: "c-loyalty", edge_type: "belongs_to" })
 link_nodes({ source_id: "i-user-profile", target_id: "f-db-core", edge_type: "depends_on" })
 ```
 
-One Interaction, two `belongs_to` edges — membership reuse across Journeys.
+One Interaction, two `belongs_to` edges — membership reuse across Capabilities.
 
 ---
 
@@ -368,10 +368,10 @@ update_node_status({ node_id: "bug-double-charge", new_status: "triaged" })
 get_blast_radius({ node_id: "i-checkout-split" })
 → {
     affected: [{ id: "f-…", ... }],   // reverse depends_on if any
-    journeys_at_risk: ["j-ordering"],
+    capabilities_at_risk: ["c-ordering"],
     reachability: {
       exposing_interfaces: ["if-checkout-page"],
-      containing_journeys: ["j-ordering"],
+      containing_capabilities: ["c-ordering"],
       leads_to_downstream: ["i-tips"]
     }
   }

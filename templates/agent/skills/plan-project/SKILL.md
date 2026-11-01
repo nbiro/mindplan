@@ -1,7 +1,7 @@
 ---
 name: mindplan-plan-project
 description: >-
-  Create or patch the MindPlan graph (Journeys, Foundations, Interactions,
+  Create or patch the MindPlan graph (Capabilities, Foundations, Interactions,
   Interfaces, Bugs, edges, territory) without writing application code. Use
   whenever you create_node, link/unlink, patch territory or project brief/config,
   open_next, or discard_next — including before any new-feature code change when
@@ -19,7 +19,7 @@ Prerequisite: MindPlan MCP is registered. The server serves this skill (`get_ski
 | User intent | Use this skill? |
 |-------------|-----------------|
 | “Let’s plan / model / map the product” | Yes |
-| Greenfield: define Journeys → draft Interactions → Interfaces → derive Foundations | Yes |
+| Greenfield: define Capabilities → draft Interactions → Interfaces → derive Foundations | Yes |
 | Restructure edges, enrich PRDs, rewrite Atomic Ops | Yes |
 | Before new-feature code: update or create the matching nodes | Yes — finish this skill, then implement |
 | Any `create_node` / link / territory / brief / config / `open_next` / `discard_next` | Yes |
@@ -52,26 +52,26 @@ For empty or unknown graphs, also call `get_mindplan_graph` once. Prefer `export
 
 Run the **breakdown recipe** from `define-entities` Step 0 before inventing nodes:
 
-1. Rewrite the ask as: *"<who> can <verb> <object> in <Journey>, from <Interface>, using <Foundations>."*
+1. Rewrite the ask as: *"<who> can <verb> <object> in <Capability>, from <Interface>, using <Foundations>."*
 2. Each distinct verb + object → one Interaction candidate (size: one behavior).
-3. **Reuse before create** — `find_related_nodes` / graph inspect for each Journey, Interaction, Interface, and Foundation. Same Interaction from a new Interface → new `exposes`, not a new Interaction. One Interface per actor + channel (not per page/tab).
-4. State which nodes you will add, **by type name**. Example: "I'll add *split the check* as a new Interaction in the Billing Journey and expose it from the back-office Interface."
-5. Missing Journey → polite refuse: "This needs a Journey first; is it part of Billing or something new?" Do not silently mint a Journey.
-6. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call when it applies everywhere, or a `patch_node_rules` call on the node when it is about one node's work (it reaches that node, its dependents, and its Journey's Interactions; check `rules_impact`). Neither is a new Journey. Call `get_project` again to re-read the brief.
+3. **Reuse before create** — `find_related_nodes` / graph inspect for each Capability, Interaction, Interface, and Foundation. Same Interaction from a new Interface → new `exposes`, not a new Interaction. One Interface per actor + channel (not per page/tab).
+4. State which nodes you will add, **by type name**. Example: "I'll add *split the check* as a new Interaction in the Billing Capability and expose it from the back-office Interface."
+5. Missing Capability → polite refuse: "This needs a Capability first; is it part of Billing or something new?" Do not silently mint a Capability.
+6. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call when it applies everywhere, or a `patch_node_rules` call on the node when it is about one node's work (it reaches that node, its dependents, and its Capability's Interactions; check `rules_impact`). Neither is a new Capability. Call `get_project` again to re-read the brief.
 
 7. A **choice between viable designs** (a data shape, an ordering guarantee, which system owns a fact) is a `record_decision` call on the node it shapes: the decision, the alternative you rejected, and why. Changing an earlier decision is a new record with `supersedes`, never an edit. A shipped Foundation's revision, a new migration or schema file, a wide blast radius, or a `depends_on` change is Blocked at `in-review` without one, and `run_check` warns from draft on.
 
-8. **Prefer additive over reopening.** Before choosing `open_next` on a shipped node, read its `stability` in the full `orient_for_work` reply (`rate` against `median_rate`: how often it shipped lately compared with the rest of the project; `fan_in`: nodes that depend on it directly) and any `hotspot:` warning from `run_check`. When it is a hotspot, add a new node that `depends_on` it instead, or split the part this feature changes out of it (the node keeps importing the part; a part never imports the node to register itself). Mark the split on the node's open revision with `patch_node_territory({ node_id, split_into: [parts] })` (a Foundation's parts are Foundations it depends_on; an Interaction's are Interactions in one of its Journeys; an Interface's are the Interactions it exposes), ship the parts first, then the revision: that ship records the split (`split_at`, `split_into`), and its rate starts again from zero. A node that should stay whole on purpose gets a decision with `keep_whole: true`, which silences the hotspot. `open_next` on such a node returns a `Warning:` and a `decision_prompt`: record why revising it is right, naming the additive alternative you rejected. `get_blast_radius({ change })` returns `additivity`: aim for "purely additive", or a few revised nodes with low fan-in.
+8. **Prefer additive over reopening.** Before choosing `open_next` on a shipped node, read its `stability` in the full `orient_for_work` reply (`rate` against `median_rate`: how often it shipped lately compared with the rest of the project; `fan_in`: nodes that depend on it directly) and any `hotspot:` warning from `run_check`. When it is a hotspot, add a new node that `depends_on` it instead, or split the part this feature changes out of it (the node keeps importing the part; a part never imports the node to register itself). Mark the split on the node's open revision with `patch_node_territory({ node_id, split_into: [parts] })` (a Foundation's parts are Foundations it depends_on; an Interaction's are Interactions in one of its Capabilities; an Interface's are the Interactions it exposes), ship the parts first, then the revision: that ship records the split (`split_at`, `split_into`), and its rate starts again from zero. A node that should stay whole on purpose gets a decision with `keep_whole: true`, which silences the hotspot. `open_next` on such a node returns a `Warning:` and a `decision_prompt`: record why revising it is right, naming the additive alternative you rejected. `get_blast_radius({ change })` returns `additivity`: aim for "purely additive", or a few revised nodes with low fan-in.
 
 9. **Invert nodes that must know every feature.** When one Interaction has to handle every feature of a kind (erase a site, export an account, index for search, check a permission), do not add a `depends_on` per feature. Define the contract once on the Foundation those features already use: a schema convention (every per-site table cascades from the site) or a record they react to (a deleted/restored state). State it as a node rule there with `patch_node_rules`, so every dependent sees it in `orient_for_work`, and link the test that enforces it with `set_test_files`. The Interaction then depends only on that Foundation. `run_check` warns `fan-out:` on a pre-ship node whose `depends_on` reaches `fan_out.warn_at` (default 3) other unshipped changes; the full `orient_for_work` reply shows the count in `stability.fan_out`. A node that keeps those edges on purpose gets a decision with `keep_whole: true`, which silences the warning.
 
-Then decide what the plan session must produce: new Journeys, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project_description` and `patch_project_rules`, node rules via `patch_node_rules`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
+Then decide what the plan session must produce: new Capabilities, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project_description` and `patch_project_rules`, node rules via `patch_node_rules`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
 
 ### 3. Define and link entities
 
 Follow the `define-entities` skill:
 
-1. Journeys first (refuse Interactions with no matching Journey; ask for the Journey first)
+1. Capabilities first (refuse Interactions with no matching Capability; ask for the Capability first)
 2. Interactions at `draft` (behavior / PRD thinking; links not required yet)
 3. Interfaces that will `exposes` those Interactions
 4. Foundations derived from those drafts (role tags in `description`)
@@ -81,10 +81,10 @@ Follow the `define-entities` skill:
 Greenfield order:
 
 ```
-Journey(s) → Interaction(s) at draft → Interface(s) → Foundation(s) derived from those drafts → link_nodes → enrich territory → self-ready → stop if plan-only
+Capabilities → Interaction(s) at draft → Interface(s) → Foundation(s) derived from those drafts → link_nodes → enrich territory → self-ready → stop if plan-only
 ```
 
-Gate facts: Journey before any Interaction create; draft Interactions may lack links until leaving `draft`; Interfaces need `exposes` before leaving `draft`; Foundation `ready` before Interaction `ready` is preference — Infrastructure First at Interaction `ship` still requires Foundations `stable`; Behavior First at Interface `ship` requires exposed Interactions `stable`.
+Gate facts: Capability before any Interaction create; draft Interactions may lack links until leaving `draft`; Interfaces need `exposes` before leaving `draft`; Foundation `ready` before Interaction `ready` is preference — Infrastructure First at Interaction `ship` still requires Foundations `stable`; Behavior First at Interface `ship` requires exposed Interactions `stable`.
 
 ### 4. Enrich territory (full contracts)
 
@@ -139,11 +139,11 @@ Then self-ready. Do not interpret “ship” here as `update_node_status` → `s
 - Advance to `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`, in a plan-only session
 - Treat “ship the plan” as build-pipeline `ship` / `stable`, or as permission to check Atomic Ops
 - Check off Atomic Ops without implementation
-- Create an Interaction with no matching Journey
+- Create an Interaction with no matching Capability
 - Link Interaction → Interaction with `depends_on`
 - Write Interface territory as if it owns feature screen bodies, or mint one Interface per screen/tab
 - Omit mount/view (Page/UI) or handler/module (CLI/MCP/Webhook/Cron) from Interaction PRDs that an Interface will expose
 - Hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)
-- Set Journey, `stable`, or `unstable` manually
+- Set Capability, `stable`, or `unstable` manually
 - Treat `mindplan/map.md` as graph authority
 - Self-`ready` or claim done while default `mindplan-mcp check` fails

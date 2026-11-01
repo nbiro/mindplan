@@ -8,17 +8,19 @@ Without them you get a 5,000-line app file; MindPlan keeps your product’s stru
 
 MindPlan names five kinds of thing. The type names are the vocabulary, in the graph, in the tools, and in conversation:
 
-| Type | Question | Example |
-|------|----------|---------|
-| **Journey** | What does the product do? | Billing |
-| **Interaction** | What can someone do? | Split the check |
-| **Interface** | Where do they do it? | Checkout page, CLI, MCP tools |
-| **Foundation** | What does it all run on? | Database, design system, Stripe |
-| **Bug** | What's broken? | Double charge on split |
+| Type | Question | Example | Closest established term |
+|------|----------|---------|--------------------------|
+| **Capability** | What does the product do? | Billing | Business capability, bounded context |
+| **Interaction** | What can someone do? | Split the check | Use case |
+| **Interface** | Where do they do it? | Checkout page, CLI, MCP tools | Driving adapter, C4 container |
+| **Foundation** | What does it all run on? | Database, design system, Stripe | Driven adapter, infrastructure, shared kernel |
+| **Bug** | What's broken? | Double charge on split | Defect |
+
+The last column is there to help you map each type onto what you already know; SPEC §2.0.0 says where MindPlan differs from each term. Use the type names, not those terms.
 
 Links: `belongs_to` = is part of · `exposes` = shows · `depends_on` = needs · `leads_to` = then goes to · `affects` = breaks.
 
-Rules: **Infrastructure First** — ship the Foundations before the Interaction that needs them. **Behavior First** — an Interaction has to work before an Interface shows it. **Completion Check** — finish the checklist before going live. **No Ghosts** — every Interaction belongs to a Journey and depends on a Foundation.
+Rules: **Infrastructure First** — ship the Foundations before the Interaction that needs them. **Behavior First** — an Interaction has to work before an Interface shows it. **Completion Check** — finish the checklist before going live. **No Ghosts** — every Interaction belongs to a Capability and depends on a Foundation.
 
 ## Think in systems
 
@@ -41,21 +43,21 @@ The compiler refuses *illegal* moves; it does not freeze the plan.
 - **Revise together** — classify the blast radius. Sources get a full successor (`open_next`). Neighbors whose files changed but whose behavior did not are edited in place, with no `next` and no impact note. Nodes whose files did not change are left alone. Status then moves Foundations, then Interactions, then Interfaces, then Bugs, in one call, and stops on the first `Blocked:`
 - **Ship after green check** — the implementer `ship`s when `run_check` (the CLI `mindplan-mcp check`) is green and legal transitions allow; moves to `in-review` and `ship` also run its import and ownership rules on the node's files, and `update_node_status` with `scope` walks every open update (or one change's revisions) through in-review to ship in one call — jumping past in-review needs `skip_review: true`, which is reported
 - **Decide on the record** — when an agent chooses between viable designs, `record_decision` keeps the choice, the rejected alternative, and the reason on the node; the next agent gets it from `orient_for_work` before touching that design. A shipped Foundation's revision, a new migration, a wide blast radius, or a `depends_on` change cannot reach `in-review` without one
-- **Retire** — production work to `deprecated` when intent is replaced (Journeys stay; only Bugs truly close)
+- **Retire** — production work to `deprecated` when intent is replaced (Capabilities stay; only Bugs truly close)
 
 ## See what the agent sees
 
-After every graph mutation, MindPlan refreshes [`mindplan/map.md`](mindplan/map.md) — Journeys, Interactions, Interfaces, Foundations, and Bugs. On demand: MCP `export_mindplan_view` or CLI `mindplan-mcp view`.
+After every graph mutation, MindPlan refreshes [`mindplan/map.md`](mindplan/map.md) — Capabilities, Interactions, Interfaces, Foundations, and Bugs. On demand: MCP `export_mindplan_view` or CLI `mindplan-mcp view`.
 
 Today's map is an **architecture + state** projection. A richer status board is planned.
 
 ## Worked example: scrambled eggs
 
-A **Journey** (make breakfast), a **Foundation** (the stove), **Interactions** (crack, whisk, cook), and an **Interface** (the breakfast CLI):
+A **Capability** (make breakfast), a **Foundation** (the stove), **Interactions** (crack, whisk, cook), and an **Interface** (the breakfast CLI):
 
 ```mermaid
 flowchart TB
-  subgraph jBreakfast ["Journey: j-breakfast · Make breakfast · incubation"]
+  subgraph cBreakfast ["Capability: c-breakfast · Make breakfast · incubation"]
     iCrack["i-crack-eggs · Crack eggs · stable"]
     iWhisk["i-whisk · Whisk · stable"]
     iCook["i-cook-scramble · Cook scramble · in-progress"]
@@ -72,7 +74,7 @@ flowchart TB
   ifCli -->|"exposes"| iCook
 ```
 
-- **Journey** `j-breakfast` — permanent capability (make breakfast)
+- **Capability** `c-breakfast` — what the product does (make breakfast), a permanent container
 - **Foundation** `f-stove` — cook cannot ship until the stove is `stable`
 - **Interactions** — crack, whisk, cook; they share state via Foundations, never `depends_on` each other. `leads_to` is "then goes to" only (cycles allowed, not a ship gate)
 - **Interface** `if-breakfast-cli` — how an actor starts cooking; ship needs exposed Interactions `stable` (**Behavior First**)
@@ -86,7 +88,7 @@ In other words: you cannot go live with *cook scramble* while the *stove* Founda
 
 ## How it's built
 
-Territory under `mindplan/` (Journeys, Foundations, Interactions, Interfaces, Bugs) plus optional `<id>.next.mdx` while a shipped node evolves. Nodes declare owned source files via `implements` / `set_implementation_files` (`mindplan/config.json` `sources`/`exclude` define the coverage universe). An MCP server is the single write path for server-owned frontmatter.
+Territory under `mindplan/` (Capabilities, Foundations, Interactions, Interfaces, Bugs) plus optional `<id>.next.mdx` while a shipped node evolves. Nodes declare owned source files via `implements` / `set_implementation_files` (`mindplan/config.json` `sources`/`exclude` define the coverage universe). An MCP server is the single write path for server-owned frontmatter.
 
 - **[SPEC.md](SPEC.md)** — graph, compiler rules, and tools
 - **`src/`** — TypeScript MCP server (stdio)
@@ -150,7 +152,7 @@ Then register `node /absolute/path/to/mindplan/dist/index.js` (with `MINDPLAN_RO
 │   ├── config.json                # { sources, exclude } — coverage universe; optional decisions, hotspots, fan_out, search
 │   ├── project.md                 # description + rules only (playbook via get_project)
 │   ├── version.json               # { package, graph, migrations } — written by setup_project / upgrade_project; drives the version gate
-│   ├── journeys/<id>/<id>.mdx
+│   ├── capabilities/<id>/<id>.mdx
 │   ├── foundations/<id>/<id>.mdx  # + optional <id>.next.mdx
 │   ├── interactions/<id>/<id>.mdx # + optional <id>.next.mdx
 │   ├── interfaces/<id>/<id>.mdx   # + optional <id>.next.mdx
@@ -164,13 +166,13 @@ Owned files are declared with `set_implementation_files` (exact paths or directo
 
 | Type | What it is | States |
 |------|------------|--------|
-| **Journey** | Domain capability the architecture screams | Computed (`draft`, `incubation`, `stable`, `evolving`) |
+| **Capability** | What the product does; the architecture screams it | Computed (`draft`, `incubation`, `stable`, `evolving`) |
 | **Interaction** | Self-contained behavior (any actor) — **not** an entry surface; owns domain + mountable view/handler | Build pipeline + `stable`/`unstable` |
 | **Interface** | How an actor enters an Interaction (Page, CLI, MCP, Webhook, Cron, …) — **mounts/wires only** | Build pipeline + `stable`/`unstable` |
 | **Foundation** | Shared substrate by role (Assembler, Infra, Design system, Adapter) | Build pipeline + `stable`/`unstable` |
 | **Bug** | Defect on Interaction, Interface, or Foundation | `open → triaged → fixing → in-review → resolved \| wontfix` |
 
-Journeys scream the domain · Interactions are behaviors (they own the screen body / handler) · Interfaces are entry (they only mount) · Foundations are shared substrate · Assembler composes them.
+Capabilities scream the domain · Interactions are behaviors (they own the screen body / handler) · Interfaces are entry (they only mount) · Foundations are shared substrate · Assembler composes them.
 
 **Build pipeline** (Foundation/Interaction/Interface): `draft → ready → in-progress → in-review → ship` → computed `stable`/`unstable`.
 
@@ -185,7 +187,7 @@ Every violation starts with `Blocked: `.
 5. **Behavior First** — Interface `ship` needs all exposed Interactions (and Foundation deps) `stable`
 6. **Completion Check** — unchecked `[ ]` block `ship` (and Bug `resolved`)
 7. **Interaction Independence** — no Interaction → Interaction `depends_on` (share state via Foundations)
-8. **Computed Journeys / Stability** — never set manually
+8. **Computed Capabilities / Stability** — never set manually
 9. **Taxonomy** — legal edge shapes; `depends_on` acyclic; `leads_to` cycles allowed
 10. **Next Evolution / Force Unship** — stable-id `open_next`; recovery only with explicit `confirm`
 
@@ -215,7 +217,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `run_check` | read | The same integrity check as `mindplan-mcp check` (`ok`, `output`, `failures`, `warnings`, `info`); unclaimed files and illegal imports come with their fix; `hotspot:` warnings name shipped nodes that ship far more often than the project's median; `fan-out:` warnings name pre-ship nodes whose `depends_on` reaches `fan_out.warn_at` (default 3) other unshipped changes, a node that may need to know every feature of a kind (invert it onto a Foundation contract, or keep it with `record_decision({ keep_whole: true })`); a shipped node whose claimed files changed against the base gets every stale-text signal; `change` also gates every revision of a change and prints its additivity; `merge` (`true` or `"strict"`) runs the merge gate |
 | `get_spec` | read | One section of the running server's own SPEC.md by stable topic id (`territory-shape`, `lifecycle`, `change-ids`, `neighbors`, `decisions`, …) or tool name; no topic lists them |
 | `get_skill` | read | The skills this server serves (`plan-project`, `define-entities`): no name lists them with their description and files; `name` returns the SKILL.md text without frontmatter; `name` + `file` returns one supporting file |
-| `list_areas` | read | Every Journey as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
+| `list_areas` | read | Every Capability as one row: id, title, short description, and counts of its Interactions, Interfaces, Foundations, and open Bugs; pass a row's id as `area` to `orient_for_work` / `find_related_nodes` |
 | `find_related_nodes` | read | Hybrid search by query (keyword + semantic; exact id first); focus + 1-hop |
 | `get_mindplan_graph` | read | One page of assembled nodes/edges (`version: 1`): `offset` / `limit` (default 200), totals, `next_offset`; optional filters `state`, `type`, `change` (AND across filters, OR inside an array; totals and paging describe the filtered set) and `fields` to project node records (`id` always kept). Filter and project for a question about part of the graph instead of reading all of it; use `orient_for_work` for one piece of work |
 | `export_mindplan_view` | read | Mermaid or DOT; `decisions: true` labels decision counts; `output` writes to a file; over-budget diagrams are Blocked with the fix |
@@ -232,7 +234,7 @@ The descriptions the MCP server sends to clients — each tool's `description` a
 | `patch_project_rules` | mutation | Write the `mindplan/project.md` rules |
 | `patch_config` | mutation | Write `mindplan/config.json` sources/exclude, decision-gate settings, hotspot thresholds, the fan-out threshold (`fan_out.warn_at`), and search settings |
 | `put_attachment` / `remove_attachment` | mutation | Node attachment files |
-| `create_node` | mutation | Journey, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold); returns `shape`, the sections its first move checks, each `present`, `missing`, or `stub` |
+| `create_node` | mutation | Capability, Foundation, Interaction, Interface, or Bug (territory only; no src scaffold); returns `shape`, the sections its first move checks, each `present`, `missing`, or `stub` |
 | `open_next` / `discard_next` | mutation | Write `<id>.next.mdx` from live (fresh Atomic Ops; a warning and a decision prompt on a hotspot) / delete it |
 | `link_nodes` / `unlink_nodes` | mutation | Five edge types; no `link_dependent`; with `change` on a shipped node, plan (or drop) an edge under that change without `open_next`, applied when `open_next` opens it with that change |
 | `update_node_status` | mutation | One node, or a `revisions` list ordered Foundation → Interaction → Interface → Bug; stops on the first `Blocked:` |

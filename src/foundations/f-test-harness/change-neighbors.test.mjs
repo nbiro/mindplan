@@ -173,7 +173,7 @@ fs.writeFileSync(
 );
 
 // --- base graph: shipped Foundations and Interactions, committed on main ---
-await call("create_node", { id: "j-app", type: "Journey", title: "App", description: "App area" });
+await call("create_node", { id: "j-app", type: "Capability", title: "App", description: "App area" });
 await call("create_node", { id: "f-core", type: "Foundation", title: "Core", description: "Infra — core", role: "infra" });
 await call("create_node", { id: "f-util", type: "Foundation", title: "Util", description: "Infra — util", role: "infra" });
 await call("create_node", { id: "i-a", type: "Interaction", title: "A", description: "Action A" });

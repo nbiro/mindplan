@@ -48,7 +48,7 @@ async function call(tool, args) {
 }
 const file = (kind, id) => fs.readFileSync(path.join(root, "mindplan", kind, id, `${id}.mdx`), "utf-8");
 
-await call("create_node", { id: "j-book", type: "Journey", title: "Enquiries", description: "A visitor sends a form enquiry." });
+await call("create_node", { id: "j-book", type: "Capability", title: "Enquiries", description: "A visitor sends a form enquiry." });
 await call("create_node", {
   id: "i-send-enquiry",
   type: "Interaction",
@@ -112,10 +112,10 @@ const closed = await raw("patch_node_territory", { node_id: "bug-old", descripti
 check("aliases plus a field on a closed Bug are Blocked and write nothing", closed.error && file("bugs", "bug-old") === before, closed.text);
 
 // --- description check: warnings, never failures ---
-await call("create_node", { id: "j-same", type: "Journey", title: "Billing", description: "Billing" });
-await call("create_node", { id: "j-long", type: "Journey", title: "Reports", description: `Reports area. ${"Detail ".repeat(50)}` });
+await call("create_node", { id: "j-same", type: "Capability", title: "Billing", description: "Billing" });
+await call("create_node", { id: "j-long", type: "Capability", title: "Reports", description: `Reports area. ${"Detail ".repeat(50)}` });
 await call("create_node", { id: "i-actorless", type: "Interaction", title: "Export a report", description: "Exports the monthly report as a PDF file." });
-await call("create_node", { id: "j-history", type: "Journey", title: "Settings", description: "Settings now live on one page and no longer on three." });
+await call("create_node", { id: "j-history", type: "Capability", title: "Settings", description: "Settings now live on one page and no longer on three." });
 await call("create_node", { id: "f-signer", type: "Foundation", title: "Signer", description: "Infra — the key used to sign requests.", role: "infra" });
 await call("create_node", { id: "bug-total", type: "Bug", title: "Total missing", description: "Checkout no longer shows the order total." });
 const result = await call("run_check", {});

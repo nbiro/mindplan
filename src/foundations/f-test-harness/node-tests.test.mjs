@@ -340,9 +340,9 @@ await foundation("f-dep");
     const text = await blocked("set_test_files", { node_id: "f-core", files: [bad] });
     check(`an invalid tests path is Blocked: ${bad}`, text?.includes("Blocked:") && text.includes("tests path"), text ?? "accepted");
   }
-  await call("create_node", { id: "j-area", type: "Journey", title: "Area", description: "An area" });
-  const journey = await blocked("set_test_files", { node_id: "j-area", files: ["tests/core.test.mjs"] });
-  check("a Journey takes no tests", journey?.includes("only a Foundation, Interaction, or Interface"), journey ?? "accepted");
+  await call("create_node", { id: "j-area", type: "Capability", title: "Area", description: "An area" });
+  const capability = await blocked("set_test_files", { node_id: "j-area", files: ["tests/core.test.mjs"] });
+  check("a Capability takes no tests", capability?.includes("only a Foundation, Interaction, or Interface"), capability ?? "accepted");
   await call("create_node", { id: "bug-x", type: "Bug", title: "Broken", description: "Breaks core", severity: "low" });
   const bug = await blocked("set_test_files", { node_id: "bug-x", files: ["tests/core.test.mjs"] });
   check("a Bug takes no tests", bug?.includes("only a Foundation, Interaction, or Interface"), bug ?? "accepted");

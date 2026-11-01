@@ -59,7 +59,7 @@ function isRetired(node: MindPlanNode): boolean {
 
 /**
  * An open revision: a shipped Foundation/Interaction/Interface with an open next, or a pre-ship,
- * non-retired one at any pre-ship state. Journeys and Bugs are never revisions.
+ * non-retired one at any pre-ship state. Capabilities and Bugs are never revisions.
  */
 export function isOpenRevision(node: MindPlanNode): boolean {
   if (!isPipelineNodeType(node.type)) return false;

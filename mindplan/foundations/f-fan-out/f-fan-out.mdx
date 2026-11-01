@@ -8,7 +8,7 @@ shipped_at: 2026-10-31T21:15:36.198Z
 revisions: 1
 churn: 1
 created_at: 2026-10-31T20:45:24.389Z
-updated_at: 2026-10-31T21:15:36.198Z
+updated_at: 2026-11-01T10:53:14.836Z
 role: infra
 aliases:
   - "fan-out"
@@ -52,7 +52,7 @@ Depends on: `f-domain-model`, `f-source-index`, `f-compiler-rules`.
 
 - A pre-ship node whose `depends_on` targets sit in 3 other unshipped changes yields a `fan-out:` warning naming the count and the change ids; 2 yields none
 - Targets in the node's own change, shipped targets, retired targets, and targets with no change id do not count
-- A shipped node and a Journey or Bug yield `null` from `fanOut`
+- A shipped node and a Capability or Bug yield `null` from `fanOut`
 - An active `keep_whole: true` decision on the node silences `fanOutFor`; superseding it brings the warning back
 - `warn_at` from `fanOutSettings` changes the threshold (e.g. 2 warns on 2 changes)
 - The warning text matches the wording above

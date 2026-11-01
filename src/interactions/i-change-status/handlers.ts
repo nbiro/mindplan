@@ -38,7 +38,7 @@ import {
   blocked,
   changeMembers,
   findNode,
-  recomputeJourneyStates,
+  recomputeCapabilityStates,
   recomputeStability,
   resolveForceUnship,
   resolveStatusChange,
@@ -188,9 +188,9 @@ function orderStatusRevisions(items: StatusRevision[]): StatusRevision[] {
   return items
     .map((item, index) => {
       const node = findNode(graph, item.node_id);
-      if (node.type === "Journey") {
+      if (node.type === "Capability") {
         throw blocked(
-          "Journey states are computed automatically from their Interactions and cannot be set manually."
+          "Capability states are computed automatically from their Interactions and cannot be set manually."
         );
       }
       return { item, index, tier: STATUS_TIER[node.type] ?? 99 };
@@ -510,7 +510,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
       ...(verbose
         ? {
-            journeys_recomputed: last.journeys_recomputed ?? [],
+            capabilities_recomputed: last.capabilities_recomputed ?? [],
             stability_recomputed: last.stability_recomputed ?? [],
           }
         : {}),
@@ -578,7 +578,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       ? {
           applied,
           stopped_on: null,
-          journeys_recomputed: last.journeys_recomputed ?? [],
+          capabilities_recomputed: last.capabilities_recomputed ?? [],
           stability_recomputed: last.stability_recomputed ?? [],
         }
       : {}),
@@ -588,7 +588,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
 /**
  * The parts a revision split out of its node: the ids its next slot marks in `split_into`
  * (patch_node_territory) beyond the live list, kept only where the edge that keeps imports legal is
- * in place by now (`splitPartLinked`: a Foundation depends_on them, an Interaction shares a Journey,
+ * in place by now (`splitPartLinked`: a Foundation depends_on them, an Interaction shares a Capability,
  * an Interface exposes them). A split is declared, not guessed.
  */
 function splitParts(graph: MindPlanGraph, node: MindPlanNode): string[] {
@@ -676,8 +676,8 @@ function applyOneStatus(args: {
   }
 
   const changedStability = recomputeStability(graph);
-  const changedJourneys = recomputeJourneyStates(graph);
-  const synced = syncNodes([...changedStability, ...changedJourneys]);
+  const changedCapabilities = recomputeCapabilityStates(graph);
+  const synced = syncNodes([...changedStability, ...changedCapabilities]);
   refreshPersistedMap();
 
   const primaryPaths: string[] = [];
@@ -703,7 +703,7 @@ function applyOneStatus(args: {
     promoted_next: promoted,
     ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
-    journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
+    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
@@ -758,8 +758,8 @@ export function forceUnship(args: {
   const removedNext = deleteNextSlotFiles(node);
 
   const changedStability = recomputeStability(graph);
-  const changedJourneys = recomputeJourneyStates(graph);
-  const synced = syncNodes([...changedStability, ...changedJourneys]);
+  const changedCapabilities = recomputeCapabilityStates(graph);
+  const synced = syncNodes([...changedStability, ...changedCapabilities]);
   refreshPersistedMap();
 
   const files = [territoryPath(node), ...removedNext, ...synced];
@@ -771,7 +771,7 @@ export function forceUnship(args: {
     shipped_at: null,
     force_unship: true,
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
-    journeys_recomputed: changedJourneys.map((j) => ({ id: j.id, state: j.state })),
+    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
     changed_files: changedFiles(files, true),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
