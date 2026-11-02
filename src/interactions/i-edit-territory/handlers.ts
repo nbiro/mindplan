@@ -35,7 +35,25 @@ import {
   type TerritorySlot,
   loadProjectConfig,
   writeRevisionFields,
+  nextFileExists,
+  entityDir,
+  projectRoot,
+  hasNodeRulesHeading,
+  hasNodeDecisionsHeading,
+  normalizeHeadingName,
+  replaceSectionInBody,
+  replaceTextInBody,
+  toggleCheckboxesInBody,
 } from "../../foundations/f-territory-store/store.js";
+import {
+  readRevisions,
+  revisionAttachmentsDir,
+  revisionRelativeFilePath,
+  writeRevisionBody,
+  writeRevisionScalars,
+  writeRevisionState,
+} from "../../foundations/f-territory-store/revisions.js";
+import { graphUnder, openChanges, resolveRevisionChange, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 import { unlinkRetry, writeFileRetry } from "../../foundations/f-source-index/io.js";
 import { assertPipelineTerritoryScalarsEditable, blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
@@ -43,6 +61,7 @@ import { orientationGateEnabled, recordOriented } from "../../foundations/f-orie
 import * as fs from "fs";
 import * as path from "path";
 import {
+  READINESS_NOTE,
   changedFiles,
   gateWrite,
   mutationTail,
@@ -143,6 +162,8 @@ function clearSplitRecord(node: MindPlanNode): { paths: string[]; churn: number 
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   gateWrite(null, [args.node_id], "patch_node_territory");
+  const revision = targetRevision(findNode(loadGraph(), args.node_id), args.change, args.slot);
+  if (revision !== null) return patchRevisionTerritory(args, revision);
   const { aliases, split_into, ...territory } = args;
   if (split_into !== undefined) {
     const graph = loadGraph();
@@ -179,7 +200,7 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
   if (aliases !== undefined) {
     // Aliases are search words, not contract: written to live and an open next alike, on any node,
     // shipped ones included, without open_next or a readiness reset.
-    const written = writeAliasesFrontmatter(findNode(loadGraph(), args.node_id), aliases);
+    const written = writeLiveAliases(findNode(loadGraph(), args.node_id), aliases);
     fields.push("aliases");
     paths.push(...written.paths);
     extra.aliases = written.aliases;
@@ -224,6 +245,212 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
     changed_files: changedFiles(paths),
     ...mutationTail(loadGraph(), args.node_id, args.verbose),
   };
+}
+
+/**
+ * The open revision a write on `node` targets, or null for the live / legacy next slots: null when
+ * the node has no open revision or `slot` is "current". `change` names the revision (Blocked when
+ * the node has none of it: a revision's change is its folder name, so it is never patched); omitted,
+ * the node's only open revision (several open: Blocked, naming them).
+ */
+function targetRevision(node: MindPlanNode, change: string | undefined, slot: TerritorySlot | undefined): string | null {
+  if (!node.open_revisions?.length || slot === "current") return null;
+  if (change !== undefined && !revisionFor(node, change)) {
+    const open = openChanges(node).map((c) => `"${c}"`).join(", ");
+    throw blocked(
+      `"${node.id}" has no open revision of change "${change}"; open revisions: ${open}. ` +
+        "A revision's change is its folder name: it cannot be patched (discard the revision and open_next under the other change)."
+    );
+  }
+  return resolveRevisionChange(node, change);
+}
+
+/**
+ * Writes aliases to live only when the node's open work is held in revision folders (aliases are
+ * slot-independent search words); a legacy next file still takes them alongside live.
+ */
+function writeLiveAliases(node: MindPlanNode, aliases: string[]): ReturnType<typeof writeAliasesFrontmatter> {
+  if (node.open_revisions?.length && !nextFileExists(node)) {
+    const live: MindPlanNode = { ...node };
+    delete live.next;
+    const written = writeAliasesFrontmatter(live, aliases);
+    if (live.aliases) node.aliases = live.aliases;
+    else delete node.aliases;
+    return written;
+  }
+  return writeAliasesFrontmatter(node, aliases);
+}
+
+function assertNoOwnedHeading(text: string, what: string): void {
+  if (hasNodeRulesHeading(text)) {
+    throw blocked(`${what} contains a "## Rules" heading. Node rules are written only by patch_node_rules; remove the section.`);
+  }
+  if (hasNodeDecisionsHeading(text)) {
+    throw blocked(`${what} contains a "## Decisions" heading. Decisions are written only by record_decision; remove the section.`);
+  }
+}
+
+/**
+ * patch_node_territory on an open revision of a shipped node: body, section, replace, and
+ * checkboxes edit the revision file's body; title, description, role, change_ref, and split_into
+ * its scalars; aliases go to live. Every check runs before the first write. A contract write
+ * (anything but change_ref, split_into, and aliases) to a ready revision sends it back to draft.
+ */
+function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Record<string, unknown> {
+  const graph = loadGraph();
+  const node = findNode(graph, args.node_id);
+  const { title, description, role, body, toggle_checkboxes, aliases, split_into } = args;
+  if ((args.section === undefined) !== (args.text === undefined)) {
+    throw blocked('patch_node_territory section needs both section ("## Heading") and text.');
+  }
+  if (body !== undefined && (args.section !== undefined || args.replace !== undefined)) {
+    throw blocked("patch_node_territory body replaces the whole body; do not combine it with section or replace.");
+  }
+  if (args.change_ref !== undefined) validateChangeInput({ change_ref: args.change_ref });
+  if (aliases !== undefined) normalizeAliases(node.id, aliases);
+  if (role !== undefined) {
+    if (node.type !== "Foundation") throw blocked(`role only applies to Foundations; "${node.id}" is a ${node.type}.`);
+    if (!isFoundationRole(role)) throw blocked(`invalid Foundation role "${role}".`);
+  }
+  const view = withRevision(node, change);
+  if (split_into !== undefined) validateSplitInto(graph, view, split_into);
+  const file = readRevisions(entityDir(node), node.id).find((r) => r.revision.change === change);
+  if (!file) throw blocked(`revision file of "${node.id}" for change "${change}" is missing.`);
+
+  const patched: string[] = [];
+  let text = file.body;
+  let toggled: string[] | undefined;
+  if (body !== undefined) {
+    assertNoOwnedHeading(body, "body");
+    text = body.replace(/\r\n/g, "\n");
+    patched.push("body");
+  }
+  if (args.section !== undefined) {
+    const name = normalizeHeadingName(args.section).toLowerCase();
+    if (name === "rules") throw blocked('"## Rules" is written only by patch_node_rules; it cannot be patched as a section.');
+    if (name === "decisions") throw blocked('"## Decisions" is written only by record_decision; it cannot be patched as a section.');
+    assertNoOwnedHeading(args.text!, "section text");
+    text = replaceSectionInBody(text, args.section, args.text!);
+    patched.push("section");
+  }
+  if (args.replace !== undefined) {
+    assertNoOwnedHeading(args.replace.with, "replace.with");
+    text = replaceTextInBody(text, args.replace.find, args.replace.with, args.replace.all);
+    patched.push("replace");
+  }
+  if (toggle_checkboxes?.length) {
+    const result = toggleCheckboxesInBody(text, toggle_checkboxes);
+    text = result.body;
+    toggled = result.toggled;
+    patched.push("toggle_checkboxes");
+  }
+  const bodyWrite = patched.length > 0;
+  const scalars: Parameters<typeof writeRevisionScalars>[2] = {};
+  if (title !== undefined) {
+    scalars.title = title;
+    patched.push("title");
+  }
+  if (description !== undefined) {
+    scalars.description = description;
+    patched.push("description");
+  }
+  if (role !== undefined) {
+    scalars.role = role;
+    patched.push("role");
+  }
+  if (args.change_ref !== undefined) {
+    scalars.change_ref = args.change_ref;
+    patched.push("change_ref");
+  }
+  let splitList: string[] | undefined;
+  if (split_into !== undefined) {
+    splitList = [...new Set([...(node.split_into ?? []), ...split_into.map((id) => id.trim()).filter(Boolean)])];
+    scalars.split_into = splitList;
+    patched.push("split_into");
+  }
+  if (patched.length === 0 && aliases === undefined) {
+    throw blocked(
+      "patch_node_territory requires at least one of title, description, role, body, section, replace, toggle_checkboxes, change_ref, split_into, or aliases."
+    );
+  }
+
+  const paths: string[] = [];
+  if (bodyWrite) paths.push(...writeRevisionBody(node, change, text).changed_files);
+  if (Object.keys(scalars).length > 0) paths.push(...writeRevisionScalars(node, change, scalars).changed_files);
+  // A change ref and a split record describe the revision's shape, not its contract.
+  const contractWrite = patched.some((f) => f !== "change_ref" && f !== "split_into");
+  let reset: Record<string, unknown> | null = null;
+  if (contractWrite && revisionFor(node, change)?.state === "ready") {
+    paths.push(...writeRevisionState(node, change, "draft").changed_files);
+    reset = { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE };
+  }
+  const extra: Record<string, unknown> = {};
+  if (aliases !== undefined) {
+    const written = writeLiveAliases(node, aliases);
+    patched.push("aliases");
+    paths.push(...written.paths);
+    extra.aliases = written.aliases;
+  }
+  if (splitList) {
+    extra.split_into = splitList;
+    const under = graphUnder(loadGraph(), change);
+    const revised = findNode(under, node.id);
+    const unlinked = split_into!.filter((id) => !splitPartLinked(under, revised, id));
+    if (unlinked.length > 0) {
+      extra.warnings = [
+        `split_into: "${node.id}" does not yet ${splitLinkHint(revised)} for ` +
+          `${unlinked.map((id) => `"${id}"`).join(", ")}; only linked parts are recorded as split out when the revision ships.`,
+      ];
+    }
+  }
+  refreshPersistedMap();
+  return {
+    node_id: node.id,
+    patched_fields: patched,
+    slot: "next",
+    change,
+    path: revisionRelativeFilePath(node, change),
+    ...(toggled ? { toggled } : {}),
+    ...extra,
+    ...(reset ? { readiness_reset: reset } : {}),
+    changed_files: changedFiles(paths, true),
+    ...mutationTail(loadGraph(), node.id, args.verbose),
+  };
+}
+
+/** Repo-relative POSIX path of an absolute path under the project root. */
+function repoRelative(abs: string): string {
+  return path.relative(projectRoot(), abs).split(path.sep).join("/");
+}
+
+/**
+ * Where an attachment call writes: the open revision's `attachments/` when it targets one (see
+ * `targetRevision`), else the live `attachments/` or the legacy `next-attachments/`.
+ */
+function attachmentTarget(
+  node: MindPlanNode,
+  args: { change?: string; slot?: TerritorySlot },
+  verb: "put" | "remove"
+): { slot: TerritorySlot; dir: string; relDir: string; change?: string } {
+  const change = targetRevision(node, args.change, args.slot);
+  if (change !== null) {
+    const dir = revisionAttachmentsDir(node, change);
+    return { slot: "next", dir, relDir: repoRelative(dir), change };
+  }
+  if (args.change !== undefined) {
+    throw blocked(`"${node.id}" has no open revision of change "${args.change}"; it has no open revision.`);
+  }
+  const slot: TerritorySlot = args.slot ?? (node.next && isPipelineNodeType(node.type) ? "next" : "current");
+  if (slot === "next" && !node.next) {
+    throw blocked(
+      verb === "put"
+        ? `cannot put attachment on next for "${node.id}" — no open evolution. Call open_next first.`
+        : `cannot remove attachment on next for "${node.id}" — no open evolution.`
+    );
+  }
+  return slot === "next"
+    ? { slot, dir: nextAttachmentsDir(node), relDir: `${entityRelativePath(node)}/${NEXT_ATTACHMENTS_DIR}` }
+    : { slot, dir: attachmentsDir(node), relDir: `${entityRelativePath(node)}/${ATTACHMENTS_DIR}` };
 }
 
 function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
@@ -342,6 +569,7 @@ export function putAttachment(args: {
   filename: string;
   content_base64: string;
   slot?: TerritorySlot;
+  change?: string;
 }): Record<string, unknown> {
   const { node_id } = args;
   const graph = loadGraph();
@@ -349,29 +577,23 @@ export function putAttachment(args: {
   gateWrite(graph, [node_id], "put_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
-  const slot: TerritorySlot =
-    args.slot ??
-    (node.next && isPipelineNodeType(node.type) ? "next" : "current");
-  if (slot === "next" && !node.next) {
-    throw blocked(
-      `cannot put attachment on next for "${node_id}" — no open evolution. Call open_next first.`
-    );
-  }
+  const target = attachmentTarget(node, args, "put");
   if (!isBase64Payload(args.content_base64)) {
     throw blocked("content_base64 is not valid base64.");
   }
   const bytes = Buffer.from(args.content_base64, "base64");
-  const dir = slot === "next" ? nextAttachmentsDir(node) : attachmentsDir(node);
+  const dir = target.dir;
   fs.mkdirSync(dir, { recursive: true });
   const abs = path.join(dir, filename);
   if (path.resolve(abs) !== path.resolve(dir, filename)) {
     throw blocked(`invalid attachment filename "${args.filename}".`);
   }
   writeFileRetry(abs, bytes);
-  const rel = `${entityRelativePath(node)}/${slot === "next" ? NEXT_ATTACHMENTS_DIR : ATTACHMENTS_DIR}/${filename}`;
+  const rel = `${target.relDir}/${filename}`;
   return {
     node_id,
-    slot,
+    slot: target.slot,
+    ...(target.change ? { change: target.change } : {}),
     path: rel,
     bytes: bytes.length,
     changed_files: changedFiles([rel]),
@@ -384,6 +606,7 @@ export function removeAttachment(args: {
   node_id: string;
   filename: string;
   slot?: TerritorySlot;
+  change?: string;
 }): Record<string, unknown> {
   const { node_id } = args;
   const graph = loadGraph();
@@ -391,27 +614,23 @@ export function removeAttachment(args: {
   gateWrite(graph, [node_id], "remove_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
-  const slot: TerritorySlot =
-    args.slot ??
-    (node.next && isPipelineNodeType(node.type) ? "next" : "current");
-  if (slot === "next" && !node.next) {
-    throw blocked(
-      `cannot remove attachment on next for "${node_id}" — no open evolution.`
-    );
-  }
-  const dir = slot === "next" ? nextAttachmentsDir(node) : attachmentsDir(node);
+  const target = attachmentTarget(node, args, "remove");
+  const dir = target.dir;
   const abs = path.join(dir, filename);
   if (path.resolve(abs) !== path.resolve(dir, filename)) {
     throw blocked(`invalid attachment filename "${args.filename}".`);
   }
   if (!fs.existsSync(abs)) {
-    throw blocked(`attachment "${filename}" not found on ${slot} for "${node_id}".`);
+    throw blocked(
+      `attachment "${filename}" not found on ${target.change ? `revision "${target.change}"` : target.slot} for "${node_id}".`
+    );
   }
   unlinkRetry(abs);
-  const rel = `${entityRelativePath(node)}/${slot === "next" ? NEXT_ATTACHMENTS_DIR : ATTACHMENTS_DIR}/${filename}`;
+  const rel = `${target.relDir}/${filename}`;
   return {
     node_id,
-    slot,
+    slot: target.slot,
+    ...(target.change ? { change: target.change } : {}),
     path: rel,
     removed: true,
     changed_files: changedFiles([rel]),

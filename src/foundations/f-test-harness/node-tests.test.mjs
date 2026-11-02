@@ -142,7 +142,7 @@ async function walk(id, steps) {
 async function foundation(id) {
   await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
   write(`src/${id}/index.ts`, `export const ${id.replace(/-/g, "_")} = 1;\n`);
-  await call("set_implementation_files", { node_id: id, files: [`src/${id}/`] });
+  await call("set_implementation_files", { node_id: id, add: [`src/${id}/`] });
   fillAndTick(id);
 }
 
@@ -162,7 +162,7 @@ await foundation("f-dep");
 {
   const res = await call("set_test_files", {
     node_id: "f-dep",
-    files: ["tests/dep.test.mjs", "./tests/dep.test.mjs", "tests/later.test.mjs"],
+    add: ["tests/dep.test.mjs", "./tests/dep.test.mjs", "tests/later.test.mjs"],
   });
   check(
     "set_test_files on a draft node dedupes, sorts, and writes only the live file",
@@ -193,7 +193,7 @@ await foundation("f-dep");
 // --- readiness is never reset ---
 {
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
-  const res = await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs"] });
+  const res = await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs"], replace: true });
   check(
     "set_test_files on a ready node keeps it ready",
     res.state === "ready" && !("readiness_reset" in res),
@@ -212,7 +212,7 @@ await foundation("f-dep");
     gate?.includes("Blocked:") && gate.includes('presence: "f-dep" tests entry missing on disk: "tests/later.test.mjs"'),
     gate ?? "accepted"
   );
-  await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs"] });
+  await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs"], replace: true });
   await call("update_node_status", { node_id: "f-dep", new_status: "in-review" });
   check("with every linked test on disk the move to in-review passes", true);
 
@@ -233,7 +233,7 @@ await foundation("f-dep");
 {
   const res = await call("set_test_files", {
     node_id: "f-core",
-    files: ["tests/core.test.mjs", "tests/extra/"],
+    files: ["tests/core.test.mjs", "tests/extra/"], replace: true,
   });
   check(
     "set_test_files on a shipped node writes only live, opening no revision",
@@ -242,15 +242,15 @@ await foundation("f-dep");
       noNextFile("f-core"),
     JSON.stringify(res)
   );
-  await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs", "tests/gone.test.mjs"] });
+  await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs", "tests/gone.test.mjs"], replace: true });
   const ran = await call("run_check", {});
   check(
     "a shipped node's missing linked test fails the check",
     !ran.ok && ran.failures.some((f) => f.includes('presence: "f-core" tests entry missing on disk: "tests/gone.test.mjs"')),
     JSON.stringify(ran.failures)
   );
-  await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs", "tests/extra/"] });
-  check("an unchanged list writes nothing", (await call("set_test_files", { node_id: "f-core", files: ["tests/extra/", "tests/core.test.mjs"] })).changed_files.length === 0);
+  await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs", "tests/extra/"], replace: true });
+  check("an unchanged list writes nothing", (await call("set_test_files", { node_id: "f-core", files: ["tests/extra/", "tests/core.test.mjs"], replace: true })).changed_files.length === 0);
 }
 
 // --- the blast radius lists the tests to run ---
@@ -266,7 +266,7 @@ await foundation("f-dep");
     ]),
     JSON.stringify(radius.tests)
   );
-  const labeled = await blocked("set_test_files", { node_id: "f-bare", files: [], change: "c-tests" });
+  const labeled = await blocked("set_test_files", { node_id: "f-bare", files: [], replace: true, change: "c-tests" });
   check("change on a shipped node with no open next is Blocked", labeled?.includes("needs no change id"), String(labeled));
   await call("open_next", { node_id: "f-dep", change: "c-tests" });
   const merged = await call("get_blast_radius", { change: "c-tests" });
@@ -283,7 +283,7 @@ await foundation("f-dep");
   await call("open_next", { node_id: "f-core", change: "c-core" });
   const res = await call("set_test_files", {
     node_id: "f-core",
-    files: ["tests/core.test.mjs", "tests/extra/one.test.mjs"],
+    files: ["tests/core.test.mjs", "tests/extra/one.test.mjs"], replace: true,
   });
   check(
     "set_test_files with an open revision writes live and next alike",
@@ -294,7 +294,7 @@ await foundation("f-dep");
     JSON.stringify(res)
   );
   await call("patch_node_territory", { node_id: "f-core", description: "Infra — core, revised" });
-  await call("set_implementation_files", { node_id: "f-core", files: ["src/f-core/"] });
+  await call("set_implementation_files", { node_id: "f-core", add: ["src/f-core/"] });
   check(
     "territory and claim writes keep the tests list on next",
     same(testsIn(nextOf("f-core")), ["tests/core.test.mjs", "tests/extra/one.test.mjs"]),
@@ -319,14 +319,14 @@ await foundation("f-dep");
 // --- discard keeps the live list; an empty list removes the field ---
 {
   await call("open_next", { node_id: "f-dep" });
-  await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"] });
+  await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"], replace: true });
   await call("discard_next", { node_id: "f-dep" });
   check(
     "discard_next keeps the tests written during the revision on live and deletes the next file",
     same(testsIn(liveOf("f-dep")), ["tests/core.test.mjs", "tests/dep.test.mjs"]) && noNextFile("f-dep"),
     JSON.stringify(testsIn(liveOf("f-dep")))
   );
-  await call("set_test_files", { node_id: "f-dep", files: [] });
+  await call("set_test_files", { node_id: "f-dep", files: [], replace: true });
   check(
     "an empty list removes the field",
     !/^tests:/m.test(readRel(liveOf("f-dep"))) && noNextFile("f-dep"),
@@ -337,23 +337,189 @@ await foundation("f-dep");
 // --- Blocked cases write nothing ---
 {
   for (const bad of ["../outside.test.mjs", "/abs/x.test.mjs", "mindplan/x.test.mjs"]) {
-    const text = await blocked("set_test_files", { node_id: "f-core", files: [bad] });
+    const text = await blocked("set_test_files", { node_id: "f-core", files: [bad], replace: true });
     check(`an invalid tests path is Blocked: ${bad}`, text?.includes("Blocked:") && text.includes("tests path"), text ?? "accepted");
   }
   await call("create_node", { id: "j-area", type: "Capability", title: "Area", description: "An area" });
-  const capability = await blocked("set_test_files", { node_id: "j-area", files: ["tests/core.test.mjs"] });
+  const capability = await blocked("set_test_files", { node_id: "j-area", files: ["tests/core.test.mjs"], replace: true });
   check("a Capability takes no tests", capability?.includes("only a Foundation, Interaction, or Interface"), capability ?? "accepted");
   await call("create_node", { id: "bug-x", type: "Bug", title: "Broken", description: "Breaks core", severity: "low" });
-  const bug = await blocked("set_test_files", { node_id: "bug-x", files: ["tests/core.test.mjs"] });
+  const bug = await blocked("set_test_files", { node_id: "bug-x", files: ["tests/core.test.mjs"], replace: true });
   check("a Bug takes no tests", bug?.includes("only a Foundation, Interaction, or Interface"), bug ?? "accepted");
   await call("create_node", { id: "f-gone", type: "Foundation", title: "Gone", description: "Infra — gone", role: "infra" });
   await call("update_node_status", { node_id: "f-gone", new_status: "cancelled" });
-  const retired = await blocked("set_test_files", { node_id: "f-gone", files: ["tests/core.test.mjs"] });
+  const retired = await blocked("set_test_files", { node_id: "f-gone", files: ["tests/core.test.mjs"], replace: true });
   check("a retired node takes no tests", retired?.includes("retired"), retired ?? "accepted");
 }
 
 const final = await call("run_check", {});
 check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.failures));
+
+// --- add / remove / replace: files alone is Blocked; add and remove change entries ---
+{
+  const noReplace = await blocked("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs"] });
+  check(
+    "set_test_files files without replace: true is Blocked, naming add / remove and replace: true",
+    noReplace?.includes("Blocked:") && noReplace.includes("add / remove") && noReplace.includes("replace: true"),
+    noReplace ?? "accepted"
+  );
+  const claimNoReplace = await blocked("set_implementation_files", { node_id: "f-core", files: ["src/f-core/"] });
+  check(
+    "set_implementation_files files without replace: true is Blocked, naming add / remove and replace: true",
+    claimNoReplace?.includes("add / remove") && claimNoReplace.includes("replace: true"),
+    claimNoReplace ?? "accepted"
+  );
+  const before = testsIn(liveOf("f-core"));
+  const added = await call("set_test_files", { node_id: "f-core", add: ["tests/extra/two.test.mjs"] });
+  check(
+    "set_test_files add keeps the other entries",
+    same(added.tests, [...new Set([...before, "tests/extra/two.test.mjs"])].sort()),
+    JSON.stringify(added.tests)
+  );
+  const removed = await call("set_test_files", { node_id: "f-core", remove: ["tests/extra/two.test.mjs"] });
+  check("set_test_files remove drops only that entry", same(removed.tests, before), JSON.stringify(removed.tests));
+  const replaced = await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs"], replace: true });
+  check("set_test_files files with replace: true replaces the list", same(replaced.tests, ["tests/core.test.mjs"]), JSON.stringify(replaced.tests));
+
+  await call("create_node", { id: "f-claims", type: "Foundation", title: "Claims", description: "Infra — claims", role: "infra" });
+  write("src/f-claims/a.ts", "export const a = 1;\n");
+  write("src/f-claims/b.ts", "export const b = 1;\n");
+  const both = await call("set_implementation_files", { node_id: "f-claims", add: ["src/f-claims/a.ts", "src/f-claims/b.ts"] });
+  const one = await call("set_implementation_files", { node_id: "f-claims", remove: ["src/f-claims/a.ts"] });
+  const dir = await call("set_implementation_files", { node_id: "f-claims", files: ["src/f-claims/"], replace: true });
+  check(
+    "set_implementation_files add, remove, and replace on a draft node",
+    same(both.implements, ["src/f-claims/a.ts", "src/f-claims/b.ts"]) &&
+      same(one.implements, ["src/f-claims/b.ts"]) &&
+      same(dir.implements, ["src/f-claims/"]),
+    JSON.stringify([both.implements, one.implements, dir.implements])
+  );
+}
+
+// --- open revisions: edits write add / remove deltas into the revision's folder ---
+{
+  process.env.MINDPLAN_ROOT = root;
+  const { loadGraph } = await import("../../../dist/foundations/f-territory-store/store.js");
+  const { openRevision, parseRevisionFile, writeRevisionState } = await import(
+    "../../../dist/foundations/f-territory-store/revisions.js"
+  );
+  const { closeGraphCaches } = await import("../../../dist/foundations/f-graph-cache/cache.js");
+
+  await foundation("f-rev");
+  await call("link_nodes", { source_id: "f-rev", target_id: "f-core", edge_type: "depends_on" });
+  await walk("f-rev", ["ready", "in-progress", "in-review", "ship"]);
+  const shipped = loadGraph().nodes.find((n) => n.id === "f-rev");
+  openRevision(shipped, "c-one", {});
+  openRevision(shipped, "c-two", {});
+  closeGraphCaches();
+
+  const revOf = (change) => `mindplan/foundations/f-rev/revisions/${change}/f-rev.mdx`;
+  const rev = (change) => parseRevisionFile(readRel(revOf(change)), "f-rev");
+  const liveBefore = readRel(liveOf("f-rev"));
+
+  const ambiguous = await blocked("link_nodes", { source_id: "f-rev", target_id: "f-dep", edge_type: "depends_on" });
+  check(
+    "link_nodes on a node with two open revisions and no change is Blocked, listing both",
+    ambiguous?.includes("Blocked:") && ambiguous.includes('"c-one"') && ambiguous.includes('"c-two"'),
+    ambiguous ?? "accepted"
+  );
+  const one = await call("link_nodes", { source_id: "f-rev", target_id: "f-dep", edge_type: "depends_on", change: "c-one" });
+  const two = await call("link_nodes", { source_id: "f-rev", target_id: "f-bare", edge_type: "depends_on", change: "c-two" });
+  check(
+    "link_nodes with each change writes an add delta to that revision's folder only",
+    one.changed_files.includes(revOf("c-one")) &&
+      two.changed_files.includes(revOf("c-two")) &&
+      same(rev("c-one").revision.edges.depends_on, { add: ["f-dep"], remove: [] }) &&
+      same(rev("c-two").revision.edges.depends_on, { add: ["f-bare"], remove: [] }) &&
+      readRel(liveOf("f-rev")) === liveBefore,
+    JSON.stringify([rev("c-one").revision.edges, rev("c-two").revision.edges, one.changed_files])
+  );
+  const dup = await blocked("link_nodes", { source_id: "f-rev", target_id: "f-core", edge_type: "depends_on", change: "c-one" });
+  check("linking an edge the revision already has (live) is Blocked", dup?.includes("already exists"), dup ?? "accepted");
+
+  await call("unlink_nodes", { source_id: "f-rev", target_id: "f-core", change: "c-two" });
+  await call("unlink_nodes", { source_id: "f-rev", target_id: "f-dep", change: "c-one" });
+  check(
+    "unlink_nodes writes a remove delta for a live edge and drops an added one",
+    same(rev("c-two").revision.edges.depends_on, { add: ["f-bare"], remove: ["f-core"] }) &&
+      rev("c-one").revision.edges.depends_on === undefined &&
+      readRel(liveOf("f-rev")) === liveBefore,
+    JSON.stringify([rev("c-one").revision.edges, rev("c-two").revision.edges])
+  );
+  await call("link_nodes", { source_id: "f-rev", target_id: "f-core", edge_type: "depends_on", change: "c-two" });
+  check(
+    "re-linking a removed live edge clears the remove delta",
+    same(rev("c-two").revision.edges.depends_on, { add: ["f-bare"], remove: [] }),
+    JSON.stringify(rev("c-two").revision.edges)
+  );
+
+  // Readiness: a contract write to a ready revision sends it back to draft.
+  writeRevisionState(loadGraph().nodes.find((n) => n.id === "f-rev"), "c-one", "ready");
+  closeGraphCaches();
+  const reset = await call("link_nodes", { source_id: "f-rev", target_id: "f-dep", edge_type: "depends_on", change: "c-one" });
+  check(
+    "a link on a ready revision resets it to draft",
+    reset.readiness_reset?.to === "draft" && rev("c-one").revision.state === "draft",
+    JSON.stringify(reset)
+  );
+
+  const testsAmbiguous = await blocked("set_test_files", { node_id: "f-rev", add: ["tests/core.test.mjs"] });
+  check("set_test_files with two open revisions and no change is Blocked", testsAmbiguous?.includes('"c-one"'), testsAmbiguous ?? "accepted");
+  const testRes = await call("set_test_files", { node_id: "f-rev", add: ["tests/core.test.mjs"], change: "c-one" });
+  check(
+    "set_test_files add on a revision writes a tests delta there, live untouched",
+    same(rev("c-one").revision.tests, { add: ["tests/core.test.mjs"], remove: [] }) &&
+      same(testRes.changed_files, [revOf("c-one")]) &&
+      readRel(liveOf("f-rev")) === liveBefore,
+    JSON.stringify(testRes)
+  );
+  const claimAdd = await call("set_implementation_files", { node_id: "f-rev", add: ["src/f-rev/extra.ts"], change: "c-one" });
+  const claimReplace = await call("set_implementation_files", { node_id: "f-rev", files: [], replace: true, change: "c-two" });
+  check(
+    "set_implementation_files add and replace on revisions write implements deltas against live",
+    same(rev("c-one").revision.implements, { add: ["src/f-rev/extra.ts"], remove: [] }) &&
+      same(rev("c-two").revision.implements, { add: [], remove: ["src/f-rev/"] }) &&
+      same(claimAdd.implements, ["src/f-rev/", "src/f-rev/extra.ts"]) &&
+      same(claimReplace.implements, []) &&
+      readRel(liveOf("f-rev")) === liveBefore,
+    JSON.stringify([rev("c-one").revision.implements, rev("c-two").revision.implements])
+  );
+
+  const patched = await call("patch_node_territory", {
+    node_id: "f-rev",
+    change: "c-two",
+    replace: { find: "Node-tests filled territory.", with: "Revised in c-two.", all: true },
+    title: "f-rev two",
+  });
+  check(
+    "patch_node_territory with change edits that revision's body and title only",
+    rev("c-two").body.includes("Revised in c-two.") &&
+      rev("c-two").revision.title === "f-rev two" &&
+      !rev("c-one").body.includes("Revised in c-two.") &&
+      readRel(liveOf("f-rev")) === liveBefore &&
+      patched.path === revOf("c-two"),
+    JSON.stringify(patched)
+  );
+  const moved = await blocked("patch_node_territory", { node_id: "f-rev", change: "c-three", description: "x" });
+  check("patching a revision's change is Blocked", moved?.includes("folder name"), moved ?? "accepted");
+  const att = await call("put_attachment", { node_id: "f-rev", change: "c-two", filename: "note.txt", content_base64: "aGk=" });
+  check(
+    "put_attachment with change writes to the revision's attachments/",
+    att.path === "mindplan/foundations/f-rev/revisions/c-two/attachments/note.txt" &&
+      fs.existsSync(path.join(root, ...att.path.split("/"))),
+    JSON.stringify(att)
+  );
+  await call("remove_attachment", { node_id: "f-rev", change: "c-two", filename: "note.txt" });
+  check("remove_attachment with change deletes it", !fs.existsSync(path.join(root, ...att.path.split("/"))));
+  const c1 = readRel(revOf("c-one"));
+  const aliased = await call("patch_node_territory", { node_id: "f-rev", change: "c-one", aliases: ["revision words"] });
+  check(
+    "aliases on a node with open revisions go to live only",
+    /^aliases:/m.test(readRel(liveOf("f-rev"))) && readRel(revOf("c-one")) === c1 && same(aliased.aliases, ["revision words"]),
+    JSON.stringify(aliased)
+  );
+  closeGraphCaches();
+}
 check("every write listed every mindplan/ file it touched", diffMisses === 0, `${diffMisses} write(s) missed files`);
 
 await client.close();
