@@ -13,7 +13,7 @@ The `pointer` field of the `setup_project` result is the text every agent sessio
 
 ## 2. Ignores
 
-- Add `.mindplan-cache/` to `.gitignore` (create it if missing) unless an entry for it is already there: it is the derived search and graph cache.
+- Add `.mindplan-cache/` to `.gitignore` (create it if missing) unless an entry for it is already there: it is the derived search and graph cache. Add `mindplan/map.md` too, unless `mindplan/.gitignore` already lists it: the server rewrites that map after every graph change, so tracking it only makes merge conflicts.
 - If the user works in Cursor, add `mindplan/**` to `.cursorignore`, so Cursor never edits the graph with its own file tools.
 
 ## 3. Move standing rules into the brief
