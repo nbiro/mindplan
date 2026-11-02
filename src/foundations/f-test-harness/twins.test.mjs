@@ -207,9 +207,9 @@ write("src/f-core/index.ts", "export const core = 1;\n");
 write("src/i-a/a.ts", 'import { core } from "../f-core/index.js";\nexport const a = core;\n');
 write("src/i-b/b.ts", 'import { core } from "../f-core/index.js";\nexport const b = core;\n');
 write("tests/core.test.ts", "export {};\n");
-await call("set_implementation_files", { node_id: "f-core", files: ["src/f-core/index.ts"] });
-await call("set_implementation_files", { node_id: "i-a", files: ["src/i-a/a.ts"] });
-await call("set_implementation_files", { node_id: "i-b", files: ["src/i-b/b.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/f-core/index.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "i-a", files: ["src/i-a/a.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "i-b", files: ["src/i-b/b.ts"] });
 fillAndTick("foundations", "f-core");
 fillAndTick("interactions", "i-a");
 await walk("f-core", ["ready", "in-progress", "in-review"]);
@@ -299,7 +299,7 @@ check(
   liveOnly("an alias write on a shipped node writes no next file", aliased, "foundations", "f-core");
   const ruled = await call("patch_node_rules", { node_id: "f-core", rules: "- Core keeps one export." });
   liveOnly("patch_node_rules on a shipped node writes no next file", ruled, "foundations", "f-core");
-  const tested = await call("set_test_files", { node_id: "f-core", files: ["tests/core.test.ts"] });
+  const tested = await call("set_test_files", { replace: true, node_id: "f-core", files: ["tests/core.test.ts"] });
   liveOnly("set_test_files on a shipped node writes no next file", tested, "foundations", "f-core");
 }
 
@@ -327,8 +327,10 @@ check(
     why: "One caller needs it.",
   });
   check(
-    "record_decision lists the live file",
-    recorded.slot === "current" && recorded.changed_files.includes(liveOf("foundations", "f-core")),
+    "record_decision lists the decision file it wrote",
+    recorded.slot === "current" &&
+      recorded.changed_files.length === 1 &&
+      recorded.changed_files[0] === "mindplan/foundations/f-core/decisions/d-core-keeps-one-export.md",
     JSON.stringify(recorded)
   );
   liveOnly("record_decision on a shipped node writes no next file", recorded, "foundations", "f-core");

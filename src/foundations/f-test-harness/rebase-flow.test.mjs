@@ -106,8 +106,8 @@ await call("create_node", { id: "f-base", type: "Foundation", title: "Base", des
 await call("create_node", { id: "f-sub", type: "Foundation", title: "Sub", description: "Infra — substrate", role: "infra" });
 write("src/f-base/index.ts", "export const base = 1;\n");
 write("src/f-sub/index.ts", "export const sub = 1;\n");
-await call("set_implementation_files", { node_id: "f-base", files: ["src/f-base/index.ts"] });
-await call("set_implementation_files", { node_id: "f-sub", files: ["src/f-sub/index.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-base", files: ["src/f-base/index.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-sub", files: ["src/f-sub/index.ts"] });
 fillAndTick(abs("mindplan/foundations/f-base/f-base.mdx"));
 fillAndTick(abs(LIVE));
 for (const new_status of SHIP) {

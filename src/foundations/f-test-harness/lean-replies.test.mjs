@@ -130,7 +130,7 @@ function write(rel, content) {
 async function foundation(id) {
   await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
   write(`src/${id}/index.ts`, `export const ${id.replace(/-/g, "_")} = 1;\n`);
-  await call("set_implementation_files", { node_id: id, files: [`src/${id}/`] });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
   const file = path.join(root, ...liveOf(id).split("/"));
   let text = fs.readFileSync(file, "utf-8");
   text = text.replace(/^_.*?_$/gm, (line) => (line.includes("attachments/") ? line : "Lean-replies filled territory."));

@@ -421,7 +421,7 @@ for (const status of ["ready", "in-progress"]) {
     (idle.drift?.unowned ?? []).some((p) => p.endsWith("orphan/x.ts")),
     JSON.stringify(idle.drift)
   );
-  await call("open_next", { node_id: "f-core" });
+  await call("open_next", { change: "rev-f-core", node_id: "f-core" });
   await call("set_implementation_files", { node_id: "f-core", add: ["src/foundations/f-core/"] });
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
   await call("update_node_status", { node_id: "f-core", new_status: "in-progress" });

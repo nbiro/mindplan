@@ -237,7 +237,7 @@ function runCheck(root) {
     await must("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
     fs.mkdirSync(path.join(root, "src", id), { recursive: true });
     fs.writeFileSync(path.join(root, "src", id, "index.ts"), "export const x = 1;\n");
-    await must("set_implementation_files", { node_id: id, files: [`src/${id}/index.ts`] });
+    await must("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/index.ts`] });
     fillAndTick(path.join(root, "mindplan", "foundations", id, `${id}.mdx`));
     for (const new_status of SHIP) await must("update_node_status", { node_id: id, new_status });
   }
@@ -531,7 +531,7 @@ function runCheck(root) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-gate-list-"));
   const { client } = await session(root);
   const { tools } = await client.listTools();
-  check("the server lists thirty-three tools", tools.length === 33, String(tools.length));
+  check("the server lists thirty-four tools", tools.length === 34, String(tools.length));
   const names = tools.map((t) => t.name);
   check("setup_project and upgrade_project come last", names.slice(-2).join(",") === "setup_project,upgrade_project", names.slice(-3).join(","));
   check("get_skill follows get_spec", names[names.indexOf("get_spec") + 1] === "get_skill", names.join(","));

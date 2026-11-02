@@ -54,11 +54,14 @@ function snapshot() {
   return files;
 }
 
-/** Paths created, changed, or deleted between two snapshots. */
+/** The derived Mermaid snapshot: rewritten after every write, never listed in changed_files. */
+const MAP = "mindplan/map.md";
+
+/** Paths created, changed, or deleted between two snapshots (map.md excepted). */
 function touched(before, after) {
   const out = [];
-  for (const [rel, text] of after) if (before.get(rel) !== text) out.push(rel);
-  for (const rel of before.keys()) if (!after.has(rel)) out.push(rel);
+  for (const [rel, text] of after) if (rel !== MAP && before.get(rel) !== text) out.push(rel);
+  for (const rel of before.keys()) if (rel !== MAP && !after.has(rel)) out.push(rel);
   return out;
 }
 
@@ -318,7 +321,7 @@ await foundation("f-dep");
 
 // --- discard keeps the live list; an empty list removes the field ---
 {
-  await call("open_next", { node_id: "f-dep" });
+  await call("open_next", { change: "rev-f-dep", node_id: "f-dep" });
   await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"], replace: true });
   await call("discard_next", { node_id: "f-dep" });
   check(
@@ -357,13 +360,13 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
 
 // --- add / remove / replace: files alone is Blocked; add and remove change entries ---
 {
-  const noReplace = await blocked("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs"] });
+  const noReplace = await blocked("set_test_files", { replace: true, node_id: "f-core", files: ["tests/core.test.mjs"] });
   check(
     "set_test_files files without replace: true is Blocked, naming add / remove and replace: true",
     noReplace?.includes("Blocked:") && noReplace.includes("add / remove") && noReplace.includes("replace: true"),
     noReplace ?? "accepted"
   );
-  const claimNoReplace = await blocked("set_implementation_files", { node_id: "f-core", files: ["src/f-core/"] });
+  const claimNoReplace = await blocked("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/f-core/"] });
   check(
     "set_implementation_files files without replace: true is Blocked, naming add / remove and replace: true",
     claimNoReplace?.includes("add / remove") && claimNoReplace.includes("replace: true"),

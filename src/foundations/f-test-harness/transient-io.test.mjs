@@ -110,7 +110,7 @@ fs.mkdirSync(path.join(root, "src", "f-store"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "f-store", "index.ts"), "export const store = 1;\n");
 
 await call("create_node", { id: "f-store", type: "Foundation", title: "Store", description: "Infra — store", role: "infra" });
-await call("set_implementation_files", { node_id: "f-store", files: ["src/f-store/"] });
+await call("set_implementation_files", { replace: true, node_id: "f-store", files: ["src/f-store/"] });
 const live = path.join(root, "mindplan", "foundations", "f-store", "f-store.mdx");
 const next = path.join(root, "mindplan", "foundations", "f-store", "f-store.next.mdx");
 fs.writeFileSync(
@@ -124,7 +124,7 @@ for (const new_status of ["ready", "in-progress", "in-review", "ship"]) {
 const ROUNDS = 25;
 const failed = [];
 for (let round = 0; round < ROUNDS; round++) {
-  await call("open_next", { node_id: "f-store" });
+  await call("open_next", { change: "rev-f-store", node_id: "f-store" });
   const results = await Promise.all([
     raw("patch_node_territory", { node_id: "f-store", replace: { find: "Transient-io test territory.", with: `Round ${round}.`, all: true } }),
     raw("record_decision", {

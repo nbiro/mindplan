@@ -90,10 +90,10 @@ await call("create_node", { id: "f-db", type: "Foundation", title: "Database", d
 await call("create_node", { id: "f-root", type: "Foundation", title: "Root", description: "Assembler — composition root with the migrations folder", role: "assembler", change: "base" });
 await call("create_node", { id: "i-old", type: "Interaction", title: "Read a page", description: "Visitor reads a page.", change: "base" });
 await call("create_node", { id: "if-dash", type: "Interface", title: "Dashboard", description: "Dashboard entry point for staff.", change: "base" });
-await call("set_implementation_files", { node_id: "f-db", files: ["src/db/"] });
-await call("set_implementation_files", { node_id: "f-root", files: ["src/root/"] });
-await call("set_implementation_files", { node_id: "i-old", files: ["src/old/"] });
-await call("set_implementation_files", { node_id: "if-dash", files: ["src/dash/"] });
+await call("set_implementation_files", { replace: true, node_id: "f-db", files: ["src/db/"] });
+await call("set_implementation_files", { replace: true, node_id: "f-root", files: ["src/root/"] });
+await call("set_implementation_files", { replace: true, node_id: "i-old", files: ["src/old/"] });
+await call("set_implementation_files", { replace: true, node_id: "if-dash", files: ["src/dash/"] });
 await call("link_nodes", { source_id: "f-root", target_id: "f-db", edge_type: "depends_on" });
 await call("link_nodes", { source_id: "i-old", target_id: "j-site", edge_type: "belongs_to" });
 await call("link_nodes", { source_id: "i-old", target_id: "f-db", edge_type: "depends_on" });
@@ -113,7 +113,7 @@ check("the base ships", !base.error, base.text);
 
 // --- planned edges ---
 await call("create_node", { id: "i-new", type: "Interaction", title: "Edit a page", description: "Staff edits a page.", change: "feat" });
-await call("set_implementation_files", { node_id: "i-new", files: ["src/new/"] });
+await call("set_implementation_files", { replace: true, node_id: "i-new", files: ["src/new/"] });
 await call("link_nodes", { source_id: "i-new", target_id: "j-site", edge_type: "belongs_to" });
 await call("link_nodes", { source_id: "i-new", target_id: "f-db", edge_type: "depends_on" });
 
@@ -241,7 +241,7 @@ fs.writeFileSync(path.join(root, dashRel), withBogus.replace(/\r?\n/g, "\r\n"));
 await call("unlink_nodes", { source_id: "if-dash", target_id: "i-third", change: "c3" });
 check("an unreadable planned item survives a planned write", live(dashRel).includes("c9 bogus_type i-third"), live(dashRel).split("---")[1]);
 await call("link_nodes", { source_id: "if-dash", target_id: "i-third", edge_type: "exposes", change: "c3" });
-await call("open_next", { node_id: "if-dash" });
+await call("open_next", { change: "rev-if-dash", node_id: "if-dash" });
 const crlfNext = live("mindplan/interfaces/if-dash/if-dash.next.mdx").split("---")[1];
 check("open_next keeps a CRLF live file's line endings in the next file", !/[^\r]\n/.test(crlfNext), JSON.stringify(crlfNext.slice(0, 120)));
 await call("patch_node_territory", { node_id: "if-dash", change: "c3" });

@@ -181,7 +181,7 @@ for (const [id, dir] of [
   ["i-cancel", "src/i-cancel/"],
   ["if-web", "src/if-web/"],
 ]) {
-  await call("set_implementation_files", { node_id: id, files: [dir] });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [dir] });
 }
 fillAndTick("foundations", "f-bookings");
 fillAndTick("foundations", "f-db");
@@ -525,7 +525,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- a body-only Interaction revision is never gated ---
 {
-  await call("open_next", { node_id: "i-reschedule" });
+  await call("open_next", { change: "rev-i-reschedule", node_id: "i-reschedule" });
   await call("patch_node_territory", { node_id: "i-reschedule", section: "## Purpose", text: "Move a booking to another evening." });
   const result = await call("run_check", {});
   check("a body-only revision prints no decision warning", decisionWarnings(result, "i-reschedule").length === 0);
@@ -650,7 +650,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   await call("link_nodes", { source_id: "i-odometer", target_id: "f-bookings", edge_type: "depends_on" });
   write("src/i-odometer/log.ts", "export const log = 1;\n");
   write("src/i-odometer/migrations/001_init.sql", "create table readings (odometer integer);\n");
-  await call("set_implementation_files", { node_id: "i-odometer", files: ["src/i-odometer/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-odometer", files: ["src/i-odometer/"] });
   fillAndTick("interactions", "i-odometer");
   await walk("i-odometer", ["ready", "in-progress"]);
   const first = await blocked("update_node_status", { node_id: "i-odometer", new_status: "in-review" });
@@ -674,7 +674,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   await call("create_node", { id: "i-forms", type: "Interaction", title: "Forms", description: "Edit settings" });
   write("src/i-forms/settings.schema.json", "{}\n");
   write("src/i-forms/schema.ts", "export const settings = {};\n");
-  await call("set_implementation_files", { node_id: "i-forms", files: ["src/i-forms/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-forms", files: ["src/i-forms/"] });
   check(
     "JSON Schema and zod modules are not schema files by default",
     decisionWarnings(await call("run_check", {}), "i-forms").length === 0
@@ -683,7 +683,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   // A brownfield node: a draft Foundation modeling a migration the repository already has.
   await call("create_node", { id: "f-store", type: "Foundation", title: "Store", description: "Infra — store", role: "infra" });
   write("src/f-store/migrations/001_store.sql", "create table store (id integer);\n");
-  await call("set_implementation_files", { node_id: "f-store", files: ["src/f-store/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-store", files: ["src/f-store/"] });
   check(
     "outside git, a first build's claimed migration counts as new",
     decisionWarnings(await call("run_check", {}), "f-store").length === 1
@@ -697,7 +697,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     "in git, a first build that adopts an existing migration is not decision-worthy",
     decisionWarnings(await call("run_check", {}), "f-store").length === 0
   );
-  await call("open_next", { node_id: "i-odometer" });
+  await call("open_next", { change: "rev-i-odometer", node_id: "i-odometer" });
   write("src/i-odometer/migrations/001_init.sql", "create table readings (odometer numeric(10,1));\n");
   git("commit", "-am", "edit an existing migration");
   check(

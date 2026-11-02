@@ -104,10 +104,12 @@ fs.writeFileSync(
   'import { core } from "../../foundations/f-core/index.js";\nexport const x = core;\n'
 );
 await call("set_implementation_files", {
+  replace: true,
   node_id: "f-core",
   files: ["src/foundations/f-core/"],
 });
 await call("set_implementation_files", {
+  replace: true,
   node_id: "i-feature",
   files: ["src/interactions/i-feature/"],
 });
@@ -145,6 +147,7 @@ await call("link_nodes", { source_id: "i-other", target_id: "j-app", edge_type: 
 await call("link_nodes", { source_id: "i-other", target_id: "f-core", edge_type: "depends_on" });
 try {
   await call("set_implementation_files", {
+    replace: true,
     node_id: "i-other",
     files: ["src/interactions/i-feature/feature.ts"],
   });
@@ -165,6 +168,7 @@ fs.writeFileSync(
   'import { x } from "../i-feature/feature.js";\nexport const y = x;\n'
 );
 await call("set_implementation_files", {
+  replace: true,
   node_id: "i-other",
   files: ["src/interactions/i-other/"],
 });
@@ -176,7 +180,7 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("imports")) {
 fs.rmSync(path.join(root, "src", "interactions", "i-other"), { recursive: true, force: true });
 // Clear implements by shrinking to empty via rewriting frontmatter after cancel path —
 // just leave i-other without files by setting empty and deleting claims
-await call("set_implementation_files", { node_id: "i-other", files: [] });
+await call("set_implementation_files", { replace: true, node_id: "i-other", files: [] });
 
 git("init");
 git("config", "user.email", "test@example.com");
@@ -299,7 +303,7 @@ if (r.status !== 0) {
 } else console.log("ok   uncommitted edit to stable owner without next passes");
 
 // With an open next that is not in-progress, the next slot governs and the edit fails.
-await call("open_next", { node_id: "i-feature" });
+await call("open_next", { change: "rev-i-feature", node_id: "i-feature" });
 r = runCheck(["--base", baseSha]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("i-feature")) {
   failures++;
@@ -323,6 +327,7 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
   await call("link_nodes", { source_id: "i-exact", target_id: "f-core", edge_type: "depends_on" });
   fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-exact", "i-exact.mdx"));
   await call("set_implementation_files", {
+    replace: true,
     node_id: "i-exact",
     files: ["src/lonely/gone.ts"],
   });
@@ -343,12 +348,13 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
   fs.writeFileSync(wideMdx, wideBody);
   fs.mkdirSync(path.join(root, "src", "wide"), { recursive: true });
   fs.writeFileSync(path.join(root, "src", "wide", "keep.ts"), "export const keep = 1;\n");
-  await call("set_implementation_files", { node_id: "f-wide", files: ["src/wide/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-wide", files: ["src/wide/"] });
   for (const status of ["ready", "in-progress", "in-review", "ship"]) {
     await call("update_node_status", { node_id: "f-wide", new_status: status });
   }
-  await call("open_next", { node_id: "f-wide" });
+  await call("open_next", { change: "rev-f-wide", node_id: "f-wide" });
   await call("set_implementation_files", {
+    replace: true,
     node_id: "f-wide",
     files: ["src/wide/", "src/lonely/"],
   });
@@ -384,6 +390,7 @@ fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-dead", 
 fs.mkdirSync(path.join(root, "src", "interactions", "i-dead"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "interactions", "i-dead", "dead.ts"), "export {};\n");
 await call("set_implementation_files", {
+  replace: true,
   node_id: "i-dead",
   files: ["src/interactions/i-dead/"],
 });
@@ -397,7 +404,7 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("leftovers")) {
   console.log(`FAIL retired leftovers should fail: ${r.stderr || r.stdout}`);
 } else console.log("ok   retired leftovers fail until deleted");
 fs.rmSync(path.join(root, "src", "interactions", "i-dead"), { recursive: true, force: true });
-await call("set_implementation_files", { node_id: "i-dead", files: [] });
+await call("set_implementation_files", { replace: true, node_id: "i-dead", files: [] });
 r = runCheck([]);
 if (r.status !== 0) {
   failures++;
@@ -498,10 +505,11 @@ if (!scaffoldBody.includes("set_implementation_files")) {
 // --- Released live presence (open next relocates files) ---
 
 // Stable + open next relocates implements: deleted released live entry must not fail presence
-await call("open_next", { node_id: "f-core" });
+await call("open_next", { change: "rev-f-core", node_id: "f-core" });
 fs.mkdirSync(path.join(root, "src", "platform", "db"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "platform", "db", "index.ts"), "export const db = 1;\n");
 await call("set_implementation_files", {
+  replace: true,
   node_id: "f-core",
   files: ["src/platform/db/"],
 });
@@ -531,7 +539,7 @@ if (r.status !== 0) {
 } else console.log("ok   restored live implements passes presence");
 
 // Kept live entry (still listed by next) missing on disk → presence fails
-await call("open_next", { node_id: "i-feature" });
+await call("open_next", { change: "rev-i-feature", node_id: "i-feature" });
 fs.rmSync(path.join(root, "src", "interactions", "i-feature"), { recursive: true, force: true });
 git("add", "-u", "src/interactions/i-feature");
 r = runCheck([]);

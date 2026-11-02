@@ -62,11 +62,14 @@ function snapshot() {
   return files;
 }
 
-/** Paths created, changed, or deleted between two snapshots. */
+/** The derived Mermaid snapshot: rewritten after every write, never listed in changed_files. */
+const MAP = "mindplan/map.md";
+
+/** Paths created, changed, or deleted between two snapshots (map.md excepted). */
 function touched(before, after) {
   const out = [];
-  for (const [rel, text] of after) if (before.get(rel) !== text) out.push(rel);
-  for (const rel of before.keys()) if (!after.has(rel)) out.push(rel);
+  for (const [rel, text] of after) if (rel !== MAP && before.get(rel) !== text) out.push(rel);
+  for (const rel of before.keys()) if (rel !== MAP && !after.has(rel)) out.push(rel);
   return out;
 }
 
@@ -146,7 +149,7 @@ async function newRevision(id, change) {
   await call("link_nodes", { source_id: id, target_id: "j-app", edge_type: "belongs_to" });
   await call("link_nodes", { source_id: id, target_id: "f-core", edge_type: "depends_on" });
   write(`src/${id}/x.ts`, 'import { core } from "../f-core/index.js";\nexport const x = core;\n');
-  await call("set_implementation_files", { node_id: id, files: [`src/${id}/x.ts`] });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/x.ts`] });
   fillAndTick("interactions", id);
 }
 
@@ -188,10 +191,10 @@ write("src/f-core/index.ts", "export const core = 1;\n");
 write("src/f-util/index.ts", "export const util = 1;\n");
 write("src/i-a/a.ts", 'import { core } from "../f-core/index.js";\nexport const a = core;\n');
 write("src/i-b/b.ts", 'import { core } from "../f-core/index.js";\nexport const b = core;\n');
-await call("set_implementation_files", { node_id: "f-core", files: ["src/f-core/index.ts"] });
-await call("set_implementation_files", { node_id: "f-util", files: ["src/f-util/index.ts"] });
-await call("set_implementation_files", { node_id: "i-a", files: ["src/i-a/a.ts"] });
-await call("set_implementation_files", { node_id: "i-b", files: ["src/i-b/b.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/f-core/index.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-util", files: ["src/f-util/index.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "i-a", files: ["src/i-a/a.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "i-b", files: ["src/i-b/b.ts"] });
 for (const [kind, id] of [
   ["foundations", "f-core"],
   ["foundations", "f-util"],
@@ -220,9 +223,9 @@ git("switch", "-q", "-c", "feature");
     ["patch_node_territory", { node_id: "f-util", change: "" }],
     ["patch_node_territory", { node_id: "f-util", change_ref: "feat/x" }],
     ["patch_node_territory", { node_id: "f-util", replace: { find: "Change-ids test", with: "Edited" }, change: "feat" }],
-    ["set_implementation_files", { node_id: "f-util", files: ["src/f-util/index.ts"], change: "feat" }],
-    ["set_implementation_files", { node_id: "f-util", files: ["src/f-util/index.ts"], change: "" }],
-    ["set_test_files", { node_id: "f-util", files: ["tests/util.test.mjs"], change: "feat" }],
+    ["set_implementation_files", { replace: true, node_id: "f-util", files: ["src/f-util/index.ts"], change: "feat" }],
+    ["set_implementation_files", { replace: true, node_id: "f-util", files: ["src/f-util/index.ts"], change: "" }],
+    ["set_test_files", { replace: true, node_id: "f-util", files: ["tests/util.test.mjs"], change: "feat" }],
   ]) {
     const text = await blocked(tool, args);
     check(
@@ -236,8 +239,8 @@ git("switch", "-q", "-c", "feature");
     readRel(liveOf("foundations", "f-util")) === liveBefore && noNextFile("foundations", "f-util")
   );
 
-  const tested = await call("set_test_files", { node_id: "f-util", files: ["tests/util.test.mjs"] });
-  const claimed = await call("set_implementation_files", { node_id: "f-util", files: ["src/f-util/index.ts"] });
+  const tested = await call("set_test_files", { replace: true, node_id: "f-util", files: ["tests/util.test.mjs"] });
+  const claimed = await call("set_implementation_files", { replace: true, node_id: "f-util", files: ["src/f-util/index.ts"] });
   check(
     "the same writes without change pass in place, with no label fields",
     liveOnly(tested.changed_files, "foundations", "f-util") &&
@@ -245,7 +248,7 @@ git("switch", "-q", "-c", "feature");
       (await changeOf("f-util")) === undefined,
     `${JSON.stringify(tested)} | ${JSON.stringify(claimed)}`
   );
-  await call("set_test_files", { node_id: "f-util", files: [] });
+  await call("set_test_files", { replace: true, node_id: "f-util", files: [] });
 }
 
 // --- a revision carries the change id; the live file never does ---

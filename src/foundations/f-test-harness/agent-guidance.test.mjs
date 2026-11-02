@@ -171,7 +171,7 @@ const FOUNDATION_SECTIONS = {
     section: "## Shared Substrate Spec",
     text: "- `src/pay/cards.ts` charges a card\n- `src/pay/cards-retry.ts` retries a decline",
   });
-  await call("set_implementation_files", { node_id: "f-cards", files: ["src/pay/cards.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-cards", files: ["src/pay/cards.ts"] });
   const plan = await call("run_check", { change: "cards" });
   check(
     "a plan-only change reports one planned: info line per node and no stale: line for its paths",

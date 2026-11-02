@@ -226,11 +226,11 @@ function nextTerritoryPath(...parts) {
 {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
-  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec", "get_skill", "setup_project", "upgrade_project"];
-  if (names.size !== 33 || required.some((n) => !names.has(n))) {
+  const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec", "get_skill", "setup_project", "upgrade_project", "resolve_conflict"];
+  if (names.size !== 34 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 33 tools including ${required.join(", ")} (got ${names.size})`);
-  } else console.log(`ok   thirty-three tools registered including ${required.join(", ")}`);
+    console.log(`FAIL expected 34 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   thirty-four tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
     if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {
@@ -451,10 +451,12 @@ fs.writeFileSync(
   'import { tables } from "../../foundations/f-db/schema.js";\nexport const checkout = tables;\n'
 );
 await expectOk("set implements f-db", "set_implementation_files", {
+  replace: true,
   node_id: "f-db",
   files: ["src/foundations/f-db/"],
 });
 await expectOk("set implements i-checkout", "set_implementation_files", {
+  replace: true,
   node_id: "i-checkout",
   files: ["src/interactions/i-checkout/"],
 });
@@ -480,6 +482,7 @@ fs.writeFileSync(
   'import { checkout } from "../../interactions/i-checkout/checkout.js";\nexport const page = checkout;\n'
 );
 await expectOk("set implements if-web", "set_implementation_files", {
+  replace: true,
   node_id: "if-web",
   files: ["src/interfaces/if-web/"],
 });
@@ -720,6 +723,7 @@ fillMinimumTerritoryShape(territoryPath("interfaces", "if-pending"));
 fs.mkdirSync(path.join(root, "src", "interfaces", "if-pending"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "interfaces", "if-pending", "ui.ts"), "export {};\n");
 await expectOk("set implements if-pending", "set_implementation_files", {
+  replace: true,
   node_id: "if-pending",
   files: ["src/interfaces/if-pending/"],
 });
@@ -974,6 +978,7 @@ async function claimDir(nodeId, relDir, seedFile, contents = "export {};\n") {
   fs.mkdirSync(abs, { recursive: true });
   fs.writeFileSync(path.join(abs, seedFile), contents);
   await expectOk(`set implements ${nodeId}`, "set_implementation_files", {
+    replace: true,
     node_id: nodeId,
     files: [`${relDir}/`],
   });
@@ -1007,6 +1012,7 @@ await expectBlocked("depends_on cycle foundations", "link_nodes", {
 
 // --- stable-id evolution (open_next / promote) ---
 await expectBlocked("open_next on draft", "open_next", {
+  change: "rev-i-tips",
   node_id: "i-tips", title: "Tips v2", description: "v2",
 });
 
@@ -1020,6 +1026,7 @@ await expectBlocked("open_next on draft", "open_next", {
 }
 
 const openNextRes = JSON.parse(await expectOk("open_next i-checkout", "open_next", {
+  change: "rev-i-checkout",
   node_id: "i-checkout", title: "Checkout v2", description: "Revised checkout",
 }));
 if (openNextRes.next?.state !== "draft") {
@@ -1066,6 +1073,7 @@ if (!nextCtx.includes("implements:") || !ixCheckoutLive.implements?.includes("sr
 } else console.log("ok   open_next copies implements to next");
 
 await expectOk("set implements i-checkout next", "set_implementation_files", {
+  replace: true,
   node_id: "i-checkout",
   files: ["src/interactions/i-checkout/", "src/interactions/i-checkout/extra.ts"],
   slot: "next",
@@ -1073,6 +1081,7 @@ await expectOk("set implements i-checkout next", "set_implementation_files", {
 fs.writeFileSync(path.join(root, "src", "interactions", "i-checkout", "extra.ts"), "export {};\n");
 
 await expectBlocked("open_next twice", "open_next", {
+  change: "rev-i-checkout",
   node_id: "i-checkout", title: "Checkout v3", description: "v3",
 });
 
@@ -1082,6 +1091,7 @@ fs.writeFileSync(tipsPath, fs.readFileSync(tipsPath, "utf-8").replaceAll("[ ]", 
 fs.mkdirSync(path.join(root, "src", "interactions", "i-tips"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "interactions", "i-tips", "tips.ts"), "export {};\n");
 await expectOk("set implements i-tips", "set_implementation_files", {
+  replace: true,
   node_id: "i-tips",
   files: ["src/interactions/i-tips/"],
 });
@@ -1228,7 +1238,7 @@ if (tipsLeadsAfterPromote.length !== 1) {
 } else console.log("ok   leads_to unchanged after promote (stable id)");
 
 // discard_next path
-const openForDiscard = JSON.parse(await expectOk("open_next again for discard", "open_next", { node_id: "i-checkout" }));
+const openForDiscard = JSON.parse(await expectOk("open_next again for discard", "open_next", { change: "rev-i-checkout", node_id: "i-checkout" }));
 const discardRes = JSON.parse(await expectOk("discard_next", "discard_next", { node_id: "i-checkout" }));
 if (fs.existsSync(nextPath) || fs.existsSync(nextAttDir)) {
   failures++; console.log("FAIL discard_next should delete next.mdx and next-attachments/");
@@ -1389,7 +1399,7 @@ void openForDiscard;
   // open_next replaces a leftover mirror file with a real draft revision.
   writeLeftoverMirror();
   const openOverLeftover = JSON.parse(
-    await expectOk("open_next over leftover mirror", "open_next", { node_id: "i-checkout" })
+    await expectOk("open_next over leftover mirror", "open_next", { change: "rev-i-checkout", node_id: "i-checkout" })
   );
   if (
     openOverLeftover.next?.state !== "draft" ||
@@ -1415,7 +1425,7 @@ await expectBlocked("force_unship mismatched token", "force_unship", {
   confirm: "unship:i-checkout",
 });
 
-await expectOk("open_next before force_unship gate", "open_next", { node_id: "i-tips" });
+await expectOk("open_next before force_unship gate", "open_next", { change: "rev-i-tips", node_id: "i-tips" });
 await expectBlocked("force_unship while next open", "force_unship", {
   node_id: "i-tips",
   confirm: "unship:i-tips",
@@ -1482,6 +1492,7 @@ if (fs.existsSync(tipsNextAfterUnship)) {
   fs.mkdirSync(path.join(root, "src", "foundations", "f-retire-twin"), { recursive: true });
   fs.writeFileSync(path.join(root, "src", "foundations", "f-retire-twin", "index.ts"), "export {};\n");
   await expectOk("set implements f-retire-twin", "set_implementation_files", {
+    replace: true,
     node_id: "f-retire-twin",
     files: ["src/foundations/f-retire-twin/"],
   });
@@ -1602,6 +1613,7 @@ await expectOk("f-needed -> ready", "update_node_status", {
   new_status: "ready",
 });
 await expectOk("open_next i-checkout for next depends_on", "open_next", {
+  change: "rev-i-checkout",
   node_id: "i-checkout",
 });
 await expectOk("link next depends_on f-needed", "link_nodes", {
@@ -1635,6 +1647,7 @@ async function shipFoundation(id, title) {
   fs.mkdirSync(pkg, { recursive: true });
   fs.writeFileSync(path.join(pkg, "index.ts"), "export {};\n");
   await expectOk(`set implements ${id}`, "set_implementation_files", {
+    replace: true,
     node_id: id,
     files: [`src/foundations/${id}/`],
   });
@@ -1653,8 +1666,8 @@ async function shipFoundation(id, title) {
 }
 await shipFoundation("f-cyc-a", "Cycle A");
 await shipFoundation("f-cyc-b", "Cycle B");
-await expectOk("open_next f-cyc-a", "open_next", { node_id: "f-cyc-a" });
-await expectOk("open_next f-cyc-b", "open_next", { node_id: "f-cyc-b" });
+await expectOk("open_next f-cyc-a", "open_next", { change: "rev-f-cyc-a", node_id: "f-cyc-a" });
+await expectOk("open_next f-cyc-b", "open_next", { change: "rev-f-cyc-b", node_id: "f-cyc-b" });
 await expectOk("link f-cyc-a next depends_on f-cyc-b", "link_nodes", {
   source_id: "f-cyc-a",
   target_id: "f-cyc-b",
@@ -2116,6 +2129,7 @@ for (const [kind, id] of [
   fs.mkdirSync(impl, { recursive: true });
   fs.writeFileSync(path.join(impl, "index.ts"), "export const ok = true;\n");
   await expectOk(`set implements ${id}`, "set_implementation_files", {
+    replace: true,
     node_id: id,
     files: [`src/${kind}/${id}/`],
   });
@@ -2197,7 +2211,7 @@ if (ifOrd?.state !== "in-review") {
   console.log(`FAIL if-ord should stay in-review, got ${ifOrd?.state}`);
 } else console.log("ok   later interface was not attempted");
 
-await expectOk("open_next f-ord", "open_next", { node_id: "f-ord" });
+await expectOk("open_next f-ord", "open_next", { change: "rev-f-ord", node_id: "f-ord" });
 const fOrdNext = nextTerritoryPath("foundations", "f-ord");
 const inheritedLabels = [...fs.readFileSync(fOrdNext, "utf-8").matchAll(/^- \[[ xX]\] (.+)$/gm)].map(
   (match) => match[1]
@@ -2232,6 +2246,7 @@ fillMinimumTerritoryShape(fCrPath);
   fs.writeFileSync(path.join(impl, "index.ts"), "export const ok = true;\n");
 }
 await expectOk("set implements f-cr", "set_implementation_files", {
+  replace: true,
   node_id: "f-cr",
   files: ["src/foundations/f-cr/"],
 });
@@ -2272,7 +2287,7 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
     console.log("FAIL shipped f-db should have no next file before open_next");
   }
   const liveRaw = fs.readFileSync(fDbCurrent, "utf-8");
-  await expectOk("open_next f-db (CRLF body)", "open_next", { node_id: "f-db" });
+  await expectOk("open_next f-db (CRLF body)", "open_next", { change: "rev-f-db", node_id: "f-db" });
   const nextRaw = fs.readFileSync(fDbNext, "utf-8");
   const checkedAfter = (nextRaw.match(/^\s*[-*+]\s+\[[xX]\]/gm) ?? []).length;
   const uncheckedAfter = (nextRaw.match(/^\s*[-*+]\s+\[ \]/gm) ?? []).length;
@@ -2374,7 +2389,7 @@ Legacy substrate.
         failures++;
         console.log("FAIL patch wrote a new id-named file instead of current.mdx");
       } else {
-        await expectOk("open_next on legacy foundation", "open_next", { node_id: "f-legacy" });
+        await expectOk("open_next on legacy foundation", "open_next", { change: "rev-f-legacy", node_id: "f-legacy" });
         if (
           !fs.existsSync(path.join(legacyFoundation, "next.mdx")) ||
           fs.existsSync(path.join(legacyFoundation, "f-legacy.next.mdx"))
@@ -2393,6 +2408,7 @@ Legacy substrate.
           fs.mkdirSync(legacySrc, { recursive: true });
           fs.writeFileSync(path.join(legacySrc, "store.ts"), "export {}\n", "utf-8");
           await expectOk("set implements f-legacy next", "set_implementation_files", {
+            replace: true,
             node_id: "f-legacy",
             files: ["src/foundations/f-legacy/"],
           });
@@ -2412,7 +2428,7 @@ Legacy substrate.
             failures++;
             console.log("FAIL promote should write current.mdx and delete legacy next.mdx");
           } else console.log("ok   promote writes legacy current.mdx and deletes next.mdx");
-          await expectOk("open_next again on legacy foundation", "open_next", { node_id: "f-legacy" });
+          await expectOk("open_next again on legacy foundation", "open_next", { change: "rev-f-legacy", node_id: "f-legacy" });
           if (!fs.existsSync(nextPath) || fs.existsSync(path.join(legacyFoundation, "f-legacy.next.mdx"))) {
             failures++;
             console.log("FAIL open_next again on current.mdx should recreate legacy next.mdx");
@@ -2660,7 +2676,7 @@ role: infra
   await expectBlocked("patch_node_rules unknown node", "patch_node_rules", { node_id: "j-nope", rules: "x" });
 
   // Open evolution: same text lands in live and next; discard deletes the next file.
-  await expectOk("open_next f-rules-base", "open_next", { node_id: "f-rules-base" });
+  await expectOk("open_next f-rules-base", "open_next", { change: "rev-f-rules-base", node_id: "f-rules-base" });
   const evolving = await json("patch_node_rules", { node_id: "f-rules-base", rules: "- Evolving rule." });
   const nextRaw = readFile("foundations", "f-rules-base", "f-rules-base.next.mdx");
   if (
@@ -2689,7 +2705,7 @@ role: infra
   const readRules = (...parts) => fs.readFileSync(path.join(root, "mindplan", ...parts), "utf-8");
 
   // Ship an evolution that carries rules; promote must keep exactly one Rules section.
-  await expectOk("open_next f-rules-base again", "open_next", { node_id: "f-rules-base" });
+  await expectOk("open_next f-rules-base again", "open_next", { change: "rev-f-rules-base", node_id: "f-rules-base" });
   await expectOk("patch_node_rules during evolution", "patch_node_rules", {
     node_id: "f-rules-base", rules: "- Shipped rule.",
   });

@@ -101,9 +101,9 @@ await call("link_nodes", { source_id: "i-b", target_id: "f-core", edge_type: "de
 write("src/f-core/index.ts", "export const core = 1;\n");
 write("src/i-a/a.ts", 'import { core } from "../f-core/index.js";\nexport const a = core;\n');
 write("src/i-b/b.ts", 'import { core } from "../f-core/index.js";\nexport const b = core;\n');
-await call("set_implementation_files", { node_id: "f-core", files: ["src/f-core/index.ts"] });
-await call("set_implementation_files", { node_id: "i-a", files: ["src/i-a/"] });
-await call("set_implementation_files", { node_id: "i-b", files: ["src/i-b/b.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/f-core/index.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "i-a", files: ["src/i-a/"] });
+await call("set_implementation_files", { replace: true, node_id: "i-b", files: ["src/i-b/b.ts"] });
 fillAndTick("foundations", "f-core");
 fillAndTick("interactions", "i-a");
 fillAndTick("interactions", "i-b");
@@ -122,12 +122,12 @@ fillAndTick("interactions", "i-b");
   );
 
   await call("update_node_status", { node_id: "i-a", new_status: "ready" });
-  const same = await call("set_implementation_files", { node_id: "i-a", files: ["src/i-a/"] });
+  const same = await call("set_implementation_files", { replace: true, node_id: "i-a", files: ["src/i-a/"] });
   check("re-claiming the same files keeps a ready node ready", same.state === "ready" && !same.readiness_reset, JSON.stringify(same));
   write("src/i-a/more.ts", "export const more = 1;\n");
-  const claimed = await call("set_implementation_files", { node_id: "i-a", files: ["src/i-a/a.ts", "src/i-a/more.ts"] });
+  const claimed = await call("set_implementation_files", { replace: true, node_id: "i-a", files: ["src/i-a/a.ts", "src/i-a/more.ts"] });
   check("a claim on a ready node moves it to draft", claimed.state === "draft" && !!claimed.readiness_reset, JSON.stringify(claimed));
-  await call("set_implementation_files", { node_id: "i-a", files: ["src/i-a/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-a", files: ["src/i-a/"] });
 
   await call("update_node_status", { node_id: "i-a", new_status: "ready" });
   const linked = await call("link_nodes", { source_id: "i-a", target_id: "i-b", edge_type: "leads_to" });
@@ -162,7 +162,7 @@ fillAndTick("interactions", "i-b");
 
   // Ship f-core, then open and ready an evolution: writes to the ready next slot reset it.
   await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
-  await call("open_next", { node_id: "f-core" });
+  await call("open_next", { change: "rev-f-core", node_id: "f-core" });
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
   const nextPatch = await call("patch_node_territory", {
     node_id: "f-core",
@@ -180,7 +180,7 @@ fillAndTick("interactions", "i-b");
 {
   await call("create_node", { id: "f-tog", type: "Foundation", title: "Toggles", description: "Infra — toggles", role: "infra" });
   write("src/f-tog/index.ts", "export const tog = 1;\n");
-  await call("set_implementation_files", { node_id: "f-tog", files: ["src/f-tog/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-tog", files: ["src/f-tog/"] });
   fillAndTick("foundations", "f-tog");
   const togFile = territory("foundations", "f-tog");
   const ops = "- [ ] Write docs\n- [ ] Write tests\n- [ ] Load test\n- [ ] Manual check\n";
@@ -271,7 +271,7 @@ fillAndTick("interactions", "i-b");
     "the fix for a shipped owner in a folder it dominates is the in-place claim alone",
     !!shippedCov &&
       !shippedCov.includes("open_next") &&
-      shippedCov.includes('Fix: set_implementation_files({"node_id":"f-core","files":["src/f-core/extra.ts","src/f-core/index.ts"]})'),
+      shippedCov.includes('Fix: set_implementation_files({"node_id":"f-core","add":["src/f-core/extra.ts"]})'),
     String(shippedCov)
   );
   remove("src/f-core/extra.ts");
@@ -283,7 +283,7 @@ fillAndTick("interactions", "i-b");
     "the fix for a shipped owner outside a folder it dominates opens its evolution first",
     !!deepCov &&
       deepCov.includes('Probable owner by path: "f-core"') &&
-      deepCov.includes('open_next({"node_id":"f-core"}) then set_implementation_files'),
+      deepCov.includes('open_next({"node_id":"f-core","change":"<change-id>"}) then set_implementation_files({"node_id":"f-core","change":"<change-id>","add":'),
     String(deepCov)
   );
   remove("src/f-core/sub");
@@ -294,11 +294,11 @@ fillAndTick("interactions", "i-b");
   await call("create_node", { id: "f-rel", type: "Foundation", title: "Released", description: "Infra — released", role: "infra" });
   write("src/f-rel/keep.ts", "export const keep = 1;\n");
   write("src/f-rel/old.ts", "export const old = 1;\n");
-  await call("set_implementation_files", { node_id: "f-rel", files: ["src/f-rel/keep.ts", "src/f-rel/old.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-rel", files: ["src/f-rel/keep.ts", "src/f-rel/old.ts"] });
   fillAndTick("foundations", "f-rel");
   await walk("f-rel", ["ready", "in-progress", "in-review", "ship"]);
-  await call("open_next", { node_id: "f-rel" });
-  await call("set_implementation_files", { node_id: "f-rel", files: ["src/f-rel/keep.ts"] });
+  await call("open_next", { change: "rev-f-rel", node_id: "f-rel" });
+  await call("set_implementation_files", { replace: true, node_id: "f-rel", files: ["src/f-rel/keep.ts"] });
   write("src/f-rel/old.ts", 'import { a } from "../i-a/a.js";\nexport const old = a;\n');
   const r = await call("run_check", {});
   const w = r.warnings.find((x) => x.startsWith("imports (next slot):") && x.includes("src/f-rel/old.ts"));
@@ -315,7 +315,7 @@ fillAndTick("interactions", "i-b");
 {
   await call("create_node", { id: "f-quick", type: "Foundation", title: "Quick", description: "Infra — quick", role: "infra" });
   write("src/f-quick/index.ts", "export const quick = 1;\n");
-  await call("set_implementation_files", { node_id: "f-quick", files: ["src/f-quick/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-quick", files: ["src/f-quick/"] });
   fillAndTick("foundations", "f-quick");
   await call("update_node_status", { node_id: "f-quick", new_status: "ready" });
   const dry = await call("update_node_status", {
@@ -371,8 +371,8 @@ fillAndTick("interactions", "i-b");
   await call("link_nodes", { source_id: "i-cx", target_id: "f-cx", edge_type: "depends_on" });
   write("src/f-cx/index.ts", "export const cx = 1;\n");
   write("src/i-cx/cx.ts", 'import { cx } from "../f-cx/index.js";\nexport const icx = cx;\n');
-  await call("set_implementation_files", { node_id: "f-cx", files: ["src/f-cx/"] });
-  await call("set_implementation_files", { node_id: "i-cx", files: ["src/i-cx/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-cx", files: ["src/f-cx/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-cx", files: ["src/i-cx/"] });
   fillAndTick("foundations", "f-cx");
   fillAndTick("interactions", "i-cx");
   const rec = await state("f-cx");
@@ -428,7 +428,7 @@ fillAndTick("interactions", "i-b");
   write("src/templates/blog/actions/i-read-post/view.tsx", "export const v = 1;\n");
   write("src/templates/news/actions/i-read-post/view.tsx", "export const v = 2;\n");
   write("src/templates/blog/layout.tsx", "export const l = 1;\n");
-  await call("set_implementation_files", { node_id: "i-read", files: ["src/templates/*/actions/i-read-post/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-read", files: ["src/templates/*/actions/i-read-post/"] });
   const impl = await call("get_node_implementation", { node_id: "i-read" });
   check(
     "a glob claim expands to the matching files in every template",
@@ -439,12 +439,12 @@ fillAndTick("interactions", "i-b");
   check("path lookup resolves through a glob claim", owner.owner?.node_id === "i-read", JSON.stringify(owner));
 
   await call("create_node", { id: "if-blog", type: "Interface", title: "Blog template", description: "Blog entry point" });
-  const conflict = await blocked("set_implementation_files", { node_id: "if-blog", files: ["src/templates/blog/"] });
+  const conflict = await blocked("set_implementation_files", { replace: true, node_id: "if-blog", files: ["src/templates/blog/"] });
   check("an overlapping claim on a glob-claimed file is Blocked", !!conflict && conflict.includes("i-read"), String(conflict));
-  await call("set_implementation_files", { node_id: "if-blog", files: ["src/templates/blog/layout.tsx"] });
+  await call("set_implementation_files", { replace: true, node_id: "if-blog", files: ["src/templates/blog/layout.tsx"] });
 
   write("src/routes/[slug]/x.ts", "export const x = 1;\n");
-  await call("set_implementation_files", { node_id: "i-b", files: ["src/i-b/", "src/routes/[slug]/x.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-b", files: ["src/i-b/", "src/routes/[slug]/x.ts"] });
   const lit = await call("get_node_implementation", { node_id: "i-b" });
   check(
     "[slug] in a claim is a literal folder name",
@@ -457,7 +457,7 @@ fillAndTick("interactions", "i-b");
 {
   await call("create_node", { id: "f-lay", type: "Foundation", title: "Layout", description: "Infra — layout", role: "infra" });
   write("src/f-lay/index.ts", "export const lay = 1;\n");
-  await call("set_implementation_files", { node_id: "f-lay", files: ["src/f-lay/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-lay", files: ["src/f-lay/"] });
   fillAndTick("foundations", "f-lay");
   const layFile = territory("foundations", "f-lay");
   const layNext = territory("foundations", "f-lay", "next");
@@ -515,7 +515,7 @@ fillAndTick("interactions", "i-b");
 
   // Ship, open an evolution, patch it, and ship it: promote keeps the next file's layout and CRLF.
   await walk("f-lay", ["ready", "in-progress", "in-review", "ship"]);
-  await call("open_next", { node_id: "f-lay" });
+  await call("open_next", { change: "rev-f-lay", node_id: "f-lay" });
   await call("patch_node_territory", { node_id: "f-lay", section: "## Purpose", text: "Next purpose." });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
   await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
@@ -546,7 +546,7 @@ fillAndTick("interactions", "i-b");
 {
   await call("create_node", { id: "f-gap", type: "Foundation", title: "Gap", description: "Infra — gap", role: "infra" });
   write("src/f-gap/index.ts", "export const gap = 1;\n");
-  await call("set_implementation_files", { node_id: "f-gap", files: ["src/f-gap/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-gap", files: ["src/f-gap/"] });
   fillAndTick("foundations", "f-gap");
   const gapFile = territory("foundations", "f-gap");
   const read = (file) => fs.readFileSync(file, "utf-8");
@@ -576,7 +576,7 @@ fillAndTick("interactions", "i-b");
 
   // A discarded revision deletes the next file, even while the live file still has its run.
   await walk("f-gap", ["in-progress", "in-review", "ship"]);
-  await call("open_next", { node_id: "f-gap" });
+  await call("open_next", { change: "rev-f-gap", node_id: "f-gap" });
   check(
     "open_next writes the next file with one blank line below the frontmatter",
     blankRun(territory("foundations", "f-gap", "next")) === 1,
@@ -601,15 +601,17 @@ fillAndTick("interactions", "i-b");
   write("app/layout.tsx", "export default function Root({ children }) { return children; }\n");
   write("src/features/app/page.ts", "export const notARoute = 1;\n");
   write("src/features/app/error.ts", "export const notARouteEither = 1;\n");
-  await call("set_implementation_files", { node_id: "i-b", files: ["src/features/app/", "src/i-b/", "src/routes/[slug]/x.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-b", files: ["src/features/app/", "src/i-b/", "src/routes/[slug]/x.ts"] });
   write("app/sites/[site]/[lang]/blog/page.tsx", "export default function Page() { return null; }\n");
   write("app/sites/[site]/[lang]/blog/[slug]/page.tsx", "export default function Post() { return null; }\n");
   write("app/sites/[site]/[lang]/shop/page.tsx", "export default function Shop() { return null; }\n");
   await call("set_implementation_files", {
+    replace: true,
     node_id: "f-asm",
     files: ["app/layout.tsx", "app/sites/[site]/[lang]/blog/page.tsx", "app/sites/[site]/[lang]/shop/"],
   });
   await call("set_implementation_files", {
+    replace: true,
     node_id: "if-blog",
     files: ["app/sites/[site]/[lang]/blog/[slug]/page.tsx", "src/templates/blog/layout.tsx"],
   });
@@ -623,8 +625,9 @@ fillAndTick("interactions", "i-b");
       split[0].includes('"if-blog" (Interface)'),
     JSON.stringify(r.warnings)
   );
-  await call("set_implementation_files", { node_id: "if-blog", files: ["src/templates/blog/layout.tsx"] });
+  await call("set_implementation_files", { replace: true, node_id: "if-blog", files: ["src/templates/blog/layout.tsx"] });
   await call("set_implementation_files", {
+    replace: true,
     node_id: "f-asm",
     files: ["app/layout.tsx", "app/sites/[site]/[lang]/blog/", "app/sites/[site]/[lang]/shop/"],
   });
@@ -637,7 +640,7 @@ fillAndTick("interactions", "i-b");
 {
   await call("create_node", { id: "if-ext", type: "Interface", title: "Ext", description: "Partner uses the ext surface" });
   write("web/ext.ts", 'import { b } from "../src/i-b/b.js";\nexport const ext = b;\n');
-  await call("set_implementation_files", { node_id: "if-ext", files: ["web/ext.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "if-ext", files: ["web/ext.ts"] });
   let r = await call("run_check", {});
   check(
     "an Interface file outside sources importing an Interaction it does not expose fails the check",
@@ -662,9 +665,9 @@ fillAndTick("interactions", "i-b");
   write("src/f-ok/ok.ts", "export const ok = 1;\n");
   write("src/f-bad/bad.ts", 'import { b } from "../i-b/b.js";\nexport const bad = b;\n');
   write("src/i-mixed/m.ts", "export const m = 1;\n");
-  await call("set_implementation_files", { node_id: "f-ok", files: ["src/f-ok/"] });
-  await call("set_implementation_files", { node_id: "f-bad", files: ["src/f-bad/"] });
-  await call("set_implementation_files", { node_id: "i-mixed", files: ["src/i-mixed/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-ok", files: ["src/f-ok/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-bad", files: ["src/f-bad/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-mixed", files: ["src/i-mixed/"] });
 
   const noReview = await call("update_node_status", {
     scope: "change", change: "mixed", new_status: "ship", skip_blocked: true, dry_run: true,
