@@ -5,8 +5,10 @@
  * a section into files is a straight split.
  */
 
+import * as fs from "fs";
 import * as path from "path";
-import type { DecisionRecord } from "../f-domain-model/types.js";
+import { DECISION_ID_PATTERN, type DecisionRecord } from "../f-domain-model/types.js";
+import { readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
 import { formatDecisionEntry, parseDecisions } from "./store.js";
 
 /** Folder name that holds decision files. */
@@ -55,7 +57,32 @@ export function parseDecisionFile(text: string): DecisionRecord | null {
  * file name. A missing folder is an empty list. Unparsable files are skipped.
  */
 export function readDecisionFiles(dir: string): DecisionRecord[] {
-  throw new Error("not implemented: readDecisionFiles");
+  const out: { name: string; record: DecisionRecord }[] = [];
+  for (const name of decisionFileNames(dir)) {
+    const record = parseDecisionFile(readFileRetry(path.join(dir, name)));
+    if (record) out.push({ name, record });
+  }
+  out.sort((a, b) => {
+    const da = a.record.date ?? "";
+    const db = b.record.date ?? "";
+    if (da !== db) return da < db ? -1 : 1;
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  });
+  return out.map((e) => e.record);
+}
+
+/** Names of the `*.md` files in `dir` (any case), sorted; a missing folder is empty. */
+function decisionFileNames(dir: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md"))
+    .map((e) => e.name)
+    .sort();
 }
 
 /**
@@ -64,7 +91,16 @@ export function readDecisionFiles(dir: string): DecisionRecord[] {
  * written; callers report it repo-relative in `changed_files`.
  */
 export function appendDecisionFile(dir: string, record: DecisionRecord): string {
-  throw new Error("not implemented: appendDecisionFile");
+  if (!DECISION_ID_PATTERN.test(record.id)) {
+    throw new Error(`Blocked: decision id "${record.id}" must be "d-" followed by a slug.`);
+  }
+  const file = path.join(dir, decisionFileName(record.id));
+  if (fs.existsSync(file)) {
+    throw new Error(`Blocked: decision "${record.id}" is already recorded (${file}); decisions are never rewritten.`);
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  writeFileRetry(file, formatDecisionFile(record));
+  return file;
 }
 
 /**
@@ -74,5 +110,26 @@ export function appendDecisionFile(dir: string, record: DecisionRecord): string 
  * and each destination). A missing `fromDir` moves nothing.
  */
 export function moveDecisions(fromDir: string, toDir: string): string[] {
-  throw new Error("not implemented: moveDecisions");
+  if (!fs.existsSync(fromDir)) return [];
+  const names = fs
+    .readdirSync(fromDir, { withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => e.name)
+    .sort();
+  const clash = names.filter((name) => fs.existsSync(path.join(toDir, name)));
+  if (clash.length > 0) {
+    throw new Error(
+      `Blocked: ${clash.map((n) => `"${n}"`).join(", ")} already exist in ${toDir}; no decision file was moved.`
+    );
+  }
+  const touched: string[] = [];
+  if (names.length > 0) fs.mkdirSync(toDir, { recursive: true });
+  for (const name of names) {
+    const from = path.join(fromDir, name);
+    const to = path.join(toDir, name);
+    withTransientRetry(() => fs.renameSync(from, to));
+    touched.push(from, to);
+  }
+  if (fs.readdirSync(fromDir).length === 0) withTransientRetry(() => fs.rmdirSync(fromDir));
+  return touched;
 }

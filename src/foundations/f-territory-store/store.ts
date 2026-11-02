@@ -57,6 +57,9 @@ import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js"
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
+import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
+import { readRevisions } from "./revisions.js";
+import { withRevision } from "../f-revision-model/index.js";
 
 export {
   CONFIG_FILENAME,
@@ -850,7 +853,15 @@ let cachedParserVersion: string | null = null;
 export function parserVersion(): string {
   if (cachedParserVersion === null) {
     const h = createHash("sha1");
-    for (const rel of ["./store.js", "../f-domain-model/types.js", "../f-source-index/claims.js", "../f-graph-cache/cache.js"]) {
+    for (const rel of [
+      "./store.js",
+      "./revisions.js",
+      "./decisions-store.js",
+      "../f-domain-model/types.js",
+      "../f-revision-model/revision.js",
+      "../f-source-index/claims.js",
+      "../f-graph-cache/cache.js",
+    ]) {
       try {
         h.update(fs.readFileSync(fileURLToPath(new URL(rel, import.meta.url))));
       } catch {
@@ -862,7 +873,12 @@ export function parserVersion(): string {
   return cachedParserVersion;
 }
 
-/** Assembles one node from its folder's <id>.mdx (+ optional <id>.next.mdx); null when it has no live file. */
+/**
+ * Assembles one node from its folder's <id>.mdx (+ optional <id>.next.mdx), its `decisions/*.md`
+ * (appended to the live decisions), and its open revisions under `revisions/`; null when it has
+ * no live file. A legacy next file fills `next`; otherwise exactly one open revision fills it as
+ * the live-plus-revision view (`withRevision`), and several leave it unset.
+ */
 function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
   const currentFile = existingSlotFile(folder.abs, folder.id, "current", folder.rel);
   if (!currentFile) return null;
@@ -880,6 +896,18 @@ function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
       const evolution = parseNextSlot(folder.id, nextFile);
       if (evolution) node.next = evolution;
     }
+  }
+  const fileDecisions = readDecisionFiles(decisionsDir(folder.abs));
+  if (fileDecisions.length > 0) node.decisions = [...(node.decisions ?? []), ...fileDecisions];
+  const revisions = readRevisions(folder.abs, folder.id);
+  if (revisions.length > 0) {
+    if (!isPipelineNodeType(folder.type)) {
+      throw new Error(
+        `Blocked: revisions/ is only allowed for Foundations, Interactions, and Interfaces (found on ${folder.type} "${folder.id}").`
+      );
+    }
+    node.open_revisions = revisions.map((r) => r.revision);
+    if (!node.next && revisions.length === 1) node.next = withRevision(node, revisions[0].revision.change).next;
   }
   return node;
 }
@@ -2643,30 +2671,91 @@ export function promoteNextSlot(
     throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
   }
 
-  const title = nextParsed.scalars.title ?? node.next.title;
-  const description = nextParsed.scalars.description ?? node.next.description;
-  const belongs_to = nextParsed.arrays.belongs_to;
-  const depends_on = nextParsed.arrays.depends_on;
-  const exposes = nextParsed.arrays.exposes;
-  const leads_to = nextParsed.arrays.leads_to;
-  const mounts = nextParsed.arrays.mounts;
-  const implementsList = nextParsed.implements;
-  const testsList = nextParsed.tests;
-  const aliasesList = nextParsed.aliases;
   const role =
     nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
       ? (nextParsed.scalars.role as FoundationRole)
       : node.next.role ?? node.role;
-  // The shipped change's planned edges are now real (or were dropped on purpose); other changes keep theirs.
-  const shippedChange = nextParsed.scalars.change ?? node.next.change;
+  writePromotedLive(node, productionState, shippedAt, {
+    title: nextParsed.scalars.title ?? node.next.title,
+    description: nextParsed.scalars.description ?? node.next.description,
+    role,
+    edges: nextParsed.arrays,
+    implements: nextParsed.implements,
+    tests: nextParsed.tests,
+    aliases: nextParsed.aliases,
+    // The shipped change's planned edges are now real (or were dropped on purpose); other changes keep theirs.
+    change: nextParsed.scalars.change ?? node.next.change,
+    splitInto: opts.splitInto,
+    body: splitNodeRules(nextSplit.body).body,
+    eol: detectEol(nextRaw),
+    separator: nextSplit.separator,
+  });
+
+  // Merge next-attachments into attachments when present
+  const nextAtt = nextAttachmentsDir(node);
+  if (fs.existsSync(nextAtt)) {
+    const dest = attachmentsDir(node);
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(nextAtt, { withFileTypes: true })) {
+      if (!entry.isFile() || entry.name === ".gitkeep") continue;
+      copyFileRetry(path.join(nextAtt, entry.name), path.join(dest, entry.name));
+    }
+  }
+
+  discardNextSlot(node);
+  delete node.next;
+}
+
+/** What a ship writes over the live file: the shipping revision's scalars, lists, and body. */
+export type PromotedLive = {
+  title: string;
+  description: string;
+  role?: FoundationRole;
+  edges: Partial<Record<PlannedEdgeType, string[]>>;
+  implements: string[];
+  tests: string[];
+  aliases: string[];
+  /** The shipping change: its planned edges are dropped from live. */
+  change?: string;
+  /** Parts this ship splits out of the node. */
+  splitInto?: string[];
+  /** The new live body without its `## Rules` section (live's rules are joined back). */
+  body: string;
+  /** Line endings of the written file. */
+  eol: string;
+  /** Text between the closing frontmatter fence and the body. */
+  separator: string;
+};
+
+/**
+ * Rewrites the live file of a shipping node from `p` with production state: bumps `revisions`
+ * and `churn` (reset by a split), keeps live's rules and other changes' planned edges, strips the
+ * Atomic Ops, drops `added_claims` and `attributed`, and updates `node` to match. Shared by
+ * `promoteNextSlot` and `shipRevision`; attachments and the revision's files are the caller's.
+ */
+export function writePromotedLive(
+  node: MindPlanNode,
+  productionState: string,
+  shippedAt: string,
+  p: PromotedLive
+): void {
+  const { title, description, role } = p;
+  const belongs_to = p.edges.belongs_to ?? [];
+  const depends_on = p.edges.depends_on ?? [];
+  const exposes = p.edges.exposes ?? [];
+  const leads_to = p.edges.leads_to ?? [];
+  const mounts = p.edges.mounts ?? [];
+  const implementsList = p.implements;
+  const testsList = p.tests;
+  const aliasesList = p.aliases;
   const liveParsed = parseFrontmatter(readMarkdown(node, "current"));
-  const plannedKept = (liveParsed?.planned ?? []).filter((e) => e.change !== shippedChange);
+  const plannedKept = (liveParsed?.planned ?? []).filter((e) => e.change !== p.change);
   // One more ship; a revision that split parts out of the node records where the split happened.
   const revisions = (positiveInt(liveParsed?.scalars.revisions) ?? 1) + 1;
-  const splitInto = [...new Set([...(liveParsed?.split_into ?? []), ...(opts.splitInto ?? [])])];
-  const splitAt = opts.splitInto?.length ? revisions : positiveInt(liveParsed?.scalars.split_at);
+  const splitInto = [...new Set([...(liveParsed?.split_into ?? []), ...(p.splitInto ?? [])])];
+  const splitAt = p.splitInto?.length ? revisions : positiveInt(liveParsed?.scalars.split_at);
   // A split hands the reasons for change to the parts, so the root's recent rate starts over.
-  const churn = opts.splitInto?.length
+  const churn = p.splitInto?.length
     ? 0
     : churnAfterShip(
         nonNegativeNumber(liveParsed?.scalars.churn),
@@ -2715,11 +2804,11 @@ export function promoteNextSlot(
   }
   if (implementsList.length > 0) {
     frontmatterLines.push("implements:");
-    for (const p of implementsList) frontmatterLines.push(`  - ${p}`);
+    for (const entry of implementsList) frontmatterLines.push(`  - ${entry}`);
   }
   if (testsList.length > 0) {
     frontmatterLines.push("tests:");
-    for (const p of testsList) frontmatterLines.push(`  - ${p}`);
+    for (const entry of testsList) frontmatterLines.push(`  - ${entry}`);
   }
   if (aliasesList.length > 0) {
     frontmatterLines.push("aliases:");
@@ -2736,26 +2825,8 @@ export function promoteNextSlot(
 
   const liveRules = readNodeRules(node, "current");
   // A shipped node keeps no Atomic Ops: the ledger was for this ship, and git keeps it.
-  const promotedBody = joinNodeRules(withoutAtomicOps(splitNodeRules(nextSplit.body).body, node.type), liveRules);
-  // The live file takes the next file's line endings.
-  writeMarkdown(
-    node,
-    `${frontmatterLines.join(detectEol(nextRaw))}${nextSplit.separator}${promotedBody}`,
-    "current"
-  );
-
-  // Merge next-attachments into attachments when present
-  const nextAtt = nextAttachmentsDir(node);
-  if (fs.existsSync(nextAtt)) {
-    const dest = attachmentsDir(node);
-    fs.mkdirSync(dest, { recursive: true });
-    for (const entry of fs.readdirSync(nextAtt, { withFileTypes: true })) {
-      if (!entry.isFile() || entry.name === ".gitkeep") continue;
-      copyFileRetry(path.join(nextAtt, entry.name), path.join(dest, entry.name));
-    }
-  }
-
-  discardNextSlot(node);
+  const promotedBody = joinNodeRules(withoutAtomicOps(p.body, node.type), liveRules);
+  writeMarkdown(node, `${frontmatterLines.join(p.eol)}${p.separator}${promotedBody}`, "current");
 
   node.title = title;
   node.description = description;
@@ -2787,7 +2858,6 @@ export function promoteNextSlot(
   if (plannedKept.length > 0) node.planned = plannedKept;
   else delete node.planned;
   delete node.attributed;
-  delete node.next;
 }
 
 /**
