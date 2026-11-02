@@ -659,13 +659,11 @@ export function assertEffectiveDependsOnAcyclic(graph: MindPlanGraph): void {
  */
 export function validateOpenNext(node: MindPlanNode, change?: string): void {
   if (!isPipelineNodeType(node.type)) {
-    throw blocked(
-      `only Foundations, Interactions, and Interfaces can open a next evolution. Got ${node.type} "${node.id}".`
-    );
+    throw blocked(`only Foundations, Interactions, and Interfaces open revisions. Got ${node.type} "${node.id}".`);
   }
   if (node.state !== "stable" && node.state !== "unstable") {
     throw blocked(
-      `only shipped Foundations/Interactions/Interfaces (stable or unstable) can open next. "${node.id}" is currently "${node.state}".`
+      `only shipped Foundations/Interactions/Interfaces (stable or unstable) open revisions. "${node.id}" is currently "${node.state}".`
     );
   }
   if (change !== undefined) {
@@ -673,7 +671,7 @@ export function validateOpenNext(node: MindPlanNode, change?: string): void {
     if (open || (hasLegacyNext(node) && node.next!.change === change)) {
       throw blocked(
         `"${node.id}" already has an open revision of change "${change}" in state "${open?.state ?? node.next!.state}". ` +
-          `Work in it, or ship or discard_next it before opening another revision of that change.`
+          `Edit it (pass change: "${change}"), ship it, or discard_next({ node_id: "${node.id}", change: "${change}" }).`
       );
     }
     return;
@@ -1181,9 +1179,15 @@ export function assertNoRevisionConflicts(node: MindPlanNode, change: string | u
           : `claim "${c.path}" (owned by "${c.owner}")`
     )
     .join(", ");
+  const target = (c: (typeof conflicts)[number]): string =>
+    c.kind === "section" ? `section: "${c.section}"` : c.kind === "scalar" ? `field: "${c.field}"` : `claim: "${c.path}"`;
   throw blocked(
     `"${node.id}" revision "${change}" has ${conflicts.length} unresolved rebase conflict(s): ${list}. ` +
-      `Resolve each with resolve_conflict({ node_id, change, ... }).`
+      `Resolve each with resolve_conflict({ node_id, change, ... }). Fix: ` +
+      conflicts
+        .map((c) => `resolve_conflict({ node_id: "${node.id}", change: "${change}", ${target(c)}, take: "revision" | "live" | "text" })`)
+        .join(", ") +
+      `.`
   );
 }
 

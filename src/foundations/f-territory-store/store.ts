@@ -1017,18 +1017,30 @@ export function nodeExists(id: string): boolean {
   return false;
 }
 
+/**
+ * The file a slot reads: `current` is the live file; `next` is the open revision's
+ * `revisions/<change>/<id>.mdx` when the node's `next` is the view of a stored revision
+ * (`withRevision`, or the loader's single-revision view), else `<id>.next.mdx` (a legacy file the
+ * readers only name so they can Block with upgrade_project).
+ */
+export function slotFilePath(node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot): string {
+  const viewChange = slot === "next" ? (node as Partial<MindPlanNode>).next?.change : undefined;
+  if (viewChange && (node as Partial<MindPlanNode>).open_revisions?.some((r) => r.change === viewChange)) {
+    return revisionMarkdownPath(node, viewChange);
+  }
+  return markdownPath(node, slot);
+}
+
+/** Absolute path of the open revision file of `change`: `<node folder>/revisions/<change>/<id>.mdx`. */
+export function revisionMarkdownPath(node: Pick<MindPlanNode, "id" | "type">, change: string): string {
+  return path.join(entityDir(node), "revisions", change, liveMdxFilename(node.id));
+}
+
 export function readMarkdown(
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot = "current"
 ): string {
-  let file = markdownPath(node, slot);
-  // The `next` view of an open revision (`withRevision`) carries its change: the next slot reads
-  // that revision's file when it exists (a leftover mirror `<id>.next.mdx` never shadows it).
-  const viewChange = slot === "next" ? (node as Partial<MindPlanNode>).next?.change : undefined;
-  if (viewChange) {
-    const revisionFile = path.join(entityDir(node), "revisions", viewChange, liveMdxFilename(node.id));
-    if (fs.existsSync(revisionFile)) file = revisionFile;
-  }
+  const file = slotFilePath(node, slot);
   if (!fs.existsSync(file)) {
     throw new Error(
       `Blocked: ${slot} file not found for node "${node.id}" (expected at ${file}).`
@@ -1037,23 +1049,34 @@ export function readMarkdown(
   return readFileRetry(file);
 }
 
+/** Full text of the node's open revision file of `change`. Throws when it is missing. */
+export function readRevisionMarkdown(node: Pick<MindPlanNode, "id" | "type">, change: string): string {
+  return readFileRetry(revisionMarkdownPath(node, change));
+}
+
 /**
  * Body reader for search (section headings): `readMarkdown`, plus a `stamp` so a search re-reads a
  * body edited outside MCP even when its frontmatter is unchanged: the graph cache's content key for
- * a node it loaded (no file access), else the slot file's size and mtime.
+ * a node it loaded (no file access), else the slot file's size and mtime. `revision` reads an open
+ * revision's file, so every revision's headings are indexed the same way on every path (orient,
+ * the write refresh, the server warm-up).
  */
 export function territoryBodyReader(): ((
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot
-) => string) & { stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => string } {
+) => string) & {
+  stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => string;
+  revision: (node: Pick<MindPlanNode, "id" | "type">, change: string) => string;
+} {
   const read = (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => readMarkdown(node, slot);
   return Object.assign(read, {
     stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => {
       const key = graphCacheFor(projectRoot(), parserVersion())?.contentKey(node as MindPlanNode);
       if (key) return key;
-      const st = fs.statSync(markdownPath(node, slot));
+      const st = fs.statSync(slotFilePath(node, slot));
       return `${st.size}:${st.mtimeMs}`;
     },
+    revision: (node: Pick<MindPlanNode, "id" | "type">, change: string) => readRevisionMarkdown(node, change),
   });
 }
 

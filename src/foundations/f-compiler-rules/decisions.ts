@@ -8,7 +8,7 @@
  *
  * A shipped node may hold several open revisions, one per change: every function here takes an
  * optional `change` naming the revision it judges (`withRevision` gives the live-plus-revision
- * view, `graphUnder` the graph that revision is judged against). Without one, a node with exactly
+ * view, `revisionGraph` the graph that revision is judged against). Without one, a node with exactly
  * one open revision is judged on it; otherwise the node's own fields are read as before (a legacy
  * `<id>.next.mdx` in `next`, or a pre-ship node).
  */
@@ -22,7 +22,7 @@ import {
   type MindPlanNode,
   type Revision,
 } from "../f-domain-model/types.js";
-import { graphUnder, openChanges, revisionFor, withRevision } from "../f-revision-model/index.js";
+import { openChanges, revisionFor, withRevision } from "../f-revision-model/index.js";
 import { claimCoversPath, expandClaims } from "../f-source-index/claims.js";
 import {
   decisionGateSettings,
@@ -30,7 +30,7 @@ import {
   type DecisionGateSettings,
 } from "../f-source-index/config.js";
 import { matchesSchemaFile, newFilesSinceBase } from "../f-source-index/git.js";
-import { blastRadiusDependents, blocked } from "./rules.js";
+import { blastRadiusDependents, blocked, liveGraph, revisionGraph } from "./rules.js";
 
 export type DecisionTriggerKind = "foundation_contract" | "schema" | "blast_radius" | "depends_on";
 
@@ -69,7 +69,7 @@ function isRetired(node: MindPlanNode): boolean {
  * The revision a gate call judges. `change` names it (`null`: the node's own fields, no revision
  * folder); `undefined` means the only open revision when there is exactly one, else the node's own
  * fields. `view` is live plus that revision (`withRevision`), `graph` the graph it is judged
- * against (`graphUnder`), and `change` the change id the revision belongs to (for a pre-ship node
+ * against (`revisionGraph`), and `change` the change id the revision belongs to (for a pre-ship node
  * or a legacy next file, its `activeChange`).
  */
 type Subject = {
@@ -101,10 +101,10 @@ function subjectOf(graph: MindPlanGraph, node: MindPlanNode, change?: string | n
   if (named) {
     const revision = revisionFor(node, named);
     if (revision && isPipelineNodeType(node.type)) {
-      return { node, view: withRevision(node, named), base: graph, graph: graphUnder(graph, named), change: named, revision };
+      return { node, view: withRevision(node, named), base: graph, graph: revisionGraph(graph, named), change: named, revision };
     }
   }
-  return { node, view: node, base: graph, graph, change: named ?? activeChange(node) };
+  return { node, view: node, base: graph, graph: liveGraph(graph), change: named ?? activeChange(node) };
 }
 
 /**

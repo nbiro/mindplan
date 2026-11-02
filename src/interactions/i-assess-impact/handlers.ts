@@ -6,10 +6,9 @@
 import { type MindPlanGraph } from "../../foundations/f-domain-model/types.js";
 import { loadGraph } from "../../foundations/f-territory-store/store.js";
 import { changeAdditivity } from "../../foundations/f-compiler-rules/open-closed.js";
-import { blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
+import { blocked, findNode, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { changeMembership, plannedEdges } from "../../foundations/f-compiler-rules/planned.js";
 import { nodeDecisions } from "../../foundations/f-graph-search/decisions.js";
-import { graphUnder } from "../../foundations/f-revision-model/index.js";
 import {
   BlastRadiusDecision,
   DependentDecisionsSummary,
@@ -37,13 +36,13 @@ export function getBlastRadius(args: {
   if (args.change === undefined) return buildBlastRadiusPayload(graph, live, opts);
   // That node's revision of the change, judged on the graph the change would ship into.
   const change = namedRevisionChange(live, args.change);
-  const under = graphUnder(graph, change);
+  const under = revisionGraph(graph, change);
   return { ...buildBlastRadiusPayload(under, findNode(under, live.id), opts), change };
 }
 
 /**
  * Blast radius of a whole change: the radii of its members (each node's revision of it and the
- * shipped nodes with planned edges under it) merged, judged on `graphUnder(graph, change)` so
+ * shipped nodes with planned edges under it) merged, judged on `revisionGraph(graph, change)` so
  * other changes' revisions stay invisible. `affected` keeps each node's smallest distance and
  * leaves out the members themselves; files group by owner.
  */
@@ -52,7 +51,7 @@ export function buildChangeBlastRadiusPayload(
   change: string,
   opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
 ): Record<string, unknown> {
-  graph = graphUnder(graph, change);
+  graph = revisionGraph(graph, change);
   // A shipped node with planned wiring under the change is a member too: its contract will change.
   const { revisions, planned } = changeMembership(graph, change);
   const plannedIds = new Set(planned.map((n) => n.id));

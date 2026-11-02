@@ -38,11 +38,10 @@ import {
   schemaClaimEntries,
   type OtherClaims,
 } from "../../foundations/f-source-index/dominance.js";
-import { blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
+import { blocked, findNode, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import {
   applyDelta,
   diffDelta,
-  graphUnder,
   resolveRevisionChange,
   revisionFor,
 } from "../../foundations/f-revision-model/index.js";
@@ -437,7 +436,7 @@ function writeRevisionClaims(
   }
   const readiness = contract ? resetReadyRevision(node, change) : { reset: null, files: [] };
   if (paths.length > 0) refreshPersistedMap();
-  const claimedGraph = graphUnder(loadGraph(), change);
+  const claimedGraph = revisionGraph(loadGraph(), change);
   const claimedNode = findNode(claimedGraph, node.id);
   const importViolations = findImportViolationsForClaim(claimedGraph, projectRoot(), claimedNode, normalized).map((v) => ({
     file: v.file,

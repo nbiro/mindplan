@@ -17,7 +17,9 @@ import {
   STALE_PATHS_ONLY,
   coverageFix,
   createCoverageFixContext,
+  crossChangeClaimWarnings,
   findAllImportViolations,
+  findAllOwnershipConflicts,
   findImportViolationsForNode,
   findOwnershipConflicts,
   formatCoverageFix,
@@ -28,7 +30,7 @@ import {
   testPresenceFailures,
   untestedWarning,
 } from "../../foundations/f-compiler-rules/integrity.js";
-import { changeMembers } from "../../foundations/f-compiler-rules/rules.js";
+import { revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
 import {
   changeMembership,
@@ -73,7 +75,7 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { graphUnder, withRevision } from "../../foundations/f-revision-model/index.js";
+import { revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 const MID_PIPELINE = new Set(["in-progress", "in-review"]);
@@ -180,18 +182,18 @@ function slotLabel(node: MindPlanNode, change: string | null): string {
 }
 
 /**
- * The in-review gate on every revision of a change, judged on `graphUnder(graph, change)` (each
+ * The in-review gate on every revision of a change, judged on `revisionGraph(graph, change)` (each
  * member's revision of the change, every other node live): import and ownership violations on its
  * active-slot files (Blocked), every stale-text signal (warnings; planned paths go to info), and
  * its decision and fan-out warnings.
  */
 function checkChange(
-  liveGraph: MindPlanGraph,
+  fullGraph: MindPlanGraph,
   root: string,
   change: string,
   decisionCtx: DecisionContext
 ): ChangeCheck {
-  const graph = graphUnder(liveGraph, change);
+  const graph = revisionGraph(fullGraph, change);
   // Planned sources are listed, not gated: their files do not change until the change opens them.
   const { revisions, planned } = changeMembership(graph, change);
   const failures: string[] = [];
@@ -203,16 +205,18 @@ function checkChange(
     );
   }
   for (const node of revisions) {
-    for (const v of findImportViolationsForNode(graph, root, node)) {
+    // A shipped member is judged through its revision of this change; a pre-ship member is live.
+    const c = revisionFor(node, change) ? change : undefined;
+    for (const v of findImportViolationsForNode(fullGraph, root, node, c)) {
       failures.push(`Blocked: change "${change}": ${v.message}`);
     }
-    for (const conflict of findOwnershipConflicts(graph, root, node)) {
+    for (const conflict of findOwnershipConflicts(fullGraph, root, node, c)) {
       failures.push(`Blocked: change "${change}": ${conflict}`);
     }
     for (const missing of testPresenceFailures(node, root)) {
       failures.push(`Blocked: change "${change}": ${missing}`);
     }
-    const stale = staleTextWarnings(graph, root, node, undefined, STALE_ALL);
+    const stale = staleTextWarnings(fullGraph, root, node, undefined, STALE_ALL, c);
     warnings.push(...stale.warnings);
     info.push(...stale.info);
   }
@@ -232,7 +236,7 @@ function checkChange(
   const fanOut = fanOutSettings(loadProjectConfig(root));
   const fanOutCtx = fanOutContext(graph);
   for (const node of revisions) {
-    warnings.push(...decisionWarnings(graph, node, decisionCtx));
+    warnings.push(...decisionWarnings(fullGraph, node, decisionCtx, revisionFor(node, change) ? change : null));
     const f = fanOutFor(graph, node, fanOut, fanOutCtx);
     if (f) warnings.push(fanOutWarning(f));
     const untested = untestedWarning(node);
@@ -361,23 +365,11 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
 }
 
 /**
- * The files a node claims in one view: a legacy next's claims (plus the live claims it keeps),
- * else its live claims.
- */
-function viewClaims(node: MindPlanNode, root: string): string[] {
-  if (!node.next) return expandClaims(node.implements, root);
-  const next = expandClaims(node.next.implements, root);
-  const nextSet = new Set(next);
-  return [...new Set([...next, ...expandClaims(node.implements, root).filter((f) => nextSet.has(f))])];
-}
-
-/**
- * Exclusivity per change. Live (every node live, a legacy next file as before): a file two nodes
- * claim fails. Under each change (`graphUnder`): a file a revision of that change claims while
- * another node claims it too fails, naming the change. A file only revisions of different changes
- * claim (on different nodes) never meets in one graph: it warns, since the second to ship rebases
- * into a claim conflict.
- * WP4: ownership may grow a shared helper for this; until it lands the check is local.
+ * Exclusivity per view (`findAllOwnershipConflicts`): a file two nodes claim live fails, and under
+ * each change a file a revision of that change claims while another node claims it too fails,
+ * naming the change. A file only revisions of different changes claim (on different nodes) never
+ * meets in one view: it warns (`crossChangeClaimWarnings`), since the second to ship rebases into
+ * a claim conflict.
  */
 function checkExclusivity(
   graph: MindPlanGraph,
@@ -385,72 +377,31 @@ function checkExclusivity(
   failures: string[],
   warnings: string[]
 ): OwnershipBuckets {
-  const active = graph.nodes.filter((n) => isPipelineNodeType(n.type) && !RETIRED_STATES.has(n.state));
-  const owners = (claims: Map<string, string[]>) => {
-    const byFile = new Map<string, Set<string>>();
-    for (const [owner, files] of claims) {
-      for (const f of files) {
-        let set = byFile.get(f);
-        if (!set) byFile.set(f, (set = new Set()));
-        set.add(owner);
-      }
-    }
-    return byFile;
-  };
-  const list = (ids: Iterable<string>) => [...ids].sort().map((id) => `"${id}"`).join(", ");
-
-  // Live: a node with stored revisions claims its live files here.
-  const live = new Map(
-    active.map((n) => [n.id, n.open_revisions?.length ? expandClaims(n.implements, root) : viewClaims(n, root)])
-  );
-  const liveOwners = owners(live);
+  const groups = new Map<string, { file: string; change: string | null; ids: Set<string> }>();
+  for (const p of findAllOwnershipConflicts(graph, root)) {
+    const key = `${p.file}
+${p.change ?? ""}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { file: p.file, change: p.change, ids: new Set() }));
+    g.ids.add(p.a);
+    g.ids.add(p.b);
+  }
   const failed = new Set<string>();
-  for (const [file, ids] of liveOwners) {
-    if (ids.size < 2) continue;
-    failed.add(file);
-    fail(failures, `exclusivity: "${file}" claimed by multiple nodes: ${list(ids)}.`);
+  const ordered = [...groups.values()].sort(
+    (a, b) => (a.change === null ? 0 : 1) - (b.change === null ? 0 : 1) || (a.change ?? "").localeCompare(b.change ?? "")
+  );
+  for (const g of ordered) {
+    if (failed.has(g.file)) continue;
+    failed.add(g.file);
+    const list = [...g.ids].sort().map((id) => `"${id}"`).join(", ");
+    const under = g.change === null ? "" : ` under change "${g.change}"`;
+    fail(failures, `exclusivity: "${g.file}" claimed by multiple nodes${under}: ${list}.`);
   }
-
-  // Each change: its revisions replace their nodes' live claims.
-  const byChange = new Map<string, Map<string, string[]>>();
-  for (const n of active) {
-    for (const { change, view } of slotViews(n)) {
-      if (change === null) continue;
-      if (!byChange.has(change)) byChange.set(change, new Map());
-      byChange.get(change)!.set(n.id, viewClaims(view, root));
-    }
+  for (const w of crossChangeClaimWarnings(graph, root)) {
+    const file = /^ownership: "([^"]+)"/.exec(w)?.[1];
+    if (file && failed.has(file)) continue;
+    warnings.push(w);
   }
-  const revisionClaimants = new Map<string, Map<string, string>>(); // file → owner → change
-  for (const change of [...byChange.keys()].sort()) {
-    const revised = byChange.get(change)!;
-    const claims = new Map(live);
-    for (const [id, files] of revised) claims.set(id, files);
-    const under = owners(claims);
-    for (const [id, files] of revised) {
-      for (const f of files) {
-        if (!live.get(id)?.includes(f)) {
-          const seen = revisionClaimants.get(f) ?? new Map<string, string>();
-          if (!seen.has(id)) seen.set(id, change);
-          revisionClaimants.set(f, seen);
-        }
-        const ids = under.get(f)!;
-        if (ids.size < 2 || failed.has(f)) continue;
-        failed.add(f);
-        fail(failures, `exclusivity: "${f}" claimed by multiple nodes under change "${change}": ${list(ids)}.`);
-      }
-    }
-  }
-  for (const [file, claimants] of revisionClaimants) {
-    if (failed.has(file) || claimants.size < 2) continue;
-    const named = [...claimants.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([id, change]) => `"${id}" (change "${change}")`)
-      .join(", ");
-    warnings.push(
-      `exclusivity: "${file}" is claimed by revisions of different changes: ${named}; the second to ship rebases into a claim conflict.`
-    );
-  }
-
   return buildOwnershipIndex(graph, root);
 }
 
@@ -603,7 +554,13 @@ function checkImports(
   warnings: string[]
 ): void {
   const scanned = [
-    ...new Set([...universe, ...buckets.live.keys(), ...buckets.next.keys(), ...buckets.released.keys()]),
+    ...new Set([
+      ...universe,
+      ...buckets.live.keys(),
+      ...buckets.next.keys(),
+      ...buckets.released.keys(),
+      ...buckets.revisions.keys(),
+    ]),
   ].sort((a, b) => a.localeCompare(b));
   const seen = new Set<string>();
   for (const violation of findAllImportViolations(graph, buckets, root, scanned)) {
@@ -676,9 +633,7 @@ function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): st
   const warnings = new Set<string>();
   for (const node of graph.nodes) {
     for (const { change } of slotViews(node)) {
-      const judged = change === null ? graph : graphUnder(graph, change);
-      const view = change === null ? node : judged.nodes.find((n) => n.id === node.id)!;
-      for (const w of decisionWarnings(judged, view, ctx)) warnings.add(w);
+      for (const w of decisionWarnings(graph, node, ctx, change)) warnings.add(w);
     }
   }
   return [...warnings];

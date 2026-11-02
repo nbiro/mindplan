@@ -30,7 +30,7 @@ import {
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
 import { REVISIONS_DIR, readRevisions, revisionRelativeFilePath } from "../../foundations/f-territory-store/revisions.js";
-import { graphUnder, openChanges, resolveRevisionChange, withRevision } from "../../foundations/f-revision-model/index.js";
+import { openChanges, resolveRevisionChange, withRevision } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOut } from "../../foundations/f-fan-out/index.js";
 import {
@@ -41,7 +41,7 @@ import {
   hotspotContext,
 } from "../../foundations/f-compiler-rules/open-closed.js";
 import { buildOwnershipIndex, exclusiveOwner, nodeOwnedFiles } from "../../foundations/f-source-index/ownership.js";
-import { blocked, findNode, interfacesExposing } from "../../foundations/f-compiler-rules/rules.js";
+import { blocked, findNode, interfacesExposing, liveGraph, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import {
   DEFAULT_FIND_LIMIT,
   expandNeighborhood,
@@ -288,10 +288,8 @@ async function rankedMatches(
     area: args.area,
     limit: args.limit ?? DEFAULT_FIND_LIMIT,
     root: projectRoot(),
-    readBody: Object.assign(territoryBodyReader(), {
-      // Each open revision's headings are searchable too.
-      revision: (node: MindPlanNode, change: string) => revisionFile(node, change)?.body ?? "",
-    }),
+    // Each open revision's headings are searchable too (the reader's `revision`).
+    readBody: territoryBodyReader(),
   });
 }
 
@@ -352,7 +350,7 @@ export function getNodeContext(args: {
  * orient_for_work({ change }): every member of a change (each node's revision of it, its planned
  * sources, and the other nodes holding a decision recorded under it) with the nodes whose
  * rules reach it, each source's rules once, and the members that hold decisions. Membership and
- * rules are judged on `graphUnder(graph, change)`. Every member is recorded as oriented, so one
+ * rules are judged on `revisionGraph(graph, change)`. Every member is recorded as oriented, so one
  * call clears the gate for a walk over the change. A decision gives its node no change id, so
  * decision holders are members here only, not in changeMembership.
  */
@@ -361,7 +359,7 @@ function orientForChange(
   change: string,
   known: Record<string, string> | undefined
 ): Record<string, unknown> {
-  const under = graphUnder(graph, change);
+  const under = revisionGraph(graph, change);
   const { revisions, planned } = changeMembership(under, change);
   const listed = new Set([...revisions, ...planned].map((n) => n.id));
   const holderIds = new Set(listDecisions(graph, { change }).map((d) => d.node_id));
@@ -600,7 +598,7 @@ export async function orientForWork(args: {
     reply.nodes = nodes;
     reply.edges = edges;
     // A named revision is judged on the graph it would ship into.
-    const judged = change !== undefined ? graphUnder(graph, change) : graph;
+    const judged = change !== undefined ? revisionGraph(graph, change) : liveGraph(graph);
     reply.blast_radius = isPipelineNodeType(node.type)
       ? buildBlastRadiusPayload(judged, findNode(judged, node.id))
       : null;

@@ -44,12 +44,12 @@ import {
   findNode,
   recomputeCapabilityStates,
   recomputeStability,
+  revisionGraph,
   validateLink,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
 import {
   emptyDelta,
-  graphUnder,
   resolveRevisionChange,
   revisionFor,
   withRevision,
@@ -273,7 +273,7 @@ function linkOnRevision(
   verbose?: boolean
 ): Record<string, unknown> {
   validateLink(source, target, type);
-  if (type === "depends_on") assertAcyclicDependsOn(graphUnder(graph, change), source.id, target.id);
+  if (type === "depends_on") assertAcyclicDependsOn(revisionGraph(graph, change), source.id, target.id);
   gateWrite(graph, [source.id], "link_nodes");
   const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source.id) : null;
   if ((withRevision(source, change).next?.[type] ?? []).includes(target.id)) {

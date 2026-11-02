@@ -5,12 +5,10 @@
  * docs embed all read it, so an agent can learn the shape before the first transition.
  */
 
-import * as fs from "fs";
 import type { FoundationRole, MindPlanNode } from "../f-domain-model/types.js";
 import { isInactiveNode, isOpenBugState, isPipelineNodeType } from "../f-domain-model/types.js";
 import { revisionFor, withRevision } from "../f-revision-model/index.js";
-import { readFileRetry } from "../f-source-index/io.js";
-import { REVISIONS_DIR, revisionFilePath, revisionRelativeFilePath } from "../f-territory-store/revisions.js";
+import { REVISIONS_DIR, revisionRelativeFilePath } from "../f-territory-store/revisions.js";
 import {
   markdownRelativePath,
   readMarkdown,
@@ -28,22 +26,15 @@ export type SlotSource = { text: string | null; file: string; relPath: string };
  * `<id>.next.mdx`. Gate code that reads slot "next" on a revision view so reads that revision.
  */
 export function slotSource(node: MindPlanNode, slot: "current" | "next"): SlotSource {
-  const change = slot === "next" ? node.next?.change : undefined;
-  if (change && revisionFor(node, change)) {
-    const abs = revisionFilePath(node, change);
-    let text: string | null = null;
-    try {
-      if (fs.existsSync(abs)) text = readFileRetry(abs);
-    } catch {
-      text = null;
-    }
-    return { text, file: `${REVISIONS_DIR}/${change}/${node.id}.mdx`, relPath: revisionRelativeFilePath(node, change) };
-  }
   let text: string | null = null;
   try {
     text = readMarkdown(node, slot);
   } catch {
     text = null;
+  }
+  const change = slot === "next" ? node.next?.change : undefined;
+  if (change && revisionFor(node, change)) {
+    return { text, file: `${REVISIONS_DIR}/${change}/${node.id}.mdx`, relPath: revisionRelativeFilePath(node, change) };
   }
   return { text, file: territorySlotFilename(node, slot), relPath: markdownRelativePath(node, slot) };
 }

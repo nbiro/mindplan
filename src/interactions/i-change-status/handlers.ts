@@ -34,7 +34,6 @@ import {
   writeRevisionState,
 } from "../../foundations/f-territory-store/revisions.js";
 import {
-  graphUnder,
   openChanges,
   resolveRevisionChange,
   revisionFor,
@@ -45,12 +44,14 @@ import {
   blocked,
   changeMembers,
   findNode,
+  liveGraph,
   recomputeCapabilityStates,
   recomputeStability,
   resolveForceUnship,
+  resolveRevisionStatusChange,
   resolveStatusChange,
 } from "../../foundations/f-compiler-rules/rules.js";
-import { assertCheckCleanForNode, staleTextWarnings } from "../../foundations/f-compiler-rules/integrity.js";
+import { assertCheckCleanForNode, assertCheckCleanForRevision, staleTextWarnings } from "../../foundations/f-compiler-rules/integrity.js";
 import { assertDecisionForReview, createDecisionContext, type DecisionContext } from "../../foundations/f-compiler-rules/decisions.js";
 import {
   changedFiles,
@@ -96,31 +97,6 @@ function revisionChangeFor(node: MindPlanNode, newStatus: string, change?: strin
   }
   if (RETIRE_STATES.has(newStatus) && !change) return undefined;
   return resolveRevisionChange(node, change) ?? undefined;
-}
-
-/** The node as gates judge a live-only move: no revision view on `next`. */
-function liveOnly(node: MindPlanNode): MindPlanNode {
-  if (!node.next) return node;
-  const copy = { ...node };
-  delete copy.next;
-  return copy;
-}
-
-/** Blocked when the revision still holds rebase conflicts (in-review and ship need none). */
-function assertNoConflicts(node: MindPlanNode, change: string, step: string): void {
-  // WP4: the conflict Blocked moves into the revision gates; this handler check then goes.
-  const rev = revisionFor(node, change);
-  if (!rev || rev.conflicts.length === 0) return;
-  const target = (c: (typeof rev.conflicts)[number]): string =>
-    c.kind === "section" ? `section: "${c.section}"` : c.kind === "scalar" ? `field: "${c.field}"` : `claim: "${c.path}"`;
-  throw blocked(
-    `revision "${change}" of "${node.id}" holds unresolved conflicts (${rev.conflicts.map(conflictLabel).join(", ")}) ` +
-      `left by a sibling revision that shipped; it cannot move to ${step}. Resolve each with ` +
-      rev.conflicts
-        .map((c) => `resolve_conflict({ node_id: "${node.id}", change: "${change}", ${target(c)}, take: "revision" | "live" | "text" })`)
-        .join(", ") +
-      `, then retry.`
-  );
 }
 
 /** Which nodes a scoped status call walks. */
@@ -436,7 +412,7 @@ function simulateWalk(
 
 /**
  * One node's steps applied to `graph` in memory; the first Blocked step and its reason, or null.
- * A revision row is judged on `graphUnder(graph, change)` (live plus that change's revisions).
+ * A revision row is judged on `revisionGraph(graph, change)` (live plus that change's revisions).
  */
 function simulateRow(
   graph: MindPlanGraph,
@@ -450,17 +426,11 @@ function simulateRow(
   for (const step of row.steps) {
     try {
       if (row.change) {
-        if (step === "in-review" || step === "ship") assertNoConflicts(node, row.change, step);
-        const under = graphUnder(graph, row.change);
-        const view = findNode(under, row.node_id);
-        // WP4: resolveRevisionStatusChange(graph, node, row.change, step) replaces this call.
-        const resolved = resolveStatusChange(under, view, step);
+        const resolved = resolveRevisionStatusChange(graph, node, row.change, step);
         if (step === "in-review" || step === "ship") {
-          // WP4: assertCheckCleanForRevision(graph, root, node, row.change, step) replaces this call.
-          assertCheckCleanForNode(under, root, view, step);
-          // WP2: decisionGapFor(graph, root, node, row.change, decisionCtx) replaces this call.
-          if (step === "in-review") assertDecisionForReview(under, root, view, decisionCtx);
-          for (const w of staleTextWarnings(under, root, view).warnings) warnings.add(w);
+          assertCheckCleanForRevision(graph, root, node, row.change, step);
+          if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx, row.change);
+          for (const w of staleTextWarnings(graph, root, node, undefined, undefined, row.change).warnings) warnings.add(w);
         }
         if (resolved.promote_next) {
           promoteInMemory(graph, node, row.change, resolved.state, now);
@@ -471,8 +441,8 @@ function simulateRow(
         }
         continue;
       }
-      const subject = RETIRE_STATES.has(step) ? liveOnly(node) : node;
-      const resolved = resolveStatusChange(graph, subject, step);
+      const live = liveGraph(graph);
+      const resolved = resolveStatusChange(live, findNode(live, row.node_id), step);
       if (step === "in-review" || step === "ship") {
         assertCheckCleanForNode(graph, root, node, step);
         if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx);
@@ -811,7 +781,9 @@ function applyOneStatus(args: {
   const change = revisionChangeFor(node, new_status, args.change);
   if (change) return applyRevisionStatus({ ...args, change }, graph, node);
 
-  const resolved = resolveStatusChange(graph, RETIRE_STATES.has(new_status) ? liveOnly(node) : node, new_status);
+  // A live move (pre-ship, a Bug, or a retirement) is judged with no change's revision visible.
+  const live = liveGraph(graph);
+  const resolved = resolveStatusChange(live, findNode(live, node_id), new_status);
   // Moves to in-review and ship run the check's import and ownership rules on this node's files.
   let warnings: string[] = [];
   if (new_status === "in-review" || new_status === "ship") {
@@ -883,7 +855,7 @@ function applyOneStatus(args: {
 }
 
 /**
- * A build-pipeline move of the revision of `change`: judged on `graphUnder(graph, change)` (live
+ * A build-pipeline move of the revision of `change`: judged on `revisionGraph(graph, change)` (live
  * plus that change's revisions), written with writeRevisionState, or shipped with shipRevision
  * (siblings rebased; `rebased` lists each with the conflicts it holds).
  */
@@ -894,18 +866,12 @@ function applyRevisionStatus(
 ): Record<string, unknown> {
   const { node_id, new_status, change } = args;
   const root = projectRoot();
-  if (new_status === "in-review" || new_status === "ship") assertNoConflicts(node, change, new_status);
-  const under = graphUnder(graph, change);
-  const view = findNode(under, node_id);
-  // WP4: resolveRevisionStatusChange(graph, node, change, new_status) replaces this call.
-  const resolved = resolveStatusChange(under, view, new_status);
+  const resolved = resolveRevisionStatusChange(graph, node, change, new_status);
   let warnings: string[] = [];
   if (new_status === "in-review" || new_status === "ship") {
-    // WP4: assertCheckCleanForRevision(graph, root, node, change, new_status) replaces this call.
-    assertCheckCleanForNode(under, root, view, new_status);
-    // WP2: decisionGapFor(graph, root, node, change, ctx) replaces this call.
-    if (new_status === "in-review") assertDecisionForReview(under, root, view, args.decisionCtx);
-    warnings = staleTextWarnings(under, root, view).warnings;
+    assertCheckCleanForRevision(graph, root, node, change, new_status);
+    if (new_status === "in-review") assertDecisionForReview(graph, root, node, args.decisionCtx, change);
+    warnings = staleTextWarnings(graph, root, node, undefined, undefined, change).warnings;
   }
 
   const previous = revisionFor(node, change)!.state;

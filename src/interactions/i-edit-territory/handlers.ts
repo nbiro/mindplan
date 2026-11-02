@@ -53,9 +53,9 @@ import {
   writeRevisionScalars,
   writeRevisionState,
 } from "../../foundations/f-territory-store/revisions.js";
-import { graphUnder, openChanges, resolveRevisionChange, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
+import { openChanges, resolveRevisionChange, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 import { unlinkRetry, writeFileRetry } from "../../foundations/f-source-index/io.js";
-import { assertPipelineTerritoryScalarsEditable, blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
+import { assertPipelineTerritoryScalarsEditable, blocked, findNode, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import { orientationGateEnabled, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
 import * as fs from "fs";
@@ -393,7 +393,7 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
   }
   if (splitList) {
     extra.split_into = splitList;
-    const under = graphUnder(loadGraph(), change);
+    const under = revisionGraph(loadGraph(), change);
     const revised = findNode(under, node.id);
     const unlinked = split_into!.filter((id) => !splitPartLinked(under, revised, id));
     if (unlinked.length > 0) {

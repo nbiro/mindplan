@@ -3,7 +3,7 @@
  * planned edges and the hotspot warning), discard_next, and resolve_conflict.
  */
 
-import { isPipelineNodeType, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
+import { type MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import {
   entityRelativePath,
   loadGraph,
@@ -20,7 +20,7 @@ import {
 import { openChanges, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
-import { blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
+import { blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
 import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
@@ -55,20 +55,8 @@ export function openNext(args: {
   validateChangeInput(args);
   const graph = loadGraph();
   const node = findNode(graph, node_id);
-  if (!isPipelineNodeType(node.type)) {
-    throw blocked(`only Foundations, Interactions, and Interfaces open revisions. Got ${node.type} "${node_id}".`);
-  }
-  if (node.state !== "stable" && node.state !== "unstable") {
-    throw blocked(
-      `only shipped Foundations/Interactions/Interfaces (stable or unstable) open revisions. "${node_id}" is currently "${node.state}".`
-    );
-  }
   assertNoLegacyNext(node, "open_next");
-  if (openChanges(node).includes(change)) {
-    throw blocked(
-      `"${node_id}" already has an open revision of change "${change}". Edit it (pass change: "${change}"), ship it, or discard_next({ node_id: "${node_id}", change: "${change}" }).`
-    );
-  }
+  validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
   const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
   // The revision takes its change's planned edges: each must still be legal before it opens.
