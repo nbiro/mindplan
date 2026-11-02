@@ -471,7 +471,8 @@ export function mindPlanMapPath(): string {
 
 /**
  * Writes the full Mermaid projection to `mindplan/map.md`.
- * Called after every successful graph mutation so the map tracks live territory.
+ * Called after every successful graph mutation so the map tracks live territory. The file is
+ * derived: write results never list it in `changed_files`.
  */
 export function persistMindPlanMap(graph: MindPlanGraph): string {
   const { diagram, node_count, edge_count } = exportMindPlanView(graph, {
