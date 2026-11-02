@@ -11,7 +11,7 @@ import { matchesSchemaFile } from "./git.js";
 import { RETIRED_STATES } from "./ownership.js";
 import { matchGlob } from "./universe.js";
 
-/** Every other non-retired pipeline node's claim entries (live and open next) and their files. */
+/** Every other non-retired pipeline node's claim entries (live, open next, and every open revision's adds) and their files. */
 export type OtherClaims = { entries: string[]; files: string[] };
 
 /**
@@ -23,7 +23,8 @@ export function collectOtherClaims(graph: MindPlanGraph, nodeId: string, root?: 
   for (const other of graph.nodes) {
     if (other.id === nodeId || !isPipelineNodeType(other.type)) continue;
     if (RETIRED_STATES.has(other.state)) continue;
-    for (const raw of [...(other.implements ?? []), ...(other.next?.implements ?? [])]) {
+    const revisionAdds = (other.open_revisions ?? []).flatMap((r) => r.implements.add);
+    for (const raw of [...(other.implements ?? []), ...(other.next?.implements ?? []), ...revisionAdds]) {
       entries.push(validateClaimPath(raw));
     }
   }
@@ -79,7 +80,8 @@ function normalizeFolder(folder: string): string | null {
 
 /**
  * True when `folder` is dominated by `nodeId`: the node's live claims expand to at least one file
- * directly in the folder, and no other non-retired pipeline node (live or open next) claims the
+ * directly in the folder, and no other non-retired pipeline node (live, open next, or any open
+ * revision) claims the
  * folder, anything under it, an ancestor or glob covering it (or one of `probes`, the paths about
  * to be claimed), has a glob whose static prefix is at, under, or above it, or has an expanded
  * file beneath it. The repo root is never dominated. `others` is `collectOtherClaims(graph,

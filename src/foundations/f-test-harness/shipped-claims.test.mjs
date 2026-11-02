@@ -100,14 +100,25 @@ const liveOf = (kind, id) => `mindplan/${kind}/${id}/${id}.mdx`;
 const nextOf = (kind, id) => `mindplan/${kind}/${id}/${id}.next.mdx`;
 const readRel = (rel) => fs.readFileSync(path.join(root, ...rel.split("/")), "utf-8");
 
-/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+const revisionsOf = (kind, id) => `mindplan/${kind}/${id}/revisions`;
+
+/**
+ * True when a shipped node with no open revision has neither a legacy `<id>.next.mdx` nor a
+ * `revisions/` folder beside its live file.
+ */
 function noNextFile(kind, id) {
-  return fs.existsSync(path.join(root, ...liveOf(kind, id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(kind, id).split("/")));
+  const exists = (rel) => fs.existsSync(path.join(root, ...rel.split("/")));
+  return exists(liveOf(kind, id)) && !exists(nextOf(kind, id)) && !exists(revisionsOf(kind, id));
 }
 
-/** True when a live write's changed_files lists the live file and no next file. */
+/** True when a live write's changed_files lists the live file and no next or revision file. */
 function liveOnly(changed, kind, id) {
-  return Array.isArray(changed) && changed.includes(liveOf(kind, id)) && !changed.includes(nextOf(kind, id));
+  return (
+    Array.isArray(changed) &&
+    changed.includes(liveOf(kind, id)) &&
+    !changed.includes(nextOf(kind, id)) &&
+    !changed.some((f) => f.startsWith(`${revisionsOf(kind, id)}/`))
+  );
 }
 
 /** The `added_claims` list in a live file's frontmatter. */
