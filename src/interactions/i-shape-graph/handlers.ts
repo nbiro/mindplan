@@ -47,9 +47,18 @@ import {
   validateLink,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
+import {
+  emptyDelta,
+  graphUnder,
+  resolveRevisionChange,
+  revisionFor,
+  withRevision,
+} from "../../foundations/f-revision-model/index.js";
+import { writeRevisionDelta, writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
 import { validatePlannedLink } from "../../foundations/f-compiler-rules/planned.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
+  READINESS_NOTE,
   changedFiles,
   gateWrite,
   mutationTail,
@@ -157,6 +166,8 @@ export function linkNodes(args: {
   const graph = loadGraph();
   const source = findNode(graph, source_id);
   const target = findNode(graph, target_id);
+  const revision = linkRevision(source, edge_type, args.change);
+  if (revision !== null) return linkOnRevision(graph, source, target, edge_type as PlannedEdgeType, revision, args.verbose);
   if (args.change !== undefined && isPlannedSource(source, args.change)) {
     return planEdge(graph, source, target, edge_type, args.change, args.verbose);
   }
@@ -226,6 +237,113 @@ export function linkNodes(args: {
 }
 
 /**
+ * The open revision a link of `edgeType` from `source` writes to, or null (live, legacy next, or a
+ * planned edge): a planned-type edge on a node with open revisions goes to the revision of `change`
+ * when it has one (none of `change`: planned), else to its only open revision (several: Blocked).
+ */
+function linkRevision(source: MindPlanNode, edgeType: string, change: string | undefined): string | null {
+  if (!source.open_revisions?.length || !(PLANNED_EDGE_TYPES as readonly string[]).includes(edgeType)) return null;
+  if (change !== undefined) return revisionFor(source, change) ? change : null;
+  return resolveRevisionChange(source);
+}
+
+/** A contract write to a ready revision sends it back to draft; returns the reset and files. */
+function resetReadyRevision(
+  node: MindPlanNode,
+  change: string
+): { reset: Record<string, unknown> | null; files: string[] } {
+  if (revisionFor(node, change)?.state !== "ready") return { reset: null, files: [] };
+  const written = writeRevisionState(node, change, "draft");
+  return {
+    reset: { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE },
+    files: written.changed_files,
+  };
+}
+
+/**
+ * link_nodes on an open revision: the edge joins the revision's add delta (and leaves its remove
+ * delta), so live gains it only when the revision ships. Checked against live plus that revision.
+ */
+function linkOnRevision(
+  graph: MindPlanGraph,
+  source: MindPlanNode,
+  target: MindPlanNode,
+  type: PlannedEdgeType,
+  change: string,
+  verbose?: boolean
+): Record<string, unknown> {
+  validateLink(source, target, type);
+  if (type === "depends_on") assertAcyclicDependsOn(graphUnder(graph, change), source.id, target.id);
+  gateWrite(graph, [source.id], "link_nodes");
+  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source.id) : null;
+  if ((withRevision(source, change).next?.[type] ?? []).includes(target.id)) {
+    throw blocked(`edge ${source.id} -${type}-> ${target.id} already exists in revision "${change}".`);
+  }
+  const d = revisionFor(source, change)!.edges[type] ?? emptyDelta();
+  const files = writeRevisionDelta(source, change, type, {
+    add: [...d.add, target.id],
+    remove: d.remove.filter((id) => id !== target.id),
+  }).changed_files;
+  const readiness = resetReadyRevision(source, change);
+  refreshPersistedMap();
+  return {
+    linked: { source: source.id, target: target.id, type },
+    slot: "next",
+    change,
+    capabilities_recomputed: [],
+    stability_recomputed: [],
+    ...(readiness.reset ? { readiness_reset: readiness.reset } : {}),
+    ...rulesReachingAfterWrite(source.id, rulesBefore),
+    changed_files: changedFiles([...files, ...readiness.files], true),
+    ...mutationTail(loadGraph(), source.id, verbose),
+  };
+}
+
+/**
+ * unlink_nodes on an open revision: every planned-type edge from source to target in live plus
+ * that revision joins the revision's remove delta (and leaves its add delta). Live is untouched
+ * until the revision ships.
+ */
+function unlinkOnRevision(
+  graph: MindPlanGraph,
+  source: MindPlanNode,
+  target_id: string,
+  change: string,
+  verbose?: boolean
+): Record<string, unknown> {
+  const view = withRevision(source, change).next;
+  const types = PLANNED_EDGE_TYPES.filter((t) => (view?.[t] ?? []).includes(target_id));
+  if (types.length === 0) {
+    throw blocked(`no edge exists between "${source.id}" and "${target_id}" in revision "${change}".`);
+  }
+  gateWrite(graph, [source.id], "unlink_nodes");
+  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source.id) : null;
+  const files: string[] = [];
+  for (const type of types) {
+    const d = revisionFor(source, change)!.edges[type] ?? emptyDelta();
+    files.push(
+      ...writeRevisionDelta(source, change, type, {
+        add: d.add.filter((id) => id !== target_id),
+        remove: [...d.remove, target_id],
+      }).changed_files
+    );
+  }
+  const readiness = resetReadyRevision(source, change);
+  refreshPersistedMap();
+  return {
+    removed: types.length,
+    slot: "next",
+    change,
+    capabilities_recomputed: [],
+    stability_recomputed: [],
+    ...(readiness.reset ? { readiness_reset: readiness.reset } : {}),
+    ...rulesReachingAfterWrite(source.id, rulesBefore),
+    changed_files: changedFiles([...files, ...readiness.files], true),
+    ...mutationTail(loadGraph(), source.id, verbose),
+  };
+}
+
+/**
  * Whether `change` on a link plans the edge: the source is shipped and has no open revision of
  * that change (a revision of it takes the edge on its next slot, as without `change`).
  */
@@ -272,7 +390,11 @@ export function unlinkNodes(args: {
   const source = findNode(graph, source_id);
   // A planned edge may point at a node deleted since: removing it must not need the target.
   if (args.change !== undefined) {
+    if (revisionFor(source, args.change)) return unlinkOnRevision(graph, source, target_id, args.change, args.verbose);
     return unplanEdges(graph, source, target_id, args.change, args.verbose);
+  }
+  if (source.open_revisions?.length) {
+    return unlinkOnRevision(graph, source, target_id, resolveRevisionChange(source)!, args.verbose);
   }
   findNode(graph, target_id);
   gateWrite(graph, [source_id], "unlink_nodes");

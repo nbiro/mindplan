@@ -121,16 +121,16 @@ write(
     "export const registry = [entry_if_a, entry_if_b];\n"
 );
 
-await call("set_implementation_files", { node_id: "f-core", files: ["src/foundations/f-core/"] });
-await call("set_implementation_files", { node_id: "i-feature", files: ["src/interactions/i-feature/"] });
-await call("set_implementation_files", { node_id: "if-a", files: ["src/interfaces/if-a/"] });
-await call("set_implementation_files", { node_id: "if-b", files: ["src/interfaces/if-b/"] });
+await call("set_implementation_files", { node_id: "f-core", add: ["src/foundations/f-core/"] });
+await call("set_implementation_files", { node_id: "i-feature", add: ["src/interactions/i-feature/"] });
+await call("set_implementation_files", { node_id: "if-a", add: ["src/interfaces/if-a/"] });
+await call("set_implementation_files", { node_id: "if-b", add: ["src/interfaces/if-b/"] });
 
 // --- item 2 + 4: claiming a registry that imports Interfaces returns the mounts fix ---
 {
   const claim = await call("set_implementation_files", {
     node_id: "f-reg",
-    files: ["src/foundations/f-reg/"],
+    add: ["src/foundations/f-reg/"],
   });
   const violations = claim.import_violations ?? [];
   const mounted = violations.map((v) => v.fix?.args?.target_id).sort();
@@ -289,7 +289,7 @@ for (const [kind, id] of [
 // A parked plan: a draft node that already claims files is still a plan, not an update.
 await call("create_node", { id: "f-parked", type: "Foundation", title: "Parked", description: "Infra — later work", role: "infra" });
 write("src/foundations/f-parked/index.ts", "export const parked = 1;\n");
-await call("set_implementation_files", { node_id: "f-parked", files: ["src/foundations/f-parked/"] });
+await call("set_implementation_files", { node_id: "f-parked", add: ["src/foundations/f-parked/"] });
 for (const status of ["ready", "in-progress"]) {
   await call("update_node_status", {
     revisions: ["f-core", "f-reg", "i-feature", "if-a", "if-b"].map((node_id) => ({ node_id, new_status: status })),
@@ -332,8 +332,8 @@ for (const status of ["ready", "in-progress"]) {
     "src/interactions/i-bad/bad.ts",
     'import { extra } from "../../foundations/f-extra/index.js";\nexport const bad = extra;\n'
   );
-  await call("set_implementation_files", { node_id: "f-extra", files: ["src/foundations/f-extra/"] });
-  const claim = await call("set_implementation_files", { node_id: "i-bad", files: ["src/interactions/i-bad/"] });
+  await call("set_implementation_files", { node_id: "f-extra", add: ["src/foundations/f-extra/"] });
+  const claim = await call("set_implementation_files", { node_id: "i-bad", add: ["src/interactions/i-bad/"] });
   const fix = claim.import_violations?.[0]?.fix;
   check(
     "claiming a file that imports an unlinked node returns the link_nodes call",
@@ -422,7 +422,7 @@ for (const status of ["ready", "in-progress"]) {
     JSON.stringify(idle.drift)
   );
   await call("open_next", { node_id: "f-core" });
-  await call("set_implementation_files", { node_id: "f-core", files: ["src/foundations/f-core/"] });
+  await call("set_implementation_files", { node_id: "f-core", add: ["src/foundations/f-core/"] });
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
   await call("update_node_status", { node_id: "f-core", new_status: "in-progress" });
   const expected = await call("orient_for_work", { node_id: "f-core" });
