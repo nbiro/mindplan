@@ -5,7 +5,9 @@
  * record_decision tags its decision only. A decision-only change has no members for the check,
  * the graph filter, or a scoped walk, and orient_for_work({ change }) lists its decision holders.
  * In a git sandbox the plain check gives a shipped node whose claimed file changed against main
- * the full stale-text pass. Every write is diffed against the sandbox on disk: each mindplan/ file
+ * the full stale-text pass. With several open revisions on one node, the read surfaces (orient,
+ * get_node_context, run_check, the merge gate, the graph filter, search, blast radius) see each
+ * revision under its change, and exclusivity is judged per change. Every write is diffed against the sandbox on disk: each mindplan/ file
  * it created, changed, or deleted must be in its changed_files.
  * Run via npm test.
  */
@@ -391,6 +393,129 @@ git("switch", "-q", "-c", "feature");
     noGit.ok && !stale(noGit.warnings, "f-util") && !/git/i.test(noGit.output),
     JSON.stringify(noGit.warnings)
   );
+}
+
+// --- several open revisions per node: the read surfaces see each one ---
+{
+  // Revision folders are written in-process (open_next still writes the legacy next file).
+  // No in-process graph cache: its open database would keep the sandbox from being removed.
+  process.env.MINDPLAN_ROOT = root;
+  process.env.MINDPLAN_GRAPH_CACHE = "off";
+  const store = await import("../../../dist/foundations/f-territory-store/store.js");
+  const revs = await import("../../../dist/foundations/f-territory-store/revisions.js");
+  const nodeOf = (id) => store.loadGraph().nodes.find((n) => n.id === id);
+  revs.openRevision(nodeOf("f-util"), "rev-a", {});
+  revs.openRevision(nodeOf("f-util"), "rev-b", { title: "Util reshaped", description: "Infra — util with a backoff policy" });
+  revs.writeRevisionBody(nodeOf("f-util"), "rev-b", "## Spec\n\nUtil retries.\n\n## Backoff schedule\n\nThree tries.\n");
+  revs.openRevision(nodeOf("i-a"), "rev-a", {});
+  revs.writeRevisionState(nodeOf("i-a"), "rev-a", "in-review");
+  const file = revs.revisionFilePath({ id: "f-util", type: "Foundation" }, "rev-b");
+  const parsed = revs.parseRevisionFile(fs.readFileSync(file, "utf-8"), "f-util");
+  parsed.revision.conflicts = [{ kind: "section", section: "## Spec" }];
+  fs.writeFileSync(file, revs.formatRevisionFile("f-util", "Foundation", parsed.revision, parsed.body));
+
+  const lean = (list) => (list ?? []).map((r) => `${r.change}:${r.state}:${r.title ?? ""}:${r.conflicts}`).join();
+  const oriented = await call("orient_for_work", { node_id: "f-util" });
+  check(
+    "orient_for_work on a node with two revisions lists both, reads live, and says to pass change",
+    lean(oriented.revisions) === "rev-a:draft::0,rev-b:draft:Util reshaped:1" &&
+      oriented.context.next === "pass change to read a revision" &&
+      oriented.next === "pass change to read a revision" &&
+      !oriented.context.body.includes("Three tries") &&
+      !("unlocks" in oriented),
+    JSON.stringify({ revisions: oriented.revisions, next: oriented.context.next })
+  );
+  const onRev = await call("orient_for_work", { node_id: "f-util", change: "rev-b" });
+  check(
+    "orient_for_work with change returns that revision as the active slot and unlocks it",
+    onRev.unlocks === "rev-b" &&
+      onRev.context.next?.record?.title === "Util reshaped" &&
+      onRev.context.next?.body?.includes("Three tries") &&
+      lean(onRev.revisions) === lean(oriented.revisions),
+    JSON.stringify({ unlocks: onRev.unlocks, next: onRev.context.next })
+  );
+  const ctx = await call("get_node_context", { node_id: "f-util", change: "rev-b" });
+  check(
+    "get_node_context with change returns the revision body and unlocks the change",
+    ctx.unlocks === "rev-b" && ctx.next?.body?.includes("Three tries") && ctx.body.includes("Change-ids test"),
+    JSON.stringify({ unlocks: ctx.unlocks, next: ctx.next })
+  );
+  const noRev = await blocked("get_node_context", { node_id: "f-util", change: "rev-z" });
+  check("get_node_context with a change the node has no revision of is Blocked", noRev?.includes('"rev-z"'), String(noRev));
+  const both = await blocked("get_node_context", { node_id: "f-util", slot: "next" });
+  check("slot next with two revisions and no change is Blocked naming them", both?.includes("pass change"), String(both));
+
+  const forChange = await call("orient_for_work", { change: "rev-a" });
+  check(
+    "orient_for_work({ change }) lists each node's revision of that change",
+    forChange.members.map((m) => `${m.id}:${m.kind}:${m.change}`).sort().join() === "f-util:revision:rev-a,i-a:revision:rev-a",
+    JSON.stringify(forChange.members)
+  );
+  const checkA = await call("run_check", { change: "rev-a" });
+  check(
+    "run_check({ change }) lists only that change's revisions",
+    (checkA.change?.members ?? []).map((m) => `${m.id}:${m.kind}`).sort().join() === "f-util:revision,i-a:revision",
+    JSON.stringify(checkA.change)
+  );
+  check(
+    "run_check warns once per revision with unresolved conflicts",
+    checkA.warnings.includes(
+      'conflicts: "f-util" revision "rev-b" has 1 unresolved rebase conflict(s); resolve_conflict before in-review.'
+    ),
+    JSON.stringify(checkA.warnings)
+  );
+  const merge = await call("run_check", { merge: true });
+  const gated = merge.merge?.changes?.find((g) => g.change === "rev-a")?.nodes ?? [];
+  check(
+    "the merge gate Blocks a revision in review, naming its change",
+    !merge.ok && gated.some((n) => n.id === "i-a" && n.slot === "revision" && n.state === "in-review") &&
+      merge.failures.some((f) => f.startsWith("Blocked: Merge:") && f.includes('"i-a"') && f.includes('change "rev-a"')),
+    JSON.stringify(merge.merge)
+  );
+  const page = await call("get_mindplan_graph", { change: "rev-b", fields: ["open_revisions"], edges: false });
+  check(
+    "get_mindplan_graph's change filter finds a node by any of its revisions; open_revisions is lean",
+    page.nodes.map((n) => n.id).join() === "f-util" &&
+      JSON.stringify(page.nodes[0].open_revisions) === JSON.stringify([{ change: "rev-a", state: "draft" }, { change: "rev-b", state: "draft" }]),
+    JSON.stringify(page.nodes)
+  );
+  const found = await call("orient_for_work", { query: "backoff schedule" });
+  check(
+    "search finds a node by a revision's new wording",
+    found.matches.some((m) => m.id === "f-util"),
+    JSON.stringify(found.matches)
+  );
+  const radius = await call("get_blast_radius", { node_id: "f-util", change: "rev-b" });
+  const changeRadius = await call("get_blast_radius", { change: "rev-a" });
+  check(
+    "get_blast_radius lists the node's open revisions and takes change with node_id; a change radius lists its revisions",
+    JSON.stringify(radius.open_revisions) === JSON.stringify([{ change: "rev-a", state: "draft" }, { change: "rev-b", state: "draft" }]) &&
+      changeRadius.members.map((m) => `${m.id}:${m.kind}`).sort().join() === "f-util:revision,i-a:revision",
+    JSON.stringify({ radius: radius.open_revisions, members: changeRadius.members })
+  );
+  write("src/shared/x.ts", "export const x = 1;\n");
+  write("src/shared/y.ts", "export const y = 1;\n");
+  revs.writeRevisionDelta(nodeOf("f-util"), "rev-b", "implements", { add: ["src/shared/x.ts"], remove: [] });
+  revs.writeRevisionDelta(nodeOf("i-a"), "rev-a", "implements", { add: ["src/shared/x.ts", "src/shared/y.ts"], remove: [] });
+  revs.writeRevisionDelta(nodeOf("f-util"), "rev-a", "implements", { add: ["src/shared/y.ts"], remove: [] });
+  const claims = await call("run_check", {});
+  check(
+    "exclusivity is per change: two changes claiming one file warn, one change claiming it twice fails",
+    claims.warnings.some((w) => w.startsWith('exclusivity: "src/shared/x.ts" is claimed by revisions of different changes')) &&
+      claims.failures.includes(
+        'Blocked: exclusivity: "src/shared/y.ts" claimed by multiple nodes under change "rev-a": "f-util", "i-a".'
+      ) &&
+      !claims.failures.some((f) => f.includes('exclusivity: "src/shared/x.ts"')),
+    JSON.stringify({ failures: claims.failures, warnings: claims.warnings.filter((w) => w.startsWith("exclusivity")) })
+  );
+  fs.rmSync(path.join(root, "src", "shared"), { recursive: true, force: true });
+  for (const [id, change] of [
+    ["f-util", "rev-a"],
+    ["f-util", "rev-b"],
+    ["i-a", "rev-a"],
+  ]) {
+    revs.discardRevision(nodeOf(id), change);
+  }
 }
 
 check(`each of ${diffedWrites} writes listed every mindplan/ file it touched`, diffMisses === 0, `${diffMisses} write(s) missed files`);
