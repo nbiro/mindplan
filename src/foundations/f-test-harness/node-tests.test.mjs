@@ -101,6 +101,7 @@ async function blocked(tool, args) {
 
 const liveOf = (id) => `mindplan/foundations/${id}/${id}.mdx`;
 const nextOf = (id) => `mindplan/foundations/${id}/${id}.next.mdx`;
+const revOf = (id, change) => `mindplan/foundations/${id}/revisions/${change}/${id}.mdx`;
 const readRel = (rel) => fs.readFileSync(path.join(root, ...rel.split("/")), "utf-8");
 
 /** The `tests` list in a territory file's frontmatter. */
@@ -115,9 +116,27 @@ function testsIn(rel) {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+/** A list field (`tests_add`, `tests_remove`, ...) in a revision file's frontmatter. */
+function listIn(rel, key) {
+  const fm = readRel(rel).match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+  const block = fm.match(new RegExp(`^${key}:\\r?\\n((?:\\s+-\\s+.*(?:\\r?\\n|$))*)`, "m"))?.[1] ?? "";
+  return block
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s+-\s+/, "").replace(/^"|"$/g, "").trim())
+    .filter(Boolean);
+}
+
+/**
+ * True when a shipped node with no open revision has no `<id>.next.mdx` and no `revisions/`
+ * folder beside its live file.
+ */
 function noNextFile(id) {
-  return fs.existsSync(path.join(root, ...liveOf(id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(id).split("/")));
+  const dir = path.join(root, "mindplan", "foundations", id);
+  return (
+    fs.existsSync(path.join(root, ...liveOf(id).split("/"))) &&
+    !fs.existsSync(path.join(root, ...nextOf(id).split("/"))) &&
+    !fs.existsSync(path.join(dir, "revisions"))
+  );
 }
 
 /** Fill create_node scaffold stubs with real text and tick every checkbox (before first ship). */
@@ -281,27 +300,29 @@ await foundation("f-dep");
   await call("discard_next", { node_id: "f-dep" });
 }
 
-// --- an open revision: both files, kept through body and claim writes, and through ship ---
+// --- an open revision: a tests delta on the revision file, kept through body and claim writes, applied at ship ---
 {
   await call("open_next", { node_id: "f-core", change: "c-core" });
+  const liveBefore = testsIn(liveOf("f-core"));
   const res = await call("set_test_files", {
     node_id: "f-core",
     files: ["tests/core.test.mjs", "tests/extra/one.test.mjs"], replace: true,
   });
+  const delta = () => ({ add: listIn(revOf("f-core", "c-core"), "tests_add"), remove: listIn(revOf("f-core", "c-core"), "tests_remove") });
   check(
-    "set_test_files with an open revision writes live and next alike",
-    same(testsIn(liveOf("f-core")), ["tests/core.test.mjs", "tests/extra/one.test.mjs"]) &&
-      same(testsIn(nextOf("f-core")), ["tests/core.test.mjs", "tests/extra/one.test.mjs"]) &&
-      res.changed_files.includes(liveOf("f-core")) &&
-      res.changed_files.includes(nextOf("f-core")),
-    JSON.stringify(res)
+    "set_test_files with an open revision writes the revision's tests delta and leaves live alone",
+    same(testsIn(liveOf("f-core")), liveBefore) &&
+      same(res.tests, ["tests/core.test.mjs", "tests/extra/one.test.mjs"]) &&
+      same(delta(), { add: ["tests/extra/one.test.mjs"], remove: ["tests/extra/"] }) &&
+      same(res.changed_files, [revOf("f-core", "c-core")]),
+    JSON.stringify({ res, live: testsIn(liveOf("f-core")), delta: delta() })
   );
   await call("patch_node_territory", { node_id: "f-core", description: "Infra — core, revised" });
   await call("set_implementation_files", { node_id: "f-core", add: ["src/f-core/"] });
   check(
-    "territory and claim writes keep the tests list on next",
-    same(testsIn(nextOf("f-core")), ["tests/core.test.mjs", "tests/extra/one.test.mjs"]),
-    JSON.stringify(testsIn(nextOf("f-core")))
+    "territory and claim writes keep the revision's tests delta",
+    same(delta(), { add: ["tests/extra/one.test.mjs"], remove: ["tests/extra/"] }),
+    JSON.stringify(delta())
   );
   await call("record_decision", {
     node_id: "f-core",
@@ -313,7 +334,7 @@ await foundation("f-dep");
   await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
   await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
   check(
-    "ship keeps the tests list on live and deletes the next file",
+    "ship applies the revision's tests to live and deletes the revision folder",
     same(testsIn(liveOf("f-core")), ["tests/core.test.mjs", "tests/extra/one.test.mjs"]) && noNextFile("f-core"),
     JSON.stringify(testsIn(liveOf("f-core")))
   );
@@ -325,8 +346,8 @@ await foundation("f-dep");
   await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"], replace: true });
   await call("discard_next", { node_id: "f-dep" });
   check(
-    "discard_next keeps the tests written during the revision on live and deletes the next file",
-    same(testsIn(liveOf("f-dep")), ["tests/core.test.mjs", "tests/dep.test.mjs"]) && noNextFile("f-dep"),
+    "discard_next drops the tests written during the revision, keeps live, and deletes the revision folder",
+    same(testsIn(liveOf("f-dep")), ["tests/dep.test.mjs"]) && noNextFile("f-dep"),
     JSON.stringify(testsIn(liveOf("f-dep")))
   );
   await call("set_test_files", { node_id: "f-dep", files: [], replace: true });
@@ -360,13 +381,13 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
 
 // --- add / remove / replace: files alone is Blocked; add and remove change entries ---
 {
-  const noReplace = await blocked("set_test_files", { replace: true, node_id: "f-core", files: ["tests/core.test.mjs"] });
+  const noReplace = await blocked("set_test_files", { node_id: "f-core", files: ["tests/core.test.mjs"] });
   check(
     "set_test_files files without replace: true is Blocked, naming add / remove and replace: true",
     noReplace?.includes("Blocked:") && noReplace.includes("add / remove") && noReplace.includes("replace: true"),
     noReplace ?? "accepted"
   );
-  const claimNoReplace = await blocked("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/f-core/"] });
+  const claimNoReplace = await blocked("set_implementation_files", { node_id: "f-core", files: ["src/f-core/"] });
   check(
     "set_implementation_files files without replace: true is Blocked, naming add / remove and replace: true",
     claimNoReplace?.includes("add / remove") && claimNoReplace.includes("replace: true"),

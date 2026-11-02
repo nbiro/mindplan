@@ -112,7 +112,13 @@ fs.writeFileSync(path.join(root, "src", "f-store", "index.ts"), "export const st
 await call("create_node", { id: "f-store", type: "Foundation", title: "Store", description: "Infra — store", role: "infra" });
 await call("set_implementation_files", { replace: true, node_id: "f-store", files: ["src/f-store/"] });
 const live = path.join(root, "mindplan", "foundations", "f-store", "f-store.mdx");
-const next = path.join(root, "mindplan", "foundations", "f-store", "f-store.next.mdx");
+const revisionDir = path.join(root, "mindplan", "foundations", "f-store", "revisions", "rev-f-store");
+const next = path.join(revisionDir, "f-store.mdx");
+/** Every decision file text recorded under the open revision. */
+const revisionDecisions = () => {
+  const dir = path.join(revisionDir, "decisions");
+  return fs.existsSync(dir) ? fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f), "utf-8")).join(" ") : "";
+};
 fs.writeFileSync(
   live,
   fs.readFileSync(live, "utf-8").replace(/^_.*?_$/gm, "Transient-io test territory.").replaceAll("- [ ]", "- [x]")
@@ -135,7 +141,9 @@ for (let round = 0; round < ROUNDS; round++) {
     }),
   ]);
   const errors = results.filter((r) => r.error).map((r) => r.text);
-  const onNext = fs.readFileSync(next, "utf-8").includes(`Round ${round} keeps one store.`);
+  const onNext =
+    fs.readFileSync(next, "utf-8").includes(`Round ${round}.`) &&
+    revisionDecisions().includes(`Round ${round} keeps one store.`);
   if (errors.length || !onNext) failed.push({ round, errors, onNext });
   await call("discard_next", { node_id: "f-store" });
 }

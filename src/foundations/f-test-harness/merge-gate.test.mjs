@@ -143,7 +143,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   assert.equal(gated.status, 1, gated.out);
   const line = gated.out.split("\n").find((l) => l.startsWith("Blocked: Merge:"));
   assert.ok(line, gated.out);
-  assert.match(line, /"f-shared" \(Foundation, next in-review, change "add-thing"\)/);
+  assert.match(line, /"f-shared" \(Foundation, revision in-review, change "add-thing"\)/);
   assert.ok(
     line.includes('update_node_status({ scope: "change", change: "add-thing", new_status: "ship" })'),
     line
@@ -157,7 +157,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   assert.deepEqual(result.merge, {
     level: "default",
     changes: [
-      { change: "add-thing", nodes: [{ id: "f-shared", type: "Foundation", state: "in-review", slot: "next" }] },
+      { change: "add-thing", nodes: [{ id: "f-shared", type: "Foundation", state: "in-review", slot: "revision" }] },
     ],
   });
   ok("runCheckHandler({ merge: true }) returns the CLI's failures and the grouped merge report");
@@ -292,7 +292,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   const dirty = handler(root, { merge: "strict" });
   assert.deepEqual(
     dirty.merge.changes[0].nodes.map((n) => [n.id, n.slot]),
-    [["f-evolving", "next"], ["i-touched", "live"]]
+    [["f-evolving", "revision"], ["i-touched", "live"]]
   );
   ok("strict counts working-tree edits and an open next, with the default base");
 

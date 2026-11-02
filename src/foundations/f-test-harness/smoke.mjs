@@ -161,9 +161,16 @@ function territoryPath(...parts) {
   return path.join(root, "mindplan", ...parts, `${id}.mdx`);
 }
 
-function nextTerritoryPath(...parts) {
+/** A `<id>.next.mdx` file from an older release (a leftover mirror or a legacy evolution). */
+function legacyNextPath(...parts) {
   const id = parts[parts.length - 1];
   return path.join(root, "mindplan", ...parts, `${id}.next.mdx`);
+}
+
+/** The open revision file opened with change `rev-<id>`: `<folder>/revisions/rev-<id>/<id>.mdx`. */
+function nextTerritoryPath(...parts) {
+  const id = parts[parts.length - 1];
+  return path.join(root, "mindplan", ...parts, "revisions", `rev-${id}`, `${id}.mdx`);
 }
 
 // --- get_project (empty brief + bundled playbook in sandbox) ---
@@ -362,7 +369,7 @@ function nextTerritoryPath(...parts) {
 const createdCapability = JSON.parse(
   await expectOk("create capability", "create_node", { id: "j-ordering", type: "Capability", title: "Ordering", description: "Diner orders food" })
 );
-if (!createdCapability.changed_files?.includes("mindplan/capabilities/j-ordering/j-ordering.mdx") || !createdCapability.changed_files?.includes("mindplan/map.md")) {
+if (!createdCapability.changed_files?.includes("mindplan/capabilities/j-ordering/j-ordering.mdx") || createdCapability.changed_files?.includes("mindplan/map.md")) {
   failures++; console.log(`FAIL create_node changed_files capability: ${JSON.stringify(createdCapability.changed_files)}`);
 } else console.log("ok   create_node changed_files (capability)");
 await expectOk("create foundation", "create_node", {
@@ -378,7 +385,7 @@ const createdIx = JSON.parse(
 if (
   !createdIx.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
   createdIx.changed_files?.some((f) => String(f).includes("src/interactions/")) ||
-  !createdIx.changed_files?.includes("mindplan/map.md")
+  createdIx.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL create_node changed_files interaction: ${JSON.stringify(createdIx.changed_files)}`);
 } else console.log("ok   create_node changed_files (interaction)");
@@ -415,7 +422,7 @@ const linkedDepends = JSON.parse(
 );
 if (
   !linkedDepends.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
-  !linkedDepends.changed_files?.includes("mindplan/map.md")
+  linkedDepends.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL link_nodes changed_files: ${JSON.stringify(linkedDepends.changed_files)}`);
 } else console.log("ok   link_nodes changed_files");
@@ -592,7 +599,7 @@ const ixReady = JSON.parse(
 );
 if (
   !ixReady.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
-  !ixReady.changed_files?.includes("mindplan/map.md")
+  ixReady.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL update_node_status changed_files: ${JSON.stringify(ixReady.changed_files)}`);
 } else console.log("ok   update_node_status changed_files");
@@ -1029,13 +1036,13 @@ const openNextRes = JSON.parse(await expectOk("open_next i-checkout", "open_next
   change: "rev-i-checkout",
   node_id: "i-checkout", title: "Checkout v2", description: "Revised checkout",
 }));
-if (openNextRes.next?.state !== "draft") {
-  failures++; console.log(`FAIL open_next should write a draft next: ${JSON.stringify(openNextRes.next)}`);
-} else console.log("ok   open_next writes a draft next file");
+if (openNextRes.revision?.state !== "draft" || openNextRes.revision?.change !== "rev-i-checkout") {
+  failures++; console.log(`FAIL open_next should write a draft revision: ${JSON.stringify(openNextRes.revision)}`);
+} else console.log("ok   open_next writes a draft revision");
 if (
-  !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
-  !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments/.gitkeep") ||
-  !openNextRes.changed_files?.includes("mindplan/map.md")
+  !openNextRes.changed_files?.includes("mindplan/interactions/i-checkout/revisions/rev-i-checkout/i-checkout.mdx") ||
+  openNextRes.changed_files?.some((f) => f.endsWith(".next.mdx") || f.includes("next-attachments")) ||
+  openNextRes.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL open_next changed_files: ${JSON.stringify(openNextRes.changed_files)}`);
 } else console.log("ok   open_next changed_files");
@@ -1063,14 +1070,20 @@ if (ixCheckoutLive.state !== "stable" || ixCheckoutLive.next?.state !== "draft")
   failures++; console.log(`FAIL live should stay stable with draft next: ${JSON.stringify(ixCheckoutLive)}`);
 } else console.log("ok   live stays stable after open_next");
 
-const nextPath = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.next.mdx");
+const nextPath = nextTerritoryPath("interactions", "i-checkout");
 const nextCtx = fs.readFileSync(nextPath, "utf-8");
-if (!nextCtx.includes("state: draft") || !nextCtx.includes("belongs_to:") || !nextCtx.includes("depends_on:")) {
-  failures++; console.log("FAIL next.mdx missing draft state or inherited edges");
-} else console.log("ok   next.mdx inherits edges and starts draft");
-if (!nextCtx.includes("implements:") || !ixCheckoutLive.implements?.includes("src/interactions/i-checkout/")) {
-  failures++; console.log(`FAIL open_next should copy implements: ${JSON.stringify(ixCheckoutLive.implements)}`);
-} else console.log("ok   open_next copies implements to next");
+// A revision stores edges and claims as deltas against live: it opens with none.
+if (!nextCtx.includes("state: draft") || /_(add|remove):/.test(nextCtx)) {
+  failures++; console.log("FAIL revision file should start draft with empty deltas");
+} else console.log("ok   revision file starts draft with empty deltas");
+if (
+  !ixCheckoutLive.implements?.includes("src/interactions/i-checkout/") ||
+  !(ixCheckoutLive.next?.implements ?? []).includes("src/interactions/i-checkout/") ||
+  !(ixCheckoutLive.next?.belongs_to ?? []).length ||
+  !(ixCheckoutLive.next?.depends_on ?? []).length
+) {
+  failures++; console.log(`FAIL the revision view should inherit live edges and claims: ${JSON.stringify(ixCheckoutLive.next)}`);
+} else console.log("ok   the revision view inherits live edges and claims");
 
 await expectOk("set implements i-checkout next", "set_implementation_files", {
   replace: true,
@@ -1175,7 +1188,9 @@ if (!retiredFileGroup?.via?.includes("dependent")) {
 await expectOk("i-checkout next -> ready", "update_node_status", { node_id: "i-checkout", new_status: "ready" });
 await expectOk("i-checkout next -> in-progress", "update_node_status", { node_id: "i-checkout", new_status: "in-progress" });
 fs.writeFileSync(nextPath, fs.readFileSync(nextPath, "utf-8").replaceAll("[ ]", "[x]"));
-const nextAttNote = path.join(root, "mindplan", "interactions", "i-checkout", "next-attachments", "note.txt");
+const nextAttDir = path.join(root, "mindplan", "interactions", "i-checkout", "revisions", "rev-i-checkout", "attachments");
+fs.mkdirSync(nextAttDir, { recursive: true });
+const nextAttNote = path.join(nextAttDir, "note.txt");
 fs.writeFileSync(nextAttNote, "promote me");
 await expectOk("i-checkout next -> in-review", "update_node_status", { node_id: "i-checkout", new_status: "in-review" });
 
@@ -1194,23 +1209,22 @@ if (shipNext.new_state !== "stable") {
 } else console.log("ok   promoted node is stable");
 if (
   !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.mdx") ||
-  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
-  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments") ||
-  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments/note.txt") ||
+  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/revisions/rev-i-checkout/i-checkout.mdx") ||
+  !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/revisions/rev-i-checkout/attachments/note.txt") ||
   !shipNext.changed_files?.includes("mindplan/interactions/i-checkout/attachments/note.txt") ||
-  !shipNext.changed_files?.includes("mindplan/map.md")
+  shipNext.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL promote changed_files: ${JSON.stringify(shipNext.changed_files)}`);
 } else console.log("ok   promote changed_files includes attachments");
 const promotedAtt = path.join(root, "mindplan", "interactions", "i-checkout", "attachments", "note.txt");
 if (!fs.existsSync(promotedAtt)) {
-  failures++; console.log("FAIL promote should copy next-attachments/note.txt into attachments/");
-} else console.log("ok   promote copied next-attachment into attachments/");
+  failures++; console.log("FAIL ship should copy the revision's attachments/note.txt into attachments/");
+} else console.log("ok   ship copied the revision attachment into attachments/");
 
-const nextAttDir = path.join(root, "mindplan", "interactions", "i-checkout", "next-attachments");
-if (fs.existsSync(nextPath) || fs.existsSync(nextAttDir)) {
-  failures++; console.log("FAIL promote should delete next.mdx and next-attachments/");
-} else console.log("ok   promote deletes next.mdx and next-attachments/");
+const revisionsDir = path.join(root, "mindplan", "interactions", "i-checkout", "revisions");
+if (fs.existsSync(nextPath) || fs.existsSync(revisionsDir)) {
+  failures++; console.log("FAIL ship should delete the revision folder");
+} else console.log("ok   ship deletes the revision folder");
 
 const currentAfter = fs.readFileSync(path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx"), "utf-8");
 if (!currentAfter.includes("Checkout v2") || !currentAfter.includes("Revised checkout")) {
@@ -1240,15 +1254,13 @@ if (tipsLeadsAfterPromote.length !== 1) {
 // discard_next path
 const openForDiscard = JSON.parse(await expectOk("open_next again for discard", "open_next", { change: "rev-i-checkout", node_id: "i-checkout" }));
 const discardRes = JSON.parse(await expectOk("discard_next", "discard_next", { node_id: "i-checkout" }));
-if (fs.existsSync(nextPath) || fs.existsSync(nextAttDir)) {
-  failures++; console.log("FAIL discard_next should delete next.mdx and next-attachments/");
-} else console.log("ok   discard_next deletes next.mdx and next-attachments/");
+if (fs.existsSync(nextPath) || fs.existsSync(revisionsDir)) {
+  failures++; console.log("FAIL discard_next should delete the revision folder");
+} else console.log("ok   discard_next deletes the revision folder");
 if (
   "restored_mirror" in discardRes ||
-  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
-  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments/.gitkeep") ||
-  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/next-attachments") ||
-  !discardRes.changed_files?.includes("mindplan/map.md")
+  !discardRes.changed_files?.includes("mindplan/interactions/i-checkout/revisions/rev-i-checkout/i-checkout.mdx") ||
+  discardRes.changed_files?.includes("mindplan/map.md")
 ) {
   failures++; console.log(`FAIL discard_next changed_files: ${JSON.stringify(discardRes.changed_files)}`);
 } else console.log("ok   discard_next changed_files");
@@ -1349,9 +1361,10 @@ void openForDiscard;
   // A leftover `state: mirror` next file (older release) is not a revision:
   // the graph has no next, check warns and passes, upgrade_project removes it.
   const livePathNow = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.mdx");
+  const mirrorPath = path.join(root, "mindplan", "interactions", "i-checkout", "i-checkout.next.mdx");
   const writeLeftoverMirror = () =>
     fs.writeFileSync(
-      nextPath,
+      mirrorPath,
       fs.readFileSync(livePathNow, "utf-8").replace(/^state:\s*.*$/m, "state: mirror")
     );
   writeLeftoverMirror();
@@ -1388,7 +1401,7 @@ void openForDiscard;
   const initRemove = runUpgrade(root);
   if (
     initRemove.status !== 0 ||
-    fs.existsSync(nextPath) ||
+    fs.existsSync(mirrorPath) ||
     !initRemove.result.migrations.mirrorTwinsRemoved.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx") ||
     !initRemove.result.changed_files.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx")
   ) {
@@ -1402,14 +1415,16 @@ void openForDiscard;
     await expectOk("open_next over leftover mirror", "open_next", { change: "rev-i-checkout", node_id: "i-checkout" })
   );
   if (
-    openOverLeftover.next?.state !== "draft" ||
-    !fs.readFileSync(nextPath, "utf-8").includes("state: draft")
+    openOverLeftover.revision?.state !== "draft" ||
+    !fs.readFileSync(nextPath, "utf-8").includes("state: draft") ||
+    fs.existsSync(mirrorPath) ||
+    !openOverLeftover.changed_files?.includes("mindplan/interactions/i-checkout/i-checkout.next.mdx")
   ) {
     failures++;
-    console.log(`FAIL open_next should replace a leftover mirror: ${JSON.stringify(openOverLeftover.next)}`);
+    console.log(`FAIL open_next should replace a leftover mirror: ${JSON.stringify(openOverLeftover)}`);
   } else console.log("ok   open_next replaces a leftover mirror file");
   await expectOk("discard_next after open over leftover", "discard_next", { node_id: "i-checkout" });
-  if (fs.existsSync(nextPath)) {
+  if (fs.existsSync(nextPath) || fs.existsSync(mirrorPath)) {
     failures++;
     console.log("FAIL discard_next should leave no next file");
   }
@@ -1506,8 +1521,8 @@ if (fs.existsSync(tipsNextAfterUnship)) {
     node_id: "f-retire-twin",
     new_status: "ship",
   });
-  const retireNext = nextTerritoryPath("foundations", "f-retire-twin");
-  if (fs.existsSync(retireNext)) {
+  const retireNext = legacyNextPath("foundations", "f-retire-twin");
+  if (fs.existsSync(retireNext) || fs.existsSync(nextTerritoryPath("foundations", "f-retire-twin"))) {
     failures++;
     console.log("FAIL f-retire-twin ship should write no next file");
   }
@@ -1666,8 +1681,9 @@ async function shipFoundation(id, title) {
 }
 await shipFoundation("f-cyc-a", "Cycle A");
 await shipFoundation("f-cyc-b", "Cycle B");
-await expectOk("open_next f-cyc-a", "open_next", { change: "rev-f-cyc-a", node_id: "f-cyc-a" });
-await expectOk("open_next f-cyc-b", "open_next", { change: "rev-f-cyc-b", node_id: "f-cyc-b" });
+// Both revisions belong to one change, so the cycle is judged in one view.
+await expectOk("open_next f-cyc-a", "open_next", { change: "cyc", node_id: "f-cyc-a" });
+await expectOk("open_next f-cyc-b", "open_next", { change: "cyc", node_id: "f-cyc-b" });
 await expectOk("link f-cyc-a next depends_on f-cyc-b", "link_nodes", {
   source_id: "f-cyc-a",
   target_id: "f-cyc-b",
@@ -1905,11 +1921,16 @@ if (migrateInit.status !== 0) {
   fs.mkdirSync(ixDir, { recursive: true });
   fs.mkdirSync(capabilityDir, { recursive: true });
   fs.writeFileSync(path.join(ixDir, "current.mdx"), "---\nid: i-old\n---\n\n# Old\n", "utf-8");
-  fs.writeFileSync(path.join(ixDir, "next.mdx"), "---\nid: i-old\n---\n\n# Next\n", "utf-8");
+  // A legacy next.mdx is renamed, then (level 4) moved to revisions/<change>/: it needs a readable frontmatter.
+  fs.writeFileSync(
+    path.join(ixDir, "next.mdx"),
+    "---\nid: i-old\nstate: draft\nupdated_at: 2024-01-01T00:00:00.000Z\n---\n\n# Next\n",
+    "utf-8"
+  );
   fs.writeFileSync(path.join(capabilityDir, "current.mdx"), "---\nid: j-old\n---\n\n# Capability\n", "utf-8");
   const renameInit = upgradeLike(renameRoot);
   const live = path.join(ixDir, "i-old.mdx");
-  const evolved = path.join(ixDir, "i-old.next.mdx");
+  const evolved = path.join(ixDir, "revisions", "rev-i-old", "i-old.mdx");
   const capability = path.join(capabilityDir, "j-old.mdx");
   if (renameInit.status !== 0) {
     failures++;
@@ -1917,6 +1938,7 @@ if (migrateInit.status !== 0) {
   } else if (
     !fs.existsSync(live) ||
     !fs.existsSync(evolved) ||
+    fs.existsSync(path.join(ixDir, "i-old.next.mdx")) ||
     !fs.existsSync(capability) ||
     fs.existsSync(path.join(ixDir, "current.mdx")) ||
     fs.existsSync(path.join(ixDir, "next.mdx")) ||
@@ -2046,14 +2068,22 @@ if (migrateInit.status !== 0) {
   const nextClashRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-init-next-clash-"));
   const nextClashDir = path.join(nextClashRoot, "mindplan", "foundations", "f-next");
   fs.mkdirSync(nextClashDir, { recursive: true });
-  fs.writeFileSync(path.join(nextClashDir, "f-next.mdx"), "live\n", "utf-8");
+  fs.writeFileSync(path.join(nextClashDir, "f-next.mdx"), "---\nid: f-next\n---\n\nlive\n", "utf-8");
   fs.writeFileSync(path.join(nextClashDir, "next.mdx"), "legacy-next\n", "utf-8");
-  fs.writeFileSync(path.join(nextClashDir, "f-next.next.mdx"), "named-next\n", "utf-8");
+  // The kept evolution is then (level 4) moved to revisions/<change>/: it needs a readable frontmatter.
+  fs.writeFileSync(
+    path.join(nextClashDir, "f-next.next.mdx"),
+    "---\nid: f-next\nstate: draft\nupdated_at: 2024-01-01T00:00:00.000Z\n---\n\nnamed-next\n",
+    "utf-8"
+  );
   const nextClash = upgradeLike(nextClashRoot);
+  const movedNext = path.join(nextClashDir, "revisions", "rev-f-next", "f-next.mdx");
   if (
     nextClash.status !== 0 ||
     fs.existsSync(path.join(nextClashDir, "next.mdx")) ||
-    fs.readFileSync(path.join(nextClashDir, "f-next.next.mdx"), "utf-8") !== "named-next\n" ||
+    fs.existsSync(path.join(nextClashDir, "f-next.next.mdx")) ||
+    !fs.existsSync(movedNext) ||
+    !fs.readFileSync(movedNext, "utf-8").includes("named-next") ||
     !(nextClash.stdout || "").includes("Removed mindplan/foundations/f-next/next.mdx (kept mindplan/foundations/f-next/f-next.next.mdx)")
   ) {
     failures++;
@@ -2390,15 +2420,17 @@ Legacy substrate.
         console.log("FAIL patch wrote a new id-named file instead of current.mdx");
       } else {
         await expectOk("open_next on legacy foundation", "open_next", { change: "rev-f-legacy", node_id: "f-legacy" });
+        // A revision of a node still on current.mdx lives under revisions/<change>/ like any other.
+        const nextPath = path.join(legacyFoundation, "revisions", "rev-f-legacy", "f-legacy.mdx");
         if (
-          !fs.existsSync(path.join(legacyFoundation, "next.mdx")) ||
+          !fs.existsSync(nextPath) ||
+          fs.existsSync(path.join(legacyFoundation, "next.mdx")) ||
           fs.existsSync(path.join(legacyFoundation, "f-legacy.next.mdx"))
         ) {
           failures++;
-          console.log("FAIL open_next on current.mdx should create next.mdx");
+          console.log("FAIL open_next on current.mdx should open a revision under revisions/");
         } else {
-          console.log("ok   legacy current.mdx and next.mdx still load and write");
-          const nextPath = path.join(legacyFoundation, "next.mdx");
+          console.log("ok   legacy current.mdx still loads, and its revision lives under revisions/");
           const nextRaw = fs
             .readFileSync(nextPath, "utf-8")
             .replace(/\[[ ]\]/g, "[x]")
@@ -2408,38 +2440,42 @@ Legacy substrate.
           fs.mkdirSync(legacySrc, { recursive: true });
           fs.writeFileSync(path.join(legacySrc, "store.ts"), "export {}\n", "utf-8");
           await expectOk("set implements f-legacy next", "set_implementation_files", {
-            replace: true,
             node_id: "f-legacy",
-            files: ["src/foundations/f-legacy/"],
+            add: ["src/foundations/f-legacy/"],
           });
           await expectOk("legacy next ready", "update_node_status", { node_id: "f-legacy", new_status: "ready" });
           await expectOk("legacy next in-progress", "update_node_status", { node_id: "f-legacy", new_status: "in-progress" });
-          // A shipped Foundation's revision is decision-worthy; legacy next.mdx takes the entry.
+          // A shipped Foundation's revision is decision-worthy; the revision's decisions/ takes the entry.
           await expectOk("record decision on legacy next", "record_decision", {
             node_id: "f-legacy",
             decision: "Legacy files keep their names until init renames them.",
             alternatives: ["Rename on every write (churns history)"],
             why: "Review diffs stay readable.",
+            change: "rev-f-legacy",
           });
           await expectOk("legacy next in-review", "update_node_status", { node_id: "f-legacy", new_status: "in-review" });
           await expectOk("legacy next ship", "update_node_status", { node_id: "f-legacy", new_status: "ship" });
           const promoted = fs.readFileSync(path.join(legacyFoundation, "current.mdx"), "utf-8");
-          if (!promoted.includes("PROMOTED_LEGACY") || fs.existsSync(nextPath)) {
-            failures++;
-            console.log("FAIL promote should write current.mdx and delete legacy next.mdx");
-          } else console.log("ok   promote writes legacy current.mdx and deletes next.mdx");
-          await expectOk("open_next again on legacy foundation", "open_next", { change: "rev-f-legacy", node_id: "f-legacy" });
-          if (!fs.existsSync(nextPath) || fs.existsSync(path.join(legacyFoundation, "f-legacy.next.mdx"))) {
-            failures++;
-            console.log("FAIL open_next again on current.mdx should recreate legacy next.mdx");
-          }
-          await expectOk("discard legacy next.mdx", "discard_next", { node_id: "f-legacy" });
           if (
-            fs.existsSync(nextPath) ||
+            !promoted.includes("PROMOTED_LEGACY") ||
+            fs.existsSync(path.join(legacyFoundation, "revisions")) ||
+            fs.existsSync(path.join(legacyFoundation, "f-legacy.mdx"))
+          ) {
+            failures++;
+            console.log("FAIL ship should write current.mdx and delete the revision folder");
+          } else console.log("ok   ship writes legacy current.mdx and deletes the revision folder");
+          await expectOk("open_next again on legacy foundation", "open_next", { change: "rev-f-legacy", node_id: "f-legacy" });
+          if (!fs.existsSync(nextPath)) {
+            failures++;
+            console.log("FAIL open_next again on current.mdx should open a revision again");
+          }
+          await expectOk("discard legacy revision", "discard_next", { node_id: "f-legacy" });
+          if (
+            fs.existsSync(path.join(legacyFoundation, "revisions")) ||
             !fs.existsSync(path.join(legacyFoundation, "current.mdx"))
           ) {
             failures++;
-            console.log("FAIL discard_next should delete legacy next.mdx and keep current.mdx");
+            console.log("FAIL discard_next should delete the revision folder and keep current.mdx");
           }
         }
       }
@@ -2675,18 +2711,19 @@ role: infra
   }, "heading");
   await expectBlocked("patch_node_rules unknown node", "patch_node_rules", { node_id: "j-nope", rules: "x" });
 
-  // Open evolution: same text lands in live and next; discard deletes the next file.
+  // Open revision: rules stay on live only; the revision file never carries them, and no next file appears.
   await expectOk("open_next f-rules-base", "open_next", { change: "rev-f-rules-base", node_id: "f-rules-base" });
   const evolving = await json("patch_node_rules", { node_id: "f-rules-base", rules: "- Evolving rule." });
-  const nextRaw = readFile("foundations", "f-rules-base", "f-rules-base.next.mdx");
+  const revisionRaw = fs.readFileSync(nextTerritoryPath("foundations", "f-rules-base"), "utf-8");
   if (
-    JSON.stringify(evolving.slots) !== '["current","next"]' ||
+    JSON.stringify(evolving.slots) !== '["current"]' ||
     !readFile("foundations", "f-rules-base", "f-rules-base.mdx").includes("- Evolving rule.") ||
-    !nextRaw.includes("- Evolving rule.")
+    revisionRaw.includes("- Evolving rule.") ||
+    fs.existsSync(legacyNextPath("foundations", "f-rules-base"))
   ) {
     failures++;
-    console.log(`FAIL rules with an open evolution: ${JSON.stringify(evolving)}`);
-  } else console.log("ok   rules are written to live and next while an evolution is open");
+    console.log(`FAIL rules with an open revision: ${JSON.stringify(evolving)}`);
+  } else console.log("ok   rules are written to live only while a revision is open");
   await expectOk("discard_next f-rules-base", "discard_next", { node_id: "f-rules-base" });
 
   // Clearing removes the section.
@@ -2726,12 +2763,14 @@ role: infra
     });
   }
   const shippedLive = readRules("foundations", "f-rules-base", "f-rules-base.mdx");
-  const shippedNextExists = fs.existsSync(path.join(root, "mindplan", "foundations", "f-rules-base", "f-rules-base.next.mdx"));
+  const shippedNextExists =
+    fs.existsSync(legacyNextPath("foundations", "f-rules-base")) ||
+    fs.existsSync(path.join(root, "mindplan", "foundations", "f-rules-base", "revisions"));
   const shippedCtx = await json("get_node_context", { node_id: "f-rules-base" });
   if (
     (shippedLive.match(/^## Rules$/gm) ?? []).length !== 1 ||
-    (shippedLive.match(/^## Decisions$/gm) ?? []).length !== 1 ||
-    shippedLive.indexOf("## Decisions") > shippedLive.indexOf("## Rules") ||
+    // Decisions are files (decisions/<id>.md): the live body holds no Decisions section.
+    (shippedLive.match(/^## Decisions$/gm) ?? []).length !== 0 ||
     shippedCtx.decisions?.[0]?.decision !== "Rules stay prose, not checks." ||
     !shippedLive.includes("- Shipped rule.") ||
     shippedCtx.rules !== "- Shipped rule." ||

@@ -242,12 +242,12 @@ await call("unlink_nodes", { source_id: "if-dash", target_id: "i-third", change:
 check("an unreadable planned item survives a planned write", live(dashRel).includes("c9 bogus_type i-third"), live(dashRel).split("---")[1]);
 await call("link_nodes", { source_id: "if-dash", target_id: "i-third", edge_type: "exposes", change: "c3" });
 await call("open_next", { change: "rev-if-dash", node_id: "if-dash" });
-const crlfNext = live("mindplan/interfaces/if-dash/if-dash.next.mdx").split("---")[1];
-check("open_next keeps a CRLF live file's line endings in the next file", !/[^\r]\n/.test(crlfNext), JSON.stringify(crlfNext.slice(0, 120)));
-await call("patch_node_territory", { node_id: "if-dash", change: "c3" });
+// The revision file's frontmatter is server-written (LF); its body is the live body, CRLF kept.
+const crlfNext = live("mindplan/interfaces/if-dash/revisions/rev-if-dash/if-dash.mdx").split(/\r?\n---\r?\n/).slice(1).join("---");
+check("open_next keeps a CRLF live file's line endings in the revision body", !/[^\r]\n/.test(crlfNext), JSON.stringify(crlfNext.slice(0, 120)));
 const lateChange = await call("run_check", { change: "c3" });
 check(
-  "a planned edge the revision never applied stays listed after the change id is set on it",
+  "a planned edge of another change stays listed while a revision of a different change is open",
   lateChange.info.some((l) => l.startsWith('planned edges: "if-dash" plans exposes i-third')),
   JSON.stringify(lateChange.info)
 );

@@ -53,8 +53,15 @@ async function blocked(tool, args) {
   return error && text.startsWith("Blocked:") ? text : null;
 }
 
-const territory = (kind, id, slot = "current") =>
-  path.join(root, "mindplan", kind, id, slot === "next" ? `${id}.next.mdx` : `${id}.mdx`);
+/** The node's open revision file (`revisions/<change>/<id>.mdx`, its only revision), or its live file. */
+const territory = (kind, id, slot = "current") => {
+  const dir = path.join(root, "mindplan", kind, id);
+  if (slot !== "next") return path.join(dir, `${id}.mdx`);
+  const revisions = path.join(dir, "revisions");
+  // Before open_next, the path the suite's `rev-<id>` revision will take.
+  const [change] = fs.existsSync(revisions) ? fs.readdirSync(revisions) : [];
+  return path.join(revisions, change ?? `rev-${id}`, `${id}.mdx`);
+};
 
 /** Fill create_node scaffold stubs with real text and tick every checkbox. */
 function fillAndTick(kind, id) {
@@ -526,9 +533,11 @@ fillAndTick("interactions", "i-b");
     alternatives: ["A longer purpose (this fixture only exercises the file layout)"],
     why: "The test checks bytes, not prose.",
   });
+  // The revision file's frontmatter is the server's own; its body keeps the live body's bytes.
+  const layBody = () => fromFence(layNext).replace(/^---\r?\n/, "");
   check(
-    "patches and a decision on an open next file keep its layout and CRLF",
-    fromFence(layNext).startsWith("---\r\n\r\n# Layout") && !hasLf(fromFence(layNext)),
+    "patches and a decision on an open revision keep one blank line above its body and the body CRLF",
+    /^\r?\n# Layout/.test(layBody()) && !hasLf(layBody().replace(/^\r?\n/, "")),
     JSON.stringify(fromFence(layNext).slice(0, 40))
   );
   await walk("f-lay", ["ready", "in-progress", "in-review", "ship"]);
@@ -539,7 +548,7 @@ fillAndTick("interactions", "i-b");
       !hasLf(read(layFile)),
     JSON.stringify(head(layFile))
   );
-  check("shipping an evolution deletes the next file", !fs.existsSync(layNext));
+  check("shipping an evolution deletes the revision folder", !fs.existsSync(path.dirname(layNext)));
 }
 
 // --- runs of blank lines below the frontmatter (left by releases before 0.2.0) collapse ---

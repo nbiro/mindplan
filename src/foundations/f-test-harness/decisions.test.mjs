@@ -365,12 +365,15 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     supersedes: "d-capacity-on-booking",
   });
   check(
-    "with an open revision the entry lands in the next file only and takes the revision's change",
-    replaced.slot === "next" &&
+    "with an open revision the entry is a decision file of the revision only and takes the revision's change",
+    replaced.slot === "revision" &&
+      replaced.revision === "cap" &&
       replaced.decision.change === "cap" &&
       replaced.supersedes?.node_id === "f-bookings" &&
       read(territory("foundations", "f-bookings")) === liveBefore &&
-      read(territory("foundations", "f-bookings", "next")).includes("### d-evening-capacity-table"),
+      replaced.changed_files.join() === "mindplan/foundations/f-bookings/revisions/cap/decisions/d-evening-capacity-table.md" &&
+      fs.existsSync(decisionFile("foundations", "f-bookings", "d-evening-capacity-table", "cap")) &&
+      !fs.existsSync(decisionFile("foundations", "f-bookings", "d-evening-capacity-table")),
     JSON.stringify(replaced)
   );
   const active = await call("list_decisions", { node_id: "f-bookings" });
@@ -473,8 +476,9 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   await walk("f-bookings", ["in-review", "ship"]);
   const live = read(territory("foundations", "f-bookings"));
   check(
-    "promote ships the revision's decision into the live file and the check passes",
-    live.includes("### d-capacity-in-transaction") &&
+    "ship moves the revision's decision file beside the live file and the check passes",
+    !live.includes("### d-capacity-in-transaction") &&
+      fs.existsSync(decisionFile("foundations", "f-bookings", "d-capacity-in-transaction")) &&
       fs.existsSync(decisionFile("foundations", "f-bookings", "d-capacity-on-booking")) &&
       (await call("run_check", {})).ok === true
   );

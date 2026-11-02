@@ -281,7 +281,11 @@ export function findAllImportViolations(
     for (const c of claimantsOf(live.buckets, file)) {
       if (c.via === "revision") continue;
       const owner = live.graph.nodes.find((n) => n.id === c.id);
-      if (owner && !views.get(c.id)?.some((v) => v.pass === live)) add(c.id, { pass: live, owner, advisory: c.id !== exclusive });
+      if (!owner || views.get(c.id)?.some((v) => v.pass === live)) continue;
+      // A live claim every open revision of its owner drops is released: its scan only warns.
+      const open = openChanges(owner);
+      const released = open.length > 0 && open.every((ch) => live.buckets.releasedByChange.get(ch)?.get(file) === owner.id);
+      add(c.id, { pass: live, owner, advisory: c.id !== exclusive || released });
     }
     for (const r of live.buckets.revisions.get(file) ?? []) {
       const pass = passFor(r.change);

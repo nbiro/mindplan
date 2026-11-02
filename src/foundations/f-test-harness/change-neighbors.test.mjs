@@ -256,17 +256,19 @@ git("switch", "-q", "-c", "feature");
   await newRevision("i-new", "feat");
   const opened = await call("open_next", { node_id: "i-b", change: "feat" });
   check(
-    "open_next writes the change to the next file only, with no replaced_change",
-    !("replaced_change" in opened) && opened.next.change === "feat" && !/^change:/m.test(readRel(liveOf("interactions", "i-b"))),
+    "open_next writes the change to the revision only, with no replaced_change",
+    !("replaced_change" in opened) &&
+      opened.revision.change === "feat" &&
+      opened.changed_files.includes("mindplan/interactions/i-b/revisions/feat/i-b.mdx") &&
+      !/^change:/m.test(readRel(liveOf("interactions", "i-b"))),
     JSON.stringify(opened)
   );
-  const moved = await call("patch_node_territory", { node_id: "i-b", change: "feat2" });
+  const moved = await blocked("patch_node_territory", { node_id: "i-b", change: "feat2" });
   check(
-    "moving the revision's change writes the next file only",
-    !moved.changed_files.includes(liveOf("interactions", "i-b")) && !("replaced_change" in moved),
-    JSON.stringify(moved)
+    "a revision's change is its folder: moving it is Blocked and names discard and open_next",
+    !!moved && moved.includes("open_next"),
+    String(moved)
   );
-  await call("patch_node_territory", { node_id: "i-b", change: "feat" });
   const report = await call("run_check", { change: "feat" });
   const kinds = Object.fromEntries((report.change?.members ?? []).map((m) => [m.id, m.kind]));
   check(
@@ -317,7 +319,7 @@ git("switch", "-q", "-c", "feature");
     "record_decision with change on a shipped node tags the decision and writes no change id on the node",
     tagged.decision.change === "feat" &&
       !("neighbor_of" in tagged) &&
-      liveOnly(tagged.changed_files, "interactions", "i-a") &&
+      JSON.stringify(tagged.changed_files) === JSON.stringify([`mindplan/interactions/i-a/decisions/${tagged.decision.id}.md`]) &&
       (await changeOf("i-a")) === undefined &&
       !(await call("run_check", { change: "feat" })).change.members.some((m) => m.id === "i-a"),
     JSON.stringify(tagged)
@@ -504,12 +506,12 @@ git("switch", "-q", "-c", "feature");
   const claims = await call("run_check", {});
   check(
     "exclusivity is per change: two changes claiming one file warn, one change claiming it twice fails",
-    claims.warnings.some((w) => w.startsWith('exclusivity: "src/shared/x.ts" is claimed by revisions of different changes')) &&
+    claims.warnings.some((w) => w.startsWith('ownership: "src/shared/x.ts" is claimed by "f-util" (revision "rev-b") and "i-a" (revision "rev-a")')) &&
       claims.failures.includes(
         'Blocked: exclusivity: "src/shared/y.ts" claimed by multiple nodes under change "rev-a": "f-util", "i-a".'
       ) &&
       !claims.failures.some((f) => f.includes('exclusivity: "src/shared/x.ts"')),
-    JSON.stringify({ failures: claims.failures, warnings: claims.warnings.filter((w) => w.startsWith("exclusivity")) })
+    JSON.stringify({ failures: claims.failures, warnings: claims.warnings.filter((w) => w.startsWith("ownership")) })
   );
   fs.rmSync(path.join(root, "src", "shared"), { recursive: true, force: true });
   for (const [id, change] of [

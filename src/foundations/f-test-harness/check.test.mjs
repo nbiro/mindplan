@@ -559,13 +559,13 @@ fs.writeFileSync(
 git("add", "-A", "src/interactions/i-feature");
 
 // Next in-review with missing next entry → next presence fails
-fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"));
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "revisions", "rev-i-feature", "i-feature.mdx"));
 let nextBody = fs.readFileSync(
-  path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"),
+  path.join(root, "mindplan", "interactions", "i-feature", "revisions", "rev-i-feature", "i-feature.mdx"),
   "utf-8"
 );
 nextBody = nextBody.replace(/- \[ \]/g, "- [x]");
-fs.writeFileSync(path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"), nextBody);
+fs.writeFileSync(path.join(root, "mindplan", "interactions", "i-feature", "revisions", "rev-i-feature", "i-feature.mdx"), nextBody);
 await call("update_node_status", { node_id: "i-feature", new_status: "ready" });
 await call("update_node_status", { node_id: "i-feature", new_status: "in-progress" });
 await call("update_node_status", { node_id: "i-feature", new_status: "in-review" });
