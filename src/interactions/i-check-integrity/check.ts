@@ -75,7 +75,7 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
+import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 const MID_PIPELINE = new Set(["in-progress", "in-review"]);
@@ -663,27 +663,82 @@ function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
   );
 }
 
-function ownerAllowsWorkingTree(graph: MindPlanGraph, node: MindPlanNode): boolean {
-  if (node.next) {
-    if (ACTIVE_BUILD.has(node.next.state)) return true;
+/**
+ * A node's open slots for the dirty-file rules: each open revision (with its change), else a
+ * legacy next file (change `null`). Empty when nothing is open.
+ */
+function openSlots(node: MindPlanNode): { change: string | null; state: string }[] {
+  const revs = node.open_revisions ?? [];
+  if (revs.length > 0) return revs.map((r) => ({ change: r.change, state: r.state }));
+  return node.next ? [{ change: null, state: node.next.state }] : [];
+}
+
+/** True when the node's open revision of `change` claims `rel` (live with its delta applied). */
+function revisionClaims(buckets: OwnershipBuckets, node: MindPlanNode, change: string, rel: string): boolean {
+  return (buckets.revisions.get(rel) ?? []).some((c) => c.id === node.id && c.change === change);
+}
+
+/**
+ * True when one of the node's open slots in `states` may be touching `rel`: a legacy next always;
+ * a revision when it claims the file (live ⊕ its delta) or the file is a live claim it releases.
+ */
+function openSlotAllows(
+  buckets: OwnershipBuckets,
+  node: MindPlanNode,
+  rel: string,
+  states: Set<string>
+): boolean {
+  return openSlots(node).some(
+    (s) =>
+      states.has(s.state) &&
+      (s.change === null || revisionClaims(buckets, node, s.change, rel) || buckets.liveClaims.get(rel) === node.id)
+  );
+}
+
+function ownerAllowsWorkingTree(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  node: MindPlanNode,
+  rel: string
+): boolean {
+  if (openSlots(node).length > 0) {
+    if (openSlotAllows(buckets, node, rel, ACTIVE_BUILD)) return true;
     return bugAllowsDirty(graph, node.id);
   }
   if (ACTIVE_BUILD.has(node.state)) return true;
-  // A shipped node's files are edited in place: stable/unstable with no open next.
+  // A shipped node's files are edited in place: stable/unstable with no open revision.
   if (isProductionState(node.state)) return true;
   return bugAllowsDirty(graph, node.id);
 }
 
-function ownerAllowsCommitDiff(graph: MindPlanGraph, node: MindPlanNode): boolean {
-  if (node.next) {
-    if (MID_PIPELINE.has(node.next.state)) return true;
+function ownerAllowsCommitDiff(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  node: MindPlanNode,
+  rel: string
+): boolean {
+  if (openSlots(node).length > 0) {
+    if (openSlotAllows(buckets, node, rel, MID_PIPELINE)) return true;
     return bugAllowsDirty(graph, node.id);
   }
   if (CLAIMED_OR_CONCLUDED.has(node.state)) return true;
   return bugAllowsDirty(graph, node.id);
 }
 
+/** The open revisions of a node with several, as drift and dirty-src lines name them; else undefined. */
+function revisionStates(node: MindPlanNode): { change: string; state: string }[] | undefined {
+  const revs = node.open_revisions ?? [];
+  if (revs.length < 2) return undefined;
+  return [...revs]
+    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
+    .map((r) => ({ change: r.change, state: r.state }));
+}
+
 function describeOwner(node: MindPlanNode): string {
+  const revs = revisionStates(node);
+  if (revs) {
+    return `"${node.id}" is "${node.state}" (revisions: ${revs.map((r) => `"${r.change}" ${r.state}`).join(", ")})`;
+  }
   return `"${node.id}" is "${node.state}"` + (node.next ? ` (next: ${node.next.state})` : "");
 }
 
@@ -751,7 +806,7 @@ function checkDirtySrc(
 
   const checkPath = (
     rel: string,
-    allow: (g: MindPlanGraph, n: MindPlanNode) => boolean,
+    allow: (g: MindPlanGraph, b: OwnershipBuckets, n: MindPlanNode, rel: string) => boolean,
     hint: string
   ): void => {
     if (!universe.has(rel) && !exclusiveOwner(buckets, rel) && !ownerOfFile(buckets, rel)) {
@@ -769,7 +824,7 @@ function checkDirtySrc(
       fail(failures, `dirty path "${rel}" maps to unknown node "${ownerId}".`);
       return;
     }
-    if (!allow(graph, node)) {
+    if (!allow(graph, buckets, node, rel)) {
       fail(
         failures,
         `dirty file "${rel}" while ${describeOwner(node)}. ${hint}`
@@ -935,8 +990,15 @@ export type DriftPath = {
   owner_id: string;
   state: string;
   next_state: string | null;
+  /** Present when the owner has several open revisions (`next_state` is then null). */
+  revisions?: { change: string; state: string }[];
   class: DriftClass;
 };
+
+function driftRevisions(node: MindPlanNode): { revisions?: { change: string; state: string }[] } {
+  const revisions = revisionStates(node);
+  return revisions ? { revisions } : {};
+}
 
 export type DriftReport = {
   paths: DriftPath[];
@@ -969,8 +1031,12 @@ function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
     .sort((a, b) => a.id.localeCompare(b.id));
   let best: { id: string; viaNext: boolean; len: number } | null = null;
   for (const node of nodes) {
+    // Every open revision's claims (live with its delta), else a legacy next's, then live.
+    const revs = node.open_revisions ?? [];
     const slots: { claims: string[] | undefined; viaNext: boolean }[] = [
-      { claims: node.next?.implements, viaNext: true },
+      ...(revs.length > 0
+        ? revs.map((r) => ({ claims: applyDelta(node.implements, r.implements), viaNext: true }))
+        : [{ claims: node.next?.implements, viaNext: true }]),
       { claims: node.implements, viaNext: false },
     ];
     for (const slot of slots) {
@@ -990,15 +1056,25 @@ function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
   return best?.id ?? null;
 }
 
-/** True when the owner has an open update that is allowed to be editing `rel` right now. */
+/**
+ * True when the owner has an open update that is allowed to be editing `rel` right now: an
+ * in-progress legacy next or open revision that claims the file (each revision read as live with
+ * its delta), a pre-ship node in progress, or a Bug in fixing/in-review.
+ */
 function hasOpenUpdateFor(
   graph: MindPlanGraph,
   buckets: OwnershipBuckets,
   node: MindPlanNode,
   rel: string
 ): boolean {
-  if (node.next) {
-    if (ACTIVE_BUILD.has(node.next.state) && buckets.next.get(rel) === node.id) return true;
+  const slots = openSlots(node);
+  if (slots.length > 0) {
+    for (const s of slots) {
+      if (!ACTIVE_BUILD.has(s.state)) continue;
+      if (s.change === null ? buckets.next.get(rel) === node.id : revisionClaims(buckets, node, s.change, rel)) {
+        return true;
+      }
+    }
     return bugAllowsDirty(graph, node.id);
   }
   if (!node.shipped_at && ACTIVE_BUILD.has(node.state)) return true;
@@ -1062,6 +1138,7 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
           owner_id: node.id,
           state: node.state,
           next_state: node.next?.state ?? null,
+          ...driftRevisions(node),
           class: "claimed_missing",
         });
         continue;
@@ -1075,6 +1152,7 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
         owner_id: node.id,
         state: node.state,
         next_state: node.next?.state ?? null,
+        ...driftRevisions(node),
         class: "owner_idle",
       });
     }

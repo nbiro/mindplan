@@ -150,10 +150,17 @@ function conflictEntry(c: RevisionConflict): string {
 }
 
 /**
- * One revision file's text: the flat frontmatter (LF line endings), a blank line, then `body`.
- * The revision's `decisions` are not written: they live in its `decisions/` folder.
+ * One revision file's text: the flat frontmatter, a blank line, then `body`, every line ending
+ * `eol` (writers pass the node's live file's, so a CRLF node gets CRLF revisions). The revision's
+ * `decisions` are not written: they live in its `decisions/` folder.
  */
-export function formatRevisionFile(nodeId: string, nodeType: NodeType, revision: Revision, body: string): string {
+export function formatRevisionFile(
+  nodeId: string,
+  nodeType: NodeType,
+  revision: Revision,
+  body: string,
+  eol: "\n" | "\r\n" = "\n"
+): string {
   const lines = ["---", `id: ${nodeId}`, `type: ${nodeType}`, `change: ${revision.change}`];
   if (revision.change_ref) lines.push(`change_ref: ${JSON.stringify(revision.change_ref)}`);
   lines.push(
@@ -181,7 +188,7 @@ export function formatRevisionFile(nodeId: string, nodeType: NodeType, revision:
   }
   lines.push(...listLines("conflicts", revision.conflicts.map(conflictEntry)));
   lines.push("---");
-  return oneBlankLineBelowFrontmatter(`${lines.join("\n")}\n${body}`);
+  return oneBlankLineBelowFrontmatter(`${lines.join(eol)}${eol}${body.replace(/\r?\n/g, eol)}`);
 }
 
 function parseConflict(entry: string): RevisionConflict {
@@ -348,11 +355,23 @@ function loadRevision(node: MindPlanNode, change: string): { revision: Revision;
   return parsed;
 }
 
-/** Writes one revision file, replaces it in `node.open_revisions`, and returns its repo path. */
+/** The line ending of the node's live file (CRLF when it has any), else LF. */
+function liveEol(node: MindPlanNode): "\n" | "\r\n" {
+  try {
+    return readMarkdown(node, "current").includes("\r\n") ? "\r\n" : "\n";
+  } catch {
+    return "\n";
+  }
+}
+
+/**
+ * Writes one revision file in the line endings of the node's live file, replaces it in
+ * `node.open_revisions`, and returns its repo path.
+ */
 function storeRevision(node: MindPlanNode, revision: Revision, body: string): string {
   const file = revisionFilePath(node, revision.change);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  writeFileRetry(file, formatRevisionFile(node.id, node.type, revision, body));
+  writeFileRetry(file, formatRevisionFile(node.id, node.type, revision, body, liveEol(node)));
   const others = (node.open_revisions ?? []).filter((r) => r.change !== revision.change);
   node.open_revisions = [...others, revision].sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0));
   syncNextView(node);

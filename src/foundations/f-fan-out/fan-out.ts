@@ -14,7 +14,7 @@ import {
   type MindPlanNode,
 } from "../f-domain-model/types.js";
 import type { FanOutSettings } from "../f-source-index/config.js";
-import { keepsWhole } from "../f-compiler-rules/open-closed.js";
+import { keepsWhole, supersededIds } from "../f-compiler-rules/open-closed.js";
 
 export type FanOutCount = { count: number; changes: string[] };
 
@@ -48,17 +48,10 @@ export function fanOut(graph: MindPlanGraph, node: MindPlanNode, byId?: Map<stri
   return { count: changes.length, changes };
 }
 
-/** Ids of every decision some active record supersedes, so a superseded `keep_whole` no longer counts. */
-function supersededIds(graph: MindPlanGraph): Set<string> {
-  const ids = new Set<string>();
-  for (const n of graph.nodes) {
-    if (isInactiveNode(n)) continue;
-    for (const d of [...(n.decisions ?? []), ...(n.next?.decisions ?? [])]) if (d.supersedes) ids.add(d.supersedes);
-  }
-  return ids;
-}
-
-/** Precomputed once per check: the nodes by id and the superseded decision ids. */
+/**
+ * Precomputed once per check: the nodes by id and the superseded decision ids (`supersededIds`:
+ * live, a legacy next, and every open revision's records).
+ */
 export type FanOutContext = { byId: Map<string, MindPlanNode>; superseded: Set<string> };
 
 export function fanOutContext(graph: MindPlanGraph): FanOutContext {

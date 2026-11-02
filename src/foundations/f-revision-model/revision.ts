@@ -138,3 +138,31 @@ export function graphUnder(graph: MindPlanGraph, change: string): MindPlanGraph 
   edges.sort((a, b) => edgeKey(a).localeCompare(edgeKey(b)));
   return { ...graph, nodes, edges };
 }
+
+/**
+ * Whether a marked part counts when `node`'s open revision ships, by the edge that keeps imports
+ * legal: a Foundation depends_on its parts (it stays the composition root), an Interaction shares
+ * a Capability with them (the behavior moved to sibling actions), an Interface exposes them.
+ */
+export function splitPartLinked(graph: MindPlanGraph, node: MindPlanNode, partId: string): boolean {
+  const next = node.next;
+  if (!next) return false;
+  if (node.type === "Foundation") return (next.depends_on ?? []).includes(partId);
+  if (node.type === "Interface") return (next.exposes ?? []).includes(partId);
+  const part = graph.nodes.find((n) => n.id === partId);
+  // The revision's own Capabilities, as its ship will write them.
+  const capabilities = new Set(next.belongs_to ?? []);
+  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => capabilities.has(j));
+}
+
+/**
+ * The parts a revision split out of its node (`node` is the view of that revision, `withRevision`):
+ * the ids its next slot marks in `split_into` beyond the live list, kept only where the edge that
+ * keeps imports legal is in place (`splitPartLinked`). The dry-run walk and the real ship
+ * (`shipRevision`) both record exactly these. A split is declared, not guessed.
+ */
+export function splitParts(graph: MindPlanGraph, node: MindPlanNode): string[] {
+  if (!node.next) return [];
+  const live = new Set(node.split_into ?? []);
+  return (node.next.split_into ?? []).filter((id) => !live.has(id) && splitPartLinked(graph, node, id)).sort();
+}

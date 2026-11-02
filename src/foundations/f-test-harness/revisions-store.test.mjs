@@ -292,6 +292,25 @@ foundation("f-core");
   ok("graph cache: a revision file edit and a new decision file re-parse the node");
 }
 
+// --- a CRLF node gets CRLF revision files -------------------------------------------------------
+
+{
+  const dir = foundation("f-crlf");
+  const live = path.join(dir, "f-crlf.mdx");
+  fs.writeFileSync(live, fs.readFileSync(live, "utf-8").replace(/\r?\n/g, "\r\n"), "utf-8");
+  const n = node("f-crlf");
+  const opened = openRevision(n, "w", {});
+  const file = revisionFilePath(n, "w");
+  const crlfOnly = (text) => text.includes("\r\n") && !/[^\r]\n/.test(text);
+  assert.ok(crlfOnly(fs.readFileSync(file, "utf-8")), "open_next writes CRLF frontmatter and body");
+  assert.deepEqual(opened.changed_files, ["mindplan/foundations/f-crlf/revisions/w/f-crlf.mdx"]);
+  writeRevisionBody(node("f-crlf"), "w", "## Spec\n\nNew spec.\n\n## Notes\n\nNew notes.\n");
+  const after = fs.readFileSync(file, "utf-8");
+  assert.ok(crlfOnly(after), "a body write keeps CRLF");
+  assert.equal(parseRevisionFile(after, "f-crlf").revision.change, "w");
+  ok("a revision file takes the line endings of its node's live file");
+}
+
 const { closeGraphCaches } = await import("../../../dist/foundations/f-graph-cache/cache.js");
 closeGraphCaches();
 fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 });

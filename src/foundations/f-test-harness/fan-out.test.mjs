@@ -74,6 +74,33 @@ function check(label, condition, detail = "") {
   };
   const reopened = { ...graph, nodes: [...graph.nodes, superseding] };
   check("superseding the keep_whole decision brings it back", fo.fanOutFor(reopened, kept, defaults) !== null);
+  // A shipped node with several open revisions has no `next` view: each revision's records count.
+  const rev = (change, decisions) => ({
+    change,
+    state: "draft",
+    opened_at: shipped.shipped_at,
+    updated_at: shipped.shipped_at,
+    title: "Other",
+    description: "Other.",
+    edges: {},
+    implements: { add: [], remove: [] },
+    tests: { add: [], remove: [] },
+    base: { scalars: {}, sections: {} },
+    conflicts: [],
+    ...(decisions ? { decisions } : {}),
+  });
+  const multiRevision = {
+    ...node("f-revised", shipped),
+    open_revisions: [
+      rev("alpha"),
+      rev("beta", [{ id: "d-unkeep-rev", decision: "Invert it.", alternatives: ["Keep"], why: "Grew.", supersedes: "d-keep" }]),
+    ],
+  };
+  const reopenedByRevision = { ...graph, nodes: [...graph.nodes, multiRevision] };
+  check(
+    "a superseding decision on one of several open revisions brings it back",
+    fo.fanOutFor(reopenedByRevision, kept, defaults) !== null
+  );
   check("warn_at: 2 makes 2 changes warn", fo.fanOutFor(graph, two, { warn_at: 2 }) !== null);
   const all = fo.fanOuts(graph, defaults).map((f) => f.node_id);
   check("fanOuts lists the highest count first, then by id", all.join(",") === "i-delete-site,i-three", all.join(","));

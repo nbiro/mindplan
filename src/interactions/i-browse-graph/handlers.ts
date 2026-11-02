@@ -114,6 +114,23 @@ function pageNode(node: MindPlanNode): MindPlanNode {
   return { ...node, open_revisions: lean as unknown as MindPlanNode["open_revisions"] };
 }
 
+/** Projected fields whose value an open revision changes: the live value alone would hide it. */
+const REVISED_FIELDS = new Set(["title", "description", "next"]);
+
+/**
+ * One node projected to `keep`. A node with several open revisions has no `next` view, so a
+ * projection naming `title`, `description`, or `next` also carries its lean `open_revisions`:
+ * the live values plus which revisions are open, never silently nothing.
+ */
+function projectNode(node: MindPlanNode, keep: Set<string>): Partial<MindPlanNode> {
+  const page = pageNode(node);
+  const withRevisions =
+    (node.open_revisions?.length ?? 0) > 1 && [...keep].some((f) => REVISED_FIELDS.has(f));
+  return Object.fromEntries(
+    Object.entries(page).filter(([key]) => keep.has(key) || (withRevisions && key === "open_revisions"))
+  ) as Partial<MindPlanNode>;
+}
+
 /** Unknown names fail before any node is read, listing the valid ones. */
 function projectionFields(fields: string[]): Set<string> {
   for (const name of fields) {
@@ -172,12 +189,7 @@ export function getMindPlanGraph(args: GraphQuery = {}): GraphPage {
   const unfiltered = filtered.length === graph.nodes.length;
   const sorted = filtered.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const slice = sorted.slice(offset, offset + limit);
-  const nodes = keep
-    ? slice.map(
-        (n) =>
-          Object.fromEntries(Object.entries(pageNode(n)).filter(([key]) => keep.has(key))) as Partial<MindPlanNode>
-      )
-    : slice.map(pageNode);
+  const nodes = keep ? slice.map((n) => projectNode(n, keep)) : slice.map(pageNode);
   let edges: GraphPage["edges"];
   let totalEdges: number | undefined;
   if (!omitEdges) {

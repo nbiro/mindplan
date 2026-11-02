@@ -136,8 +136,11 @@ export function graphRateMedian(graph: MindPlanGraph, settings: HotspotSettings,
   return rates.length % 2 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2;
 }
 
-/** Ids of every decision some active record supersedes, anywhere in the graph. */
-function supersededIds(graph: MindPlanGraph): Set<string> {
+/**
+ * Ids of every decision some active record supersedes, anywhere in the graph: live, a legacy next,
+ * and every open revision's decisions.
+ */
+export function supersededIds(graph: MindPlanGraph): Set<string> {
   const ids = new Set<string>();
   for (const n of graph.nodes) {
     if (isRetired(n)) continue;
@@ -372,21 +375,8 @@ export function splitPartProblem(graph: MindPlanGraph, node: MindPlanNode, partI
   return null;
 }
 
-/**
- * Whether a marked part counts when `node`'s open revision ships, by the edge that keeps imports
- * legal: a Foundation depends_on its parts (it stays the composition root), an Interaction shares
- * a Capability with them (the behavior moved to sibling actions), an Interface exposes them.
- */
-export function splitPartLinked(graph: MindPlanGraph, node: MindPlanNode, partId: string): boolean {
-  const next = node.next;
-  if (!next) return false;
-  if (node.type === "Foundation") return (next.depends_on ?? []).includes(partId);
-  if (node.type === "Interface") return (next.exposes ?? []).includes(partId);
-  const part = graph.nodes.find((n) => n.id === partId);
-  // The revision's own Capabilities, as its ship will write them.
-  const capabilities = new Set(next.belongs_to ?? []);
-  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => capabilities.has(j));
-}
+// The split-part rules are pure revision rules: the store's ship and the walk's dry run share them.
+export { splitPartLinked, splitParts } from "../f-revision-model/index.js";
 
 /** The edge a marked part still needs before the ship records it, for the split_into warning. */
 export function splitLinkHint(node: MindPlanNode): string {

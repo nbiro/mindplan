@@ -289,6 +289,63 @@ write("src/shared/s.ts", "export const s = 1;\n");
   assert.equal(ownership.ownerUnder(bd, "src/shared/s.ts", "beta"), "f-own1");
   assert.deepEqual([...ownership.releasedUnder(bd, "alpha").keys()], ["src/shared/s.ts"]);
   ok("a revision that drops a live claim releases it under its change only");
+
+  // Two revisions on one node: one drops a live claim another still needs, one adds a file.
+  const twoRevs = node("f-two", "Foundation", {
+    implements: ["src/own1/o.ts", "src/own2/o.ts"],
+    open_revisions: [
+      revision("alpha", { implements: { add: [], remove: ["src/own1/o.ts"] } }),
+      revision("beta", { implements: { add: ["src/shared/s.ts"], remove: ["src/own2/o.ts"] } }),
+    ],
+  });
+  const bt = ownership.buildOwnershipIndex(graphOf([twoRevs]), root);
+  assert.equal(bt.next.get("src/shared/s.ts"), "f-two", "a file one revision adds is in the next bucket");
+  assert.equal(bt.next.get("src/own1/o.ts"), "f-two", "beta still claims what alpha drops");
+  assert.equal(bt.live.get("src/own1/o.ts"), "f-two");
+  assert.equal(bt.released.has("src/own1/o.ts"), false, "kept by a sibling, so not released");
+  assert.equal(ownership.exclusiveOwner(bt, "src/shared/s.ts"), "f-two");
+  assert.deepEqual(
+    [...ownership.releasedClaimEntries(twoRevs, root)].sort(),
+    ["src/own1/o.ts", "src/own2/o.ts"],
+    "presence skips a live entry any one revision releases"
+  );
+  ok("with several revisions, next and released presence read every revision");
+
+  const views = await import("../../../dist/foundations/f-plan-views/views.js");
+  const radius = views.buildBlastRadiusPayload(graphOf([twoRevs]), twoRevs);
+  const focus = radius.affected_files.find((g) => g.owner_id === "f-two");
+  assert.deepEqual(focus?.files, ["src/own1/o.ts", "src/own2/o.ts", "src/shared/s.ts"]);
+  ok("the blast radius counts a file one of several revisions adds as the focus's own");
+}
+
+// --- A pre-ship member of C is judged seeing C's revisions on shipped co-members ---
+{
+  write("src/newi/n.ts", `import { x } from "../dep-a/x";\nexport const n = x;\n`);
+  const core = node("f-core", "Foundation", {
+    implements: ["src/core/"],
+    open_revisions: [revision("gamma", { edges: { depends_on: { add: ["f-dep-a"], remove: [] } } })],
+  });
+  const fresh = (change) => ({
+    ...node("i-new", "Interaction", { implements: ["src/newi/"], depends_on: ["f-core"], change }),
+    state: "draft",
+    shipped_at: undefined,
+  });
+  const graphFor = (iNew) =>
+    graphOf([core, node("f-dep-a", "Foundation", { implements: ["src/dep-a/"] }), node("f-dep-b", "Foundation", { implements: ["src/dep-b/"] }), iNew]);
+  const member = fresh("gamma");
+  assert.deepEqual(integrity.findImportViolationsForNode(graphFor(member), root, member), []);
+  const all = integrity
+    .findAllImportViolations(graphFor(member), ownership.buildOwnershipIndex(graphFor(member), root), root, ["src/newi/n.ts"])
+    .filter((v) => !v.advisory);
+  assert.deepEqual(all, [], "the check judges the member under its change too");
+  const outsider = fresh("other");
+  assert.deepEqual(
+    integrity.findImportViolationsForNode(graphFor(outsider), root, outsider).map((v) => v.imports),
+    ["src/dep-a/x.ts"],
+    "a node of another change does not see gamma's edge"
+  );
+  fs.rmSync(path.join(root, "src", "newi"), { recursive: true, force: true });
+  ok("a pre-ship member of a change sees that change's revisions of shipped co-members");
 }
 
 // --- Rebase conflicts Block in-review ---

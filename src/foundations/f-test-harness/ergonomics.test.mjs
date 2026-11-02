@@ -431,6 +431,42 @@ for (const status of ["ready", "in-progress"]) {
     !(expected.drift?.paths ?? []).some((p) => p.path.endsWith("f-core/index.ts")),
     JSON.stringify(expected.drift)
   );
+  // A second open revision: f-core has no single `next` view now, and each revision is read on
+  // its own (live with its delta applied).
+  write("src/f-core-extra/y.ts", "export const y = 1;\n");
+  await call("open_next", { change: "rev-two", node_id: "f-core" });
+  await call("set_implementation_files", { node_id: "f-core", change: "rev-two", add: ["src/f-core-extra/y.ts"] });
+  const two = await call("orient_for_work", { node_id: "f-core" });
+  const twoPaths = two.drift?.paths ?? [];
+  check(
+    "with two open revisions, a file the in-progress revision claims is still expected",
+    !twoPaths.some((p) => p.path.endsWith("f-core/index.ts")) && (two.drift?.expected ?? 0) >= 1,
+    JSON.stringify(two.drift)
+  );
+  const extra = twoPaths.find((p) => p.path === "src/f-core-extra/y.ts");
+  check(
+    "a file only a draft revision claims is owner_idle and names every open revision",
+    extra?.class === "owner_idle" &&
+      extra.owner_id === "f-core" &&
+      JSON.stringify(extra.revisions) ===
+        JSON.stringify([
+          { change: "rev-f-core", state: "in-progress" },
+          { change: "rev-two", state: "draft" },
+        ]),
+    JSON.stringify(two.drift)
+  );
+  const dirtyCheck = runCli(["check", "--base", "HEAD"]);
+  const dirtyOut = dirtyCheck.stdout + dirtyCheck.stderr;
+  check(
+    "dirty-src allows the in-progress revision's file and describes the owner by its revisions",
+    !dirtyOut.includes('dirty file "src/foundations/f-core/index.ts"') &&
+      dirtyOut.includes(
+        'dirty file "src/f-core-extra/y.ts" while "f-core" is "stable" (revisions: "rev-f-core" in-progress, "rev-two" draft)'
+      ),
+    dirtyOut
+  );
+  await call("discard_next", { node_id: "f-core", change: "rev-two" });
+  fs.rmSync(path.join(root, "src", "f-core-extra"), { recursive: true, force: true });
   fs.rmSync(path.join(root, "src", "foundations", "f-core", "index.ts"));
   const missing = await call("orient_for_work", { node_id: "f-core" });
   check(

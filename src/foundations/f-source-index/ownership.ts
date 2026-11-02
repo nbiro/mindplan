@@ -33,7 +33,9 @@ export type OwnershipBuckets = {
  * Build ownership index from implements lists.
  * Exclusivity uses live ∪ next (released excluded); per change, `ownerUnder`.
  * Coverage uses live ∪ next ∪ released ∪ every revision (`claimantsOf`); retired claims only feed
- * leftovers. `next` is the legacy next file or the loader's single-revision view, as before.
+ * leftovers. `next` holds the open slots' claims: a legacy next file, or every open revision's
+ * (live with its delta applied; several revisions add up); `live` the live claims some open slot
+ * keeps, and `released` the live claims no open slot keeps.
  */
 export function buildOwnershipIndex(
   graph: MindPlanGraph,
@@ -67,9 +69,8 @@ export function buildOwnershipIndex(
         }
       }
     }
-    const nextFiles = node.next
-      ? new Set(expandClaims(node.next.implements, root))
-      : null;
+    const slots = openSlotClaims(node);
+    const nextFiles = slots ? new Set(slots.flatMap((claims) => expandClaims(claims, root))) : null;
 
     if (RETIRED_STATES.has(node.state)) {
       for (const f of currentFiles) {
@@ -119,10 +120,22 @@ export function releasedUnder(buckets: OwnershipBuckets, change: string): Map<st
 }
 
 /**
- * Live implements claim entries released by an open next slot.
- * Same release idea as buildOwnershipIndex (live expanded file omitted from
- * next.implements), applied at claim-entry granularity so presence can skip
- * directories already moved off disk (expandClaims omits missing paths).
+ * The claim lists of a node's open slots: with several open revisions, each one's (live with its
+ * delta applied); else its `next` (a legacy next file, or the loader's view of its only revision);
+ * null when nothing is open.
+ */
+export function openSlotClaims(node: MindPlanNode): string[][] | null {
+  const revs = node.open_revisions ?? [];
+  if (revs.length > 1) return revs.map((r) => applyDelta(node.implements, r.implements));
+  return node.next ? [node.next.implements ?? []] : null;
+}
+
+/**
+ * Live implements claim entries released by an open slot: a live entry an open revision (or a
+ * legacy next) drops, at claim-entry granularity so presence can skip directories already moved
+ * off disk (expandClaims omits missing paths). With several revisions, an entry any one of them
+ * releases is released: that revision may delete it, and a sibling that still needs the file
+ * checks its own claims when it goes to review.
  */
 export function releasedClaimEntries(
   node: MindPlanNode,
@@ -130,20 +143,17 @@ export function releasedClaimEntries(
 ): Set<string> {
   const out = new Set<string>();
   if (!isPipelineNodeType(node.type)) return out;
-  if (!node.next) return out;
-
-  const nextEntries = new Set(
-    (node.next.implements ?? []).map((e) => validateClaimPath(e))
-  );
-  const nextFiles = new Set(expandClaims(node.next.implements, root));
-
-  for (const raw of node.implements ?? []) {
-    const entry = validateClaimPath(raw);
-    if (nextEntries.has(entry)) continue;
-    const expanded = expandClaims([entry], root);
-    if (expanded.every((f) => !nextFiles.has(f))) {
-      out.add(raw);
-      out.add(entry);
+  for (const claims of openSlotClaims(node) ?? []) {
+    const nextEntries = new Set(claims.map((e) => validateClaimPath(e)));
+    const nextFiles = new Set(expandClaims(claims, root));
+    for (const raw of node.implements ?? []) {
+      const entry = validateClaimPath(raw);
+      if (nextEntries.has(entry)) continue;
+      const expanded = expandClaims([entry], root);
+      if (expanded.every((f) => !nextFiles.has(f))) {
+        out.add(raw);
+        out.add(entry);
+      }
     }
   }
   return out;

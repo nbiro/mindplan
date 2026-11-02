@@ -229,26 +229,25 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 
 // --- what still needs a revision ---
 {
-  const base = ["src/core/a.ts", "src/core/new.ts", "src/mixed/c.ts"];
-  const mixed = await blocked("set_implementation_files", { replace: true, node_id: "f-core", files: [...base, "src/mixed/e.ts"] });
+  const mixed = await blocked("set_implementation_files", { node_id: "f-core", add: ["src/mixed/e.ts"] });
   check(
     "a folder holding another node's file is not dominated: Blocked → open_next",
     mixed?.startsWith("Blocked:") && mixed.includes("src/mixed/e.ts") && mixed.includes("open_next"),
     mixed ?? "accepted"
   );
-  const dropped = await blocked("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/core/new.ts", "src/mixed/c.ts"] });
+  const dropped = await blocked("set_implementation_files", { node_id: "f-core", remove: ["src/core/a.ts"] });
   check(
     "removing an entry in place is Blocked and names it",
     dropped?.startsWith("Blocked:") && dropped.includes("src/core/a.ts") && dropped.includes("open_next"),
     dropped ?? "accepted"
   );
-  const glob = await blocked("set_implementation_files", { replace: true, node_id: "f-core", files: [...base, "src/core/*.ts"] });
+  const glob = await blocked("set_implementation_files", { node_id: "f-core", add: ["src/core/*.ts"] });
   check(
     "adding a glob in place is Blocked",
     glob?.startsWith("Blocked:") && glob.includes("src/core/*.ts") && glob.includes("open_next"),
     glob ?? "accepted"
   );
-  const outside = await blocked("set_implementation_files", { replace: true, node_id: "f-core", files: [...base, "src/elsewhere/z.ts"] });
+  const outside = await blocked("set_implementation_files", { node_id: "f-core", add: ["src/elsewhere/z.ts"] });
   check(
     "adding a file outside any dominated folder is Blocked",
     outside?.startsWith("Blocked:") && outside.includes("src/elsewhere/z.ts") && outside.includes("open_next"),
@@ -347,10 +346,9 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     JSON.stringify(next)
   );
   const explicit = await blocked("set_implementation_files", {
-    replace: true,
     node_id: "f-other",
     slot: "current",
-    files: ["src/mixed/d.ts", "src/shared/x.ts", "src/shared/y.ts"],
+    add: ["src/shared/y.ts"],
   });
   check('slot: "current" with an open next stays Blocked', explicit?.startsWith("Blocked:"), explicit ?? "accepted");
 }
@@ -367,16 +365,15 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   await walk("f-lib", ["ready", "in-progress", "in-review", "ship"]);
   write("src/lib/own/b.ts", "export const b = 1;\n");
   const globbed = await blocked("set_implementation_files", {
-    replace: true,
     node_id: "f-lib",
-    files: ["src/lib/own/a.ts", "src/lib/own/b.ts"],
+    add: ["src/lib/own/b.ts"],
   });
   check(
     "another node's glob whose static prefix is an ancestor of the folder makes it undominated",
     globbed?.startsWith("Blocked:") && globbed.includes("src/lib/own/b.ts") && globbed.includes("open_next"),
     globbed ?? "accepted"
   );
-  const dirClaim = await blocked("set_implementation_files", { replace: true, node_id: "f-lib", files: ["src/lib/own/a.ts", "src/lib/own/"] });
+  const dirClaim = await blocked("set_implementation_files", { node_id: "f-lib", add: ["src/lib/own/"] });
   check("so is a directory claim of that folder", dirClaim?.startsWith("Blocked:"), dirClaim ?? "accepted");
 }
 
@@ -453,7 +450,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   const base = ["src/db/client.ts", "src/db/migrations/001.sql"];
 
   write("src/db/migrations/002.sql", "alter table t add column n int;\n");
-  const exact = await blocked("set_implementation_files", { replace: true, node_id: "f-db", files: [...base, "src/db/migrations/002.sql"] });
+  const exact = await blocked("set_implementation_files", { node_id: "f-db", add: ["src/db/migrations/002.sql"] });
   check(
     "a new migration file in a dominated folder is not claimed in place: Blocked → open_next",
     exact?.startsWith("Blocked:") &&
@@ -462,13 +459,13 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
       /schema|decision/i.test(exact),
     exact ?? "accepted"
   );
-  const folder = await blocked("set_implementation_files", { replace: true, node_id: "f-db", files: [...base, "src/db/migrations/"] });
+  const folder = await blocked("set_implementation_files", { node_id: "f-db", add: ["src/db/migrations/"] });
   check(
     "a migrations folder entry is not claimed in place",
     folder?.startsWith("Blocked:") && folder.includes("src/db/migrations/") && folder.includes("open_next"),
     folder ?? "accepted"
   );
-  const parent = await blocked("set_implementation_files", { replace: true, node_id: "f-db", files: ["src/db/", ...base] });
+  const parent = await blocked("set_implementation_files", { node_id: "f-db", add: ["src/db/"] });
   check(
     "a folder entry that holds a migration file is not claimed in place",
     parent?.startsWith("Blocked:") && parent.includes("src/db/") && parent.includes("open_next"),

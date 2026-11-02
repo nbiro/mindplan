@@ -167,6 +167,13 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
   assertNoLegacyNext(subject, "patch_node_territory");
   const revision = targetRevision(subject, args.change, args.slot);
   if (revision !== null) return patchRevisionTerritory(args, revision);
+  if (args.slot === "next" && isPipelineNodeType(subject.type) && subject.shipped_at) {
+    // The legacy next file Blocked above, so slot "next" can only mean an open revision.
+    throw blocked(
+      `"${subject.id}" has no open revision; slot "next" writes to one. ` +
+        `Open it with open_next({ node_id: "${subject.id}", change }), or patch the live slot (slot "current").`
+    );
+  }
   const { aliases, split_into, ...territory } = args;
   if (split_into !== undefined) {
     const graph = loadGraph();

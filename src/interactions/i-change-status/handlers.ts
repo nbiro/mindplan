@@ -3,7 +3,7 @@
  * dry run, ship and promotion with revision counts and declared splits) and force_unship.
  */
 
-import { splitPartLinked } from "../../foundations/f-compiler-rules/open-closed.js";
+import { splitParts } from "../../foundations/f-compiler-rules/open-closed.js";
 import {
   churnAfterShip,
   decayChurn,
@@ -50,8 +50,14 @@ import {
   resolveForceUnship,
   resolveRevisionStatusChange,
   resolveStatusChange,
+  revisionGraph,
 } from "../../foundations/f-compiler-rules/rules.js";
-import { assertCheckCleanForNode, assertCheckCleanForRevision, staleTextWarnings } from "../../foundations/f-compiler-rules/integrity.js";
+import {
+  assertCheckCleanForNode,
+  assertCheckCleanForRevision,
+  preShipChange,
+  staleTextWarnings,
+} from "../../foundations/f-compiler-rules/integrity.js";
 import { assertDecisionForReview, createDecisionContext, type DecisionContext } from "../../foundations/f-compiler-rules/decisions.js";
 import {
   changedFiles,
@@ -337,6 +343,16 @@ function stepsToTarget(node: MindPlanNode, target: string, change?: string): str
   return WALK_PIPELINE.slice(from + 1, to + 1);
 }
 
+/**
+ * The graph a live status move is judged on: live plus legacy next files, or for a pre-ship member
+ * of change C, live plus C's revisions (`revisionGraph`), so an edge C adds to a shipped co-member
+ * is in place for it.
+ */
+function liveMoveGraph(graph: MindPlanGraph, node: MindPlanNode): MindPlanGraph {
+  const own = preShipChange(node);
+  return own === null ? liveGraph(graph) : revisionGraph(graph, own);
+}
+
 /** Replace a node's outgoing edges in the in-memory graph with its current edge fields. */
 function rebuildOutgoingEdges(graph: MindPlanGraph, node: MindPlanNode): void {
   graph.edges = graph.edges.filter((e) => e.source !== node.id);
@@ -447,7 +463,7 @@ function simulateRow(
         }
         continue;
       }
-      const live = liveGraph(graph);
+      const live = liveMoveGraph(graph, node);
       const resolved = resolveStatusChange(live, findNode(live, row.node_id), step);
       if (step === "in-review" || step === "ship") {
         assertCheckCleanForNode(graph, root, node, step);
@@ -760,18 +776,6 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   };
 }
 
-/**
- * The parts a revision split out of its node: the ids its next slot marks in `split_into`
- * (patch_node_territory) beyond the live list, kept only where the edge that keeps imports legal is
- * in place by now (`splitPartLinked`: a Foundation depends_on them, an Interaction shares a Capability,
- * an Interface exposes them). A split is declared, not guessed.
- */
-function splitParts(graph: MindPlanGraph, node: MindPlanNode): string[] {
-  if (!node.next) return [];
-  const live = new Set(node.split_into ?? []);
-  return (node.next.split_into ?? []).filter((id) => !live.has(id) && splitPartLinked(graph, node, id)).sort();
-}
-
 function applyOneStatus(args: {
   verbose?: boolean;
   node_id: string;
@@ -787,8 +791,9 @@ function applyOneStatus(args: {
   const change = revisionChangeFor(node, new_status, args.change);
   if (change) return applyRevisionStatus({ ...args, change }, graph, node);
 
-  // A live move (pre-ship, a Bug, or a retirement) is judged with no change's revision visible.
-  const live = liveGraph(graph);
+  // A live move (pre-ship, a Bug, or a retirement) is judged with no change's revision visible,
+  // except that a pre-ship member of a change sees that change's revisions (`liveMoveGraph`).
+  const live = liveMoveGraph(graph, node);
   const resolved = resolveStatusChange(live, findNode(live, node_id), new_status);
   // Moves to in-review and ship run the check's import and ownership rules on this node's files.
   let warnings: string[] = [];

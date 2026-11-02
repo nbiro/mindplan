@@ -11,6 +11,8 @@ export {
   openChanges,
   resolveRevisionChange,
   revisionFor,
+  splitPartLinked,
+  splitParts,
   withRevision,
 } from "./revision.js";
 export {

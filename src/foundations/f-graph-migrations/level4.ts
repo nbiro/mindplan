@@ -167,7 +167,13 @@ export function moveNextToRevisions(): RevisionMoved[] {
 
     const revFile = path.join(revDir, liveMdxFilename(id));
     fs.mkdirSync(revDir, { recursive: true });
-    writeFileRetry(revFile, formatRevisionFile(id, liveFm.scalars.type as NodeType, revision, withoutOwnedSections(next.body)));
+    writeFileRetry(revFile, formatRevisionFile(
+        id,
+        liveFm.scalars.type as NodeType,
+        revision,
+        withoutOwnedSections(next.body),
+        liveRaw.includes("\r\n") ? "\r\n" : "\n"
+      ));
     for (const record of own) {
       const dir = decisionsDir(revDir);
       fs.mkdirSync(dir, { recursive: true });

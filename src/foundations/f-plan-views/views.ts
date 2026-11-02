@@ -55,6 +55,20 @@ export function revisionSummaries(node: MindPlanNode): RevisionSummary[] {
     }));
 }
 
+/**
+ * Claims a node's open work adds beside live: a legacy next's (or the loader's single-revision
+ * view's), and with several open revisions, every revision's adds.
+ */
+function openClaims(node: MindPlanNode): string[] {
+  return [...(node.next?.implements ?? []), ...(node.open_revisions ?? []).flatMap((r) => r.implements.add)];
+}
+
+/** Files attributed to the node's open work: its open slot's (every revision's), else live's. */
+function openAttributed(node: MindPlanNode): string[] {
+  if ((node.open_revisions?.length ?? 0) > 1) return node.open_revisions!.flatMap((r) => r.attributed ?? []);
+  return (node.next ? node.next.attributed : node.attributed) ?? [];
+}
+
 /** Reverse-depends_on blast radius; Interaction focus also includes reachability + affected_files. */
 export function buildBlastRadiusPayload(
   graph: MindPlanGraph,
@@ -105,14 +119,12 @@ export function buildBlastRadiusPayload(
     for (const p of expandClaims(owner.implements, root)) {
       group.files.add(p);
     }
-    if (owner.next) {
-      for (const p of expandClaims(owner.next.implements, root)) {
-        group.files.add(p);
-      }
+    for (const p of expandClaims(openClaims(owner), root)) {
+      group.files.add(p);
     }
-    // Files the revision adds in another node's folder count as the revision's own.
+    // Files a revision adds in another node's folder count as the revision's own.
     if (via === "focus") {
-      for (const p of (owner.next ? owner.next.attributed : owner.attributed) ?? []) group.files.add(p);
+      for (const p of openAttributed(owner)) group.files.add(p);
     }
   };
 
@@ -134,14 +146,14 @@ export function buildBlastRadiusPayload(
   // Importers: other nodes whose files import focus-owned files
   const focusFiles = new Set([
     ...expandClaims(node.implements, root),
-    ...(node.next ? expandClaims(node.next.implements, root) : []),
+    ...expandClaims(openClaims(node), root),
   ]);
   if (focusFiles.size > 0) {
     for (const other of graph.nodes) {
       if (other.id === node.id || !isPipelineNodeType(other.type)) continue;
       const otherFiles = [
         ...expandClaims(other.implements, root),
-        ...(other.next ? expandClaims(other.next.implements, root) : []),
+        ...expandClaims(openClaims(other), root),
       ];
       let importsFocus = false;
       for (const f of otherFiles) {

@@ -238,6 +238,28 @@ function rulePass(graph: MindPlanGraph, root: string, change: string | null): Ru
   return { change, graph: g, buckets: buildOwnershipIndex(g, root) };
 }
 
+/**
+ * The change a pre-ship member is judged under: a pre-ship, active Foundation, Interaction, or
+ * Interface sees its own change's revisions on shipped co-members (an edge the change adds to a
+ * shipped node is in place for it). Null for any other node.
+ */
+export function preShipChange(node: MindPlanNode): string | null {
+  if (!isPipelineNodeType(node.type) || node.shipped_at || isInactiveNode(node)) return null;
+  return node.change || null;
+}
+
+/**
+ * The live pass for `node`: live plus legacy next files, except that a pre-ship member of a change
+ * sees that change's revisions (`revisionGraph`). Its `change` stays null: the node's own claims
+ * are live ones, so violations are not tagged as a revision's.
+ */
+function livePassFor(graph: MindPlanGraph, root: string, node: MindPlanNode): RulePass {
+  const own = preShipChange(node);
+  if (own === null) return rulePass(graph, root, null);
+  const g = revisionGraph(graph, own);
+  return { change: null, graph: g, buckets: buildOwnershipIndex(g, root) };
+}
+
 /** One owner's view of one file: the pass it is judged under and whether that claim alone is advisory. */
 type OwnerView = { pass: RulePass; owner: MindPlanNode; advisory: boolean };
 
@@ -273,6 +295,15 @@ export function findAllImportViolations(
     if (!p) passes.set(change, (p = rulePass(graph, root, change)));
     return p;
   };
+  // A pre-ship member of a change is judged seeing that change's revisions (`livePassFor`).
+  const memberPasses = new Map<string, RulePass>();
+  const livePass = (owner: MindPlanNode): RulePass => {
+    const own = preShipChange(owner);
+    if (own === null) return live;
+    let p = memberPasses.get(own);
+    if (!p) memberPasses.set(own, (p = livePassFor(graph, root, owner)));
+    return p;
+  };
   const out: ImportViolation[] = [];
   for (const file of universe) {
     const views = new Map<string, OwnerView[]>();
@@ -280,12 +311,15 @@ export function findAllImportViolations(
     const exclusive = exclusiveOwner(live.buckets, file);
     for (const c of claimantsOf(live.buckets, file)) {
       if (c.via === "revision") continue;
-      const owner = live.graph.nodes.find((n) => n.id === c.id);
-      if (!owner || views.get(c.id)?.some((v) => v.pass === live)) continue;
+      const liveOwner = live.graph.nodes.find((n) => n.id === c.id);
+      if (!liveOwner) continue;
+      const pass = livePass(liveOwner);
+      if (views.get(c.id)?.some((v) => v.pass === pass)) continue;
+      const owner = inGraph(pass.graph, liveOwner);
       // A live claim every open revision of its owner drops is released: its scan only warns.
       const open = openChanges(owner);
       const released = open.length > 0 && open.every((ch) => live.buckets.releasedByChange.get(ch)?.get(file) === owner.id);
-      add(c.id, { pass: live, owner, advisory: c.id !== exclusive || released });
+      add(c.id, { pass, owner, advisory: c.id !== exclusive || released });
     }
     for (const r of live.buckets.revisions.get(file) ?? []) {
       const pass = passFor(r.change);
@@ -576,7 +610,8 @@ export function findImportViolationsForNode(
   change?: string
 ): ImportViolation[] {
   if (!isPipelineNodeType(node.type)) return [];
-  const pass = rulePass(graph, root, gateChange(node, change));
+  const c = gateChange(node, change);
+  const pass = c === null ? livePassFor(graph, root, node) : rulePass(graph, root, c);
   const owner = inGraph(pass.graph, node);
   const files = expandClaims(activeClaims(owner), root);
   return scanUnder(pass, root, owner, files, new Set(files));

@@ -335,6 +335,15 @@ await walk("f-core", ["ship"]);
   check("promote deletes the revision folder", noNextFile("f-core"));
   const noNext = await blocked("get_node_context", { node_id: "f-core", slot: "next" });
   check("slot next without an open revision is Blocked", noNext?.includes("Blocked:") && noNext.includes("no open revision"), noNext ?? "accepted");
+  const noNextPatch = await blocked("patch_node_territory", { node_id: "f-core", slot: "next", description: "Infra — patched." });
+  check(
+    "patch_node_territory slot next without an open revision is Blocked naming open_next, not a next file",
+    noNextPatch?.includes("Blocked:") &&
+      noNextPatch.includes("no open revision") &&
+      noNextPatch.includes('open_next({ node_id: "f-core", change })') &&
+      !noNextPatch.includes(".next.mdx"),
+    noNextPatch ?? "accepted"
+  );
 }
 
 // --- a Foundation's Checklist heading is dropped at ship too ---

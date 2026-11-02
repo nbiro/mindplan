@@ -446,7 +446,7 @@ fillAndTick("interactions", "i-b");
   check("path lookup resolves through a glob claim", owner.owner?.node_id === "i-read", JSON.stringify(owner));
 
   await call("create_node", { id: "if-blog", type: "Interface", title: "Blog template", description: "Blog entry point" });
-  const conflict = await blocked("set_implementation_files", { replace: true, node_id: "if-blog", files: ["src/templates/blog/"] });
+  const conflict = await blocked("set_implementation_files", { node_id: "if-blog", add: ["src/templates/blog/"] });
   check("an overlapping claim on a glob-claimed file is Blocked", !!conflict && conflict.includes("i-read"), String(conflict));
   await call("set_implementation_files", { replace: true, node_id: "if-blog", files: ["src/templates/blog/layout.tsx"] });
 

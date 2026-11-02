@@ -484,6 +484,15 @@ git("switch", "-q", "-c", "feature");
       JSON.stringify(page.nodes[0].open_revisions) === JSON.stringify([{ change: "rev-a", state: "draft" }, { change: "rev-b", state: "draft" }]),
     JSON.stringify(page.nodes)
   );
+  const titled = await call("get_mindplan_graph", { change: "rev-b", fields: ["title", "next"], edges: false });
+  const titledNode = titled.nodes[0] ?? {};
+  check(
+    "a title/next projection of a node with several revisions gives live values plus its open_revisions",
+    titledNode.title !== undefined &&
+      !("next" in titledNode) &&
+      JSON.stringify(titledNode.open_revisions) === JSON.stringify([{ change: "rev-a", state: "draft" }, { change: "rev-b", state: "draft" }]),
+    JSON.stringify(titled.nodes)
+  );
   const found = await call("orient_for_work", { query: "backoff schedule" });
   check(
     "search finds a node by a revision's new wording",
