@@ -61,6 +61,7 @@ export const GRAPH_NODE_FIELDS = [
   "attributed",
   "role",
   "next",
+  "open_revisions",
   "rules",
   "change",
   "change_ref",
