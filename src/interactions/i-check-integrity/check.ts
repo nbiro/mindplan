@@ -504,7 +504,9 @@ function checkLeftovers(
 
 /**
  * Import rule over every claimant of a file. Violations only the next-slot / released scan finds
- * are warnings for one release (existing graphs keep passing), then they Block.
+ * are warnings for one release (existing graphs keep passing), then they Block. Claimed files
+ * outside the universe are scanned too: the in-review gate scans every claimed file, so the
+ * check must not pass what the gate Blocks.
  */
 function checkImports(
   graph: MindPlanGraph,
@@ -514,8 +516,11 @@ function checkImports(
   failures: string[],
   warnings: string[]
 ): void {
+  const scanned = [
+    ...new Set([...universe, ...buckets.live.keys(), ...buckets.next.keys(), ...buckets.released.keys()]),
+  ].sort((a, b) => a.localeCompare(b));
   const seen = new Set<string>();
-  for (const violation of findAllImportViolations(graph, buckets, root, universe)) {
+  for (const violation of findAllImportViolations(graph, buckets, root, scanned)) {
     if (seen.has(violation.message)) continue;
     seen.add(violation.message);
     if (violation.advisory) {
