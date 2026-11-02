@@ -59,6 +59,17 @@ const call = async (tool, args) => {
   return JSON.parse(r.text);
 };
 const live = (rel) => fs.readFileSync(path.join(root, rel), "utf-8");
+/**
+ * The open evolution file of `<dir>/<id>` for `change`: the revision file
+ * (`revisions/<change>/<id>.mdx`) when one exists, else a legacy `<id>.next.mdx`.
+ */
+const openSlot = (dir, id, change) => {
+  const revision = `${dir}/${id}/revisions/${change}/${id}.mdx`;
+  return fs.existsSync(path.join(root, revision)) ? live(revision) : live(`${dir}/${id}/${id}.next.mdx`);
+};
+/** True when a slot's text lists `target` under `type` (a full list, or a revision's `<type>_add` delta). */
+const listsEdge = (text, type, target) =>
+  new RegExp(`(?:^|\\n)${type}(?:_add)?:\\r?\\n(\\s+- .*\\r?\\n)*\\s+- ${target}(?:\\r?\\n|$)`).test(text);
 
 const SECTIONS = {
   Foundation: ["## Purpose", "## Shared Substrate Spec", "## Acceptance Criteria"],
@@ -187,8 +198,8 @@ check(
 );
 check(
   "the next file has the edge and no planned: list",
-  /exposes:\r?\n(\s+- .*\r?\n)*\s+- i-new/.test(live("mindplan/interfaces/if-dash/if-dash.next.mdx")) &&
-    !live("mindplan/interfaces/if-dash/if-dash.next.mdx").includes("planned:")
+  listsEdge(openSlot("mindplan/interfaces", "if-dash", "feat"), "exposes", "i-new") &&
+    !openSlot("mindplan/interfaces", "if-dash", "feat").includes("planned:")
 );
 const whileOpen = await call("run_check", { change: "feat" });
 check(
