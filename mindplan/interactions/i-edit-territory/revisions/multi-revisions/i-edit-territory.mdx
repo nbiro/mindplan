@@ -1,0 +1,72 @@
+---
+id: i-edit-territory
+type: Interaction
+change: multi-revisions
+change_ref: "feat/multi-revisions"
+state: in-progress
+opened_at: 2026-11-02T08:30:57.177Z
+updated_at: 2026-11-02T08:33:27.526Z
+title: "Edit a node's territory"
+description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, a revision's change id, aliases, declared splits, node rules, and attachments."
+depends_on_add:
+  - f-revision-model
+base:
+  - title=6339afb2
+  - description=cee339a4
+  - role=da39a3ee
+  - section:_preamble=675d273b
+  - "section:## Purpose=4637fca7"
+  - "section:## Actor & Trigger=c02cc462"
+  - "section:## PRD / Execution Logic=47aa2c1e"
+  - "section:## Acceptance Criteria=9b458b9c"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# Edit a node's territory
+
+## Purpose
+
+The one writer of a node's prose and territory metadata through MCP: body, sections, exact replacements, checkboxes, title, description, role, change ids, aliases, declared splits, node rules, and attachments. Contract edits on a ready slot send it back to draft, so readiness always means reviewed.
+
+## Actor & Trigger
+
+Agent calls `patch_node_territory`, `patch_node_rules`, `put_attachment`, or `remove_attachment` when a node's text or files should match the work, before the feature code.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`).
+
+- **patch_node_territory** preserves `## Rules` and Blocks a body containing one (naming `patch_node_rules`), and Blocks `## Decisions` (use `record_decision`). Besides `body` it takes `section` + `text` and `replace { find, with, all? }`; `body` cannot be combined with them; `section` without `text` is Blocked. `toggle_checkboxes` items take `all`, `note`, and `not_applicable` and return `toggled`. Title, description, and role write the pre-ship live slot or an open next; on a shipped live slot they are Blocked
+- **Readiness reset.** A contract write to a `ready` slot (title, description, role, body, section, replace, checkboxes) moves it back to `draft` and returns `readiness_reset`; `change` / `change_ref`, aliases, `split_into`, rules, and attachments never reset
+- **Change ids.** `change` / `change_ref` set the change of the slot that holds a revision (the open next, or a pre-ship live slot). On a shipped node with no open next either one is Blocked (`shippedChangeBlocked`, `f-plan-writes`): its files are edited in place and need no change id. A write that passes `change` runs inside `withChangeCleanup` (`f-plan-writes`), so moving the last revision off a change drops that change's planned edges
+- **Aliases** on any active node, shipped ones included, live and next alike, without `open_next` or a readiness reset
+- **Declared splits.** `split_into` on a node with an open revision writes the next file's `split_into` as the live list plus the parts (`writeNextSplitInto`), validated first (`validateSplitInto`): a Foundation splits into other active Foundations (recorded at ship for the parts it then `depends_on`); an Interaction into other active Interactions that share one of its Capabilities; an Interface into the Interactions it exposes. A marked part that will not count at ship yet returns a `split_into:` warning. **Clearing a wrong split.** `split_into: []` on a shipped node with no open revision removes its `split_at` and `split_into` in place (no `open_next`, no readiness reset) and recounts `churn` from the node file's git history without the split reset (`shipHistory`, `replayChurn`, f-compiler-rules); outside git the stored `churn` is kept. A node with no split record is Blocked (nothing to clear); a non-empty list without an open revision stays Blocked with `open_next`
+- **patch_node_rules({ node_id, rules })** replaces `## Rules` on any active node (live and an open next alike), never changes state or readiness, Blocks a heading line, and returns `rules_impact` (`rulesImpact`, `f-graph-search`) so the author sees whose work the edit reaches
+- **Attachments.** `put_attachment` / `remove_attachment` write or remove a file under the node's attachments folder (next-attachments while a revision is open)
+- Orientation gate on `node_id` (`gateWrite`, `f-plan-writes`)
+
+Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
+
+- **Open revisions (0.18.0).** `patch_node_territory`, `put_attachment`, and `remove_attachment` take `change` to pick the revision (optional with at most one open); `slot: "next"` means that revision. Editing a section of a revision that has a conflict on it leaves the conflict until `resolve_conflict`
+
+## Acceptance Criteria
+
+- `section` rewrites one section and leaves the rest; `replace` is Blocked unless the text matches exactly once (or `all`)
+- Each contract write on a `ready` next slot returns `next_state: "draft"` and `readiness_reset`; the same write on an in-progress slot changes no state; `patch_node_rules` and change writes never reset readiness
+- `patch_node_rules` then `patch_node_territory` leaves the rules intact; with an open evolution the rules appear in both files; Blocked on unknown id, retired node, closed Bug, or a heading line
+- `change` (any value, `""` included) or `change_ref` on a shipped node with no open next is Blocked naming in-place edits and `open_next`, and writes nothing
+- `aliases` are written, `[]` clears them, an alias over 60 characters is rejected
+- `split_into` on the node itself, on a node with no open revision, or naming a node of the wrong kind is Blocked; an Interaction may mark Interactions in one of its Capabilities and an Interface the Interactions it exposes
+- Verified via `npm test`
+
+- `split_into: []` on a shipped node with a split record and no open revision clears `split_at` and `split_into`, keeps `revisions`, and recounts `churn` without the reset; on a node with no split record it is Blocked
+
+## Atomic Ops
+
+- [ ] Requirements defined
+- [ ] Implementation complete
+- [ ] Tests passing
+
+## Attachments
+
+_None._

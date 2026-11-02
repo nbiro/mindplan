@@ -48,30 +48,6 @@ Depends on: `f-graph-search`, `f-domain-model`.
 - A write over three unoriented nodes is Blocked once, naming all three; over one change it names `orient_for_work({ change })`
 - Verified via `npm test` (`orient-gate.test.mjs`)
 
-## Decisions
-
-### d-ledger-in-memory-per-process
-
-- Decision: The ledger lives in the MCP server's memory: one process is one session; a fetch is stored with a fingerprint of the rules that reach the node (its own and every inherited entry, with their sources), and the gate compares it with the current fingerprint at write time.
-- Alternatives:
-  - Persist fetches under mindplan/ or the cache (a new session would inherit an orientation it never read)
-  - Invalidate on every graph write (any unrelated write would force re-orienting on every node)
-- Why: Orientation is a property of what reached this agent; the fingerprint makes only a change to the rules that reach the node invalidate it.
-- Consequences: Restarting the server forgets every fetch; MINDPLAN_ORIENT_GATE=off turns the gate off for a process (legacy test suites).
-- Change: summary-orient
-- Date: 2026-10-25
-
-### d-change-wide-orient-stays-in-memory
-
-- Decision: A reconnect is covered by orient_for_work({ change }), which returns the rules of every member of a change once per source and records them all; the ledger stays in memory per process, and an orientation Block names every unoriented node at once.
-- Alternatives:
-  - Persist the ledger per working directory with rules fingerprints (a new conversation would inherit orientation whose rules never reached it)
-  - Both persist and add the change-wide orient (keeps the persistence risk for a case one call already covers)
-- Why: Orientation is a property of what reached this conversation; one call per change makes a reconnect cheap without letting rules be skipped.
-- Consequences: After a reconnect an agent makes one orient call per change (or per node outside a change) before writing.
-- Change: agent-guidance
-- Date: 2026-10-30
-
 ## Attachments
 
 _None._

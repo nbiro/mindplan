@@ -1,0 +1,71 @@
+---
+id: i-record-decision
+type: Interaction
+change: multi-revisions
+change_ref: "feat/multi-revisions"
+state: in-progress
+opened_at: 2026-11-02T08:30:57.624Z
+updated_at: 2026-11-02T08:33:27.843Z
+title: "Record a decision"
+description: "Agent records a design decision on the node it shapes, with the rejected alternatives, supersession, and keep_whole."
+depends_on_add:
+  - f-revision-model
+base:
+  - title=173d2b31
+  - description=bfe16c3e
+  - role=da39a3ee
+  - section:_preamble=34f05773
+  - "section:## Purpose=5ca8e639"
+  - "section:## Actor & Trigger=18caf028"
+  - "section:## PRD / Execution Logic=58d8ff66"
+  - "section:## Acceptance Criteria=14e857b0"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# Record a decision
+
+## Purpose
+
+Records why a design was chosen over its alternatives, on the node it shapes, so the next agent reads the reasoning before reshaping it. Records are never rewritten: a changed decision is a new record that supersedes the old one. A `keep_whole` decision also tells hotspot detection the node stays one node on purpose.
+
+## Actor & Trigger
+
+Agent calls `record_decision` when it chooses between viable designs, or when the decision gate or an `open_next` decision prompt asks for one.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-record-decision/` (`handlers.ts`, `tools.ts`).
+
+- `record_decision({ node_id, decision, alternatives, why, consequences?, supersedes?, change?, id?, keep_whole? })` appends one entry (`appendDecision`) to the node's active slot: the open next file while a shipped node evolves, else the live file. `decision`, `why`, and `consequences` are trimmed to one line; `alternatives` needs at least one non-empty item
+- `id` defaults to one generated from the decision's first words; a given id must be `d-` plus a slug and unused anywhere in the graph (an id a `supersedes` still names is taken)
+- `change` defaults to the node's open revision's change (`activeChange`), else none. It tags the decision only: the node's own change id is never written, so a decision on a shipped node with no open next records its change on the record and the node stays outside the change's members. `date` is today in UTC
+- `supersedes` must name an active decision held by the node or by a node it inherits decisions from (its Capabilities, its transitive Foundations); the old entry stays as written and becomes `superseded`
+- `keep_whole: true` writes `- Keep whole: true` on the record
+- Blocked: unknown node; inactive node; a Bug (record the decision on the node the fix shapes); empty decision or why; no alternative; a bad or taken id; an invalid change id; a `supersedes` that is unknown, already superseded, or out of reach
+- Output: `{ node_id, slot, decision, supersedes?, changed_files, state, next_state }`; never resets readiness and does not rewrite `mindplan/map.md`
+- Orientation gate on `node_id`
+
+Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-domain-model`, `f-tool-kit`.
+
+- **Decision files (0.18.0).** `record_decision` writes one `decisions/<decision-id>.md` file (in the revision folder `change` picks, else the node folder), never rewriting another; an id already used anywhere on the node is Blocked
+
+## Acceptance Criteria
+
+- `record_decision` writes a structured entry that `list_decisions` returns; on a node with an open evolution it lands in the next file only
+- Superseding marks the old decision superseded; superseding an unknown, already-superseded, or out-of-reach decision is Blocked, and so is a taken id
+- `record_decision` on a `ready` revision does not reset readiness
+- `record_decision` without `change` on a node with an open revision records under that revision's change; on a shipped node with no open next it records with no change
+- `record_decision({ change })` on a shipped node with no open next records the decision under that change and writes no change id on the node; `get_mindplan_graph({ change })` and `run_check({ change })` do not list the node
+- `keep_whole: true` is written and read back, and the node stops being a hotspot until the decision is superseded
+- A Bug is refused with the nodes it affects named
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Requirements defined
+- [ ] Implementation complete
+- [ ] Tests passing
+
+## Attachments
+
+_None._

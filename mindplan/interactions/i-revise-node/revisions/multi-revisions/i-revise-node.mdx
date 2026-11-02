@@ -1,0 +1,65 @@
+---
+id: i-revise-node
+type: Interaction
+change: multi-revisions
+change_ref: "feat/multi-revisions"
+state: in-progress
+opened_at: 2026-11-02T08:30:56.986Z
+updated_at: 2026-11-02T08:33:27.998Z
+title: "Revise a shipped node"
+description: "Agent opens a revision of a shipped node, with its planned edges applied and a hotspot warning when it ships far above the graph's pace, or discards the revision."
+depends_on_add:
+  - f-revision-model
+base:
+  - title=960557ed
+  - description=42c4473d
+  - role=da39a3ee
+  - section:_preamble=8d2258a6
+  - "section:## Purpose=4a46c312"
+  - "section:## Actor & Trigger=0bfda4ea"
+  - "section:## PRD / Execution Logic=20994a5d"
+  - "section:## Acceptance Criteria=12d4cd29"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# Revise a shipped node
+
+## Purpose
+
+Opens a revision of a shipped Foundation, Interaction, or Interface while the live node keeps serving, or discards it, and warns at the moment of reopening when the node ships far more often than the rest of the graph, since that is when an additive design is still cheap.
+
+## Actor & Trigger
+
+Agent calls `open_next` when a shipped node's contract changes, before editing that contract, and `discard_next` to abandon the revision.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-revise-node/` (`handlers.ts`, `tools.ts`).
+
+- **open_next** validates Rule 10 and writes `<id>.next.mdx` from the live file in state `draft` (optional title and description) with a fresh list of unticked default Atomic Ops and an empty `next-attachments/`; takes `change` / `change_ref`, written to the next file only (the live file carries no change id)
+- **Planned edges.** With a change, open_next is Blocked while any of that change's planned entries on the node is no longer legal (with the `unlink_nodes` fix); otherwise it applies them to the next slot and returns `applied_planned` (and the `rules` they bring)
+- **Hotspot warning.** When the node is a hotspot counting the revision it opens (`openClosedWarning`, `f-compiler-rules`), the result carries `warnings` and `decision_prompt`, the `record_decision` call naming a new node that depends on it as the alternative. It never Blocks
+- **discard_next** deletes `<id>.next.mdx` and `next-attachments/`, leaves the live file untouched, and drops its change's planned edges when it was the change's last revision (`withChangeCleanup`, `f-plan-writes`)
+- Orientation gate on `node_id`
+
+Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
+
+- **Open revisions (0.18.0).** `open_next` requires `change` and opens `revisions/<change>/` from live (with that change's planned edges as add deltas and base hashes of live); it is Blocked only when that change is already open on the node, so several changes can revise one node at once. `discard_next` takes `change` (optional when only one is open). New tool `resolve_conflict({ node_id, change, section | field | claim, take: "mine" | "live" | "text", text? })` settles one rebase conflict and refreshes its base hash
+
+## Acceptance Criteria
+
+- `open_next` creates `<id>.next.mdx` with unticked default ops; `discard_next` deletes it and `next-attachments/` and lists each deleted path; no write creates a `state: mirror` file
+- `open_next` with a change writes it to the next file only; the result has no `replaced_change`
+- `open_next` with a change adds its planned edges to the next slot and returns `applied_planned`; a planned edge whose target was cancelled Blocks `open_next` with the `unlink_nodes` fix
+- `open_next` on a node shipping far above the graph's median returns `warnings` and `decision_prompt`; on a node at the graph's pace it returns neither
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Requirements defined
+- [ ] Implementation complete
+- [ ] Tests passing
+
+## Attachments
+
+_None._

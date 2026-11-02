@@ -58,29 +58,6 @@ Depends on: `f-domain-model`, `f-source-index`, `f-compiler-rules`.
 - The warning text matches the wording above
 - Verified via `npm test` (`src/foundations/f-test-harness/fan-out.test.mjs`)
 
-## Decisions
-
-### d-fan-out-own-foundation
-
-- Decision: The fan-out signal is its own Foundation (f-fan-out) that depends_on f-compiler-rules for keepsWhole, not another open–closed signal inside f-compiler-rules.
-- Alternatives:
-  - Add fanOut beside hotspotFor in f-compiler-rules/open-closed.ts (reopens a hotspot shipping at 13.7 against a median of 3.4)
-- Why: f-compiler-rules is a hotspot; a new Foundation keeps this change additive there, and the check and orient only need two functions from it.
-- Consequences: The check and orient gain a depends_on on f-fan-out; a later graph-fact signal can follow the same pattern.
-- Change: graph-filters-fan-out
-- Date: 2026-10-31
-
-### d-fan-out-pre-ship-only
-
-- Decision: Fan-out is counted only for never-shipped Foundations, Interactions, and Interfaces; a shipped node's open revision is not counted, and a target counts only when it has never shipped and carries a change id other than the node's own.
-- Alternatives:
-  - Also count a shipped node's open revision over its next depends_on (no measured case yet; the reported problem was a planned node)
-  - Count every unshipped depends_on target, change id or not (a target with no change id is not part of another feature's change)
-- Why: The case that motivated it was a planned action wired to four unbuilt features; shipped targets are settled substrate, and same-change targets are one feature.
-- Consequences: A revision that adds many cross-change depends_on edges is still caught by the depends_on decision trigger, not by fan-out.
-- Change: graph-filters-fan-out
-- Date: 2026-10-31
-
 ## Attachments
 
 _None._

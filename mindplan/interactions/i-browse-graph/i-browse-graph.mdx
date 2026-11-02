@@ -68,30 +68,6 @@ Depends on: `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-domain
 - `list_decisions` returns a node's, a change's, and the graph's decisions; with `include_superseded` the superseded entry carries `superseded_by`
 - Verified via `npm test`
 
-## Decisions
-
-### d-graph-filter-before-paging
-
-- Decision: get_mindplan_graph filters (state, type, change; AND across, OR within) before sorting and paging, so the page totals describe the filtered set, total_edges counts edges whose source is in the filtered set, and change matches an open revision's change, else the record's change field.
-- Alternatives:
-  - Filter each page after slicing (pages would come back short or empty and next_offset would not walk the answer)
-  - Match change on the live change field only (an open revision's change lives on next, so every revision of the change would be missed)
-- Why: A filtered call should answer a question in one page that fits the host's result limit; totals that describe the answer let the agent trust it.
-- Consequences: total_edges no longer means every edge once a filter is passed; with no filter the output is unchanged.
-- Change: graph-filters-fan-out
-- Date: 2026-10-31
-
-### d-graph-edges-option
-
-- Decision: get_mindplan_graph takes edges: true (default) | false | edge types; false drops both edges and total_edges, an array keeps only those types and counts them over the filtered set, and unknown types fail in the handler with the valid list.
-- Alternatives:
-  - Keep total_edges with edges: false (a count of edges the reply does not carry invites a second call for nothing)
-  - Validate edge types with a zod enum (the schema error is harder to read than the fields-style Blocked line)
-  - Drop edges whenever fields is passed (couples projection to edge selection; some slices need depends_on)
-- Why: On real graphs edges are most of a filtered reply; an explicit option keeps the default output unchanged while letting a question about nodes skip them.
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
 ## Attachments
 
 _None._

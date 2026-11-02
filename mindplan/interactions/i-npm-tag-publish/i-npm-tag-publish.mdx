@@ -127,44 +127,6 @@ Workflow-level `concurrency: { group: publish, cancel-in-progress: false }` queu
 - **OIDC / Trusted Publisher misconfigured:** fix the npm binding; do not add `NPM_TOKEN` without a product decision
 - **Broken published version:** bump patch in a new PR and merge; never unpublish or move a tag
 
-## Decisions
-
-### d-publish-unpublished-version-on-main
-
-- Decision: Every push to main publishes package.json's version when npm does not list it yet, and tags it afterward; the version bump in the merged PR is the release signal.
-- Alternatives:
-  - Publish on a pushed vX.Y.Z tag (the maintainer wants merging to be the only release step)
-  - Bump the version automatically on every merge (semantic-release / changesets: CI writes commits to main, and every merge becomes a release whether or not it should ship)
-  - Publish when a commit message says release (a typo silently skips or double-releases)
-- Why: The registry is the source of truth for what is already released, so the check is idempotent across re-runs and queued pushes, and a merge that should not ship simply does not bump the version.
-- Consequences: A PR that should release must bump package.json; forgetting it publishes nothing. The first publish stays manual because Trusted Publishing is bound to an existing package.
-- Change: npm-release
-- Date: 2026-10-23
-
-### d-repin-job-after-tag
-
-- Decision: The Publish workflow repins the exact self devDependency in its own repin job right after a successful publish and tag: it opens a PR with GITHUB_TOKEN that bumps no version and dispatches CI on the branch.
-- Alternatives:
-  - Dependabot scoped to mindplan-mcp (no workflow code, but it checks on a schedule, at most daily, so the pin lags a release by up to a day)
-  - Open the PR with a personal access token or GitHub App so pull_request CI runs by itself (a long-lived secret or an app to maintain, for one lockfile PR)
-  - Repin by hand after each release (easy to forget; the rule alone did not do it for 0.2.1)
-- Why: The workflow knows the exact moment a release succeeded, GITHUB_TOKEN with contents, pull-requests, and actions write can push, open the PR, and dispatch CI, and a separate job keeps a repin failure from marking the release failed.
-- Consequences: The repository must allow GitHub Actions to create pull requests; ci.yml must keep its workflow_dispatch trigger; a publish job that fails after publishing skips the repin, which is then opened by hand.
-- Change: npm-release
-- Date: 2026-10-25
-
-### d-repin-merges-from-dispatched-ci
-
-- Decision: The repin PR is merged by a merge-repin job in ci.yml that runs after the test matrix passes on the CI run the repin job dispatched, merging with GITHUB_TOKEN pinned to the tested head commit.
-- Alternatives:
-  - GitHub auto-merge (gh pr merge --auto) from the repin job: main has no required status checks, so it merges at once without waiting for CI; making it wait means adding required checks for every PR, and the PR's pull_request run waits for approval
-  - Repin job in publish.yml waits for the dispatched run (gh run watch) and then merges: polling, and it holds the publish concurrency group for the whole CI run, queueing the next release behind it
-  - Run the tests inside the repin job and merge there: duplicates the CI matrix and check in a second workflow
-- Why: The CI run that tests the branch is the one that knows when it is green, so a dependent job merges with no polling and no hold on the publish queue, and --match-head-commit ties the merge to the tested commit.
-- Consequences: ci.yml carries a job that writes to the repository, scoped by event and branch prefix and limited to package.json and package-lock.json changes. The merge by GITHUB_TOKEN starts no CI or Publish run on main.
-- Change: repin-auto-merge
-- Date: 2026-10-25
-
 ## Attachments
 
 Optional: successful Actions run URLs or screenshots under `attachments/`.

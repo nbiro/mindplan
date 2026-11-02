@@ -1,0 +1,67 @@
+---
+id: f-graph-migrations
+type: Foundation
+change: multi-revisions
+change_ref: "feat/multi-revisions"
+state: in-progress
+opened_at: 2026-11-02T08:30:42.853Z
+updated_at: 2026-11-02T08:33:25.570Z
+title: "Graph migrations"
+description: "Infra — the ordered, idempotent graph migrations (legacy filenames and config, shipped Atomic Ops, mirror twins, revision backfill, retired agent files, change labels on shipped nodes), the migration level and stamp, the version gate, and the tree diff setup and upgrade report."
+role: infra
+depends_on_add:
+  - f-revision-model
+base:
+  - title=0bde110e
+  - description=de1de63d
+  - role=5e03a58d
+  - section:_preamble=6f3b6872
+  - "section:## Purpose=40be014b"
+  - "section:## Shared Substrate Spec=c13112c8"
+  - "section:## Acceptance Criteria=6ab4a472"
+---
+
+# Graph migrations
+
+## Purpose
+
+Infra — the one place that knows which migrations a graph needs and whether tools may touch it. Every migration is idempotent and runs in code, never by hand: an agent cannot replay git history to backfill revisions, and must not write `mindplan/` with host tools. The level, not the package version, decides the Block, so a release without a new migration asks nothing of a project.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-graph-migrations/` (`migrations.ts`, `status.ts`, `tree.ts`)
+
+- **Migrations (`migrations.ts`).** `migrateJourneysToCapabilities` (level 3, runs first, before any graph load): moves every `mindplan/journeys/<id>/` node folder (one holding a live `<id>.mdx` or `current.mdx`), attachments included, to `mindplan/capabilities/<id>/`, after rewriting `type: Journey` in its live file's frontmatter to `type: Capability` (keeping its line endings) and the scaffold stubs `create_node` wrote before level 3 to the current ones. Every run applies the same rewrite to every `capabilities/<id>/` live file, so a folder moved by hand, or one whose rewrite failed, is repaired by the next upgrade. It removes `journeys/` once it holds nothing but `.gitkeep` files and empty folders; a folder there without a live file is not a node and is left alone. `hasLegacyCapabilityFolders()` says whether `journeys/` still holds a node folder. A failed move or rewrite throws `LegacyTerritoryMigrationError` with the moves made before it. It keeps ids and body text as they are. A Capability folder that already exists under the same id is `Blocked:` naming both paths, after the moves made before it, which it reports. The rest moved from the retired init, unchanged in behavior: `migrateLegacyTerritoryFilenames` (legacy `current.mdx` / `next.mdx` → `<id>.mdx` / `<id>.next.mdx`, with `LegacyTerritoryMigrationError` carrying the renames applied before a failure; runs before any graph load), `migrateImplementationPackages` (legacy `implementation_packages` → `{ sources, exclude }`, seeding `implements` and `role`; writes the default config when none exists), `dropShippedAtomicOps`, `removeLegacyMirrorTwins`, `backfillRevisions` (revision counts, churn, and splits from git, `f-compiler-rules` ship history), `removeRetiredAgentFiles` (deletes `mindplan/agent/`, the copies the retired init installed, through the lock-tolerant `f-source-index` I/O), and `clearStaleChangeLabels` (level 2: strips the `change` and `change_ref` scalars from the live file of every shipped, non-retired pipeline node, with or without an open next (a revision's own change lives on its next file; `open_next` before 0.15.0 copied a label there and left it on live), the neighbor labels releases before 0.15.0 wrote). Like the others it is idempotent and runs on every upgrade: once no such scalar exists it changes nothing
+- `runMigrations(): MigrationReport` runs them in that order and returns `{ capabilitiesMoved, territoryFilenames, config, atomicOpsDropped, mirrorTwinsRemoved, mirrorTwinSkips, revisionsBackfilled, splitsFound, agentFilesRemoved, staleChangeLabelsCleared }` (`capabilitiesMoved`: the ids moved, sorted; `staleChangeLabelsCleared`: `{ node_id, change }` per cleared label, sorted by node id). A graph that cannot load is skipped by each graph pass (as before)
+- `MIGRATION_LEVEL` (now `3`): the level a graph reaches after `runMigrations`. A release that adds a migration raises it by one; a release that adds none leaves it
+- `stampGraph()` writes `mindplan/version.json` with the running package, `GRAPH_VERSION`, and `migrations: MIGRATION_LEVEL` (`writeProjectVersion`, `f-territory-store`) and returns its repo-relative path
+- **Status (`status.ts`).** `graphStatus()` never throws and returns `{ state, level, required, warning?, call? }`:
+  - `setup` — no `mindplan/` directory, or one with no stamp and no node folder (the empty folders a 0.12 server created at boot, or a setup that stopped before its stamp); `call: "setup_project"`
+  - `upgrade` — the stamp is missing, unreadable, or its `migrations` level (absent counts as 0) is below `MIGRATION_LEVEL`, with the same graph format, or `mindplan/journeys/` holds a node folder whatever the stamp says (a branch from before level 3 merged one in); `call: "upgrade_project"`
+  - `server-behind` — the stamp's level is above `MIGRATION_LEVEL` or its graph format above `GRAPH_VERSION`; the fix is to upgrade `mindplan-mcp` to the stamp's package
+  - `current` — no warning
+  Each non-current state carries one `warning` sentence that names the fix
+- `versionGate()` throws `Blocked: Version — <warning>` unless the state is `current`. `MINDPLAN_VERSION_GATE=off` turns it off (test fixtures without a stamp), like `MINDPLAN_ORIENT_GATE`
+- **Tree diff (`tree.ts`).** `snapshotTree()` maps every file under `mindplan/` (`map.md` included) to a content hash; `changedSince(snapshot)` returns the repo-relative paths added, changed, or deleted since, sorted. Setup and upgrade report their `changed_files` with it, so every `mindplan/` path they touch is listed
+
+Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain-model`.
+
+- **Migration level 4 (0.18.0).** Moves each `<id>.next.mdx` and `next-attachments/` to `revisions/<change>/` (a next file without a change gets `rev-<id>`), turns its snapshot edges, claims, and tests into deltas against live, and records base hashes from the current live file; splits every `## Decisions` section into `decisions/<decision-id>.md` files; removes the tracked `mindplan/map.md` and adds it to `mindplan/.gitignore`. A frozen copy of the old next-file reader lives in `legacy-next.ts`. The report lists `revisionsMoved`, `decisionsSplit`, and `mapIgnored`; every step is idempotent
+
+## Acceptance Criteria
+
+- `graphStatus()` is `setup` without `mindplan/`, `upgrade` for a graph with no stamp or a stamp without `migrations`, `current` after `runMigrations` + `stampGraph`, and `server-behind` for a stamp whose level is above `MIGRATION_LEVEL`
+- `versionGate()` Blocks in every state but `current` and never with `MINDPLAN_VERSION_GATE=off`
+- `runMigrations()` on a migrated graph changes nothing; on legacy fixtures it renames, migrates config, drops shipped Atomic Ops, removes mirror twins, backfills revisions and splits, and removes `mindplan/agent/` (the suites that covered init now cover it)
+- `changedSince` lists every file a migration wrote or deleted
+- `clearStaleChangeLabels` strips and reports the live `change` of every shipped node, whatever its change and whether or not a revision is open; it leaves a pre-ship node's change and an open revision's next-slot change alone; a second run clears nothing
+- `migrateJourneysToCapabilities` moves a Journey folder with its attachments to `capabilities/`, rewrites its type, keeps its id and body, removes the empty `journeys/`, and Blocks on an id that exists in both; a second run moves nothing; a hand-moved Capability with `type: Journey` is repaired; a `journeys/` folder without a live file neither moves nor blocks
+- `graphStatus()` is `upgrade` for a level-3 stamp while `mindplan/journeys/` holds a node folder
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Spec written
+- [ ] Implementation complete
+- [ ] Verified in target environment
+

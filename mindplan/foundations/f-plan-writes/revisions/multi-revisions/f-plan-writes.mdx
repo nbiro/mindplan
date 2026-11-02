@@ -1,0 +1,68 @@
+---
+id: f-plan-writes
+type: Foundation
+change: multi-revisions
+change_ref: "feat/multi-revisions"
+state: in-progress
+opened_at: 2026-11-02T08:30:43.072Z
+updated_at: 2026-11-02T08:33:26.542Z
+title: "Plan writes"
+description: "Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it."
+role: infra
+depends_on_add:
+  - f-revision-model
+base:
+  - title=d254ce52
+  - description=eb6cec55
+  - role=5e03a58d
+  - section:_preamble=0583de4d
+  - "section:## Purpose=ea497090"
+  - "section:## Shared Substrate Spec=59d1a111"
+  - "section:## Acceptance Criteria=a810e19b"
+  - "section:## Attachments=6e5b104c"
+---
+
+# Plan writes
+
+Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it.
+
+## Purpose
+
+Infra — the plumbing every graph-write action shares, so the write actions (status, shape, territory, revision, claims, decisions, brief) can live apart without copying it. Split out of `i-steer-plan`, which held all of them in one module that changed for every write feature.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-plan-writes/` (`writes.ts`)
+
+- `gateWrite(graph, ids, tool)` — `Blocked: Orientation` unless each node was oriented on with the rules that reach it now (`f-orientation-ledger`); free when the gate is off
+- `rulesReachingAfterWrite(id, before)` — after a write that can change the rules reaching a node, return them as a `rules` block and count the node as oriented
+- `syncNodes(nodes)`, `territoryPath(node, slot?)`, `changedFiles(paths, withMap?)`, `MAP_REL`, `refreshPersistedMap()` — persist recomputed states and build `changed_files` (the persisted map included)
+- `buildMutationAnchor`, `mutationTail(graph, id, verbose)` — the small default write result, the record and 1-hop neighborhood only with `verbose`
+- `ReadinessReset`, `readinessFields`, `readinessResult`, `READINESS_NOTE` — the `readiness_reset` fields a contract write on a ready slot returns
+- `clearClosedChanges(graph, changes)`, `withChangeCleanup(fn)` — when a write leaves a change with no open revision, drop the planned edges recorded under it (`cleared_planned`), once per call
+- `shippedChangeBlocked(node, tool)` — the one `Blocked:` for `change` on a shipped node with no open next (`isShippedWithoutNext`): `"<id>" is shipped with no open next: edit its files in place; it needs no change id (open_next if its contract changes).`
+
+No tool handlers live here; each write action owns its own.
+
+Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-orientation-ledger`, `f-view-projection`.
+
+- **Open revisions (0.18.0).** `mutationTail` reports `revisions: [{ change, state }]` for a node with open revisions instead of one `next_state`; `withChangeCleanup` compares the set of changes with open revisions before and after a write; the map refresh still runs but `mindplan/map.md` is never in `changed_files`
+
+## Acceptance Criteria
+
+- Every write action imports its gate, result envelope, and change cleanup from here; no write action imports another
+- A write that ships, cancels, discards, or moves the last revision off a change drops that change's planned edges and reports them in `cleared_planned`
+- No write result carries `neighbor_of`, `cleared_neighbors`, or `replaced_change`
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Spec written
+- [ ] Implementation complete
+- [ ] Verified in target environment
+
+## Attachments
+
+_Schemas, OpenAPI exports, ER diagrams, design tokens, etc. go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}

@@ -1,0 +1,69 @@
+---
+id: i-claim-files
+type: Interaction
+change: multi-revisions
+change_ref: "feat/multi-revisions"
+state: in-progress
+opened_at: 2026-11-02T08:30:57.399Z
+updated_at: 2026-11-02T08:33:27.352Z
+title: "Claim files"
+description: "Agent claims the files a node owns, including in-place growth on a shipped node and attributed files, and links the tests that verify the node."
+depends_on_add:
+  - f-revision-model
+base:
+  - title=4900136d
+  - description=0c2a6660
+  - role=da39a3ee
+  - section:_preamble=181c24f8
+  - "section:## Purpose=1481e179"
+  - "section:## Actor & Trigger=419e5ce1"
+  - "section:## PRD / Execution Logic=b30766d9"
+  - "section:## Acceptance Criteria=c88ace5b"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# Claim files
+
+## Purpose
+
+Declares which repo files a node owns, so coverage, exclusivity, and the import matrix can be checked, and links the test files that verify it. A shipped node may grow its claims in place only where no other node's contract can be touched.
+
+## Actor & Trigger
+
+Agent calls `set_implementation_files` before writing a file the node does not yet claim, and `set_test_files` when the tests that verify the node exist.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-claim-files/` (`handlers.ts`, `tools.ts`).
+
+- **set_implementation_files** replaces the slot's `implements` list (pre-ship: live; shipped with an open next: next), then scans the claimed files (`findImportViolationsForClaim`) and returns `import_violations` with the exact `link_nodes` fix; a ready slot whose list changes goes back to draft
+- **In-place claims.** On a shipped node with no open next, `assertAdditiveInPlace` allows only growth into folders the node dominates (`isDominatedFolder`); a dropped entry, a glob, a folder another node claims into, or a migration or schema file (`schemaClaimEntries`) is Blocked with `open_next`. New entries join the live `added_claims` marker; the result carries `added_in_place` and a `hint` to name each in the body
+- **Folder suggestions.** The result carries `folder_claims` when one `folder/` entry would replace several per-file entries
+- **Attributed files.** `attributed` replaces the revision slot's list of exact files it adds in another node's claimed folder; anything else, or a shipped node with no open next, is Blocked with the fix
+- `change` sets the written slot's change id (a revision's next file, or a pre-ship live slot); on a shipped node with no open next it is Blocked (`shippedChangeBlocked`, `f-plan-writes`) and nothing is written; a write that passes `change` runs inside `withChangeCleanup` (`f-plan-writes`)
+- **set_test_files** replaces the node's `tests` list on live and an open next alike; evidence, not a claim: no `open_next`, no readiness reset; Blocked for a Capability, a Bug, a retired node, or an invalid path
+- Orientation gate on `node_id`
+
+Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
+
+- **Add and remove (0.18.0).** `set_implementation_files` and `set_test_files` take `add: [...]` and `remove: [...]` (the documented default) and replace the whole list only with `files` plus `replace: true`; `files` without `replace` is Blocked naming both forms. On a node with open revisions they write deltas to the revision `change` picks; `tests` written without a revision still go to live
+
+## Acceptance Criteria
+
+- Claiming a file that imports from an unlinked node returns the `link_nodes` call; a registry importing Interfaces gets one `mounts` fix per Interface
+- A shipped node claims a new file beside its own in place: the live list grows, `added_in_place` and `hint` return, and `run_check` warns until the body names the file
+- Dropping an entry, adding a glob, claiming in a folder another node claims into, or claiming a migration in place is Blocked with `open_next`; replacing per-file entries with their folder's `dir/` entry is allowed
+- `attributed` on a schema node's revision writes the list; a path no other node claims, a glob, or a shipped node with no open next is Blocked
+- `set_test_files` on a shipped node writes only live, with no `open_next`; on an open revision it writes both files; a `ready` slot stays ready
+- `set_implementation_files` or `set_test_files` with `change` (any value, `""` included) on a shipped node with no open next is Blocked and writes neither the claims nor the tests
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Requirements defined
+- [ ] Implementation complete
+- [ ] Tests passing
+
+## Attachments
+
+_None._

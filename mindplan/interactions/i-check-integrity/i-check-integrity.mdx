@@ -121,42 +121,6 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - `run_check({ change })` prints one `Info: additivity:` line with the change's summary and carries `change.additivity`
 - A pre-ship node depending on nodes in 3 other unshipped changes prints one `Warning: fan-out:` line naming them and `ok` stays true; 2 changes print none; `keep_whole: true` on the node removes it; `fan_out.warn_at: 2` in `mindplan/config.json` makes 2 changes warn
 
-## Decisions
-
-### d-merge-gate-opt-level-existing
-
-- Decision: The merge gate is an opt-in level of the existing check (`check --merge`, `run_check({ merge })`), failing on in-review active slots and in-review Bugs, with a strict level for in-progress nodes whose claimed files changed against the base.
-- Alternatives:
-  - Fail in-review nodes in the default check (every branch with a node in review would fail CI, though in-review on a branch is the normal pre-merge state)
-  - A separate `mindplan-mcp gate` command (a second output format and exit path that could drift from run_check)
-  - Make strict the only level (blocks every incremental PR of a large in-progress feature)
-- Why: In review is legal on a branch and illegal on the default branch, so only a check that knows it is guarding a merge can fail on it; reusing the check keeps one output format for the CLI, run_check, and CI.
-- Consequences: CI must opt in (the init workflow, or a required status check the repository configures); strict needs git history and a resolvable base.
-- Change: merge-gate
-- Date: 2026-10-28
-
-### d-check-stays-whole
-
-- Decision: The integrity check stays one action: every level (default, change, merge, strict) is a level of one check with one output for the CLI, run_check, and CI.
-- Alternatives:
-  - Split the merge gate into its own action (d-merge-gate-opt-level-existing chose one check so the output format cannot drift)
-  - Split the change check out (it reuses every default rule; a second action would duplicate them)
-- Why: Its revisions add checks to one behavior; the rules themselves already live in f-compiler-rules, so new checks mostly land there.
-- Change: hotspot-splits
-- Date: 2026-10-31
-- Keep whole: true
-
-### d-derived-in-place-stale-pass
-
-- Decision: The plain check gives every shipped, non-retired node with no open next whose claimed files changed against the default-branch merge base the full stale-text pass (warnings); without git or a base it falls back to the missing-path pass silently.
-- Alternatives:
-  - Keep the full pass for labeled neighbors in run_check({ change }) only (needs the stored label this change removes)
-  - Give every shipped node the full pass (noisy on untouched nodes whose text predates their code)
-- Why: The files a branch edits in place are exactly the nodes whose text may now be wrong; the merge gate already maps changed paths to claims with the same probe, so the signal costs no new state.
-- Consequences: The check runs git when a base exists (one memoized probe per run, shared with dirty-src and the strict gate).
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
 ## Attachments
 
 _None._
