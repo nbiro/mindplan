@@ -11,7 +11,6 @@ import {
   type MindPlanNode,
 } from "../../foundations/f-domain-model/types.js";
 import {
-  appendDecision,
   entityDir,
   loadGraph,
   projectRoot,
@@ -30,7 +29,7 @@ import {
   listDecisions,
   supersessionIndex,
 } from "../../foundations/f-graph-search/decisions.js";
-import { changedFiles, gateWrite, mutationTail } from "../../foundations/f-plan-writes/writes.js";
+import { assertNoLegacyNext, changedFiles, gateWrite, mutationTail } from "../../foundations/f-plan-writes/writes.js";
 
 /** Trims a value and collapses its line breaks: decision fields are single lines. */
 function oneLine(value: string | undefined): string {
@@ -71,6 +70,7 @@ export function recordDecision(args: {
   gateWrite(null, [args.node_id], "record_decision");
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
+  assertNoLegacyNext(node, "record_decision");
   if (node.type === "Bug") {
     const targets = node.affects ?? [];
     throw blocked(
@@ -158,21 +158,10 @@ export function recordDecision(args: {
   };
   // The record carries its change id; the node's change label is left alone. A label groups live
   // work, and a change that only records decisions never opens a revision, so nothing would clear it.
-  let slot: "revision" | "current" | "next";
-  let rel: string;
-  if (!revision && node.next && node.shipped_at && !node.open_revisions?.length) {
-    // Legacy `<id>.next.mdx` (opened before revision folders): its decisions still live in its
-    // `## Decisions` section, so discard drops them and promote ships them. Goes away once every
-    // next file is a revision folder.
-    const written = appendDecision(node, record);
-    slot = written.slot;
-    rel = written.paths[0];
-  } else {
-    const dir = revision ? revisionDecisionsDir(node, revision) : decisionsDir(entityDir(node));
-    const file = appendDecisionFile(dir, record);
-    slot = revision ? "revision" : "current";
-    rel = path.relative(projectRoot(), file).split(path.sep).join("/");
-  }
+  const dir = revision ? revisionDecisionsDir(node, revision) : decisionsDir(entityDir(node));
+  const file = appendDecisionFile(dir, record);
+  const slot: "revision" | "current" = revision ? "revision" : "current";
+  const rel = path.relative(projectRoot(), file).split(path.sep).join("/");
   const after = loadGraph();
   const entry = listDecisions(after, { node_id: node.id, include_superseded: true }).find(
     (d) => d.id === id

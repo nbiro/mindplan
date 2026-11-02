@@ -326,14 +326,6 @@ export function nextFileExists(node: Pick<MindPlanNode, "id" | "type">): boolean
   return fs.existsSync(markdownPath(node, "next"));
 }
 
-/**
- * @deprecated Prefer `nextFileExists` (path on disk) or `node.next` (open evolution).
- * Kept for callers that only need "path present"; does not mean an evolution is open.
- */
-export function nextExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
-  return nextFileExists(node);
-}
-
 /** Read `state:` from a next-slot file without requiring a pipeline state. */
 export function readNextFileState(node: Pick<MindPlanNode, "id" | "type">): string | null {
   const file = markdownPath(node, "next");
@@ -1647,8 +1639,8 @@ export function writeNodeRules(
   }
   assertValidNodeRules(rules);
   const text = rules.replace(/\r\n/g, "\n").trim();
+  // Rules live on the live file only: an open revision never carries them.
   const slots: TerritorySlot[] = ["current"];
-  if (node.next) slots.push("next");
   const paths: string[] = [];
   for (const slot of slots) {
     const raw = readMarkdown(node, slot);
@@ -1811,43 +1803,6 @@ export function formatDecisionEntry(record: DecisionRecord): string {
   if (record.date) lines.push(`- Date: ${record.date}`);
   if (record.keep_whole) lines.push("- Keep whole: true");
   return lines.join("\n");
-}
-
-/**
- * The only writer of the `## Decisions` section. Appends one entry to the active slot (the open
- * next file while a shipped node evolves, else the live file).
- * Frontmatter, state, and readiness are untouched: a decision explains the contract, it does not
- * change it. Returns the slot and repo-relative paths written.
- */
-export function appendDecision(
-  node: MindPlanNode,
-  record: DecisionRecord
-): { slot: TerritorySlot; paths: string[] } {
-  if (isInactiveNode(node)) {
-    throw new Error(
-      `Blocked: "${node.id}" is ${node.state}; decisions cannot be recorded on a retired or closed node.`
-    );
-  }
-  const slot: TerritorySlot = node.next ? "next" : "current";
-  const raw = readMarkdown(node, slot);
-  const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n?)([\s\S]*)$/);
-  if (!match) {
-    throw new Error(`Blocked: ${slot} file for "${node.id}" has no YAML frontmatter.`);
-  }
-  const { body: withoutRules, rules } = splitNodeRules(match[2]);
-  const { body, section } = splitNodeDecisions(withoutRules);
-  const entry = formatDecisionEntry(record);
-  const nextSection = section ? `${section}\n\n${entry}` : entry;
-  // joinNodeDecisions writes the section in the body's own line endings.
-  const written = joinNodeRules(joinNodeDecisions(body, nextSection), rules);
-  writeMarkdown(node, `${match[1]}${written}`, slot);
-  const paths = [markdownRelativePath(node, slot)];
-  if (slot === "next" && node.next) {
-    node.next.decisions = [...(node.next.decisions ?? []), record];
-  } else {
-    node.decisions = [...(node.decisions ?? []), record];
-  }
-  return { slot, paths };
 }
 
 /**
@@ -2563,179 +2518,6 @@ export function clearAddedClaims(node: MindPlanNode): boolean {
   return true;
 }
 
-/**
- * Opens an evolution: writes `<id>.next.mdx` from the live file in state `draft` (replacing a
- * leftover `mirror` file).
- * The revision gets a fresh list of unticked default Atomic Ops (`withFreshAtomicOps`); the rest of
- * the body is the live text until the agent edits the successor.
- */
-export function openNextSlot(
-  node: MindPlanNode,
-  meta?: { title?: string; description?: string }
-): NextSlot {
-  if (node.next) {
-    throw new Error(
-      `Blocked: "${node.id}" already has a ${territorySlotFilename(node, "next")} evolution in state "${node.next.state}".`
-    );
-  }
-  const nextPath = markdownPath(node, "next");
-  const existingState = readNextFileState(node);
-  if (existingState && !isMirrorState(existingState)) {
-    throw new Error(
-      `Blocked: "${node.id}" next file has unexpected state "${existingState}". ` +
-        `Expected a missing file (or a leftover ${MIRROR_STATE} file, which open_next replaces).`
-    );
-  }
-  if (fs.existsSync(nextPath) && !fs.statSync(nextPath).isFile()) {
-    throw new Error(
-      `Blocked: cannot open "${node.id}": ${path.basename(nextPath)} exists and is not a file.`
-    );
-  }
-
-  const now = new Date().toISOString();
-  const raw = readMarkdown(node, "current");
-  const match = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
-  if (!match) {
-    throw new Error(`Blocked: live file for "${node.id}" has no YAML frontmatter.`);
-  }
-  // Planned edges stay on live (the handler applies the revision's own); attribution is per revision.
-  const eol = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-  let inner = stripNamedListLines(stripNamedListLines(match[2], "planned"), "attributed")
-    .replace(/\r?\n/g, eol)
-    .replace(/^state:\s*.*$/m, "state: draft");
-  if (/^updated_at:/m.test(inner)) {
-    inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
-  } else {
-    const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-    inner = `${inner}${nl}updated_at: ${now}`;
-  }
-  // When this revision opened: the decision gate only counts change-id decisions from then on.
-  {
-    const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-    inner = `${inner.replace(/\r?\nopened_at:.*$/m, "")}${nl}opened_at: ${now}`;
-  }
-  const title = meta?.title;
-  const description = meta?.description;
-  if (title !== undefined) {
-    if (/^title:/m.test(inner)) {
-      inner = inner.replace(/^title:.*$/m, () => `title: ${JSON.stringify(title)}`);
-    } else {
-      const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-      inner = `${inner}${nl}title: ${JSON.stringify(title)}`;
-    }
-  }
-  if (description !== undefined) {
-    if (/^description:/m.test(inner)) {
-      inner = inner.replace(/^description:.*$/m, () => `description: ${JSON.stringify(description)}`);
-    } else {
-      const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-      inner = `${inner}${nl}description: ${JSON.stringify(description)}`;
-    }
-  }
-  // The revision starts its own Atomic Ops; the shipped ledger is not copied forward.
-  const rest = withFreshAtomicOps(raw.slice(match[0].length), node.type);
-  // Bypass writeMarkdown's guard: a leftover mirror file is replaced here.
-  writeTerritoryFile(nextPath, `${match[1]}${inner}${match[3]}${rest}`);
-
-  fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
-  const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
-  if (!fs.existsSync(keep)) writeFileRetry(keep, "");
-
-  const parsed = parseFrontmatter(readFileRetry(nextPath));
-  if (!parsed) {
-    throw new Error(`Blocked: next file for "${node.id}" unreadable after open_next.`);
-  }
-  const slot: NextSlot = {
-    state: "draft",
-    title: parsed.scalars.title ?? node.title,
-    description: parsed.scalars.description ?? node.description,
-    updated_at: now,
-    opened_at: now,
-  };
-  if (parsed.arrays.belongs_to.length) slot.belongs_to = [...parsed.arrays.belongs_to];
-  if (parsed.arrays.depends_on.length) slot.depends_on = [...parsed.arrays.depends_on];
-  if (parsed.arrays.exposes.length) slot.exposes = [...parsed.arrays.exposes];
-  if (parsed.arrays.leads_to.length) slot.leads_to = [...parsed.arrays.leads_to];
-  if (parsed.arrays.mounts.length) slot.mounts = [...parsed.arrays.mounts];
-  if (parsed.implements.length) slot.implements = [...parsed.implements];
-  if (parsed.scalars.role && isFoundationRole(parsed.scalars.role)) {
-    slot.role = parsed.scalars.role;
-  } else if (node.role) {
-    slot.role = node.role;
-  }
-  return slot;
-}
-
-/**
- * Abandons an in-flight evolution: deletes `<id>.next.mdx` and `next-attachments/`. Returns the
- * paths deleted.
- */
-export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): string[] {
-  const nextFile = markdownPath(node, "next");
-  if (!fs.existsSync(nextFile)) {
-    throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to discard.`);
-  }
-  return deleteNextSlotFiles(node);
-}
-
-/**
- * Promotes `<id>.next.mdx` over `<id>.mdx`: copies next body/scalars/edges into the live file with
- * production state, then deletes the next file and `next-attachments/`.
- */
-export function promoteNextSlot(
-  node: MindPlanNode,
-  productionState: string,
-  shippedAt: string,
-  opts: { splitInto?: string[] } = {}
-): void {
-  if (!node.next) {
-    throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to promote.`);
-  }
-  const nextRaw = readMarkdown(node, "next");
-  const nextSplit = splitContext(nextRaw);
-  if (!nextSplit) {
-    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
-  }
-  const nextParsed = parseFrontmatter(nextRaw);
-  if (!nextParsed) {
-    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
-  }
-
-  const role =
-    nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
-      ? (nextParsed.scalars.role as FoundationRole)
-      : node.next.role ?? node.role;
-  writePromotedLive(node, productionState, shippedAt, {
-    title: nextParsed.scalars.title ?? node.next.title,
-    description: nextParsed.scalars.description ?? node.next.description,
-    role,
-    edges: nextParsed.arrays,
-    implements: nextParsed.implements,
-    tests: nextParsed.tests,
-    aliases: nextParsed.aliases,
-    // The shipped change's planned edges are now real (or were dropped on purpose); other changes keep theirs.
-    change: nextParsed.scalars.change ?? node.next.change,
-    splitInto: opts.splitInto,
-    body: splitNodeRules(nextSplit.body).body,
-    eol: detectEol(nextRaw),
-    separator: nextSplit.separator,
-  });
-
-  // Merge next-attachments into attachments when present
-  const nextAtt = nextAttachmentsDir(node);
-  if (fs.existsSync(nextAtt)) {
-    const dest = attachmentsDir(node);
-    fs.mkdirSync(dest, { recursive: true });
-    for (const entry of fs.readdirSync(nextAtt, { withFileTypes: true })) {
-      if (!entry.isFile() || entry.name === ".gitkeep") continue;
-      copyFileRetry(path.join(nextAtt, entry.name), path.join(dest, entry.name));
-    }
-  }
-
-  discardNextSlot(node);
-  delete node.next;
-}
-
 /** What a ship writes over the live file: the shipping revision's scalars, lists, and body. */
 export type PromotedLive = {
   title: string;
@@ -3015,7 +2797,8 @@ export function writeTestsFrontmatter(
     throw new Error(`Blocked: "${node.id}" is ${node.state}; tests cannot be linked to a retired node.`);
   }
   const normalized = normalizeClaimList(entries, "tests");
-  const slots: TerritorySlot[] = node.next ? ["current", "next"] : ["current"];
+  // A legacy next file holds its own copy; an open revision (a `next` view) does not.
+  const slots: TerritorySlot[] = node.next && !node.open_revisions?.length ? ["current", "next"] : ["current"];
   const paths: string[] = [];
   let changed = false;
   for (const slot of slots) {
@@ -3070,7 +2853,8 @@ export function writeAliasesFrontmatter(
     throw new Error(`Blocked: "${node.id}" is ${node.state}; aliases cannot be set on a retired or closed node.`);
   }
   const normalized = normalizeAliases(node.id, entries);
-  const slots: TerritorySlot[] = node.next ? ["current", "next"] : ["current"];
+  // A legacy next file holds its own copy; an open revision (a `next` view) does not.
+  const slots: TerritorySlot[] = node.next && !node.open_revisions?.length ? ["current", "next"] : ["current"];
   const paths: string[] = [];
   let changed = false;
   for (const slot of slots) {

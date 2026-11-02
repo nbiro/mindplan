@@ -385,9 +385,10 @@ export function createCoverageFixContext(root: string): CoverageFixContext {
 }
 
 /**
- * The calls that add `file` to the owner's active claim list. A shipped owner with no open next
- * opens an evolution first, unless the file's folder is one it dominates and the file is not a
- * migration or schema file (then the claim is additive in place).
+ * The calls that add `file` to the owner's active claim list: its open revision (named by change
+ * when it has several), else live. A shipped owner with no open revision opens one first, unless
+ * the file's folder is one it dominates and the file is not a migration or schema file (then the
+ * claim is additive in place).
  */
 export function coverageFix(
   graph: MindPlanGraph,
@@ -405,18 +406,23 @@ export function coverageFix(
     }
     return isDominatedFolder(graph, owner.id, path.posix.dirname(file), root, [file], others);
   };
-  // With several open revisions and no next view, the claim goes into the first of them.
-  const revisionChange = !owner.next ? openChanges(owner)[0] : undefined;
-  const shippedIdle = Boolean(owner.shipped_at) && !owner.next && !revisionChange && !inPlace();
-  const current = revisionChange
-    ? applyDelta(owner.implements, revisionFor(owner, revisionChange)!.implements)
-    : ((owner.next ? owner.next.implements : owner.implements) ?? []);
-  const files = [...new Set([...current, file])].sort((a, b) => a.localeCompare(b));
-  const claim: CoverageFixCall = {
-    tool: "set_implementation_files",
-    args: revisionChange ? { node_id: owner.id, change: revisionChange, files } : { node_id: owner.id, files },
-  };
-  return shippedIdle ? [{ tool: "open_next", args: { node_id: owner.id } }, claim] : [claim];
+  // The claim goes into the owner's open revision; with several, the first, named by change.
+  const open = openChanges(owner);
+  if (open.length > 0) {
+    return [
+      {
+        tool: "set_implementation_files",
+        args: open.length > 1 ? { node_id: owner.id, change: open[0], add: [file] } : { node_id: owner.id, add: [file] },
+      },
+    ];
+  }
+  if (owner.shipped_at && !inPlace()) {
+    return [
+      { tool: "open_next", args: { node_id: owner.id, change: "<change-id>" } },
+      { tool: "set_implementation_files", args: { node_id: owner.id, change: "<change-id>", add: [file] } },
+    ];
+  }
+  return [{ tool: "set_implementation_files", args: { node_id: owner.id, add: [file] } }];
 }
 
 /** `Fix: a({...}) then b({...}).` */

@@ -61,6 +61,7 @@ import { orientationGateEnabled, recordOriented } from "../../foundations/f-orie
 import * as fs from "fs";
 import * as path from "path";
 import {
+  assertNoLegacyNext,
   READINESS_NOTE,
   changedFiles,
   gateWrite,
@@ -162,7 +163,9 @@ function clearSplitRecord(node: MindPlanNode): { paths: string[]; churn: number 
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   gateWrite(null, [args.node_id], "patch_node_territory");
-  const revision = targetRevision(findNode(loadGraph(), args.node_id), args.change, args.slot);
+  const subject = findNode(loadGraph(), args.node_id);
+  assertNoLegacyNext(subject, "patch_node_territory");
+  const revision = targetRevision(subject, args.change, args.slot);
   if (revision !== null) return patchRevisionTerritory(args, revision);
   const { aliases, split_into, ...territory } = args;
   if (split_into !== undefined) {
@@ -550,6 +553,7 @@ export function patchNodeRules(args: {
   }
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  assertNoLegacyNext(node, "patch_node_rules");
   const written = writeNodeRules(node, rules);
   // The author holds the rules it just wrote; its orientation stays current. Nodes that inherit
   // them now need a fresh orientation before their next write.
@@ -577,6 +581,7 @@ export function putAttachment(args: {
   gateWrite(graph, [node_id], "put_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
+  assertNoLegacyNext(node, "put_attachment");
   const target = attachmentTarget(node, args, "put");
   if (!isBase64Payload(args.content_base64)) {
     throw blocked("content_base64 is not valid base64.");
@@ -614,6 +619,7 @@ export function removeAttachment(args: {
   gateWrite(graph, [node_id], "remove_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
+  assertNoLegacyNext(node, "remove_attachment");
   const target = attachmentTarget(node, args, "remove");
   const dir = target.dir;
   const abs = path.join(dir, filename);
