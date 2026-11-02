@@ -466,6 +466,40 @@ function runCheck(root) {
   }
 }
 
+// --- level 4: a level-3 graph is Blocked until upgrade_project (upgrade-revisions.test.mjs covers the moves) ---
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-level4-"));
+  let client;
+  try {
+    let call;
+    ({ client, call } = await session(root));
+    const setup = await call("setup_project");
+    check("setup_project on an empty folder succeeds", !setup.error, setup.text);
+    await client.close();
+    client = undefined;
+    const stampFile = path.join(root, "mindplan", "version.json");
+    fs.writeFileSync(stampFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(stampFile, "utf-8")), migrations: 3 }) + "\n");
+    ({ client, call } = await session(root));
+    const blocked = await call("list_areas");
+    check("a level-3 graph is Blocked naming upgrade_project", blocked.error && blocked.text.includes("upgrade_project"), blocked.text);
+    const up = await call("upgrade_project");
+    check(
+      "upgrade takes a level-3 graph to level 4 and reports the level-4 passes",
+      !up.error &&
+        up.json.from_level === 3 &&
+        up.json.to_level === 4 &&
+        Array.isArray(up.json.migrations.revisionsMoved) &&
+        Array.isArray(up.json.migrations.decisionsSplit) &&
+        typeof up.json.migrations.mapIgnored === "boolean",
+      up.text.slice(0, 400)
+    );
+    check("after the level-4 upgrade the gated tools answer", !(await call("list_areas")).error);
+  } finally {
+    await client?.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 // --- graph ahead of the server ---
 {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-ahead-"));

@@ -1,8 +1,9 @@
 /**
  * Graph migrations — the ordered, idempotent passes that bring a mindplan/ tree to the server's
  * migration level: Journey folders moved to capabilities/, legacy territory filenames, legacy config, shipped Atomic Ops, mirror twins,
- * revision backfill from git, the agent files the retired init installed under mindplan/agent/, and
- * change labels no open revision backs.
+ * revision backfill from git, the agent files the retired init installed under mindplan/agent/,
+ * change labels no open revision backs, and (level 4, level4.ts) legacy next files moved into
+ * revision folders, `## Decisions` sections split into decision files, and map.md left to git ignore.
  * upgrade_project runs them; setup_project writes the default config through
  * migrateImplementationPackages. Owned by Foundation f-graph-migrations.
  */
@@ -53,6 +54,15 @@ import {
   writeRevisionFields,
   writeRoleFrontmatter,
 } from "../f-territory-store/store.js";
+import {
+  ignoreDerivedMap,
+  moveNextToRevisions,
+  splitDecisionSections,
+  type DecisionsSplit,
+  type RevisionMoved,
+} from "./level4.js";
+
+export type { DecisionsSplit, RevisionMoved } from "./level4.js";
 
 function roleFromDescription(description: string): FoundationRole {
   if (/^Assembler\b/i.test(description)) return "assembler";
@@ -680,7 +690,7 @@ export function clearStaleChangeLabels(): ClearedChangeLabel[] {
  * The level a graph reaches after runMigrations. Raise it by one in the release that adds a
  * migration to runMigrations; a release that adds none leaves it, so projects need no upgrade.
  */
-export const MIGRATION_LEVEL = 3;
+export const MIGRATION_LEVEL = 4;
 
 export type MigrationReport = {
   capabilitiesMoved: string[];
@@ -693,6 +703,12 @@ export type MigrationReport = {
   splitsFound: Record<string, string[]>;
   agentFilesRemoved: string[];
   staleChangeLabelsCleared: ClearedChangeLabel[];
+  /** Level 4: legacy `<id>.next.mdx` files moved to `revisions/<change>/`. */
+  revisionsMoved: RevisionMoved[];
+  /** Level 4: live `## Decisions` sections split into `decisions/<id>.md` files. */
+  decisionsSplit: DecisionsSplit[];
+  /** Level 4: true when this run added `map.md` to mindplan/.gitignore or untracked it. */
+  mapIgnored: boolean;
 };
 
 /**
@@ -709,6 +725,9 @@ export function runMigrations(): MigrationReport {
   const backfill = backfillRevisions();
   const agentFilesRemoved = removeRetiredAgentFiles();
   const staleChangeLabelsCleared = clearStaleChangeLabels();
+  const revisionsMoved = moveNextToRevisions();
+  const decisionsSplit = splitDecisionSections();
+  const mapIgnored = ignoreDerivedMap();
   drainRemovedLegacyFiles();
   return {
     capabilitiesMoved,
@@ -726,5 +745,8 @@ export function runMigrations(): MigrationReport {
     splitsFound: backfill.splitsFound,
     agentFilesRemoved,
     staleChangeLabelsCleared,
+    revisionsMoved,
+    decisionsSplit,
+    mapIgnored,
   };
 }
