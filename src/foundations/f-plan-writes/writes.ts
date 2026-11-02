@@ -4,6 +4,7 @@
  * refresh, and dropping a change's planned edges when a write closes it. Owned by f-plan-writes.
  */
 
+import { revisionSummaries as readSummaries } from "../../foundations/f-plan-views/views.js";
 import {
   type MindPlanGraph,
   type MindPlanNode,
@@ -185,17 +186,12 @@ export function assertNoLegacyNext(node: MindPlanNode, tool: string): void {
   }
 }
 
-/** One line per open revision of `node`: its change, state, and unresolved conflicts when any. */
-export function revisionSummaries(
-  node: MindPlanNode
-): { change: string; state: string; conflicts?: string[] }[] {
-  return [...(node.open_revisions ?? [])]
-    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
-    .map((r) => ({
-      change: r.change,
-      state: r.state,
-      ...(r.conflicts.length ? { conflicts: r.conflicts.map(conflictLabel) } : {}),
-    }));
+/**
+ * One line per open revision of `node` in a write result: the read surfaces' summary
+ * (`revisionSummaries` of f-plan-views: change, state, conflict count) without the title.
+ */
+export function revisionSummaries(node: MindPlanNode): { change: string; state: string; conflicts: number }[] {
+  return readSummaries(node).map(({ change, state, conflicts }) => ({ change, state, conflicts }));
 }
 
 /** A conflict as one short label: `section:## Spec`, `scalar:title`, `claim:<path>@<owner>`. */
@@ -258,7 +254,7 @@ export function readinessFields(reset: ReadinessReset | null): Record<string, un
  */
 export function shippedChangeBlocked(node: Pick<MindPlanNode, "id">): Error {
   return new Error(
-    `Blocked: "${node.id}" is shipped with no open next: edit its files in place; it needs no change id (open_next if its contract changes).`
+    `Blocked: "${node.id}" is shipped with no open revision: edit its files in place; it needs no change id (open_next if its contract changes).`
   );
 }
 

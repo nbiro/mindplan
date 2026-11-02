@@ -447,8 +447,8 @@ function attachmentTarget(
   if (slot === "next" && !node.next) {
     throw blocked(
       verb === "put"
-        ? `cannot put attachment on next for "${node.id}" — no open evolution. Call open_next first.`
-        : `cannot remove attachment on next for "${node.id}" — no open evolution.`
+        ? `cannot put attachment on next for "${node.id}" — no open revision. Call open_next first.`
+        : `cannot remove attachment on next for "${node.id}" — no open revision.`
     );
   }
   return slot === "next"

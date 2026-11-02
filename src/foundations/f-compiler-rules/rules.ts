@@ -678,7 +678,7 @@ export function validateOpenNext(node: MindPlanNode, change?: string): void {
   }
   if (node.next) {
     throw blocked(
-      `"${node.id}" already has an open evolution in state "${node.next.state}". Ship or discard_next before opening another.`
+      `"${node.id}" already has an open revision in state "${node.next.state}". Ship or discard_next before opening another.`
     );
   }
   if (node.open_revisions?.length) {
@@ -850,7 +850,7 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
   if (node.next) {
     if (node.next.state !== "in-review") {
       throw blocked(
-        `ship is only allowed from next in-review. "${node.id}" next is currently "${node.next.state}".`
+        `ship is only allowed from a revision in-review. "${node.id}" revision is currently "${node.next.state}".`
       );
     }
     runCompletionCheck(node, SHIP_TRANSITION, "next");
@@ -1062,7 +1062,7 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
   }
   if (node.next) {
     throw blocked(
-      `cannot cancel "${node.id}" while an open evolution exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot cancel "${node.id}" while an open revision exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
   const byId = new Map<string, MindPlanNode>();
@@ -1114,7 +1114,7 @@ function resolveNextStatusChange(
   if (newStatus === "in-review" || newStatus === SHIP_TRANSITION) assertNoRevisionConflicts(node, next.change);
   if (newStatus === "deprecated" || newStatus === "cancelled") {
     throw blocked(
-      `cannot set "${newStatus}" on "${node.id}" while an open evolution exists. Call discard_next first, or ship the evolution.`
+      `cannot set "${newStatus}" on "${node.id}" while an open revision exists. Call discard_next first, or ship the revision.`
     );
   }
 
@@ -1131,7 +1131,7 @@ function resolveNextStatusChange(
 
   const current = next.state;
   if (newStatus === current) {
-    throw blocked(`next slot of "${node.id}" is already in state "${current}".`);
+    throw blocked(`the revision of "${node.id}" is already in state "${current}".`);
   }
   if (!EXECUTION_TRANSITIONS[current]?.includes(newStatus)) {
     throw blocked(
@@ -1357,7 +1357,7 @@ export function resolveForceUnship(
 
   if (node.next) {
     throw blocked(
-      `cannot force_unship "${node.id}" while an open evolution exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot force_unship "${node.id}" while an open revision exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
   if (node.open_revisions?.length) {

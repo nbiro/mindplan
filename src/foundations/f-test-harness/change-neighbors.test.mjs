@@ -169,7 +169,7 @@ function touchAhead(rel) {
   fs.utimesSync(path.join(root, ...rel.split("/")), when, when);
 }
 
-const IN_PLACE = "is shipped with no open next: edit its files in place; it needs no change id (open_next if its contract changes).";
+const IN_PLACE = "is shipped with no open revision: edit its files in place; it needs no change id (open_next if its contract changes).";
 
 fs.mkdirSync(path.join(root, "mindplan"), { recursive: true });
 fs.writeFileSync(

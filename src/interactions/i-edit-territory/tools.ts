@@ -41,7 +41,7 @@ export const TOOLS: ToolDef[] = [
         READINESS_HINT +
         " On a shipped node with open revisions, change only picks the revision: a revision's change is its folder name and cannot be patched. " +
         "Otherwise change / change_ref set the node's change id (grouping only: never resets readiness); moving the last revision off a change drops its planned edges (cleared_planned). " +
-        "On a shipped node with no open next both are Blocked: edit its files in place, it needs no change id. " +
+        "On a shipped node with no open revision both are Blocked: edit its files in place, it needs no change id. " +
         "aliases and rules are live only: aliases replaces the node's search aliases on any node, shipped included, without open_next or a readiness reset.",
       inputSchema: {
         verbose: VERBOSE,

@@ -62,7 +62,7 @@ export const TOOLS: ToolDef[] = [
           .enum(STATUS_SCOPES)
           .optional()
           .describe(
-            "Walk many nodes in one call to the new_status target: all_open_updates (every shipped node with an open next, and every pre-ship node being built: in-progress or in-review; draft and ready plans are never walked) " +
+            "Walk many nodes in one call to the new_status target: all_open_updates (every shipped node with an open revision, and every pre-ship node being built: in-progress or in-review; draft and ready plans are never walked) " +
               "or node_and_dependents (node_id plus its open dependents), or change (every open revision with that change id, draft and ready included). " +
               "The server orders Foundations, Interactions, Interfaces, " +
               "walks each node through the pipeline, and validates the whole walk before writing anything. Target: ready | in-progress | in-review | ship."
@@ -93,6 +93,9 @@ export const TOOLS: ToolDef[] = [
             z.object({
               node_id: NODE_ID.describe("Node to transition."),
               new_status: z.string().describe("Target status for this node."),
+              change: CHANGE_ID.optional().describe(
+                "Which open revision of a shipped node moves; optional when it has at most one. One node may appear once per change."
+              ),
             })
           )
           .min(1)

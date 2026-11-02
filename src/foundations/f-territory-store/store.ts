@@ -2,18 +2,19 @@
  * File system persistence for MindPlan.
  *
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
- *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation)
+ *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation; git-ignored)
  *   /mindplan/components/                  — project-specific MDX components (opaque to the compiler)
  *   /mindplan/capabilities/<id>/<id>.mdx          (legacy: current.mdx)
- *   /mindplan/foundations/<id>/<id>.mdx       (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
- *   /mindplan/interactions/<id>/<id>.mdx      (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
- *   /mindplan/interfaces/<id>/<id>.mdx        (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
+ *   /mindplan/foundations/<id>/<id>.mdx       (+ revisions/<change>/<id>.mdx per open revision; legacy: current.mdx)
+ *   /mindplan/interactions/<id>/<id>.mdx      (+ revisions/<change>/<id>.mdx per open revision; legacy: current.mdx)
+ *   /mindplan/interfaces/<id>/<id>.mdx        (+ revisions/<change>/<id>.mdx per open revision; legacy: current.mdx)
  *   /mindplan/bugs/<id>/<id>.mdx              (legacy: current.mdx)
  *
  * Owned source files are declared via server-owned `implements` (not prescribed folders).
  * Live node records and outgoing edge arrays live in the live MDX YAML frontmatter.
- * While evolving a shipped Foundation/Interaction/Interface, the evolution file holds the draft pipeline + proposed edges.
- * A shipped node has `<id>.next.mdx` only while a revision is open; ship and discard delete it.
+ * A shipped node's open revisions live under `revisions/<change>/` (revisions.ts); ship and
+ * discard delete the folder. A `<id>.next.mdx` from a release before migration level 4 is still
+ * read (the older migrations need it), but every write tool Blocks beside it naming upgrade_project.
  * New files use the id names. An existing current.mdx / next.mdx stays in use.
  * When both names exist for one slot, the id-named file is kept and the legacy file is deleted.
  * Callers report those deletions via drainRemovedLegacyFiles().
@@ -2139,7 +2140,7 @@ export function resolveTerritorySlot(
   if (explicit) {
     if (explicit === "next" && !node.next) {
       throw new Error(
-        `Blocked: node "${node.id}" has no open evolution (a leftover mirror file is not a revision; call open_next first).`
+        `Blocked: node "${node.id}" has no open revision (a leftover mirror file is not a revision; call open_next first).`
       );
     }
     return explicit;
@@ -2498,7 +2499,7 @@ export function writeChangeFrontmatter(
 ): void {
   if (input.change === undefined && input.change_ref === undefined) return;
   if (slot === "next" && !node.next) {
-    throw new Error(`Blocked: node "${node.id}" has no open evolution to carry a change id.`);
+    throw new Error(`Blocked: node "${node.id}" has no open revision to carry a change id.`);
   }
   const { file, raw, fence } = requireMutableFrontmatter(node, slot);
   const patched = applyChangeScalars(fence, input);

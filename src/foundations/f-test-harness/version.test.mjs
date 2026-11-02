@@ -108,8 +108,12 @@ function runCheck(root) {
   check("setup stamps the package and the migration level", stamp.package === pkgVersion && stamp.migrations === MIGRATION_LEVEL && stamp.graph === 1, JSON.stringify(stamp));
   check(
     "setup lists the files it wrote",
-    ["mindplan/config.json", "mindplan/project.md", "mindplan/version.json"].every((p) => setup.json.changed_files.includes(p)),
+    ["mindplan/config.json", "mindplan/project.md", "mindplan/version.json", "mindplan/.gitignore"].every((p) => setup.json.changed_files.includes(p)),
     JSON.stringify(setup.json.changed_files)
+  );
+  check(
+    "setup starts the graph with git ignoring the derived map.md",
+    fs.readFileSync(path.join(root, "mindplan", ".gitignore"), "utf-8").split(/\r?\n/).includes("map.md")
   );
   check(
     "setup returns the MINDPLAN.md pointer and the guide",

@@ -379,8 +379,7 @@ function checkExclusivity(
 ): OwnershipBuckets {
   const groups = new Map<string, { file: string; change: string | null; ids: Set<string> }>();
   for (const p of findAllOwnershipConflicts(graph, root)) {
-    const key = `${p.file}
-${p.change ?? ""}`;
+    const key = `${p.file}\n${p.change ?? ""}`;
     let g = groups.get(key);
     if (!g) groups.set(key, (g = { file: p.file, change: p.change, ids: new Set() }));
     g.ids.add(p.a);
@@ -596,9 +595,9 @@ function collectWarnings(
   const info = new Set<string>();
   for (const node of graph.nodes) {
     // Each open revision is read on its own view (live plus that revision).
-    for (const { view } of slotViews(node)) {
-      // Description quality (every node type; never fails the check).
-      for (const w of descriptionWarnings(view)) warnings.add(w);
+    for (const { change, view } of slotViews(node)) {
+      // Description quality (every node type; never fails the check), per open revision.
+      for (const w of descriptionWarnings(node, change ?? undefined)) warnings.add(w);
       const shape = shapeWarning(view);
       if (shape) warnings.add(shape);
       if (!isPipelineNodeType(node.type)) continue;
@@ -784,7 +783,7 @@ function checkDirtySrc(
     checkPath(
       rel,
       ownerAllowsWorkingTree,
-      "Uncommitted changes require in-progress (or next in-progress), a shipped owner with no open next, or a Bug in fixing/in-review."
+      "Uncommitted changes require in-progress (or a revision in-progress), a shipped owner with no open revision, or a Bug in fixing/in-review."
     );
   }
 
@@ -795,7 +794,7 @@ function checkDirtySrc(
     checkPath(
       rel,
       ownerAllowsCommitDiff,
-      "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review."
+      "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or a revision in-progress/in-review, or a Bug in fixing/in-review."
     );
   }
 }

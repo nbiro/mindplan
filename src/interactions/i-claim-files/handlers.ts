@@ -279,12 +279,12 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
   if (args.slot) {
     slot = args.slot;
     if (slot === "next" && !node.next) {
-      throw blocked(`cannot set implements on next: "${node.id}" has no open evolution.`);
+      throw blocked(`cannot set implements on next: "${node.id}" has no open revision.`);
     }
     if (slot === "current" && isProductionState(node.state) && !retired) {
       if (node.next) {
         throw blocked(
-          `shipped "${node.id}" can only change implements on an open next slot. Call open_next first.`
+          `shipped "${node.id}" can only change implements on an open revision. Call open_next first.`
         );
       }
       inPlace = true;

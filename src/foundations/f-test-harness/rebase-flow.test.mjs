@@ -245,6 +245,128 @@ for (const new_status of SHIP) {
   );
 }
 
+// --- a hub Foundation with three dependents takes three changes at once; all ship in sequence ---
+{
+  const HUB = "mindplan/foundations/f-static-build/f-static-build.mdx";
+  const hubRev = (change) => `mindplan/foundations/f-static-build/revisions/${change}/f-static-build.mdx`;
+  const ids = ["f-static-build", "f-dep-1", "f-dep-2", "f-dep-3", "f-x", "f-y", "f-z"];
+  for (const id of ids) {
+    await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
+    write(`src/${id}/index.ts`, `export const v = 1;\n`);
+    await call("set_implementation_files", { node_id: id, add: [`src/${id}/index.ts`] });
+    fillAndTick(abs(`mindplan/foundations/${id}/${id}.mdx`));
+  }
+  for (const dep of ["f-dep-1", "f-dep-2", "f-dep-3"]) {
+    await call("link_nodes", { source_id: dep, target_id: "f-static-build", edge_type: "depends_on" });
+  }
+  for (const id of ids) for (const new_status of SHIP) await call("update_node_status", { node_id: id, new_status });
+
+  // Three changes, each adding its own depends_on and editing its own section.
+  const plan = [
+    { change: "add-x", target: "f-x", section: "## Purpose", text: "Builds pages from X." },
+    { change: "add-y", target: "f-y", section: "## Shared Substrate Spec", text: "The build reads Y." },
+    { change: "add-z", target: "f-z", section: "## Acceptance Criteria", text: "A build with Z passes." },
+  ];
+  for (const p of plan) await call("open_next", { node_id: "f-static-build", change: p.change });
+  for (const p of plan) {
+    await call("link_nodes", { source_id: "f-static-build", target_id: p.target, edge_type: "depends_on", change: p.change });
+    await call("patch_node_territory", { node_id: "f-static-build", change: p.change, section: p.section, text: p.text });
+    await call("patch_node_territory", {
+      node_id: "f-static-build",
+      change: p.change,
+      toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }],
+    });
+    await call("record_decision", {
+      node_id: "f-static-build",
+      change: p.change,
+      decision: `The static build depends on ${p.target}.`,
+      alternatives: [`A new node that depends_on f-static-build: the build itself needs ${p.target}.`],
+      why: "The build step reads it directly.",
+    });
+  }
+  const oriented = await call("orient_for_work", { node_id: "f-static-build", change: "add-y" });
+  check(
+    "orient on one revision reports its shape from the revision file (no section missing)",
+    !!oriented.shape && oriented.shape.sections.every((s) => s.status === "present"),
+    JSON.stringify(oriented.shape)
+  );
+  const graphRevs = (await call("get_node_context", { node_id: "f-static-build" })).revisions ?? [];
+  check(
+    "the hub lists three open revisions with conflict counts",
+    graphRevs.map((r) => `${r.change}:${r.conflicts}`).join() === "add-x:0,add-y:0,add-z:0",
+    JSON.stringify(graphRevs)
+  );
+
+  // Batch items carry change: two revisions of one node move in one call.
+  const batch = await call("update_node_status", {
+    revisions: [
+      { node_id: "f-static-build", change: "add-x", new_status: "ready" },
+      { node_id: "f-static-build", change: "add-y", new_status: "ready" },
+    ],
+  });
+  check(
+    "a revisions batch moves two revisions of one node by change",
+    batch.lines?.length === 2 && batch.lines.every((l) => l.endsWith("-> ready")),
+    JSON.stringify(batch)
+  );
+
+  for (const p of plan) {
+    const shipped = await call("update_node_status", { scope: "change", change: p.change, new_status: "ship", skip_review: true });
+    check(
+      `change ${p.change} ships with no conflicts on the other revisions`,
+      (shipped.rebased ?? []).every((r) => r.conflicts.length === 0) && noMap(shipped),
+      JSON.stringify(shipped)
+    );
+  }
+  const hub = await call("get_node_context", { node_id: "f-static-build" });
+  const live = read(HUB);
+  check(
+    "the live hub has all three depends_on edges and all three texts, and no revision is left",
+    ["f-x", "f-y", "f-z"].every((t) => (hub.record.depends_on ?? []).includes(t)) &&
+      plan.every((p) => live.includes(p.text)) &&
+      !exists("mindplan/foundations/f-static-build/revisions") &&
+      !hub.revisions,
+    JSON.stringify({ depends_on: hub.record.depends_on, live })
+  );
+  const decisions = fs.readdirSync(abs("mindplan/foundations/f-static-build/decisions")).sort();
+  check(
+    "each change's decision shipped into the hub's decisions folder",
+    decisions.length === 3,
+    JSON.stringify(decisions)
+  );
+  const final = await call("run_check", {});
+  check("the check passes after the three ships", final.ok, final.output);
+
+  // Stale text is read from the revision's own body.
+  await call("open_next", { node_id: "f-y", change: "stale-y" });
+  await call("patch_node_territory", {
+    node_id: "f-y",
+    change: "stale-y",
+    section: "## Purpose",
+    text: "Reads `src/f-y/missing.ts` on every build.",
+  });
+  const staleCheck = await call("run_check", { change: "stale-y" });
+  check(
+    "run_check({ change }) reads the revision body for stale paths",
+    [...staleCheck.warnings, ...staleCheck.info].some((w) => w.includes("src/f-y/missing.ts")),
+    JSON.stringify({ warnings: staleCheck.warnings, info: staleCheck.info })
+  );
+  await call("discard_next", { node_id: "f-y", change: "stale-y" });
+
+  // Description warnings judge each open revision on its own, naming it.
+  await call("open_next", { node_id: "f-z", change: "d1", description: "f-z" });
+  await call("open_next", { node_id: "f-z", change: "d2", description: "Infra — z with a cache" });
+  const described = await call("run_check", {});
+  const about = described.warnings.filter((w) => w.startsWith('description: "f-z"'));
+  check(
+    "a repeated-title description warns for that revision only, naming it",
+    about.length === 1 && about[0].startsWith('description: "f-z" (revision "d1") repeats its title'),
+    JSON.stringify(about)
+  );
+  await call("discard_next", { node_id: "f-z", change: "d1" });
+  await call("discard_next", { node_id: "f-z", change: "d2" });
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {

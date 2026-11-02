@@ -181,10 +181,16 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
       if (!item?.node_id || !item?.new_status) {
         throw blocked("each revision needs node_id and new_status.");
       }
-      if (ids.has(item.node_id)) {
-        throw blocked(`duplicate node_id "${item.node_id}" in revisions.`);
+      // A node may move several of its open revisions, once per change.
+      const key = `${item.node_id}@${item.change ?? ""}`;
+      if (ids.has(key)) {
+        throw blocked(
+          item.change
+            ? `duplicate node_id "${item.node_id}" with change "${item.change}" in revisions.`
+            : `duplicate node_id "${item.node_id}" in revisions.`
+        );
       }
-      ids.add(item.node_id);
+      ids.add(key);
     }
     return { mode: "batch", items: list! };
   }

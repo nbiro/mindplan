@@ -962,13 +962,21 @@ const comparable = (text: string) =>
 /**
  * Description quality warnings (never failures) for one node's active slot: empty or a repeat of
  * the title, longer than `DESCRIPTION_MAX_CHARS`, an Interaction that names no actor, or revision
- * wording ("now", "no longer", "was changed to", …) that belongs in the revision's body.
+ * wording ("now", "no longer", "was changed to", …) that belongs in the revision's body. With
+ * `change`, the node's open revision of that change is judged (named when it has several).
  */
-export function descriptionWarnings(node: MindPlanNode): string[] {
-  if (isInactiveNode(node)) return [];
+export function descriptionWarnings(input: MindPlanNode, change?: string): string[] {
+  if (isInactiveNode(input)) return [];
+  const node = change !== undefined ? nodeUnder(input, change) : input;
   const title = node.next?.title ?? node.title;
   const description = (node.next?.description ?? node.description ?? "").trim();
-  const where = node.next ? `"${node.id}" (next)` : `"${node.id}"`;
+  // Each open revision is judged on its own; with several, the line names which one.
+  const viewed = node.next?.change;
+  const where = !node.next
+    ? `"${node.id}"`
+    : viewed && (node.open_revisions?.length ?? 0) > 1
+      ? `"${node.id}" (revision "${viewed}")`
+      : `"${node.id}" (next)`;
   const out: string[] = [];
   if (!description) {
     out.push(`description: ${where} has no description; say what the node does in one sentence (search ranks it).`);

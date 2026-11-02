@@ -29,7 +29,7 @@ export const TOOLS: ToolDef[] = [
         "Changes the server-owned implements list for an Interaction, Interface, or Foundation: add (the default) and remove change entries; " +
         "files replaces the whole list only with replace: true (files without replace is Blocked). " +
         "Pre-ship writes current; shipped with an open revision writes it as an add/remove delta against live (change picks the revision when several are open); " +
-        "shipped with no open next writes live in place, additive only: every old entry kept (or under a new dir entry), " +
+        "shipped with no open revision writes live in place, additive only: every old entry kept (or under a new dir entry), " +
         "each new entry an exact file (or F/) in a folder F the node dominates (it already claims a file directly in F, no other node claims under F); " +
         "removing, moving, globbing, claiming elsewhere, or claiming a migration or schema file (config decisions.schema_files) is Blocked → open_next. " +
         "In-place results list added_in_place; name each in the body with patch_node_territory (run_check warns until then). " +

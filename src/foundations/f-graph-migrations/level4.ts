@@ -255,6 +255,21 @@ function git(args: string[]): string | null {
 }
 
 /**
+ * Lists `map.md` in `mindplan/.gitignore` (creating the file) unless a line already ignores it.
+ * True when it wrote the file. setup_project starts every new graph with it.
+ */
+export function ignoreMapLine(): boolean {
+  const ignoreFile = path.join(mindplanRoot(), ".gitignore");
+  const current = fs.existsSync(ignoreFile) ? readFileRetry(ignoreFile) : "";
+  const listed = current.split(/\r?\n/).some((l) => ["map.md", "/map.md"].includes(l.trim()));
+  if (listed) return false;
+  const eol = current.includes("\r\n") ? "\r\n" : "\n";
+  const sep = current === "" || current.endsWith("\n") ? "" : eol;
+  writeFileRetry(ignoreFile, `${current}${sep}map.md${eol}`);
+  return true;
+}
+
+/**
  * `mindplan/map.md` is derived (rewritten after every mutation), so git should not track it. When
  * it is present or tracked: adds a `map.md` line to `mindplan/.gitignore` (creating the file) and,
  * inside git, untracks it (`git rm --cached`), never deleting the working copy. Returns true when
@@ -264,16 +279,7 @@ export function ignoreDerivedMap(): boolean {
   const mapAbs = path.join(mindplanRoot(), "map.md");
   const tracked = git(["ls-files", "--error-unmatch", "--", MAP_REL]) !== null;
   if (!tracked && !fs.existsSync(mapAbs)) return false;
-  let changed = false;
-  const ignoreFile = path.join(mindplanRoot(), ".gitignore");
-  const current = fs.existsSync(ignoreFile) ? readFileRetry(ignoreFile) : "";
-  const listed = current.split(/\r?\n/).some((l) => ["map.md", "/map.md"].includes(l.trim()));
-  if (!listed) {
-    const eol = current.includes("\r\n") ? "\r\n" : "\n";
-    const sep = current === "" || current.endsWith("\n") ? "" : eol;
-    writeFileRetry(ignoreFile, `${current}${sep}map.md${eol}`);
-    changed = true;
-  }
+  let changed = ignoreMapLine();
   if (tracked && git(["rm", "--cached", "--quiet", "--", MAP_REL]) !== null) changed = true;
   return changed;
 }
