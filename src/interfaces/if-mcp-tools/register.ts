@@ -171,6 +171,7 @@ const TOOL_ORDER = [
   "link_nodes",
   "open_next",
   "discard_next",
+  "resolve_conflict",
   "get_blast_radius",
   "unlink_nodes",
   "update_node_status",

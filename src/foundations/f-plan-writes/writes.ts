@@ -4,9 +4,16 @@
  * refresh, and dropping a change's planned edges when a write closes it. Owned by f-plan-writes.
  */
 
-import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import {
+  type MindPlanGraph,
+  type MindPlanNode,
+  type RevisionConflict,
+} from "../../foundations/f-domain-model/types.js";
+import { openChanges } from "../../foundations/f-revision-model/index.js";
+import {
+  isLegacyMirror,
   loadGraph,
+  nextFileExists,
   markdownRelativePath,
   nodeToRecord,
   projectRoot,
@@ -68,7 +75,10 @@ export function syncNodes(nodes: MindPlanNode[]): string[] {
   return paths;
 }
 
-/** Project-relative path of the auto-persisted Mermaid snapshot. */
+/**
+ * Project-relative path of the auto-persisted Mermaid snapshot. `refreshPersistedMap` rewrites it
+ * after every write, but it is derived and never listed in `changed_files`.
+ */
 export const MAP_REL = "mindplan/map.md";
 
 /** Repo-relative path of a node's live or evolution territory MDX. */
@@ -79,11 +89,13 @@ export function territoryPath(
   return markdownRelativePath(node, slot);
 }
 
-/** Deduplicate changed paths (null: nothing written), optionally appending the map snapshot. */
-export function changedFiles(paths: (string | null)[], includeMap = false): string[] {
-  const out = [...new Set(paths.filter((p): p is string => Boolean(p)))];
-  if (includeMap && !out.includes(MAP_REL)) out.push(MAP_REL);
-  return out;
+/**
+ * Deduplicate changed paths (null: nothing written). The map snapshot is derived: it is never
+ * listed, even when a caller still passes `includeMap` (kept so older call sites compile).
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function changedFiles(paths: (string | null)[], _includeMap = false): string[] {
+  return [...new Set(paths.filter((p): p is string => Boolean(p) && p !== MAP_REL))];
 }
 
 /**
@@ -140,8 +152,10 @@ export function buildMutationAnchor(
 }
 
 /**
- * Default write tail: the touched node's state and next_state. Neighborhood and
- * record come only with `verbose: true` (`buildMutationAnchor`).
+ * Default write tail: the touched node's state and next_state (the single open revision's or a
+ * legacy next file's state; null with none or several), plus `revisions: [{ change, state,
+ * conflicts? }]` when the node has open revisions. Neighborhood and record come only with
+ * `verbose: true` (`buildMutationAnchor`).
  */
 export function mutationTail(
   graph: MindPlanGraph,
@@ -153,7 +167,57 @@ export function mutationTail(
     state: node.state,
     next_state: node.next?.state ?? null,
   };
+  const open = revisionSummaries(node);
+  if (open.length > 0) tail.revisions = open;
   return verbose ? { ...tail, ...buildMutationAnchor(graph, nodeId) } : tail;
+}
+
+/**
+ * Blocked when the node still has a `<id>.next.mdx` evolution from before revisions were stored
+ * per change: upgrade_project moves it into `revisions/<change>/`.
+ */
+export function assertNoLegacyNext(node: MindPlanNode, tool: string): void {
+  if (nextFileExists(node) && !isLegacyMirror(node)) {
+    throw new Error(
+      `Blocked: "${node.id}" still has a ${node.id}.next.mdx evolution from an older release; ${tool} works on revisions/<change>/. ` +
+        `Call upgrade_project to move it, then retry.`
+    );
+  }
+}
+
+/** One line per open revision of `node`: its change, state, and unresolved conflicts when any. */
+export function revisionSummaries(
+  node: MindPlanNode
+): { change: string; state: string; conflicts?: string[] }[] {
+  return [...(node.open_revisions ?? [])]
+    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
+    .map((r) => ({
+      change: r.change,
+      state: r.state,
+      ...(r.conflicts.length ? { conflicts: r.conflicts.map(conflictLabel) } : {}),
+    }));
+}
+
+/** A conflict as one short label: `section:## Spec`, `scalar:title`, `claim:<path>@<owner>`. */
+export function conflictLabel(c: RevisionConflict): string {
+  if (c.kind === "section") return `section:${c.section}`;
+  if (c.kind === "scalar") return `scalar:${c.field}`;
+  return `claim:${c.path}@${c.owner}`;
+}
+
+/**
+ * Every change id with an open revision anywhere: a pre-ship node's live change, a legacy next
+ * file's change, and each open revision of a shipped node.
+ */
+export function openChangeIds(graph: MindPlanGraph): Set<string> {
+  const out = new Set(changesWithRevisions(graph));
+  for (const n of graph.nodes) for (const c of openChanges(n)) out.add(c);
+  return out;
+}
+
+/** Whether `change` still has an open revision on any node. */
+function changeIsOpen(graph: MindPlanGraph, change: string): boolean {
+  return changeMembers(graph, change).length > 0 || graph.nodes.some((n) => openChanges(n).includes(change));
 }
 
 /** What a readiness reset reports: the slot that left `ready`. */
@@ -209,7 +273,7 @@ export function clearClosedChanges(
   const planned: string[] = [];
   const files: string[] = [];
   for (const change of new Set(changes)) {
-    if (changeMembers(graph, change).length > 0) continue;
+    if (changeIsOpen(graph, change)) continue;
     // Wiring planned under a closed change was never opened: it goes with the change.
     for (const node of graph.nodes) {
       const dropped = (node.planned ?? []).filter((e) => e.change === change);
@@ -230,14 +294,14 @@ export function clearClosedChanges(
  * result then carries nothing, as before.
  */
 export function withChangeCleanup(write: () => Record<string, unknown>): Record<string, unknown> {
-  const before = changesWithRevisions(loadGraph());
+  const before = openChangeIds(loadGraph());
   let result: Record<string, unknown> | undefined;
   try {
     result = write();
   } finally {
     if (before.size > 0) {
       const graph = loadGraph();
-      const after = changesWithRevisions(graph);
+      const after = openChangeIds(graph);
       const closed = [...before].filter((c) => !after.has(c));
       const dropped = closed.length ? clearClosedChanges(graph, closed) : { planned: [], files: [] };
       if (result && dropped.planned.length > 0) {

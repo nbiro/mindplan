@@ -1021,7 +1021,14 @@ export function readMarkdown(
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot = "current"
 ): string {
-  const file = markdownPath(node, slot);
+  let file = markdownPath(node, slot);
+  // The `next` view of an open revision (`withRevision`) carries its change: the next slot reads
+  // that revision's file when it exists (a leftover mirror `<id>.next.mdx` never shadows it).
+  const viewChange = slot === "next" ? (node as Partial<MindPlanNode>).next?.change : undefined;
+  if (viewChange) {
+    const revisionFile = path.join(entityDir(node), "revisions", viewChange, liveMdxFilename(node.id));
+    if (fs.existsSync(revisionFile)) file = revisionFile;
+  }
   if (!fs.existsSync(file)) {
     throw new Error(
       `Blocked: ${slot} file not found for node "${node.id}" (expected at ${file}).`
