@@ -58,6 +58,11 @@ async function blocked(tool, args) {
 const territory = (kind, id, slot = "current") =>
   path.join(root, "mindplan", kind, id, slot === "next" ? `${id}.next.mdx` : `${id}.mdx`);
 const read = (file) => fs.readFileSync(file, "utf-8");
+/** A decision file: `decisions/<id>.md` beside the live file, or inside the revision of `change`. */
+const decisionFile = (kind, nodeId, id, change) =>
+  change
+    ? path.join(root, "mindplan", kind, nodeId, "revisions", change, "decisions", `${id}.md`)
+    : path.join(root, "mindplan", kind, nodeId, "decisions", `${id}.md`);
 
 /** Fill create_node scaffold stubs with real text and tick every checkbox. */
 function fillAndTick(kind, id) {
@@ -203,11 +208,12 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     why: "Capacity changes per evening.",
   });
   check(
-    "record_decision on a Capability writes its live file with a date",
+    "record_decision on a Capability writes a decision file beside its live file, with a date",
     capability.slot === "current" &&
       capability.decision.status === "active" &&
       /^\d{4}-\d{2}-\d{2}$/.test(capability.decision.date ?? "") &&
-      read(territory("capabilities", "j-book")).includes("### d-evening-bookings"),
+      read(decisionFile("capabilities", "j-book", "d-evening-bookings")).startsWith("### d-evening-bookings") &&
+      !read(territory("capabilities", "j-book")).includes("## Decisions"),
     JSON.stringify(capability)
   );
 
@@ -220,11 +226,11 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     consequences: "Capacity reads join through Booking.",
   });
   check(
-    "on a shipped node with no open revision the entry lands in the live file only and writes no next file",
+    "on a shipped node with no open revision the entry is a live decision file and writes no next file",
     shipped.slot === "current" &&
-      shipped.changed_files.includes("mindplan/foundations/f-bookings/f-bookings.mdx") &&
-      !shipped.changed_files.includes("mindplan/foundations/f-bookings/f-bookings.next.mdx") &&
-      read(territory("foundations", "f-bookings")).includes("### d-capacity-on-booking") &&
+      shipped.changed_files.join() === "mindplan/foundations/f-bookings/decisions/d-capacity-on-booking.md" &&
+      fs.existsSync(decisionFile("foundations", "f-bookings", "d-capacity-on-booking")) &&
+      !read(territory("foundations", "f-bookings")).includes("### d-capacity-on-booking") &&
       !fs.existsSync(territory("foundations", "f-bookings", "next")) &&
       (await call("run_check", {})).ok === true,
     JSON.stringify(shipped)
@@ -309,8 +315,8 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 {
   await call("patch_node_territory", { node_id: "j-book", section: "## Overview", text: "Evening bookings." });
   check(
-    "a section patch keeps the decisions section",
-    read(territory("capabilities", "j-book")).includes("### d-evening-bookings") &&
+    "a section patch keeps the decision",
+    fs.existsSync(decisionFile("capabilities", "j-book", "d-evening-bookings")) &&
       (await call("list_decisions", { node_id: "j-book" })).count === 1
   );
   const bodyBlock = await blocked("patch_node_territory", {
@@ -469,7 +475,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   check(
     "promote ships the revision's decision into the live file and the check passes",
     live.includes("### d-capacity-in-transaction") &&
-      live.includes("### d-capacity-on-booking") &&
+      fs.existsSync(decisionFile("foundations", "f-bookings", "d-capacity-on-booking")) &&
       (await call("run_check", {})).ok === true
   );
   const byChange = await call("list_decisions", { change: "cap" });
@@ -538,7 +544,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     why: "It fit the earlier change.",
   });
   // Back-date it, as if that change shipped years ago.
-  const capabilityFile = territory("capabilities", "j-book");
+  const capabilityFile = decisionFile("capabilities", "j-book", "d-legacy-choice");
   fs.writeFileSync(
     capabilityFile,
     read(capabilityFile).replace(/(### d-legacy-choice[\s\S]*?- Date: )\d{4}-\d{2}-\d{2}/, (_, head) => `${head}2020-01-01`)
@@ -920,8 +926,151 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   );
 }
 
+// --- decision files in revision folders: several open revisions per node ---
+{
+  // Revisions are opened in-process (open_next still writes a legacy next file).
+  process.env.MINDPLAN_ROOT = root;
+  const { loadGraph } = await import("../../../dist/foundations/f-territory-store/store.js");
+  const { openRevision } = await import("../../../dist/foundations/f-territory-store/revisions.js");
+  const { createDecisionContext, decisionGapFor, assertDecisionForReview } = await import(
+    "../../../dist/foundations/f-compiler-rules/decisions.js"
+  );
+  const nodeOf = (id) => loadGraph().nodes.find((n) => n.id === id);
+  const gapOf = (id, change) => {
+    const graph = loadGraph();
+    return decisionGapFor(graph, root, graph.nodes.find((n) => n.id === id), change, createDecisionContext(root));
+  };
+  const reviewBlock = (id, change) => {
+    const graph = loadGraph();
+    try {
+      assertDecisionForReview(graph, root, graph.nodes.find((n) => n.id === id), createDecisionContext(root), change);
+      return null;
+    } catch (err) {
+      return err.message;
+    }
+  };
+
+  openRevision(nodeOf("f-db"), "wa", {});
+  openRevision(nodeOf("f-db"), "wb", {});
+  check(
+    "each revision of a Foundation is gated on its own",
+    gapOf("f-db", "wa")?.change === "wa" && gapOf("f-db", "wb")?.fix.args.change === "wb",
+    JSON.stringify([gapOf("f-db", "wa"), gapOf("f-db", "wb")])
+  );
+  const ambiguous = await blocked("record_decision", { node_id: "f-db", decision: "x", alternatives: ["y"], why: "z" });
+  check("with several revisions open, record_decision without change is Blocked naming them", ambiguous?.includes('"wa", "wb"'), ambiguous ?? "");
+
+  const inA = await call("record_decision", {
+    node_id: "f-db",
+    change: "wa",
+    id: "d-pool-size-wa",
+    decision: "The pool holds ten connections.",
+    alternatives: ["Twenty (the database caps connections)"],
+    why: "The cap.",
+  });
+  const inB = await call("record_decision", {
+    node_id: "f-db",
+    change: "wb",
+    id: "d-pool-timeout-wb",
+    decision: "Pool checkouts time out after a second.",
+    alternatives: ["Wait forever (a stuck request holds a connection)"],
+    why: "Bounded latency.",
+  });
+  check(
+    "two revisions of different changes each get their own decision file",
+    inA.slot === "revision" &&
+      inA.decision.change === "wa" &&
+      inA.changed_files.join() === "mindplan/foundations/f-db/revisions/wa/decisions/d-pool-size-wa.md" &&
+      fs.existsSync(decisionFile("foundations", "f-db", "d-pool-size-wa", "wa")) &&
+      fs.existsSync(decisionFile("foundations", "f-db", "d-pool-timeout-wb", "wb")) &&
+      !fs.existsSync(decisionFile("foundations", "f-db", "d-pool-size-wa", "wb")) &&
+      !fs.existsSync(decisionFile("foundations", "f-db", "d-pool-size-wa")),
+    JSON.stringify([inA, inB])
+  );
+  check(
+    "a revision's own decision clears its gate only",
+    gapOf("f-db", "wa") === null && gapOf("f-db", "wb") === null && reviewBlock("f-db", "wa") === null
+  );
+  const byA = await call("list_decisions", { change: "wa" });
+  const byB = await call("list_decisions", { change: "wb" });
+  check(
+    "list_decisions by change finds decisions recorded in a revision folder",
+    byA.decisions.map((d) => d.id).join() === "d-pool-size-wa" && byB.decisions.map((d) => d.id).join() === "d-pool-timeout-wb",
+    JSON.stringify([byA, byB])
+  );
+  const dupRevision = await blocked("record_decision", {
+    node_id: "j-book",
+    id: "d-pool-size-wa",
+    decision: "x",
+    alternatives: ["y"],
+    why: "z",
+  });
+  const dupLive = await blocked("record_decision", {
+    node_id: "f-db",
+    change: "wb",
+    id: "d-evening-bookings",
+    decision: "x",
+    alternatives: ["y"],
+    why: "z",
+  });
+  check(
+    "a decision id used anywhere (a revision folder, a live file) is Blocked",
+    dupRevision?.includes("already used") && dupRevision.includes('"f-db"') && dupLive?.includes("already used"),
+    `${dupRevision} | ${dupLive}`
+  );
+
+  // One decision, recorded once, that shapes three revisions of one change.
+  openRevision(nodeOf("f-bookings"), "wide", {});
+  openRevision(nodeOf("f-db"), "wide", {});
+  openRevision(nodeOf("i-cancel"), "wide", { plannedAdds: [{ change: "wide", type: "depends_on", target: "f-blob" }] });
+  const triggered = ["f-bookings", "f-db", "i-cancel"].map((id) => reviewBlock(id, "wide"));
+  check(
+    "before the decision, in-review of each revision of the change is Blocked: Decision",
+    triggered.every((m) => m?.startsWith("Blocked: Decision.")) && triggered[2].includes('adds depends_on "f-blob"'),
+    JSON.stringify(triggered)
+  );
+  const onBug = await blocked("record_decision", {
+    node_id: "j-book",
+    nodes: ["f-db", "bug-slot"],
+    decision: "x",
+    alternatives: ["y"],
+    why: "z",
+  });
+  const unknown = await blocked("record_decision", {
+    node_id: "j-book",
+    nodes: ["f-nope"],
+    decision: "x",
+    alternatives: ["y"],
+    why: "z",
+  });
+  check("nodes naming a Bug or an unknown node is Blocked", onBug?.includes("bug-slot") && unknown?.includes("f-nope"), `${onBug} | ${unknown}`);
+  const shared = await call("record_decision", {
+    node_id: "j-book",
+    id: "d-wide-shared",
+    nodes: ["f-bookings", "f-db", "i-cancel"],
+    decision: "Bookings, the database, and cancelling share one blob store.",
+    alternatives: ["A store per area (three copies of every attachment)"],
+    why: "One copy.",
+  });
+  check(
+    "a decision listing nodes is written once, on node_id, and records them",
+    shared.decision.nodes?.join() === "f-bookings,f-db,i-cancel" &&
+      read(decisionFile("capabilities", "j-book", "d-wide-shared")).includes("- Nodes: f-bookings, f-db, i-cancel") &&
+      !fs.existsSync(decisionFile("foundations", "f-db", "d-wide-shared", "wide")),
+    JSON.stringify(shared)
+  );
+  const cleared = ["f-bookings", "f-db", "i-cancel"].map((id) => reviewBlock(id, "wide"));
+  check(
+    "one decision with nodes clears the gate of each listed node's revision (in-review passes)",
+    cleared.every((m) => m === null),
+    JSON.stringify(cleared)
+  );
+}
+
 await client.close();
-fs.rmSync(root, { recursive: true, force: true });
+// The in-process loader above holds the graph cache open.
+(await import("../../../dist/foundations/f-graph-cache/cache.js")).closeGraphCaches();
+fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 fs.rmSync(path.dirname(gitConfig), { recursive: true, force: true });
 if (failures > 0) {
   console.log(`\n${failures} decisions check(s) failed.`);
