@@ -288,6 +288,97 @@ try {
   fs.rmSync(mp("foundations", "f-b", "revisions"), { recursive: true, force: true });
   fs.rmSync(mp("foundations", "f-b", "f-b.next.mdx"));
 
+  // A run stopped part way resumes: an empty revision folder of this move, then the very file it writes.
+  const resumeNext = nextFile("f-b", "Foundation", { change: "c3", title: "B3", role: "infra", body: "## Spec\n\nB3.\n" });
+  write(mp("foundations", "f-b", "f-b.next.mdx"), resumeNext);
+  fs.mkdirSync(mp("foundations", "f-b", "revisions", "c3", "decisions"), { recursive: true });
+  write(mp("version.json"), JSON.stringify({ package: "0.17.0", graph: 1, migrations: 3 }) + "\n");
+  const resumed = runUpgrade(root, { env: { MINDPLAN_ORIENT_GATE: "off" } });
+  const revC3 = mp("foundations", "f-b", "revisions", "c3", "f-b.mdx");
+  check(
+    "a revision folder this move left without its file is finished, not Blocked",
+    resumed.status === 0 && fs.existsSync(revC3) && !fs.existsSync(mp("foundations", "f-b", "f-b.next.mdx")),
+    resumed.stderr
+  );
+  const writtenC3 = fs.readFileSync(revC3, "utf-8");
+  write(mp("foundations", "f-b", "f-b.next.mdx"), resumeNext);
+  write(mp("version.json"), JSON.stringify({ package: "0.17.0", graph: 1, migrations: 3 }) + "\n");
+  const resumedAgain = runUpgrade(root, { env: { MINDPLAN_ORIENT_GATE: "off" } });
+  check(
+    "a revision file equal to the one this move writes lets it finish (the next file goes)",
+    resumedAgain.status === 0 &&
+      fs.readFileSync(revC3, "utf-8") === writtenC3 &&
+      !fs.existsSync(mp("foundations", "f-b", "f-b.next.mdx")) &&
+      !fs.readdirSync(mp("foundations", "f-b", "revisions", "c3")).some((n) => n.includes(".tmp-")),
+    resumedAgain.stderr
+  );
+  fs.rmSync(mp("foundations", "f-b", "revisions"), { recursive: true, force: true });
+
+  // Decisions are copied verbatim: a wrapped field and an unknown field survive.
+  const wrapped = [
+    "### d-wrap",
+    "",
+    "- Decision: Keep the text verbatim.",
+    "- Alternatives:",
+    "  - Parse and format it",
+    "- Why: the text wraps",
+    "  onto a second line.",
+    "- Owner: team-x",
+    "- Date: 2026-01-01",
+  ].join("\n");
+  write(
+    mp("foundations", "f-w", "f-w.mdx"),
+    liveFile("f-w", "Foundation", { title: "f-w", role: "infra", body: "## Spec\n\nPlain.\n\n## Decisions\n\n" + wrapped + "\n\n## Notes\n\nAfter.\n" })
+  );
+  write(mp("version.json"), JSON.stringify({ package: "0.17.0", graph: 1, migrations: 3 }) + "\n");
+  const verbatim = runUpgrade(root, { env: { MINDPLAN_ORIENT_GATE: "off" } });
+  const wrapFile = mp("foundations", "f-w", "decisions", "d-wrap.md");
+  const wrapText = fs.existsSync(wrapFile) ? fs.readFileSync(wrapFile, "utf-8") : "";
+  const wrapRecord = parseDecisionFile(wrapText);
+  check(
+    "a decision file holds its entry verbatim and parses its wrapped field whole",
+    verbatim.status === 0 &&
+      wrapText === `${wrapped}\n` &&
+      wrapRecord?.why === "the text wraps onto a second line." &&
+      fs.readFileSync(mp("foundations", "f-w", "f-w.mdx"), "utf-8").includes("## Notes\n\nAfter."),
+    verbatim.stderr + wrapText
+  );
+
+  // Base hashes read live as the split leaves it (a level-1 heading after Decisions stays in live).
+  write(
+    mp("foundations", "f-h", "f-h.mdx"),
+    liveFile("f-h", "Foundation", {
+      title: "f-h",
+      role: "infra",
+      body: "## Spec\n\nS.\n\n## Decisions\n\n" + decision("d-h", "hash after split") + "\n\n# Appendix\n\nA.\n",
+    })
+  );
+  write(mp("foundations", "f-h", "f-h.next.mdx"), nextFile("f-h", "Foundation", { change: "ch", title: "H", role: "infra", body: "## Spec\n\nS2.\n" }));
+  write(mp("version.json"), JSON.stringify({ package: "0.17.0", graph: 1, migrations: 3 }) + "\n");
+  const hashed = runUpgrade(root, { env: { MINDPLAN_ORIENT_GATE: "off" } });
+  const hLive = fs.readFileSync(mp("foundations", "f-h", "f-h.mdx"), "utf-8");
+  const hRev = parseRevisionFile(fs.readFileSync(mp("foundations", "f-h", "revisions", "ch", "f-h.mdx"), "utf-8"), "f-h").revision;
+  check(
+    "a moved revision's base hashes the live body as the decisions split leaves it",
+    hashed.status === 0 &&
+      hLive.includes("# Appendix") &&
+      JSON.stringify(hRev.base.sections) === JSON.stringify(sectionHashes(hLive.slice(hLive.indexOf("\n---", 3) + 4).replace(/^\r?\n+/, ""))),
+    hashed.stderr + JSON.stringify(hRev.base.sections)
+  );
+
+  // A "###" entry whose id does not parse Blocks the split.
+  write(
+    mp("foundations", "f-v", "f-v.mdx"),
+    liveFile("f-v", "Foundation", { title: "f-v", role: "infra", body: "## Spec\n\nPlain.\n\n## Decisions\n\n### Not an id\n\n- Decision: x\n" })
+  );
+  const badId = runUpgrade(root, { env: { MINDPLAN_ORIENT_GATE: "off" } });
+  check(
+    "a decision heading whose id does not parse is Blocked",
+    badId.status !== 0 && badId.stderr.includes("Blocked") && badId.stderr.includes("mindplan/foundations/f-v/f-v.mdx"),
+    badId.stderr
+  );
+  fs.rmSync(mp("foundations", "f-v"), { recursive: true, force: true });
+
   // A decision file of the same id with other content blocks the split.
   write(
     mp("foundations", "f-c", "f-c.mdx"),

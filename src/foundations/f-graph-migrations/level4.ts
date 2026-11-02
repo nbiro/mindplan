@@ -11,6 +11,7 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   CHANGE_ID_PATTERN,
+  DECISION_ID_PATTERN,
   PLANNED_EDGE_TYPES,
   isFoundationRole,
   type DecisionRecord,
@@ -19,8 +20,8 @@ import {
 } from "../f-domain-model/types.js";
 import { diffDelta, scalarHashes, sectionHashes } from "../f-revision-model/index.js";
 import { RM_MAX_RETRIES, readFileRetry, unlinkRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
-import { decisionFileName, decisionsDir, formatDecisionFile } from "../f-territory-store/decisions-store.js";
-import { REVISIONS_DIR, formatRevisionFile } from "../f-territory-store/revisions.js";
+import { decisionFileName, decisionsDir, parseDecisionFile } from "../f-territory-store/decisions-store.js";
+import { REVISIONS_DIR, formatRevisionFile, parseRevisionFile } from "../f-territory-store/revisions.js";
 import {
   ATTACHMENTS_DIR,
   MINDPLAN_DIR,
@@ -101,15 +102,106 @@ function moveAttachments(from: string, to: string): string[] {
 }
 
 /**
+ * Each `### <id>` entry of a decisions section, verbatim: its id and its raw text from the heading
+ * line up to the next heading of any level (or the end), trailing blank lines dropped. Blocked
+ * when a `###` heading does not carry a decision id, or an entry has no `- Decision:` line, naming
+ * `where`.
+ */
+function decisionEntries(section: string, where: string): { id: string; text: string }[] {
+  const out: { id: string; lines: string[] }[] = [];
+  let current: { id: string; lines: string[] } | null = null;
+  for (const raw of section.replace(/\r/g, "").split("\n")) {
+    if (DECISION_HEADING_LINE.test(raw)) {
+      const m = raw.match(/^###[ \t]+(\S+)[ \t]*$/);
+      if (!m || !DECISION_ID_PATTERN.test(m[1])) {
+        throw blocked(
+          `the decisions in ${where} hold a "###" entry whose id does not parse ("${raw.trim()}"; a decision id is "d-" then lowercase letters, digits, "-" or "_"). Fix it by hand, then call upgrade_project again.`
+        );
+      }
+      current = { id: m[1], lines: [raw] };
+      out.push(current);
+      continue;
+    }
+    if (/^#{1,6}[ \t]/.test(raw)) {
+      current = null;
+      continue;
+    }
+    current?.lines.push(raw);
+  }
+  return out.map((e) => {
+    const text = `${e.lines.join("\n").replace(/\s+$/, "")}\n`;
+    if (parseDecisions(text).length !== 1) {
+      throw blocked(
+        `decision "${e.id}" in ${where} does not parse as a decision (a "- Decision:" line). Fix it by hand, then call upgrade_project again.`
+      );
+    }
+    return { id: e.id, text };
+  });
+}
+
+/** True when two decision file texts hold the same entry: the same text, or the same parsed record. */
+function sameDecisionText(a: string, b: string): boolean {
+  const norm = (t: string) => t.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+  if (norm(a) === norm(b)) return true;
+  const ra = parseDecisionFile(a);
+  const rb = parseDecisionFile(b);
+  return ra !== null && rb !== null && JSON.stringify(ra) === JSON.stringify(rb);
+}
+
+/**
+ * Writes each entry to `<dir>/<id>.md` verbatim (its first line ending kept for the whole file).
+ * An existing file with the same entry is kept; one with another is Blocked naming `where`.
+ */
+function writeDecisionEntries(dir: string, entries: { id: string; text: string }[], where: string, eol: string): void {
+  const toWrite: { file: string; text: string }[] = [];
+  for (const e of entries) {
+    const file = path.join(dir, decisionFileName(e.id));
+    if (fs.existsSync(file)) {
+      if (!sameDecisionText(readFileRetry(file), e.text)) {
+        throw blocked(
+          `cannot split decision "${e.id}" out of ${where}: ${repoRelative(file)} already holds a different decision of that id. Keep one, delete the other by hand, then call upgrade_project again.`
+        );
+      }
+      continue;
+    }
+    toWrite.push({ file, text: e.text.replace(/\n/g, eol) });
+  }
+  if (toWrite.length > 0) fs.mkdirSync(dir, { recursive: true });
+  for (const w of toWrite) writeFileRetry(w.file, w.text);
+}
+
+/** Writes `text` to `file` through a temp file and a rename, so a half-written file never exists. */
+function writeAtomically(file: string, text: string): void {
+  const tmp = `${file}.tmp-${process.pid}`;
+  writeFileRetry(tmp, text);
+  withTransientRetry(() => fs.renameSync(tmp, file));
+}
+
+/** True when the revision file on disk is the one this migration would write. */
+function sameRevisionFile(file: string, id: string, revision: Revision, body: string): boolean {
+  try {
+    const onDisk = parseRevisionFile(readFileRetry(file), id);
+    const norm = (t: string) => t.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+    return JSON.stringify(onDisk.revision) === JSON.stringify(revision) && norm(onDisk.body) === norm(body);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Moves every legacy `<id>.next.mdx` of a Foundation, Interaction, or Interface into
  * `revisions/<change>/<id>.mdx` (change: the file's `change`, else `rev-<id>`). The revision's
  * edges, claims, and tests are the deltas from the live file to the next snapshot; its scalars,
  * state, dates, `change_ref`, `attributed`, and `split_into` come from the next file; `base` hashes
- * the current live file, so nothing conflicts. The body drops `## Rules` and `## Decisions`; next
- * decisions live does not hold become `revisions/<change>/decisions/<id>.md`, and
- * `next-attachments/` (but `.gitkeep`) moves to `revisions/<change>/attachments/`. The next file
- * and `next-attachments/` are then deleted. A `state: mirror` leftover is skipped. Blocked when
- * `revisions/<change>/` already exists or the change id is invalid. Returns the moves, in folder order.
+ * the live file as it reads once its `## Decisions` section is split out, so nothing conflicts. The
+ * body drops `## Rules` and `## Decisions`; each next decision live does not hold is copied verbatim
+ * to `revisions/<change>/decisions/<id>.md`, and `next-attachments/` (but `.gitkeep`) moves to
+ * `revisions/<change>/attachments/`. The revision file is written last but one (atomically), then
+ * the next file and `next-attachments/` are deleted. A run stopped part way resumes: a
+ * `revisions/<change>/` with no revision file, or with the very file this pass would write, is
+ * finished. A `state: mirror` leftover is skipped. Blocked when `revisions/<change>/` holds a
+ * different revision, the change id is invalid, or a next decision's `###` id does not parse.
+ * Returns the moves, in folder order.
  */
 export function moveNextToRevisions(): RevisionMoved[] {
   const moved: RevisionMoved[] = [];
@@ -125,15 +217,12 @@ export function moveNextToRevisions(): RevisionMoved[] {
       );
     }
     const revDir = path.join(folder, REVISIONS_DIR, change);
-    if (fs.existsSync(revDir)) {
-      throw blocked(
-        `cannot move ${repoRelative(nextFile)} to ${repoRelative(revDir)}/: that revision folder already exists. Keep one of the two, delete the other by hand, then call upgrade_project again.`
-      );
-    }
+    const revFile = path.join(revDir, liveMdxFilename(id));
     const liveRaw = readFileRetry(live);
     const liveFm = parseFrontmatter(liveRaw);
     if (!liveFm) throw blocked(`${repoRelative(live)} has no YAML frontmatter.`);
-    const liveBody = splitContext(liveRaw)?.body ?? "";
+    // Hash live as splitDecisionSections will leave it: its `## Decisions` section removed.
+    const liveBody = splitNodeDecisions(splitContext(liveRaw)?.body ?? "").body;
     const liveRole = liveFm.scalars.role && isFoundationRole(liveFm.scalars.role) ? liveFm.scalars.role : undefined;
 
     const edges: Revision["edges"] = {};
@@ -161,26 +250,24 @@ export function moveNextToRevisions(): RevisionMoved[] {
     if (next.role) revision.role = next.role;
     if (next.attributed.length > 0) revision.attributed = next.attributed;
     if (next.split_into.length > 0) revision.split_into = next.split_into;
+    const eol = liveRaw.includes("\r\n") ? "\r\n" : "\n";
+    const body = withoutOwnedSections(next.body);
+    const text = formatRevisionFile(id, liveFm.scalars.type as NodeType, revision, body, eol);
+
+    // A folder already there is this pass's own unfinished work, or Blocks.
+    if (fs.existsSync(revDir) && fs.existsSync(revFile) && !sameRevisionFile(revFile, id, revision, body)) {
+      throw blocked(
+        `cannot move ${repoRelative(nextFile)} to ${repoRelative(revDir)}/: that folder already holds a different revision. Keep one of the two, delete the other by hand, then call upgrade_project again.`
+      );
+    }
 
     const known = liveDecisionIds(folder, liveRaw);
-    const own: DecisionRecord[] = parseDecisions(splitNodeDecisions(next.body).section).filter((d) => !known.has(d.id));
-
-    const revFile = path.join(revDir, liveMdxFilename(id));
+    const own = decisionEntries(splitNodeDecisions(next.body).section, repoRelative(nextFile)).filter((e) => !known.has(e.id));
     fs.mkdirSync(revDir, { recursive: true });
-    writeFileRetry(revFile, formatRevisionFile(
-        id,
-        liveFm.scalars.type as NodeType,
-        revision,
-        withoutOwnedSections(next.body),
-        liveRaw.includes("\r\n") ? "\r\n" : "\n"
-      ));
-    for (const record of own) {
-      const dir = decisionsDir(revDir);
-      fs.mkdirSync(dir, { recursive: true });
-      writeFileRetry(path.join(dir, decisionFileName(record.id)), formatDecisionFile(record));
-    }
+    writeDecisionEntries(decisionsDir(revDir), own, repoRelative(nextFile), eol);
     const nextAtt = legacyNextAttachmentsDir(folder);
     moveAttachments(nextAtt, path.join(revDir, ATTACHMENTS_DIR));
+    if (!fs.existsSync(revFile)) writeAtomically(revFile, text);
     unlinkRetry(nextFile);
     if (fs.existsSync(nextAtt)) fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
     moved.push({ node_id: id, change });
@@ -199,11 +286,11 @@ function decisionsSectionRunsToEnd(body: string): boolean {
 }
 
 /**
- * Moves each entry of every live file's `## Decisions` section to `decisions/<id>.md`
- * (`formatDecisionFile`) and removes the section from the body, keeping every other byte and the
- * file's line endings. A file already there with the same content is kept; one with other content
- * is Blocked, as is a section holding a `###` entry that does not parse as a decision. Returns the
- * nodes split, in folder order.
+ * Moves each entry of every live file's `## Decisions` section to `decisions/<id>.md`, its raw
+ * text copied verbatim (heading to the next heading of any level), and removes the section from
+ * the body, keeping every other byte and the file's line endings. A file already there with the
+ * same entry is kept; one with another is Blocked, as is a section holding a `###` entry whose id
+ * does not parse or that has no `- Decision:` line. Returns the nodes split, in folder order.
  */
 export function splitDecisionSections(): DecisionsSplit[] {
   const split: DecisionsSplit[] = [];
@@ -213,31 +300,9 @@ export function splitDecisionSections(): DecisionsSplit[] {
     if (!parts) continue;
     const { body, section } = splitNodeDecisions(parts.body);
     if (body === parts.body) continue;
-    const records = parseDecisions(section);
-    const headings = section.split("\n").filter((l) => DECISION_HEADING_LINE.test(l)).length;
-    if (headings !== records.length) {
-      throw blocked(
-        `the ## Decisions section of ${repoRelative(live)} holds ${headings - records.length} "###" entr${headings - records.length === 1 ? "y" : "ies"} that do not parse as decisions (a "d-" id and a "- Decision:" line). Fix them by hand, then call upgrade_project again.`
-      );
-    }
-    const dir = decisionsDir(folder);
-    const toWrite: { file: string; text: string }[] = [];
-    for (const record of records) {
-      const file = path.join(dir, decisionFileName(record.id));
-      const text = formatDecisionFile(record);
-      if (fs.existsSync(file)) {
-        if (readFileRetry(file).replace(/\r\n/g, "\n") !== text) {
-          throw blocked(
-            `cannot split decision "${record.id}" out of ${repoRelative(live)}: ${repoRelative(file)} already holds a different decision of that id. Keep one, delete the other by hand, then call upgrade_project again.`
-          );
-        }
-        continue;
-      }
-      toWrite.push({ file, text });
-    }
-    if (toWrite.length > 0) fs.mkdirSync(dir, { recursive: true });
-    for (const w of toWrite) writeFileRetry(w.file, w.text);
     const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+    const entries = decisionEntries(section, repoRelative(live));
+    writeDecisionEntries(decisionsDir(folder), entries, repoRelative(live), eol);
     // A section at the end leaves its leading blank line (and, in CRLF files, a lone \r): end on one EOL.
     let newBody = body;
     if (decisionsSectionRunsToEnd(parts.body)) {
@@ -245,7 +310,7 @@ export function splitDecisionSections(): DecisionsSplit[] {
       newBody = trimmed ? `${trimmed}${eol}` : "";
     }
     writeFileRetry(live, `${parts.frontmatter}${parts.separator}${newBody}`);
-    split.push({ node_id: id, count: records.length });
+    split.push({ node_id: id, count: entries.length });
   }
   return split;
 }

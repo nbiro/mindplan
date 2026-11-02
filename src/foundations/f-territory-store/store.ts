@@ -1676,14 +1676,23 @@ export function withoutOwnedSections(text: string): string {
 /**
  * Splits a territory body (or full MDX) into the body without the `## Decisions` section and the
  * section's text (heading excluded, surrounding blank lines trimmed, CR removed). The section runs
- * from a `## Decisions` line to the next level-1/2 heading or EOF. Only the first section is read.
+ * from a `## Decisions` line to the next level-1/2 heading or EOF; as in `splitSections`, a heading
+ * inside a fenced code block is code, not a boundary. Only the first section is read.
  */
 export function splitNodeDecisions(text: string): { body: string; section: string } {
   const lines = text.split("\n");
-  const start = lines.findIndex((line) => NODE_DECISIONS_HEADING_LINE.test(line.replace(/\r$/, "")));
+  let fence: string | null = null;
+  const fenced = lines.map((raw) => {
+    const f = raw.match(/^\s*(```|~~~)/);
+    if (!f) return fence !== null;
+    if (fence === null) fence = f[1];
+    else if (fence === f[1]) fence = null;
+    return true;
+  });
+  const start = lines.findIndex((line, i) => !fenced[i] && NODE_DECISIONS_HEADING_LINE.test(line.replace(/\r$/, "")));
   if (start === -1) return { body: text, section: "" };
   let end = start + 1;
-  while (end < lines.length && !SECTION_BREAK_LINE.test(lines[end])) end++;
+  while (end < lines.length && (fenced[end] || !SECTION_BREAK_LINE.test(lines[end]))) end++;
   const section = lines
     .slice(start + 1, end)
     .join("\n")
@@ -1723,17 +1732,22 @@ const DECISION_ALTERNATIVE_LINE = /^[ \t]+[-*][ \t]+(.+)$/;
 
 /**
  * Parses the `### <id>` entries of a Decisions section. Lines outside an entry, entries whose id
- * is not a decision id, and entries with no `Decision:` value are skipped.
+ * is not a decision id, and entries with no `Decision:` value are skipped. A field may wrap: a
+ * non-blank line right below a `Decision:`, `Why:`, or `Consequences:` line (or an alternative)
+ * that is not itself a field continues it, joined with one space. Unknown fields are ignored.
  */
 export function parseDecisions(section: string): DecisionRecord[] {
   const out: DecisionRecord[] = [];
   let current: DecisionRecord | null = null;
   let inAlternatives = false;
+  /** The value a wrapped line continues; null after a blank line or another field. */
+  let wrapping: "decision" | "why" | "consequences" | "alternative" | null = null;
   for (const raw of section.replace(/\r/g, "").split("\n")) {
     const heading = raw.match(DECISION_ENTRY_HEADING);
     if (heading) {
       if (current?.decision) out.push(current);
       inAlternatives = false;
+      wrapping = null;
       current = DECISION_ID_PATTERN.test(heading[1])
         ? { id: heading[1], decision: "", alternatives: [], why: "" }
         : null;
@@ -1743,28 +1757,49 @@ export function parseDecisions(section: string): DecisionRecord[] {
     const alternative = raw.match(DECISION_ALTERNATIVE_LINE);
     if (inAlternatives && alternative) {
       current.alternatives.push(alternative[1].trim());
+      wrapping = "alternative";
       continue;
     }
     const field = raw.match(DECISION_FIELD_LINE);
     if (!field) {
-      if (raw.trim()) inAlternatives = false;
+      const more = raw.trim();
+      if (!more) {
+        wrapping = null;
+        continue;
+      }
+      if (wrapping === "alternative" && current.alternatives.length > 0) {
+        current.alternatives[current.alternatives.length - 1] += ` ${more}`;
+      } else if (wrapping === "decision" || wrapping === "why") {
+        current[wrapping] = current[wrapping] ? `${current[wrapping]} ${more}` : more;
+      } else if (wrapping === "consequences") {
+        current.consequences = current.consequences ? `${current.consequences} ${more}` : more;
+      } else {
+        inAlternatives = false;
+      }
       continue;
     }
     inAlternatives = false;
+    wrapping = null;
     const value = field[2].trim();
     switch (field[1].toLowerCase()) {
       case "decision":
         current.decision = value;
+        wrapping = "decision";
         break;
       case "alternatives":
         inAlternatives = true;
-        if (value) current.alternatives.push(value);
+        if (value) {
+          current.alternatives.push(value);
+          wrapping = "alternative";
+        }
         break;
       case "why":
         current.why = value;
+        wrapping = "why";
         break;
       case "consequences":
         if (value) current.consequences = value;
+        wrapping = "consequences";
         break;
       case "supersedes":
         if (value) current.supersedes = value;

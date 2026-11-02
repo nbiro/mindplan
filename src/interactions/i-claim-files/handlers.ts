@@ -475,8 +475,11 @@ type SetTestFilesArgs = {
 };
 
 /**
- * Replace a node's linked test files. Evidence, not contract: the same list goes to live and an
- * open next, a shipped node needs no `open_next`, and readiness is never reset.
+ * Change a node's linked test files (add / remove, or the whole list with `replace`). Test links
+ * are stored per revision like claims: on a shipped node with an open revision the edit is an
+ * add/remove delta on the picked revision (`change`, or its only one), applied when it ships; a
+ * shipped node with no open revision is written live in place, with no `open_next`; a pre-ship
+ * node writes its live list. Readiness is never reset.
  */
 export function setTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
   gateWrite(null, [args.node_id], "set_test_files");
@@ -501,6 +504,7 @@ function writeTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
     const requested = applyListEdit(applyDelta(live, revision.tests), edit, "tests");
     const delta = diffDelta(live, requested);
     const files = sameDelta(revision.tests, delta) ? [] : writeRevisionDelta(node, change, "tests", delta).changed_files;
+    if (files.length > 0) refreshPersistedMap();
     return {
       node_id: node.id,
       slot: "next",

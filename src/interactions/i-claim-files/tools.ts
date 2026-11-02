@@ -84,7 +84,7 @@ export const TOOLS: ToolDef[] = [
         "Call when tests that verify a node exist, before moving it to in-review. " +
         "Changes the node's linked tests list for an Interaction, Interface, or Foundation: add (the default) and remove change entries; " +
         "files replaces the whole list only with replace: true (files without replace is Blocked). " +
-        "The list is evidence, not a claim: it does not own the files (claim them with set_implementation_files), several nodes may list one file, " +
+        "Test links are stored per revision like claims, but they do not own the files (claim them with set_implementation_files): several nodes may list one file, " +
         "and readiness is never reset. A shipped node with no open revision is written live in place (no open_next); " +
         "one with an open revision takes it as an add/remove delta on that revision, applied when it ships (change picks the revision when several are open). " +
         "run_check Blocks an entry missing on disk once the node is in review or shipped, and warns about a revision in review with none. " +
