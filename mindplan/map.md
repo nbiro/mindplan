@@ -1,6 +1,6 @@
 # MindPlan map
 
-_Auto-generated after each graph mutation (55 nodes, 173 edges). Do not edit by hand._
+_Auto-generated after each graph mutation (56 nodes, 174 edges). Do not edit by hand._
 
 ```mermaid
 flowchart TB
@@ -22,6 +22,7 @@ flowchart TB
     f_orientation_ledger["f-orientation-ledger · Orientation ledger · stable"]
     f_plan_views["f-plan-views · Plan views · stable"]
     f_plan_writes["f-plan-writes · Plan writes · stable"]
+    f_revision_model["f-revision-model · Revision model · in-progress"]
     f_search_index["f-search-index · Search index · stable"]
     f_source_index["f-source-index · Source index · stable"]
     f_territory_store["f-territory-store · Territory store · stable"]
@@ -38,7 +39,7 @@ flowchart TB
     if_publish_script{{"if-publish-script · Publish script · ready"}}
     if_release_tag{{"if-release-tag · Main-branch release trigger · draft"}}
   end
-  subgraph capability_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · stable"]
+  subgraph capability_j_agent_onboarding["j-agent-onboarding · Adopt MindPlan · evolving"]
     i_npm_publish__in__j_agent_onboarding["i-npm-publish · Publish to npm · stable"]
     i_setup_project__in__j_agent_onboarding["i-setup-project · Set up the project · stable"]
     i_upgrade_graph__in__j_agent_onboarding["i-upgrade-graph · Upgrade the graph · stable"]
@@ -47,7 +48,7 @@ flowchart TB
     i_npm_publish__in__j_npm_publish["i-npm-publish · Publish to npm · stable"]
     i_npm_tag_publish__in__j_npm_publish["i-npm-tag-publish · Publish on merge to main · stable"]
   end
-  subgraph capability_j_plan_console["j-plan-console · See and steer the plan · stable"]
+  subgraph capability_j_plan_console["j-plan-console · See and steer the plan · evolving"]
     i_browse_territory__in__j_plan_console["i-browse-territory · Read territory · ready"]
     i_change_status__in__j_plan_console["i-change-status · Change a node's status · stable"]
     i_claim_files__in__j_plan_console["i-claim-files · Claim files · stable"]
@@ -60,7 +61,7 @@ flowchart TB
     i_shape_graph__in__j_plan_console["i-shape-graph · Shape the graph · stable"]
     i_view_status__in__j_plan_console["i-view-status · Status board · ready"]
   end
-  subgraph capability_j_territory_sdlc["j-territory-sdlc · Plan software · stable"]
+  subgraph capability_j_territory_sdlc["j-territory-sdlc · Plan software · evolving"]
     i_assess_impact__in__j_territory_sdlc["i-assess-impact · Assess impact · stable"]
     i_browse_graph__in__j_territory_sdlc["i-browse-graph · Browse the graph · stable"]
     i_change_status__in__j_territory_sdlc["i-change-status · Change a node's status · stable"]
@@ -107,6 +108,7 @@ flowchart TB
   f_plan_writes --> f_orientation_ledger
   f_plan_writes --> f_territory_store
   f_plan_writes --> f_view_projection
+  f_revision_model --> f_domain_model
   f_search_index --> f_source_index
   f_source_index --> f_domain_model
   f_territory_store --> f_domain_model
