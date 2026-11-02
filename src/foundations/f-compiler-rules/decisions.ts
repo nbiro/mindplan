@@ -5,16 +5,24 @@
  * configured blast radius, or adds or removes a `depends_on` edge of a shipped node. Such a
  * revision warns while no decision is recorded for it and is `Blocked: Decision` on its move to
  * `in-review`. Any other revision is never gated.
+ *
+ * A shipped node may hold several open revisions, one per change: every function here takes an
+ * optional `change` naming the revision it judges (`withRevision` gives the live-plus-revision
+ * view, `graphUnder` the graph that revision is judged against). Without one, a node with exactly
+ * one open revision is judged on it; otherwise the node's own fields are read as before (a legacy
+ * `<id>.next.mdx` in `next`, or a pre-ship node).
  */
 
 import {
   activeChange,
-  activeDecisions,
   isInactiveNode,
   isPipelineNodeType,
+  type DecisionRecord,
   type MindPlanGraph,
   type MindPlanNode,
+  type Revision,
 } from "../f-domain-model/types.js";
+import { graphUnder, openChanges, revisionFor, withRevision } from "../f-revision-model/index.js";
 import { claimCoversPath, expandClaims } from "../f-source-index/claims.js";
 import {
   decisionGateSettings,
@@ -22,7 +30,7 @@ import {
   type DecisionGateSettings,
 } from "../f-source-index/config.js";
 import { matchesSchemaFile, newFilesSinceBase } from "../f-source-index/git.js";
-import { blastRadiusDependents, blocked, changeMembers } from "./rules.js";
+import { blastRadiusDependents, blocked } from "./rules.js";
 
 export type DecisionTriggerKind = "foundation_contract" | "schema" | "blast_radius" | "depends_on";
 
@@ -58,11 +66,59 @@ function isRetired(node: MindPlanNode): boolean {
 }
 
 /**
- * An open revision: a shipped Foundation/Interaction/Interface with an open next, or a pre-ship,
- * non-retired one at any pre-ship state. Capabilities and Bugs are never revisions.
+ * The revision a gate call judges. `change` names it (`null`: the node's own fields, no revision
+ * folder); `undefined` means the only open revision when there is exactly one, else the node's own
+ * fields. `view` is live plus that revision (`withRevision`), `graph` the graph it is judged
+ * against (`graphUnder`), and `change` the change id the revision belongs to (for a pre-ship node
+ * or a legacy next file, its `activeChange`).
  */
-export function isOpenRevision(node: MindPlanNode): boolean {
+type Subject = {
+  node: MindPlanNode;
+  view: MindPlanNode;
+  /** The loaded graph, every node live. */
+  base: MindPlanGraph;
+  /** The graph the revision is judged against. */
+  graph: MindPlanGraph;
+  change?: string;
+  revision?: Revision;
+};
+
+/** The change `change` names on `node`: given, or the only open revision's when omitted. */
+function namedChange(node: MindPlanNode, change?: string | null): string | undefined {
+  if (change !== undefined) return change ?? undefined;
+  const open = node.open_revisions ?? [];
+  return open.length === 1 ? open[0].change : undefined;
+}
+
+/** Live plus the named revision (`withRevision`), or the node itself when it has none of it. */
+function viewOf(node: MindPlanNode, change?: string | null): MindPlanNode {
+  const named = namedChange(node, change);
+  return named && revisionFor(node, named) ? withRevision(node, named) : node;
+}
+
+function subjectOf(graph: MindPlanGraph, node: MindPlanNode, change?: string | null): Subject {
+  const named = namedChange(node, change);
+  if (named) {
+    const revision = revisionFor(node, named);
+    if (revision && isPipelineNodeType(node.type)) {
+      return { node, view: withRevision(node, named), base: graph, graph: graphUnder(graph, named), change: named, revision };
+    }
+  }
+  return { node, view: node, base: graph, graph, change: named ?? activeChange(node) };
+}
+
+/**
+ * An open revision: a shipped Foundation/Interaction/Interface with an open revision of `change`
+ * (or, without one, any open revision or a legacy open next), or a pre-ship, non-retired one at
+ * any pre-ship state. Capabilities and Bugs are never revisions.
+ */
+export function isOpenRevision(node: MindPlanNode, change?: string | null): boolean {
   if (!isPipelineNodeType(node.type)) return false;
+  if (change) {
+    if (revisionFor(node, change)) return true;
+  } else if (change === undefined && (node.open_revisions?.length ?? 0) > 0) {
+    return true;
+  }
   if (node.next) return true;
   if (node.shipped_at) return false;
   return !isRetired(node);
@@ -75,10 +131,11 @@ function quoteList(ids: string[], cap = 3): string {
 
 /**
  * Migration or schema files the revision claims, or attributes to itself in another node's folder,
- * that are new in this revision.
+ * that are new in this revision. `change` picks the revision (see `subjectOf`).
  */
-function newSchemaFiles(node: MindPlanNode, ctx: DecisionContext): string[] {
-  const attributed = ((node.next ? node.next.attributed : node.attributed) ?? []).filter((f) =>
+export function newSchemaFiles(node: MindPlanNode, ctx: DecisionContext, change?: string | null): string[] {
+  const view = viewOf(node, change);
+  const attributed = ((view.next ? view.next.attributed : view.attributed) ?? []).filter((f) =>
     matchesSchemaFile(f, ctx.settings.schema_files)
   );
   // An attributed file is new when the branch adds it (or always outside git): attributing a
@@ -88,11 +145,11 @@ function newSchemaFiles(node: MindPlanNode, ctx: DecisionContext): string[] {
     const added = ctx.newFiles();
     return added ? attributed.filter((f) => added.has(f)) : attributed;
   };
-  const claimed = newClaimedSchemaFiles(node, ctx);
+  const claimed = newClaimedSchemaFiles(view, ctx);
   return [...new Set([...claimed, ...addedAttributed()])];
 }
 
-/** Migration or schema files the revision claims that are new in this revision. */
+/** Migration or schema files the revision (`node.next` of a view) claims that are new in it. */
 function newClaimedSchemaFiles(node: MindPlanNode, ctx: DecisionContext): string[] {
   const claims = (node.next ? node.next.implements : node.implements) ?? [];
   const schema = expandClaims(claims, ctx.root).filter((f) =>
@@ -114,13 +171,20 @@ function newClaimedSchemaFiles(node: MindPlanNode, ctx: DecisionContext): string
   return added ? schema.filter((f) => added.has(f)) : [];
 }
 
-/** Why `node` is decision-worthy; `[]` when it is not (or is not an open revision). */
+/** Why the revision of `change` on `node` is decision-worthy; `[]` when it is not (or is not open). */
 export function decisionTriggers(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  ctx: DecisionContext
+  ctx: DecisionContext,
+  change?: string | null
 ): DecisionTrigger[] {
-  if (!isOpenRevision(node)) return [];
+  const s = subjectOf(graph, node, change);
+  return triggersOf(s, ctx);
+}
+
+function triggersOf(s: Subject, ctx: DecisionContext): DecisionTrigger[] {
+  const node = s.view;
+  if (!isOpenRevision(node, null)) return [];
   const triggers: DecisionTrigger[] = [];
   if (node.type === "Foundation" && node.next) {
     triggers.push({
@@ -128,14 +192,14 @@ export function decisionTriggers(
       message: "contract changes (an open revision of a shipped Foundation)",
     });
   }
-  const schema = newSchemaFiles(node, ctx);
+  const schema = newSchemaFiles(node, ctx, null);
   if (schema.length > 0) {
     triggers.push({
       kind: "schema",
       message: `claims new migration or schema file(s) ${quoteList(schema)}`,
     });
   }
-  const dependents = blastRadiusDependents(graph, node.id).affected.filter(
+  const dependents = blastRadiusDependents(s.graph, node.id).affected.filter(
     ({ node: n }) => !isRetired(n)
   );
   if (dependents.length > ctx.settings.blast_radius) {
@@ -162,12 +226,22 @@ export function decisionTriggers(
 }
 
 /**
- * The day this revision started (`YYYY-MM-DD`): when open_next opened it, or when a pre-ship node
- * was created. Undefined for a next file opened before `opened_at` existed.
+ * The day a revision view started (`YYYY-MM-DD`): when its revision opened, or when a pre-ship
+ * node was created. Undefined for a next file opened before `opened_at` existed.
  */
-function revisionStartDay(node: MindPlanNode): string | undefined {
-  const started = node.next ? node.next.opened_at : node.created_at;
+function revisionStartDay(view: MindPlanNode): string | undefined {
+  const started = view.next ? view.next.opened_at : view.created_at;
   return started?.slice(0, 10);
+}
+
+/** Whether `n` is an open revision of `change`, and the day that revision started. */
+function memberStart(n: MindPlanNode, change: string): { member: boolean; day?: string } {
+  const revision = revisionFor(n, change);
+  if (revision) return { member: true, day: revision.opened_at?.slice(0, 10) };
+  if (!isPipelineNodeType(n.type) || activeChange(n) !== change) return { member: false };
+  if (n.next) return { member: true, day: n.next.opened_at?.slice(0, 10) };
+  if (n.shipped_at || isRetired(n)) return { member: false };
+  return { member: true, day: n.created_at?.slice(0, 10) };
 }
 
 /**
@@ -177,8 +251,9 @@ function revisionStartDay(node: MindPlanNode): string | undefined {
  */
 function changeStartDay(graph: MindPlanGraph, change: string): string | undefined {
   let earliest: string | undefined;
-  for (const member of changeMembers(graph, change)) {
-    const day = revisionStartDay(member);
+  for (const n of graph.nodes) {
+    const { member, day } = memberStart(n, change);
+    if (!member) continue;
     if (!day) return undefined;
     if (!earliest || day < earliest) earliest = day;
   }
@@ -186,27 +261,49 @@ function changeStartDay(graph: MindPlanGraph, change: string): string | undefine
 }
 
 /**
- * True when a decision is recorded for this revision: an active node holds a decision under the
- * revision's change id recorded on or after the day the change started (so a reused change id is
- * not satisfied by an earlier change's decisions), or the node's own active slot holds a decision
- * new in this revision (before first ship: any own decision; with an open next: an id the live
- * file does not hold).
+ * Every decision a node holds: live (section and `decisions/*.md`), a legacy next file's, and each
+ * open revision's, the latter tagged with the revision's change when untagged.
  */
-export function revisionHasDecision(graph: MindPlanGraph, node: MindPlanNode): boolean {
-  const change = activeChange(node);
-  if (change) {
-    const since = changeStartDay(graph, change);
-    const counts = (d: { change?: string; date?: string }) =>
-      d.change === change && (!since || !d.date || d.date >= since);
-    for (const other of graph.nodes) {
-      if (isInactiveNode(other)) continue;
-      if (activeDecisions(other).some(counts)) return true;
+function heldDecisions(node: MindPlanNode): DecisionRecord[] {
+  const out: DecisionRecord[] = [...(node.decisions ?? []), ...(node.next?.decisions ?? [])];
+  for (const rev of node.open_revisions ?? []) {
+    for (const d of rev.decisions ?? []) out.push(d.change ? d : { ...d, change: rev.change });
+  }
+  return out;
+}
+
+/**
+ * True when a decision is recorded for the revision of `change` on `node` (see `subjectOf` for an
+ * omitted `change`):
+ * - any active node holds a decision under the revision's change id recorded on or after the day
+ *   the change started (so a reused change id is not satisfied by an earlier change's decisions);
+ * - or any active node holds a decision that lists this node in `nodes`, under that change or
+ *   none, recorded since then;
+ * - or the revision holds a decision of its own: its `decisions/` folder is not empty (a revision
+ *   folder), an id the live file does not hold (a legacy next file), or any own decision before
+ *   first ship.
+ */
+export function revisionHasDecision(graph: MindPlanGraph, node: MindPlanNode, change?: string | null): boolean {
+  return hasDecision(subjectOf(graph, node, change));
+}
+
+function hasDecision(s: Subject): boolean {
+  const node = s.node;
+  const since = s.change ? changeStartDay(s.base, s.change) : revisionStartDay(s.view);
+  const dated = (d: DecisionRecord) => !since || !d.date || d.date >= since;
+  for (const other of s.base.nodes) {
+    if (isInactiveNode(other)) continue;
+    for (const d of heldDecisions(other)) {
+      if (!dated(d)) continue;
+      if (s.change && d.change === s.change) return true;
+      if (d.nodes?.includes(node.id) && (!d.change || d.change === s.change)) return true;
     }
   }
-  const own = activeDecisions(node);
-  if (!node.next) return !node.shipped_at && own.length > 0;
+  if (s.revision) return (s.revision.decisions?.length ?? 0) > 0;
+  const view = s.view;
+  if (!view.next) return !view.shipped_at && heldDecisions(view).length > 0;
   const live = new Set((node.decisions ?? []).map((d) => d.id));
-  return own.some((d) => !live.has(d.id));
+  return (view.next.decisions ?? []).some((d) => !live.has(d.id));
 }
 
 export type DecisionFix = {
@@ -227,24 +324,19 @@ export type DecisionGap = {
   fix: DecisionFix;
 };
 
-/** The missing decision of a decision-worthy revision, with the call that records it; null when none is missing. */
-export function decisionGap(
-  graph: MindPlanGraph,
-  node: MindPlanNode,
-  ctx: DecisionContext
-): DecisionGap | null {
-  if (!isOpenRevision(node) || revisionHasDecision(graph, node)) return null;
-  const triggers = decisionTriggers(graph, node, ctx);
+function gapOf(s: Subject, ctx: DecisionContext): DecisionGap | null {
+  if (!isOpenRevision(s.view, null) || hasDecision(s)) return null;
+  const triggers = triggersOf(s, ctx);
   if (triggers.length === 0) return null;
-  const change = activeChange(node) ?? null;
+  const change = s.change ?? null;
   return {
-    node_id: node.id,
+    node_id: s.node.id,
     change,
     triggers,
     fix: {
       tool: "record_decision",
       args: {
-        node_id: node.id,
+        node_id: s.node.id,
         decision: "<one sentence: what was chosen>",
         alternatives: ["<what else was considered, and why it lost>"],
         why: "<the constraint or trade-off that decided it>",
@@ -254,31 +346,75 @@ export function decisionGap(
   };
 }
 
-function describeTriggers(gap: DecisionGap): string {
-  return `"${gap.node_id}" ${gap.triggers.map((t) => t.message).join("; ")}`;
+/**
+ * The missing decision of a decision-worthy revision, with the call that records it; null when
+ * none is missing. `change` picks the revision (see `subjectOf`).
+ */
+export function decisionGap(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  ctx: DecisionContext,
+  change?: string | null
+): DecisionGap | null {
+  return gapOf(subjectOf(graph, node, change), ctx);
 }
 
-/** `decision:` warnings for a decision-worthy revision with no decision; `[]` otherwise. */
+/**
+ * The missing decision of the revision of `change` on `node` (`null`: the node's own pre-ship or
+ * legacy revision), or null when none is missing or the revision is not decision-worthy.
+ * The entry point for gates that walk a node's revisions one change at a time.
+ */
+export function decisionGapFor(
+  graph: MindPlanGraph,
+  root: string,
+  node: MindPlanNode,
+  change: string | null,
+  ctx: DecisionContext = createDecisionContext(root)
+): DecisionGap | null {
+  return gapOf(subjectOf(graph, node, change), ctx);
+}
+
+function describeTriggers(gap: DecisionGap, node: MindPlanNode): string {
+  const which =
+    gap.change && (node.open_revisions?.length ?? 0) > 1 ? ` (revision "${gap.change}")` : "";
+  return `"${gap.node_id}"${which} ${gap.triggers.map((t) => t.message).join("; ")}`;
+}
+
+/**
+ * `decision:` warnings for a decision-worthy revision with no decision; `[]` otherwise. Without
+ * `change`, a node with several open revisions gets one warning per revision missing one.
+ */
 export function decisionWarnings(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  ctx: DecisionContext
+  ctx: DecisionContext,
+  change?: string | null
 ): string[] {
-  const gap = decisionGap(graph, node, ctx);
-  if (!gap) return [];
-  return [
-    `decision: ${describeTriggers(gap)}; record the choice and the alternative you rejected with record_decision before in-review.`,
-  ];
+  const changes: (string | null | undefined)[] =
+    change === undefined && (node.open_revisions?.length ?? 0) > 1 ? openChanges(node) : [change];
+  const out: string[] = [];
+  for (const c of changes) {
+    const gap = decisionGap(graph, node, ctx, c);
+    if (!gap) continue;
+    out.push(
+      `decision: ${describeTriggers(gap, node)}; record the choice and the alternative you rejected with record_decision before in-review.`
+    );
+  }
+  return out;
 }
 
-/** The in-review gate: `Blocked: Decision` with the `record_decision` call when a decision is missing. */
+/**
+ * The in-review gate: `Blocked: Decision` with the `record_decision` call when a decision is
+ * missing for the revision of `change` (see `subjectOf` for an omitted `change`).
+ */
 export function assertDecisionForReview(
   graph: MindPlanGraph,
   root: string,
   node: MindPlanNode,
-  ctx: DecisionContext = createDecisionContext(root)
+  ctx: DecisionContext = createDecisionContext(root),
+  change?: string | null
 ): void {
-  const gap = decisionGap(graph, node, ctx);
+  const gap = decisionGap(graph, node, ctx, change);
   if (!gap) return;
   const where = gap.change ? `under change "${gap.change}" or on the node` : "on the node";
   // Reopening a shipped, shared contract is where an additive design was most likely possible.
@@ -288,7 +424,7 @@ export function assertDecisionForReview(
       `name it in alternatives if you rejected it. `
     : "";
   throw blocked(
-    `Decision. ${describeTriggers(gap)}, and no decision is recorded for this revision (${where}). ` +
+    `Decision. ${describeTriggers(gap, node)}, and no decision is recorded for this revision (${where}). ` +
       `Record the choice and the alternative you rejected. ${additive}` +
       `Fix: record_decision(${JSON.stringify(gap.fix.args)}).`
   );

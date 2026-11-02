@@ -8,8 +8,19 @@ import {
   activeChange,
   isInactiveNode,
   type DecisionRecord,
+  type MindPlanNode,
 } from "../../foundations/f-domain-model/types.js";
-import { appendDecision, loadGraph, validateChangeInput } from "../../foundations/f-territory-store/store.js";
+import {
+  appendDecision,
+  entityDir,
+  loadGraph,
+  projectRoot,
+  validateChangeInput,
+} from "../../foundations/f-territory-store/store.js";
+import { appendDecisionFile, decisionsDir } from "../../foundations/f-territory-store/decisions-store.js";
+import { revisionDecisionsDir } from "../../foundations/f-territory-store/revisions.js";
+import { resolveRevisionChange, revisionFor } from "../../foundations/f-revision-model/index.js";
+import * as path from "path";
 import { blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
 import { inheritanceSources } from "../../foundations/f-graph-search/rules.js";
 import {
@@ -27,9 +38,22 @@ function oneLine(value: string | undefined): string {
 }
 
 /**
- * Append one decision record to a node's active slot. Records are never rewritten: changing a
- * decision means recording a new one that supersedes it; the old one's status becomes superseded.
- * Never resets readiness and does not rewrite the map.
+ * The revision a decision lands in: the open revision of `change` when the node has one, else
+ * the one `resolveRevisionChange` picks (the only open revision; Blocked when several are open and
+ * `change` is omitted), else none (the node folder's live `decisions/`). A `change` the node has
+ * no revision of only tags the decision.
+ */
+function pickRevision(node: MindPlanNode, change: string | undefined): string | null {
+  if (change && !revisionFor(node, change)) return null;
+  return resolveRevisionChange(node, change || undefined);
+}
+
+/**
+ * Write one decision record as its own file: `decisions/<id>.md` inside the picked revision
+ * folder, else beside the node's live file. Records are never rewritten: changing a decision
+ * means recording a new one that supersedes it; the old one's status becomes superseded.
+ * `nodes` lists every node the one decision shapes (it is written once, on `node_id`). Never
+ * resets readiness and does not rewrite the map.
  */
 export function recordDecision(args: {
   verbose?: boolean;
@@ -42,6 +66,7 @@ export function recordDecision(args: {
   change?: string;
   id?: string;
   keep_whole?: boolean;
+  nodes?: string[];
 }): Record<string, unknown> {
   gateWrite(null, [args.node_id], "record_decision");
   const graph = loadGraph();
@@ -66,7 +91,17 @@ export function recordDecision(args: {
   }
   const consequences = oneLine(args.consequences);
   validateChangeInput({ change: args.change });
-  const change = args.change || activeChange(node);
+  const revision = pickRevision(node, args.change);
+  const change = args.change || revision || activeChange(node);
+
+  const nodes = [...new Set((args.nodes ?? []).map((n) => n.trim()).filter(Boolean))];
+  for (const id of nodes) {
+    const listed = graph.nodes.find((n) => n.id === id);
+    if (!listed) throw blocked(`nodes names "${id}", which does not exist in mindplan territory.`);
+    if (listed.type === "Bug") {
+      throw blocked(`nodes names "${id}", a Bug; list the nodes the decision shapes, not the Bug.`);
+    }
+  }
 
   let id: string;
   if (args.id !== undefined) {
@@ -119,20 +154,36 @@ export function recordDecision(args: {
     ...(change ? { change } : {}),
     date: new Date().toISOString().slice(0, 10),
     ...(args.keep_whole ? { keep_whole: true } : {}),
+    ...(nodes.length ? { nodes } : {}),
   };
   // The record carries its change id; the node's change label is left alone. A label groups live
   // work, and a change that only records decisions never opens a revision, so nothing would clear it.
-  const written = appendDecision(node, record);
+  let slot: "revision" | "current" | "next";
+  let rel: string;
+  if (!revision && node.next && node.shipped_at && !node.open_revisions?.length) {
+    // Legacy `<id>.next.mdx` (opened before revision folders): its decisions still live in its
+    // `## Decisions` section, so discard drops them and promote ships them. Goes away once every
+    // next file is a revision folder.
+    const written = appendDecision(node, record);
+    slot = written.slot;
+    rel = written.paths[0];
+  } else {
+    const dir = revision ? revisionDecisionsDir(node, revision) : decisionsDir(entityDir(node));
+    const file = appendDecisionFile(dir, record);
+    slot = revision ? "revision" : "current";
+    rel = path.relative(projectRoot(), file).split(path.sep).join("/");
+  }
   const after = loadGraph();
   const entry = listDecisions(after, { node_id: node.id, include_superseded: true }).find(
     (d) => d.id === id
   );
   return {
     node_id: node.id,
-    slot: written.slot,
+    slot,
+    revision,
     decision: entry ?? record,
     ...(superseded ? { supersedes: superseded } : {}),
-    changed_files: changedFiles(written.paths),
+    changed_files: changedFiles([rel]),
     ...mutationTail(after, node.id, args.verbose),
   };
 }
