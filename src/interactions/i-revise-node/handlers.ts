@@ -8,6 +8,7 @@ import {
   entityRelativePath,
   loadGraph,
   loadProjectConfig,
+  removeLegacyMirror,
   validateChangeInput,
 } from "../../foundations/f-territory-store/store.js";
 import {
@@ -83,6 +84,8 @@ export function openNext(args: {
     .filter((e) => !(node[e.type] ?? []).includes(e.target))
     .map((e) => `${node_id} -${e.type}-> ${e.target}`);
   const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, node_id) : null;
+  // A leftover mirror file from before 0.8.0 is not a revision: opening one removes it.
+  const removedMirror = removeLegacyMirror(node);
   const opened = openRevision(node, change, {
     change_ref: args.change_ref,
     title,
@@ -128,7 +131,7 @@ export function openNext(args: {
       : {}),
     // Applied belongs_to / depends_on can bring new rules: return them so the node stays oriented.
     ...(applied.length ? rulesReachingAfterWrite(node_id, rulesBefore) : {}),
-    changed_files: changedFiles(opened.changed_files),
+    changed_files: changedFiles([...opened.changed_files, ...removedMirror]),
     // `revisions` lists every open revision of the node: this one and its siblings.
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };

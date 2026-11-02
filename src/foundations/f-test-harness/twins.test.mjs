@@ -3,10 +3,12 @@
  * revision is open. Live writes on a shipped node (stability recompute on link/unlink and status
  * moves, live territory patches, live edge writes, rules, tests, aliases, decisions) touch only
  * `<id>.mdx`; no write ever creates a `state: mirror` file. open_next creates
- * the next file; ship and discard_next delete it and list every deleted path. A hand-written
- * leftover `state: mirror` file loads as no revision, warns in run_check, is replaced by
- * open_next, and is deleted by force_unship. Every write here is also diffed against the sandbox
- * on disk: each mindplan/ file it created, changed, or deleted must be in its changed_files.
+ * `revisions/<change>/<id>.mdx`; ship and discard_next delete the revision folder and list every
+ * deleted path. A hand-written leftover `state: mirror` file loads as no revision, warns in
+ * run_check, is removed by open_next, and is deleted by force_unship; a `<id>.next.mdx` evolution
+ * from an older release blocks the lifecycle tools until upgrade_project. Every write here is also
+ * diffed against the sandbox on disk: each mindplan/ file it created, changed, or deleted (the
+ * derived map.md excepted) must be in its changed_files, and map.md never is.
  * Run via npm test.
  */
 // Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
@@ -58,11 +60,14 @@ function snapshot() {
   return files;
 }
 
-/** Paths created, changed, or deleted between two snapshots. */
+/** Derived after every write and never listed in changed_files. */
+const MAP = "mindplan/map.md";
+
+/** Paths created, changed, or deleted between two snapshots (the derived map excluded). */
 function touched(before, after) {
   const out = [];
-  for (const [rel, text] of after) if (before.get(rel) !== text) out.push(rel);
-  for (const rel of before.keys()) if (!after.has(rel)) out.push(rel);
+  for (const [rel, text] of after) if (rel !== MAP && before.get(rel) !== text) out.push(rel);
+  for (const rel of before.keys()) if (rel !== MAP && !after.has(rel)) out.push(rel);
   return out;
 }
 
@@ -88,6 +93,10 @@ async function call(tool, args) {
   if (Array.isArray(result.changed_files)) {
     diffedWrites++;
     const missing = changed.filter((rel) => !result.changed_files.includes(rel));
+    if (result.changed_files.includes(MAP)) {
+      diffMisses++;
+      check(`${tool} ${JSON.stringify(args).slice(0, 80)} never lists ${MAP}`, false, JSON.stringify(result.changed_files));
+    }
     // Report only misses: every write in this file runs through here.
     if (missing.length > 0) {
       diffMisses++;
@@ -110,6 +119,8 @@ async function blocked(tool, args) {
 const nextOf = (kind, id) => `mindplan/${kind}/${id}/${id}.next.mdx`;
 const liveOf = (kind, id) => `mindplan/${kind}/${id}/${id}.mdx`;
 const attachDirOf = (kind, id) => `mindplan/${kind}/${id}/next-attachments`;
+const revDirOf = (kind, id, change) => `mindplan/${kind}/${id}/revisions/${change}`;
+const revOf = (kind, id, change) => `${revDirOf(kind, id, change)}/${id}.mdx`;
 const abs = (rel) => path.join(root, ...rel.split("/"));
 const exists = (rel) => fs.existsSync(abs(rel));
 const read = (rel) => fs.readFileSync(abs(rel), "utf-8");
@@ -323,51 +334,51 @@ check(
   liveOnly("record_decision on a shipped node writes no next file", recorded, "foundations", "f-core");
 }
 
-// --- open_next creates the next file; patches land there; ship deletes it and lists what it deleted ---
+// --- open_next creates a revision folder; ship deletes it and lists what it deleted ---
 {
-  const opened = await call("open_next", { node_id: "f-core" });
-  const nextText = exists(nextOf("foundations", "f-core")) ? read(nextOf("foundations", "f-core")) : "";
+  const opened = await call("open_next", { node_id: "f-core", change: "twins" });
+  const revText = exists(revOf("foundations", "f-core", "twins")) ? read(revOf("foundations", "f-core", "twins")) : "";
   check(
-    "open_next creates the next file as a draft with unticked Atomic Ops and lists it",
-    opened.changed_files.includes(nextOf("foundations", "f-core")) &&
-      opened.changed_files.includes(`${attachDirOf("foundations", "f-core")}/.gitkeep`) &&
-      /^state: draft\s*$/m.test(nextText) &&
-      /^## Atomic Ops/m.test(nextText) &&
-      nextText.includes("- [ ]") &&
-      exists(`${attachDirOf("foundations", "f-core")}/.gitkeep`),
+    "open_next creates revisions/<change>/<id>.mdx as a draft with unticked Atomic Ops and lists it",
+    opened.changed_files.includes(revOf("foundations", "f-core", "twins")) &&
+      /^state: draft\s*$/m.test(revText) &&
+      /^## Atomic Ops/m.test(revText) &&
+      revText.includes("- [ ]") &&
+      !exists(nextOf("foundations", "f-core")) &&
+      opened.revisions?.length === 1 &&
+      opened.revisions[0].change === "twins",
     JSON.stringify(opened)
   );
-  const liveBefore = read(liveOf("foundations", "f-core"));
-  const nextPatch = await call("patch_node_territory", {
-    node_id: "f-core",
-    replace: { find: "Twins-test patched live.", with: "Twins-test next revision.", all: true },
-  });
-  check(
-    "a patch on an open revision lists only the next file",
-    nextPatch.slot === "next" &&
-      nextPatch.changed_files.includes(nextOf("foundations", "f-core")) &&
-      !nextPatch.changed_files.includes(liveOf("foundations", "f-core")) &&
-      read(liveOf("foundations", "f-core")) === liveBefore,
-    JSON.stringify(nextPatch)
+  // The revision's text, ticks, and decision are written in its folder (the edit tools have their own suites).
+  const revFile = revOf("foundations", "f-core", "twins");
+  write(revFile, read(revFile).replaceAll("Twins-test patched live.", "Twins-test next revision.").replaceAll("- [ ]", "- [x]"));
+  write(
+    `${revDirOf("foundations", "f-core", "twins")}/decisions/d-core-revised.md`,
+    [
+      "### d-core-revised",
+      "",
+      "- Decision: Core text is revised.",
+      "- Alternatives:",
+      "  - Keep the old text",
+      "- Why: The twins test ships a revision.",
+      "- Change: twins",
+      `- Date: ${new Date().toISOString().slice(0, 10)}`,
+      "",
+    ].join("\n")
   );
-  // The revision ticks its own fresh ops and records its decision before it ships.
-  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
-  await call("record_decision", {
-    node_id: "f-core",
-    decision: "Core text is revised.",
-    alternatives: ["Keep the old text"],
-    why: "The twins test ships a revision.",
-  });
+  write(`${revDirOf("foundations", "f-core", "twins")}/attachments/sketch.txt`, "revision sketch\n");
   await walk("f-core", ["ready", "in-progress", "in-review"]);
   const shipped = await call("update_node_status", { node_id: "f-core", new_status: "ship" });
   check(
-    "shipping a revision writes the live file, deletes the next file and next-attachments/, and lists them",
+    "shipping a revision writes the live file, deletes the revision folder, and lists every path",
     read(liveOf("foundations", "f-core")).includes("Twins-test next revision.") &&
+      shipped.promoted_next === true &&
       shipped.changed_files.includes(liveOf("foundations", "f-core")) &&
-      shipped.changed_files.includes(nextOf("foundations", "f-core")) &&
-      shipped.changed_files.includes(`${attachDirOf("foundations", "f-core")}/.gitkeep`) &&
-      !exists(nextOf("foundations", "f-core")) &&
-      !exists(attachDirOf("foundations", "f-core")),
+      shipped.changed_files.includes(revOf("foundations", "f-core", "twins")) &&
+      shipped.changed_files.includes("mindplan/foundations/f-core/attachments/sketch.txt") &&
+      shipped.changed_files.includes("mindplan/foundations/f-core/decisions/d-core-revised.md") &&
+      !exists(revDirOf("foundations", "f-core", "twins")) &&
+      !exists("mindplan/foundations/f-core/revisions"),
     JSON.stringify(shipped)
   );
   check(
@@ -376,28 +387,19 @@ check(
   );
 }
 
-// --- discard_next deletes the next file, its attachments, and the folder ---
+// --- discard_next deletes the revision folder with its attachments ---
 {
-  await call("open_next", { node_id: "i-a" });
-  await call("put_attachment", {
-    node_id: "i-a",
-    filename: "note.txt",
-    content_base64: Buffer.from("revision note\n").toString("base64"),
-  });
-  check("the attachment lands under next-attachments/", exists(`${attachDirOf("interactions", "i-a")}/note.txt`));
+  await call("open_next", { node_id: "i-a", change: "drop" });
+  write(`${revDirOf("interactions", "i-a", "drop")}/attachments/note.txt`, "revision note\n");
   const discarded = await call("discard_next", { node_id: "i-a" });
-  const dir = attachDirOf("interactions", "i-a");
   check(
-    "discard_next deletes the next file and next-attachments/ and lists every deleted path and map.md",
+    "discard_next deletes the revision folder and lists every deleted path, never map.md",
     discarded.discarded === true &&
-      !("restored_mirror" in discarded) &&
-      discarded.changed_files.includes(nextOf("interactions", "i-a")) &&
-      discarded.changed_files.includes(`${dir}/.gitkeep`) &&
-      discarded.changed_files.includes(`${dir}/note.txt`) &&
-      discarded.changed_files.some((f) => f === dir || f === `${dir}/`) &&
-      discarded.changed_files.includes("mindplan/map.md") &&
-      !exists(nextOf("interactions", "i-a")) &&
-      !exists(dir),
+      discarded.change === "drop" &&
+      discarded.changed_files.includes(revOf("interactions", "i-a", "drop")) &&
+      discarded.changed_files.includes(`${revDirOf("interactions", "i-a", "drop")}/attachments/note.txt`) &&
+      !discarded.changed_files.includes("mindplan/map.md") &&
+      !exists("mindplan/interactions/i-a/revisions"),
     JSON.stringify(discarded)
   );
   check(
@@ -406,7 +408,7 @@ check(
   );
 }
 
-// --- a hand-written leftover mirror is not a revision: it warns, open_next replaces it ---
+// --- a hand-written leftover mirror is not a revision: it warns, open_next removes it ---
 {
   writeLeftoverMirror("foundations", "f-core");
   check(
@@ -434,20 +436,31 @@ check(
       read(nextOf("foundations", "f-core")) === mirrorBefore,
     JSON.stringify(livePatch)
   );
-  const opened = await call("open_next", { node_id: "f-core" });
-  const text = read(nextOf("foundations", "f-core"));
+  const opened = await call("open_next", { node_id: "f-core", change: "again" });
+  const text = read(revOf("foundations", "f-core", "again"));
   check(
-    "open_next replaces a leftover mirror with a draft revision",
+    "open_next deletes a leftover mirror, lists it, and opens a draft revision",
     opened.changed_files.includes(nextOf("foundations", "f-core")) &&
+      !exists(nextOf("foundations", "f-core")) &&
       /^state: draft\s*$/m.test(text) &&
-      !/^state: mirror\s*$/m.test(text) &&
       text.includes("Twins-test live again."),
     JSON.stringify(opened)
   );
   const after = await call("run_check", {});
-  check("the leftover warning is gone once open_next replaced it", !after.warnings.some((w) => w.startsWith("legacy:")), JSON.stringify(after.warnings));
-  await call("discard_next", { node_id: "f-core" });
-  check("discarding that revision leaves no next file", !exists(nextOf("foundations", "f-core")));
+  check("the leftover warning is gone once open_next removed it", !after.warnings.some((w) => w.startsWith("legacy:")), JSON.stringify(after.warnings));
+  await call("discard_next", { node_id: "f-core", change: "again" });
+  check("discarding that revision leaves no revision folder", !exists("mindplan/foundations/f-core/revisions"));
+}
+
+// --- a <id>.next.mdx evolution from an older release blocks the lifecycle tools until upgrade_project ---
+{
+  const legacy = nextOf("foundations", "f-core");
+  write(legacy, read(liveOf("foundations", "f-core")).replace(/^state:.*$/m, "state: draft"));
+  const open = await blocked("open_next", { node_id: "f-core", change: "late" });
+  check("open_next beside a legacy next file is Blocked naming upgrade_project", !!open && open.includes("upgrade_project"), String(open));
+  const move = await blocked("update_node_status", { node_id: "f-core", new_status: "ready" });
+  check("update_node_status beside a legacy next file is Blocked naming upgrade_project", !!move && move.includes("upgrade_project"), String(move));
+  fs.rmSync(abs(legacy));
 }
 
 // --- force_unship deletes a leftover mirror ---

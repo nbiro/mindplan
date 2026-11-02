@@ -1022,10 +1022,10 @@ export function readMarkdown(
   slot: TerritorySlot = "current"
 ): string {
   let file = markdownPath(node, slot);
-  // The `next` view of an open revision (`withRevision`) carries its change: with no legacy
-  // `<id>.next.mdx`, the next slot reads that revision's file.
+  // The `next` view of an open revision (`withRevision`) carries its change: the next slot reads
+  // that revision's file when it exists (a leftover mirror `<id>.next.mdx` never shadows it).
   const viewChange = slot === "next" ? (node as Partial<MindPlanNode>).next?.change : undefined;
-  if (viewChange && !fs.existsSync(file)) {
+  if (viewChange) {
     const revisionFile = path.join(entityDir(node), "revisions", viewChange, liveMdxFilename(node.id));
     if (fs.existsSync(revisionFile)) file = revisionFile;
   }
