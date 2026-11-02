@@ -73,6 +73,7 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
+import { graphUnder, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 const MID_PIPELINE = new Set(["in-progress", "in-review"]);
@@ -114,7 +115,8 @@ export interface MergeNode {
   id: string;
   type: string;
   state: string;
-  slot: "live" | "next";
+  /** `revision`: an open revision stored under `revisions/<change>/`; `next`: a legacy next file. */
+  slot: "live" | "next" | "revision";
   files?: string[];
 }
 
@@ -135,6 +137,8 @@ export interface ChangeCheck {
     id: string;
     type: string;
     kind: "revision" | "planned";
+    /** The change id, on a revision member. */
+    change?: string;
     state: string;
     next_state: string | null;
   }[];
@@ -161,16 +165,33 @@ export interface CheckResult {
 }
 
 /**
- * The in-review gate on every revision of a change: import and ownership violations on its
+ * The slots the check reads on a node: each open revision as its own view (`withRevision`, tagged
+ * with its change), else the node itself (live, or live plus a legacy next file).
+ */
+function slotViews(node: MindPlanNode): { change: string | null; view: MindPlanNode }[] {
+  const open = node.open_revisions ?? [];
+  if (open.length === 0) return [{ change: null, view: node }];
+  return open.map((r) => ({ change: r.change, view: withRevision(node, r.change) }));
+}
+
+/** How a check line names a node's open slot: `next` (legacy, or a node's only revision), else `revision "<change>"`. */
+function slotLabel(node: MindPlanNode, change: string | null): string {
+  return change === null || (node.open_revisions?.length ?? 0) <= 1 ? "next" : `revision "${change}"`;
+}
+
+/**
+ * The in-review gate on every revision of a change, judged on `graphUnder(graph, change)` (each
+ * member's revision of the change, every other node live): import and ownership violations on its
  * active-slot files (Blocked), every stale-text signal (warnings; planned paths go to info), and
  * its decision and fan-out warnings.
  */
 function checkChange(
-  graph: MindPlanGraph,
+  liveGraph: MindPlanGraph,
   root: string,
   change: string,
   decisionCtx: DecisionContext
 ): ChangeCheck {
+  const graph = graphUnder(liveGraph, change);
   // Planned sources are listed, not gated: their files do not change until the change opens them.
   const { revisions, planned } = changeMembership(graph, change);
   const failures: string[] = [];
@@ -221,6 +242,7 @@ function checkChange(
     id: n.id,
     type: n.type,
     kind,
+    ...(kind === "revision" ? { change } : {}),
     state: n.state,
     next_state: n.next?.state ?? null,
   });
@@ -338,50 +360,95 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
   };
 }
 
+/**
+ * The files a node claims in one view: a legacy next's claims (plus the live claims it keeps),
+ * else its live claims.
+ */
+function viewClaims(node: MindPlanNode, root: string): string[] {
+  if (!node.next) return expandClaims(node.implements, root);
+  const next = expandClaims(node.next.implements, root);
+  const nextSet = new Set(next);
+  return [...new Set([...next, ...expandClaims(node.implements, root).filter((f) => nextSet.has(f))])];
+}
+
+/**
+ * Exclusivity per change. Live (every node live, a legacy next file as before): a file two nodes
+ * claim fails. Under each change (`graphUnder`): a file a revision of that change claims while
+ * another node claims it too fails, naming the change. A file only revisions of different changes
+ * claim (on different nodes) never meets in one graph: it warns, since the second to ship rebases
+ * into a claim conflict.
+ * WP4: ownership may grow a shared helper for this; until it lands the check is local.
+ */
 function checkExclusivity(
   graph: MindPlanGraph,
   root: string,
-  failures: string[]
+  failures: string[],
+  warnings: string[]
 ): OwnershipBuckets {
-  const claims: { file: string; owner: string }[] = [];
+  const active = graph.nodes.filter((n) => isPipelineNodeType(n.type) && !RETIRED_STATES.has(n.state));
+  const owners = (claims: Map<string, string[]>) => {
+    const byFile = new Map<string, Set<string>>();
+    for (const [owner, files] of claims) {
+      for (const f of files) {
+        let set = byFile.get(f);
+        if (!set) byFile.set(f, (set = new Set()));
+        set.add(owner);
+      }
+    }
+    return byFile;
+  };
+  const list = (ids: Iterable<string>) => [...ids].sort().map((id) => `"${id}"`).join(", ");
 
-  for (const node of graph.nodes) {
-    if (!isPipelineNodeType(node.type)) continue;
-    if (RETIRED_STATES.has(node.state)) continue;
-    if (node.next) {
-      for (const f of expandClaims(node.next.implements, root)) {
-        claims.push({ file: f, owner: node.id });
-      }
-      const nextSet = new Set(expandClaims(node.next.implements, root));
-      for (const f of expandClaims(node.implements, root)) {
-        if (nextSet.has(f)) claims.push({ file: f, owner: node.id });
-      }
-    } else {
-      for (const f of expandClaims(node.implements, root)) {
-        claims.push({ file: f, owner: node.id });
+  // Live: a node with stored revisions claims its live files here.
+  const live = new Map(
+    active.map((n) => [n.id, n.open_revisions?.length ? expandClaims(n.implements, root) : viewClaims(n, root)])
+  );
+  const liveOwners = owners(live);
+  const failed = new Set<string>();
+  for (const [file, ids] of liveOwners) {
+    if (ids.size < 2) continue;
+    failed.add(file);
+    fail(failures, `exclusivity: "${file}" claimed by multiple nodes: ${list(ids)}.`);
+  }
+
+  // Each change: its revisions replace their nodes' live claims.
+  const byChange = new Map<string, Map<string, string[]>>();
+  for (const n of active) {
+    for (const { change, view } of slotViews(n)) {
+      if (change === null) continue;
+      if (!byChange.has(change)) byChange.set(change, new Map());
+      byChange.get(change)!.set(n.id, viewClaims(view, root));
+    }
+  }
+  const revisionClaimants = new Map<string, Map<string, string>>(); // file → owner → change
+  for (const change of [...byChange.keys()].sort()) {
+    const revised = byChange.get(change)!;
+    const claims = new Map(live);
+    for (const [id, files] of revised) claims.set(id, files);
+    const under = owners(claims);
+    for (const [id, files] of revised) {
+      for (const f of files) {
+        if (!live.get(id)?.includes(f)) {
+          const seen = revisionClaimants.get(f) ?? new Map<string, string>();
+          if (!seen.has(id)) seen.set(id, change);
+          revisionClaimants.set(f, seen);
+        }
+        const ids = under.get(f)!;
+        if (ids.size < 2 || failed.has(f)) continue;
+        failed.add(f);
+        fail(failures, `exclusivity: "${f}" claimed by multiple nodes under change "${change}": ${list(ids)}.`);
       }
     }
   }
-
-  const byFile = new Map<string, Set<string>>();
-  for (const c of claims) {
-    let set = byFile.get(c.file);
-    if (!set) {
-      set = new Set();
-      byFile.set(c.file, set);
-    }
-    set.add(c.owner);
-  }
-  for (const [file, owners] of byFile) {
-    if (owners.size > 1) {
-      fail(
-        failures,
-        `exclusivity: "${file}" claimed by multiple nodes: ${[...owners]
-          .sort()
-          .map((id) => `"${id}"`)
-          .join(", ")}.`
-      );
-    }
+  for (const [file, claimants] of revisionClaimants) {
+    if (failed.has(file) || claimants.size < 2) continue;
+    const named = [...claimants.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([id, change]) => `"${id}" (change "${change}")`)
+      .join(", ");
+    warnings.push(
+      `exclusivity: "${file}" is claimed by revisions of different changes: ${named}; the second to ship rebases into a claim conflict.`
+    );
   }
 
   return buildOwnershipIndex(graph, root);
@@ -445,20 +512,39 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
       : undefined;
     checkSlot(node.implements, "live", liveNeedsPresence, released);
 
-    if (node.next && node.next.state === "in-review") {
-      checkSlot(node.next.implements, "next", true);
-    }
-    for (const missing of testPresenceFailures(node, root)) fail(failures, missing);
-    // A revision in review must have written the files it attributes to itself.
-    const reviewSlot = node.next ? node.next : node;
-    if (reviewSlot.state === "in-review") {
-      for (const f of reviewSlot.attributed ?? []) {
-        if (!fs.existsSync(path.join(root, ...f.split("/")))) {
-          fail(failures, `presence: "${node.id}" attributed file missing on disk: "${f}".`);
+    // Each open revision (or a legacy next) on its own: a node may hold several.
+    const lines = new Set<string>();
+    for (const { change, view } of slotViews(node)) {
+      if (view.next && view.next.state === "in-review") {
+        checkSlot(view.next.implements, slotLabel(node, change), true);
+      }
+      for (const missing of testPresenceFailures(view, root)) lines.add(missing);
+      // A revision in review must have written the files it attributes to itself.
+      const reviewSlot = view.next ? view.next : view;
+      if (reviewSlot.state === "in-review") {
+        for (const f of reviewSlot.attributed ?? []) {
+          if (!fs.existsSync(path.join(root, ...f.split("/")))) {
+            lines.add(`presence: "${node.id}" attributed file missing on disk: "${f}".`);
+          }
         }
       }
     }
+    for (const line of lines) fail(failures, line);
   }
+}
+
+/** One `conflicts:` warning per open revision that still holds unresolved rebase conflicts. */
+function conflictWarnings(graph: MindPlanGraph): string[] {
+  const warnings: string[] = [];
+  for (const node of graph.nodes) {
+    for (const r of node.open_revisions ?? []) {
+      if (r.conflicts.length === 0) continue;
+      warnings.push(
+        `conflicts: "${node.id}" revision "${r.change}" has ${r.conflicts.length} unresolved rebase conflict(s); resolve_conflict before in-review.`
+      );
+    }
+  }
+  return warnings;
 }
 
 /**
@@ -549,43 +635,53 @@ function collectWarnings(
 ): { warnings: string[]; info: string[] } {
   const editedInPlace = (node: MindPlanNode): boolean =>
     changed !== null && (node.implements ?? []).some((claim) => changed.some((rel) => claimCoversPath(claim, rel)));
-  const warnings: string[] = [];
-  const info: string[] = [];
+  const warnings = new Set<string>();
+  const info = new Set<string>();
   for (const node of graph.nodes) {
-    // Description quality (every node type; never fails the check).
-    warnings.push(...descriptionWarnings(node));
-    const shape = shapeWarning(node);
-    if (shape) warnings.push(shape);
-    if (!isPipelineNodeType(node.type)) continue;
-    if (RETIRED_STATES.has(node.state)) continue;
-    const active = node.next ? node.next.state : node.state;
-    const scope =
-      active === "in-review"
-        ? STALE_ALL
-        : !node.next && isProductionState(node.state)
-          ? editedInPlace(node)
-            ? STALE_ALL
-            : STALE_PATHS_ONLY
-          : null;
-    if (scope) {
-      const stale = staleTextWarnings(graph, root, node, undefined, scope);
-      warnings.push(...stale.warnings);
-      info.push(...stale.info);
+    // Each open revision is read on its own view (live plus that revision).
+    for (const { view } of slotViews(node)) {
+      // Description quality (every node type; never fails the check).
+      for (const w of descriptionWarnings(view)) warnings.add(w);
+      const shape = shapeWarning(view);
+      if (shape) warnings.add(shape);
+      if (!isPipelineNodeType(node.type)) continue;
+      if (RETIRED_STATES.has(node.state)) continue;
+      const active = view.next ? view.next.state : view.state;
+      const scope =
+        active === "in-review"
+          ? STALE_ALL
+          : !view.next && isProductionState(view.state)
+            ? editedInPlace(view)
+              ? STALE_ALL
+              : STALE_PATHS_ONLY
+            : null;
+      if (scope) {
+        const stale = staleTextWarnings(graph, root, view, undefined, scope);
+        for (const w of stale.warnings) warnings.add(w);
+        for (const line of stale.info) info.add(line);
+      }
+      const untested = untestedWarning(view);
+      if (untested) warnings.add(untested);
     }
-    const untested = untestedWarning(node);
-    if (untested) warnings.push(untested);
   }
-  return { warnings, info };
+  return { warnings: [...warnings], info: [...info] };
 }
 
 /**
- * Decision warnings: every open revision (any pre-ship state, or a shipped node's open next) that
- * is decision-worthy and has no decision yet. Moving it to in-review Blocks until one is recorded.
+ * Decision warnings: every open revision (any pre-ship state, a shipped node's legacy next, or
+ * each stored revision judged under its change) that is decision-worthy and has no decision yet.
+ * Moving it to in-review Blocks until one is recorded.
  */
 function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): string[] {
-  const warnings: string[] = [];
-  for (const node of graph.nodes) warnings.push(...decisionWarnings(graph, node, ctx));
-  return warnings;
+  const warnings = new Set<string>();
+  for (const node of graph.nodes) {
+    for (const { change } of slotViews(node)) {
+      const judged = change === null ? graph : graphUnder(graph, change);
+      const view = change === null ? node : judged.nodes.find((n) => n.id === node.id)!;
+      for (const w of decisionWarnings(judged, view, ctx)) warnings.add(w);
+    }
+  }
+  return [...warnings];
 }
 
 /**
@@ -760,9 +856,8 @@ function mergeShipCall(node: MergeNode, change: string | null): string {
 }
 
 function mergeLine(node: MergeNode, change: string | null, base: string | undefined): string {
-  const where = `"${node.id}" (${node.type}, ${node.slot === "next" ? "next " : ""}${node.state}, ${
-    change ? `change "${change}"` : "no change"
-  })`;
+  const slot = node.slot === "live" ? "" : `${node.slot} `;
+  const where = `"${node.id}" (${node.type}, ${slot}${node.state}, ${change ? `change "${change}"` : "no change"})`;
   if (node.type === "Bug") {
     return (
       `Blocked: Merge: ${where}: the fix is finished but the bug is not resolved. ` +
@@ -838,16 +933,19 @@ function checkMerge(
     }
     if (!isPipelineNodeType(node.type)) continue;
     if (RETIRED_STATES.has(node.state)) continue;
-    const slot = node.next ? "next" : "live";
-    const state = node.next ? node.next.state : node.state;
-    const change = activeChange(node) ?? null;
-    if (state === "in-review") {
-      found.push({ change, node: { id: node.id, type: node.type, state, slot } });
-    } else if (state === "in-progress" && changed) {
-      const claims = (node.next ? node.next.implements : node.implements) ?? [];
-      const files = changed.filter((rel) => claims.some((claim) => claimCoversPath(claim, rel)));
-      if (files.length > 0) {
-        found.push({ change, node: { id: node.id, type: node.type, state, slot, files } });
+    // Each open revision is gated on its own, under its change.
+    for (const { change: revision, view } of slotViews(node)) {
+      const slot = revision !== null ? "revision" : view.next ? "next" : "live";
+      const state = view.next ? view.next.state : view.state;
+      const change = revision ?? activeChange(view) ?? null;
+      if (state === "in-review") {
+        found.push({ change, node: { id: node.id, type: node.type, state, slot } });
+      } else if (state === "in-progress" && changed) {
+        const claims = (view.next ? view.next.implements : view.implements) ?? [];
+        const files = changed.filter((rel) => claims.some((claim) => claimCoversPath(claim, rel)));
+        if (files.length > 0) {
+          found.push({ change, node: { id: node.id, type: node.type, state, slot, files } });
+        }
       }
     }
   }
@@ -1099,7 +1197,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   }
 
   try {
-    const buckets = checkExclusivity(graph, root, failures);
+    const buckets = checkExclusivity(graph, root, failures, warnings);
     const universe = listUniverseFiles(root);
     checkCoverage(graph, root, buckets, universe, failures);
     checkPresence(graph, root, failures);
@@ -1110,6 +1208,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...collected.warnings);
     info.push(...collected.info);
     warnings.push(...legacyMirrorWarnings(graph));
+    warnings.push(...conflictWarnings(graph));
     warnings.push(...routeFamilySplits(graph, buckets, universe));
     const decisionCtx = createDecisionContext(root);
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));

@@ -30,7 +30,8 @@ function isPreShipPipelineNode(node: MindPlanNode): boolean {
  * first target appears; null unless the node is a pre-ship Foundation, Interaction, or Interface.
  * A target counts when it exists, is not retired, has never shipped, and carries a change id that
  * differs from the node's own. Shipped targets are settled substrate, and same-change targets are
- * one feature.
+ * one feature. Only live changes count: a pre-ship node's `change` (never a shipped node's open
+ * revisions, which sit on settled substrate), and only live `depends_on`.
  */
 export function fanOut(graph: MindPlanGraph, node: MindPlanNode, byId?: Map<string, MindPlanNode>): FanOutCount | null {
   if (!isPreShipPipelineNode(node)) return null;

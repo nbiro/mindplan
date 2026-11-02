@@ -18,6 +18,7 @@ import { RETIRED_STATES } from "../../foundations/f-source-index/ownership.js";
 import { blastRadiusDependents, interactionReachability, interfacesExposing } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import { nodeDecisions, supersessionIndex } from "../../foundations/f-graph-search/decisions.js";
+import { resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 
 export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
 
@@ -25,6 +26,33 @@ export const VIA_ORDER: AffectedFileVia[] = ["focus", "dependent", "exposing", "
 
 export function isRetired(node: MindPlanNode): boolean {
   return RETIRED_STATES.has(node.state);
+}
+
+/**
+ * The change a read names on `node`: one of its stored revisions (`resolveRevisionChange`, Blocked
+ * when it has none of that change), or the change of a legacy next file not yet migrated.
+ */
+export function namedRevisionChange(node: MindPlanNode, change: string): string {
+  if (!node.open_revisions?.length && node.next?.change === change) return change;
+  return resolveRevisionChange(node, change)!;
+}
+
+/** One open revision as a read reply lists it: no body, deltas, or base. */
+export type RevisionSummary = { change: string; state: string; title?: string; conflicts: number };
+
+/**
+ * A node's open revisions, sorted by change id, lean: change, state, the title when it differs
+ * from live, and how many rebase conflicts are unresolved. `[]` when none is open.
+ */
+export function revisionSummaries(node: MindPlanNode): RevisionSummary[] {
+  return [...(node.open_revisions ?? [])]
+    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
+    .map((r) => ({
+      change: r.change,
+      state: r.state,
+      ...(r.title !== node.title ? { title: r.title } : {}),
+      conflicts: r.conflicts.length,
+    }));
 }
 
 /** Reverse-depends_on blast radius; Interaction focus also includes reachability + affected_files. */
@@ -151,6 +179,9 @@ export function buildBlastRadiusPayload(
     affected_files,
     tests: [...tests].sort((a, b) => a.localeCompare(b)),
     rules_impact: rulesImpact(graph, node),
+    ...(node.open_revisions?.length
+      ? { open_revisions: revisionSummaries(node).map(({ change, state }) => ({ change, state })) }
+      : {}),
     ...blastRadiusDecisions(graph, node, visibleEntries, opts.include_dependent_decisions === true),
   };
   if (node.type === "Interaction") {

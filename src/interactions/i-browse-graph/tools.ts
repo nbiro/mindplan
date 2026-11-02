@@ -36,6 +36,7 @@ export const TOOLS: ToolDef[] = [
         "Returns one page of the MindPlan graph assembled from <id>.mdx frontmatter: nodes sorted by id, " +
         "the edges whose source is in the page, total_nodes, total_edges, and next_offset while nodes remain, all over the filtered set. " +
         'edges: false leaves out edges and total_edges; an array (e.g. ["depends_on"]) keeps only those edge types. ' +
+        "open_revisions lists each open revision as { change, state } only; read one with get_node_context({ node_id, change }). " +
         `A graph of up to ${GRAPH_PAGE_DEFAULT} nodes fits one page; walk offset = next_offset for the rest.`,
       inputSchema: {
         offset: z.number().int().min(0).optional().describe("First node index (default 0)."),
@@ -55,7 +56,7 @@ export const TOOLS: ToolDef[] = [
           .optional()
           .describe("Only nodes of this type, or of any of these types."),
         change: CHANGE_ID.optional().describe(
-          "Only the nodes of this change: an open revision's change id, else a pre-ship node's change field."
+          "Only the nodes of this change: the nodes holding an open revision of it, and pre-ship nodes whose change field it is."
         ),
         fields: z
           .array(z.string())
