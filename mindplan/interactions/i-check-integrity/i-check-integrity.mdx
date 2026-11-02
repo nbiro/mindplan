@@ -4,11 +4,11 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, hotspots, and fan-out, checks one change, and runs the merge gate."
 state: stable
-shipped_at: 2026-10-31T23:05:25.250Z
-revisions: 26
-churn: 18.329
+shipped_at: 2026-11-02T08:16:45.706Z
+revisions: 27
+churn: 18.753
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-10-31T23:05:25.250Z
+updated_at: 2026-11-02T08:16:45.706Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -50,7 +50,7 @@ Default check Blocks an illegal import with the exact fix. A shipped node has no
 Intended files: `src/interactions/i-check-integrity/`
 
 - Keep ownership checks; there is no mirror-twin check. `legacyMirrorWarnings` adds one `legacy: "<id>" has a leftover mirror twin (<path>); call upgrade_project to remove it.` warning per leftover `state: mirror` next file, and never fails the check
-- Import rule: `findAllImportViolations` (`f-compiler-rules`); each failure ends with `Fix: link_nodes({...})` or `not allowed: ...`; a Foundation importing an Interface it mounts is legal
+- Import rule: `findAllImportViolations` (`f-compiler-rules`) over the universe plus every file a non-retired node claims (live, next, released), so a claimed file outside the configured `sources` is held to the same import rule the in-review gate applies to it; each failure ends with `Fix: link_nodes({...})` or `not allowed: ...`; a Foundation importing an Interface it mounts is legal
 - `runIntegrityCheck` returns `{ ok, failures, warnings, removedLegacyFiles }`; `renderCheckOutput` formats it (`mindplan-mcp check: ok`, or one `Blocked:` line per failure, then `Warning:` lines) for both the CLI and `run_check`
 - Warnings never change `ok` or the exit code: a node in review gets every stale-text signal (body names a missing path, a claimed file changed after the body was updated, unticked checkboxes); a shipped node with no open update gets only the path signals (a missing path, and a live `added_claims` entry its body does not name), unless one of its claimed files changed against the default-branch merge base (`defaultBaseRef`; the run's one memoized `dirtyProbe`, matched with `claimCoversPath` as the strict merge gate does): then it gets every signal, because the branch edited it in place. Without git or a base it keeps the path signals and nothing is reported; nodes still being built are skipped
 - `runCheckHandler({ base? })` — the `run_check` handler: `{ ok, output, failures, warnings }`
@@ -88,6 +88,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 
 - `run_check` output equals the CLI check output
 - An illegal import fails the check with its fix; a registry that mounts two Interfaces passes and the same import without the edge is still blocked
+- An Interface file claimed outside the configured `sources` that imports an Interaction the Interface does not expose fails the full check, as it fails the move to `in-review`
 - A stale body path warns without failing the check
 - Drift lists owner_idle, claimed_missing, and unowned files, counts expected edits, and scopes to the focus node
 - Clean tree or git failure yields no report (or empty)
