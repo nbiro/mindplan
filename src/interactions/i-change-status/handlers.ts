@@ -108,6 +108,8 @@ type StatusArgs = {
   change?: string;
   /** Let a scoped walk to `ship` move nodes that have not reached in-review. Reported in the result. */
   skip_review?: boolean;
+  /** Let a scoped walk move every node that passes its gates and leave the blocked ones in place. */
+  skip_blocked?: boolean;
   dry_run?: boolean;
   verbose?: boolean;
 };
@@ -153,6 +155,9 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
   }
   if (args.skip_review === true) {
     throw blocked("skip_review only applies to a scoped walk to ship.");
+  }
+  if (args.skip_blocked === true) {
+    throw blocked("skip_blocked only applies to a scoped walk (scope + new_status).");
   }
   if (hasList && hasSingle) {
     throw blocked(
@@ -365,33 +370,91 @@ function simulateWalk(
   const now = new Date().toISOString();
   const warnings = new Set<string>();
   for (const row of plan) {
-    const node = findNode(graph, row.node_id);
-    for (const step of row.steps) {
-      try {
-        const resolved = resolveStatusChange(graph, node, step);
-        if (step === "in-review" || step === "ship") {
-          assertCheckCleanForNode(graph, root, node, step);
-          if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx);
-          for (const w of staleTextWarnings(graph, root, node).warnings) warnings.add(w);
-        }
-        if (resolved.promote_next) {
-          promoteInMemory(graph, node, resolved.state, now);
-        } else if (resolved.ship) {
-          node.state = resolved.state;
-          node.shipped_at = now;
-        } else if (node.next && isNextPipelineState(resolved.state)) {
-          node.next.state = resolved.state;
-        } else {
-          node.state = resolved.state;
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const reason = message.replace(/^Blocked:\s*/, "");
-        return { blocked: `Blocked: ${reason} (at "${row.node_id}" -> ${step})`, warnings: [...warnings] };
-      }
+    const stop = simulateRow(graph, root, row, now, decisionCtx, warnings);
+    if (stop) {
+      return { blocked: `Blocked: ${stop.reason} (at "${row.node_id}" -> ${stop.step})`, warnings: [...warnings] };
     }
   }
   return { blocked: null, warnings: [...warnings] };
+}
+
+/** One node's steps applied to `graph` in memory; the first Blocked step and its reason, or null. */
+function simulateRow(
+  graph: MindPlanGraph,
+  root: string,
+  row: WalkPlan,
+  now: string,
+  decisionCtx: DecisionContext,
+  warnings: Set<string>
+): { step: string; reason: string } | null {
+  const node = findNode(graph, row.node_id);
+  for (const step of row.steps) {
+    try {
+      const resolved = resolveStatusChange(graph, node, step);
+      if (step === "in-review" || step === "ship") {
+        assertCheckCleanForNode(graph, root, node, step);
+        if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx);
+        for (const w of staleTextWarnings(graph, root, node).warnings) warnings.add(w);
+      }
+      if (resolved.promote_next) {
+        promoteInMemory(graph, node, resolved.state, now);
+      } else if (resolved.ship) {
+        node.state = resolved.state;
+        node.shipped_at = now;
+      } else if (node.next && isNextPipelineState(resolved.state)) {
+        node.next.state = resolved.state;
+      } else {
+        node.state = resolved.state;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { step, reason: message.replace(/^Blocked:\s*/, "") };
+    }
+  }
+  return null;
+}
+
+type BlockedMember = { node_id: string; step: string; reason: string };
+
+/**
+ * `skip_blocked`: each node's whole walk is validated on a copy of the graph that already holds
+ * the nodes validated before it. A node blocked at any step keeps its state (no partial steps), so
+ * a later node that cannot move without it is blocked by the gates in turn.
+ */
+function simulateSkippingBlocked(
+  start: MindPlanGraph,
+  plan: WalkPlan[],
+  reviewSkippers: Set<string>,
+  decisionCtx: DecisionContext
+): { walkable: WalkPlan[]; blocked: BlockedMember[]; warnings: string[] } {
+  let graph = start;
+  const root = projectRoot();
+  const now = new Date().toISOString();
+  const warnings = new Set<string>();
+  const walkable: WalkPlan[] = [];
+  const blockedRows: BlockedMember[] = [];
+  for (const row of plan) {
+    if (reviewSkippers.has(row.node_id)) {
+      blockedRows.push({
+        node_id: row.node_id,
+        step: "ship",
+        reason:
+          "not in-review yet: walk it to in-review and review it, or pass skip_review: true to walk through in-review in this call.",
+      });
+      continue;
+    }
+    const trial = structuredClone(graph);
+    const rowWarnings = new Set<string>();
+    const stop = simulateRow(trial, root, row, now, decisionCtx, rowWarnings);
+    if (stop) {
+      blockedRows.push({ node_id: row.node_id, ...stop });
+      continue;
+    }
+    graph = trial;
+    walkable.push(row);
+    for (const w of rowWarnings) warnings.add(w);
+  }
+  return { walkable, blocked: blockedRows, warnings: [...warnings] };
 }
 
 /** Every transition a plan makes, one `id: from -> to` line per step. */
@@ -440,6 +503,85 @@ function statusLine(row: Record<string, unknown>): string {
   return `${String(row.node_id)}: ${String(row.previous_state)} -> ${to}`;
 }
 
+/** Writes a validated scoped walk, one step at a time, and returns its lines and changed files. */
+function applyWalk(
+  args: StatusArgs,
+  graph: MindPlanGraph,
+  plan: WalkPlan[],
+  simWarnings: string[],
+  decisionCtx: DecisionContext
+): Record<string, unknown> {
+  gateWrite(
+    graph,
+    plan.map((row) => row.node_id),
+    "update_node_status",
+    args.scope === "change" ? { change: args.change } : {}
+  );
+  const lines: string[] = [];
+  const changed = new Set<string>();
+  const warnings = new Set<string>(simWarnings);
+  let last: Record<string, unknown> = {};
+  for (const row of plan) {
+    let first: Record<string, unknown> | null = null;
+    for (const step of row.steps) {
+      last = applyOneStatus({ node_id: row.node_id, new_status: step, decisionCtx });
+      first = first ?? last;
+      for (const f of (last.changed_files as string[] | undefined) ?? []) changed.add(f);
+    }
+    lines.push(statusLine({ ...last, previous_state: first!.previous_state }));
+  }
+  return {
+    ordered: true,
+    scope: args.scope,
+    ...(args.scope === "change" ? { change: args.change } : {}),
+    lines,
+    changed_files: [...changed],
+    ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
+    ...(args.verbose === true
+      ? {
+          capabilities_recomputed: last.capabilities_recomputed ?? [],
+          stability_recomputed: last.stability_recomputed ?? [],
+        }
+      : {}),
+  };
+}
+
+/** A scoped walk with `skip_blocked`: walks every node that passes and lists the ones left behind. */
+function walkSkippingBlocked(
+  args: StatusArgs,
+  graph: MindPlanGraph,
+  plan: WalkPlan[],
+  skipping: string[],
+  decisionCtx: DecisionContext
+): Record<string, unknown> {
+  const reviewSkippers = new Set(args.skip_review === true ? [] : skipping);
+  // Each row is tried on a clone, so `graph` stays as loaded for describePlan and the writes.
+  const sim = simulateSkippingBlocked(graph, plan, reviewSkippers, decisionCtx);
+  const walkedIds = new Set(sim.walkable.map((row) => row.node_id));
+  const skippedReview = skipping.filter((id) => walkedIds.has(id));
+  const skipped = args.skip_review === true && skippedReview.length > 0 ? { skipped_review: skippedReview } : {};
+  if (args.dry_run) {
+    return {
+      dry_run: true,
+      scope: args.scope,
+      ...(args.scope === "change" ? { change: args.change } : {}),
+      plan: describePlan(sim.walkable, graph),
+      blocked: sim.blocked,
+      ...skipped,
+      ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
+    };
+  }
+  if (sim.walkable.length === 0 && sim.blocked.length > 0) {
+    const reasons = sim.blocked.map((b) => `- "${b.node_id}" -> ${b.step}: ${b.reason}`).join("\n");
+    throw blocked(`no node of this walk can move; nothing was written.\n${reasons}`);
+  }
+  return {
+    ...applyWalk(args, graph, sim.walkable, sim.warnings, decisionCtx),
+    ...(sim.blocked.length ? { blocked: sim.blocked } : {}),
+    ...skipped,
+  };
+}
+
 export function updateNodeStatus(args: StatusArgs): Record<string, unknown> {
   // A ship, promotion, or retirement ends a revision's membership; a dry run writes nothing.
   return args.dry_run ? applyStatusUpdate(args) : withChangeCleanup(() => applyStatusUpdate(args));
@@ -456,10 +598,13 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       .map((n) => ({ node_id: n.id, steps: stepsToTarget(n, args.new_status!) }))
       .filter((row) => row.steps.length > 0);
     const skipping = nodesSkippingReview(plan, graph);
-    const reviewBlock =
-      skipping.length > 0 && args.skip_review !== true ? skipReviewBlocked(skipping) : null;
     // One decision context (config + git probe) serves the validation and every step.
     const decisionCtx = createDecisionContext(projectRoot());
+    if (args.skip_blocked === true) {
+      return walkSkippingBlocked(args, graph, plan, skipping, decisionCtx);
+    }
+    const reviewBlock =
+      skipping.length > 0 && args.skip_review !== true ? skipReviewBlocked(skipping) : null;
     const sim = simulateWalk(plan, decisionCtx);
     const skipped = args.skip_review === true && skipping.length > 0 ? { skipped_review: skipping } : {};
     if (args.dry_run) {
@@ -481,39 +626,9 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
         `${sim.blocked}. Nothing was written: the whole walk is validated before the first transition.`
       );
     }
-    gateWrite(
-      graph,
-      plan.map((row) => row.node_id),
-      "update_node_status",
-      args.scope === "change" ? { change: args.change } : {}
-    );
-    const lines: string[] = [];
-    const changed = new Set<string>();
-    const warnings = new Set<string>(sim.warnings);
-    let last: Record<string, unknown> = {};
-    for (const row of plan) {
-      let first: Record<string, unknown> | null = null;
-      for (const step of row.steps) {
-        last = applyOneStatus({ node_id: row.node_id, new_status: step, decisionCtx });
-        first = first ?? last;
-        for (const f of (last.changed_files as string[] | undefined) ?? []) changed.add(f);
-      }
-      lines.push(statusLine({ ...last, previous_state: first!.previous_state }));
-    }
     return {
-      ordered: true,
-      scope: args.scope,
-      ...(args.scope === "change" ? { change: args.change } : {}),
-      lines,
+      ...applyWalk(args, graph, plan, sim.warnings, decisionCtx),
       ...skipped,
-      changed_files: [...changed],
-      ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
-      ...(verbose
-        ? {
-            capabilities_recomputed: last.capabilities_recomputed ?? [],
-            stability_recomputed: last.stability_recomputed ?? [],
-          }
-        : {}),
     };
   }
 

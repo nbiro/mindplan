@@ -633,6 +633,88 @@ fillAndTick("interactions", "i-b");
   check("the sandbox graph passes the check", r.ok, r.output);
 }
 
+// --- item 9: the full check scans imports of claimed files outside the configured sources ---
+{
+  await call("create_node", { id: "if-ext", type: "Interface", title: "Ext", description: "Partner uses the ext surface" });
+  write("web/ext.ts", 'import { b } from "../src/i-b/b.js";\nexport const ext = b;\n');
+  await call("set_implementation_files", { node_id: "if-ext", files: ["web/ext.ts"] });
+  let r = await call("run_check", {});
+  check(
+    "an Interface file outside sources importing an Interaction it does not expose fails the check",
+    !r.ok && r.failures.some((f) => f.includes('"web/ext.ts"') && f.includes('"edge_type":"exposes"')),
+    r.output
+  );
+  await call("link_nodes", { source_id: "if-ext", target_id: "i-b", edge_type: "exposes" });
+  r = await call("run_check", {});
+  check("exposing the Interaction clears it", r.ok, r.output);
+}
+
+// --- item 10: a scoped walk with skip_blocked ships what passes and leaves the blocked ---
+{
+  for (const id of ["f-ok", "f-bad"]) {
+    await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra", change: "mixed" });
+    fillAndTick("foundations", id);
+  }
+  await call("create_node", { id: "i-mixed", type: "Interaction", title: "Mixed", description: "User does mixed", change: "mixed" });
+  await call("link_nodes", { source_id: "i-mixed", target_id: "j-app", edge_type: "belongs_to" });
+  await call("link_nodes", { source_id: "i-mixed", target_id: "f-bad", edge_type: "depends_on" });
+  fillAndTick("interactions", "i-mixed");
+  write("src/f-ok/ok.ts", "export const ok = 1;\n");
+  write("src/f-bad/bad.ts", 'import { b } from "../i-b/b.js";\nexport const bad = b;\n');
+  write("src/i-mixed/m.ts", "export const m = 1;\n");
+  await call("set_implementation_files", { node_id: "f-ok", files: ["src/f-ok/"] });
+  await call("set_implementation_files", { node_id: "f-bad", files: ["src/f-bad/"] });
+  await call("set_implementation_files", { node_id: "i-mixed", files: ["src/i-mixed/"] });
+
+  const noReview = await call("update_node_status", {
+    scope: "change", change: "mixed", new_status: "ship", skip_blocked: true, dry_run: true,
+  });
+  check(
+    "without skip_review, skip_blocked lists a member that would skip review as blocked instead of shipping it",
+    noReview.plan.length === 0 &&
+      noReview.blocked.some((b) => b.node_id === "f-ok" && b.reason.includes("not in-review yet")),
+    JSON.stringify(noReview)
+  );
+
+  const walk = { scope: "change", change: "mixed", new_status: "ship", skip_review: true };
+  const whole = await blocked("update_node_status", walk);
+  check(
+    "without skip_blocked a walk with a blocked member writes nothing",
+    !!whole && (await state("f-ok")).state === "draft",
+    String(whole)
+  );
+
+  const dry = await call("update_node_status", { ...walk, skip_blocked: true, dry_run: true });
+  check(
+    "a skip_blocked dry run plans only the passing member and lists the blocked ones",
+    dry.plan.every((l) => l.startsWith("f-ok:")) &&
+      dry.blocked.some((b) => b.node_id === "f-bad" && b.step === "in-review" && b.reason.includes("imports:")) &&
+      dry.blocked.some((b) => b.node_id === "i-mixed"),
+    JSON.stringify(dry)
+  );
+
+  const r = await call("update_node_status", { ...walk, skip_blocked: true });
+  check(
+    "skip_blocked ships the passing member and leaves the blocked ones where they were",
+    r.lines.length === 1 &&
+      r.lines[0] === "f-ok: draft -> stable" &&
+      (await state("f-ok")).state === "stable" &&
+      (await state("f-bad")).state === "draft" &&
+      (await state("i-mixed")).state === "draft" &&
+      r.blocked.map((b) => b.node_id).join(",") === "f-bad,i-mixed",
+    JSON.stringify(r)
+  );
+
+  const none = await blocked("update_node_status", { ...walk, skip_blocked: true });
+  check(
+    "a skip_blocked walk where every node is blocked writes nothing",
+    !!none && none.includes("nothing was written") && (await state("f-bad")).state === "draft",
+    String(none)
+  );
+  const stray = await blocked("update_node_status", { node_id: "f-bad", new_status: "ready", skip_blocked: true });
+  check("skip_blocked outside a scoped walk is Blocked", !!stray, String(stray));
+}
+
 await client.close();
 if (failures > 0) {
   console.log(`\nhonesty.test.mjs: ${failures} failure(s)`);

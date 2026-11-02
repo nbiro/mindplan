@@ -33,6 +33,7 @@ export const TOOLS: ToolDef[] = [
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
         "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
         "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +
+        "A scoped walk is all-or-nothing unless skip_blocked: true, which walks every node that passes its gates, leaves each blocked node (and any node that cannot move without it) where it is, and lists them in blocked with the step and reason. " +
         "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
         "A move to in-review of a decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, or a depends_on change) with no decision recorded is Blocked: Decision with the record_decision call. " +
         "A Blocked: Orientation names every unoriented node of the call at once (a scope change walk names orient_for_work({ change })). " +
@@ -71,11 +72,17 @@ export const TOOLS: ToolDef[] = [
           .describe(
             "Scoped walk to ship only: allow moving nodes that are not in-review yet. Each still passes the in-review gate; the result lists skipped_review."
           ),
+        skip_blocked: z
+          .boolean()
+          .optional()
+          .describe(
+            "Scoped walk only: walk every node whose whole walk passes, leave each blocked node where it is (no partial steps), and list them in blocked ({ node_id, step, reason }). Blocked when no node can move."
+          ),
         dry_run: z
           .boolean()
           .optional()
           .describe(
-            "Validate and return the plan and the first Blocked reason without writing anything."
+            "Validate and return the plan and the first Blocked reason without writing anything (with skip_blocked: the walkable plan and every blocked node)."
           ),
         revisions: z
           .array(
