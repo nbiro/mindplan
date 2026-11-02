@@ -161,7 +161,7 @@ function conflictKey(c: RevisionConflict): string {
  * Scalars (title, description, role): the same rule; a revision with no `role` keeps none.
  * Deltas: an add already in new live and a remove no longer in new live drop silently; an
  * `implements` add another node claims live (`implementsOwners`) becomes a claim conflict.
- * Existing section and scalar conflicts are kept. Every base hash moves to new live.
+ * Existing section and scalar conflicts are kept unless new live now reads the revision's text. Every base hash moves to new live.
  * The inputs are never mutated.
  */
 export function rebase(input: RebaseInput): { revision: Revision; body: string } {
@@ -179,6 +179,20 @@ export function rebase(input: RebaseInput): { revision: Revision; body: string }
   const liveSections = splitSections(liveNew.body).filter((s) => !OWNED_HEADINGS.has(s.heading));
   const liveText = new Map(liveSections.map((s) => [s.heading, s.text]));
   const mineHeadings = new Set(mineSections.map((s) => s.heading));
+  // A conflict kept from an earlier rebase is settled once new live reads what the revision reads.
+  const mineText = new Map(mineSections.map((s) => [s.heading, s.text]));
+  const hashOf = (text: string | undefined) => (text === undefined ? undefined : hash(text));
+  const newLiveScalars = scalarHashes(liveNew.scalars);
+  for (let i = conflicts.length - 1; i >= 0; i--) {
+    const c = conflicts[i];
+    const settled =
+      c.kind === "section"
+        ? hashOf(mineText.get(c.section)) === hashOf(liveText.get(c.section))
+        : c.kind === "scalar"
+          ? hash(c.field === "role" ? revision.role ?? "" : revision[c.field]) === newLiveScalars[c.field]
+          : false;
+    if (settled) conflicts.splice(i, 1);
+  }
   const decide = (heading: string, mine: string | undefined): string | undefined => {
     const live = liveText.get(heading);
     const r = carry(

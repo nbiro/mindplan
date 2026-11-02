@@ -103,6 +103,26 @@ export function appendDecisionFile(dir: string, record: DecisionRecord): string 
   return file;
 }
 
+/** Every file name in `dir` (what a ship moves), sorted; empty when it is missing. */
+export function decisionFolderFiles(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => e.name)
+    .sort();
+}
+
+/** Blocked when a decision file of `fromDir` already exists in `toDir` (checked before any move). */
+export function assertNoDecisionClash(fromDir: string, toDir: string): void {
+  const clash = decisionFolderFiles(fromDir).filter((name) => fs.existsSync(path.join(toDir, name)));
+  if (clash.length > 0) {
+    throw new Error(
+      `Blocked: ${clash.map((n) => `"${n}"`).join(", ")} already exist in ${toDir}; no decision file was moved.`
+    );
+  }
+}
+
 /**
  * Moves every decision file of `fromDir` into `toDir` (creating it; used when a revision ships:
  * its decisions join live). Blocked before moving anything when a file of the same name exists in
@@ -111,17 +131,8 @@ export function appendDecisionFile(dir: string, record: DecisionRecord): string 
  */
 export function moveDecisions(fromDir: string, toDir: string): string[] {
   if (!fs.existsSync(fromDir)) return [];
-  const names = fs
-    .readdirSync(fromDir, { withFileTypes: true })
-    .filter((e) => e.isFile())
-    .map((e) => e.name)
-    .sort();
-  const clash = names.filter((name) => fs.existsSync(path.join(toDir, name)));
-  if (clash.length > 0) {
-    throw new Error(
-      `Blocked: ${clash.map((n) => `"${n}"`).join(", ")} already exist in ${toDir}; no decision file was moved.`
-    );
-  }
+  assertNoDecisionClash(fromDir, toDir);
+  const names = decisionFolderFiles(fromDir);
   const touched: string[] = [];
   if (names.length > 0) fs.mkdirSync(toDir, { recursive: true });
   for (const name of names) {

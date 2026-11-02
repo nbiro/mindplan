@@ -47,12 +47,19 @@ import {
   revisionFor,
   scalarHashes,
   sectionHashes,
+  splitParts,
   splitSections,
   withRevision,
   type RebaseLive,
 } from "../f-revision-model/index.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
-import { decisionsDir, moveDecisions, readDecisionFiles } from "./decisions-store.js";
+import {
+  assertNoDecisionClash,
+  decisionFolderFiles,
+  decisionsDir,
+  moveDecisions,
+  readDecisionFiles,
+} from "./decisions-store.js";
 import {
   ATTACHMENTS_DIR,
   attachmentsDir,
@@ -70,6 +77,7 @@ import {
   splitNodeRules,
   validateChangeInput,
   withFreshAtomicOps,
+  withoutAtomicOps,
   withoutOwnedSections,
   writePromotedLive,
 } from "./store.js";
@@ -171,6 +179,7 @@ export function formatRevisionFile(
     `description: ${JSON.stringify(revision.description)}`
   );
   if (revision.role) lines.push(`role: ${revision.role}`);
+  else if (revision.role_removed) lines.push("role_removed: true");
   for (const type of PLANNED_EDGE_TYPES) {
     lines.push(...listLines(`${type}_add`, revision.edges[type]?.add));
     lines.push(...listLines(`${type}_remove`, revision.edges[type]?.remove));
@@ -263,6 +272,8 @@ export function parseRevisionFile(text: string, nodeId: string): { revision: Rev
       throw blocked(`revision "${change}" of "${nodeId}" has invalid Foundation role "${scalars.role}".`);
     }
     revision.role = scalars.role;
+  } else if (scalars.role_removed === "true") {
+    revision.role_removed = true;
   }
   for (const type of PLANNED_EDGE_TYPES) {
     const d = delta(type);
@@ -496,89 +507,227 @@ export function discardRevision(node: MindPlanNode, change: string): { changed_f
   return { changed_files };
 }
 
+/** True when live moved since the revision's recorded `base`: a scalar or level-2 section hash differs. */
+function liveMovedSince(revision: Revision, live: RebaseLive): boolean {
+  if (Object.keys(revision.base.scalars).length === 0) return false;
+  const scalars = scalarHashes(live.scalars);
+  for (const [field, hash] of Object.entries(revision.base.scalars)) if (scalars[field] !== hash) return true;
+  const sections = sectionHashes(live.body);
+  const recorded = revision.base.sections;
+  const keys = new Set([...Object.keys(sections), ...Object.keys(recorded)]);
+  for (const key of keys) if (sections[key] !== recorded[key]) return true;
+  return false;
+}
+
+/** What a rebase can change in a revision's own text: its scalars and each body section. */
+function contentKey(revision: Revision, body: string): string {
+  return JSON.stringify([
+    revision.title,
+    revision.description,
+    revision.role ?? null,
+    revision.role_removed ?? false,
+    sectionHashes(body),
+  ]);
+}
+
+/** Bytes of each file a ship may write or delete (null: absent), to put back when a write fails. */
+type FileSnapshot = Map<string, Buffer | null>;
+
+function snapshotFile(snap: FileSnapshot, abs: string): void {
+  if (snap.has(abs)) return;
+  if (!fs.existsSync(abs)) snap.set(abs, null);
+  else if (fs.statSync(abs).isFile()) snap.set(abs, fs.readFileSync(abs));
+}
+
+function snapshotTree(snap: FileSnapshot, dir: string): void {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const child = path.join(dir, entry.name);
+    if (entry.isDirectory()) snapshotTree(snap, child);
+    else snapshotFile(snap, child);
+  }
+}
+
+/** Puts every snapshotted file back as it was: rewritten, or removed when it did not exist. */
+function restoreSnapshot(snap: FileSnapshot): void {
+  for (const [abs, bytes] of snap) {
+    try {
+      if (bytes === null) {
+        if (fs.existsSync(abs)) fs.rmSync(abs, { force: true, maxRetries: RM_MAX_RETRIES });
+      } else {
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, bytes);
+      }
+    } catch {
+      // Best effort: the remaining files are still put back.
+    }
+  }
+}
+
+/** One sibling revision carried onto the new live, with the readiness reset that came with it. */
+export type RebasedSibling = {
+  change: string;
+  conflicts: RevisionConflict[];
+  /** Present when the rebase changed a `ready` / `in-review` sibling's text: it is `draft` again. */
+  readiness_reset?: { from: NextPipelineState; to: "draft" };
+};
+
 /**
- * Ships the revision of `change`: Blocked when it has unresolved conflicts. Rewrites live from
- * live ⊕ revision (scalars, edges/claims/tests via `applyDelta`, body, role, split_into), sets
- * `state` = `opts.newState`, `shipped_at` = `opts.now`, bumps `revisions` and `churn`, moves the
- * revision's decision files and attachments into live (`moveDecisions`), and deletes its folder.
- * Then rebases every sibling revision of the node onto the new live (`rebase` from
- * f-revision-model, with `implementsOwners` from `graph`) and rewrites each sibling's file.
- * Updates `node` and `node.open_revisions` in memory. Returns every path written or deleted and,
- * per sibling, the conflicts it holds after the rebase.
+ * Ships the revision of `change`: Blocked when it has unresolved conflicts. When live moved in
+ * place since the revision's `base` (a live patch while it was open), the revision is first carried
+ * onto current live with `rebase`; a section or scalar both changed is stored on the revision as a
+ * conflict and the ship is Blocked naming resolve_conflict. Then everything that can Block is
+ * checked before the first write (every sibling revision file parses, no decision file name
+ * clashes with live's), and every sibling's rebase is computed in memory.
+ *
+ * The writes: live from live ⊕ revision (scalars, edges/claims/tests via `applyDelta`, body, role
+ * — cleared when the revision removes it — and the split parts `splitParts` counts linked), with
+ * `state` = `opts.newState`, `shipped_at` = `opts.now`, `revisions` and `churn` bumped; the
+ * revision's decision files and attachments join live; every sibling is rewritten rebased onto the
+ * new live (`implementsOwners` from `graph`), a `ready` / `in-review` sibling whose text the rebase
+ * changed going back to `draft`; the revision folder is deleted. A failing write puts every file
+ * back as it was (and `node` in memory) before the error is rethrown. Returns every path written
+ * or deleted and, per sibling, the conflicts it holds after the rebase.
  */
 export function shipRevision(
   graph: MindPlanGraph,
   node: MindPlanNode,
   change: string,
   opts: { now: string; newState: ProductionState }
-): { changed_files: string[]; rebased: { change: string; conflicts: RevisionConflict[] }[] } {
-  const { revision, body } = loadRevision(node, change);
-  if (revision.conflicts.length > 0) {
+): { changed_files: string[]; rebased: RebasedSibling[] } {
+  const loaded = loadRevision(node, change);
+  if (loaded.revision.conflicts.length > 0) {
     throw blocked(
-      `revision "${change}" of "${node.id}" has unresolved conflicts (${revision.conflicts.map(conflictEntry).join(", ")}); ` +
+      `revision "${change}" of "${node.id}" has unresolved conflicts (${loaded.revision.conflicts.map(conflictEntry).join(", ")}); ` +
         `resolve each with resolve_conflict first.`
     );
   }
-  const changed = new Set<string>();
   const before = liveBody(node);
   const liveOld = liveSide(node, before.body);
 
-  // Decisions first: a name clash Blocks before anything is written.
-  const moved = moveDecisions(revisionDecisionsDir(node, change), decisionsDir(entityDir(node)));
-  for (const abs of moved) changed.add(repoRelative(abs));
+  // The revision onto live as it is now: live may have been patched in place while it was open.
+  let revision = loaded.revision;
+  let body = loaded.body;
+  if (liveMovedSince(revision, liveOld)) {
+    const own = rebase({ liveOld, liveNew: liveOld, revision, revisionBody: body, nodeId: node.id });
+    if (own.revision.conflicts.length > 0) {
+      storeRevision(node, own.revision, own.body);
+      throw blocked(
+        `live "${node.id}" changed in place since revision "${change}" last started from it, and both edited ` +
+          `${own.revision.conflicts.map(conflictEntry).join(", ")}; the revision now holds those conflicts. ` +
+          `Resolve each with resolve_conflict({ node_id: "${node.id}", change: "${change}", target, take }), then ship again.`
+      );
+    }
+    revision = own.revision;
+    body = own.body;
+  }
+
+  // Everything that can Block, before the first write.
+  const siblings = (node.open_revisions ?? [])
+    .filter((r) => r.change !== change)
+    .map((r) => ({ change: r.change, ...loadRevision(node, r.change) }));
+  const fromDecisions = revisionDecisionsDir(node, change);
+  const toDecisions = decisionsDir(entityDir(node));
+  assertNoDecisionClash(fromDecisions, toDecisions);
 
   const edges: Partial<Record<PlannedEdgeType, string[]>> = {};
   for (const type of PLANNED_EDGE_TYPES) edges[type] = applyDelta(node[type], revision.edges[type]);
-  const newParts = (revision.split_into ?? []).filter((id) => !(node.split_into ?? []).includes(id));
+  const implementsNew = applyDelta(node.implements, revision.implements);
+  const testsNew = applyDelta(node.tests, revision.tests);
+  const role = revision.role_removed ? undefined : revision.role ?? node.role;
+  // The parts the dry-run walk counts: marked and linked (`splitParts`).
+  const newParts = splitParts(graph, withRevision({ ...node, open_revisions: [revision] }, change));
   // Live decisions still in the `## Decisions` section stay there until the migration splits them.
   const liveDecisionSection = splitNodeDecisions(splitNodeRules(before.body).body).section;
   const eol = body.includes("\r\n") ? "\r\n" : "\n";
-  writePromotedLive(node, opts.newState, opts.now, {
-    title: revision.title,
-    description: revision.description,
-    role: revision.role ?? node.role,
-    edges,
-    implements: applyDelta(node.implements, revision.implements),
-    tests: applyDelta(node.tests, revision.tests),
-    aliases: [...(node.aliases ?? [])],
-    change,
-    splitInto: newParts.length > 0 ? newParts : undefined,
-    body: joinNodeDecisions(withoutOwnedSections(body), liveDecisionSection),
-    eol,
-    separator: `${eol}${eol}`,
-  });
-  changed.add(markdownRelativePath(node, "current"));
-  if (revision.decisions?.length) node.decisions = [...(node.decisions ?? []), ...revision.decisions];
+  const promotedBody = joinNodeDecisions(withoutOwnedSections(body), liveDecisionSection);
 
-  // Attachments join live.
-  const revAtt = revisionAttachmentsDir(node, change);
-  if (fs.existsSync(revAtt)) {
-    const dest = attachmentsDir(node);
-    fs.mkdirSync(dest, { recursive: true });
-    for (const entry of fs.readdirSync(revAtt, { withFileTypes: true })) {
-      if (!entry.isFile() || entry.name === ".gitkeep") continue;
-      copyFileRetry(path.join(revAtt, entry.name), path.join(dest, entry.name));
-      changed.add(repoRelative(path.join(dest, entry.name)));
-    }
-  }
-  for (const rel of deleteRevisionFolder(node, change)) changed.add(rel);
-  dropRevision(node, change);
-
-  // Siblings move onto the new live.
+  // Siblings onto the new live, in memory.
   const implementsOwners = new Map<string, string>();
   for (const other of graph.nodes) {
     if (other.id === node.id || isInactiveNode(other)) continue;
     for (const entry of other.implements ?? []) if (!implementsOwners.has(entry)) implementsOwners.set(entry, other.id);
   }
-  const liveNew = { ...liveSide(node, liveBody(node).body), implementsOwners };
-  const rebased: { change: string; conflicts: RevisionConflict[] }[] = [];
-  for (const sibling of [...(node.open_revisions ?? [])]) {
-    const current = loadRevision(node, sibling.change);
-    const out = rebase({ liveOld, liveNew, revision: current.revision, revisionBody: current.body, nodeId: node.id });
-    changed.add(storeRevision(node, out.revision, out.body));
-    rebased.push({ change: sibling.change, conflicts: out.revision.conflicts });
+  const liveEdgesNew: Partial<Record<PlannedEdgeType, string[]>> = {};
+  for (const type of PLANNED_EDGE_TYPES) if (edges[type]!.length) liveEdgesNew[type] = edges[type];
+  const liveNew = {
+    scalars: { title: revision.title, description: revision.description, role },
+    body: withoutAtomicOps(promotedBody, node.type),
+    edges: liveEdgesNew,
+    implements: implementsNew,
+    tests: testsNew,
+    implementsOwners,
+  };
+  const carried = siblings.map((s) => {
+    const out = rebase({ liveOld, liveNew, revision: s.revision, revisionBody: s.body, nodeId: node.id });
+    let readiness_reset: RebasedSibling["readiness_reset"];
+    const state = out.revision.state;
+    if ((state === "ready" || state === "in-review") && contentKey(out.revision, out.body) !== contentKey(s.revision, s.body)) {
+      readiness_reset = { from: state, to: "draft" };
+      out.revision.state = "draft";
+    }
+    return { change: s.change, out, readiness_reset };
+  });
+
+  // The writes, put back as they were if one fails.
+  const snap: FileSnapshot = new Map();
+  snapshotFile(snap, path.join(projectRoot(), ...markdownRelativePath(node, "current").split("/")));
+  snapshotTree(snap, revisionDir(entityDir(node), change));
+  for (const name of decisionFolderFiles(fromDecisions)) snapshotFile(snap, path.join(toDecisions, name));
+  const revAtt = revisionAttachmentsDir(node, change);
+  const attachmentNames = fs.existsSync(revAtt)
+    ? fs.readdirSync(revAtt, { withFileTypes: true }).filter((e) => e.isFile() && e.name !== ".gitkeep").map((e) => e.name)
+    : [];
+  for (const name of attachmentNames) snapshotFile(snap, path.join(attachmentsDir(node), name));
+  for (const s of siblings) snapshotFile(snap, revisionFilePath(node, s.change));
+  const nodeBefore = structuredClone(node);
+
+  const changed = new Set<string>();
+  try {
+    for (const abs of moveDecisions(fromDecisions, toDecisions)) changed.add(repoRelative(abs));
+    writePromotedLive(node, opts.newState, opts.now, {
+      title: revision.title,
+      description: revision.description,
+      role,
+      edges,
+      implements: implementsNew,
+      tests: testsNew,
+      aliases: [...(node.aliases ?? [])],
+      change,
+      splitInto: newParts.length > 0 ? newParts : undefined,
+      body: promotedBody,
+      eol,
+      separator: `${eol}${eol}`,
+    });
+    changed.add(markdownRelativePath(node, "current"));
+    if (revision.decisions?.length) node.decisions = [...(node.decisions ?? []), ...revision.decisions];
+
+    // Attachments join live.
+    if (attachmentNames.length > 0) {
+      const dest = attachmentsDir(node);
+      fs.mkdirSync(dest, { recursive: true });
+      for (const name of attachmentNames) {
+        copyFileRetry(path.join(revAtt, name), path.join(dest, name));
+        changed.add(repoRelative(path.join(dest, name)));
+      }
+    }
+    for (const c of carried) changed.add(storeRevision(node, c.out.revision, c.out.body));
+    for (const rel of deleteRevisionFolder(node, change)) changed.add(rel);
+    dropRevision(node, change);
+  } catch (err) {
+    restoreSnapshot(snap);
+    for (const key of Object.keys(node)) delete (node as unknown as Record<string, unknown>)[key];
+    Object.assign(node, nodeBefore);
+    throw err;
   }
-  return { changed_files: [...changed], rebased };
+  return {
+    changed_files: [...changed],
+    rebased: carried.map((c) => ({
+      change: c.change,
+      conflicts: c.out.revision.conflicts,
+      ...(c.readiness_reset ? { readiness_reset: c.readiness_reset } : {}),
+    })),
+  };
 }
 
 /**
@@ -612,7 +761,7 @@ export function writeRevisionDelta(
 
 /**
  * Patches the revision's scalars: a key present in `patch` replaces the stored value (`role`
- * `null` and `change_ref` `""` clear it); sets `updated_at`. Blocked when the node has no
+ * `null` removes the role, so the ship clears live's; `change_ref` `""` clears it); sets `updated_at`. Blocked when the node has no
  * revision of `change`.
  */
 export function writeRevisionScalars(
@@ -634,8 +783,13 @@ export function writeRevisionScalars(
   const { revision, body } = loadRevision(node, change);
   if (patch.title !== undefined) revision.title = patch.title;
   if (patch.description !== undefined) revision.description = patch.description;
-  if (patch.role === null) delete revision.role;
-  else if (patch.role !== undefined) revision.role = patch.role;
+  if (patch.role === null) {
+    delete revision.role;
+    revision.role_removed = true;
+  } else if (patch.role !== undefined) {
+    revision.role = patch.role;
+    delete revision.role_removed;
+  }
   if (patch.change_ref === "") delete revision.change_ref;
   else if (patch.change_ref !== undefined) revision.change_ref = patch.change_ref;
   for (const key of ["attributed", "split_into"] as const) {
@@ -759,9 +913,14 @@ export function resolveConflict(
     if (take === "live" || take === "text") {
       const value = take === "live" ? (field === "role" ? node.role ?? "" : node[field]) : text!;
       if (field === "role") {
-        if (value === "") delete revision.role;
-        else if (isFoundationRole(value)) revision.role = value;
-        else throw blocked(`invalid Foundation role "${value}". Allowed: assembler, infra, design-system, adapter.`);
+        // Live with no role, taken: the revision removes the role (its ship clears it).
+        if (value === "") {
+          delete revision.role;
+          revision.role_removed = true;
+        } else if (isFoundationRole(value)) {
+          revision.role = value;
+          delete revision.role_removed;
+        } else throw blocked(`invalid Foundation role "${value}". Allowed: assembler, infra, design-system, adapter.`);
       } else {
         revision[field] = value;
       }

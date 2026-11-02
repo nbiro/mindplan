@@ -376,6 +376,35 @@ function body(sections) {
   assert.equal(again.body, out.body);
   assert.deepEqual(again.revision.conflicts, []);
   ok("rebase: rebasing onto an unchanged live changes nothing");
+
+  // A kept conflict is settled once new live reads the revision's text.
+  const caughtUpBody = body([
+    ["_preamble", "# Store"],
+    ["## Untouched", "u0"],
+    ["## LiveOnly", "l1"],
+    ["## RevOnly", "r0"],
+    ["## Both", "b-rev"],
+    ["## Same", "s-same"],
+    ["## GoneButEdited", "ge-other"],
+    ["## Added", "a1"],
+  ]);
+  const caughtUpScalars = { ...liveNewScalars, title: "Store v2" };
+  const settled = rebase({
+    liveOld: { scalars: liveNewScalars, body: liveNewBody },
+    liveNew: { scalars: caughtUpScalars, body: caughtUpBody, edges: { depends_on: ["f-already", "f-base", "f-old"] } },
+    revision: r,
+    revisionBody: out.body,
+    nodeId: "f-store",
+  });
+  assert.deepEqual(
+    settled.revision.conflicts.map((c) => JSON.stringify(c)).sort(),
+    [
+      JSON.stringify({ kind: "claim", path: "src/taken/", owner: "f-other" }),
+      JSON.stringify({ kind: "section", section: "## GoneButEdited" }),
+    ].sort(),
+    "the title and ## Both conflicts settle; ## GoneButEdited still differs"
+  );
+  ok("rebase: a kept section or scalar conflict drops when new live now reads the revision's text");
 }
 
 // --- decision files -----------------------------------------------------------------------------

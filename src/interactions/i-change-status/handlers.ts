@@ -402,6 +402,7 @@ function promoteInMemory(
   if (next.decisions?.length) node.decisions = [...next.decisions];
   else delete node.decisions;
   if (next.role) node.role = next.role;
+  else if (revisionFor(node, change)?.role_removed) delete node.role;
   const rest = (node.open_revisions ?? []).filter((r) => r.change !== change);
   if (rest.length) node.open_revisions = rest;
   else delete node.open_revisions;
@@ -888,12 +889,16 @@ function applyRevisionStatus(
   const previous = revisionFor(node, change)!.state;
   const now = new Date().toISOString();
   let files: string[];
-  let rebased: { change: string; conflicts: string[] }[] = [];
+  let rebased: { change: string; conflicts: string[]; readiness_reset?: { from: string; to: string } }[] = [];
   let promoted = false;
   if (resolved.promote_next) {
     const shipped = shipRevision(graph, node, change, { now, newState: resolved.state as ProductionState });
     files = shipped.changed_files;
-    rebased = shipped.rebased.map((r) => ({ change: r.change, conflicts: r.conflicts.map(conflictLabel) }));
+    rebased = shipped.rebased.map((r) => ({
+      change: r.change,
+      conflicts: r.conflicts.map(conflictLabel),
+      ...(r.readiness_reset ? { readiness_reset: r.readiness_reset } : {}),
+    }));
     promoted = true;
     rebuildOutgoingEdges(graph, node);
   } else if (isNextPipelineState(resolved.state)) {

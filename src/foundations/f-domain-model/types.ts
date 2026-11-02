@@ -154,8 +154,10 @@ export interface Revision {
   updated_at: string;
   title: string;
   description: string;
-  /** Proposed Foundation role; absent keeps the live role. */
+  /** Proposed Foundation role; absent keeps the live role (unless `role_removed`). */
   role?: FoundationRole;
+  /** True when the revision removes the live role (no `role`): its ship clears live's. */
+  role_removed?: boolean;
   /** Outgoing edge deltas by edge type; a missing type carries live unchanged. */
   edges: Partial<Record<PlannedEdgeType, EdgeDelta>>;
   /** Owned-file claim delta. */

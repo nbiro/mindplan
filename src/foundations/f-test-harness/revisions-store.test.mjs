@@ -292,6 +292,78 @@ foundation("f-core");
   ok("graph cache: a revision file edit and a new decision file re-parse the node");
 }
 
+// --- ship records only the split parts the walk counts (marked and linked) ---------------------
+
+{
+  foundation("f-linked");
+  foundation("f-unlinked");
+  foundation("f-splitter");
+  openRevision(node("f-splitter"), "s", {});
+  writeRevisionScalars(node("f-splitter"), "s", { split_into: ["f-linked", "f-unlinked"] });
+  writeRevisionDelta(node("f-splitter"), "s", "depends_on", { add: ["f-linked"], remove: [] });
+  const g = graph();
+  shipRevision(g, g.nodes.find((x) => x.id === "f-splitter"), "s", { now: "2026-05-02T00:00:00.000Z", newState: "stable" });
+  assert.deepEqual(node("f-splitter").split_into, ["f-linked"]);
+  ok("ship records a marked split part only when the edge that links it is in place");
+}
+
+// --- a ship whose write fails puts every file back -----------------------------------------------
+
+{
+  const dir = foundation("f-restore");
+  openRevision(node("f-restore"), "r", {});
+  openRevision(node("f-restore"), "q", {});
+  appendDecisionFile(revisionDecisionsDir(node("f-restore"), "r"), record("d-restore", "2026-05-03"));
+  const revAtt = path.join(revisionDir(dir, "r"), "attachments");
+  fs.mkdirSync(revAtt, { recursive: true });
+  fs.writeFileSync(path.join(revAtt, "a.txt"), "attachment\n");
+  // A directory where the attachment must land makes the copy fail after live was written.
+  fs.mkdirSync(path.join(dir, "attachments", "a.txt"), { recursive: true });
+  const liveFile = path.join(dir, "f-restore.mdx");
+  const liveBefore = fs.readFileSync(liveFile, "utf-8");
+  const revFileR = revisionFilePath(node("f-restore"), "r");
+  const revBefore = fs.readFileSync(revFileR, "utf-8");
+  const g = graph();
+  const n = g.nodes.find((x) => x.id === "f-restore");
+  assert.throws(() => shipRevision(g, n, "r", { now: "2026-05-04T00:00:00.000Z", newState: "stable" }));
+  assert.equal(fs.readFileSync(liveFile, "utf-8"), liveBefore, "live is put back");
+  assert.equal(fs.readFileSync(revFileR, "utf-8"), revBefore, "the revision file is put back");
+  assert.ok(fs.existsSync(path.join(revisionDecisionsDir(n, "r"), "d-restore.md")), "the decision is back in the revision");
+  assert.ok(!fs.existsSync(path.join(dir, "decisions", "d-restore.md")), "and not left in live");
+  assert.deepEqual(n.open_revisions.map((r) => r.change), ["q", "r"]);
+  assert.equal(n.state, "stable");
+  assert.deepEqual(node("f-restore").open_revisions.map((r) => r.change), ["q", "r"]);
+  fs.rmSync(path.join(dir, "attachments", "a.txt"), { recursive: true, force: true });
+  ok("a ship that fails after its first write restores live, the revision, and its decisions");
+}
+
+// --- a revision can remove the live role ---------------------------------------------------------
+
+{
+  foundation("f-role", { extra: ["role: infra"] });
+  openRevision(node("f-role"), "norole", {});
+  writeRevisionScalars(node("f-role"), "norole", { role: null });
+  const file = revisionFilePath(node("f-role"), "norole");
+  assert.match(fs.readFileSync(file, "utf-8"), /^role_removed: true$/m);
+  assert.equal(node("f-role").open_revisions[0].role_removed, true);
+  const g = graph();
+  shipRevision(g, g.nodes.find((x) => x.id === "f-role"), "norole", { now: "2026-05-05T00:00:00.000Z", newState: "stable" });
+  assert.equal(node("f-role").role, undefined);
+
+  // resolve_conflict take live on a role conflict while live has no role removes the role.
+  openRevision(node("f-role"), "conflicted", {});
+  const conflicted = node("f-role").open_revisions[0];
+  fs.writeFileSync(
+    revisionFilePath(node("f-role"), "conflicted"),
+    formatRevisionFile("f-role", "Foundation", { ...conflicted, role: "adapter", conflicts: [{ kind: "scalar", field: "role" }] }, bodyOf(revisionFilePath(node("f-role"), "conflicted")))
+  );
+  resolveConflict(node("f-role"), "conflicted", "role", "live");
+  const resolved = node("f-role").open_revisions[0];
+  assert.equal(resolved.role, undefined);
+  assert.equal(resolved.role_removed, true);
+  ok("role removal is stored on the revision and clears live's role at ship");
+}
+
 // --- a CRLF node gets CRLF revision files -------------------------------------------------------
 
 {

@@ -185,6 +185,11 @@ for (const new_status of SHIP) {
   );
   const b = read(revFile("b"));
   check("b's body carries A's spec and keeps its own purpose", b.includes("Spec from A.") && b.includes("Purpose from B."), b);
+  check(
+    "a ready sibling whose text the rebase changed goes back to draft, reported in rebased",
+    JSON.stringify(rebasedB?.readiness_reset) === JSON.stringify({ from: "ready", to: "draft" }) && /^state: draft$/m.test(b),
+    JSON.stringify(rebasedB)
+  );
 }
 
 // --- C edits the same section as B; shipping B leaves C with a section conflict ---
@@ -193,7 +198,7 @@ for (const new_status of SHIP) {
   setSection(revFile("c"), "Purpose", "Purpose from C.");
   readyRevision("c");
 
-  for (const new_status of ["in-progress", "in-review"]) {
+  for (const new_status of ["ready", "in-progress", "in-review"]) {
     await call("update_node_status", { node_id: "f-sub", change: "b", new_status });
   }
   const shipB = await call("update_node_status", { node_id: "f-sub", change: "b", new_status: "ship" });
@@ -243,6 +248,40 @@ for (const new_status of SHIP) {
     last.change === "e" && !exists("mindplan/foundations/f-sub/revisions") && last.next_state === null && !last.revisions,
     JSON.stringify(last)
   );
+}
+
+// --- live patched in place while a revision is open: the ship carries the revision onto it ---
+{
+  const walkToShip = async (change) => {
+    readyRevision(change);
+    for (const new_status of ["ready", "in-progress", "in-review"]) {
+      await call("update_node_status", { node_id: "f-sub", change, new_status });
+    }
+    return raw("update_node_status", { node_id: "f-sub", change, new_status: "ship" });
+  };
+  await call("open_next", { node_id: "f-sub", change: "x" });
+  setSection(revFile("x"), "Purpose", "Purpose from X.");
+  await call("patch_node_territory", { node_id: "f-sub", slot: "current", section: "## Shared Substrate Spec", text: "Spec patched in place." });
+  const shipX = await walkToShip("x");
+  const liveX = read(LIVE);
+  check(
+    "a ship keeps an in-place live edit to a section the revision did not touch",
+    !shipX.error && liveX.includes("Spec patched in place.") && liveX.includes("Purpose from X."),
+    shipX.text + "\n" + liveX
+  );
+
+  await call("open_next", { node_id: "f-sub", change: "w" });
+  setSection(revFile("w"), "Purpose", "Purpose from W.");
+  await call("patch_node_territory", { node_id: "f-sub", slot: "current", section: "## Purpose", text: "Purpose patched in place." });
+  const shipW = await walkToShip("w");
+  check(
+    "a ship over an in-place edit of the same section is Blocked with a section conflict naming resolve_conflict",
+    shipW.error && shipW.text.includes("section:## Purpose") && shipW.text.includes("resolve_conflict") &&
+      /conflicts:\r?\n\s+- "?section:## Purpose/.test(read(revFile("w"))) &&
+      read(LIVE).includes("Purpose patched in place."),
+    shipW.text
+  );
+  await call("discard_next", { node_id: "f-sub", change: "w" });
 }
 
 // --- a hub Foundation with three dependents takes three changes at once; all ship in sequence ---
