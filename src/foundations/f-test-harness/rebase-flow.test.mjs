@@ -369,6 +369,24 @@ for (const new_status of SHIP) {
     !!dup && dup.includes("duplicate") && read(revFile("dup")) === before,
     String(dup)
   );
+  // With two revisions open, an item omitting change cannot resolve: each such item Blocks on its
+  // own with the real reason, not as a duplicate of the other.
+  await call("open_next", { node_id: "f-sub", change: "dup2" });
+  const unresolved = await blocked("update_node_status", {
+    revisions: [
+      { node_id: "f-sub", new_status: "ready" },
+      { node_id: "f-sub", new_status: "ready" },
+    ],
+  });
+  const itemLines = (unresolved ?? "").split("\n").filter((l) => l.startsWith('- "f-sub"'));
+  check(
+    "two items omitting change on a node with several revisions each Block for the missing change, not as duplicates",
+    !!unresolved && !unresolved.includes("duplicate") && itemLines.length === 2 &&
+      itemLines.every((l) => /"dup", "dup2"|pass change/.test(l)) &&
+      read(revFile("dup")) === before,
+    String(unresolved)
+  );
+  await call("discard_next", { node_id: "f-sub", change: "dup2" });
   await call("discard_next", { node_id: "f-sub", change: "dup" });
 }
 

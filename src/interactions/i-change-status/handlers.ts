@@ -227,12 +227,13 @@ function orderStatusRevisions(items: StatusRevision[]): StatusRevision[] {
       }
       // A node may move several of its open revisions, once per change. Keyed on the revision the
       // item means, so an omitted change and the same change named are one revision; an item
-      // whose change does not resolve keeps its own key and Blocks on its own when tried.
-      let change = item.change ?? "";
+      // whose change does not resolve keeps a key of its own and Blocks on its own when tried.
+      let change: string;
       try {
         change = revisionChangeFor(node, item.new_status, item.change) ?? "";
       } catch {
-        // Reported by the item itself.
+        // Reported by the item itself (e.g. several open revisions and no change).
+        return { item, index, tier: STATUS_TIER[node.type] ?? 99 };
       }
       const key = `${item.node_id}@${change}`;
       if (ids.has(key)) {
