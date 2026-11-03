@@ -4,16 +4,17 @@ type: Foundation
 title: "Graph migrations"
 description: "Infra — the ordered, idempotent graph migrations (legacy filenames and config, shipped Atomic Ops, mirror twins, revision backfill, retired agent files, change labels on shipped nodes), the migration level and stamp, the version gate, and the tree diff setup and upgrade report."
 state: stable
-shipped_at: 2026-11-01T11:12:14.234Z
-revisions: 4
-churn: 3.962
+shipped_at: 2026-11-03T08:20:36.136Z
+revisions: 5
+churn: 4.794
 created_at: 2026-10-31T19:40:48.290Z
-updated_at: 2026-11-01T11:12:14.234Z
+updated_at: 2026-11-03T08:20:36.136Z
 depends_on:
-  - f-territory-store
-  - f-source-index
   - f-compiler-rules
   - f-domain-model
+  - f-revision-model
+  - f-source-index
+  - f-territory-store
 implements:
   - src/foundations/f-graph-migrations/
 tests:
@@ -55,6 +56,8 @@ Intended files: `src/foundations/f-graph-migrations/` (`migrations.ts`, `status.
 - **Tree diff (`tree.ts`).** `snapshotTree()` maps every file under `mindplan/` (`map.md` included) to a content hash; `changedSince(snapshot)` returns the repo-relative paths added, changed, or deleted since, sorted. Setup and upgrade report their `changed_files` with it, so every `mindplan/` path they touch is listed
 
 Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain-model`.
+
+- **Migration level 4 (0.18.0).** Moves each `<id>.next.mdx` and `next-attachments/` to `revisions/<change>/` (a next file without a change gets `rev-<id>`), turns its snapshot edges, claims, and tests into deltas against live, and records base hashes from the current live file; splits every `## Decisions` section into `decisions/<decision-id>.md` files; removes the tracked `mindplan/map.md` and adds it to `mindplan/.gitignore`. A frozen copy of the old next-file reader lives in `legacy-next.ts`. The report lists `revisionsMoved`, `decisionsSplit`, and `mapIgnored`; every step is idempotent
 
 ## Acceptance Criteria
 

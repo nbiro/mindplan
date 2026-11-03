@@ -4,11 +4,11 @@ type: Foundation
 title: "Plan views"
 description: "Infra — read payloads several read actions share: a node's blast radius (dependents, affected files by owner, tests, rules impact, decisions) and the rules version tag."
 state: stable
-shipped_at: 2026-11-01T11:12:13.993Z
-revisions: 2
-churn: 1.978
+shipped_at: 2026-11-03T08:20:36.314Z
+revisions: 3
+churn: 2.894
 created_at: 2026-10-31T11:57:22.526Z
-updated_at: 2026-11-01T11:12:13.993Z
+updated_at: 2026-11-03T08:20:36.314Z
 depends_on:
   - f-compiler-rules
   - f-graph-search
@@ -40,6 +40,8 @@ Intended files: `src/foundations/f-plan-views/` (`views.ts`)
 - `isRetired(node)`
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-source-index`.
+
+- **Open revisions (0.18.0).** The blast radius of a node or a change reads `graphUnder(graph, change)` for a change and lists a node's open revisions by change
 
 ## Acceptance Criteria
 

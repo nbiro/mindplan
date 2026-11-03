@@ -4,16 +4,17 @@ type: Interaction
 title: "Claim files"
 description: "Agent claims the files a node owns, including in-place growth on a shipped node and attributed files, and links the tests that verify the node."
 state: stable
-shipped_at: 2026-10-31T23:05:25.356Z
-revisions: 2
-churn: 1.99
+shipped_at: 2026-11-03T08:20:37.865Z
+revisions: 3
+churn: 2.883
 created_at: 2026-10-31T11:58:03.719Z
-updated_at: 2026-11-01T10:53:11.371Z
+updated_at: 2026-11-03T08:20:37.865Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-claim-files/
@@ -48,6 +49,8 @@ Intended files: `src/interactions/i-claim-files/` (`handlers.ts`, `tools.ts`).
 - Orientation gate on `node_id`
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
+
+- **Add and remove (0.18.0).** `set_implementation_files` and `set_test_files` take `add: [...]` and `remove: [...]` (the documented default) and replace the whole list only with `files` plus `replace: true`; `files` without `replace` is Blocked naming both forms. On a node with open revisions they write deltas to the revision `change` picks; `tests` written without a revision still go to live
 
 ## Acceptance Criteria
 

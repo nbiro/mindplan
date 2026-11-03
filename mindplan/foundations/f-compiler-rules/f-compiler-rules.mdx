@@ -4,18 +4,19 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, additivity), change members (revisions, planned sources), checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-10-31T23:05:24.860Z
-revisions: 26
-churn: 14.708
+shipped_at: 2026-11-03T08:20:35.735Z
+revisions: 27
+churn: 14.919
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-01T10:53:07.670Z
+updated_at: 2026-11-03T08:20:35.735Z
 split_at: 8
 split_into:
   - f-source-index
 depends_on:
   - f-domain-model
-  - f-territory-store
+  - f-revision-model
   - f-source-index
+  - f-territory-store
 implements:
   - src/foundations/f-compiler-rules/
 tests:
@@ -104,6 +105,8 @@ Intended files: `src/foundations/f-compiler-rules/`
 Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 - **Description warnings.** `descriptionWarnings(node)` (`integrity.ts`) returns `description: …` warnings for a non-retired node's active-slot description: empty; equal to the title (letters and digits compared, case ignored); longer than `DESCRIPTION_MAX_CHARS` (300); an Interaction's that contains none of a loose list of actor words; or, except on a Bug (whose description describes a regression), revision wording (`now`, `no longer`, `was changed to`, `used to be`, `previously`, `anymore`). Heuristics, so warnings only
+
+- **Open revisions (0.18.0).** Every gate (Infrastructure First, Behavior First, Coverage, imports, ownership, shape, the decision gate, the Completion Check) judges a revision against `graphUnder(graph, change)`: live plus that change only. `changeMembers` and `changesWithRevisions` read `open_revisions`. A move to `in-review` is Blocked while the revision has `conflicts`, naming `resolve_conflict`. `revisionHasDecision` reads decision files and accepts a decision whose `nodes` lists the node. One import and ownership implementation serves the full check and the per-transition gates
 
 ## Acceptance Criteria
 

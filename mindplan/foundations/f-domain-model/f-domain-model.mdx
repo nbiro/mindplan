@@ -4,11 +4,11 @@ type: Foundation
 title: "Domain model"
 description: "Infra — node types and edges (with `mounts`), planned edges, implements claims, attributed files, `added_claims`, `tests`, Foundation roles, rules and decision types, change ids that group open revisions, and the revision count with the last split."
 state: stable
-shipped_at: 2026-11-01T11:12:13.781Z
-revisions: 19
-churn: 12.056
+shipped_at: 2026-11-03T08:20:34.500Z
+revisions: 20
+churn: 12.543
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-11-01T11:12:13.781Z
+updated_at: 2026-11-03T08:20:34.500Z
 implements:
   - src/foundations/f-domain-model/
 tests:
@@ -62,6 +62,8 @@ Depends on: none.
 
 - **Revision count and split record.** `MindPlanNode.revisions?: number` — how many times the node shipped (first ship and each promotion), on the live file of a shipped Foundation, Interaction, or Interface; absent on a node that never shipped or predates the field until init backfills it. `split_at?: number` — the revision at which the node last split parts out of itself; `split_into?: string[]` — the ids of the parts it split into, across every split. `churn?: number` — a decayed ship count as of `shipped_at`: each ship sets it to `previous × ½^(days since the previous ship / half-life) + 1`, and a split sets it to 0. All four are server-owned frontmatter, written only by ship and init; current state, not a log (git keeps the history). Not edges: `split_into` changes no import rule and no blast radius.
 - **`keep_whole` decisions.** `DecisionRecord.keep_whole?: boolean` — the owner decided the node stays one node (for example auth, where every change is a security change). While such a decision is active, hotspot detection skips the node; superseding it turns detection back on.
+
+- **Open revisions (0.18.0).** `types.ts` defines `EdgeDelta`, `RevisionConflict`, `Revision`, and `MindPlanNode.open_revisions?: Revision[]` (one per change id, shipped nodes only). `next?: NextSlot` stays as a view field that the store never fills: `withRevision` (`f-revision-model`) fills it so gate code keeps reading one slot. `activeChange`, `activeDecisions`, and `isShippedWithoutNext` take an optional change; a decision record gains optional `nodes`
 
 ## Acceptance Criteria
 

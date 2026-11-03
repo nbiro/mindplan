@@ -4,25 +4,25 @@ type: Foundation
 title: "Graph search"
 description: "Infra — ranks nodes for a query by fusing keyword and semantic results from the search index (reciprocal rank fusion plus a small graph boost, an exact id always first), falls back to token scoring when the index or model is unavailable, expands graph neighborhoods, resolves which nodes' rules and decisions apply to a node (and which nodes a node's rules reach), computes whether a decision is superseded, and lists decisions by node, change, or graph."
 state: stable
-shipped_at: 2026-10-26T00:04:46.247Z
-revisions: 9
-churn: 0
-split_at: 9
+shipped_at: 2026-11-03T08:20:34.716Z
+revisions: 10
+churn: 1
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-11-01T10:53:08.431Z
+updated_at: 2026-11-03T08:20:34.716Z
+split_at: 9
+split_into:
+  - f-search-index
 depends_on:
   - f-domain-model
   - f-search-index
 implements:
   - src/foundations/f-graph-search/
-role: infra
 tests:
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/search-eval.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/search.test.mjs
-split_into:
-  - f-search-index
+role: infra
 ---
 
 # Graph search
@@ -68,6 +68,8 @@ Package: `src/foundations/f-graph-search/`
   - `generateDecisionId(graph, text)` — `d-` plus a slug of the decision's first words, with a numeric suffix when taken
 
 Depends on: `f-domain-model`, `f-search-index`.
+
+- **Open revisions (0.18.0).** Search docs index every open revision's title, description, and headings tagged with its change; decision listing reads decision files (node folder and revision folders) and supersession works across them
 
 ## Acceptance Criteria
 

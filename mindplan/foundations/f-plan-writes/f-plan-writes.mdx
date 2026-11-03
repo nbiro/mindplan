@@ -4,17 +4,19 @@ type: Foundation
 title: "Plan writes"
 description: "Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it."
 state: stable
-shipped_at: 2026-10-31T23:05:25.005Z
-revisions: 2
-churn: 1.99
+shipped_at: 2026-11-03T08:20:36.842Z
+revisions: 3
+churn: 2.883
 created_at: 2026-10-31T11:57:22.450Z
-updated_at: 2026-10-31T23:05:25.005Z
+updated_at: 2026-11-03T08:20:36.842Z
 depends_on:
-  - f-territory-store
   - f-compiler-rules
   - f-graph-search
-  - f-view-projection
   - f-orientation-ledger
+  - f-plan-views
+  - f-revision-model
+  - f-territory-store
+  - f-view-projection
 implements:
   - src/foundations/f-plan-writes/
 tests:
@@ -49,6 +51,8 @@ Intended files: `src/foundations/f-plan-writes/` (`writes.ts`)
 No tool handlers live here; each write action owns its own.
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-orientation-ledger`, `f-view-projection`.
+
+- **Open revisions (0.18.0).** `mutationTail` reports `revisions: [{ change, state }]` for a node with open revisions instead of one `next_state`; `withChangeCleanup` compares the set of changes with open revisions before and after a write; the map refresh still runs but `mindplan/map.md` is never in `changed_files`
 
 ## Acceptance Criteria
 

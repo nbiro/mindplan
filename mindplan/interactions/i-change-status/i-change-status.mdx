@@ -4,16 +4,17 @@ type: Interaction
 title: "Change a node's status"
 description: "Agent moves a node along the build or bug pipeline: one node, an ordered batch, or a scoped walk with dry run that can walk past blocked members; ship and promotion count revisions and record declared splits; force_unship undoes a ship."
 state: stable
-shipped_at: 2026-11-02T08:16:45.958Z
-revisions: 3
-churn: 2.927
+shipped_at: 2026-11-03T08:20:37.444Z
+revisions: 4
+churn: 3.86
 created_at: 2026-10-31T11:58:03.397Z
-updated_at: 2026-11-02T08:16:45.958Z
+updated_at: 2026-11-03T08:20:37.444Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-change-status/
@@ -54,6 +55,8 @@ Intended files: `src/interactions/i-change-status/` (`handlers.ts`, `tools.ts`).
 - Orientation gate on every node a non-dry move transitions (`gateWrite`, `f-plan-writes`); one `Blocked: Orientation` names every unoriented node, and a `scope: "change"` walk names `orient_for_work({ change })`
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
+
+- **Open revisions (0.18.0).** `update_node_status` takes `change` to pick a node's revision (optional when it has at most one); the scoped `change` walk moves each member's revision of that change; validation runs on `graphUnder(graph, change)` and `promoteInMemory` uses `withRevision`. Ship calls `shipRevision`, which rebases the node's other revisions and lists `rebased: [{ change, conflicts }]` in the result
 
 ## Acceptance Criteria
 

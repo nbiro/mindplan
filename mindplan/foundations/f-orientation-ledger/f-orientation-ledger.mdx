@@ -4,14 +4,14 @@ type: Foundation
 title: "Orientation ledger"
 description: "Infra — the in-memory record of which nodes had their full context and rules fetched in this MCP session, with a fingerprint of the rules that reached them, and the gate that blocks writes on a node until it was fetched with its current rules."
 state: stable
-shipped_at: 2026-10-30T12:50:11.953Z
-revisions: 2
-churn: 1.9
+shipped_at: 2026-11-03T08:20:34.813Z
+revisions: 3
+churn: 2.74
 created_at: 2026-10-25T23:20:45.972Z
-updated_at: 2026-10-30T12:50:11.953Z
+updated_at: 2026-11-03T08:20:34.813Z
 depends_on:
-  - f-graph-search
   - f-domain-model
+  - f-graph-search
 implements:
   - src/foundations/f-orientation-ledger/
 tests:
@@ -40,6 +40,8 @@ Package: `src/foundations/f-orientation-ledger/`
   - `resetOrientationLedger()` — forget every fetch (tests)
 
 Depends on: `f-graph-search`, `f-domain-model`.
+
+- **Open revisions (0.18.0).** The rules that reach a node are computed over live plus the edges every open revision adds, so orienting once covers writes to any of its revisions
 
 ## Acceptance Criteria
 

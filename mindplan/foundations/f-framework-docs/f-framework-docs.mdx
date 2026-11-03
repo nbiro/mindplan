@@ -4,11 +4,11 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and tests, decisions, and host install docs."
 state: stable
-shipped_at: 2026-11-02T08:16:45.889Z
-revisions: 51
-churn: 26.614
+shipped_at: 2026-11-03T08:20:34.614Z
+revisions: 52
+churn: 27.005
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-02T08:16:45.889Z
+updated_at: 2026-11-03T08:20:34.614Z
 depends_on:
   - f-domain-model
 implements:
@@ -66,6 +66,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 - **Capability and established equivalents (0.17.0).** The top-level type is Capability everywhere a type is named: SPEC (§2 taxonomy, §2.2 edge shapes, §4 Computed Capability States, the rules, the `mindplan/capabilities/` layout in §1.1, every tool input and output), the playbook, the stub, both skills and their examples, the setup and upgrade guides, README, and the map legend. Result fields say capability (`capabilities_at_risk`, `containing_capabilities`, `capabilities_recomputed`); the recommended id prefix is `c-`. SPEC §2.0.0 gains an **Established equivalents** table: for each type, its closest established architecture term (business capability or bounded context; use case; driving adapter or C4 container; driven adapter, infrastructure, or shared kernel by role; defect) and where MindPlan differs, plus the same for each edge, marked non-normative and not a list of synonyms. SPEC §1.1.2 and §8.2 specify migration level 3 (`capabilitiesMoved`). The playbook's Taxonomy table and README's "Five kinds of node" table gain the same term as a column, each with a sentence that it is not a synonym; the playbook keeps its line count. `CHANGELOG.md` has the 0.17.0 section, which tells consumers to run `upgrade_project`
 
 - **Claimed imports and skip_blocked (0.18.0).** SPEC §9.6 says the default check runs the import matrix over the universe plus every file a non-retired node claims, so it Blocks what the in-review gate Blocks; §3.7 adds "Walking past blocked members" and §8.2 `update_node_status` specifies `skip_blocked` (input, effect, the `blocked: [{ node_id, step, reason }]` output and its dry run, and the two errors). The playbook's rule 3 adds one sentence: a scoped walk is all-or-nothing, and `skip_blocked: true` walks the members that pass and lists the rest in `blocked`. README's ship bullet names `skip_blocked`; `CHANGELOG.md` has the 0.18.0 section; `package.json` and `package-lock.json` go to 0.18.0
+
+- **Open revisions and decision files (0.18.0).** SPEC §1.1 shows the `revisions/<change>/` and `decisions/` layout and that `map.md` is derived and git-ignored; §3.6–§3.7 replace the single next slot with one revision per change (deltas, base hashes, rebase on ship, conflicts, `resolve_conflict`, gates on live plus one change); §6.1.2 moves decisions to files; §8 adds `change` to every revision tool, `resolve_conflict`, add/remove on claims and tests, and thirty-four tools; §1.1.2 and §8.2 specify migration level 4. The playbook and the plan-project and define-entities skills say a node may have several open revisions, to pass `change`, and that `add` is the default for claims and tests. `CHANGELOG.md` 0.18.0 gets the section and a migration note
 
 Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section

@@ -4,16 +4,17 @@ type: Interaction
 title: "Record a decision"
 description: "Agent records a design decision on the node it shapes, with the rejected alternatives, supersession, and keep_whole."
 state: stable
-shipped_at: 2026-10-31T23:05:25.678Z
-revisions: 3
-churn: 2.989
+shipped_at: 2026-11-03T08:20:38.429Z
+revisions: 4
+churn: 3.829
 created_at: 2026-10-31T11:58:04.384Z
-updated_at: 2026-11-01T10:53:13.639Z
+updated_at: 2026-11-03T08:20:38.429Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-record-decision/
@@ -47,6 +48,8 @@ Intended files: `src/interactions/i-record-decision/` (`handlers.ts`, `tools.ts`
 - Orientation gate on `node_id`
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-domain-model`, `f-tool-kit`.
+
+- **Decision files (0.18.0).** `record_decision` writes one `decisions/<decision-id>.md` file (in the revision folder `change` picks, else the node folder), never rewriting another; an id already used anywhere on the node is Blocked
 
 ## Acceptance Criteria
 

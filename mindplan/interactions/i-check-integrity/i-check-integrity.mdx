@@ -4,21 +4,22 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, hotspots, and fan-out, checks one change, and runs the merge gate."
 state: stable
-shipped_at: 2026-11-02T08:16:45.706Z
-revisions: 27
-churn: 18.753
+shipped_at: 2026-11-03T08:20:37.666Z
+revisions: 28
+churn: 19.324
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-02T08:16:45.706Z
+updated_at: 2026-11-03T08:20:37.666Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
-  - f-territory-store
   - f-compiler-rules
-  - f-mcp-runtime
-  - f-source-index
-  - f-tool-kit
-  - f-graph-migrations
   - f-fan-out
+  - f-graph-migrations
+  - f-mcp-runtime
+  - f-revision-model
+  - f-source-index
+  - f-territory-store
+  - f-tool-kit
 implements:
   - src/interactions/i-check-integrity/
 tests:
@@ -83,6 +84,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 **Fan-out.** The default check warns `fan-out:` for each pre-ship Foundation, Interaction, or Interface whose `depends_on` targets sit in at least `fan_out.warn_at` other unshipped changes (`fanOuts` with `fanOutSettings`, `f-fan-out` and `f-source-index`), one `Warning: fan-out: …` line per node in `fanOuts` order, so a planned node that would have to know every feature of a kind is flagged before it is built; a node kept whole by a `keep_whole` decision is skipped. The settings are loaded once per run. With `change`, a member's `fan-out:` line is also part of the change's warnings. It never changes `ok` or the exit code, and is never Blocked.
 
 **Tool definition.** `run_check` is defined in this action's `tools.ts` (`defineTool`, `f-tool-kit`) and mounted by `if-mcp-tools`.
+
+- **Open revisions (0.18.0).** The check reads every open revision: imports and ownership per change on `graphUnder`, presence and stale text per revision, the merge gate per revision (`slot: "revision"`, its change), and a `conflicts:` warning per revision with unresolved conflicts
 
 ## Acceptance Criteria
 

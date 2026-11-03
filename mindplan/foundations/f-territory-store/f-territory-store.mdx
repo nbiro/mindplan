@@ -4,18 +4,19 @@ type: Foundation
 title: "Territory store"
 description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, revision change ids, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-11-01T11:12:14.105Z
-revisions: 21
-churn: 7.697
+shipped_at: 2026-11-03T08:20:35.486Z
+revisions: 22
+churn: 8.37
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-01T11:12:14.105Z
+updated_at: 2026-11-03T08:20:35.486Z
 split_at: 13
 split_into:
   - f-graph-cache
 depends_on:
   - f-domain-model
-  - f-source-index
   - f-graph-cache
+  - f-revision-model
+  - f-source-index
 implements:
   - src/foundations/f-territory-store/
 tests:
@@ -114,6 +115,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 - **`keep_whole` in decision records.** `record_decision` writes a `keep_whole: true` line in the record when given; the parser reads it back, and a record without it has none.
 
 - **Type folders.** One folder per type under `mindplan/`: `capabilities/`, `foundations/`, `interactions/`, `interfaces/`, `bugs/`. A node's type comes from its folder. The store never reads `journeys/`; only migration level 3 (`f-graph-migrations`) knows it. A live file whose type is `Journey` (a folder moved by hand) is `Blocked:` naming `upgrade_project`, which rewrites it
+
+- **Open revisions (0.18.0).** A shipped node's open revisions live in `revisions/<change>/<id>.mdx` with `attachments/` and `decisions/` beside it; the loader parses every folder into `open_revisions` and never sets `next`. Revision frontmatter is flat: scalars, `<edge>_add` / `<edge>_remove`, `implements_add` / `implements_remove`, `tests_add` / `tests_remove`, `attributed`, `split_into`, `base` (`title=…`, `section:<heading>=…`), and `conflicts`. `revisions.ts` holds `openRevision`, `discardRevision`, `shipRevision` (writes live ⊕ revision, moves its decision files, deletes the folder, then rebases every sibling with `rebase`), `writeRevisionDelta`, `writeRevisionBody`, and `resolveConflict`. `TerritorySlot` becomes `{ kind: "live" } | { kind: "revision", change }`; the old `<id>.next.mdx` reader moves to the migration
+- **Decision files.** `decisions-store.ts`: `readDecisionFiles(dir)`, `appendDecisionFile(dir, record)` (one `<decision-id>.md` per decision, never rewritten), `moveDecisions(from, to)`; the `## Decisions` body section is no longer written
+- **Derived map.** Writes no longer list `mindplan/map.md` in `changed_files`
 
 ## Acceptance Criteria
 

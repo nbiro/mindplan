@@ -4,26 +4,26 @@ type: Foundation
 title: "Fan-out signal"
 description: "Infra — counts the other unshipped changes a pre-ship node depends_on and words the fan-out warning that suggests inverting it onto a Foundation contract."
 state: stable
-shipped_at: 2026-10-31T21:15:36.198Z
-revisions: 1
-churn: 1
+shipped_at: 2026-11-03T08:20:35.937Z
+revisions: 2
+churn: 1.945
 created_at: 2026-10-31T20:45:24.389Z
-updated_at: 2026-11-01T10:53:14.836Z
-role: infra
+updated_at: 2026-11-03T08:20:35.937Z
+depends_on:
+  - f-compiler-rules
+  - f-domain-model
+  - f-source-index
+implements:
+  - src/foundations/f-fan-out/
+tests:
+  - src/foundations/f-test-harness/fan-out.test.mjs
 aliases:
   - "fan-out"
   - "fan out"
   - "knows every feature"
   - "invert dependency"
   - "depends on many changes"
-depends_on:
-  - f-domain-model
-  - f-source-index
-  - f-compiler-rules
-implements:
-  - src/foundations/f-fan-out/
-tests:
-  - src/foundations/f-test-harness/fan-out.test.mjs
+role: infra
 ---
 
 # Fan-out signal
@@ -47,6 +47,8 @@ Intended files: `src/foundations/f-fan-out/` (`fan-out.ts`, `index.ts`).
 - Never throws on a missing target and never Blocks anything
 
 Depends on: `f-domain-model`, `f-source-index`, `f-compiler-rules`.
+
+- **Open revisions (0.18.0).** Fan-out still counts pre-ship nodes only; reading a node's change uses the live change, so open revisions on shipped targets do not count
 
 ## Acceptance Criteria
 

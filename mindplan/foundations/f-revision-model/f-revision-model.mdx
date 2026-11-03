@@ -3,12 +3,13 @@ id: f-revision-model
 type: Foundation
 title: "Revision model"
 description: "Infra — the pure rules for a node's open revisions: edge, claim, and test deltas against live, the live-plus-one-revision view gates read, which revision a call means, and the section-hash rebase that carries or conflicts sibling revisions when one ships."
-state: in-review
+state: stable
+shipped_at: 2026-11-03T08:20:34.938Z
+revisions: 1
+churn: 1
 created_at: 2026-11-02T08:30:42.295Z
-updated_at: 2026-11-03T08:15:14.530Z
+updated_at: 2026-11-03T08:20:34.938Z
 role: infra
-change: "multi-revisions"
-change_ref: "feat/multi-revisions"
 aliases:
   - "revision"
   - "rebase"
@@ -52,9 +53,3 @@ Depends on: `f-domain-model`.
 - The rebase matrix (untouched, theirs, mine, both, both identical, section added or deleted, scalars, dropped deltas, claim conflict) is covered by `revision-core.test.mjs`
 - `resolveRevisionChange` returns the only revision, `null` with none, and Blocks with several, naming them
 - Verified via `npm test`
-
-## Atomic Ops
-
-- [x] Spec written
-- [x] Implementation complete
-- [x] Verified in target environment — note: revision-core and rebase-flow suites and the full npm test pass
