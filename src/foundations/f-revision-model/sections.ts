@@ -32,17 +32,33 @@ export function normalizedText(text: string): string {
  * fence-like line inside is code.
  */
 export function fencedLines(lines: string[]): boolean[] {
+  return fenceBlockEnds(lines).map((e) => e >= 0);
+}
+
+/**
+ * Per line: the index just past the fenced code block it sits in (its closing fence line
+ * included; `lines.length` for a fence never closed), or -1 outside fenced code. Same scan as
+ * `fencedLines`, so a fence's lines can be skipped as one block.
+ */
+export function fenceBlockEnds(lines: string[]): number[] {
+  const ends = new Array<number>(lines.length).fill(-1);
   let fence: string | null = null;
-  return lines.map((raw) => {
+  let start = 0;
+  lines.forEach((raw, i) => {
     const f = raw.replace(/\r$/, "").match(FENCE_LINE);
     if (fence === null) {
-      if (!f || (f[1][0] === "`" && f[2].includes("`"))) return false;
+      if (!f || (f[1][0] === "`" && f[2].includes("`"))) return;
       fence = f[1];
-      return true;
+      start = i;
+      return;
     }
-    if (f && f[1][0] === fence[0] && f[1].length >= fence.length && f[2].trim() === "") fence = null;
-    return true;
+    if (f && f[1][0] === fence[0] && f[1].length >= fence.length && f[2].trim() === "") {
+      fence = null;
+      ends.fill(i + 1, start, i + 1);
+    }
   });
+  if (fence !== null) ends.fill(lines.length, start);
+  return ends;
 }
 
 /** Level-2 heading lines outside fenced code, by line index; `name` is the heading text trimmed. */

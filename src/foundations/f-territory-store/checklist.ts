@@ -8,7 +8,7 @@
  * reviewing it), or `deploy` (a person deploying it).
  */
 
-import { detectEol, fencedLines, levelTwoHeadings, ownedLines } from "../f-revision-model/index.js";
+import { detectEol, fenceBlockEnds, fencedLines, levelTwoHeadings, ownedLines } from "../f-revision-model/index.js";
 
 const CHECKLIST_KINDS = ["build", "review", "deploy"] as const;
 export type ChecklistKind = (typeof CHECKLIST_KINDS)[number];
@@ -315,7 +315,8 @@ export function appendChecklistItems(
   // After the section's last item (or its heading when it has none); a task line inside fenced
   // code is example text, not an item, so new items never land inside a fence.
   const [start, end] = ranges[0];
-  const fenced = fencedLines(lines);
+  const fenceEnds = fenceBlockEnds(lines);
+  const fenced = fenceEnds.map((e) => e >= 0);
   let at = start;
   let itemIndent = -1;
   for (let i = start; i < end; i++) {
@@ -325,7 +326,7 @@ export function appendChecklistItems(
       itemIndent = m[1].length - m[1].trimStart().length;
     }
   }
-  if (itemIndent >= 0) at = afterContinuation(lines, fenced, at, end, itemIndent);
+  if (itemIndent >= 0) at = afterContinuation(lines, fenceEnds, at, end, itemIndent);
   if (at === start) {
     const insert = ["", ...added, ...(lines[start] === undefined || lines[start].trim() === "" ? [] : [""])];
     // Keep one blank line under the heading.
@@ -340,27 +341,38 @@ export function appendChecklistItems(
   return { body: joinLines(lines, breaks, eol), added };
 }
 
+/** A heading, or a list item marker: ends the item when not indented past its marker. */
 const CONTINUATION_BREAK = /^(?:#{1,6}[ \t]|[ \t]*(?:[-*+]|\d+[.)])[ \t])/;
+/** A thematic break (`---`, `***`, `___`, spaces allowed between): never a lazy continuation. */
+const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 
 /**
  * The line index just past the continuation lines of the item that ends before `from` (its marker
  * indented `itemIndent`), within `[from, end)`: lines indented past the marker (blank lines between
- * them included), lazy lines straight after it, and fenced code that opens among them. A heading,
- * a list item at the item's level or shallower, or an unindented line after a blank line ends it.
+ * them included), lazy lines straight after it, and fenced code indented past the marker, consumed
+ * whole to its closing fence. A heading, a list item or thematic break at the item's level or
+ * shallower, a fence not indented past the marker, or an unindented line after a blank line ends
+ * it (as in CommonMark, a thematic break or a fence is never a lazy line). The index returned is
+ * never inside fenced code: a fence that runs past `end` ends the scan before it.
+ * `fenceEnds` is `fenceBlockEnds(lines)`.
  */
-function afterContinuation(lines: string[], fenced: boolean[], from: number, end: number, itemIndent: number): number {
+function afterContinuation(lines: string[], fenceEnds: number[], from: number, end: number, itemIndent: number): number {
   let last = from;
   for (let j = from; j < end; j++) {
     const line = lines[j];
     if (line.trim() === "") continue;
-    if (fenced[j] && j === last && j > from) {
-      last = j + 1;
-      continue;
-    }
     const indent = line.length - line.trimStart().length;
     const afterBlank = j > last;
-    if (/^#{1,6}[ \t]/.test(line)) break;
+    // `j` is never inside a fence here: the item line before `from` is outside one, and a fence
+    // reached is either skipped whole or ends the scan.
+    if (fenceEnds[j] >= 0) {
+      if (indent <= itemIndent || fenceEnds[j] > end) break;
+      last = fenceEnds[j];
+      j = last - 1;
+      continue;
+    }
     if (CONTINUATION_BREAK.test(line) && indent <= itemIndent) break;
+    if (THEMATIC_BREAK.test(line) && indent <= itemIndent) break;
     if (indent > itemIndent || !afterBlank) {
       last = j + 1;
       continue;

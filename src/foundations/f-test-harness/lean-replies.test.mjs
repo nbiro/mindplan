@@ -302,6 +302,30 @@ fs.writeFileSync(
     multi === "## Atomic Ops\n\n- [ ] A {#a}\n  detail of A\n  - nested note\nlazy line\n\n  more about A\n- [ ] B {#b}\n\nAfter the list.\n\n## Rules\n",
     JSON.stringify(multi)
   );
+  // An indented fence that continues the item is consumed to its close, even across a blank line
+  // followed by a column-0 line or a `# comment` inside it: the new item never lands in the fence.
+  const fenceBody = "## Atomic Ops\n\n- [ ] A {#a}\n  ```sh\n  run\n\nexit 0\n# comment\n  ```\n\nAfter.\n";
+  const fenceAppended = checklist.appendChecklistItems(fenceBody, [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems consumes an item's fenced continuation to its close (blank line, column-0 line, # comment inside)",
+    fenceAppended === "## Atomic Ops\n\n- [ ] A {#a}\n  ```sh\n  run\n\nexit 0\n# comment\n  ```\n- [ ] B {#b}\n\nAfter.\n",
+    JSON.stringify(fenceAppended)
+  );
+  // A column-0 thematic break or opening fence straight after the item ends the list (CommonMark):
+  // it is not a lazy continuation, so the new item goes before it.
+  for (const [what, tail] of [
+    ["thematic break ---", "---\nbelow\n"],
+    ["thematic break ***", "***\nbelow\n"],
+    ["thematic break ___", "___\nbelow\n"],
+    ["opening fence", "```\ncode\n```\n"],
+  ]) {
+    const breakAppended = checklist.appendChecklistItems(`## Atomic Ops\n\n- [ ] A {#a}\n${tail}`, [{ text: "B", id: "b" }]).body;
+    check(
+      `appendChecklistItems stops before a column-0 ${what} straight after the item`,
+      breakAppended === `## Atomic Ops\n\n- [ ] A {#a}\n- [ ] B {#b}\n${tail}`,
+      JSON.stringify(breakAppended)
+    );
+  }
   // A lone CR before the Atomic Ops: parse and edit split lines the same way, and each break stays as written.
   const loneCr = "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [ ] B {#b}\r\n";
   const ticked = checklist.toggleChecklistItems(loneCr, [{ id: "b", checked: true }]).body;
