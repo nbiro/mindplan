@@ -388,6 +388,25 @@ foundation("f-core");
   ok("resolveConflict take text: a level-2 heading outside fences that would start a new section is Blocked");
 }
 
+// --- resolve_conflict text keeps a real " (N)" heading, and strips only a duplicate key's ---------
+
+{
+  foundation("f-paren", { body: "## Phase (2)\n\nPhase text.\n\n## Notes\n\nA.\n\n## Notes\n\nB.\n" });
+  openRevision(node("f-paren"), "par", {});
+  const file = revisionFilePath(node("f-paren"), "par");
+  const opened = node("f-paren").open_revisions[0];
+  const conflicts = [{ kind: "section", section: "## Phase (2)" }, { kind: "section", section: "## Notes (2)" }];
+  fs.writeFileSync(file, formatRevisionFile("f-paren", "Foundation", { ...opened, conflicts }, bodyOf(file)));
+  resolveConflict(node("f-paren"), "par", "## Phase (2)", "text", "## Phase (2)\n\nNew phase.");
+  resolveConflict(node("f-paren"), "par", "## Notes (2)", "text", "New B.");
+  const body = bodyOf(file);
+  assert.match(body, /^## Phase \(2\)\n\nNew phase\./);
+  assert.doesNotMatch(body, /^## Phase$/m);
+  assert.match(body, /## Notes\n\nA\.\n\n## Notes\n\nNew B\./);
+  assert.deepEqual(node("f-paren").open_revisions[0].conflicts, []);
+  ok("resolveConflict take text: a real heading ending in (N) stays; a duplicate key's (N) is stripped");
+}
+
 // --- resolve_conflict is a contract write: readiness reset and the body check ---------------------
 
 {
