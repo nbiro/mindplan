@@ -50,7 +50,7 @@ const transport = new StdioClientTransport({
 const client = new Client({ name: "planned-wiring-test", version: "0.1.0" });
 await client.connect(transport);
 const raw = async (tool, args) => {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
 };
 const call = async (tool, args) => {

@@ -215,6 +215,58 @@ async function session() {
   await client.close();
 }
 
+// --- session 6: sections cut the reply; orientation needs the rules section ---
+{
+  const { client, raw, call } = await session();
+  const bodyOnly = await call("orient_for_work", { node_id: "i-pay", sections: ["body"] });
+  check(
+    "sections returns only those parts plus focus and query",
+    bodyOnly.focus === "i-pay" &&
+      "query" in bodyOnly &&
+      typeof bodyOnly.context?.body === "string" &&
+      !("record" in bodyOnly.context) &&
+      !("rules" in bodyOnly) &&
+      !("decisions" in bodyOnly) &&
+      !("matches" in bodyOnly) &&
+      !("blast_radius" in bodyOnly) &&
+      !("files" in bodyOnly) &&
+      !("nodes" in bodyOnly),
+    JSON.stringify(bodyOnly).slice(0, 300)
+  );
+  const write = ["patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card today." }];
+  const gated = await raw(...write);
+  check(
+    "a reply without the rules section does not orient",
+    gated.error && gated.text.startsWith("Blocked: Orientation:"),
+    gated.text.slice(0, 120)
+  );
+  const picked = await call("orient_for_work", {
+    node_id: "i-pay",
+    sections: ["rules", "stability", "neighborhood", "blast_radius", "record", "files", "decisions"],
+  });
+  check(
+    "each named section comes back",
+    picked.rules?.node_id === "i-pay" &&
+      picked.stability &&
+      Array.isArray(picked.nodes) &&
+      Array.isArray(picked.edges) &&
+      picked.blast_radius?.node_id === "i-pay" &&
+      picked.context?.record?.id === "i-pay" &&
+      !("body" in picked.context) &&
+      picked.decisions?.node_id === "i-pay" &&
+      Array.isArray(picked.files?.files),
+    JSON.stringify(Object.keys(picked))
+  );
+  check("a reply with the rules section orients", !(await raw(...write)).error);
+  const unknown = await raw("orient_for_work", { node_id: "i-pay", sections: ["rules", "everything"] });
+  check(
+    "an unknown section is Blocked, listing the valid ones",
+    unknown.error && unknown.text.startsWith("Blocked:") && unknown.text.includes("everything") && unknown.text.includes("blast_radius") && unknown.text.includes("open_items"),
+    unknown.text.slice(0, 200)
+  );
+  await client.close();
+}
+
 // --- proposed next-slot edges bring their rules (ledger, pure) ---
 {
   const ledger = await import(new URL("../../../dist/foundations/f-orientation-ledger/ledger.js", import.meta.url).href);

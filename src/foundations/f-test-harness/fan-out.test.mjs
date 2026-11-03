@@ -153,7 +153,7 @@ const client = new Client({ name: "fan-out-test", version: "0.1.0" });
 await client.connect(transport);
 
 async function call(tool, args) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (res.isError) throw new Error(`${tool}: ${text}`);
   return JSON.parse(text || "{}");

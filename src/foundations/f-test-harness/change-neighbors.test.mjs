@@ -78,7 +78,7 @@ let diffMisses = 0;
 
 async function raw(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (!res.isError) {
     const result = JSON.parse(text || "{}");

@@ -316,7 +316,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   const client = new Client({ name: "merge-gate-test", version: "0.1.0" });
   await client.connect(transport);
   try {
-    const res = await client.callTool({ name: "run_check", arguments: { merge: true } });
+    const res = await client.callTool({ name: "run_check", arguments: { merge: true, compact: false } });
     assert.ok(!res.isError, res.content?.[0]?.text);
     const result = JSON.parse(res.content[0].text);
     assert.equal(result.ok, false);
