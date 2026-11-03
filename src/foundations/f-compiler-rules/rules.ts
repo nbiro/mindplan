@@ -1081,10 +1081,12 @@ export function assertNoRetreatUnderShippedDependents(
  * Undoing a build item of `node`'s active slot while it is in review is Blocked while
  * stable/unstable nodes rely on it: they shipped on every build item being ticked. `before` and
  * `after` are the slot text before and after every edit of one call (toggles, added items, body,
- * section, and replace edits, conflict resolution), so no edit path can take a tick back. Items
- * are counted, not matched by label: a call may not raise the number of build items not done (an
- * untick, or an added unticked item) nor lower the number done (done work removed). A ticked item
- * reworded in place passes, and so does ticking an open one.
+ * section, and replace edits, conflict resolution), so no edit path can take a tick back. A call
+ * may not raise the number of build items not done (an untick, or an added unticked item), lower
+ * the number done (done work removed), or leave a build item done before present but not done
+ * (matched by id when tagged, else by exact text), so a swap that keeps both counts is caught too.
+ * A ticked item reworded in place passes (its old label is gone, not present-but-undone), and so
+ * does ticking an open one.
  */
 export function assertNoUntickUnderShippedDependents(
   graph: MindPlanGraph,
@@ -1104,30 +1106,57 @@ export function assertNoUntickUnderShippedDependents(
 }
 
 /**
- * What one call undoes among the build items, by count: `null` when the number not done did not
- * rise and the number done did not fall; otherwise a phrase naming the offending items.
+ * What one call undoes among the build items: `null` when no build item done before is present
+ * but not done, the number not done did not rise, and the number done did not fall; otherwise a
+ * phrase naming what triggered. Items present but no longer done are named outright. A count
+ * change names the labels behind it outright only when no other label could account for it (no
+ * open label vanished for a rise, no done label appeared for a fall); otherwise it names them as
+ * possible, since a reworded item and a removed one look alike by label.
  */
 function undoneBuildItems(before: string, after: string): string | null {
-  const label = (i: ChecklistItem): string => `"${i.id ?? i.text}"`;
+  const key = (i: ChecklistItem): string => i.id ?? i.text;
+  const quote = (k: string): string => `"${k}"`;
   const build = (body: string): ChecklistItem[] => parseChecklistItems(body).filter((i) => i.kind === "build");
+  const tally = (items: ChecklistItem[]): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const i of items) m.set(key(i), (m.get(key(i)) ?? 0) + 1);
+    return m;
+  };
+  const sum = (m: Map<string, number>): number => [...m.values()].reduce((a, b) => a + b, 0);
+  /** Keys whose count in `to` exceeds their count in `from`. */
+  const grown = (from: Map<string, number>, to: Map<string, number>): string[] =>
+    [...to].filter(([k, n]) => n > (from.get(k) ?? 0)).map(([k]) => k);
+  const named = (keys: string[], certain: boolean): string =>
+    keys.length === 0 ? "" : `: ${certain ? "" : "possibly "}${keys.map(quote).join(", ")}`;
   const beforeItems = build(before);
   const afterItems = build(after);
-  const openBefore = beforeItems.filter((i) => !i.done);
-  const openAfter = afterItems.filter((i) => !i.done);
-  const doneBefore = beforeItems.filter((i) => i.done);
-  const doneAfter = afterItems.filter((i) => i.done);
+  const present = new Set(afterItems.map(key));
+  const openBefore = tally(beforeItems.filter((i) => !i.done));
+  const openAfter = tally(afterItems.filter((i) => !i.done));
+  const doneBefore = tally(beforeItems.filter((i) => i.done));
+  const doneAfter = tally(afterItems.filter((i) => i.done));
+
   const parts: string[] = [];
-  if (openAfter.length > openBefore.length) {
-    const wasOpen = new Set(openBefore.map(label));
-    const fresh = openAfter.filter((i) => !wasOpen.has(label(i)));
-    const named = [...new Set((fresh.length > 0 ? fresh : openAfter).map(label))].join(", ");
-    parts.push(`build items not done would rise from ${openBefore.length} to ${openAfter.length}: ${named}`);
+  // Done before, still present after, but fewer of that label done.
+  const undone = grown(doneAfter, doneBefore).filter((k) => present.has(k));
+  if (undone.length > 0) parts.push(`build items done before would be present but not done: ${undone.map(quote).join(", ")}`);
+  // More not done: labels newly not done (beyond those named above) are the candidates, certain
+  // only when no open label vanished.
+  if (sum(openAfter) > sum(openBefore)) {
+    const fresh = grown(openBefore, openAfter).filter((k) => !undone.includes(k));
+    if (undone.length === 0 || fresh.length > 0) {
+      const certain = grown(openAfter, openBefore).length === 0;
+      parts.push(`build items not done would rise from ${sum(openBefore)} to ${sum(openAfter)}${named(fresh, certain)}`);
+    }
   }
-  if (doneAfter.length < doneBefore.length) {
-    const stillDone = new Set(doneAfter.map(label));
-    const lost = doneBefore.filter((i) => !stillDone.has(label(i)));
-    const named = [...new Set((lost.length > 0 ? lost : doneBefore).map(label))].join(", ");
-    parts.push(`done build items would fall from ${doneBefore.length} to ${doneAfter.length}: ${named}`);
+  // Fewer done: done labels gone from the body are the candidates, certain only when no done
+  // label appeared (a ticked item reworded in place would).
+  if (sum(doneAfter) < sum(doneBefore)) {
+    const gone = grown(doneAfter, doneBefore).filter((k) => !present.has(k));
+    if (undone.length === 0 || gone.length > 0) {
+      const certain = grown(doneBefore, doneAfter).length === 0;
+      parts.push(`done build items would fall from ${sum(doneBefore)} to ${sum(doneAfter)}${named(gone, certain)}`);
+    }
   }
   return parts.length > 0 ? parts.join("; ") : null;
 }
