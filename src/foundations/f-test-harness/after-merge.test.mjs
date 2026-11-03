@@ -297,7 +297,7 @@ check("the merge carried A's live into b", read(LIVE).includes("Spec from A.") &
   const found = findingsFor(JSON.stringify({ package: "0.12.0", graph: 1 }) + "\n");
   check(
     "after-merge reports a version.json behind the graph at the root it checks, not the process's root",
-    found.failures.some((f) => f.includes("version.json is behind this graph")),
+    found.failures.some((f) => f.includes("the graph needs upgrade_project")),
     JSON.stringify(found.failures)
   );
   // A stamp newer than this server (a merge brought in an upgrade from a newer mindplan-mcp) names
