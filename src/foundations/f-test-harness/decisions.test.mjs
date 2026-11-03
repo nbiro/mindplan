@@ -701,6 +701,17 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     "in git, a first build that adopts an existing migration is not decision-worthy",
     decisionWarnings(await call("run_check", {}), "f-store").length === 0
   );
+  // A file moved to a new schema path on the branch is a new schema file there, not a rename to skip.
+  git("mv", "src/f-store/migrations/001_store.sql", "src/f-store/migrations/002_store.sql");
+  git("commit", "-m", "renumber the migration");
+  const moved = decisionWarnings(await call("run_check", {}), "f-store");
+  check(
+    "a migration moved to a new path with git mv on the branch counts as new",
+    moved.some((w) => w.includes("002_store.sql")),
+    JSON.stringify(moved)
+  );
+  git("mv", "src/f-store/migrations/002_store.sql", "src/f-store/migrations/001_store.sql");
+  git("commit", "-m", "restore the migration name");
   await call("open_next", { change: "rev-i-odometer", node_id: "i-odometer" });
   write("src/i-odometer/migrations/001_init.sql", "create table readings (odometer numeric(10,1));\n");
   git("commit", "-am", "edit an existing migration");

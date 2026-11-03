@@ -449,6 +449,10 @@ function subfolderProject(label, nodes) {
   const dirty = collectDirtySrcPaths(root, "main");
   assert.deepEqual([...dirty.commits].sort(), ["src/i-touched/new-name.ts", "src/i-touched/old-name.ts"]);
   ok("a rename committed on the branch lists both its old and new paths as changed");
+  const strictRename = cli(root, ["--merge=strict", "--base", "main"]);
+  const renameLine = strictRename.out.split("\n").find((l) => l.startsWith("Blocked: Merge (strict):")) ?? "";
+  assert.match(renameLine, /"src\/i-touched\/old-name\.ts"/, strictRename.out);
+  ok("--merge=strict names a renamed file's old path");
 }
 
 // --- The default base ignores a stale local main ------------------------------------------------
