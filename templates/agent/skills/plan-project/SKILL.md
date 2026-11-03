@@ -84,7 +84,7 @@ Greenfield order:
 Capabilities → Interaction(s) at draft → Interface(s) → Foundation(s) derived from those drafts → link_nodes → enrich territory → self-ready → stop if plan-only
 ```
 
-Gate facts: Capability before any Interaction create; draft Interactions may lack links until leaving `draft`; Interfaces need `exposes` before leaving `draft`; Foundation `ready` before Interaction `ready` is preference — Infrastructure First at Interaction `ship` still requires Foundations `stable`; Behavior First at Interface `ship` requires exposed Interactions `stable`.
+Gate facts: Capability before any Interaction create; draft Interactions may lack links until leaving `draft`; Interfaces need `exposes` before leaving `draft`; Foundation `ready` before Interaction `ready` is preference — Infrastructure First at Interaction `ship` still requires each Foundation `stable`, or `in-review` with every build checklist item ticked and its own dependencies ready the same way; Behavior First at Interface `ship` requires the same of exposed Interactions.
 
 ### 4. Enrich territory (full contracts)
 
@@ -105,6 +105,17 @@ Territory Completeness still applies to **sources**: bodies describe the full in
 
 When the plan only needs **wiring** on a shipped node (a new Interaction its shipped Interface will expose, a new `depends_on` on a shipped Foundation), plan the edge instead of opening a revision: `link_nodes({ source_id, target_id, edge_type, change })`. It is checked like a link, `run_check({ change })` validates it, and `open_next({ node_id, change })` applies it when the build session opens the node; the live graph does not change until then. When a revision adds a file in another node's folder (a migration in the composition root's migrations folder), name it with `set_implementation_files({ node_id, attributed: [...] })` so the decision gate counts it for that revision.
 
+### 4b. Parallel work in git worktrees
+
+When several agents build one change at once, each in its own git worktree, the graph travels with the branches. One MindPlan server serves every worktree through `root`:
+
+1. **Plan on the integration branch.** The orchestrator creates the change there with this skill: the nodes, the revisions (`open_next({ node_id, change })`), and the decisions, and commits them before the worktrees branch off.
+2. **Build in the worktree.** Each agent passes `root: "<absolute path of its worktree>"` to every MindPlan tool (`get_rules`, `orient_for_work`, every write, `run_check`). Orientation is per root, so orient in your own worktree. Fill your revisions, claim your files (`set_implementation_files({ node_id, add, root })`), link your tests (`set_test_files`), and move them to `in-review`. A result from another root carries `root`; a `Blocked:` from one ends with `(root: <path>)`.
+3. **Merge.** Merging the branches brings the graph along with the code. Run `run_check({ after_merge: true })` (CLI `mindplan-mcp check --after-merge`) on the merged checkout and fix each `Blocked: after-merge:` line; a `Warning: after-merge:` on a revision whose base moved names `rebase_revision({ node_id, change })`, then `resolve_conflict` for any conflict it reports.
+4. **Ship.** The orchestrator ships from the integration branch with one scoped walk, `update_node_status({ scope: "change", change, new_status: "ship" })`; `nodes: [...]` ships only the finished members while the rest keep building.
+
+Two changes must not each add half of a `depends_on` cycle: `link_nodes` and `open_next` are `Blocked:` on an edge that closes a cycle across changes. Move the shared part into a Foundation both depend on.
+
 ### 5. On `Blocked:`
 
 On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. The server already writes `mindplan/map.md`. Do not require `export_mindplan_view` after every write.
@@ -114,7 +125,7 @@ On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. 
 When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
 
 1. `run_check` (CLI `mindplan-mcp check`) returns ok. Fix every `Blocked:` first.
-2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). When the revision spans several nodes, give them one change id (`change` on `open_next` / `create_node`, or `patch_node_territory({ node_id, change })` before first ship) and use `scope: "change"` instead; a shipped node with several open revisions moves only through `scope: "change"` or a single call with `change`.
+2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). Every item is tried; `results` says which moved, and the call is `Blocked:` only when none did. When the revision spans several nodes, give them one change id (`change` on `open_next` / `create_node`, or `patch_node_territory({ node_id, change })` before first ship) and use `scope: "change"` instead; a shipped node with several open revisions moves only through `scope: "change"` or a single call with `change`.
 3. Any later edit to a `ready` node's text, claims, or links sends it back to `draft` (`readiness_reset`); self-ready it again.
 4. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
 
@@ -126,7 +137,7 @@ Requirements before self-ready:
 
 - `run_check` returns ok (same as `mindplan-mcp check` exiting `0`)
 - Links complete (Interactions: at least one `belongs_to` + one Foundation `depends_on`; Interfaces: at least one `exposes`; Bugs past `open`: `affects`)
-- Territory is a full contract with **unchecked** Atomic Ops
+- Territory is a full contract with **unchecked** Atomic Ops; an item a person closes (a review sign-off, a deploy) is added with `patch_node_territory({ node_id, add_checklist_items: [{ text, id, kind: "review" | "deploy" }] })`
 - Call `update_node_status` → `ready` yourself, one `revisions` call for the set
 - **No** application code under `src/`
 - **No** `in-progress` / `in-review` / `ship` / `stable`
