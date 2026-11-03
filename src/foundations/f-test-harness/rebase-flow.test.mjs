@@ -696,6 +696,39 @@ async function shippedFoundation(id) {
   );
 }
 
+// --- a revision's claim is judged per change: a file the owner's revision of that change releases ---
+{
+  await shippedFoundation("f-ex-src");
+  await shippedFoundation("f-ex-dst");
+  await shippedFoundation("f-ex-third");
+  const file = "src/f-ex-src/index.ts";
+  await call("open_next", { node_id: "f-ex-src", change: "ex-mv" });
+  await call("set_implementation_files", { node_id: "f-ex-src", change: "ex-mv", remove: [file] });
+  // A second revision that keeps the file: the union of the source's revisions still claims it.
+  await call("open_next", { node_id: "f-ex-src", change: "ex-keep" });
+  await call("open_next", { node_id: "f-ex-dst", change: "ex-mv" });
+  const took = await raw("set_implementation_files", { node_id: "f-ex-dst", change: "ex-mv", add: [file] });
+  check(
+    "a revision may claim a file the owner's revision of the same change releases, though another of its revisions keeps it",
+    !took.error && JSON.parse(took.text).implements?.includes(file),
+    took.text
+  );
+  await call("open_next", { node_id: "f-ex-third", change: "ex-mv" });
+  const twice = await blocked("set_implementation_files", { node_id: "f-ex-third", change: "ex-mv", add: [file] });
+  check(
+    "two revisions of the same change claiming one file stay Blocked",
+    !!twice && twice.includes("f-ex-dst") && twice.includes('"ex-mv"'),
+    String(twice)
+  );
+  await call("open_next", { node_id: "f-ex-dst", change: "ex-other" });
+  const live = await blocked("set_implementation_files", { node_id: "f-ex-dst", change: "ex-other", add: [file] });
+  check(
+    "under a change whose revisions keep the owner's live claim, the claim is Blocked naming the owner",
+    !!live && live.includes("f-ex-src"),
+    String(live)
+  );
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {

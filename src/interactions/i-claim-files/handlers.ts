@@ -31,7 +31,7 @@ import {
   validateClaimPath,
 } from "../../foundations/f-source-index/claims.js";
 import { decisionGateSettings } from "../../foundations/f-source-index/config.js";
-import { buildOwnershipIndex, exclusiveOwner } from "../../foundations/f-source-index/ownership.js";
+import { buildOwnershipIndex, exclusiveOwner, ownerUnder } from "../../foundations/f-source-index/ownership.js";
 import {
   collectOtherClaims,
   folderClaimSuggestions,
@@ -444,11 +444,12 @@ function writeRevisionClaims(
   const current = applyDelta(live, revision.implements);
   const normalized = edit ? applyListEdit(current, edit, "implements") : current;
   const attributed = args.attributed !== undefined ? validateAttributed(graph, node, args.attributed, normalized) : undefined;
+  // Exclusivity per change, as the check judges it: live plus this change's revisions.
   const buckets = buildOwnershipIndex(graph);
   for (const f of expandClaims(normalized)) {
-    const other = exclusiveOwner(buckets, f);
-    if (other && other !== node.id) {
-      throw blocked(`implements conflict: "${f}" is already claimed by "${other}".`);
+    const other = ownerUnder(buckets, f, change, node.id);
+    if (other) {
+      throw blocked(`implements conflict: "${f}" is already claimed by "${other}" under change "${change}".`);
     }
   }
   const paths: string[] = [];
