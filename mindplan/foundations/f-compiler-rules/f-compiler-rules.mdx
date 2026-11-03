@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:22:44.234Z
 revisions: 31
 churn: 18.871
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-03T12:53:15.818Z
+updated_at: 2026-11-03T13:31:24.777Z
 split_at: 8
 split_into:
   - f-source-index
@@ -110,7 +110,7 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 ## Test import scope
 
-A test file of node A (a file A's `tests` list matches that also looks like a test: `*.test.*`, `*.spec.*`, or a `__tests__` / `test` / `tests` path segment) may import, read-only, files owned by A itself and by A's direct dependents (nodes with a `depends_on`, `exposes`, or `mounts` edge to A), without an edge, so a template's starter test can import the registry that reads the template. Every other import from a test file follows the import matrix as before. The full check and the transition gates share this rule.
+A test file of node A (a file A's `tests` list matches that also looks like a test: `*.test.*`, `*.spec.*`, or a `__tests__` / `test` / `tests` path segment) may import, read-only, files owned by A itself and by A's direct dependents (nodes with a `depends_on`, `exposes`, or `mounts` edge to A), without an edge, so a template's starter test can import the registry that reads the template. Every other import from a test file follows the import matrix as before. The full check and the transition gates share this rule. Each graph's direct dependents are indexed once (a WeakMap keyed by the edges array, rebuilt when its length changes), so the lookup per import is O(1).
 
 ## Acceptance Criteria
 
