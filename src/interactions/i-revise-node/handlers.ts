@@ -17,7 +17,7 @@ import {
   resolveConflict as resolveRevisionConflict,
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
-import { conflictLabel, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
+import { PREAMBLE_SECTION, conflictLabel, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
 import { assertNoShippedDependentsOnRevision, blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
@@ -171,10 +171,13 @@ export type ResolveConflictArgs = {
   verbose?: boolean;
 };
 
-/** A section target as stored on the conflict: `"## Heading"` (a bare heading gets the `## `). */
+/**
+ * A section target as stored on the conflict: `"## Heading"` (a bare heading gets the `## `), or
+ * `"_preamble"` (the text above the first heading) as is.
+ */
 function sectionTarget(section: string): string {
   const trimmed = section.trim();
-  return trimmed.startsWith("#") ? trimmed : `## ${trimmed}`;
+  return trimmed.startsWith("#") || trimmed === PREAMBLE_SECTION ? trimmed : `## ${trimmed}`;
 }
 
 export function resolveConflict(args: ResolveConflictArgs): Record<string, unknown> {

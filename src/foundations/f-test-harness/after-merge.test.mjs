@@ -260,6 +260,19 @@ check("the merge carried A's live into b", read(LIVE).includes("Spec from A.") &
   fs.rmSync(abs(`${dupDir}/d-c1-copy.md`));
 }
 
+// --- the CLI help says a stale revision base is a warning, not a Block ---
+{
+  const help = cli(["--help"]);
+  const section = help.out.slice(help.out.indexOf("  --after-merge     "));
+  check(
+    "check --help lists a revision based on an older live as a warning naming rebase_revision, not a Block",
+    help.status === 0 &&
+      /--after-merge[\s\S]*Warn[\s\S]*older live[\s\S]*rebase_revision/.test(section) &&
+      !/Block[^.]*older live/.test(section.split("--root")[0]),
+    help.out
+  );
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 if (failures > 0) {

@@ -196,21 +196,10 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
     );
   }
   if (hasList) {
-    const ids = new Set<string>();
     for (const item of list!) {
       if (!item?.node_id || !item?.new_status) {
         throw blocked("each revision needs node_id and new_status.");
       }
-      // A node may move several of its open revisions, once per change.
-      const key = `${item.node_id}@${item.change ?? ""}`;
-      if (ids.has(key)) {
-        throw blocked(
-          item.change
-            ? `duplicate node_id "${item.node_id}" with change "${item.change}" in revisions.`
-            : `duplicate node_id "${item.node_id}" in revisions.`
-        );
-      }
-      ids.add(key);
     }
     return { mode: "batch", items: list! };
   }
@@ -227,6 +216,7 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
 
 function orderStatusRevisions(items: StatusRevision[]): StatusRevision[] {
   const graph = loadGraph();
+  const ids = new Set<string>();
   return items
     .map((item, index) => {
       const node = findNode(graph, item.node_id);
@@ -235,6 +225,24 @@ function orderStatusRevisions(items: StatusRevision[]): StatusRevision[] {
           "Capability states are computed automatically from their Interactions and cannot be set manually."
         );
       }
+      // A node may move several of its open revisions, once per change. Keyed on the revision the
+      // item means, so an omitted change and the same change named are one revision; an item
+      // whose change does not resolve keeps its own key and Blocks on its own when tried.
+      let change = item.change ?? "";
+      try {
+        change = revisionChangeFor(node, item.new_status, item.change) ?? "";
+      } catch {
+        // Reported by the item itself.
+      }
+      const key = `${item.node_id}@${change}`;
+      if (ids.has(key)) {
+        throw blocked(
+          change
+            ? `duplicate node_id "${item.node_id}" with change "${change}" in revisions.`
+            : `duplicate node_id "${item.node_id}" in revisions.`
+        );
+      }
+      ids.add(key);
       return { item, index, tier: STATUS_TIER[node.type] ?? 99 };
     })
     .sort((a, b) => a.tier - b.tier || a.index - b.index)

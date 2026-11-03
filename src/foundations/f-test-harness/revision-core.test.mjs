@@ -407,6 +407,27 @@ function body(sections) {
   ok("rebase: a kept section or scalar conflict drops when new live now reads the revision's text");
 }
 
+{
+  // Only new live has a preamble: it goes first, never with the sections live added at the end.
+  const scalars = { title: "Store", description: "Infra — the store.", role: "infra" };
+  const liveOldBody = body([["## Spec", "s0"]]);
+  const liveNewBody = body([["_preamble", "Intro from live."], ["## Spec", "s0"]]);
+  const revisionBody = body([["## Spec", "s-rev"], ["## Rules", "- keep me"]]);
+  const out = rebase({
+    liveOld: { scalars, body: liveOldBody },
+    liveNew: { scalars, body: liveNewBody },
+    revision: revision("feat-p", {
+      description: "Infra — the store.",
+      base: { scalars: scalarHashes(scalars), sections: sectionHashes(liveOldBody) },
+    }),
+    revisionBody,
+    nodeId: "f-store",
+  });
+  assert.deepEqual(splitSections(out.body).map((s) => s.heading), ["_preamble", "## Spec", "## Rules"]);
+  assert.ok(out.body.startsWith("Intro from live."), out.body);
+  ok("rebase: a preamble only new live has goes at the top of the body");
+}
+
 // --- decision files -----------------------------------------------------------------------------
 
 {

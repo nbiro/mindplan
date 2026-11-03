@@ -324,6 +324,54 @@ for (const new_status of SHIP) {
   await call("discard_next", { node_id: "f-sub", change: "v" });
 }
 
+// --- a preamble conflict (text above the first heading) resolves by "_preamble" and stays on top ---
+{
+  await call("open_next", { node_id: "f-sub", change: "pre" });
+  // The revision drops the preamble; live edits it in place: a conflict on _preamble.
+  const stripPreamble = (text) => text.replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)[\s\S]*?(?=^## )/m, "$1\n");
+  const setPreamble = (text, intro) => text.replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)[\s\S]*?(?=^## )/m, `$1\n${intro}\n\n`);
+  write(revFile("pre"), stripPreamble(read(revFile("pre"))));
+  write(LIVE, setPreamble(read(LIVE), "# Sub\n\nIntro edited in place."));
+  readyRevision("pre");
+  for (const new_status of ["ready", "in-progress", "in-review"]) {
+    await call("update_node_status", { node_id: "f-sub", change: "pre", new_status });
+  }
+  const shipPre = await raw("update_node_status", { node_id: "f-sub", change: "pre", new_status: "ship" });
+  check(
+    "a ship over a dropped preamble that live edited is Blocked with a section:_preamble conflict",
+    shipPre.error && shipPre.text.includes("section:_preamble"),
+    shipPre.text
+  );
+  const resolvedPre = await raw("resolve_conflict", { node_id: "f-sub", section: "_preamble", take: "live" });
+  const revPre = read(revFile("pre"));
+  check(
+    "resolve_conflict section _preamble take live clears the conflict and puts live's preamble at the top",
+    !resolvedPre.error && JSON.parse(resolvedPre.text).conflicts.length === 0 &&
+      /^---\r?\n[\s\S]*?\r?\n---\r?\n\s*# Sub\r?\n\r?\nIntro edited in place\./.test(revPre),
+    resolvedPre.text + "\n" + revPre
+  );
+  await call("discard_next", { node_id: "f-sub", change: "pre" });
+}
+
+// --- a batch naming one revision twice (change omitted once, given once) is a duplicate ---
+{
+  await call("open_next", { node_id: "f-sub", change: "dup" });
+  readyRevision("dup");
+  const before = read(revFile("dup"));
+  const dup = await blocked("update_node_status", {
+    revisions: [
+      { node_id: "f-sub", new_status: "ready" },
+      { node_id: "f-sub", change: "dup", new_status: "ready" },
+    ],
+  });
+  check(
+    "a batch listing the only revision with change omitted and with it named is Blocked as a duplicate",
+    !!dup && dup.includes("duplicate") && read(revFile("dup")) === before,
+    String(dup)
+  );
+  await call("discard_next", { node_id: "f-sub", change: "dup" });
+}
+
 // --- a hub Foundation with three dependents takes three changes at once; all ship in sequence ---
 {
   const HUB = "mindplan/foundations/f-static-build/f-static-build.mdx";

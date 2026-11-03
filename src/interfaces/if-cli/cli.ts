@@ -132,9 +132,9 @@ Options:
                     --base (default: the main/master merge base; an explicit --base
                     also runs dirty-src)
   --after-merge     Block git conflict markers under mindplan/, a node id in two folders,
-                    a decision id in two files, revisions based on an older live
-                    (rebase_revision), a tracked mindplan/map.md, a missing or behind
-                    version.json
+                    a decision id in two files, a revision file that does not parse,
+                    a tracked mindplan/map.md, a missing or behind version.json;
+                    Warn on revisions based on an older live (rebase_revision)
   --root <path>     Project root to check (default: MINDPLAN_ROOT, else cwd)
 `);
       return;
