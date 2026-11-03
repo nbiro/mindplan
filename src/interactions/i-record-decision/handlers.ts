@@ -13,13 +13,13 @@ import {
 import {
   entityDir,
   loadGraph,
-  projectRoot,
+  oneLineValue,
   validateChangeInput,
 } from "../../foundations/f-territory-store/store.js";
 import { appendDecisionFile, decisionsDir } from "../../foundations/f-territory-store/decisions-store.js";
 import { revisionDecisionsDir } from "../../foundations/f-territory-store/revisions.js";
 import { resolveRevisionChange, revisionFor } from "../../foundations/f-revision-model/index.js";
-import * as path from "path";
+import { repoRelative } from "../../foundations/f-source-index/root-scope.js";
 import { blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
 import { inheritanceSources } from "../../foundations/f-graph-search/rules.js";
 import {
@@ -30,11 +30,6 @@ import {
   supersessionIndex,
 } from "../../foundations/f-graph-search/decisions.js";
 import { changedFiles, gateWrite, mutationTail } from "../../foundations/f-plan-writes/writes.js";
-
-/** Trims a value and collapses its line breaks: decision fields are single lines. */
-function oneLine(value: string | undefined): string {
-  return (value ?? "").replace(/\s*\r?\n\s*/g, " ").trim();
-}
 
 /**
  * The revision a decision lands in: the open revision of `change` when the node has one, else
@@ -80,15 +75,16 @@ export function recordDecision(args: {
   if (isInactiveNode(node)) {
     throw blocked(`"${node.id}" is ${node.state}; decisions cannot be recorded on a retired node.`);
   }
-  const decision = oneLine(args.decision);
+  // Decision fields are single lines.
+  const decision = oneLineValue(args.decision ?? "");
   if (!decision) throw blocked("record_decision needs decision: one sentence saying what was chosen.");
-  const why = oneLine(args.why);
+  const why = oneLineValue(args.why ?? "");
   if (!why) throw blocked("record_decision needs why: the constraint or trade-off that decided it.");
-  const alternatives = (args.alternatives ?? []).map(oneLine).filter(Boolean);
+  const alternatives = (args.alternatives ?? []).map((a) => oneLineValue(a ?? "")).filter(Boolean);
   if (alternatives.length === 0) {
     throw blocked("record_decision needs at least one alternative: what else was considered, one line each.");
   }
-  const consequences = oneLine(args.consequences);
+  const consequences = oneLineValue(args.consequences ?? "");
   validateChangeInput({ change: args.change });
   const revision = pickRevision(node, args.change);
   const change = args.change || revision || activeChange(node);
@@ -160,7 +156,7 @@ export function recordDecision(args: {
   const dir = revision ? revisionDecisionsDir(node, revision) : decisionsDir(entityDir(node));
   const file = appendDecisionFile(dir, record);
   const slot: "revision" | "current" = revision ? "revision" : "current";
-  const rel = path.relative(projectRoot(), file).split(path.sep).join("/");
+  const rel = repoRelative(file);
   const after = loadGraph();
   const entry = listDecisions(after, { node_id: node.id, include_superseded: true }).find(
     (d) => d.id === id

@@ -13,9 +13,7 @@ import {
   type Revision,
   type RevisionConflict,
 } from "../f-domain-model/types.js";
-
-/** Key of the text above a body's first level-2 heading. */
-export const PREAMBLE_SECTION = "_preamble";
+import { detectEol, joinSections, normalizedText, splitSections } from "./sections.js";
 
 /** Sections the store owns (rules, decisions): never hashed, never rebased. */
 const OWNED_HEADINGS = new Set(["## Rules", "## Decisions"]);
@@ -52,51 +50,9 @@ export interface RebaseInput {
   nodeId: string;
 }
 
-/**
- * A body's level-2 sections in order, each with its exact text from its heading line up to the
- * next level-2 heading (so the texts concatenate back to the body). Text above the first heading
- * is a `_preamble` entry when not empty. A `## ` line inside a fenced code block is code. A
- * repeated heading is keyed `<heading> (2)`, `(3)`, … so keys stay unique.
- */
-export function splitSections(body: string): { heading: string; text: string }[] {
-  const starts: { offset: number; heading: string }[] = [];
-  const seen = new Map<string, number>();
-  let fence: string | null = null;
-  let offset = 0;
-  for (const raw of body.split("\n")) {
-    const line = raw.replace(/\r$/, "");
-    const f = line.match(/^\s*(```|~~~)/);
-    if (f) {
-      if (fence === null) fence = f[1];
-      else if (fence === f[1]) fence = null;
-    } else if (fence === null) {
-      const m = line.match(/^##\s+(.+?)\s*$/);
-      if (m) {
-        const base = `## ${m[1]}`;
-        const count = (seen.get(base) ?? 0) + 1;
-        seen.set(base, count);
-        starts.push({ offset, heading: count === 1 ? base : `${base} (${count})` });
-      }
-    }
-    offset += raw.length + 1;
-  }
-  const out: { heading: string; text: string }[] = [];
-  const first = starts.length ? starts[0].offset : body.length;
-  if (first > 0) out.push({ heading: PREAMBLE_SECTION, text: body.slice(0, first) });
-  starts.forEach((s, i) => {
-    out.push({ heading: s.heading, text: body.slice(s.offset, i + 1 < starts.length ? starts[i + 1].offset : body.length) });
-  });
-  return out;
-}
-
-/** Text as compared: LF line endings, trailing whitespace dropped. */
-function normalized(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\s+$/, "");
-}
-
 /** First 8 hex characters of sha1 over the normalized text. */
 function hash(text: string): string {
-  return createHash("sha1").update(normalized(text)).digest("hex").slice(0, 8);
+  return createHash("sha1").update(normalizedText(text)).digest("hex").slice(0, 8);
 }
 
 /**
@@ -144,8 +100,16 @@ function trimDelta(delta: EdgeDelta, live: string[] | undefined): EdgeDelta {
   return { add: delta.add.filter((v) => !have.has(v)), remove: delta.remove.filter((v) => have.has(v)) };
 }
 
+/** A conflict as one short label: `section:## Spec`, `scalar:title`, `claim:<path>@<owner>`. */
+export function conflictLabel(c: RevisionConflict): string {
+  if (c.kind === "section") return `section:${c.section}`;
+  if (c.kind === "scalar") return `scalar:${c.field}`;
+  return `claim:${c.path}@${c.owner}`;
+}
+
+/** A conflict's identity: its label, with a claim keyed by its path alone (owner dropped). */
 function conflictKey(c: RevisionConflict): string {
-  return c.kind === "section" ? `section:${c.section}` : c.kind === "scalar" ? `scalar:${c.field}` : `claim:${c.path}`;
+  return c.kind === "claim" ? `claim:${c.path}` : conflictLabel(c);
 }
 
 /**
@@ -174,7 +138,7 @@ export function rebase(input: RebaseInput): { revision: Revision; body: string }
   );
 
   // Body.
-  const eol = revisionBody.includes("\r\n") ? "\r\n" : "\n";
+  const eol = detectEol(revisionBody);
   const mineSections = splitSections(revisionBody);
   const liveSections = splitSections(liveNew.body).filter((s) => !OWNED_HEADINGS.has(s.heading));
   const liveText = new Map(liveSections.map((s) => [s.heading, s.text]));
@@ -222,8 +186,7 @@ export function rebase(input: RebaseInput): { revision: Revision; body: string }
   }
   const at = kept.findIndex((k) => k.owned);
   kept.splice(at === -1 ? kept.length : at, 0, ...added);
-  const parts = kept.map((k) => normalized(k.text)).filter((t) => t.length > 0);
-  const body = parts.length ? `${parts.join("\n\n")}\n`.replace(/\n/g, eol) : "";
+  const body = joinSections(kept.map((k) => k.text), eol);
 
   // Scalars.
   const liveScalarHashes = scalarHashes(liveNew.scalars);

@@ -48,14 +48,13 @@ import {
 import {
   writeRevisionDelta,
   writeRevisionScalars,
-  writeRevisionState,
 } from "../../foundations/f-territory-store/revisions.js";
 import type { EdgeDelta } from "../../foundations/f-domain-model/types.js";
 import { findImportViolationsForClaim } from "../../foundations/f-compiler-rules/integrity.js";
 import * as fs from "fs";
 import * as path from "path";
 import {
-  READINESS_NOTE,
+  revisionReadinessResult,
   changedFiles,
   gateWrite,
   shippedChangeBlocked,
@@ -167,19 +166,6 @@ function applyListEdit(base: string[], edit: ListEdit, field: "implements" | "te
 function sameDelta(a: EdgeDelta | undefined, b: EdgeDelta): boolean {
   const key = (d: EdgeDelta | undefined) => JSON.stringify([[...(d?.add ?? [])].sort(), [...(d?.remove ?? [])].sort()]);
   return key(a) === key(b);
-}
-
-/** A contract write to a ready revision sends it back to draft; returns the reset and files. */
-function resetReadyRevision(
-  node: MindPlanNode,
-  change: string
-): { reset: Record<string, unknown> | null; files: string[] } {
-  if (revisionFor(node, change)?.state !== "ready") return { reset: null, files: [] };
-  const written = writeRevisionState(node, change, "draft");
-  return {
-    reset: { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE },
-    files: written.changed_files,
-  };
 }
 
 type SetImplementationArgs = {
@@ -434,7 +420,7 @@ function writeRevisionClaims(
     paths.push(...writeRevisionScalars(node, change, { attributed }).changed_files);
     contract = true;
   }
-  const readiness = contract ? resetReadyRevision(node, change) : { reset: null, files: [] };
+  const readiness = contract ? revisionReadinessResult(node, change) : { reset: null, files: [] };
   if (paths.length > 0) refreshPersistedMap();
   const claimedGraph = revisionGraph(loadGraph(), change);
   const claimedNode = findNode(claimedGraph, node.id);

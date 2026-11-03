@@ -7,26 +7,27 @@
  * and never throw, so a file the loader cannot parse (conflict markers) is reported, not crashed on.
  */
 
-import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { type MindPlanGraph } from "../../foundations/f-domain-model/types.js";
-import { MINDPLAN_DIR, listNodeFolders } from "../../foundations/f-territory-store/store.js";
-import { REVISIONS_DIR, parseRevisionFile, revisionBaseStale } from "../../foundations/f-territory-store/revisions.js";
-import { DECISIONS_DIR, parseDecisionFile } from "../../foundations/f-territory-store/decisions-store.js";
+import { MINDPLAN_DIR, listNodeFolders, type NodeFolder } from "../../foundations/f-territory-store/store.js";
+import {
+  parseRevisionFile,
+  revisionBaseStale,
+  revisionDir,
+  revisionFolderNames,
+} from "../../foundations/f-territory-store/revisions.js";
+import { decisionFileNames, decisionsDir, parseDecisionFile } from "../../foundations/f-territory-store/decisions-store.js";
 import { VERSION_RELATIVE_PATH } from "../../foundations/f-territory-store/version.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { CACHE_DIRNAME } from "../../foundations/f-source-index/root-scope.js";
+import { CACHE_DIRNAME, repoRelative } from "../../foundations/f-source-index/root-scope.js";
+import { MAP_REL, git } from "../../foundations/f-source-index/git.js";
 
 const PREFIX = "Blocked: after-merge:";
 /** A warning text: run_check prints it as `Warning: after-merge: …`. */
 const WARNING_PREFIX = "after-merge:";
 /** Derived and machine-local folders under mindplan/: never scanned. */
 const SKIPPED_DIRS = new Set([CACHE_DIRNAME, ".git", "node_modules"]);
-
-function posix(rel: string): string {
-  return rel.split(path.sep).join("/");
-}
 
 /** Every file under `dir`, absolute, skipping derived folders. */
 function walkFiles(dir: string): string[] {
@@ -61,8 +62,19 @@ export function conflictMarkerLine(text: string): number {
   return 0;
 }
 
-function conflictMarkerFailures(root: string): string[] {
-  const out: string[] = [];
+/** A territory or decision file (`.md` / `.mdx`): the files the per-node findings parse. */
+function isMarkdown(abs: string): boolean {
+  return /\.mdx?$/i.test(abs);
+}
+
+/**
+ * One walk of mindplan/ for the file-level findings: git conflict markers in any file, then per node
+ * folder its revision files that no longer parse (the loader would throw on them) and any decision
+ * id recorded in two files (live and revision decision folders). Each file is read once.
+ */
+function fileFailures(root: string, folders: NodeFolder[]): { markers: string[]; unreadable: string[]; duplicates: string[] } {
+  const texts = new Map<string, string>();
+  const markers: string[] = [];
   for (const abs of walkFiles(path.join(root, MINDPLAN_DIR))) {
     let bytes: Buffer;
     try {
@@ -70,19 +82,71 @@ function conflictMarkerFailures(root: string): string[] {
     } catch {
       continue;
     }
+    const text = bytes.toString("utf-8");
+    if (isMarkdown(abs)) texts.set(abs, text);
     if (bytes.includes(0)) continue; // binary attachment
-    const line = conflictMarkerLine(bytes.toString("utf-8"));
+    const line = conflictMarkerLine(text);
     if (line > 0) {
-      const rel = posix(path.relative(root, abs));
-      out.push(`${PREFIX} ${rel}:${line} holds git conflict markers. Resolve the conflict in that file (keep one side or merge both), then commit.`);
+      markers.push(
+        `${PREFIX} ${repoRelative(abs, root)}:${line} holds git conflict markers. Resolve the conflict in that file (keep one side or merge both), then commit.`
+      );
     }
   }
-  return out;
+  const read = (file: string): string | undefined => {
+    const text = texts.get(file);
+    if (text !== undefined) return text;
+    try {
+      return fs.readFileSync(file, "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+
+  const unreadable: string[] = [];
+  const duplicates: string[] = [];
+  for (const folder of folders) {
+    const revisionDirs = revisionFolderNames(folder.abs).map((change) => revisionDir(folder.abs, change));
+    for (const dir of revisionDirs) {
+      const file = path.join(dir, `${folder.id}.mdx`);
+      const text = read(file);
+      if (text === undefined) continue;
+      try {
+        parseRevisionFile(text, folder.id);
+      } catch (err) {
+        const message = (err instanceof Error ? err.message : String(err)).replace(/^Blocked:\s*/, "");
+        unreadable.push(
+          `${PREFIX} ${repoRelative(file, root)} does not parse (${message}). Fix the file (resolve any conflict in it), then run the check again.`
+        );
+      }
+    }
+    const byId = new Map<string, string[]>();
+    for (const dir of [folder.abs, ...revisionDirs].map(decisionsDir)) {
+      for (const name of decisionFileNames(dir)) {
+        const file = path.join(dir, name);
+        const text = read(file);
+        let id: string | undefined;
+        try {
+          id = text === undefined ? undefined : parseDecisionFile(text)?.id;
+        } catch {
+          id = undefined;
+        }
+        if (id) byId.set(id, [...(byId.get(id) ?? []), repoRelative(file, root)]);
+      }
+    }
+    for (const [id, files] of byId) {
+      if (files.length < 2) continue;
+      duplicates.push(
+        `${PREFIX} decision "${id}" of "${folder.id}" is recorded in ${files.length} files (${files.sort().join(", ")}). ` +
+          `Keep one id per decision: delete one file and record it again under a new id with record_decision({ node_id: "${folder.id}", supersedes: "${id}", … }).`
+      );
+    }
+  }
+  return { markers, unreadable, duplicates };
 }
 
-function duplicateIdFailures(root: string): string[] {
+function duplicateIdFailures(folders: NodeFolder[]): string[] {
   const byId = new Map<string, string[]>();
-  for (const f of listNodeFolders(root)) byId.set(f.id, [...(byId.get(f.id) ?? []), f.rel]);
+  for (const f of folders) byId.set(f.id, [...(byId.get(f.id) ?? []), f.rel]);
   const out: string[] = [];
   for (const [id, rels] of [...byId].sort(([a], [b]) => a.localeCompare(b))) {
     if (rels.length < 2) continue;
@@ -93,86 +157,12 @@ function duplicateIdFailures(root: string): string[] {
   return out;
 }
 
-function mdFiles(dir: string): string[] {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isFile() && e.name.toLowerCase().endsWith(".md"))
-      .map((e) => path.join(dir, e.name));
-  } catch {
-    return [];
-  }
-}
-
-function revisionFolders(nodeAbs: string): { change: string; abs: string }[] {
-  try {
-    return fs
-      .readdirSync(path.join(nodeAbs, REVISIONS_DIR), { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => ({ change: e.name, abs: path.join(nodeAbs, REVISIONS_DIR, e.name) }));
-  } catch {
-    return [];
-  }
-}
-
-/** Per node folder: one decision id recorded in two files (live and revision decision folders). */
-function duplicateDecisionFailures(root: string): string[] {
-  const out: string[] = [];
-  for (const folder of listNodeFolders(root)) {
-    const dirs = [path.join(folder.abs, DECISIONS_DIR), ...revisionFolders(folder.abs).map((r) => path.join(r.abs, DECISIONS_DIR))];
-    const byId = new Map<string, string[]>();
-    for (const file of dirs.flatMap(mdFiles)) {
-      let id: string | undefined;
-      try {
-        id = parseDecisionFile(fs.readFileSync(file, "utf-8"))?.id;
-      } catch {
-        id = undefined;
-      }
-      if (id) byId.set(id, [...(byId.get(id) ?? []), posix(path.relative(root, file))]);
-    }
-    for (const [id, files] of byId) {
-      if (files.length < 2) continue;
-      out.push(
-        `${PREFIX} decision "${id}" of "${folder.id}" is recorded in ${files.length} files (${files.sort().join(", ")}). ` +
-          `Keep one id per decision: delete one file and record it again under a new id with record_decision({ node_id: "${folder.id}", supersedes: "${id}", … }).`
-      );
-    }
-  }
-  return out;
-}
-
-/** Revision files that no longer parse (the loader would throw on them). */
-function unreadableRevisionFailures(root: string): string[] {
-  const out: string[] = [];
-  for (const folder of listNodeFolders(root)) {
-    for (const rev of revisionFolders(folder.abs)) {
-      const file = path.join(rev.abs, `${folder.id}.mdx`);
-      if (!fs.existsSync(file)) continue;
-      try {
-        parseRevisionFile(fs.readFileSync(file, "utf-8"), folder.id);
-      } catch (err) {
-        const message = (err instanceof Error ? err.message : String(err)).replace(/^Blocked:\s*/, "");
-        out.push(
-          `${PREFIX} ${posix(path.relative(root, file))} does not parse (${message}). Fix the file (resolve any conflict in it), then run the check again.`
-        );
-      }
-    }
-  }
-  return out;
-}
-
 function mapTrackedFailures(root: string): string[] {
-  const rel = `${MINDPLAN_DIR}/map.md`;
-  let tracked = "";
-  try {
-    tracked = execFileSync("git", ["ls-files", "--", rel], { cwd: root, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
-  } catch {
-    return []; // not a git checkout
-  }
-  if (!tracked.trim()) return [];
+  const tracked = git(["ls-files", "--", MAP_REL], root);
+  if (!tracked?.trim()) return []; // not tracked, or not a git checkout
   return [
-    `${PREFIX} ${rel} is tracked by git, so every branch rewrites it and merges conflict on it. ` +
-      `Untrack it: git rm --cached ${rel} (and list map.md in ${MINDPLAN_DIR}/.gitignore).`,
+    `${PREFIX} ${MAP_REL} is tracked by git, so every branch rewrites it and merges conflict on it. ` +
+      `Untrack it: git rm --cached ${MAP_REL} (and list map.md in ${MINDPLAN_DIR}/.gitignore).`,
   ];
 }
 
@@ -214,16 +204,17 @@ function staleBaseFindings(graph: MindPlanGraph): { failures: string[]; warnings
 }
 
 /**
- * Every after-merge Blocked finding for the checkout at `root` (MINDPLAN_ROOT must point at it).
- * `graph` is the loaded graph, or null when it failed to load: the file-level findings still run,
- * so whatever broke the load is named. `skipVersion` leaves out the version.json findings (the
- * caller already reports `Blocked: Version`). Never throws.
+ * Every after-merge finding for the checkout at `root` (MINDPLAN_ROOT must point at it): the
+ * Blocked `failures`, and the `warnings` (`after-merge: …` texts: revisions whose base live
+ * moved past). `graph` is the loaded graph, or null when it failed to load: the file-level findings
+ * still run, so whatever broke the load is named, and there are no warnings. `skipVersion` leaves
+ * out the version.json findings (the caller already reports `Blocked: Version`). Never throws.
  */
-export function afterMergeFailures(
+export function afterMergeFindings(
   graph: MindPlanGraph | null,
   root: string,
   options: { skipVersion?: boolean } = {}
-): string[] {
+): { failures: string[]; warnings: string[] } {
   const out: string[] = [];
   const guarded = (fn: () => string[]): void => {
     try {
@@ -232,21 +223,24 @@ export function afterMergeFailures(
       out.push(`${PREFIX} ${err instanceof Error ? err.message : String(err)}`);
     }
   };
-  guarded(() => conflictMarkerFailures(root));
-  guarded(() => duplicateIdFailures(root));
-  guarded(() => unreadableRevisionFailures(root));
-  guarded(() => duplicateDecisionFailures(root));
+  let folders: NodeFolder[] = [];
+  let files = { markers: [] as string[], unreadable: [] as string[], duplicates: [] as string[] };
+  guarded(() => {
+    folders = listNodeFolders(root);
+    files = fileFailures(root, folders);
+    return files.markers;
+  });
+  guarded(() => duplicateIdFailures(folders));
+  out.push(...files.unreadable, ...files.duplicates);
   guarded(() => mapTrackedFailures(root));
   if (!options.skipVersion) guarded(() => versionFailures(root));
-  if (graph) guarded(() => staleBaseFindings(graph).failures);
-  return out;
-}
-
-/** The after-merge warnings (`after-merge: …` texts): revisions whose base live moved past. Never throws. */
-export function afterMergeWarnings(graph: MindPlanGraph): string[] {
-  try {
-    return staleBaseFindings(graph).warnings;
-  } catch {
-    return [];
+  let warnings: string[] = [];
+  if (graph) {
+    guarded(() => {
+      const stale = staleBaseFindings(graph);
+      warnings = stale.warnings;
+      return stale.failures;
+    });
   }
+  return { failures: out, warnings };
 }

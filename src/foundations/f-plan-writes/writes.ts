@@ -5,12 +5,10 @@
  */
 
 import { revisionSummaries as readSummaries } from "../../foundations/f-plan-views/views.js";
-import {
-  type MindPlanGraph,
-  type MindPlanNode,
-  type RevisionConflict,
-} from "../../foundations/f-domain-model/types.js";
-import { openChanges } from "../../foundations/f-revision-model/index.js";
+import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
+import { openChanges, revisionFor } from "../../foundations/f-revision-model/index.js";
+import { writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
+import { MAP_REL } from "../../foundations/f-source-index/git.js";
 import {
   loadGraph,
   markdownRelativePath,
@@ -35,7 +33,6 @@ import {
   recordOriented,
   rulesFingerprint,
 } from "../../foundations/f-orientation-ledger/ledger.js";
-import * as path from "path";
 
 /**
  * Blocked: Orientation unless every node was oriented on in this session with the rules that apply
@@ -73,12 +70,6 @@ export function syncNodes(nodes: MindPlanNode[]): string[] {
   }
   return paths;
 }
-
-/**
- * Project-relative path of the auto-persisted Mermaid snapshot. `refreshPersistedMap` rewrites it
- * after every write, but it is derived and never listed in `changed_files`.
- */
-export const MAP_REL = "mindplan/map.md";
 
 /** Repo-relative path of a node's live or evolution territory MDX. */
 export function territoryPath(
@@ -179,13 +170,6 @@ export function revisionSummaries(node: MindPlanNode): { change: string; state: 
   return readSummaries(node).map(({ change, state, conflicts }) => ({ change, state, conflicts }));
 }
 
-/** A conflict as one short label: `section:## Spec`, `scalar:title`, `claim:<path>@<owner>`. */
-export function conflictLabel(c: RevisionConflict): string {
-  if (c.kind === "section") return `section:${c.section}`;
-  if (c.kind === "scalar") return `scalar:${c.field}`;
-  return `claim:${c.path}@${c.owner}`;
-}
-
 /**
  * Every change id with an open revision anywhere: a pre-ship node's live change, a legacy next
  * file's change, and each open revision of a shipped node.
@@ -201,9 +185,10 @@ function changeIsOpen(graph: MindPlanGraph, change: string): boolean {
   return changeMembers(graph, change).length > 0 || graph.nodes.some((n) => openChanges(n).includes(change));
 }
 
-/** What a readiness reset reports: the slot that left `ready`. */
+/** What a readiness reset reports: the slot (and, for a revision, its change) that left `ready`. */
 export type ReadinessReset = {
   slot: TerritorySlot;
+  change?: string;
   from: "ready";
   to: "draft";
   note: string;
@@ -227,6 +212,21 @@ export function readinessResult(
     reset: { slot, from: "ready", to: "draft", note: READINESS_NOTE },
     files: [territoryPath(node, slot)],
   };
+}
+
+/** The reset a contract write reports when it sends the revision of `change` from ready back to draft. */
+export function revisionReadinessReset(change: string): ReadinessReset {
+  return { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE };
+}
+
+/** A contract write to a ready revision sends it back to draft; returns the reset and files. */
+export function revisionReadinessResult(
+  node: MindPlanNode,
+  change: string
+): { reset: ReadinessReset | null; files: string[] } {
+  if (revisionFor(node, change)?.state !== "ready") return { reset: null, files: [] };
+  const written = writeRevisionState(node, change, "draft");
+  return { reset: revisionReadinessReset(change), files: written.changed_files };
 }
 
 export function readinessFields(reset: ReadinessReset | null): Record<string, unknown> {

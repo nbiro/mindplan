@@ -8,10 +8,25 @@
  * (the legacy territory files its graph loads removed), so interleaved calls never mix those either.
  */
 import { AsyncLocalStorage } from "async_hooks";
+import * as fs from "fs";
 import * as path from "path";
 
 /** A root's folder of derived caches (graph cache, search index, acks): git-ignored, safe to delete. */
 export const CACHE_DIRNAME = ".mindplan-cache";
+
+/** The cache folder of `root` (absolute). */
+export function cacheDir(root: string): string {
+  return path.join(root, CACHE_DIRNAME);
+}
+
+/** Creates the cache folder of `root` with a `.gitignore` inside so git never lists it; returns the folder. */
+export function ensureCacheDir(root: string): string {
+  const dir = cacheDir(root);
+  fs.mkdirSync(dir, { recursive: true });
+  const ignore = path.join(dir, ".gitignore");
+  if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "# Derived MindPlan caches; safe to delete.\n*\n", "utf-8");
+  return dir;
+}
 
 /** A legacy territory file a graph load deleted because its id-named twin was kept (repo-relative). */
 export type RemovedLegacyFile = { from: string; to: string };
@@ -60,4 +75,14 @@ export function rootKey(root: string): string {
 /** The project root: an explicit root, else the scoped root, else MINDPLAN_ROOT, else cwd. */
 export function resolveProjectRoot(root?: string): string {
   return root ?? currentRoot() ?? process.env.MINDPLAN_ROOT ?? process.cwd();
+}
+
+/** A platform path with POSIX separators. */
+export function toPosix(p: string): string {
+  return p.split(path.sep).join("/");
+}
+
+/** Repo-relative POSIX path of an absolute path under `root` (default: the project root). */
+export function repoRelative(abs: string, root: string = resolveProjectRoot()): string {
+  return toPosix(path.relative(root, abs));
 }

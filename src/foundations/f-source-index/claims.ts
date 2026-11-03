@@ -5,11 +5,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { matchGlob } from "./universe.js";
-import { resolveProjectRoot } from "./root-scope.js";
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
-}
+import { resolveProjectRoot, toPosix } from "./root-scope.js";
 
 function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
@@ -75,33 +71,44 @@ function globFilePattern(claim: string): string {
 }
 
 /**
- * Glob expansions for the current synchronous call. One check or status call expands the same
- * claims many times (ownership index, conflicts, blast radius); a glob walks the disk, so its
- * result is reused until the event loop turns. Tool calls and CLI runs are synchronous, so a
- * file written between calls is always seen.
+ * Claim expansions for the current synchronous call, by root and claim. One check or status call
+ * expands the same claims many times (ownership indexes per view, conflicts, blast radius); each
+ * expansion reads the disk, so its result is reused until the event loop turns. Tool calls and CLI
+ * runs are synchronous, so a file written between calls is always seen.
  */
-let globCache: Map<string, string[]> | null = null;
+let claimCache: Map<string, string[]> | null = null;
+
+/** The files one validated claim entry covers on disk under `cwd` (memoized for the call). */
+function expandClaim(claim: string, cwd: string): string[] {
+  const key = `${cwd}\0${claim}`;
+  if (!claimCache) {
+    claimCache = new Map();
+    setImmediate(() => {
+      claimCache = null;
+    });
+  }
+  const hit = claimCache.get(key);
+  if (hit) return hit;
+  let files: string[];
+  if (isGlobClaim(claim)) files = expandGlobClaim(claim, cwd);
+  else if (claim.endsWith("/")) files = walkDirFiles(path.join(cwd, ...claim.slice(0, -1).split("/")), claim);
+  else {
+    const abs = path.join(cwd, ...claim.split("/"));
+    files = fs.existsSync(abs) && fs.statSync(abs).isFile() && path.posix.basename(claim) !== ".gitkeep" ? [claim] : [];
+  }
+  claimCache.set(key, files);
+  return files;
+}
 
 /** Files on disk matching a glob claim, walked from its static prefix. */
 function expandGlobClaim(claim: string, cwd: string): string[] {
-  const key = `${cwd}\0${claim}`;
-  if (!globCache) {
-    globCache = new Map();
-    setImmediate(() => {
-      globCache = null;
-    });
-  }
-  const hit = globCache.get(key);
-  if (hit) return hit;
   const segments = claim.split("/");
   const firstGlob = segments.findIndex((s) => isGlobClaim(s));
   const prefix = segments.slice(0, firstGlob).join("/");
   const relDir = prefix ? `${prefix}/` : "";
   const abs = prefix ? path.join(cwd, ...segments.slice(0, firstGlob)) : cwd;
   const pattern = globFilePattern(claim);
-  const files = walkDirFiles(abs, relDir).filter((f) => matchGlob(pattern, f));
-  globCache.set(key, files);
-  return files;
+  return walkDirFiles(abs, relDir).filter((f) => matchGlob(pattern, f));
 }
 
 /** True when a claim entry (file, directory ending in `/`, or glob) covers a repo-relative file path. */
@@ -142,18 +149,7 @@ export function expandClaims(entries: string[] | undefined, root?: string): stri
   const cwd = resolveProjectRoot(root);
   const files = new Set<string>();
   for (const entry of entries) {
-    const claim = validateClaimPath(entry);
-    if (isGlobClaim(claim)) {
-      for (const f of expandGlobClaim(claim, cwd)) files.add(f);
-    } else if (claim.endsWith("/")) {
-      const abs = path.join(cwd, ...claim.slice(0, -1).split("/"));
-      for (const f of walkDirFiles(abs, claim)) files.add(f);
-    } else {
-      const abs = path.join(cwd, ...claim.split("/"));
-      if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
-        if (path.posix.basename(claim) !== ".gitkeep") files.add(claim);
-      }
-    }
+    for (const f of expandClaim(validateClaimPath(entry), cwd)) files.add(f);
   }
   return [...files].sort((a, b) => a.localeCompare(b));
 }
@@ -162,7 +158,7 @@ export function expandClaims(entries: string[] | undefined, root?: string): stri
 export function claimEntryExists(entry: string, root?: string): boolean {
   const claim = validateClaimPath(entry);
   const cwd = resolveProjectRoot(root);
-  if (isGlobClaim(claim)) return expandGlobClaim(claim, cwd).length > 0;
+  if (isGlobClaim(claim)) return expandClaim(claim, cwd).length > 0;
   if (claim.endsWith("/")) {
     const abs = path.join(cwd, ...claim.slice(0, -1).split("/"));
     return fs.existsSync(abs) && fs.statSync(abs).isDirectory();

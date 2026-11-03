@@ -71,8 +71,8 @@ export function readDecisionFiles(dir: string): DecisionRecord[] {
   return out.map((e) => e.record);
 }
 
-/** Names of the `*.md` files in `dir` (any case), sorted; a missing folder is empty. */
-function decisionFileNames(dir: string): string[] {
+/** Names of the `*.md` files in `dir` (any case), sorted; a missing or unreadable folder is empty. Never throws. */
+export function decisionFileNames(dir: string): string[] {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });

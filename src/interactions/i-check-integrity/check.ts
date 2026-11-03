@@ -3,7 +3,6 @@
  * Used by `mindplan-mcp check` (CLI) — not MCP stdio.
  */
 
-import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import type { MindPlanGraph, MindPlanNode } from "../../foundations/f-domain-model/types.js";
@@ -20,8 +19,7 @@ import {
   crossChangeClaimWarnings,
   findAllImportViolations,
   findAllOwnershipConflicts,
-  findImportViolationsForNode,
-  findOwnershipConflicts,
+  changeMemberViolations,
   formatCoverageFix,
   probableOwner,
   routeFamilySplits,
@@ -32,7 +30,11 @@ import {
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
-import { changeCycleFailures } from "../../foundations/f-compiler-rules/change-cycles.js";
+import {
+  changeCycleFailures,
+  changeCycles,
+  type ChangeCycle,
+} from "../../foundations/f-compiler-rules/change-cycles.js";
 import { waitingOnPeopleLine } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import {
   changeMembership,
@@ -58,7 +60,7 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
-import { withRoot } from "../../foundations/f-source-index/root-scope.js";
+import { toPosix, withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import {
@@ -67,7 +69,7 @@ import {
   hotspotWarning,
   type ChangeAdditivity,
 } from "../../foundations/f-compiler-rules/open-closed.js";
-import { defaultBaseRef, repoPrefix } from "../../foundations/f-source-index/git.js";
+import { defaultBaseRef, repoPrefix, runGit } from "../../foundations/f-source-index/git.js";
 import {
   drainRemovedLegacyFiles,
   loadGraph,
@@ -78,8 +80,9 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { afterMergeFailures, afterMergeWarnings } from "./after-merge.js";
-import { compactCheckResult, recordSeen, scopeWarnings } from "./compact.js";
+import { afterMergeFindings } from "./after-merge.js";
+import { revisionSummaries } from "../../foundations/f-plan-views/views.js";
+import { compactCheckResult, recordSeen, scopeWarnings, warningIds } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -198,7 +201,8 @@ function checkChange(
   fullGraph: MindPlanGraph,
   root: string,
   change: string,
-  decisionCtx: DecisionContext
+  decisionCtx: DecisionContext,
+  cycles: ChangeCycle[]
 ): ChangeCheck {
   const graph = revisionGraph(fullGraph, change);
   // Planned sources are listed, not gated: their files do not change until the change opens them.
@@ -211,15 +215,13 @@ function checkChange(
       `Blocked: change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
   }
+  // A shipped member is judged through its revision of this change; a pre-ship member is live.
+  const violations = changeMemberViolations(fullGraph, root, revisions, change);
   for (const node of revisions) {
-    // A shipped member is judged through its revision of this change; a pre-ship member is live.
     const c = revisionFor(node, change) ? change : undefined;
-    for (const v of findImportViolationsForNode(fullGraph, root, node, c)) {
-      failures.push(`Blocked: change "${change}": ${v.message}`);
-    }
-    for (const conflict of findOwnershipConflicts(fullGraph, root, node, c)) {
-      failures.push(`Blocked: change "${change}": ${conflict}`);
-    }
+    const { imports, ownership } = violations.get(node.id)!;
+    for (const v of imports) failures.push(`Blocked: change "${change}": ${v.message}`);
+    for (const conflict of ownership) failures.push(`Blocked: change "${change}": ${conflict}`);
     for (const missing of testPresenceFailures(node, root)) {
       failures.push(`Blocked: change "${change}": ${missing}`);
     }
@@ -230,7 +232,7 @@ function checkChange(
   for (const p of plannedEdgeProblems(graph, change)) {
     failures.push(`Blocked: change "${change}": planned edge ${p.source} -${p.type}-> ${p.target}: ${p.problem}`);
   }
-  for (const f of changeCycleFailures(fullGraph, change)) failures.push(f.replace(/^Blocked: /, `Blocked: change "${change}": `));
+  for (const f of changeCycleFailures(fullGraph, change, cycles)) failures.push(f.replace(/^Blocked: /, `Blocked: change "${change}": `));
   const bySource = new Map<string, string[]>();
   for (const row of plannedEdges(graph, change)) {
     bySource.set(row.source, [...(bySource.get(row.source) ?? []), `${row.type} ${row.target}`]);
@@ -289,19 +291,11 @@ function fail(failures: string[], message: string): void {
   failures.push(message.startsWith("Blocked:") ? message : `Blocked: ${message}`);
 }
 
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
-}
-
 function git(args: string[], cwd: string, required: boolean): string {
   try {
     // Trim only the trailing newline. A leading space is the unstaged half of
     // porcelain (` D path`); trimming it corrupts the first path.
-    return execFileSync("git", args, {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).replace(/\s+$/, "");
+    return runGit(args, cwd).replace(/\s+$/, "");
   } catch (err) {
     if (!required) return "";
     const detail =
@@ -729,12 +723,10 @@ function ownerAllowsCommitDiff(
 }
 
 /** The open revisions of a node with several, as drift and dirty-src lines name them; else undefined. */
+/** With several open revisions: each one's change and state, sorted by change; else undefined. */
 function revisionStates(node: MindPlanNode): { change: string; state: string }[] | undefined {
-  const revs = node.open_revisions ?? [];
-  if (revs.length < 2) return undefined;
-  return [...revs]
-    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
-    .map((r) => ({ change: r.change, state: r.state }));
+  if ((node.open_revisions?.length ?? 0) < 2) return undefined;
+  return revisionSummaries(node).map(({ change, state }) => ({ change, state }));
 }
 
 function describeOwner(node: MindPlanNode): string {
@@ -1197,7 +1189,7 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   if (process.env.MINDPLAN_VERSION_GATE !== "off") {
     const status = graphStatus();
     if (status.state !== "current") {
-      if (options.after_merge) failures.push(...afterMergeFailures(null, root, { skipVersion: true }));
+      if (options.after_merge) failures.push(...afterMergeFindings(null, root, { skipVersion: true }).failures);
       fail(failures, `Blocked: Version — ${status.warning}`);
       return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
     }
@@ -1211,15 +1203,16 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // After a merge, name what broke the load (conflict markers, a file that no longer parses) first.
-    if (options.after_merge) failures.push(...afterMergeFailures(null, root));
+    if (options.after_merge) failures.push(...afterMergeFindings(null, root).failures);
     fail(failures, `graph load failed: ${message}`);
     return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
   }
 
   try {
     if (options.after_merge) {
-      failures.push(...afterMergeFailures(graph, root));
-      warnings.push(...afterMergeWarnings(graph));
+      const afterMerge = afterMergeFindings(graph, root);
+      failures.push(...afterMerge.failures);
+      warnings.push(...afterMerge.warnings);
     }
     const buckets = checkExclusivity(graph, root, failures, warnings);
     const universe = listUniverseFiles(root);
@@ -1227,7 +1220,8 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
-    for (const f of changeCycleFailures(graph)) fail(failures, f);
+    const cycles = changeCycles(graph);
+    for (const f of changeCycleFailures(graph, undefined, cycles)) fail(failures, f);
     const probe = dirtyProbe(root);
     const collected = collectWarnings(graph, root, changedAgainstBase(root, probe, options.base));
     warnings.push(...collected.warnings);
@@ -1245,7 +1239,7 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
       checkDirtySrc(graph, buckets, root, probe, options.base, failures);
     }
     if (options.change !== undefined) {
-      changeReport = checkChange(graph, root, options.change, decisionCtx);
+      changeReport = checkChange(graph, root, options.change, decisionCtx, cycles);
     }
     if (options.merge) {
       mergeReport = checkMerge(graph, root, options.merge, options.base, probe, failures);
@@ -1321,7 +1315,8 @@ export function runCheckHandler(
   };
   if (args.compact === true) {
     // Only a compact check records what it showed; a full one lists everything and records nothing.
-    const seen = recordSeen(root, result.warnings, nodes);
+    const ids = warningIds(result.warnings);
+    const seen = recordSeen(root, result.warnings, ids, nodes);
     return {
       ...compactCheckResult({
         ok: result.ok,
@@ -1330,6 +1325,7 @@ export function runCheckHandler(
         info: result.info,
         outside,
         seen,
+        ids,
         root,
         scoped: nodes !== undefined,
       }),

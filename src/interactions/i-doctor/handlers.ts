@@ -17,7 +17,7 @@ import { packageVersion } from "../../foundations/f-territory-store/version.js";
 import { serverStartedAt } from "../../foundations/f-mcp-runtime/started.js";
 import { DB_FILENAME } from "../../foundations/f-graph-cache/cache.js";
 import { INDEX_FILENAME } from "../../foundations/f-search-index/index-db.js";
-import { CACHE_DIRNAME } from "../../foundations/f-source-index/root-scope.js";
+import { cacheDir } from "../../foundations/f-source-index/root-scope.js";
 
 export type DoctorReport = {
   version: string;
@@ -43,10 +43,9 @@ export type DoctorReport = {
 export function doctor(): DoctorReport {
   const root = projectRoot();
   const status = graphStatus();
-  const cacheDir = path.join(root, CACHE_DIRNAME);
   const cache = {
-    graph: fs.existsSync(path.join(cacheDir, DB_FILENAME)),
-    search: fs.existsSync(path.join(cacheDir, INDEX_FILENAME)),
+    graph: fs.existsSync(path.join(cacheDir(root), DB_FILENAME)),
+    search: fs.existsSync(path.join(cacheDir(root), INDEX_FILENAME)),
   };
   let loadMs = 0;
   let cacheHit = false;

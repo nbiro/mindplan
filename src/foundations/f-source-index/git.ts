@@ -7,13 +7,21 @@ import { execFileSync } from "child_process";
 import { matchGlob } from "./universe.js";
 import { resolveProjectRoot } from "./root-scope.js";
 
-function git(args: string[], cwd: string): string | null {
+/**
+ * Project-relative path of the auto-persisted Mermaid snapshot. It is rewritten after every write,
+ * so it is derived: git never tracks it and `changed_files` never lists it.
+ */
+export const MAP_REL = "mindplan/map.md";
+
+/** Runs git in `cwd` and returns its stdout; throws when git fails or is missing. */
+export function runGit(args: string[], cwd: string): string {
+  return execFileSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+/** Runs git in `cwd`: its stdout, or null when git fails or is missing. */
+export function git(args: string[], cwd: string): string | null {
   try {
-    return execFileSync("git", args, {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    return runGit(args, cwd);
   } catch {
     return null;
   }

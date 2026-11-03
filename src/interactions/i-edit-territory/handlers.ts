@@ -33,8 +33,6 @@ import {
   type TerritorySlot,
   loadProjectConfig,
   writeRevisionFields,
-  entityDir,
-  projectRoot,
   hasNodeRulesHeading,
   hasNodeDecisionsHeading,
   normalizeHeadingName,
@@ -44,15 +42,15 @@ import {
 } from "../../foundations/f-territory-store/store.js";
 import { appendChecklistItems, toggleChecklistItems, type NewChecklistItem } from "../../foundations/f-territory-store/checklist.js";
 import {
-  readRevisions,
+  loadRevision,
   revisionAttachmentsDir,
   revisionRelativeFilePath,
-  writeRevisionBody,
-  writeRevisionScalars,
-  writeRevisionState,
+  writeRevision,
+  type RevisionScalarsPatch,
 } from "../../foundations/f-territory-store/revisions.js";
 import { openChanges, resolveRevisionChange, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 import { unlinkRetry, writeFileRetry } from "../../foundations/f-source-index/io.js";
+import { repoRelative } from "../../foundations/f-source-index/root-scope.js";
 import {
   assertNoUntickUnderShippedDependents,
   assertPipelineTerritoryScalarsEditable,
@@ -65,13 +63,13 @@ import { orientationGateEnabled, recordOriented } from "../../foundations/f-orie
 import * as fs from "fs";
 import * as path from "path";
 import {
-  READINESS_NOTE,
   changedFiles,
   gateWrite,
   mutationTail,
   readinessFields,
   readinessResult,
   refreshPersistedMap,
+  revisionReadinessReset,
   territoryPath,
   shippedChangeBlocked,
   withChangeCleanup,
@@ -167,10 +165,12 @@ function clearSplitRecord(node: MindPlanNode): { paths: string[]; churn: number 
 }
 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
-  gateWrite(null, [args.node_id], "patch_node_territory");
-  const subject = findNode(loadGraph(), args.node_id);
+  // One load for every check before the first write; replies after a write reload.
+  const graph = loadGraph();
+  gateWrite(graph, [args.node_id], "patch_node_territory");
+  const subject = findNode(graph, args.node_id);
   const revision = targetRevision(subject, args.change, args.slot);
-  if (revision !== null) return patchRevisionTerritory(args, revision);
+  if (revision !== null) return patchRevisionTerritory(graph, args, revision);
   if (args.slot === "next" && isPipelineNodeType(subject.type) && subject.shipped_at) {
     // Slot "next" can only mean an open revision.
     throw blocked(
@@ -179,16 +179,12 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
     );
   }
   const { aliases, split_into, ...territory } = args;
-  if (split_into !== undefined) {
-    const graph = loadGraph();
-    validateSplitInto(graph, findNode(graph, args.node_id), split_into);
-  }
+  if (split_into !== undefined) validateSplitInto(graph, subject, split_into);
   if (aliases !== undefined) {
     // Validate the alias write in full before any territory write, so a Blocked writes nothing.
     normalizeAliases(args.node_id, aliases);
-    const target = findNode(loadGraph(), args.node_id);
-    if (isInactiveNode(target)) {
-      throw blocked(`"${args.node_id}" is ${target.state}; aliases cannot be set on a retired or closed node.`);
+    if (isInactiveNode(subject)) {
+      throw blocked(`"${args.node_id}" is ${subject.state}; aliases cannot be set on a retired or closed node.`);
     }
   }
   const territoryFields = Object.entries(territory).some(
@@ -204,8 +200,8 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
     // A revision moved off (or cleared from) its change may leave that change with no revisions.
     result =
       territory.change === undefined
-        ? writeNodeTerritory(territory)
-        : withChangeCleanup(() => writeNodeTerritory(territory));
+        ? writeNodeTerritory(graph, territory)
+        : withChangeCleanup(() => writeNodeTerritory(graph, territory));
   }
   if (aliases === undefined && split_into === undefined) return result!;
   const fields: string[] = [];
@@ -219,24 +215,25 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
     paths.push(...written.paths);
     extra.aliases = written.aliases;
   }
-  if (split_into !== undefined && split_into.length === 0 && !findNode(loadGraph(), args.node_id).next) {
-    const written = clearSplitRecord(findNode(loadGraph(), args.node_id));
+  // The split record goes on the node as the writes above left it.
+  const fresh = split_into === undefined ? null : loadGraph();
+  const target = fresh && findNode(fresh, args.node_id);
+  if (split_into !== undefined && split_into.length === 0 && !target!.next) {
+    const written = clearSplitRecord(target!);
     fields.push("split_into");
     paths.push(...written.paths);
     extra.split_into = [];
     extra.churn = written.churn;
   } else if (split_into !== undefined) {
     // A record of the revision's shape, like a change id: it never resets readiness.
-    const graph = loadGraph();
-    const target = findNode(graph, args.node_id);
-    const written = writeNextSplitInto(target, split_into);
+    const written = writeNextSplitInto(target!, split_into);
     fields.push("split_into");
     paths.push(...written.paths);
     extra.split_into = written.split_into;
-    const unlinked = split_into.filter((id) => !splitPartLinked(graph, target, id));
+    const unlinked = split_into.filter((id) => !splitPartLinked(fresh!, target!, id));
     if (unlinked.length > 0) {
       extra.warnings = [
-        `split_into: "${args.node_id}" does not yet ${splitLinkHint(target)} for ` +
+        `split_into: "${args.node_id}" does not yet ${splitLinkHint(target!)} for ` +
           `${unlinked.map((id) => `"${id}"`).join(", ")}; only linked parts are recorded as split out when the revision ships.`,
       ];
     }
@@ -294,8 +291,7 @@ function assertNoOwnedHeading(text: string, what: string): void {
  * its scalars; aliases go to live. Every check runs before the first write. A contract write
  * (anything but change_ref, split_into, and aliases) to a ready revision sends it back to draft.
  */
-function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Record<string, unknown> {
-  const graph = loadGraph();
+function patchRevisionTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, change: string): Record<string, unknown> {
   const node = findNode(graph, args.node_id);
   const { title, description, role, body, toggle_checkboxes, aliases, split_into } = args;
   if ((args.section === undefined) !== (args.text === undefined)) {
@@ -312,8 +308,7 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
   }
   const view = withRevision(node, change);
   if (split_into !== undefined) validateSplitInto(graph, view, split_into);
-  const file = readRevisions(entityDir(node), node.id).find((r) => r.revision.change === change);
-  if (!file) throw blocked(`revision file of "${node.id}" for change "${change}" is missing.`);
+  const file = loadRevision(node, change);
 
   const patched: string[] = [];
   let text = file.body;
@@ -348,7 +343,7 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
     patched.push("toggle_checkboxes");
   }
   const bodyWrite = patched.length > 0;
-  const scalars: Parameters<typeof writeRevisionScalars>[2] = {};
+  const scalars: RevisionScalarsPatch = {};
   if (title !== undefined) {
     scalars.title = title;
     patched.push("title");
@@ -378,14 +373,18 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
   }
 
   const paths: string[] = [];
-  if (bodyWrite) paths.push(...writeRevisionBody(node, change, text).changed_files);
-  if (Object.keys(scalars).length > 0) paths.push(...writeRevisionScalars(node, change, scalars).changed_files);
   // A change ref and a split record describe the revision's shape, not its contract.
   const contractWrite = patched.some((f) => f !== "change_ref" && f !== "split_into");
-  let reset: Record<string, unknown> | null = null;
-  if (contractWrite && revisionFor(node, change)?.state === "ready") {
-    paths.push(...writeRevisionState(node, change, "draft").changed_files);
-    reset = { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE };
+  const reset = contractWrite && revisionFor(node, change)?.state === "ready" ? revisionReadinessReset(change) : null;
+  const scalarWrite = Object.keys(scalars).length > 0;
+  if (bodyWrite || scalarWrite || reset) {
+    // Body, scalars, and the readiness reset land in one write of the revision file.
+    const written = writeRevision(node, change, {
+      ...(bodyWrite ? { body: text } : {}),
+      ...(scalarWrite ? { scalars } : {}),
+      ...(reset ? { state: "draft" as const } : {}),
+    });
+    paths.push(...written.changed_files);
   }
   const extra: Record<string, unknown> = {};
   if (aliases !== undefined) {
@@ -421,11 +420,6 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
   };
 }
 
-/** Repo-relative POSIX path of an absolute path under the project root. */
-function repoRelative(abs: string): string {
-  return path.relative(projectRoot(), abs).split(path.sep).join("/");
-}
-
 /**
  * Where an attachment call writes: the open revision's `attachments/` when it targets one (see
  * `targetRevision`), else the live `attachments/`.
@@ -453,7 +447,7 @@ function attachmentTarget(
   return { slot: "current", dir: attachmentsDir(node), relDir: `${entityRelativePath(node)}/${ATTACHMENTS_DIR}` };
 }
 
-function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
+function writeNodeTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs): Record<string, unknown> {
   const { node_id, title, description, role, body, toggle_checkboxes, slot } = args;
   validateChangeInput(args);
   if ((args.section === undefined) !== (args.text === undefined)) {
@@ -462,7 +456,6 @@ function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   if (body !== undefined && (args.section !== undefined || args.replace !== undefined)) {
     throw blocked("patch_node_territory body replaces the whole body; do not combine it with section or replace.");
   }
-  const graph = loadGraph();
   const node = findNode(graph, node_id);
   const resolvedSlot: TerritorySlot =
     slot ??
@@ -556,12 +549,12 @@ export function patchNodeRules(args: {
   node_id: string;
   rules: string;
 }): Record<string, unknown> {
-  gateWrite(null, [args.node_id], "patch_node_rules");
+  const graph = loadGraph();
+  gateWrite(graph, [args.node_id], "patch_node_rules");
   const { node_id, rules } = args;
   if (rules === undefined) {
     throw blocked("patch_node_rules requires rules.");
   }
-  const graph = loadGraph();
   const node = findNode(graph, node_id);
   const written = writeNodeRules(node, rules);
   // The author holds the rules it just wrote; its orientation stays current. Nodes that inherit

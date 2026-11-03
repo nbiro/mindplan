@@ -17,12 +17,23 @@ export {
   withRevision,
 } from "./revision.js";
 export {
-  PREAMBLE_SECTION,
+  conflictLabel,
   rebase,
   scalarHashes,
   sectionHashes,
-  splitSections,
   type RebaseInput,
   type RebaseLive,
   type RevisionScalars,
 } from "./rebase.js";
+export {
+  PREAMBLE_SECTION,
+  decisionsSectionRange,
+  detectEol,
+  fencedLines,
+  joinSections,
+  levelTwoHeadings,
+  normalizedText,
+  ownedLines,
+  rulesSectionRange,
+  splitSections,
+} from "./sections.js";

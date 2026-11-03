@@ -39,7 +39,10 @@ import {
 } from "../f-domain-model/types.js";
 import {
   applyDelta,
+  conflictLabel,
+  detectEol,
   emptyDelta,
+  joinSections,
   PREAMBLE_SECTION,
   pickRevision,
   rebase,
@@ -53,6 +56,7 @@ import {
   type RebaseLive,
 } from "../f-revision-model/index.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
+import { repoRelative } from "../f-source-index/root-scope.js";
 import {
   assertNoDecisionClash,
   decisionFolderFiles,
@@ -71,9 +75,11 @@ import {
   oneBlankLineBelowFrontmatter,
   projectRoot,
   readMarkdown,
+  scanFrontmatter,
   splitContext,
   splitNodeDecisions,
   splitNodeRules,
+  unquote,
   validateChangeInput,
   withFreshAtomicOps,
   withoutAtomicOps,
@@ -152,24 +158,9 @@ function formatItem(value: string): string {
   return /^[A-Za-z0-9_./@=:+*-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
-function unquote(value: string): string {
-  if (!value.startsWith('"')) return value;
-  try {
-    return JSON.parse(value) as string;
-  } catch {
-    return value;
-  }
-}
-
 function listLines(key: string, items: string[] | undefined): string[] {
   if (!items || items.length === 0) return [];
   return [`${key}:`, ...items.map((i) => `  - ${formatItem(i)}`)];
-}
-
-function conflictEntry(c: RevisionConflict): string {
-  if (c.kind === "section") return `section:${c.section}`;
-  if (c.kind === "scalar") return `scalar:${c.field}`;
-  return `claim:${c.path}@${c.owner}`;
 }
 
 /**
@@ -210,9 +201,14 @@ export function formatRevisionFile(
   for (const [heading, hash] of Object.entries(revision.base.sections)) {
     lines.push(`  - ${formatItem(`section:${heading}=${hash}`)}`);
   }
-  lines.push(...listLines("conflicts", revision.conflicts.map(conflictEntry)));
+  lines.push(...listLines("conflicts", revision.conflicts.map(conflictLabel)));
   lines.push("---");
   return oneBlankLineBelowFrontmatter(`${lines.join(eol)}${eol}${body.replace(/\r?\n/g, eol)}`);
+}
+
+/** The revision file's list keys: every `<list>_add` / `<list>_remove` delta, base hashes, conflicts, and the part lists. */
+function isRevisionList(key: string): boolean {
+  return /_(add|remove)$/.test(key) || key === "base" || key === "conflicts" || key === "attributed" || key === "split_into";
 }
 
 function parseConflict(entry: string): RevisionConflict {
@@ -237,22 +233,9 @@ function parseConflict(entry: string): RevisionConflict {
 export function parseRevisionFile(text: string, nodeId: string): { revision: Revision; body: string } {
   const split = splitContext(text);
   if (!split) throw blocked(`revision file of "${nodeId}" has no YAML frontmatter.`);
-  const scalars: Record<string, string> = {};
-  const lists: Record<string, string[]> = {};
-  const lines = split.frontmatter.split(/\r?\n/).slice(1, -1);
-  for (let i = 0; i < lines.length; i++) {
-    const keyOnly = lines[i].match(/^(\w+):\s*$/);
-    if (keyOnly) {
-      const items: string[] = [];
-      while (i + 1 < lines.length && /^\s+-\s+/.test(lines[i + 1])) {
-        items.push(unquote(lines[++i].replace(/^\s+-\s+/, "").trim()));
-      }
-      lists[keyOnly[1]] = items;
-      continue;
-    }
-    const scalar = lines[i].match(/^(\w+):\s*(.*)$/);
-    if (scalar) scalars[scalar[1]] = unquote(scalar[2].trim());
-  }
+  const scanned = scanFrontmatter(split.frontmatter.split(/\r?\n/).slice(1, -1).join("\n"), isRevisionList);
+  const scalars = scanned.scalars;
+  const lists = Object.fromEntries(Object.entries(scanned.lists).map(([k, items]) => [k, items.map(unquote)]));
   if ((scalars.id ?? nodeId) !== nodeId) {
     throw blocked(`revision file names node "${scalars.id}", not "${nodeId}".`);
   }
@@ -312,6 +295,22 @@ export function parseRevisionFile(text: string, nodeId: string): { revision: Rev
 // ---------------------------------------------------------------------------
 
 /**
+ * The folder names under `<nodeFolder>/revisions/` (one per open revision, named by its change),
+ * sorted; a missing or unreadable folder is empty. Never throws.
+ */
+export function revisionFolderNames(nodeFolder: string): string[] {
+  try {
+    return fs
+      .readdirSync(path.join(nodeFolder, REVISIONS_DIR), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Every open revision under `<nodeFolder>/revisions/`, sorted by change id. A folder whose
  * `<nodeId>.mdx` is missing is skipped; a file whose frontmatter does not parse into a `Revision`
  * (unknown state, change id not matching its folder name) is Blocked naming the path. Each
@@ -320,14 +319,8 @@ export function parseRevisionFile(text: string, nodeId: string): { revision: Rev
  */
 export function readRevisions(nodeFolder: string, nodeId: string): RevisionFile[] {
   const dir = path.join(nodeFolder, REVISIONS_DIR);
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
   const out: RevisionFile[] = [];
-  for (const name of entries.filter((e) => e.isDirectory()).map((e) => e.name).sort()) {
+  for (const name of revisionFolderNames(nodeFolder)) {
     const file = path.join(dir, name, liveMdxFilename(nodeId));
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
     let parsed: { revision: Revision; body: string };
@@ -360,16 +353,15 @@ export function syncNextView(node: MindPlanNode): void {
 // Writers
 // ---------------------------------------------------------------------------
 
-function repoRelative(abs: string): string {
-  return path.relative(projectRoot(), abs).split(path.sep).join("/");
-}
-
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Reads the revision of `change` from disk (decisions from memory); Blocked when it is not open. */
-function loadRevision(node: MindPlanNode, change: string): { revision: Revision; body: string } {
+/**
+ * Reads the revision of `change` from disk (decisions from memory); Blocked when it is not open
+ * or its file is missing.
+ */
+export function loadRevision(node: MindPlanNode, change: string): { revision: Revision; body: string } {
   resolveRevisionChange(node, change);
   const file = revisionFilePath(node, change);
   if (!fs.existsSync(file)) throw blocked(`revision file of "${node.id}" for change "${change}" is missing (${file}).`);
@@ -382,7 +374,7 @@ function loadRevision(node: MindPlanNode, change: string): { revision: Revision;
 /** The line ending of the node's live file (CRLF when it has any), else LF. */
 function liveEol(node: MindPlanNode): "\n" | "\r\n" {
   try {
-    return readMarkdown(node, "current").includes("\r\n") ? "\r\n" : "\n";
+    return detectEol(readMarkdown(node, "current"));
   } catch {
     return "\n";
   }
@@ -691,7 +683,7 @@ export function shipRevision(
   const loaded = loadRevision(node, change);
   if (loaded.revision.conflicts.length > 0) {
     throw blocked(
-      `revision "${change}" of "${node.id}" has unresolved conflicts (${loaded.revision.conflicts.map(conflictEntry).join(", ")}); ` +
+      `revision "${change}" of "${node.id}" has unresolved conflicts (${loaded.revision.conflicts.map(conflictLabel).join(", ")}); ` +
         `resolve each with resolve_conflict first.`
     );
   }
@@ -708,7 +700,7 @@ export function shipRevision(
       // The conflicts are persisted before the Block: callers report the file as written.
       throw withWrittenFiles(blocked(
         `live "${node.id}" changed in place since revision "${change}" last started from it, and both edited ` +
-          `${own.revision.conflicts.map(conflictEntry).join(", ")}; the revision now holds those conflicts. ` +
+          `${own.revision.conflicts.map(conflictLabel).join(", ")}; the revision now holds those conflicts. ` +
           `Resolve each with resolve_conflict({ node_id: "${node.id}", change: "${change}", target, take }), then ship again.`
       ), [written]);
     }
@@ -733,7 +725,7 @@ export function shipRevision(
   const newParts = splitParts(graph, withRevision({ ...node, open_revisions: [revision] }, change));
   // Live decisions still in the `## Decisions` section stay there until the migration splits them.
   const liveDecisionSection = splitNodeDecisions(splitNodeRules(before.body).body).section;
-  const eol = body.includes("\r\n") ? "\r\n" : "\n";
+  const eol = detectEol(body);
   const promotedBody = joinNodeDecisions(withoutOwnedSections(body), liveDecisionSection);
 
   // Siblings onto the new live, in memory.
@@ -843,6 +835,60 @@ export function writeRevisionDelta(
   return { changed_files: [storeRevision(node, revision, body)] };
 }
 
+/** The scalars `writeRevision` patches; `role: null` removes the role, `change_ref: ""` clears it. */
+export type RevisionScalarsPatch = {
+  title?: string;
+  description?: string;
+  role?: FoundationRole | null;
+  change_ref?: string;
+  attributed?: string[];
+  split_into?: string[];
+};
+
+/**
+ * One write of the revision of `change`: any of a new body (its `## Rules` and `## Decisions`
+ * sections are ignored: rules are slot-independent, decisions live in files), scalars, and pipeline
+ * `state`, applied to one loaded revision and stored once with a new `updated_at`. Everything is
+ * checked before the write. Blocked when the node has no revision of `change`.
+ */
+export function writeRevision(
+  node: MindPlanNode,
+  change: string,
+  patch: { body?: string; scalars?: RevisionScalarsPatch; state?: NextPipelineState }
+): { changed_files: string[] } {
+  const scalars = patch.scalars ?? {};
+  if (scalars.change_ref !== undefined) validateChangeInput({ change_ref: scalars.change_ref });
+  if (scalars.role != null && !isFoundationRole(scalars.role)) {
+    throw blocked(`invalid Foundation role "${scalars.role}". Allowed: assembler, infra, design-system, adapter.`);
+  }
+  if (patch.state !== undefined && !isNextPipelineState(patch.state)) {
+    throw blocked(`invalid revision state "${patch.state}". Allowed: draft, ready, in-progress, in-review.`);
+  }
+  const loaded = loadRevision(node, change);
+  const revision = loaded.revision;
+  const body = patch.body === undefined ? loaded.body : withoutOwnedSections(patch.body);
+  if (scalars.title !== undefined) revision.title = scalars.title;
+  if (scalars.description !== undefined) revision.description = scalars.description;
+  if (scalars.role === null) {
+    delete revision.role;
+    revision.role_removed = true;
+  } else if (scalars.role !== undefined) {
+    revision.role = scalars.role;
+    delete revision.role_removed;
+  }
+  if (scalars.change_ref === "") delete revision.change_ref;
+  else if (scalars.change_ref !== undefined) revision.change_ref = scalars.change_ref;
+  for (const key of ["attributed", "split_into"] as const) {
+    const value = scalars[key];
+    if (value === undefined) continue;
+    if (value.length > 0) revision[key] = [...new Set(value)];
+    else delete revision[key];
+  }
+  if (patch.state !== undefined) revision.state = patch.state;
+  revision.updated_at = nowIso();
+  return { changed_files: [storeRevision(node, revision, body)] };
+}
+
 /**
  * Patches the revision's scalars: a key present in `patch` replaces the stored value (`role`
  * `null` removes the role, so the ship clears live's; `change_ref` `""` clears it); sets `updated_at`. Blocked when the node has no
@@ -851,39 +897,9 @@ export function writeRevisionDelta(
 export function writeRevisionScalars(
   node: MindPlanNode,
   change: string,
-  patch: {
-    title?: string;
-    description?: string;
-    role?: FoundationRole | null;
-    change_ref?: string;
-    attributed?: string[];
-    split_into?: string[];
-  }
+  patch: RevisionScalarsPatch
 ): { changed_files: string[] } {
-  if (patch.change_ref !== undefined) validateChangeInput({ change_ref: patch.change_ref });
-  if (patch.role != null && !isFoundationRole(patch.role)) {
-    throw blocked(`invalid Foundation role "${patch.role}". Allowed: assembler, infra, design-system, adapter.`);
-  }
-  const { revision, body } = loadRevision(node, change);
-  if (patch.title !== undefined) revision.title = patch.title;
-  if (patch.description !== undefined) revision.description = patch.description;
-  if (patch.role === null) {
-    delete revision.role;
-    revision.role_removed = true;
-  } else if (patch.role !== undefined) {
-    revision.role = patch.role;
-    delete revision.role_removed;
-  }
-  if (patch.change_ref === "") delete revision.change_ref;
-  else if (patch.change_ref !== undefined) revision.change_ref = patch.change_ref;
-  for (const key of ["attributed", "split_into"] as const) {
-    const value = patch[key];
-    if (value === undefined) continue;
-    if (value.length > 0) revision[key] = [...new Set(value)];
-    else delete revision[key];
-  }
-  revision.updated_at = nowIso();
-  return { changed_files: [storeRevision(node, revision, body)] };
+  return writeRevision(node, change, { scalars: patch });
 }
 
 /**
@@ -892,9 +908,7 @@ export function writeRevisionScalars(
  * `updated_at`. Blocked when the node has no revision of `change`.
  */
 export function writeRevisionBody(node: MindPlanNode, change: string, body: string): { changed_files: string[] } {
-  const { revision } = loadRevision(node, change);
-  revision.updated_at = nowIso();
-  return { changed_files: [storeRevision(node, revision, withoutOwnedSections(body))] };
+  return writeRevision(node, change, { body });
 }
 
 /** Sets the revision's pipeline `state` and `updated_at`. Blocked when the node has no revision of `change`. */
@@ -903,18 +917,7 @@ export function writeRevisionState(
   change: string,
   state: NextPipelineState
 ): { changed_files: string[] } {
-  if (!isNextPipelineState(state)) {
-    throw blocked(`invalid revision state "${state}". Allowed: draft, ready, in-progress, in-review.`);
-  }
-  const { revision, body } = loadRevision(node, change);
-  revision.state = state;
-  revision.updated_at = nowIso();
-  return { changed_files: [storeRevision(node, revision, body)] };
-}
-
-/** Text as compared and rejoined: LF line endings, trailing whitespace dropped. */
-function normalizedText(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+  return writeRevision(node, change, { state });
 }
 
 /**
@@ -923,7 +926,7 @@ function normalizedText(text: string): string {
  * end. Sections are rejoined with one blank line between them, in the body's line endings.
  */
 function replaceSection(body: string, heading: string, text: string | undefined): string {
-  const eol = body.includes("\r\n") ? "\r\n" : "\n";
+  const eol = detectEol(body);
   const parts = splitSections(body).map((s) => ({ heading: s.heading, text: s.text }));
   const at = parts.findIndex((p) => p.heading === heading);
   if (text === undefined) {
@@ -934,8 +937,7 @@ function replaceSection(body: string, heading: string, text: string | undefined)
     const owned = parts.findIndex((p) => p.heading === "## Rules" || p.heading === "## Decisions");
     parts.splice(owned === -1 ? parts.length : owned, 0, { heading, text });
   }
-  const kept = parts.map((p) => normalizedText(p.text)).filter((t) => t.length > 0);
-  return kept.length ? `${kept.join("\n\n")}\n`.replace(/\n/g, eol) : "";
+  return joinSections(parts.map((p) => p.text), eol);
 }
 
 /**
@@ -963,7 +965,7 @@ export function resolveConflict(
       (c.kind === "claim" && c.path === target)
   );
   if (!conflict) {
-    const held = revision.conflicts.map(conflictEntry);
+    const held = revision.conflicts.map(conflictLabel);
     throw blocked(
       `revision "${change}" of "${node.id}" holds no conflict on "${target}"; conflicts: ${held.length ? held.join(", ") : "(none)"}.`
     );

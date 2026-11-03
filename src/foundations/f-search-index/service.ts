@@ -38,18 +38,33 @@ export function searchSettings(root: string): SearchSettings {
   };
 }
 
+/** Open caches by root, least recently used first; at most `MAX_OPEN_INDEXES` stay open. */
 const indexes = new Map<string, { model: string; index: SearchIndex | null }>();
+const MAX_OPEN_INDEXES = 4;
 const loggedSqlite = { done: false };
+
+/** Closes an index once no background embedding still writes to it. */
+function closeWhenIdle(index: SearchIndex | null): void {
+  if (!index) return;
+  const running = background.get(index);
+  if (running) void running.finally(() => index.close());
+  else index.close();
+}
 
 /**
  * The open cache of `root` for `model`, or null without node:sqlite. One handle per root: a
  * different model closes the old handle first, so two handles never rebuild one file under each other.
+ * Beyond the last four roots used, the least recently used handle is closed.
  */
 export function searchIndexFor(rootPath: string, model: string): SearchIndex | null {
   const root = path.resolve(rootPath);
   const key = rootKey(root);
   const open = indexes.get(key);
-  if (open && open.model === model) return open.index;
+  if (open) indexes.delete(key);
+  if (open && open.model === model) {
+    indexes.set(key, open);
+    return open.index;
+  }
   open?.index?.close();
   let index: SearchIndex | null = null;
   try {
@@ -63,6 +78,11 @@ export function searchIndexFor(rootPath: string, model: string): SearchIndex | n
     loggedSqlite.done = true;
   }
   indexes.set(key, { model, index });
+  for (const [oldest, evicted] of indexes) {
+    if (indexes.size <= MAX_OPEN_INDEXES) break;
+    closeWhenIdle(evicted.index);
+    indexes.delete(oldest);
+  }
   return index;
 }
 
