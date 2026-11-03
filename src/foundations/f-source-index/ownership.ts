@@ -122,13 +122,14 @@ export function testOwnersOf(buckets: OwnershipBuckets, file: string): string[] 
 /**
  * The owner of `file` as change `change` sees it: a node whose open revision of `change` claims
  * it, else its live owner unless that owner's revision of `change` drops it. Other changes'
- * revisions are invisible. Null when nothing owns it under the change.
+ * revisions are invisible. Null when nothing owns it under the change. `except` (a node id) is
+ * left out as an owner: a claim write asks who else owns the file.
  */
-export function ownerUnder(buckets: OwnershipBuckets, file: string, change: string): string | null {
-  const mine = buckets.revisions.get(file)?.find((c) => c.change === change);
+export function ownerUnder(buckets: OwnershipBuckets, file: string, change: string, except?: string): string | null {
+  const mine = buckets.revisions.get(file)?.find((c) => c.change === change && c.id !== except);
   if (mine) return mine.id;
   const live = buckets.liveClaims.get(file);
-  if (!live) return null;
+  if (!live || live === except) return null;
   if (buckets.releasedByChange.get(change)?.get(file) === live) return null;
   return live;
 }

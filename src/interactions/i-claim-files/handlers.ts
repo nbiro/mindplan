@@ -31,7 +31,7 @@ import {
   validateClaimPath,
 } from "../../foundations/f-source-index/claims.js";
 import { decisionGateSettings } from "../../foundations/f-source-index/config.js";
-import { buildOwnershipIndex, exclusiveOwner } from "../../foundations/f-source-index/ownership.js";
+import { buildOwnershipIndex, exclusiveOwner, ownerUnder } from "../../foundations/f-source-index/ownership.js";
 import {
   collectOtherClaims,
   folderClaimSuggestions,
@@ -444,11 +444,12 @@ function writeRevisionClaims(
   const current = applyDelta(live, revision.implements);
   const normalized = edit ? applyListEdit(current, edit, "implements") : current;
   const attributed = args.attributed !== undefined ? validateAttributed(graph, node, args.attributed, normalized) : undefined;
+  // Exclusivity per change, as the check judges it: live plus this change's revisions.
   const buckets = buildOwnershipIndex(graph);
   for (const f of expandClaims(normalized)) {
-    const other = exclusiveOwner(buckets, f);
-    if (other && other !== node.id) {
-      throw blocked(`implements conflict: "${f}" is already claimed by "${other}".`);
+    const other = ownerUnder(buckets, f, change, node.id);
+    if (other) {
+      throw blocked(`implements conflict: "${f}" is already claimed by "${other}" under change "${change}".`);
     }
   }
   const paths: string[] = [];
@@ -507,10 +508,10 @@ type SetTestFilesArgs = {
 
 /**
  * Change a node's linked test files (add / remove, or the whole list with `replace`). Test links
- * are stored per revision like claims: on a shipped node with an open revision the edit is an
- * add/remove delta on the picked revision (`change`, or its only one), applied when it ships; a
- * shipped node with no open revision is written live in place, with no `open_next`; a pre-ship
- * node writes its live list. Readiness is never reset.
+ * are evidence, not contract: without `change` the edit goes to the live list, in place, whatever
+ * revisions are open (no `open_next`); with `change` on a shipped node with open revisions it is an
+ * add/remove delta on that revision, applied when it ships; on a pre-ship node `change` sets its
+ * change id. Readiness is never reset.
  */
 export function setTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
   gateWrite(null, [args.node_id], "set_test_files");
@@ -526,7 +527,7 @@ function writeTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
   const node = findNode(graph, args.node_id);
   const edit = listEdit("set_test_files", args);
   if (edit === null) throw blocked("set_test_files needs add, remove, or files with replace: true.");
-  if (node.open_revisions?.length) {
+  if (node.open_revisions?.length && args.change !== undefined) {
     // An open revision holds its test links as a delta against live, applied when it ships.
     const change = resolveRevisionChange(node, args.change)!;
     const live = node.tests ?? [];

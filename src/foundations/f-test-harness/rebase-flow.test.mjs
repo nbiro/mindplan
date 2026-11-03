@@ -619,6 +619,143 @@ for (const new_status of SHIP) {
   for (const change of ["ir2", "ir3"]) await call("discard_next", { node_id: id, change });
 }
 
+/** Ticks a revision's default ops and records its decision, so it can walk to ship. */
+async function readyByTools(id, change) {
+  await call("patch_node_territory", {
+    node_id: id,
+    change,
+    toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }],
+  });
+  await call("record_decision", {
+    node_id: id,
+    change,
+    decision: `Revise ${id} under ${change}.`,
+    alternatives: [`A new node that depends_on ${id}: the contract itself changes.`],
+    why: "The contract must change in place.",
+  });
+}
+
+/** A shipped Foundation with one claimed file. */
+async function shippedFoundation(id) {
+  await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
+  write(`src/${id}/index.ts`, "export const v = 1;\n");
+  await call("set_implementation_files", { node_id: id, add: [`src/${id}/index.ts`] });
+  fillAndTick(abs(`mindplan/foundations/${id}/${id}.mdx`));
+  for (const new_status of SHIP) await call("update_node_status", { node_id: id, new_status });
+}
+
+// --- a change walk orders by the change's edges: a shipped member's revision depending on a new member ---
+{
+  await shippedFoundation("f-wo-a");
+  await call("create_node", { id: "f-wo-b", type: "Foundation", title: "f-wo-b", description: "Infra — f-wo-b", role: "infra", change: "walk-order" });
+  write("src/f-wo-b/index.ts", "export const v = 1;\n");
+  await call("set_implementation_files", { node_id: "f-wo-b", add: ["src/f-wo-b/index.ts"] });
+  fillAndTick(abs("mindplan/foundations/f-wo-b/f-wo-b.mdx"));
+  await call("open_next", { node_id: "f-wo-a", change: "walk-order" });
+  await call("link_nodes", { source_id: "f-wo-a", target_id: "f-wo-b", edge_type: "depends_on", change: "walk-order" });
+  await readyByTools("f-wo-a", "walk-order");
+  const walked = await raw("update_node_status", { scope: "change", change: "walk-order", new_status: "ship", skip_review: true });
+  const order = walked.error ? [] : (JSON.parse(walked.text).lines ?? []).map((l) => l.split(":")[0]);
+  check(
+    "a change walk moves the new Foundation a member's revision depends_on before that member",
+    !walked.error && order.indexOf("f-wo-b") >= 0 && order.indexOf("f-wo-b") < order.indexOf("f-wo-a"),
+    walked.text
+  );
+}
+
+// --- a sibling rebase keeps a file another node's revision of the same change releases ---
+{
+  await shippedFoundation("f-mv-src");
+  await shippedFoundation("f-mv-dst");
+  const moved = "src/f-mv-src/index.ts";
+  await call("open_next", { node_id: "f-mv-src", change: "move" });
+  await call("set_implementation_files", { node_id: "f-mv-src", change: "move", remove: [moved] });
+  await call("open_next", { node_id: "f-mv-dst", change: "move" });
+  await call("set_implementation_files", { node_id: "f-mv-dst", change: "move", add: [moved] });
+  await call("open_next", { node_id: "f-mv-dst", change: "other" });
+  await call("patch_node_territory", { node_id: "f-mv-dst", change: "other", section: "## Purpose", text: "Purpose from other." });
+  await readyByTools("f-mv-dst", "other");
+  for (const new_status of ["ready", "in-progress", "in-review"]) {
+    await call("update_node_status", { node_id: "f-mv-dst", change: "other", new_status });
+  }
+  const shipped = await raw("update_node_status", { node_id: "f-mv-dst", change: "other", new_status: "ship" });
+  const after = await call("get_node_context", { node_id: "f-mv-dst", change: "move" });
+  const moveRev = (after.revisions ?? []).find((r) => r.change === "move");
+  check(
+    "shipping a sibling rebases a revision claiming a file its source's revision of that change releases with no claim conflict",
+    !!moveRev && moveRev.conflicts === 0,
+    JSON.stringify({ shipped: shipped.text, revisions: after.revisions })
+  );
+
+  await call("patch_node_territory", { node_id: "f-mv-dst", slot: "current", section: "## Purpose", text: "Purpose patched in place." });
+  const rebased = await call("rebase_revision", { node_id: "f-mv-dst", change: "move" });
+  check(
+    "rebase_revision keeps a file the source's revision of the same change releases, with no claim conflict",
+    rebased.rebased === true && Array.isArray(rebased.conflicts) && rebased.conflicts.length === 0,
+    JSON.stringify(rebased)
+  );
+}
+
+// --- a revision's claim is judged per change: a file the owner's revision of that change releases ---
+{
+  await shippedFoundation("f-ex-src");
+  await shippedFoundation("f-ex-dst");
+  await shippedFoundation("f-ex-third");
+  const file = "src/f-ex-src/index.ts";
+  await call("open_next", { node_id: "f-ex-src", change: "ex-mv" });
+  await call("set_implementation_files", { node_id: "f-ex-src", change: "ex-mv", remove: [file] });
+  // A second revision that keeps the file: the union of the source's revisions still claims it.
+  await call("open_next", { node_id: "f-ex-src", change: "ex-keep" });
+  await call("open_next", { node_id: "f-ex-dst", change: "ex-mv" });
+  const took = await raw("set_implementation_files", { node_id: "f-ex-dst", change: "ex-mv", add: [file] });
+  check(
+    "a revision may claim a file the owner's revision of the same change releases, though another of its revisions keeps it",
+    !took.error && JSON.parse(took.text).implements?.includes(file),
+    took.text
+  );
+  await call("open_next", { node_id: "f-ex-third", change: "ex-mv" });
+  const twice = await blocked("set_implementation_files", { node_id: "f-ex-third", change: "ex-mv", add: [file] });
+  check(
+    "two revisions of the same change claiming one file stay Blocked",
+    !!twice && twice.includes("f-ex-dst") && twice.includes('"ex-mv"'),
+    String(twice)
+  );
+  await call("open_next", { node_id: "f-ex-dst", change: "ex-other" });
+  const live = await blocked("set_implementation_files", { node_id: "f-ex-dst", change: "ex-other", add: [file] });
+  check(
+    "under a change whose revisions keep the owner's live claim, the claim is Blocked naming the owner",
+    !!live && live.includes("f-ex-src"),
+    String(live)
+  );
+}
+
+// --- scopes other than change leave a node with several open revisions in place and list it ---
+{
+  await shippedFoundation("f-nw-two");
+  await shippedFoundation("f-nw-one");
+  await call("link_nodes", { source_id: "f-nw-one", target_id: "f-nw-two", edge_type: "depends_on" });
+  await call("open_next", { node_id: "f-nw-two", change: "nw-a" });
+  await call("open_next", { node_id: "f-nw-two", change: "nw-b" });
+  await call("open_next", { node_id: "f-nw-one", change: "nw-c" });
+  const listed = (res) => (res.needs_change_walk ?? []).find((n) => n.node_id === "f-nw-two");
+  const all = await raw("update_node_status", { scope: "all_open_updates", new_status: "ready", dry_run: true });
+  const allRes = all.error ? {} : JSON.parse(all.text);
+  check(
+    "all_open_updates walks the others and lists a node with several open revisions in needs_change_walk",
+    !all.error && JSON.stringify(listed(allRes)?.changes) === JSON.stringify(["nw-a", "nw-b"]) &&
+      (allRes.plan ?? []).includes("f-nw-one: draft -> ready") && !(allRes.plan ?? []).some((l) => l.startsWith("f-nw-two:")),
+    all.text
+  );
+  const deps = await raw("update_node_status", { scope: "node_and_dependents", node_id: "f-nw-two", new_status: "ready" });
+  const depsRes = deps.error ? {} : JSON.parse(deps.text);
+  check(
+    "node_and_dependents moves the dependent and leaves the seed with two revisions in place, listed",
+    !deps.error && !!listed(depsRes) && (depsRes.lines ?? []).some((l) => l.startsWith("f-nw-one:")) &&
+      read("mindplan/foundations/f-nw-two/revisions/nw-a/f-nw-two.mdx").match(/^state: draft$/m) !== null,
+    deps.text
+  );
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {
