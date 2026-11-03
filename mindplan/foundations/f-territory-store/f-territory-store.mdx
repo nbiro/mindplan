@@ -4,11 +4,11 @@ type: Foundation
 title: "Territory store"
 description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, revision change ids, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-11-03T09:41:45.472Z
-revisions: 23
-churn: 9.359
+shipped_at: 2026-11-03T09:48:46.755Z
+revisions: 24
+churn: 10.358
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-03T09:41:45.472Z
+updated_at: 2026-11-03T09:48:46.755Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -120,9 +120,9 @@ Depends on: `f-domain-model`, `f-source-index`.
 - **Decision files.** `decisions-store.ts`: `readDecisionFiles(dir)`, `appendDecisionFile(dir, record)` (one `<decision-id>.md` per decision, never rewritten), `moveDecisions(from, to)`; the `## Decisions` body section is no longer written
 - **Derived map.** Writes no longer list `mindplan/map.md` in `changed_files`
 
-## Checklist items
+## Graph root per call
 
-Every checkbox the Completion Check counts (the whole body except the owned Rules and Decisions sections) is a checklist item; it may end with a tag `{#<id>}` or `{#<id> <kind>}`: `id` is a stable slug, `kind` is `build` (the default when absent), `review` (a human or after-deploy check), or `deploy` (an environment variable or a migration applied live). Default Atomic Ops carry the same ids for every type: `{#spec}`, `{#impl}`, `{#verify}`. The tag is part of the line on disk and is hidden from nothing; `toggleCheckboxesInBody` matches an item by `id` or by its exact text (without tag and annotations), and refuses substring matches. `checklistItems(body)` returns `{ id?, kind, text, checked, line }` for every item, and counts by kind feed the Completion Check.
+`projectRoot()`, `mindplanRoot()`, the brief and version-stamp paths read the root of the current tool call (an `AsyncLocalStorage` scope the MCP mount opens from the call's `root` argument), else `MINDPLAN_ROOT`, else the working directory. Nothing writes `process.env.MINDPLAN_ROOT` at runtime. The legacy-file queue (`removedLegacyFiles`) is kept per root. One server can therefore write the graph of the main checkout and of any git worktree in the same session.
 
 ## Acceptance Criteria
 
@@ -170,3 +170,7 @@ Every checkbox the Completion Check counts (the whole body except the owned Rule
 ## Attachments
 
 _None._
+
+## Checklist items
+
+Every checkbox the Completion Check counts (the whole body except the owned Rules and Decisions sections) is a checklist item; it may end with a tag `{#<id>}` or `{#<id> <kind>}`: `id` is a stable slug, `kind` is `build` (the default when absent), `review` (a human or after-deploy check), or `deploy` (an environment variable or a migration applied live). Default Atomic Ops carry the same ids for every type: `{#spec}`, `{#impl}`, `{#verify}`. The tag is part of the line on disk and is hidden from nothing; `toggleCheckboxesInBody` matches an item by `id` or by its exact text (without tag and annotations), and refuses substring matches. `checklistItems(body)` returns `{ id?, kind, text, checked, line }` for every item, and counts by kind feed the Completion Check.

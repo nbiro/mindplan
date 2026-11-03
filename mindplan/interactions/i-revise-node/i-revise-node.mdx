@@ -4,11 +4,11 @@ type: Interaction
 title: "Revise a shipped node"
 description: "Agent opens a revision of a shipped node, with its planned edges applied and a hotspot warning when it ships far above the graph's pace, or discards the revision."
 state: stable
-shipped_at: 2026-11-03T09:41:59.825Z
-revisions: 4
-churn: 3.879
+shipped_at: 2026-11-03T09:48:47.148Z
+revisions: 5
+churn: 4.879
 created_at: 2026-10-31T11:58:03.620Z
-updated_at: 2026-11-03T09:41:59.825Z
+updated_at: 2026-11-03T09:48:47.148Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -19,10 +19,12 @@ depends_on:
 implements:
   - src/interactions/i-revise-node/
 tests:
+  - src/foundations/f-test-harness/after-merge.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/planned-wiring.test.mjs
+  - src/foundations/f-test-harness/rebase-flow.test.mjs
   - src/foundations/f-test-harness/twins.test.mjs
 ---
 
@@ -50,9 +52,9 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-
 
 - **Open revisions (0.18.0).** `open_next` requires `change` and opens `revisions/<change>/` from live (with that change's planned edges as add deltas and base hashes of live); it is Blocked only when that change is already open on the node, so several changes can revise one node at once. `discard_next` takes `change` (optional when only one is open). New tool `resolve_conflict({ node_id, change, section | field | claim, take: "mine" | "live" | "text", text? })` settles one rebase conflict and refreshes its base hash
 
-## Cycles across changes
+## Rebase on demand
 
-`open_next` is Blocked when applying the change's planned `depends_on` edges to the node would close a dependency cycle across changes, naming the changes and the path.
+`rebase_revision({ node_id, change })` rebases one open revision onto current live with the same section-hash rule ship uses (untouched sections carry, both-edited ones become conflicts), for the case where live changed without a ship of a sibling, such as after a git merge brought another branch's ship. It reports `{ conflicts, readiness_reset? }`.
 
 ## Acceptance Criteria
 
@@ -65,3 +67,7 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-
 ## Attachments
 
 _None._
+
+## Cycles across changes
+
+`open_next` is Blocked when applying the change's planned `depends_on` edges to the node would close a dependency cycle across changes, naming the changes and the path.
