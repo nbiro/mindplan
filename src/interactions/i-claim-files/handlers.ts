@@ -163,26 +163,40 @@ function removeKey(entry: string): string {
 }
 
 /**
- * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry is normalized
- * like an add when it validates (taken raw when it does not), then matched: it matches a stored
- * entry verbatim, else one that differs from it only by a trailing `/`; one that matches none is Blocked, naming the stored entries. So a stored entry the
- * validator now rejects can always be removed; one the edit keeps is Blocked with that fix (every
- * list the store writes is validated whole).
+ * The forms a path is compared by for `remove`: its raw key, and its normalized form when it
+ * validates (like an add). So an entry stored before normalization, or one the validator now
+ * rejects, still matches as stored.
+ */
+function removeForms(entry: string, field: "implements" | "tests"): string[] {
+  const forms = [removeKey(entry)];
+  try {
+    forms.push(validateClaimPath(entry, field));
+  } catch {
+    // Raw key only.
+  }
+  return forms;
+}
+
+/**
+ * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry matches a stored
+ * entry when either its raw key or its normalized form (when it validates) equals the stored
+ * entry's raw key or normalized form; failing that, when they differ only by a trailing `/`. One
+ * that matches none is Blocked, naming the stored entries. So a stored entry the validator now
+ * rejects, or one stored un-normalized, can always be removed as stored; one the edit keeps is
+ * Blocked with that fix (every list the store writes is validated whole).
  */
 function applyListEdit(base: string[], edit: ListEdit, field: "implements" | "tests"): string[] {
   if ("replace" in edit) return normalizeClaimList(edit.replace, field);
   const removed = new Set<string>();
+  const stored = base.map((e) => ({ e, forms: removeForms(e, field) }));
+  const matches = (a: string[], b: string[], strip: (s: string) => string): boolean =>
+    a.some((x) => b.some((y) => strip(x) === strip(y)));
   for (const raw of edit.remove) {
-    // Normalized like an add when it validates; a raw key otherwise, so a stored entry the
-    // validator now rejects can still be removed as stored.
-    let key: string;
-    try {
-      key = validateClaimPath(raw, field);
-    } catch {
-      key = removeKey(raw);
-    }
-    const exact = base.filter((e) => removeKey(e) === key);
-    const hits = exact.length ? exact : base.filter((e) => removeKey(e).replace(/\/$/, "") === key.replace(/\/$/, ""));
+    const forms = removeForms(raw, field);
+    const exact = stored.filter((s) => matches(forms, s.forms, (x) => x)).map((s) => s.e);
+    const hits = exact.length
+      ? exact
+      : stored.filter((s) => matches(forms, s.forms, (x) => x.replace(/\/$/, ""))).map((s) => s.e);
     if (hits.length === 0) {
       throw blocked(
         `remove "${raw}" matches no ${field} entry; stored: ${base.length ? base.map((e) => `"${e}"`).join(", ") : "(none)"}. ` +
