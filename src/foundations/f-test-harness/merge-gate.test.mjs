@@ -402,6 +402,37 @@ function subfolderProject(label, nodes) {
   ok("conflicting merge levels are Blocked");
 }
 
+// --- Non-ASCII paths read verbatim (git would C-quote them under core.quotePath) ------------------
+{
+  const { repo, root } = subfolderProject("unicode", [
+    { id: "i-touched", type: "Interaction", state: "in-progress", change: "feature" },
+  ]);
+  const git = gitIn(repo);
+  // Force the quoting the gate must not depend on, whatever the machine's global config says.
+  git("init", "-q", "-b", "main");
+  git("config", "core.quotepath", "true");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  git("switch", "-q", "-c", "feature");
+  fs.writeFileSync(path.join(root, "src", "i-touched", "árvíztűrő.ts"), "export const a = 1;\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "work");
+  fs.writeFileSync(path.join(root, "src", "i-touched", "日本.ts"), "export const j = 1;\n");
+  fs.writeFileSync(path.join(root, "src", "i-touched", "with space.ts"), "export const s = 1;\n");
+
+  const dirty = collectDirtySrcPaths(root, "main");
+  assert.deepEqual(dirty.commits, ["src/i-touched/árvíztűrő.ts"]);
+  assert.deepEqual(dirty.workingTree, ["src/i-touched/with space.ts", "src/i-touched/日本.ts"]);
+  ok("changed paths with non-ASCII names and spaces read verbatim from git status and diff");
+
+  const strict = cli(root, ["--merge=strict", "--base", "main"]);
+  assert.equal(strict.status, 1, strict.out);
+  const line = strict.out.split("\n").find((l) => l.startsWith("Blocked: Merge (strict):")) ?? "";
+  assert.match(line, /"src\/i-touched\/árvíztűrő.ts"/, strict.out);
+  assert.match(line, /"src\/i-touched\/日本.ts"/, strict.out);
+  ok("--merge=strict names changed files with non-ASCII names");
+}
+
 // --- The default base ignores a stale local main ------------------------------------------------
 {
   const root = sandbox("stale-main", [
