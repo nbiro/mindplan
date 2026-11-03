@@ -33,7 +33,7 @@ export const TOOLS: ToolDef[] = [
         "a revision holding conflicts is Blocked at in-review and ship until resolve_conflict clears them. " +
         "Every ship drops the node's Atomic Ops (the shipped node shows its current state, git keeps the ledger). deprecated deletes every open revision. " +
         "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; every item is tried on the graph as the earlier ones left it, " +
-        "and the result lists results: [{ node_id, change?, ok, line?, blocked? }] plus lines for the moved ones; the call is Blocked only when no item moved (listing every reason). " +
+        "and the result lists results: [{ node_id, change?, ok, line?, blocked? }] plus lines for the moved ones; the call is Blocked only when no item moved (listing every reason); when some items moved and others were Blocked, the result says so at the top with partial: true and blocked_count: n — check it, the call did not do everything asked. " +
         "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
         'A scoped change walk is the one-call way to ship a change: update_node_status({ scope: "change", change, new_status: "ship" }); add nodes: [...] to walk only those members (the others stay put, and the gates still refuse a listed node that needs an unlisted one). ' +
         "A Blocked single or batch move of a node in a change ends with the scoped change call that moves the whole change. " +

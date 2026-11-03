@@ -823,7 +823,12 @@ fillAndTick("interactions", "i-b");
     await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
   }
   const trio = (new_status) => ({ revisions: ["f-t1", "f-t2", "f-t3"].map((node_id) => ({ node_id, new_status })) });
-  await call("update_node_status", trio("ready"));
+  const allMoved = await call("update_node_status", trio("ready"));
+  check(
+    "a batch where every item moved carries no partial or blocked_count",
+    allMoved.partial === undefined && allMoved.blocked_count === undefined,
+    JSON.stringify(allMoved)
+  );
   await call("update_node_status", trio("in-progress"));
   const batch = await call("update_node_status", trio("in-review"));
   check(
@@ -837,6 +842,11 @@ fillAndTick("interactions", "i-b");
       (await state("f-t3")).state === "in-review" &&
       batch.changed_files?.length > 0,
     JSON.stringify(batch)
+  );
+  check(
+    "a batch where some items moved and some were Blocked says partial: true and blocked_count at the top",
+    batch.partial === true && batch.blocked_count === 1,
+    JSON.stringify({ partial: batch.partial, blocked_count: batch.blocked_count })
   );
   const batchDry = await call("update_node_status", { ...trio("in-review"), dry_run: true });
   check(

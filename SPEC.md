@@ -579,7 +579,7 @@ Blocked: Minimum Territory Shape. "<id>"/<file> section "## Impact" is empty or 
 
 #### One status call
 
-The implementer advances the successor set with one `update_node_status` call (§8.2 `revisions`). The server orders **Foundations, then Interactions, then Interfaces, then Bugs**, keeps caller order within a tier, and tries **every** item on the graph as the items before it left it: a blocked item stays where it is and the call goes on. The result lists `results: [{ node_id, change?, ok, line?, blocked? }]`, one per item. The call is `Blocked:` (and writes nothing) only when no item moved; that message lists every item's reason.
+The implementer advances the successor set with one `update_node_status` call (§8.2 `revisions`). The server orders **Foundations, then Interactions, then Interfaces, then Bugs**, keeps caller order within a tier, and tries **every** item on the graph as the items before it left it: a blocked item stays where it is and the call goes on. The result lists `results: [{ node_id, change?, ok, line?, blocked? }]`, one per item; when some items moved and others were blocked it also carries `partial: true` and `blocked_count: <n>` at the top level. The call is `Blocked:` (and writes nothing) only when no item moved; that message lists every item's reason.
 
 `Blocked: Infrastructure First`, or Behavior First because an exposed Interaction is not yet shippable, defers production entry until deps allow — that is a compiler gate, not a quality judgment. An item behind it stays put while the items that pass move.
 
