@@ -938,11 +938,11 @@ export function loadGraph(): MindPlanGraph {
   return { version: GRAPH_VERSION, nodes, edges: discoverEdges(nodes) };
 }
 
-/** Whether the last graph load of this root re-parsed no folder (every node came from the graph cache); null without a cache. */
+/** Whether the last graph load of this root read at least one folder and re-parsed none (every node came from the graph cache); null without a cache. */
 export function lastGraphLoadFromCache(): boolean | null {
   const cache = graphCacheFor(projectRoot(), parserVersion());
   if (!cache) return null;
-  return cache.lastStats.parsed === 0;
+  return cache.lastStats.folders > 0 && cache.lastStats.parsed === 0;
 }
 
 /** Returns { id, type } if a territory folder exists for this id. */
