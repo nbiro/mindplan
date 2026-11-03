@@ -458,6 +458,17 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
     !dotAsStored.tests?.some((t) => t.includes("dot.test")) && same(dotNormalized.tests, ["tests/claims.test.mjs"]),
     JSON.stringify([dotAsStored, dotNormalized.tests])
   );
+  // Legacy duplicates (one stored un-normalized, one normalized): a remove that equals one stored
+  // entry as written drops that entry only, not every entry it normalizes to.
+  fs.writeFileSync(legacyFile, fs.readFileSync(legacyFile, "utf-8").replace(/^tests:$/m, "tests:\n  - tests/./dup.test.mjs\n  - tests/dup.test.mjs"));
+  const dupRaw = await call("set_test_files", { node_id: "f-claims", remove: ["tests/./dup.test.mjs"] });
+  check(
+    "a remove equal to one stored entry as written drops that entry only, keeping its normalized twin",
+    same(dupRaw.tests, ["tests/claims.test.mjs", "tests/dup.test.mjs"]),
+    JSON.stringify(dupRaw.tests)
+  );
+  const dupNormalized = await call("set_test_files", { node_id: "f-claims", remove: ["tests/dup.test.mjs"] });
+  check("the normalized twin is then removed as stored", same(dupNormalized.tests, ["tests/claims.test.mjs"]), JSON.stringify(dupNormalized.tests));
 }
 
 // --- open revisions: edits write add / remove deltas into the revision's folder ---
