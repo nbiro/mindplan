@@ -190,29 +190,62 @@ fillAndTick("interactions", "i-b");
   await call("set_implementation_files", { replace: true, node_id: "f-tog", files: ["src/f-tog/"] });
   fillAndTick("foundations", "f-tog");
   const togFile = territory("foundations", "f-tog");
-  const ops = "- [ ] Write docs\n- [ ] Write tests\n- [ ] Load test\n- [ ] Manual check\n";
+  const ops = "- [ ] Write docs {#docs}\n- [ ] Write tests\n- [ ] Write tests\n- [ ] Load test\n- [ ] Manual check\n";
   const filled = fs.readFileSync(togFile, "utf-8").replace(/^- \[x\] .*\r?\n?/gm, "");
   fs.writeFileSync(togFile, filled.replace(/(## Atomic Ops\r?\n\r?\n)/, `$1${ops}`));
   await walk("f-tog", ["ready", "in-progress"]);
 
-  const ambiguous = await blocked("patch_node_territory", {
+  const substring = await blocked("patch_node_territory", {
     node_id: "f-tog",
     toggle_checkboxes: [{ contains: "Write", checked: true }],
   });
   check(
-    "an ambiguous toggle is Blocked and lists the matching lines",
-    !!ambiguous && ambiguous.includes("matches 2 checkbox lines") && ambiguous.includes("- [ ] Write docs") && ambiguous.includes("- [ ] Write tests"),
+    "a substring toggle is Blocked and names the items with their ids",
+    !!substring &&
+      substring.includes("no item with that exact text") &&
+      substring.includes('items: "Write docs" {#docs}, "Write tests", "Write tests", "Load test", "Manual check"'),
+    String(substring)
+  );
+  const marker = await blocked("patch_node_territory", {
+    node_id: "f-tog",
+    toggle_checkboxes: [{ contains: "- [ ] Load test", checked: true }],
+  });
+  check("a contains with the checkbox marker is not the item's text: Blocked", !!marker && marker.includes("no item with that exact text"), String(marker));
+  const ambiguous = await blocked("patch_node_territory", {
+    node_id: "f-tog",
+    toggle_checkboxes: [{ contains: "Write tests", checked: true }],
+  });
+  check(
+    "an exact text on several items is Blocked and lists them",
+    !!ambiguous && ambiguous.includes("matches 2 items") && ambiguous.includes("- [ ] Write tests"),
     String(ambiguous)
   );
   const both = await call("patch_node_territory", {
     node_id: "f-tog",
-    toggle_checkboxes: [{ contains: "Write", checked: true, all: true }],
+    toggle_checkboxes: [{ contains: "Write tests", checked: true, all: true }],
   });
   check(
-    "all: true toggles every match and returns the lines",
-    both.toggled?.length === 2 && both.toggled.every((l) => l.startsWith("- [x] Write")) && both.state === "in-progress",
+    "all: true toggles every item with that exact text and returns the lines",
+    both.toggled?.length === 2 && both.toggled.every((l) => l === "- [x] Write tests") && both.state === "in-progress",
     JSON.stringify(both)
   );
+  const byId = await call("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ id: "docs", note: "in the README" }] });
+  check(
+    "a toggle by id ticks the item and writes the note after its tag",
+    byId.toggled?.[0] === "- [x] Write docs {#docs} — note: in the README",
+    JSON.stringify(byId.toggled)
+  );
+  const exactTagged = await call("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ contains: " Write docs ", checked: false }] });
+  check(
+    "the exact text excludes the tag and the annotation, trimmed; unticking strips the note and keeps the tag",
+    exactTagged.toggled?.[0] === "- [ ] Write docs {#docs}",
+    JSON.stringify(exactTagged.toggled)
+  );
+  await call("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ id: "docs", checked: true }] });
+  const noId = await blocked("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ id: "nope", checked: true }] });
+  check("an unknown id is Blocked naming the items", !!noId && noId.includes('no item with id "nope"') && noId.includes("{#docs}"), String(noId));
+  const neither = await blocked("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ checked: true }] });
+  check("a toggle with neither id nor contains is Blocked", !!neither, String(neither));
   const noted = await call("patch_node_territory", {
     node_id: "f-tog",
     toggle_checkboxes: [
@@ -228,9 +261,9 @@ fillAndTick("interactions", "i-b");
   );
   const untick = await call("patch_node_territory", {
     node_id: "f-tog",
-    toggle_checkboxes: [{ contains: "- [x] Manual check", checked: false }],
+    toggle_checkboxes: [{ contains: "Manual check", checked: false }],
   });
-  check("a contains with the checkbox marker still matches, and unticking strips the note", untick.toggled?.[0] === "- [ ] Manual check", JSON.stringify(untick.toggled));
+  check("an annotated item still matches its text, and unticking strips the note", untick.toggled?.[0] === "- [ ] Manual check", JSON.stringify(untick.toggled));
   const noteOnly = await call("patch_node_territory", {
     node_id: "f-tog",
     toggle_checkboxes: [{ contains: "Manual check", note: "verified manually" }],
@@ -525,7 +558,7 @@ fillAndTick("interactions", "i-b");
   await call("open_next", { change: "rev-f-lay", node_id: "f-lay" });
   await call("patch_node_territory", { node_id: "f-lay", section: "## Purpose", text: "Next purpose." });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
-  await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   // A shipped Foundation's revision needs a decision before in-review; recording it is a write too.
   await call("record_decision", {
     node_id: "f-lay",
@@ -837,6 +870,95 @@ fillAndTick("interactions", "i-b");
   await call("create_node", { id: "f-lone", type: "Foundation", title: "Lone", description: "Infra — lone", role: "infra" });
   const noChange = await blocked("update_node_status", { node_id: "f-lone", new_status: "ship" });
   check("a node outside any change gets no hint", !!noChange && !noChange.includes("To move the whole change"), String(noChange));
+}
+
+// --- checklist kinds: review and deploy items wait on people ---
+{
+  const read = (file) => fs.readFileSync(file, "utf-8");
+  await call("create_node", { id: "f-hum", type: "Foundation", title: "Human", description: "Infra — human", role: "infra", change: "human" });
+  await call("create_node", { id: "i-hum", type: "Interaction", title: "Hum", description: "Action hum" });
+  await call("link_nodes", { source_id: "i-hum", target_id: "j-app", edge_type: "belongs_to" });
+  await call("link_nodes", { source_id: "i-hum", target_id: "f-hum", edge_type: "depends_on" });
+  write("src/f-hum/index.ts", "export const hum = 1;\n");
+  write("src/i-hum/h.ts", 'import { hum } from "../f-hum/index.js";\nexport const h = hum;\n');
+  await call("set_implementation_files", { replace: true, node_id: "f-hum", files: ["src/f-hum/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-hum", files: ["src/i-hum/"] });
+  fillAndTick("foundations", "f-hum");
+  fillAndTick("interactions", "i-hum");
+  const humFile = territory("foundations", "f-hum");
+  check(
+    "default Atomic Ops carry the ids spec, impl, verify",
+    /- \[x\] Spec written \{#spec\}/.test(read(humFile)) &&
+      /- \[x\] Implementation complete \{#impl\}/.test(read(humFile)) &&
+      /- \[x\] Verified in target environment \{#verify\}/.test(read(humFile)),
+    read(humFile)
+  );
+
+  const added = await call("patch_node_territory", {
+    node_id: "f-hum",
+    add_checklist_items: [
+      { text: "Security review", id: "sec", kind: "review" },
+      { text: "Deploy to staging", kind: "deploy" },
+    ],
+  });
+  check(
+    "add_checklist_items appends tagged items to the Atomic Ops",
+    added.patched_fields?.includes("add_checklist_items") &&
+      /\{#verify\}\r?\n- \[ \] Security review \{#sec review\}\r?\n- \[ \] Deploy to staging \{#deploy-to-staging deploy\}/.test(read(humFile)),
+    read(humFile)
+  );
+  const dup = await blocked("patch_node_territory", { node_id: "f-hum", add_checklist_items: [{ text: "Again", id: "sec" }] });
+  check("a duplicate checklist id is Blocked", !!dup && dup.includes('"sec"'), String(dup));
+
+  await walk("f-hum", ["ready", "in-progress", "in-review"]);
+  const early = await blocked("update_node_status", { node_id: "f-hum", new_status: "ship" });
+  check("a node with an open review item cannot ship (Completion Check)", !!early && early.includes("Completion Check"), String(early));
+
+  const r = await call("run_check", {});
+  const line = r.info?.find((l) => l.startsWith("waiting on people:"));
+  check(
+    "run_check lists the open review and deploy items in one info line",
+    line === "waiting on people: f-hum: sec (review), deploy-to-staging (deploy)" &&
+      r.output.includes("Info: waiting on people: f-hum: sec (review), deploy-to-staging (deploy)"),
+    JSON.stringify(r.info)
+  );
+  const oriented = await call("orient_for_work", { node_id: "f-hum" });
+  check(
+    "orient_for_work on the node returns its open items",
+    JSON.stringify(oriented.open_items) ===
+      JSON.stringify([
+        { node_id: "f-hum", id: "sec", kind: "review", text: "Security review" },
+        { node_id: "f-hum", id: "deploy-to-staging", kind: "deploy", text: "Deploy to staging" },
+      ]),
+    JSON.stringify(oriented.open_items)
+  );
+  const byChange = await call("orient_for_work", { change: "human" });
+  check("orient_for_work on the change returns one list", byChange.open_items?.length === 2, JSON.stringify(byChange.open_items));
+  const plain = await call("orient_for_work", { node_id: "i-hum" });
+  check("a node with no open human items has no open_items", plain.open_items === undefined, JSON.stringify(plain.open_items));
+
+  // A build item unticked: the dependency still holds up its dependent.
+  await walk("i-hum", ["ready", "in-progress", "in-review"]);
+  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "impl", checked: false }] });
+  const held = await blocked("update_node_status", { node_id: "i-hum", new_status: "ship" });
+  check("a dependency in-review with an unticked build item holds up its dependent", !!held && held.includes("Infrastructure First") && held.includes("f-hum"), String(held));
+  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "impl", checked: true }] });
+  const dependent = await call("update_node_status", { node_id: "i-hum", new_status: "ship" });
+  check(
+    "a dependency in-review with every build item ticked lets its dependent ship",
+    dependent.new_state === "stable" && (await state("f-hum")).state === "in-review",
+    JSON.stringify(dependent)
+  );
+  const still = await blocked("update_node_status", { node_id: "f-hum", new_status: "ship" });
+  check("the dependency itself still cannot ship until its review items are ticked", !!still && still.includes("Completion Check"), String(still));
+  await call("patch_node_territory", {
+    node_id: "f-hum",
+    toggle_checkboxes: [{ id: "sec", note: "reviewed by security" }, { id: "deploy-to-staging", checked: true }],
+  });
+  const after = await call("run_check", {});
+  check("ticked items leave the waiting line", !after.info?.some((l) => l.startsWith("waiting on people:")), JSON.stringify(after.info));
+  const shippedHum = await call("update_node_status", { node_id: "f-hum", new_status: "ship" });
+  check("with every item ticked the dependency ships", shippedHum.new_state === "stable", JSON.stringify(shippedHum));
 }
 
 await client.close();

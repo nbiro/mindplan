@@ -43,6 +43,12 @@ import {
   withRevision,
 } from "../f-revision-model/index.js";
 import { assertMinimumTerritoryShape, slotSource } from "./shape.js";
+import { dependencySatisfied } from "./checklist-gates.js";
+
+export { openHumanItems, type OpenHumanItem } from "./checklist-gates.js";
+
+/** How a dependency stops holding up its dependents' ship. */
+const DEPENDENCY_READY = "A dependency counts once stable, or in-review with every build item ticked.";
 
 export function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
@@ -864,11 +870,11 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
       const depIds = node.next.depends_on ?? [];
       const deps = depIds.map((id) => findNode(graph, id));
       const foundations = deps.filter((n) => n.type === "Foundation");
-      const notStable = foundations.filter((n) => n.state !== "stable");
+      const notStable = foundations.filter((n) => !dependencySatisfied(n));
       if (notStable.length > 0) {
         const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Infrastructure First. Interaction "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
+          `Infrastructure First. Interaction "${node.id}" next cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
     }
@@ -876,22 +882,22 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     if (node.type === "Interface") {
       const exposedIds = node.next.exposes ?? [];
       const exposed = exposedIds.map((id) => findNode(graph, id));
-      const notStable = exposed.filter((n) => n.state !== "stable");
+      const notStable = exposed.filter((n) => !dependencySatisfied(n));
       if (notStable.length > 0) {
         const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Behavior First. Interface "${node.id}" next cannot ship while exposed Interactions are not stable: ${list}.`
+          `Behavior First. Interface "${node.id}" next cannot ship while exposed Interactions are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
       const depIds = node.next.depends_on ?? [];
       const foundations = depIds
         .map((id) => findNode(graph, id))
         .filter((n) => n.type === "Foundation");
-      const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+      const foundationsNotStable = foundations.filter((n) => !dependencySatisfied(n));
       if (foundationsNotStable.length > 0) {
         const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Infrastructure First. Interface "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
+          `Infrastructure First. Interface "${node.id}" next cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
     }
@@ -912,32 +918,32 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const notStable = foundations.filter((n) => n.state !== "stable");
+    const notStable = foundations.filter((n) => !dependencySatisfied(n));
     if (notStable.length > 0) {
       const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Interaction "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+        `Infrastructure First. Interaction "${node.id}" cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
   }
 
   if (node.type === "Interface") {
     const exposed = edgesFrom(graph, node.id, "exposes");
-    const notStable = exposed.filter((n) => n.state !== "stable");
+    const notStable = exposed.filter((n) => !dependencySatisfied(n));
     if (notStable.length > 0) {
       const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Behavior First. Interface "${node.id}" cannot ship while exposed Interactions are not stable: ${list}.`
+        `Behavior First. Interface "${node.id}" cannot ship while exposed Interactions are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+    const foundationsNotStable = foundations.filter((n) => !dependencySatisfied(n));
     if (foundationsNotStable.length > 0) {
       const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Interface "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+        `Infrastructure First. Interface "${node.id}" cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
   }

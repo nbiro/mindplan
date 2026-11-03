@@ -49,6 +49,7 @@ import {
   searchNodes,
 } from "../../foundations/f-graph-search/search.js";
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
+import { openHumanItems, openHumanItemsOfChange } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import { changeMembership } from "../../foundations/f-compiler-rules/planned.js";
 import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
 import { cutReply, orients, parseSections, type OrientSection } from "./sections.js";
@@ -403,12 +404,14 @@ function orientForChange(
       : { node_id: e.node_id, node_type: e.node_type, version, rules: e.rules };
   });
   if (orients(sections)) recordOriented(graph, members.map((m) => m.id));
+  const openItems = openHumanItemsOfChange(graph, change);
   return cutReply(
     {
       change,
       members,
       rules,
       decisions: { count: decisionCount, nodes: holders },
+      ...(openItems.length ? { open_items: openItems } : {}),
       next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
     },
     sections
@@ -588,6 +591,9 @@ export async function orientForWork(args: {
   };
   const shape = shapeReport(view);
   if (shape) reply.shape = shape;
+  // Review and deploy items wait on people: listed so the agent says so instead of ticking them.
+  const openItems = openHumanItems(graph).filter((i) => i.node_id === node.id);
+  if (openItems.length) reply.open_items = openItems;
   if (depth === "rules") {
     const next = context.next as { record?: unknown } | string | null;
     reply.context = {

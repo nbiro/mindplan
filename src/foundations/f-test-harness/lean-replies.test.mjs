@@ -21,6 +21,7 @@ process.env.MINDPLAN_SEARCH ??= "keyword";
 const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const serverEntry = path.join(toolRoot, "dist/index.js");
 const store = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-territory-store/store.js")).href);
+const checklist = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-territory-store/checklist.js")).href);
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-lean-replies-"));
 console.log("Lean-replies sandbox:", root);
@@ -142,7 +143,7 @@ async function walk(id, steps) {
 }
 
 const tickAll = (id) =>
-  call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 
 /** Ticks every box of an open revision in its file (the edit tools have their own suites). */
 function tickRevision(id, change) {
@@ -227,6 +228,61 @@ fs.writeFileSync(
     missing.startsWith("Blocked:") && missing.includes('"## Purpose"'),
     missing
   );
+}
+
+// --- checklist items: ids, kinds, and the sections they live in ---
+{
+  const body = [
+    "## Purpose",
+    "",
+    "- [ ] Not an item {#purpose}",
+    "",
+    "## Atomic Ops",
+    "",
+    "- [x] Spec written {#spec}",
+    "- [ ] Security review {#sec review} — note: booked",
+    "- [x] Ship it {#ship deploy} — n/a:",
+    "- [ ] Plain item",
+    "- [x] Odd tag {#Bad}",
+    "",
+    "## Rules",
+    "",
+    "- [ ] Not an item either",
+  ].join("\r\n");
+  const items = checklist.parseChecklistItems(body);
+  check(
+    "parseChecklistItems reads ids, kinds, text, and state from the Atomic Ops only",
+    JSON.stringify(items.map(({ id, kind, text, checked, done, index }) => ({ id, kind, text, checked, done, index }))) ===
+      JSON.stringify([
+        { id: "spec", kind: "build", text: "Spec written", checked: true, done: true, index: 0 },
+        { id: "sec", kind: "review", text: "Security review", checked: false, done: false, index: 1 },
+        { id: "ship", kind: "deploy", text: "Ship it", checked: true, done: false, index: 2 },
+        { kind: "build", text: "Plain item", checked: false, done: false, index: 3 },
+        { kind: "build", text: "Odd tag {#Bad}", checked: true, done: true, index: 4 },
+      ]) && items[0].line === 6,
+    JSON.stringify(items)
+  );
+  check(
+    "formatChecklistTag writes {#id} for build and {#id kind} otherwise",
+    checklist.formatChecklistTag("spec") === "{#spec}" &&
+      checklist.formatChecklistTag("sec", "review") === "{#sec review}" &&
+      checklist.formatChecklistTag(undefined) === ""
+  );
+  check(
+    "defaultAtomicOps gives every pipeline type the ids spec, impl, verify",
+    ["Foundation", "Interaction", "Interface"].every((type) =>
+      JSON.stringify(checklist.parseChecklistItems(["## Atomic Ops", "", ...store.defaultAtomicOps(type)].join("\n")).map((i) => i.id)) ===
+        JSON.stringify(["spec", "impl", "verify"])
+    )
+  );
+  const appended = checklist.appendChecklistItems("## Atomic Ops\n\n- [ ] A {#a}\n\n## Rules\n", [{ text: "B", kind: "deploy" }]).body;
+  check(
+    "appendChecklistItems adds after the last item and slugs an id for a non-build kind",
+    appended === "## Atomic Ops\n\n- [ ] A {#a}\n- [ ] B {#b deploy}\n\n## Rules\n",
+    JSON.stringify(appended)
+  );
+  const empty = checklist.appendChecklistItems("## Atomic Ops\n\n## Rules\n", [{ text: "C", id: "c" }]).body;
+  check("appendChecklistItems fills an empty section", empty === "## Atomic Ops\n\n- [ ] C {#c}\n\n## Rules\n", JSON.stringify(empty));
 }
 
 // --- first ship drops the ledger from live and writes no next file ---
@@ -380,6 +436,42 @@ write(revOf("f-chk", "chk"), readRel(revOf("f-chk", "chk")).replace(/^- \[ \] .*
 const final = await call("run_check", {});
 check("the sandbox passes the check before the upgrade", final.ok, JSON.stringify(final.failures));
 check("every write listed every mindplan/ file it touched", diffMisses === 0, `${diffMisses} write(s) missed files`);
+// --- an open revision's ledger: default ids, added items, and the items that wait on people ---
+{
+  await foundation("f-items");
+  await walk("f-items", ["ready", "in-progress", "in-review", "ship"]);
+  await call("open_next", { node_id: "f-items", change: "items" });
+  check(
+    "a revision's fresh ledger carries the default ids",
+    /- \[ \] Spec written \{#spec\}\r?\n- \[ \] Implementation complete \{#impl\}\r?\n- \[ \] Verified in target environment \{#verify\}/.test(
+      readRel(revOf("f-items", "items"))
+    ),
+    readRel(revOf("f-items", "items"))
+  );
+  const added = await call("patch_node_territory", { node_id: "f-items", add_checklist_items: [{ text: "QA sign-off", id: "qa", kind: "review" }] });
+  check(
+    "add_checklist_items writes to the open revision",
+    added.patched_fields?.includes("add_checklist_items") && readRel(revOf("f-items", "items")).includes("- [ ] QA sign-off {#qa review}"),
+    JSON.stringify(added)
+  );
+  const dup = await blocked("patch_node_territory", { node_id: "f-items", add_checklist_items: [{ text: "Again", id: "impl" }] });
+  check("a revision's ids are unique: a duplicate is Blocked", !!dup && dup.includes('"impl"'), String(dup));
+  const r = await call("run_check", {});
+  check(
+    "run_check names the revision whose item waits on people",
+    r.info?.includes("waiting on people: f-items (revision items): qa (review)"),
+    JSON.stringify(r.info)
+  );
+  const o = await call("orient_for_work", { change: "items" });
+  check(
+    "orient_for_work on the change lists its revisions' open items",
+    JSON.stringify(o.open_items) === JSON.stringify([{ node_id: "f-items", change: "items", id: "qa", kind: "review", text: "QA sign-off" }]),
+    JSON.stringify(o.open_items)
+  );
+  const ticked = await call("patch_node_territory", { node_id: "f-items", toggle_checkboxes: [{ id: "qa", checked: true }] });
+  check("a revision item ticks by id", ticked.toggled?.[0] === "- [x] QA sign-off {#qa review}", JSON.stringify(ticked));
+}
+
 await client.close();
 
 // --- upgrade_project drops the ledgers an older release left on shipped nodes ---

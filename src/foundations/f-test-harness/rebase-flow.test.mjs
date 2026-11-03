@@ -313,7 +313,7 @@ for (const new_status of SHIP) {
     await call("patch_node_territory", {
       node_id: "f-static-build",
       change: p.change,
-      toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }],
+      toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }],
     });
     await call("record_decision", {
       node_id: "f-static-build",

@@ -81,7 +81,7 @@ async function complete(id, type) {
   for (const heading of SECTIONS[type]) {
     await call("patch_node_territory", { node_id: id, section: heading, text: `Real ${heading.slice(3).toLowerCase()} for ${id}.` });
   }
-  await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 }
 
 // --- a shipped base: a Capability, two Foundations, an Interaction, and the Interface exposing it ---
@@ -210,7 +210,7 @@ check(
 await call("discard_next", { node_id: "if-dash" });
 check("a discard leaves the edge planned", /- feat exposes i-new/.test(live("mindplan/interfaces/if-dash/if-dash.mdx")));
 await call("open_next", { node_id: "if-dash", change: "feat" });
-await call("patch_node_territory", { node_id: "if-dash", toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+await call("patch_node_territory", { node_id: "if-dash", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 await complete("i-new", "Interaction");
 const shipped = await call("update_node_status", { scope: "change", change: "feat", new_status: "ship", skip_review: true });
 const dashAfter = live("mindplan/interfaces/if-dash/if-dash.mdx");
@@ -286,7 +286,7 @@ check(
   dbRadius.affected_files.find((g) => g.owner_id === "f-db")?.files.includes("src/root/migrations/0002.ts"),
   JSON.stringify(dbRadius.affected_files)
 );
-await call("patch_node_territory", { node_id: "f-db", toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+await call("patch_node_territory", { node_id: "f-db", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 await call("update_node_status", { node_id: "f-db", new_status: "ready" });
 await call("update_node_status", { node_id: "f-db", new_status: "in-progress" });
 const gated = await raw("update_node_status", { node_id: "f-db", new_status: "in-review" });

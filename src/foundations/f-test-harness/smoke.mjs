@@ -2262,8 +2262,9 @@ if (ifOrd?.state !== "in-review") {
 
 await expectOk("open_next f-ord", "open_next", { change: "rev-f-ord", node_id: "f-ord" });
 const fOrdNext = nextTerritoryPath("foundations", "f-ord");
+// An item's text excludes its {#id} tag.
 const inheritedLabels = [...fs.readFileSync(fOrdNext, "utf-8").matchAll(/^- \[[ xX]\] (.+)$/gm)].map(
-  (match) => match[1]
+  (match) => match[1].replace(/\s*\{#[^}]*\}\s*$/, "")
 );
 await expectOk("inherited complete next checklist", "patch_node_territory", {
   node_id: "f-ord",
@@ -2277,7 +2278,7 @@ await expectOk("inherited complete next checklist", "patch_node_territory", {
 await expectOk("fully checked building checklist is allowed regardless of labels", "patch_node_territory", {
   node_id: "f-ord",
   slot: "next",
-  toggle_checkboxes: [{ contains: "reopened", checked: true }],
+  toggle_checkboxes: [{ contains: `${inheritedLabels[0]} reopened`, checked: true }],
 });
 
 await expectOk("create f-cr", "create_node", {
@@ -2774,7 +2775,7 @@ role: infra
   });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
   await expectOk("tick the revision's ops", "patch_node_territory", {
-    node_id: "f-rules-base", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }],
+    node_id: "f-rules-base", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }],
   });
   for (const status of ["ready", "in-progress", "in-review", "ship"]) {
     await expectOk(`f-rules-base evolution -> ${status}`, "update_node_status", {

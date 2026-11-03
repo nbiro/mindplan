@@ -331,7 +331,7 @@ await foundation("f-dep");
     why: "Each part runs alone.",
   });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
-  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
   check(
     "ship applies the revision's tests to live and deletes the revision folder",
