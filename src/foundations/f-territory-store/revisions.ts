@@ -43,6 +43,7 @@ import {
   detectEol,
   emptyDelta,
   joinSections,
+  levelTwoHeadings,
   PREAMBLE_SECTION,
   pickRevision,
   rebase,
@@ -977,8 +978,9 @@ function replaceSection(body: string, heading: string, text: string | undefined)
  * (`"## Spec"`), a scalar field (`"title"`, `"description"`, `"role"`), or a claim path.
  * `take`: `"revision"` keeps the revision's value; `"live"` takes live's (a claim: drops the add);
  * `"text"` writes `text` (sections and scalars only; Blocked without `text`). Removes the conflict
- * and sets `updated_at`. Blocked when the revision holds no such conflict. Returns the paths
- * written and the conflicts left.
+ * and sets `updated_at`. Blocked when the revision holds no such conflict, and when `text` for a
+ * section holds another level-2 heading (for `_preamble`, any). Returns the paths written and the
+ * conflicts left.
  */
 export function resolveConflict(
   node: MindPlanNode,
@@ -1021,6 +1023,17 @@ export function resolveConflict(
       const firstLine = t.replace(/^\n+/, "").split("\n")[0].trim();
       const headingText = target.replace(/ \(\d+\)$/, "");
       const withHeading = target === PREAMBLE_SECTION || firstLine === headingText ? t : `${headingText}\n\n${t}`;
+      // The text stays one section: a level-2 heading in it (outside fenced code) would start
+      // another section, or turn the preamble into one.
+      const allowed = target === PREAMBLE_SECTION ? 0 : 1;
+      const extra = levelTwoHeadings(withHeading.split("\n")).slice(allowed);
+      if (extra.length > 0) {
+        throw blocked(
+          `take "text" for "${target}" holds the level-2 heading "## ${extra[0].name}"; the text replaces one ` +
+            `${target === PREAMBLE_SECTION ? "preamble (the text above the first heading)" : "section"} and may not start another. ` +
+            "Resolve this conflict without it and edit the other section with patch_node_territory."
+        );
+      }
       body = replaceSection(body, target, withHeading);
     }
     const hash = sectionHashes(live)[target];
