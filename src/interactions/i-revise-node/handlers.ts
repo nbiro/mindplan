@@ -14,6 +14,7 @@ import {
 import {
   discardRevision,
   openRevision,
+  rebaseRevisionOntoLive,
   resolveConflict as resolveRevisionConflict,
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
@@ -194,6 +195,32 @@ export function resolveConflict(args: ResolveConflictArgs): Record<string, unkno
     resolved: target,
     take,
     conflicts: out.conflicts.map(conflictLabel),
+    changed_files: changedFiles(out.changed_files),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
+  };
+}
+
+/**
+ * rebase_revision: carries one open revision onto current live (live moved since it opened: a
+ * sibling shipped on another branch and the branches merged, or live was patched in place), with
+ * the rule a ship applies to its siblings. A revision whose base already matches live is a no-op.
+ */
+export function rebaseRevision(args: { node_id: string; change?: string; verbose?: boolean }): Record<string, unknown> {
+  const { node_id } = args;
+  gateWrite(null, [node_id], "rebase_revision");
+  const graph = loadGraph();
+  const node = findNode(graph, node_id);
+  assertNoLegacyNext(node, "rebase_revision");
+  const change = resolveRevisionChange(node, args.change || undefined);
+  if (change === null) throw blocked(`node "${node_id}" has no open revision to rebase.`);
+  const out = rebaseRevisionOntoLive(graph, node, change);
+  if (out.rebased) refreshPersistedMap();
+  return {
+    node_id,
+    change,
+    rebased: out.rebased,
+    conflicts: out.conflicts.map(conflictLabel),
+    ...(out.readiness_reset ? { readiness_reset: out.readiness_reset } : {}),
     changed_files: changedFiles(out.changed_files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };

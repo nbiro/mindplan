@@ -61,9 +61,11 @@ function runViewCli(argv: string[]): void {
   printRemovedLegacyFiles(result.removed_legacy_files);
 }
 
-function parseCheckArgs(argv: string[]): { base?: string; merge?: MergeLevel } {
+function parseCheckArgs(argv: string[]): { base?: string; merge?: MergeLevel; after_merge?: boolean; root?: string } {
   let base: string | undefined;
   let merge: MergeLevel | undefined;
+  let after_merge: boolean | undefined;
+  let root: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--base") {
@@ -80,19 +82,30 @@ function parseCheckArgs(argv: string[]): { base?: string; merge?: MergeLevel } {
         throw new Error("Blocked: --merge and --merge=strict were both passed. Pass one merge level.");
       }
       merge = level;
+    } else if (arg === "--after-merge") {
+      after_merge = true;
+    } else if (arg === "--root") {
+      const value = argv[++i];
+      if (!value) throw new Error("Blocked: --root requires a path (a checkout holding mindplan/).");
+      root = value;
     } else if (arg === "--help" || arg === "-h") {
       throw new Error("HELP");
     } else {
       throw new Error(`Blocked: unknown check option "${arg}".`);
     }
   }
-  return { base, merge };
+  return { base, merge, after_merge, root };
 }
 
 function runCheckCli(argv: string[]): void {
   try {
     const opts = parseCheckArgs(argv);
-    const result = runIntegrityCheck({ base: opts.base, merge: opts.merge });
+    const result = runIntegrityCheck({
+      base: opts.base,
+      merge: opts.merge,
+      after_merge: opts.after_merge,
+      ...(opts.root !== undefined ? { cwd: opts.root } : {}),
+    });
     printRemovedLegacyFiles(result.removedLegacyFiles);
     const output = renderCheckOutput(result);
     if (result.ok) {
@@ -109,6 +122,8 @@ function runCheckCli(argv: string[]): void {
   mindplan-mcp check --base <ref>     Also enforce dirty-src ownership vs base
   mindplan-mcp check --merge          Merge gate: also Block work still in review
   mindplan-mcp check --merge=strict   Also Block in-progress work whose claimed files changed
+  mindplan-mcp check --after-merge    Also Block what merging a graph-changing branch left behind
+  mindplan-mcp check --root <path>    Check the checkout at <path> instead of MINDPLAN_ROOT / cwd
 
 Options:
   --base <ref>      Opt-in dirty-src vs this git ref; the strict merge gate's base
@@ -116,6 +131,11 @@ Options:
   --merge=strict    Also Block in-progress nodes whose claimed files changed against
                     --base (default: the main/master merge base; an explicit --base
                     also runs dirty-src)
+  --after-merge     Block git conflict markers under mindplan/, a node id in two folders,
+                    a decision id in two files, revisions based on an older live
+                    (rebase_revision), a tracked mindplan/map.md, a missing or behind
+                    version.json
+  --root <path>     Project root to check (default: MINDPLAN_ROOT, else cwd)
 `);
       return;
     }
@@ -156,6 +176,10 @@ Check options:
                             branch must ship them first, or move them back to in-progress)
   --merge=strict            Also Block in-progress nodes whose claimed files changed against
                             the base (default: the main/master merge base)
+  --after-merge             After merging a branch that changed mindplan/: Block conflict
+                            markers, duplicate node or decision ids, revisions based on an
+                            older live (rebase_revision), a tracked map.md, a stale version.json
+  --root <path>             Check the checkout at <path> (default: MINDPLAN_ROOT, else cwd)
 
 Environment:
   MINDPLAN_ROOT   Project root containing mindplan/ (default: cwd)`);

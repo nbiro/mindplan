@@ -183,6 +183,7 @@ const TOOL_ORDER = [
   "open_next",
   "discard_next",
   "resolve_conflict",
+  "rebase_revision",
   "get_blast_radius",
   "unlink_nodes",
   "update_node_status",
