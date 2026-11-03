@@ -568,7 +568,7 @@ for (const new_status of SHIP) {
   await call("discard_next", { node_id: "f-m3", change: "trio" });
 }
 
-// --- resolving a conflict of an in-review revision with other text sends it back to draft ---
+// --- resolve_conflict with other text resets only a ready revision; in-review stays in-review ---
 {
   const id = "f-ir";
   const irRev = (change) => `mindplan/foundations/${id}/revisions/${change}/${id}.mdx`;
@@ -577,7 +577,8 @@ for (const new_status of SHIP) {
   await call("set_implementation_files", { node_id: id, add: [`src/${id}/index.ts`] });
   fillAndTick(abs(`mindplan/foundations/${id}/${id}.mdx`));
   for (const new_status of SHIP) await call("update_node_status", { node_id: id, new_status });
-  for (const change of ["ir1", "ir2"]) {
+  const walks = { ir1: ["ready", "in-progress", "in-review"], ir2: ["ready", "in-progress", "in-review"], ir3: ["ready"] };
+  for (const [change, steps] of Object.entries(walks)) {
     await call("open_next", { node_id: id, change });
     await call("patch_node_territory", { node_id: id, change, section: "## Purpose", text: `Purpose from ${change}.` });
     await call("patch_node_territory", {
@@ -592,9 +593,7 @@ for (const new_status of SHIP) {
       alternatives: [`A new node that depends_on ${id}: the contract itself changes.`],
       why: "The purpose must change in place.",
     });
-    for (const new_status of ["ready", "in-progress", "in-review"]) {
-      await call("update_node_status", { node_id: id, change, new_status });
-    }
+    for (const new_status of steps) await call("update_node_status", { node_id: id, change, new_status });
   }
   const shipped = await call("update_node_status", { node_id: id, change: "ir1", new_status: "ship" });
   const rebased = (shipped.rebased ?? []).find((r) => r.change === "ir2");
@@ -604,14 +603,20 @@ for (const new_status of SHIP) {
       /^state: in-review$/m.test(read(irRev("ir2"))),
     JSON.stringify(shipped)
   );
-  const resolved = await call("resolve_conflict", { node_id: id, section: "## Purpose", take: "live" });
+  const inReview = await call("resolve_conflict", { node_id: id, change: "ir2", section: "## Purpose", take: "live" });
   check(
-    "resolve_conflict taking live's text sends the in-review revision back to draft, reported from in-review",
-    resolved.readiness_reset?.from === "in-review" && resolved.readiness_reset?.to === "draft" &&
-      /^state: draft$/m.test(read(irRev("ir2"))) && read(irRev("ir2")).includes("Purpose from ir1."),
-    JSON.stringify(resolved)
+    "resolve_conflict taking live's text keeps an in-review revision in-review, like any contract write",
+    !inReview.readiness_reset && /^state: in-review$/m.test(read(irRev("ir2"))) && read(irRev("ir2")).includes("Purpose from ir1."),
+    JSON.stringify(inReview)
   );
-  await call("discard_next", { node_id: id, change: "ir2" });
+  const ready = await call("resolve_conflict", { node_id: id, change: "ir3", section: "## Purpose", take: "live" });
+  check(
+    "resolve_conflict taking live's text sends a ready revision back to draft",
+    ready.readiness_reset?.from === "ready" && ready.readiness_reset?.to === "draft" &&
+      /^state: draft$/m.test(read(irRev("ir3"))) && read(irRev("ir3")).includes("Purpose from ir1."),
+    JSON.stringify(ready)
+  );
+  for (const change of ["ir2", "ir3"]) await call("discard_next", { node_id: id, change });
 }
 
 await client.close();
