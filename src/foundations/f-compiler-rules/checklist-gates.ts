@@ -6,7 +6,7 @@
 
 import type { MindPlanGraph, MindPlanNode } from "../f-domain-model/types.js";
 import { isPipelineNodeType } from "../f-domain-model/types.js";
-import { openChanges, revisionFor, withRevision } from "../f-revision-model/index.js";
+import { openChanges, withRevision } from "../f-revision-model/index.js";
 import { parseChecklistItems, type ChecklistKind } from "../f-territory-store/checklist.js";
 import { slotSource } from "./shape.js";
 
@@ -106,8 +106,8 @@ function humanItems(text: string | null, node_id: string, change?: string): Open
 }
 
 /**
- * Unticked review / deploy items across live pre-ship pipeline nodes and every open revision (a
- * legacy next file counts as its change's revision), sorted by node.
+ * Unticked review / deploy items across live pre-ship pipeline nodes and every open revision,
+ * sorted by node.
  */
 export function openHumanItems(graph: MindPlanGraph): OpenHumanItem[] {
   const nodes = [...graph.nodes].sort((a, b) => a.id.localeCompare(b.id));
@@ -116,7 +116,7 @@ export function openHumanItems(graph: MindPlanGraph): OpenHumanItem[] {
 
 /**
  * One node's unticked review / deploy items: its live slot while pre-ship (none once cancelled or
- * deprecated), else each open revision's (a legacy next file counts as its change's revision).
+ * deprecated), else each open revision's.
  */
 export function openHumanItemsOfNode(node: MindPlanNode): OpenHumanItem[] {
   if (!isPipelineNodeType(node.type)) return [];
@@ -127,9 +127,6 @@ export function openHumanItemsOfNode(node: MindPlanNode): OpenHumanItem[] {
   const out: OpenHumanItem[] = [];
   for (const change of openChanges(node)) {
     out.push(...humanItems(slotText(withRevision(node, change), "next"), node.id, change));
-  }
-  if (node.next && !(node.next.change && revisionFor(node, node.next.change))) {
-    out.push(...humanItems(slotText(node, "next"), node.id, node.next.change));
   }
   return out;
 }

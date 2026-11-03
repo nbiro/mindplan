@@ -29,7 +29,7 @@ import {
   listDecisions,
   supersessionIndex,
 } from "../../foundations/f-graph-search/decisions.js";
-import { assertNoLegacyNext, changedFiles, gateWrite, mutationTail } from "../../foundations/f-plan-writes/writes.js";
+import { changedFiles, gateWrite, mutationTail } from "../../foundations/f-plan-writes/writes.js";
 
 /** Trims a value and collapses its line breaks: decision fields are single lines. */
 function oneLine(value: string | undefined): string {
@@ -70,7 +70,6 @@ export function recordDecision(args: {
   gateWrite(null, [args.node_id], "record_decision");
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  assertNoLegacyNext(node, "record_decision");
   if (node.type === "Bug") {
     const targets = node.affects ?? [];
     throw blocked(

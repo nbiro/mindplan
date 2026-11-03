@@ -14,7 +14,6 @@ import {
   type ProductionState,
 } from "../../foundations/f-domain-model/types.js";
 import {
-  deleteNextSlotFiles,
   loadGraph,
   loadProjectConfig,
   projectRoot,
@@ -27,16 +26,19 @@ import {
   clearAttributed,
   stripLiveAtomicOps,
   freshLiveAtomicOps,
+  removeLegacyMirror,
 } from "../../foundations/f-territory-store/store.js";
 import {
   discardRevision,
   shipRevision,
+  syncNextView,
   withWrittenFiles,
   writeRevisionState,
   writtenFilesOf,
 } from "../../foundations/f-territory-store/revisions.js";
 import {
   openChanges,
+  pickRevision,
   resolveRevisionChange,
   revisionFor,
   withRevision,
@@ -63,7 +65,6 @@ import {
 import { assertDecisionForReview, createDecisionContext, type DecisionContext } from "../../foundations/f-compiler-rules/decisions.js";
 import {
   changedFiles,
-  assertNoLegacyNext,
   conflictLabel,
   gateWrite,
   mutationTail,
@@ -88,15 +89,14 @@ const RETIRE_STATES = new Set(["deprecated", "cancelled"]);
 /**
  * Which open revision a transition of `node` moves: the revision of `change`, or the node's only
  * one; undefined for live (a pre-ship node, a Bug, a shipped node with none, or a retirement).
- * Blocked when several are open and no change is given (naming them), when `change` names no
- * open revision, and when a `<id>.next.mdx` from an older release is still on disk.
+ * Blocked when several are open and no change is given (naming them), and when `change` names no
+ * open revision.
  */
 function revisionChangeFor(node: MindPlanNode, newStatus: string, change?: string): string | undefined {
   if (!isPipelineNodeType(node.type)) {
     if (change) throw blocked(`"${node.id}" is a ${node.type}; it has no revisions, so it takes no change.`);
     return undefined;
   }
-  assertNoLegacyNext(node, "update_node_status");
   if (!node.shipped_at) {
     if (change && node.change !== change) {
       throw blocked(`"${node.id}" is not shipped and belongs to ${node.change ? `change "${node.change}"` : "no change"}, not "${change}".`);
@@ -277,7 +277,6 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[]
     const ids = new Set(changeMembers(graph, change).map((n) => n.id));
     for (const n of graph.nodes) if (revisionFor(n, change)) ids.add(n.id);
     selected = graph.nodes.filter((n) => ids.has(n.id));
-    for (const n of selected) if (!revisionFor(n, change)) assertNoLegacyNext(n, "update_node_status");
     if (selected.length === 0) {
       throw blocked(
         `change "${args.change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
@@ -432,8 +431,7 @@ function promoteInMemory(
   if (rest.length) node.open_revisions = rest;
   else delete node.open_revisions;
   // The loader's view: the only remaining revision fills `next`, none or several leave it unset.
-  if (rest.length === 1) node.next = withRevision(node, rest[0].change).next;
-  else delete node.next;
+  syncNextView(node);
   rebuildOutgoingEdges(graph, node);
 }
 
@@ -952,8 +950,7 @@ function changeHint(item: StatusRevision, graph: MindPlanGraph | null): string |
   if (!node.shipped_at) {
     change = node.change || undefined;
   } else {
-    const open = openChanges(node);
-    revision = item.change && open.includes(item.change) ? item.change : open.length === 1 ? open[0] : undefined;
+    revision = pickRevision(node, item.change || undefined, { strict: false }).change ?? undefined;
     change = revision;
   }
   if (!change) return null;
@@ -1023,7 +1020,7 @@ function applyOneStatus(args: {
 
   const previous = node.state;
   const now = new Date().toISOString();
-  let removed: string[] = [];
+  const removed: string[] = [];
 
   if (resolved.ship) {
     // A shipped node is no longer an open revision: its change membership ends here.
@@ -1054,7 +1051,8 @@ function applyOneStatus(args: {
     if (retiring && isPipelineNodeType(node.type)) {
       // A retired node keeps no open revision: every revision folder goes with it.
       for (const c of openChanges(node)) removed.push(...discardRevision(node, c).changed_files);
-      removed = [...removed, ...deleteNextSlotFiles(node)];
+      // A leftover mirror twin from a release before 0.8.0 goes too.
+      removed.push(...removeLegacyMirror(node));
     }
   }
 
@@ -1196,14 +1194,15 @@ export function forceUnship(args: {
     Object.assign(node, rateBefore);
     throw err;
   }
-  const removedNext = deleteNextSlotFiles(node);
+  // A leftover mirror twin from a release before 0.8.0 is not kept on an unshipped node.
+  const removedMirror = removeLegacyMirror(node);
 
   const changedStability = recomputeStability(graph);
   const changedCapabilities = recomputeCapabilityStates(graph);
   const synced = syncNodes([...changedStability, ...changedCapabilities]);
   refreshPersistedMap();
 
-  const files = [territoryPath(node), ...removedNext, ...synced];
+  const files = [territoryPath(node), ...removedMirror, ...synced];
 
   return {
     node_id,

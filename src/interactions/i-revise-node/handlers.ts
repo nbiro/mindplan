@@ -26,7 +26,6 @@ import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.
 import { changeCycleGate } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
-  assertNoLegacyNext,
   changedFiles,
   conflictLabel,
   gateWrite,
@@ -57,7 +56,6 @@ export function openNext(args: {
   validateChangeInput(args);
   const graph = loadGraph();
   const node = findNode(graph, node_id);
-  assertNoLegacyNext(node, "open_next");
   validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
   const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
@@ -68,7 +66,9 @@ export function openNext(args: {
     for (const e of plannedDeps) assertNoCycle({ source: node_id, target: e.target, change });
   }
   // The revision takes its change's planned edges: each must still be legal before it opens.
-  const problems = plannedEdgeProblems(graph, change).filter((p) => p.startsWith(`planned edge ${node_id} -`));
+  const problems = plannedEdgeProblems(graph, change)
+    .filter((p) => p.source === node_id)
+    .map((p) => `planned edge ${p.source} -${p.type}-> ${p.target}: ${p.problem}`);
   if (problems.length > 0) {
     throw blocked(
       `open_next would apply planned edges that are no longer legal: ${problems.join("; ")}. ` +
@@ -143,7 +143,6 @@ function discardRevisionWrite(args: { node_id: string; change?: string; verbose?
   gateWrite(null, [node_id], "discard_next");
   const graph = loadGraph();
   const node = findNode(graph, node_id);
-  assertNoLegacyNext(node, "discard_next");
   const change = resolveRevisionChange(node, args.change || undefined);
   if (change === null) {
     throw blocked(
@@ -218,7 +217,6 @@ export function rebaseRevision(args: { node_id: string; change?: string; verbose
   gateWrite(null, [node_id], "rebase_revision");
   const graph = loadGraph();
   const node = findNode(graph, node_id);
-  assertNoLegacyNext(node, "rebase_revision");
   const change = resolveRevisionChange(node, args.change || undefined);
   if (change === null) throw blocked(`node "${node_id}" has no open revision to rebase.`);
   const out = rebaseRevisionOntoLive(graph, node, change);

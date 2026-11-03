@@ -55,7 +55,6 @@ import { findImportViolationsForClaim } from "../../foundations/f-compiler-rules
 import * as fs from "fs";
 import * as path from "path";
 import {
-  assertNoLegacyNext,
   READINESS_NOTE,
   changedFiles,
   gateWrite,
@@ -245,7 +244,6 @@ function writeImplementationFiles(args: SetImplementationArgs): Record<string, u
   validateChangeInput({ change: args.change });
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  assertNoLegacyNext(node, "set_implementation_files");
   if (!isPipelineNodeType(node.type)) {
     throw blocked(
       `set_implementation_files only applies to Interaction, Interface, and Foundation; "${node.id}" is a ${node.type}.`
@@ -493,7 +491,6 @@ function writeTestFiles(args: SetTestFilesArgs): Record<string, unknown> {
   validateChangeInput({ change: args.change });
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
-  assertNoLegacyNext(node, "set_test_files");
   const edit = listEdit("set_test_files", args);
   if (edit === null) throw blocked("set_test_files needs add, remove, or files with replace: true.");
   if (node.open_revisions?.length) {

@@ -13,8 +13,8 @@
  * Owned source files are declared via server-owned `implements` (not prescribed folders).
  * Live node records and outgoing edge arrays live in the live MDX YAML frontmatter.
  * A shipped node's open revisions live under `revisions/<change>/` (revisions.ts); ship and
- * discard delete the folder. A `<id>.next.mdx` from a release before migration level 4 is still
- * read (the older migrations need it), but every write tool Blocks beside it naming upgrade_project.
+ * discard delete the folder. A `<id>.next.mdx` from a release before migration level 4 is not
+ * read: the version gate names upgrade_project, whose level-4 migration moves it (legacy-next.ts).
  * New files use the id names. An existing current.mdx / next.mdx stays in use.
  * When both names exist for one slot, the id-named file is kept and the legacy file is deleted.
  * Callers report those deletions via drainRemovedLegacyFiles().
@@ -32,8 +32,6 @@ import type {
   MindPlanEdge,
   MindPlanGraph,
   MindPlanNode,
-  NextPipelineState,
-  NextSlot,
   PlannedEdge,
   PlannedEdgeType,
   NodeType,
@@ -47,7 +45,6 @@ import {
   isFoundationRole,
   isInactiveNode,
   isMirrorState,
-  isNextPipelineState,
   isPipelineNodeType,
   MIRROR_STATE,
   NODE_TYPES,
@@ -60,8 +57,7 @@ import { resolveProjectRoot, rootKey } from "../f-source-index/root-scope.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
-import { readRevisions } from "./revisions.js";
-import { withRevision } from "../f-revision-model/index.js";
+import { readRevisions, syncNextView } from "./revisions.js";
 
 export {
   CONFIG_FILENAME,
@@ -137,7 +133,8 @@ export const LEGACY_LIVE_FILENAME = "current.mdx";
 /** Previous evolution filename. Still read and written when that file is the one on disk. */
 export const LEGACY_NEXT_FILENAME = "next.mdx";
 export const ATTACHMENTS_DIR = "attachments";
-export const NEXT_ATTACHMENTS_DIR = "next-attachments";
+/** The legacy next file's attachments folder: only a leftover mirror twin's is still removed here. */
+const NEXT_ATTACHMENTS_DIR = "next-attachments";
 export const COMPONENTS_DIR = "components";
 
 export type TerritorySlot = "current" | "next";
@@ -370,17 +367,12 @@ export function attachmentsDir(node: Pick<MindPlanNode, "id" | "type">): string 
   return path.join(entityDir(node), ATTACHMENTS_DIR);
 }
 
-export function nextAttachmentsDir(node: Pick<MindPlanNode, "id" | "type">): string {
+function nextAttachmentsDir(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.join(entityDir(node), NEXT_ATTACHMENTS_DIR);
 }
 
-/** True when the next-slot path exists on disk (an open evolution, or a leftover mirror). */
-export function nextFileExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
-  return fs.existsSync(markdownPath(node, "next"));
-}
-
 /** Read `state:` from a next-slot file without requiring a pipeline state. */
-export function readNextFileState(node: Pick<MindPlanNode, "id" | "type">): string | null {
+function readNextFileState(node: Pick<MindPlanNode, "id" | "type">): string | null {
   const file = markdownPath(node, "next");
   try {
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return null;
@@ -401,8 +393,8 @@ export function isLegacyMirror(node: Pick<MindPlanNode, "id" | "type">): boolean
   return state !== null && isMirrorState(state);
 }
 
-/** Delete the next file and next-attachments/ (ship, discard, retire, force_unship). */
-export function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): string[] {
+/** Delete the next file and next-attachments/ (a leftover mirror twin's: retire, force_unship, open_next, upgrade). */
+function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): string[] {
   const removed: string[] = [];
   const nextFile = markdownPath(node, "next");
   if (fs.existsSync(nextFile)) {
@@ -828,65 +820,36 @@ function parseNodeFromFrontmatter(
   return node;
 }
 
-/**
- * Parse an open-evolution next slot. Returns null when the file is a leftover `mirror` twin
- * (not an evolution). Throws on missing required fields or illegal states.
- */
-function parseNextSlot(folderId: string, nextFile: string): NextSlot | null {
-  const raw = readFileRetry(nextFile);
-  const parsed = parseFrontmatter(raw);
-  if (!parsed) {
-    throw new Error(
-      `Blocked: next file for "${folderId}" has no YAML frontmatter (expected at ${nextFile}).`
-    );
-  }
-  const fm = parsed.scalars;
-  if (!fm.state || !fm.updated_at) {
-    throw new Error(
-      `Blocked: next frontmatter for "${folderId}" must include state and updated_at.`
-    );
-  }
-  if (isMirrorState(fm.state)) {
-    return null;
-  }
-  if (!isNextPipelineState(fm.state)) {
-    throw new Error(
-      `Blocked: ${path.basename(nextFile)} for "${folderId}" has invalid next state "${fm.state}". ` +
-        `Allowed: ${MIRROR_STATE}, draft, ready, in-progress, in-review.`
-    );
-  }
-  const slot: NextSlot = {
-    state: fm.state as NextPipelineState,
-    title: fm.title ?? "",
-    description: fm.description ?? "",
-    updated_at: fm.updated_at,
-  };
-  if (fm.change) slot.change = fm.change;
-  if (fm.change_ref) slot.change_ref = fm.change_ref;
-  if (fm.opened_at) slot.opened_at = fm.opened_at;
-  const nextDecisions = parseDecisions(splitNodeDecisions(raw).section);
-  if (nextDecisions.length > 0) slot.decisions = nextDecisions;
-  if (parsed.arrays.belongs_to.length > 0) slot.belongs_to = [...parsed.arrays.belongs_to];
-  if (parsed.arrays.depends_on.length > 0) slot.depends_on = [...parsed.arrays.depends_on];
-  if (parsed.arrays.exposes.length > 0) slot.exposes = [...parsed.arrays.exposes];
-  if (parsed.arrays.leads_to.length > 0) slot.leads_to = [...parsed.arrays.leads_to];
-  if (parsed.arrays.mounts.length > 0) slot.mounts = [...parsed.arrays.mounts];
-  if (parsed.implements.length > 0) slot.implements = [...parsed.implements];
-  if (parsed.attributed.length > 0) slot.attributed = [...parsed.attributed];
-  if (parsed.split_into.length > 0) slot.split_into = [...parsed.split_into];
-  if (fm.role) {
-    if (!isFoundationRole(fm.role)) {
-      throw new Error(
-        `Blocked: invalid Foundation role "${fm.role}" in ${path.basename(nextFile)} for "${folderId}". ` +
-          `Allowed: assembler, infra, design-system, adapter.`
-      );
-    }
-    slot.role = fm.role;
-  }
-  return slot;
-}
+export type NodeFolder = FolderRef & { id: string; type: NodeType };
 
-type NodeFolder = FolderRef & { id: string; type: NodeType };
+/**
+ * Every folder under a type folder of `<root>/mindplan/` (one per node type, `typeDir`), read from
+ * disk only: `{ id, type, abs, rel }` (`rel` is repo-relative, posix), in NODE_TYPES order then
+ * directory order. A folder need not hold a live file. A missing or unreadable type folder is skipped.
+ */
+export function listNodeFolders(root: string): NodeFolder[] {
+  const out: NodeFolder[] = [];
+  for (const type of NODE_TYPES) {
+    const dirName = TYPE_DIRS[type];
+    const typePath = path.join(root, MINDPLAN_DIR, dirName);
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(typePath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      out.push({
+        id: entry.name,
+        type,
+        abs: path.join(typePath, entry.name),
+        rel: path.posix.join(MINDPLAN_DIR, dirName, entry.name),
+      });
+    }
+  }
+  return out;
+}
 
 let cachedParserVersion: string | null = null;
 
@@ -919,29 +882,15 @@ export function parserVersion(): string {
 }
 
 /**
- * Assembles one node from its folder's <id>.mdx (+ optional <id>.next.mdx), its `decisions/*.md`
- * (appended to the live decisions), and its open revisions under `revisions/`; null when it has
- * no live file. A legacy next file fills `next`; otherwise exactly one open revision fills it as
- * the live-plus-revision view (`withRevision`), and several leave it unset.
+ * Assembles one node from its folder's <id>.mdx, its `decisions/*.md` (appended to the live
+ * decisions), and its open revisions under `revisions/`; null when it has no live file. Exactly
+ * one open revision fills `next` as the live-plus-revision view (`withRevision`); several leave it
+ * unset. A legacy `<id>.next.mdx` is never read (the version gate sends it to upgrade_project).
  */
 function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
   const currentFile = existingSlotFile(folder.abs, folder.id, "current", folder.rel);
   if (!currentFile) return null;
   const node = parseNodeFromFrontmatter(folder.id, folder.type, currentFile);
-  const nextFile = existingSlotFile(folder.abs, folder.id, "next", folder.rel);
-  if (nextFile) {
-    // Non-file next paths (e.g. a directory occupying the next file's name) are not evolutions;
-    // leave node.next unset so init can report a skip when healing fails.
-    if (fs.statSync(nextFile).isFile()) {
-      if (!isPipelineNodeType(folder.type)) {
-        throw new Error(
-          `Blocked: ${path.basename(nextFile)} is only allowed for Foundations, Interactions, and Interfaces (found on ${folder.type} "${folder.id}").`
-        );
-      }
-      const evolution = parseNextSlot(folder.id, nextFile);
-      if (evolution) node.next = evolution;
-    }
-  }
   const fileDecisions = readDecisionFiles(decisionsDir(folder.abs));
   if (fileDecisions.length > 0) node.decisions = [...(node.decisions ?? []), ...fileDecisions];
   const revisions = readRevisions(folder.abs, folder.id);
@@ -952,7 +901,7 @@ function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
       );
     }
     node.open_revisions = revisions.map((r) => r.revision);
-    if (!node.next && revisions.length === 1) node.next = withRevision(node, revisions[0].revision.change).next;
+    syncNextView(node);
   }
   return node;
 }
@@ -962,23 +911,8 @@ function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
  * vouch for (`f-graph-cache`). Returned records are the caller's to mutate.
  */
 export function discoverNodes(): MindPlanNode[] {
-  const root = mindplanRoot();
-  if (!fs.existsSync(root)) return [];
-
-  const folders: NodeFolder[] = [];
-  for (const [dirName, nodeType] of Object.entries(DIR_TO_TYPE)) {
-    const typePath = path.join(root, dirName);
-    if (!fs.existsSync(typePath)) continue;
-    for (const entry of fs.readdirSync(typePath, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      folders.push({
-        id: entry.name,
-        type: nodeType,
-        abs: path.join(typePath, entry.name),
-        rel: path.posix.join(MINDPLAN_DIR, dirName, entry.name),
-      });
-    }
-  }
+  if (!fs.existsSync(mindplanRoot())) return [];
+  const folders: NodeFolder[] = listNodeFolders(projectRoot());
   const cache = graphCacheFor(projectRoot(), parserVersion());
   const nodes = cache
     ? cache.load(folders, parseNodeFolder, MINDPLAN_DIR)
@@ -1071,16 +1005,16 @@ export function nodeExists(id: string): boolean {
 
 /**
  * The file a slot reads: `current` is the live file; `next` is the open revision's
- * `revisions/<change>/<id>.mdx` when the node's `next` is the view of a stored revision
- * (`withRevision`, or the loader's single-revision view), else `<id>.next.mdx` (a legacy file the
- * readers only name so they can Block with upgrade_project).
+ * `revisions/<change>/<id>.mdx` that the node's `next` view stands for (`withRevision`, or the
+ * loader's single-revision view). Blocked when slot `next` has no such view.
  */
 export function slotFilePath(node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot): string {
-  const viewChange = slot === "next" ? (node as Partial<MindPlanNode>).next?.change : undefined;
-  if (viewChange && (node as Partial<MindPlanNode>).open_revisions?.some((r) => r.change === viewChange)) {
-    return revisionMarkdownPath(node, viewChange);
+  if (slot === "current") return markdownPath(node, "current");
+  const viewChange = (node as Partial<MindPlanNode>).next?.change;
+  if (!viewChange || !(node as Partial<MindPlanNode>).open_revisions?.some((r) => r.change === viewChange)) {
+    throw new Error(`Blocked: node "${node.id}" has no open revision to read the next slot from.`);
   }
-  return markdownPath(node, slot);
+  return revisionMarkdownPath(node, viewChange);
 }
 
 /** Absolute path of the open revision file of `change`: `<node folder>/revisions/<change>/<id>.mdx`. */
@@ -2808,8 +2742,7 @@ export function writeImplementsFrontmatter(
 }
 
 /**
- * Write (replace) a node's linked `tests` list: the only writer. Slot-independent like rules, so
- * the same list goes to live and, while a revision is open, to the next file. Evidence, not contract: state, `updated_at`, and readiness are
+ * Write (replace) a node's live linked `tests` list: the only writer. Evidence, not contract: state, `updated_at`, and readiness are
  * untouched. An empty list removes the field. Returns the paths written and whether live changed.
  */
 export function writeTestsFrontmatter(
@@ -2825,21 +2758,20 @@ export function writeTestsFrontmatter(
     throw new Error(`Blocked: "${node.id}" is ${node.state}; tests cannot be linked to a retired node.`);
   }
   const normalized = normalizeClaimList(entries, "tests");
-  // A legacy next file holds its own copy; an open revision (a `next` view) does not.
-  const slots: TerritorySlot[] = node.next && !node.open_revisions?.length ? ["current", "next"] : ["current"];
-  const paths: string[] = [];
-  let changed = false;
-  for (const slot of slots) {
-    const { file, raw, fence } = requireMutableFrontmatter(node, slot);
-    const patched = replaceNamedListInFence(fence, "tests", normalized);
-    if (patched === fence) continue;
-    writeTerritoryFile(file, raw.replace(fence, () => patched));
-    paths.push(markdownRelativePath(node, slot));
-    if (slot === "current") changed = true;
-  }
+  // Live only: an open revision holds tests as a delta of its own.
+  const paths = writeLiveNamedList(node, "tests", normalized);
   if (normalized.length > 0) node.tests = normalized;
   else delete node.tests;
-  return { paths, changed };
+  return { paths, changed: paths.length > 0 };
+}
+
+/** Replaces the named list `key` in the live file's frontmatter; returns the path when it changed. */
+function writeLiveNamedList(node: MindPlanNode, key: "tests" | "aliases", list: string[]): string[] {
+  const { file, raw, fence } = requireMutableFrontmatter(node, "current");
+  const patched = replaceNamedListInFence(fence, key, list);
+  if (patched === fence) return [];
+  writeTerritoryFile(file, raw.replace(fence, () => patched));
+  return [markdownRelativePath(node, "current")];
 }
 
 /** At most this many aliases per node, each at most `MAX_ALIAS_CHARS` characters. */
@@ -2869,7 +2801,7 @@ export function normalizeAliases(id: string, entries: string[]): string[] {
 
 /**
  * Write (replace) a node's search `aliases`: the only writer. Any node type; slot-independent like
- * `tests` (live and an open next alike). Search words, not
+ * `tests` (written to live). Search words, not
  * contract: state, `updated_at`, and readiness are untouched. Entries are trimmed, one line each,
  * deduplicated ignoring case; an empty list removes the field.
  */
@@ -2881,21 +2813,11 @@ export function writeAliasesFrontmatter(
     throw new Error(`Blocked: "${node.id}" is ${node.state}; aliases cannot be set on a retired or closed node.`);
   }
   const normalized = normalizeAliases(node.id, entries);
-  // A legacy next file holds its own copy; an open revision (a `next` view) does not.
-  const slots: TerritorySlot[] = node.next && !node.open_revisions?.length ? ["current", "next"] : ["current"];
-  const paths: string[] = [];
-  let changed = false;
-  for (const slot of slots) {
-    const { file, raw, fence } = requireMutableFrontmatter(node, slot);
-    const patched = replaceNamedListInFence(fence, "aliases", normalized);
-    if (patched === fence) continue;
-    writeTerritoryFile(file, raw.replace(fence, () => patched));
-    paths.push(markdownRelativePath(node, slot));
-    if (slot === "current") changed = true;
-  }
+  // Live only: an open revision (a `next` view) holds no copy.
+  const paths = writeLiveNamedList(node, "aliases", normalized);
   if (normalized.length > 0) node.aliases = normalized;
   else delete node.aliases;
-  return { paths, changed, aliases: normalized };
+  return { paths, changed: paths.length > 0, aliases: normalized };
 }
 
 /**

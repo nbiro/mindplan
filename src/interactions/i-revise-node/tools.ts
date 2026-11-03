@@ -34,7 +34,7 @@ export const TOOLS: ToolDef[] = [
         "Optional title/description overrides. Ship it with update_node_status (pass change when the node has several), or discard_next to abandon it. " +
         "Shipping one revision rebases its siblings onto the new live: untouched text carries over, a section both edited becomes a conflict (resolve_conflict). " +
         "Edges planned on the node under the change are added to the revision (applied_planned). " +
-        "Blocked when the change is already open on the node, the node is not shipped, or the node still has a <id>.next.mdx from an older release (upgrade_project). " +
+        "Blocked when the change is already open on the node or the node is not shipped. " +
         "On a hotspot (a node shipping far more often than the graph's median lately; config hotspots) the result also carries warnings and decision_prompt: prefer a new node that depends_on it, or record why revising it is right. " +
         "The result lists the node's open revisions ({ change, state }).",
       inputSchema: {

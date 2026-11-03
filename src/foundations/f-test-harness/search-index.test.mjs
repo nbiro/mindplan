@@ -105,12 +105,32 @@ assert.match(embedText(enquiry), /^Interaction: Send an enquiry\. .* Area: Enqui
   const evolving = {
     ...graph,
     nodes: graph.nodes.map((n) =>
-      n.id === "f-mail" ? { ...n, next: { state: "draft", title: "Mail delivery", description: "Adapter — delivers mail.", updated_at: n.updated_at } } : n
+      n.id === "f-mail"
+        ? {
+            ...n,
+            open_revisions: [
+              {
+                change: "mail-v2",
+                state: "draft",
+                title: "Mail delivery",
+                description: "Adapter — delivers mail.",
+                opened_at: n.updated_at,
+                updated_at: n.updated_at,
+                edges: {},
+                implements: { add: [], remove: [] },
+                tests: { add: [], remove: [] },
+                base: { scalars: {}, sections: {} },
+                conflicts: [],
+              },
+            ],
+          }
+        : n
     ),
   };
-  assert.equal(searchDocs(evolving).find((d) => d.id === "f-mail").title, "Mail delivery", "an open next is found by its new wording");
+  const mail = searchDocs(evolving).find((d) => d.id === "f-mail");
+  assert.ok(mail.aliases.includes("Mail delivery (revision mail-v2)"), "an open revision is found by its new wording");
 }
-ok("search docs: headings, area, entry points, retired flag, next-slot wording");
+ok("search docs: headings, area, entry points, retired flag, revision wording");
 
 {
   const docsMap = new Map(docs.map((d) => [d.id, d]));

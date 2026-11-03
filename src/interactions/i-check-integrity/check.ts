@@ -124,8 +124,8 @@ export interface MergeNode {
   id: string;
   type: string;
   state: string;
-  /** `revision`: an open revision stored under `revisions/<change>/`; `next`: a legacy next file. */
-  slot: "live" | "next" | "revision";
+  /** `revision`: an open revision stored under `revisions/<change>/`. */
+  slot: "live" | "revision";
   files?: string[];
 }
 
@@ -175,7 +175,7 @@ export interface CheckResult {
 
 /**
  * The slots the check reads on a node: each open revision as its own view (`withRevision`, tagged
- * with its change), else the node itself (live, or live plus a legacy next file).
+ * with its change), else the node itself (live).
  */
 function slotViews(node: MindPlanNode): { change: string | null; view: MindPlanNode }[] {
   const open = node.open_revisions ?? [];
@@ -183,7 +183,7 @@ function slotViews(node: MindPlanNode): { change: string | null; view: MindPlanN
   return open.map((r) => ({ change: r.change, view: withRevision(node, r.change) }));
 }
 
-/** How a check line names a node's open slot: `next` (legacy, or a node's only revision), else `revision "<change>"`. */
+/** How a check line names a node's open slot: `next` (a node's only revision), else `revision "<change>"`. */
 function slotLabel(node: MindPlanNode, change: string | null): string {
   return change === null || (node.open_revisions?.length ?? 0) <= 1 ? "next" : `revision "${change}"`;
 }
@@ -227,8 +227,8 @@ function checkChange(
     warnings.push(...stale.warnings);
     info.push(...stale.info);
   }
-  for (const problem of plannedEdgeProblems(graph, change)) {
-    failures.push(`Blocked: change "${change}": ${problem}`);
+  for (const p of plannedEdgeProblems(graph, change)) {
+    failures.push(`Blocked: change "${change}": planned edge ${p.source} -${p.type}-> ${p.target}: ${p.problem}`);
   }
   for (const f of changeCycleFailures(fullGraph, change)) failures.push(f.replace(/^Blocked: /, `Blocked: change "${change}": `));
   const bySource = new Map<string, string[]>();
@@ -470,7 +470,7 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
       : undefined;
     checkSlot(node.implements, "live", liveNeedsPresence, released);
 
-    // Each open revision (or a legacy next) on its own: a node may hold several.
+    // Each open revision on its own: a node may hold several.
     const lines = new Set<string>();
     for (const { change, view } of slotViews(node)) {
       if (view.next && view.next.state === "in-review") {
@@ -632,8 +632,8 @@ function collectWarnings(
 }
 
 /**
- * Decision warnings: every open revision (any pre-ship state, a shipped node's legacy next, or
- * each stored revision judged under its change) that is decision-worthy and has no decision yet.
+ * Decision warnings: every open revision (any pre-ship state, or each stored revision judged
+ * under its change) that is decision-worthy and has no decision yet.
  * Moving it to in-review Blocks until one is recorded.
  */
 function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): string[] {
@@ -671,14 +671,9 @@ function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
   );
 }
 
-/**
- * A node's open slots for the dirty-file rules: each open revision (with its change), else a
- * legacy next file (change `null`). Empty when nothing is open.
- */
-function openSlots(node: MindPlanNode): { change: string | null; state: string }[] {
-  const revs = node.open_revisions ?? [];
-  if (revs.length > 0) return revs.map((r) => ({ change: r.change, state: r.state }));
-  return node.next ? [{ change: null, state: node.next.state }] : [];
+/** A node's open slots for the dirty-file rules: each open revision (with its change). Empty when none is open. */
+function openSlots(node: MindPlanNode): { change: string; state: string }[] {
+  return (node.open_revisions ?? []).map((r) => ({ change: r.change, state: r.state }));
 }
 
 /** True when the node's open revision of `change` claims `rel` (live with its delta applied). */
@@ -687,8 +682,8 @@ function revisionClaims(buckets: OwnershipBuckets, node: MindPlanNode, change: s
 }
 
 /**
- * True when one of the node's open slots in `states` may be touching `rel`: a legacy next always;
- * a revision when it claims the file (live ⊕ its delta) or the file is a live claim it releases.
+ * True when one of the node's open slots in `states` may be touching `rel`: a revision when it
+ * claims the file (live ⊕ its delta) or the file is a live claim it releases.
  */
 function openSlotAllows(
   buckets: OwnershipBuckets,
@@ -699,7 +694,7 @@ function openSlotAllows(
   return openSlots(node).some(
     (s) =>
       states.has(s.state) &&
-      (s.change === null || revisionClaims(buckets, node, s.change, rel) || buckets.liveClaims.get(rel) === node.id)
+      (revisionClaims(buckets, node, s.change, rel) || buckets.liveClaims.get(rel) === node.id)
   );
 }
 
@@ -952,7 +947,7 @@ function checkMerge(
     if (RETIRED_STATES.has(node.state)) continue;
     // Each open revision is gated on its own, under its change.
     for (const { change: revision, view } of slotViews(node)) {
-      const slot = revision !== null ? "revision" : view.next ? "next" : "live";
+      const slot = revision !== null ? "revision" : "live";
       const state = view.next ? view.next.state : view.state;
       const change = revision ?? activeChange(view) ?? null;
       if (state === "in-review") {
@@ -1039,12 +1034,9 @@ function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
     .sort((a, b) => a.id.localeCompare(b.id));
   let best: { id: string; viaNext: boolean; len: number } | null = null;
   for (const node of nodes) {
-    // Every open revision's claims (live with its delta), else a legacy next's, then live.
-    const revs = node.open_revisions ?? [];
+    // Every open revision's claims (live with its delta), then live.
     const slots: { claims: string[] | undefined; viaNext: boolean }[] = [
-      ...(revs.length > 0
-        ? revs.map((r) => ({ claims: applyDelta(node.implements, r.implements), viaNext: true }))
-        : [{ claims: node.next?.implements, viaNext: true }]),
+      ...(node.open_revisions ?? []).map((r) => ({ claims: applyDelta(node.implements, r.implements), viaNext: true })),
       { claims: node.implements, viaNext: false },
     ];
     for (const slot of slots) {
@@ -1066,7 +1058,7 @@ function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
 
 /**
  * True when the owner has an open update that is allowed to be editing `rel` right now: an
- * in-progress legacy next or open revision that claims the file (each revision read as live with
+ * in-progress open revision that claims the file (each revision read as live with
  * its delta), a pre-ship node in progress, or a Bug in fixing/in-review.
  */
 function hasOpenUpdateFor(
@@ -1079,9 +1071,7 @@ function hasOpenUpdateFor(
   if (slots.length > 0) {
     for (const s of slots) {
       if (!ACTIVE_BUILD.has(s.state)) continue;
-      if (s.change === null ? buckets.next.get(rel) === node.id : revisionClaims(buckets, node, s.change, rel)) {
-        return true;
-      }
+      if (revisionClaims(buckets, node, s.change, rel)) return true;
     }
     return bugAllowsDirty(graph, node.id);
   }

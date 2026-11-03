@@ -42,6 +42,8 @@ export type RevisionMoved = { node_id: string; change: string };
 /** A live `## Decisions` section split into `count` decision files. */
 export type DecisionsSplit = { node_id: string; count: number };
 
+// Pinned, not the store's type→folder map (listNodeFolders): a migration reads the layout of the
+// level it migrates to, so a later rename of a type folder must not change what this pass scans.
 const PIPELINE_DIRS = ["foundations", "interactions", "interfaces"] as const;
 const NODE_DIRS = ["capabilities", ...PIPELINE_DIRS, "bugs"] as const;
 

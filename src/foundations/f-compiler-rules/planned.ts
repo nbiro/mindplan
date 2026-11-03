@@ -10,7 +10,7 @@ import type {
   PlannedEdge,
   PlannedEdgeType,
 } from "../f-domain-model/types.js";
-import { activeChange, isInactiveNode, isPipelineNodeType } from "../f-domain-model/types.js";
+import { isInactiveNode, isPipelineNodeType } from "../f-domain-model/types.js";
 import { revisionFor } from "../f-revision-model/index.js";
 import { assertAcyclicDependsOn, blocked, changeMembers, validateLink } from "./rules.js";
 
@@ -20,20 +20,15 @@ export type PlannedEdgeRow = { source: string; change: string; type: PlannedEdge
 /**
  * Pending planned edges (of one change, or all): every live entry of a shipped, active node,
  * except the entries an open revision of their change has already applied. A node with an open
- * revision of change C applies none of C's entries (they became add deltas when it opened). A
- * legacy next file of C applies the entries its next slot holds; an entry of that change the next
- * slot lacks (the revision took the change id after it opened) stays pending.
+ * revision of change C applies none of C's entries (they became add deltas when it opened).
  */
 export function plannedEdges(graph: MindPlanGraph, change?: string): PlannedEdgeRow[] {
   const rows: PlannedEdgeRow[] = [];
   for (const n of graph.nodes) {
     if (!n.planned?.length || !n.shipped_at || isInactiveNode(n)) continue;
-    const legacy = n.next && !(n.next.change && revisionFor(n, n.next.change));
-    const open = legacy ? activeChange(n) : undefined;
     for (const e of n.planned) {
       if (change !== undefined && e.change !== change) continue;
       if (revisionFor(n, e.change)) continue;
-      if (open !== undefined && e.change === open && (n.next?.[e.type] ?? []).includes(e.target)) continue;
       rows.push({ source: n.id, change: e.change, type: e.type, target: e.target });
     }
   }
@@ -124,13 +119,16 @@ function plannedEdgeProblem(graph: MindPlanGraph, withPlanned: MindPlanGraph, ro
   return null;
 }
 
-/** One line per illegal pending planned edge of `change`: `<source> -<type>-> <target>: <why>`. */
-export function plannedEdgeProblems(graph: MindPlanGraph, change: string): string[] {
+/** One illegal pending planned edge: the row and why it is illegal. */
+export type PlannedEdgeIssue = PlannedEdgeRow & { problem: string };
+
+/** Every illegal pending planned edge of `change`, in `plannedEdges` order. */
+export function plannedEdgeProblems(graph: MindPlanGraph, change: string): PlannedEdgeIssue[] {
   const withPlanned = withPlannedDependsOn(graph, change);
-  const out: string[] = [];
+  const out: PlannedEdgeIssue[] = [];
   for (const row of plannedEdges(graph, change)) {
     const problem = plannedEdgeProblem(graph, withPlanned, row);
-    if (problem) out.push(`planned edge ${row.source} -${row.type}-> ${row.target}: ${problem}`);
+    if (problem) out.push({ ...row, problem });
   }
   return out;
 }

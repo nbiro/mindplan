@@ -22,8 +22,8 @@ export type SlotSource = { text: string | null; file: string; relPath: string };
 /**
  * The file a slot reads. `current` is the live file. `next` is the open revision file
  * (`revisions/<change>/<id>.mdx`) when the node's `next` is the view of an open revision (a node
- * from `withRevision` / `graphUnder`, or the loader's single-revision view), else the legacy
- * `<id>.next.mdx`. Gate code that reads slot "next" on a revision view so reads that revision.
+ * from `withRevision` / `graphUnder`, or the loader's single-revision view); with no such view
+ * the slot has no file (`text` null). Gate code that reads slot "next" on a revision view so reads that revision.
  */
 export function slotSource(node: MindPlanNode, slot: "current" | "next"): SlotSource {
   let text: string | null = null;

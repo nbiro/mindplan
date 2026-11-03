@@ -83,7 +83,7 @@ export type ImportViolation = {
 /**
  * The change a per-node gate judges `node` under: `change` when given, else the change of the
  * revision its `next` views (a `nodeUnder` / `graphUnder` node, or the loader's single-revision
- * view), else none (live, plus a legacy next file).
+ * view), else none (live).
  */
 export function gateChange(node: MindPlanNode, change?: string): string | null {
   if (change !== undefined) return change;
@@ -91,7 +91,7 @@ export function gateChange(node: MindPlanNode, change?: string): string | null {
   return viewed && revisionFor(node, viewed) ? viewed : null;
 }
 
-/** The graph a gate judges under: live plus that change's revisions, or live plus legacy next files. */
+/** The graph a gate judges under: live plus that change's revisions, or live. */
 function judgeGraph(graph: MindPlanGraph, change: string | null): MindPlanGraph {
   return change === null ? liveGraph(graph) : revisionGraph(graph, change);
 }
@@ -101,7 +101,7 @@ function inGraph(g: MindPlanGraph, node: MindPlanNode): MindPlanNode {
   return g.nodes.find((n) => n.id === node.id) ?? node;
 }
 
-/** The claim entries of a node's active slot in its graph view: next (legacy or revision) or live. */
+/** The claim entries of a node's active slot in its graph view: its revision's next view, or live. */
 function activeClaims(node: MindPlanNode): string[] {
   return (node.next ? node.next.implements : node.implements) ?? [];
 }
@@ -229,8 +229,7 @@ function scanFiles(
 }
 
 /**
- * One view of the graph the import and ownership rules run under: live (plus legacy next files)
- * when `change` is null, else live plus that change's open revisions only.
+ * One view of the graph the import and ownership rules run under: live when `change` is null, else live plus that change's open revisions only.
  */
 type RulePass = { change: string | null; graph: MindPlanGraph; buckets: OwnershipBuckets };
 
@@ -250,7 +249,7 @@ export function preShipChange(node: MindPlanNode): string | null {
 }
 
 /**
- * The live pass for `node`: live plus legacy next files, except that a pre-ship member of a change
+ * The live pass for `node`: live, except that a pre-ship member of a change
  * sees that change's revisions (`revisionGraph`). Its `change` stays null: the node's own claims
  * are live ones, so violations are not tagged as a revision's.
  */
@@ -275,8 +274,8 @@ function scanUnder(pass: RulePass, root: string, owner: MindPlanNode, files: str
 
 /**
  * Every illegal import across the ownership universe (the check's import rule). Each file is
- * scanned as every node that claims it, in every view it claims it in: live (live, legacy next
- * slot, released claims, under the live graph) and each open revision (under `revisionGraph` of
+ * scanned as every node that claims it, in every view it claims it in: live (live and released
+ * claims, under the live graph) and each open revision (under `revisionGraph` of
  * its change, its file owners resolved for that change). An import is reported for an owner only
  * when every view in which that owner claims the file finds it illegal, so a revision that adds
  * the edge an import needs clears it. Import targets resolve through released claims too. A
@@ -601,7 +600,7 @@ export function findImportViolationsForClaim(
 
 /**
  * Illegal imports of the node's active-slot files: its revision of `gateChange(node, change)`
- * under that change's graph, else its live (or legacy next) files under the live graph. The same
+ * under that change's graph, else its live files under the live graph. The same
  * scan the check runs, restricted to this owner and view.
  */
 export function findImportViolationsForNode(
@@ -774,7 +773,7 @@ export function testPresenceFailures(node: MindPlanNode, root: string): string[]
   const out = due ? missingTestMessages(node, root) : [];
   // An in-review revision's linked tests (live with its test delta) are due too.
   for (const view of revisionViews(node)) {
-    if (view === node || view.next?.state !== "in-review") continue;
+    if (view.next?.state !== "in-review") continue;
     for (const m of missingTestMessages(view, root)) if (!out.includes(m)) out.push(m);
   }
   return out;

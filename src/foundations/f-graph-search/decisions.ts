@@ -1,7 +1,7 @@
 /**
  * Decision-record queries over the loaded graph — pure, no file I/O. A node's decisions are its
- * held decisions (`heldDecisions`): live (the `## Decisions` section and `decisions/*.md`), a
- * legacy open next file's, and every open revision's (tagged with the revision's change). Status
+ * held decisions (`heldDecisions`): live (the `## Decisions` section and `decisions/*.md`) and
+ * every open revision's (tagged with the revision's change). Status
  * is computed: a decision is superseded while a decision held by an active node names it in
  * `supersedes`.
  */
@@ -18,8 +18,7 @@ import { inheritanceSources } from "./rules.js";
 
 /**
  * Every decision a node holds, each id once, in this order: live (section entries, then
- * `decisions/*.md`), a legacy `<id>.next.mdx`'s own entries (or a single revision's view), then
- * each open revision's `decisions/` in change order. A revision's decision with no `change` is
+ * `decisions/*.md`), then each open revision's `decisions/` in change order. A revision's decision with no `change` is
  * tagged with the revision's change.
  */
 export function heldDecisions(node: MindPlanNode): DecisionRecord[] {
@@ -33,7 +32,6 @@ export function heldDecisions(node: MindPlanNode): DecisionRecord[] {
   const revisions = [...(node.open_revisions ?? [])].sort((a, b) =>
     a.change < b.change ? -1 : a.change > b.change ? 1 : 0
   );
-  // Revision decisions first into the set, so the view copy in `next` keeps the revision's tag.
   const tagged = new Map<string, DecisionRecord>();
   for (const rev of revisions) {
     for (const d of rev.decisions ?? []) {
@@ -41,7 +39,6 @@ export function heldDecisions(node: MindPlanNode): DecisionRecord[] {
     }
   }
   for (const d of node.decisions ?? []) add(d);
-  for (const d of node.next?.decisions ?? []) add(tagged.get(d.id) ?? d);
   for (const d of tagged.values()) add(d);
   return out;
 }
@@ -165,7 +162,7 @@ export function listDecisions(
 }
 
 /**
- * The node holding a decision id (live, legacy next file, or any open revision). Ids are unique
+ * The node holding a decision id (live, or any open revision). Ids are unique
  * across the graph, so there is at most one holder.
  */
 export function findDecision(

@@ -9,8 +9,8 @@
  * A shipped node may hold several open revisions, one per change: every function here takes an
  * optional `change` naming the revision it judges (`withRevision` gives the live-plus-revision
  * view, `revisionGraph` the graph that revision is judged against). Without one, a node with exactly
- * one open revision is judged on it; otherwise the node's own fields are read as before (a legacy
- * `<id>.next.mdx` in `next`, or a pre-ship node).
+ * one open revision is judged on it; otherwise the node's own fields are read (live, or a pre-ship
+ * node).
  */
 
 import {
@@ -22,7 +22,7 @@ import {
   type MindPlanNode,
   type Revision,
 } from "../f-domain-model/types.js";
-import { openChanges, revisionFor, withRevision } from "../f-revision-model/index.js";
+import { openChanges, pickRevision, revisionFor, withRevision } from "../f-revision-model/index.js";
 import { claimCoversPath, expandClaims } from "../f-source-index/claims.js";
 import {
   decisionGateSettings,
@@ -83,34 +83,33 @@ type Subject = {
   revision?: Revision;
 };
 
-/** The change `change` names on `node`: given, or the only open revision's when omitted. */
-function namedChange(node: MindPlanNode, change?: string | null): string | undefined {
-  if (change !== undefined) return change ?? undefined;
-  const open = node.open_revisions ?? [];
-  return open.length === 1 ? open[0].change : undefined;
+/**
+ * The revision `change` names on `node` (`pickRevision`, never Blocked): the given change's, or
+ * the only open revision's when omitted; `null` names live.
+ */
+function picked(node: MindPlanNode, change?: string | null): ReturnType<typeof pickRevision> {
+  return change === null ? { change: null, view: node } : pickRevision(node, change, { strict: false });
 }
 
 /** Live plus the named revision (`withRevision`), or the node itself when it has none of it. */
 function viewOf(node: MindPlanNode, change?: string | null): MindPlanNode {
-  const named = namedChange(node, change);
-  return named && revisionFor(node, named) ? withRevision(node, named) : node;
+  return picked(node, change).view;
 }
 
 function subjectOf(graph: MindPlanGraph, node: MindPlanNode, change?: string | null): Subject {
-  const named = namedChange(node, change);
-  if (named) {
-    const revision = revisionFor(node, named);
-    if (revision && isPipelineNodeType(node.type)) {
-      return { node, view: withRevision(node, named), base: graph, graph: revisionGraph(graph, named), change: named, revision };
-    }
+  const { change: named, view } = picked(node, change);
+  if (named !== null && isPipelineNodeType(node.type)) {
+    return { node, view, base: graph, graph: revisionGraph(graph, named), change: named, revision: revisionFor(node, named) };
   }
-  return { node, view: node, base: graph, graph: liveGraph(graph), change: named ?? activeChange(node) };
+  // A change the node has no revision of still names the change a pre-ship node is judged under.
+  return { node, view: node, base: graph, graph: liveGraph(graph), change: change ?? activeChange(node) };
 }
 
 /**
  * An open revision: a shipped Foundation/Interaction/Interface with an open revision of `change`
- * (or, without one, any open revision or a legacy open next), or a pre-ship, non-retired one at
- * any pre-ship state. Capabilities and Bugs are never revisions.
+ * (or, without one, any open revision), a revision view (its `next` is a revision, see
+ * `withRevision`), or a pre-ship, non-retired one at any pre-ship state. Capabilities and Bugs are
+ * never revisions.
  */
 export function isOpenRevision(node: MindPlanNode, change?: string | null): boolean {
   if (!isPipelineNodeType(node.type)) return false;

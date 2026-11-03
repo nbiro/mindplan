@@ -9,6 +9,7 @@ export {
   emptyDelta,
   graphUnder,
   openChanges,
+  pickRevision,
   resolveRevisionChange,
   revisionFor,
   splitPartLinked,

@@ -5,15 +5,16 @@
  */
 
 import * as fs from "fs";
-import { GRAPH_VERSION } from "../f-domain-model/types.js";
 import * as path from "path";
-import { mindplanRoot } from "../f-territory-store/store.js";
+import { GRAPH_VERSION, isMirrorState, isPipelineNodeType } from "../f-domain-model/types.js";
+import { listNodeFolders, liveMdxFilename, mindplanRoot, parseFrontmatter, projectRoot } from "../f-territory-store/store.js";
 import {
   VERSION_RELATIVE_PATH,
   packageVersion,
   readProjectVersion,
   writeProjectVersion,
 } from "../f-territory-store/version.js";
+import { legacyNextFile, legacyNextFilename } from "./legacy-next.js";
 import { LEGACY_CAPABILITY_DIR, MIGRATION_LEVEL, hasLegacyCapabilityFolders } from "./migrations.js";
 
 export type GraphState = "setup" | "upgrade" | "server-behind" | "current";
@@ -35,22 +36,38 @@ export function stampGraph(): string {
   return writeProjectVersion({ package: packageVersion(), graph: GRAPH_VERSION, migrations: MIGRATION_LEVEL });
 }
 
-/**
- * Folders a node can live in, one per type, plus the pre-level-3 journeys/ (legacy current.mdx
- * folders count as nodes too).
- */
-const NODE_TYPE_DIRS = ["capabilities", LEGACY_CAPABILITY_DIR, "foundations", "interactions", "interfaces", "bugs"];
-
-/** True when mindplan/ holds no node folder at all, whatever its files are named. */
+/** True when mindplan/ holds no node folder at all, whatever its files are named (journeys/ included). */
 function graphIsEmpty(): boolean {
   try {
-    return NODE_TYPE_DIRS.every((dir) => {
-      const abs = path.join(mindplanRoot(), dir);
-      return !fs.existsSync(abs) || !fs.readdirSync(abs, { withFileTypes: true }).some((e) => e.isDirectory());
-    });
+    if (listNodeFolders(projectRoot()).length > 0) return false;
+    const legacy = path.join(mindplanRoot(), LEGACY_CAPABILITY_DIR);
+    return !fs.existsSync(legacy) || !fs.readdirSync(legacy, { withFileTypes: true }).some((e) => e.isDirectory());
   } catch {
     return false;
   }
+}
+
+/**
+ * Repo-relative path of the first legacy `<id>.next.mdx` evolution beside a Foundation,
+ * Interaction, or Interface live file (the files the level-4 `moveNextToRevisions` moves into
+ * `revisions/<change>/`), or null. A `state: mirror` leftover is no evolution and is skipped (the
+ * mirror migration removes it, and the store never read it). Never throws.
+ */
+function firstLegacyNextFile(): string | null {
+  try {
+    for (const folder of listNodeFolders(projectRoot())) {
+      if (!isPipelineNodeType(folder.type)) continue;
+      if (!fs.existsSync(path.join(folder.abs, liveMdxFilename(folder.id)))) continue;
+      const nextFile = legacyNextFile(folder.abs, folder.id);
+      if (!fs.existsSync(nextFile) || !fs.statSync(nextFile).isFile()) continue;
+      const state = parseFrontmatter(fs.readFileSync(nextFile, "utf-8"))?.scalars.state;
+      if (state !== undefined && isMirrorState(state)) continue;
+      return `${folder.rel}/${legacyNextFilename(folder.id)}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 /** Where this project's graph stands against the running server. Never throws. */
@@ -94,6 +111,17 @@ export function graphStatus(): GraphStatus {
       required,
       call: "upgrade_project",
       warning: `This graph needs an upgrade: mindplan/${LEGACY_CAPABILITY_DIR}/ still holds a node folder, and mindplan-mcp ${packageVersion()} reads Capabilities only from mindplan/capabilities/. Call upgrade_project, then commit the upgrade on its own.`,
+    };
+  }
+  // A branch from before level 4 can merge a legacy next file in after the stamp says 4.
+  const legacyNext = stampCurrent ? firstLegacyNextFile() : null;
+  if (legacyNext !== null) {
+    return {
+      state: "upgrade",
+      level,
+      required,
+      call: "upgrade_project",
+      warning: `This graph needs an upgrade: ${legacyNext} is an evolution file from before revisions/<change>/, and mindplan-mcp ${packageVersion()} reads open revisions only from revisions/. Call upgrade_project to move it, then commit the upgrade on its own.`,
     };
   }
   if (stamp === null || stamp === "invalid" || stamp.graph < GRAPH_VERSION || level < required) {
