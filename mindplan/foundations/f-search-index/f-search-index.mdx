@@ -8,7 +8,7 @@ shipped_at: 2026-10-26T00:04:46.126Z
 revisions: 1
 churn: 1
 created_at: 2026-10-25T21:51:39.591Z
-updated_at: 2026-10-26T06:43:58.976Z
+updated_at: 2026-11-03T10:00:28.391Z
 depends_on:
   - f-source-index
 implements:
@@ -54,6 +54,8 @@ Package: `src/foundations/f-search-index/`
 - `ftsQuery` normalizes the query to NFC and splits it on letters and marks of any script (`\p{L}`, `\p{M}`), so an alias like `ofertă` reaches FTS5, whose unicode61 tokenizer folds diacritics on both sides
 
 Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
+
+- **One index per root.** Open indexes are keyed by `rootKey(root)` (`f-source-index/root-scope.ts`: resolved, lowercased on Windows), so one server serving several worktree roots, or one root spelled with two casings, never opens two handles on one `index.db`.
 
 ## Acceptance Criteria
 
