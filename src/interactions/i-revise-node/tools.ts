@@ -84,7 +84,7 @@ export const TOOLS: ToolDef[] = [
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Id of the node whose revision holds the conflict."),
         change: CHANGE_ARG,
-        section: z.string().min(1).optional().describe('A section conflict: its heading, e.g. "## Spec".'),
+        section: z.string().min(1).optional().describe('A section conflict: its heading, e.g. "## Spec", or "_preamble" for the text above the first heading.'),
         field: z.enum(["title", "description", "role"]).optional().describe("A scalar conflict: the field."),
         claim: z.string().min(1).optional().describe("A claim conflict: the claimed path."),
         take: z.enum(["revision", "live", "text"]).describe("Which side wins, or text to write instead."),
