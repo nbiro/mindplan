@@ -10,7 +10,7 @@ process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 process.env.MINDPLAN_SEARCH ??= "keyword";
@@ -359,6 +359,62 @@ check(
 );
 const openBack = await raw("open_next", { node_id: "f-sb", change: "platform-settings" });
 check("open_next is Blocked on a planned edge that closes a cross-change cycle", openBack.error && openBack.text.includes("across changes"), openBack.text);
+
+// --- cycle search on in-memory graphs: label choice, and size ---
+{
+  const cycles = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-compiler-rules/change-cycles.js")).href);
+  const shipped = (id, extra = {}) => ({ id, type: "Foundation", state: "stable", shipped_at: "2026-01-01T00:00:00.000Z", title: id, description: id, ...extra });
+  // a -> b is planned in c1 and c2, b -> c in c3, c -> a is live but c1's revision removes it.
+  // Taking c1 for a -> b breaks the cycle; c2 keeps it, so it is a cycle across c2 and c3.
+  const picky = {
+    version: 1,
+    nodes: [
+      shipped("a", { planned: [{ change: "c1", type: "depends_on", target: "b" }, { change: "c2", type: "depends_on", target: "b" }] }),
+      shipped("b", { planned: [{ change: "c3", type: "depends_on", target: "c" }] }),
+      shipped("c", {
+        depends_on: ["a"],
+        open_revisions: [{ change: "c1", state: "draft", title: "c", description: "c", edges: { depends_on: { add: [], remove: ["a"] } } }],
+      }),
+    ],
+    edges: [{ source: "c", target: "a", type: "depends_on" }],
+  };
+  const found = cycles.changeCycles(picky);
+  check(
+    "a cycle is found when one of an edge's changes keeps a live edge another removes",
+    found.length === 1 && JSON.stringify(found[0].changes) === JSON.stringify(["c2", "c3"]),
+    JSON.stringify(found)
+  );
+
+  // 2,000 nodes, dense planned depends_on edges across 20 changes.
+  let seed = 7;
+  const rand = (n) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % n;
+  };
+  const nodes = [];
+  for (let i = 0; i < 2000; i++) {
+    const planned = [];
+    for (let j = 0; j < 8; j++) planned.push({ change: `c${rand(20)}`, type: "depends_on", target: `n${rand(2000)}` });
+    nodes.push(shipped(`n${i}`, { planned }));
+  }
+  const dense = { version: 1, nodes, edges: [] };
+  const started = performance.now();
+  const lines = cycles.changeCycleFailures(dense);
+  const ms = performance.now() - started;
+  check(`run_check's cycle search on 2,000 dense nodes across 20 changes finishes fast (${Math.round(ms)} ms)`, ms < 3000 && lines.length >= 1, String(lines.length));
+  const gateStarted = performance.now();
+  const gate = cycles.changeCycleGate(dense);
+  let blockedCount = 0;
+  for (let i = 0; i < 200; i++) {
+    try {
+      gate({ source: `n${rand(2000)}`, target: `n${rand(2000)}`, change: `c${rand(20)}` });
+    } catch {
+      blockedCount++;
+    }
+  }
+  const gateMs = performance.now() - gateStarted;
+  check(`200 edge checks through one gate stay fast (${Math.round(gateMs)} ms, ${blockedCount} Blocked)`, gateMs < 3000);
+}
 
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
