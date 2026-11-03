@@ -8,6 +8,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { resolveProjectRoot } from "./root-scope.js";
 
 export const CONFIG_FILENAME = "config.json";
 const MINDPLAN_DIR = "mindplan";
@@ -107,10 +108,6 @@ const DEFAULT_CONFIG: MindPlanProjectConfig = {
   sources: ["src/**"],
   exclude: [],
 };
-
-function resolveProjectRoot(root?: string): string {
-  return root ?? process.env.MINDPLAN_ROOT ?? process.cwd();
-}
 
 export function projectConfigRelativePath(): string {
   return path.posix.join(MINDPLAN_DIR, CONFIG_FILENAME);

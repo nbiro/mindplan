@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { ORIENT_SECTIONS } from "./sections.js";
 import {
   NODE_TYPES,
 } from "../../foundations/f-domain-model/types.js";
@@ -187,9 +188,15 @@ export const TOOLS: ToolDef[] = [
         area: AREA,
         slot: SLOT_READ,
         section: SECTION_READ,
+        sections: z
+          .array(z.string())
+          .optional()
+          .describe(
+            `Return only these parts (plus focus and query): ${ORIENT_SECTIONS.join(", ")}. A reply without "rules" does not clear the write gate. Default: every part depth returns.`
+          ),
       },
     },
-    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section }) =>
+    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section, sections }) =>
       orientForWork({
         query,
         node_id,
@@ -203,6 +210,7 @@ export const TOOLS: ToolDef[] = [
         area,
         slot,
         section,
+        sections,
       })
   ),
 ];

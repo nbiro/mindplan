@@ -32,6 +32,8 @@ import {
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
+import { changeCycleFailures } from "../../foundations/f-compiler-rules/change-cycles.js";
+import { waitingOnPeopleLine } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import {
   changeMembership,
   plannedEdgeProblems,
@@ -56,6 +58,7 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
+import { withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import {
@@ -75,6 +78,8 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
+import { afterMergeFailures, afterMergeWarnings } from "./after-merge.js";
+import { compactCheckResult, recordSeen, scopeWarnings } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -108,6 +113,8 @@ export interface CheckOptions {
    * changed against `base` (default: `defaultBaseRef`).
    */
   merge?: MergeLevel;
+  /** Also report what a git merge of two graph-changing branches left behind (`after-merge.ts`). */
+  after_merge?: boolean;
 }
 
 export type MergeLevel = true | "strict";
@@ -223,6 +230,7 @@ function checkChange(
   for (const problem of plannedEdgeProblems(graph, change)) {
     failures.push(`Blocked: change "${change}": ${problem}`);
   }
+  for (const f of changeCycleFailures(fullGraph, change)) failures.push(f.replace(/^Blocked: /, `Blocked: change "${change}": `));
   const bySource = new Map<string, string[]>();
   for (const row of plannedEdges(graph, change)) {
     bySource.set(row.source, [...(bySource.get(row.source) ?? []), `${row.type} ${row.target}`]);
@@ -1092,11 +1100,11 @@ export interface DriftOptions {
  * Returns null when there is nothing to report or git cannot be read. Does not change default check.
  */
 export function buildDriftReport(options: DriftOptions = {}): DriftReport | null {
-  const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
-  const prev = process.env.MINDPLAN_ROOT;
-  if (options.cwd) {
-    process.env.MINDPLAN_ROOT = root;
-  }
+  return withRoot(options.cwd, () => driftReportInScope(options));
+}
+
+function driftReportInScope(options: DriftOptions): DriftReport | null {
+  const root = projectRoot();
   try {
     loadProjectConfig(root);
     const graph = loadGraph();
@@ -1177,11 +1185,6 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
     return report;
   } catch {
     return null;
-  } finally {
-    if (options.cwd) {
-      if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-      else process.env.MINDPLAN_ROOT = prev;
-    }
   }
 }
 
@@ -1189,26 +1192,23 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
  * Run integrity checks. Loads the territory graph from disk.
  */
 export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
+  return withRoot(options.cwd, () => integrityCheckInScope(options));
+}
+
+function integrityCheckInScope(options: CheckOptions): CheckResult {
   const failures: string[] = [];
   const warnings: string[] = [];
   const info: string[] = [];
   let changeReport: ChangeCheck | undefined;
   let mergeReport: MergeReport | undefined;
-  const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
-  const prev = process.env.MINDPLAN_ROOT;
-  if (options.cwd) {
-    process.env.MINDPLAN_ROOT = root;
-  }
+  const root = projectRoot();
 
   // A graph that needs setup or an upgrade is not checked: the code may misread it.
   if (process.env.MINDPLAN_VERSION_GATE !== "off") {
     const status = graphStatus();
     if (status.state !== "current") {
+      if (options.after_merge) failures.push(...afterMergeFailures(null, root, { skipVersion: true }));
       fail(failures, `Blocked: Version — ${status.warning}`);
-      if (options.cwd) {
-        if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-        else process.env.MINDPLAN_ROOT = prev;
-      }
       return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
     }
   }
@@ -1220,21 +1220,24 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     graph = loadGraph();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // After a merge, name what broke the load (conflict markers, a file that no longer parses) first.
+    if (options.after_merge) failures.push(...afterMergeFailures(null, root));
     fail(failures, `graph load failed: ${message}`);
-    if (options.cwd) {
-      if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-      else process.env.MINDPLAN_ROOT = prev;
-    }
     return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
   }
 
   try {
+    if (options.after_merge) {
+      failures.push(...afterMergeFailures(graph, root));
+      warnings.push(...afterMergeWarnings(graph));
+    }
     const buckets = checkExclusivity(graph, root, failures, warnings);
     const universe = listUniverseFiles(root);
     checkCoverage(graph, root, buckets, universe, failures);
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
+    for (const f of changeCycleFailures(graph)) fail(failures, f);
     const probe = dirtyProbe(root);
     const collected = collectWarnings(graph, root, changedAgainstBase(root, probe, options.base));
     warnings.push(...collected.warnings);
@@ -1246,6 +1249,8 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     warnings.push(...collectHotspotWarnings(graph, root));
     warnings.push(...collectFanOutWarnings(graph, root));
+    const waiting = waitingOnPeopleLine(graph);
+    if (waiting) info.push(waiting);
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, probe, options.base, failures);
     }
@@ -1258,11 +1263,6 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     fail(failures, message);
-  } finally {
-    if (options.cwd) {
-      if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-      else process.env.MINDPLAN_ROOT = prev;
-    }
   }
 
   if (changeReport) {
@@ -1297,19 +1297,30 @@ export function renderCheckOutput(result: CheckResult): string {
 }
 
 /**
- * `run_check` MCP handler: the same text `mindplan-mcp check` prints, plus the parts split out.
- * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings and info.
+ * `run_check` MCP handler. `compact: true` (the MCP default) returns counts, failures, and only the
+ * warnings not seen in the previous check nor acknowledged (compact.ts); otherwise it returns
+ * the text `mindplan-mcp check` prints, plus the parts split out. `nodes` scopes warnings.
  */
 export function runCheckHandler(
-  args: { base?: string; change?: string; merge?: MergeLevel } = {}
+  args: {
+    base?: string;
+    change?: string;
+    merge?: MergeLevel;
+    after_merge?: boolean;
+    compact?: boolean;
+    nodes?: string[];
+  } = {}
 ): Record<string, unknown> {
-  const result = runIntegrityCheck({ base: args.base, change: args.change, merge: args.merge });
-  return {
-    ok: result.ok,
-    output: renderCheckOutput(result),
-    failures: result.failures,
-    warnings: result.warnings,
-    info: result.info,
+  const result = runIntegrityCheck({
+    base: args.base,
+    change: args.change,
+    merge: args.merge,
+    after_merge: args.after_merge,
+  });
+  const nodes = args.nodes?.length ? new Set(args.nodes) : undefined;
+  const root = projectRoot();
+  const { kept, outside } = scopeWarnings(result.warnings, nodes);
+  const extras = {
     ...(result.change
       ? { change: { id: result.change.id, members: result.change.members, additivity: result.change.additivity } }
       : {}),
@@ -1317,5 +1328,31 @@ export function runCheckHandler(
     ...(result.removedLegacyFiles.length
       ? { removed_legacy_files: result.removedLegacyFiles.map((f) => f.from) }
       : {}),
+  };
+  if (args.compact === true) {
+    // Only a compact check records what it showed; a full one lists everything and records nothing.
+    const seen = recordSeen(root, result.warnings, nodes);
+    return {
+      ...compactCheckResult({
+        ok: result.ok,
+        failures: result.failures,
+        warnings: kept,
+        info: result.info,
+        outside,
+        seen,
+        root,
+        scoped: nodes !== undefined,
+      }),
+      ...extras,
+    };
+  }
+  const scoped = { ...result, warnings: kept };
+  return {
+    ok: result.ok,
+    output: renderCheckOutput(scoped),
+    failures: result.failures,
+    warnings: kept,
+    info: result.info,
+    ...extras,
   };
 }

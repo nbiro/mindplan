@@ -10,7 +10,7 @@ process.env.MINDPLAN_VERSION_GATE ??= "off";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 process.env.MINDPLAN_SEARCH ??= "keyword";
@@ -50,7 +50,7 @@ const transport = new StdioClientTransport({
 const client = new Client({ name: "planned-wiring-test", version: "0.1.0" });
 await client.connect(transport);
 const raw = async (tool, args) => {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
 };
 const call = async (tool, args) => {
@@ -81,7 +81,7 @@ async function complete(id, type) {
   for (const heading of SECTIONS[type]) {
     await call("patch_node_territory", { node_id: id, section: heading, text: `Real ${heading.slice(3).toLowerCase()} for ${id}.` });
   }
-  await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 }
 
 // --- a shipped base: a Capability, two Foundations, an Interaction, and the Interface exposing it ---
@@ -210,7 +210,7 @@ check(
 await call("discard_next", { node_id: "if-dash" });
 check("a discard leaves the edge planned", /- feat exposes i-new/.test(live("mindplan/interfaces/if-dash/if-dash.mdx")));
 await call("open_next", { node_id: "if-dash", change: "feat" });
-await call("patch_node_territory", { node_id: "if-dash", toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+await call("patch_node_territory", { node_id: "if-dash", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 await complete("i-new", "Interaction");
 const shipped = await call("update_node_status", { scope: "change", change: "feat", new_status: "ship", skip_review: true });
 const dashAfter = live("mindplan/interfaces/if-dash/if-dash.mdx");
@@ -286,7 +286,7 @@ check(
   dbRadius.affected_files.find((g) => g.owner_id === "f-db")?.files.includes("src/root/migrations/0002.ts"),
   JSON.stringify(dbRadius.affected_files)
 );
-await call("patch_node_territory", { node_id: "f-db", toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+await call("patch_node_territory", { node_id: "f-db", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 await call("update_node_status", { node_id: "f-db", new_status: "ready" });
 await call("update_node_status", { node_id: "f-db", new_status: "in-progress" });
 const gated = await raw("update_node_status", { node_id: "f-db", new_status: "in-review" });
@@ -301,6 +301,120 @@ const reviewed = await raw("update_node_status", { node_id: "f-db", new_status: 
 check("with a decision under its change the move passes", !reviewed.error, reviewed.text);
 await call("update_node_status", { node_id: "f-db", new_status: "ship" });
 check("ship drops the attributed list", !live("mindplan/foundations/f-db/f-db.mdx").includes("attributed:"));
+
+// --- cycles across changes: each change alone is acyclic, together they could never ship ---
+write("src/sa/sa.ts", "export const sa = 1;\n");
+write("src/sb/sb.ts", "export const sb = 1;\n");
+write("src/sc/sc.ts", "export const sc = 1;\n");
+for (const id of ["f-sa", "f-sb", "f-sc"]) {
+  await call("create_node", { id, type: "Foundation", title: `Sky ${id}`, description: `Adapter — sky part ${id}`, role: "adapter", change: "sky-base" });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id.slice(2)}/`] });
+  await complete(id, "Foundation");
+}
+const skyBase = await raw("update_node_status", { scope: "change", change: "sky-base", new_status: "ship", skip_review: true });
+check("the sky base ships", !skyBase.error, skyBase.text);
+await call("open_next", { node_id: "f-sa", change: "ai-builder" });
+await call("link_nodes", { source_id: "f-sa", target_id: "f-sb", edge_type: "depends_on", change: "ai-builder" });
+await call("open_next", { node_id: "f-sb", change: "ai-builder" });
+const sameChange = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "ai-builder" });
+check(
+  "a cycle within one change is still caught by the acyclic check",
+  sameChange.error && sameChange.text.includes("dependency cycle") && !sameChange.text.includes("across changes"),
+  sameChange.text
+);
+await call("discard_next", { node_id: "f-sb", change: "ai-builder" });
+const plannedBack = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "platform-settings" });
+check(
+  "a planned depends_on back into another change's edge is Blocked as a cross-change cycle",
+  plannedBack.error &&
+    plannedBack.text.includes('Blocked: depends_on "f-sb" -> "f-sa" (change "platform-settings") would close a dependency cycle across changes "ai-builder", "platform-settings": f-sb -> f-sa -> f-sb.') &&
+    plannedBack.text.includes("Foundation both depend on"),
+  plannedBack.text
+);
+await call("open_next", { node_id: "f-sb", change: "platform-settings" });
+await call("open_next", { node_id: "f-sb", change: "other-sky" });
+const revisionBack = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "platform-settings" });
+check(
+  "a revision depends_on back into another change's edge is Blocked as a cross-change cycle",
+  revisionBack.error && revisionBack.text.includes("across changes \"ai-builder\", \"platform-settings\""),
+  revisionBack.text
+);
+await call("discard_next", { node_id: "f-sb", change: "platform-settings" });
+await call("discard_next", { node_id: "f-sb", change: "other-sky" });
+// A cycle written before the rule existed: plan a harmless edge, then point it back by hand.
+await call("link_nodes", { source_id: "f-sb", target_id: "f-sc", edge_type: "depends_on", change: "platform-settings" });
+const sbRel = "mindplan/foundations/f-sb/f-sb.mdx";
+fs.writeFileSync(path.join(root, sbRel), live(sbRel).replace("- platform-settings depends_on f-sc", "- platform-settings depends_on f-sa"));
+const cycleCheck = await call("run_check", {});
+check(
+  "run_check reports an existing cross-change cycle",
+  !cycleCheck.ok && cycleCheck.failures.some((f) => f.startsWith('Blocked: change cycle: changes "ai-builder", "platform-settings"')),
+  JSON.stringify(cycleCheck.failures)
+);
+const memberCheck = await call("run_check", { change: "platform-settings" });
+check(
+  "run_check({ change }) reports it for a member change",
+  !memberCheck.ok && memberCheck.failures.some((f) => f.includes("change cycle:") && f.includes("platform-settings")),
+  JSON.stringify(memberCheck.failures)
+);
+const openBack = await raw("open_next", { node_id: "f-sb", change: "platform-settings" });
+check("open_next is Blocked on a planned edge that closes a cross-change cycle", openBack.error && openBack.text.includes("across changes"), openBack.text);
+
+// --- cycle search on in-memory graphs: label choice, and size ---
+{
+  const cycles = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-compiler-rules/change-cycles.js")).href);
+  const shipped = (id, extra = {}) => ({ id, type: "Foundation", state: "stable", shipped_at: "2026-01-01T00:00:00.000Z", title: id, description: id, ...extra });
+  // a -> b is planned in c1 and c2, b -> c in c3, c -> a is live but c1's revision removes it.
+  // Taking c1 for a -> b breaks the cycle; c2 keeps it, so it is a cycle across c2 and c3.
+  const picky = {
+    version: 1,
+    nodes: [
+      shipped("a", { planned: [{ change: "c1", type: "depends_on", target: "b" }, { change: "c2", type: "depends_on", target: "b" }] }),
+      shipped("b", { planned: [{ change: "c3", type: "depends_on", target: "c" }] }),
+      shipped("c", {
+        depends_on: ["a"],
+        open_revisions: [{ change: "c1", state: "draft", title: "c", description: "c", edges: { depends_on: { add: [], remove: ["a"] } } }],
+      }),
+    ],
+    edges: [{ source: "c", target: "a", type: "depends_on" }],
+  };
+  const found = cycles.changeCycles(picky);
+  check(
+    "a cycle is found when one of an edge's changes keeps a live edge another removes",
+    found.length === 1 && JSON.stringify(found[0].changes) === JSON.stringify(["c2", "c3"]),
+    JSON.stringify(found)
+  );
+
+  // 2,000 nodes, dense planned depends_on edges across 20 changes.
+  let seed = 7;
+  const rand = (n) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % n;
+  };
+  const nodes = [];
+  for (let i = 0; i < 2000; i++) {
+    const planned = [];
+    for (let j = 0; j < 8; j++) planned.push({ change: `c${rand(20)}`, type: "depends_on", target: `n${rand(2000)}` });
+    nodes.push(shipped(`n${i}`, { planned }));
+  }
+  const dense = { version: 1, nodes, edges: [] };
+  const started = performance.now();
+  const lines = cycles.changeCycleFailures(dense);
+  const ms = performance.now() - started;
+  check(`run_check's cycle search on 2,000 dense nodes across 20 changes finishes fast (${Math.round(ms)} ms)`, ms < 3000 && lines.length >= 1, String(lines.length));
+  const gateStarted = performance.now();
+  const gate = cycles.changeCycleGate(dense);
+  let blockedCount = 0;
+  for (let i = 0; i < 200; i++) {
+    try {
+      gate({ source: `n${rand(2000)}`, target: `n${rand(2000)}`, change: `c${rand(20)}` });
+    } catch {
+      blockedCount++;
+    }
+  }
+  const gateMs = performance.now() - gateStarted;
+  check(`200 edge checks through one gate stay fast (${Math.round(gateMs)} ms, ${blockedCount} Blocked)`, gateMs < 3000);
+}
 
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });

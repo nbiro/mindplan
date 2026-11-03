@@ -70,7 +70,7 @@ let diffMisses = 0;
 /** Call a tool and check that its changed_files covers every file it touched on disk. */
 async function call(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (res.isError) throw new Error(`${tool}: ${text}`);
   const result = JSON.parse(text || "{}");
@@ -91,7 +91,7 @@ async function call(tool, args) {
 /** The Blocked text of a call expected to fail (null when it succeeded), with nothing written. */
 async function blocked(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (!res.isError) return null;
   const wrote = touched(before, snapshot());
@@ -331,7 +331,7 @@ await foundation("f-dep");
     why: "Each part runs alone.",
   });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
-  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
   check(
     "ship applies the revision's tests to live and deletes the revision folder",

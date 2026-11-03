@@ -82,7 +82,16 @@ export const TOOLS: ToolDef[] = [
         toggle_checkboxes: z
           .array(
             z.object({
-              contains: z.string().min(1).describe("Substring to match on a checkbox line."),
+              id: z
+                .string()
+                .min(1)
+                .optional()
+                .describe('The item\'s id: its "{#id}" tag (defaults: spec, impl, verify).'),
+              contains: z
+                .string()
+                .min(1)
+                .optional()
+                .describe("The item's full text, tag and annotation excluded (exact match; a substring is Blocked). Pass id or contains."),
               checked: z
                 .boolean()
                 .optional()
@@ -90,7 +99,7 @@ export const TOOLS: ToolDef[] = [
               all: z
                 .boolean()
                 .optional()
-                .describe("Toggle every matching line. Without it, a substring matching several lines is Blocked."),
+                .describe("Toggle every item with that exact text. Without it, text matching several items is Blocked."),
               note: z
                 .string()
                 .optional()
@@ -103,8 +112,24 @@ export const TOOLS: ToolDef[] = [
           )
           .optional()
           .describe(
-            "Toggle markdown checkboxes by matching line content. Returns toggled: the lines as written. " +
+            "Tick or untick Atomic Ops / Checklist items by id or exact text. Returns toggled: the lines as written. " +
               "Close an item honestly with note or not_applicable instead of rewording it."
+          ),
+        add_checklist_items: z
+          .array(
+            z.object({
+              text: z.string().min(1).describe("The item's wording (no tag or annotation)."),
+              id: z.string().min(1).optional().describe("A lowercase slug, unique in the slot."),
+              kind: z
+                .enum(["build", "review", "deploy"])
+                .optional()
+                .describe("Who closes it: build (default; the agent), review or deploy (a person)."),
+            })
+          )
+          .optional()
+          .describe(
+            "Append unticked items to the slot's Atomic Ops, tagged {#id kind}. A review or deploy item waits on people: " +
+              "it does not hold up dependents once the node is in-review with every build item ticked, but the node ships only when it is ticked."
           ),
         change: z
           .string()
@@ -136,6 +161,7 @@ export const TOOLS: ToolDef[] = [
         text,
         replace,
         toggle_checkboxes,
+        add_checklist_items,
         change,
         change_ref,
         slot,
@@ -153,6 +179,7 @@ export const TOOLS: ToolDef[] = [
           text,
           replace,
           toggle_checkboxes,
+          add_checklist_items,
           change,
           change_ref,
           slot,

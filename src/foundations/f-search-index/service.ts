@@ -3,7 +3,9 @@
  * semantic ranking is on, and one open `SearchIndex` per project root.
  */
 
+import * as path from "path";
 import { loadProjectConfig } from "../f-source-index/config.js";
+import { rootKey } from "../f-source-index/root-scope.js";
 import { SearchIndex, sqliteUnavailableReason, type SearchDoc } from "./index-db.js";
 import {
   DEFAULT_SEARCH_MODEL,
@@ -43,8 +45,10 @@ const loggedSqlite = { done: false };
  * The open cache of `root` for `model`, or null without node:sqlite. One handle per root: a
  * different model closes the old handle first, so two handles never rebuild one file under each other.
  */
-export function searchIndexFor(root: string, model: string): SearchIndex | null {
-  const open = indexes.get(root);
+export function searchIndexFor(rootPath: string, model: string): SearchIndex | null {
+  const root = path.resolve(rootPath);
+  const key = rootKey(root);
+  const open = indexes.get(key);
   if (open && open.model === model) return open.index;
   open?.index?.close();
   let index: SearchIndex | null = null;
@@ -58,7 +62,7 @@ export function searchIndexFor(root: string, model: string): SearchIndex | null 
     if (reason) console.error(`MindPlan search: ${reason}.`);
     loggedSqlite.done = true;
   }
-  indexes.set(root, { model, index });
+  indexes.set(key, { model, index });
   return index;
 }
 

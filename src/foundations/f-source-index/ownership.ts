@@ -27,6 +27,8 @@ export type OwnershipBuckets = {
   liveClaims: Map<string, string>;
   /** Change → live files a revision of that change drops (file → node id). */
   releasedByChange: Map<string, Map<string, string>>;
+  /** Test file → every non-retired node whose `tests` list covers it (files, dirs, globs). */
+  testOwners: Map<string, string[]>;
 };
 
 /**
@@ -48,9 +50,13 @@ export function buildOwnershipIndex(
   const revisions = new Map<string, RevisionClaim[]>();
   const liveClaims = new Map<string, string>();
   const releasedByChange = new Map<string, Map<string, string>>();
+  const testOwners = new Map<string, string[]>();
 
   for (const node of graph.nodes) {
     if (!isPipelineNodeType(node.type)) continue;
+    if (!RETIRED_STATES.has(node.state)) {
+      for (const f of expandClaims(node.tests, root)) testOwners.set(f, [...(testOwners.get(f) ?? []), node.id]);
+    }
     const currentFiles = new Set(expandClaims(node.implements, root));
     if (!RETIRED_STATES.has(node.state)) {
       for (const f of currentFiles) liveClaims.set(f, node.id);
@@ -97,7 +103,12 @@ export function buildOwnershipIndex(
     }
   }
 
-  return { live, next, released, retired, revisions, liveClaims, releasedByChange };
+  return { live, next, released, retired, revisions, liveClaims, releasedByChange, testOwners };
+}
+
+/** The nodes whose `tests` list covers `file` (a test file of each), in graph order; empty when none. */
+export function testOwnersOf(buckets: OwnershipBuckets, file: string): string[] {
+  return buckets.testOwners.get(file) ?? [];
 }
 
 /**

@@ -127,6 +127,22 @@ function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
 }
 
+/** A Blocked error thrown after some files were already written (`changed_files`, repo-relative). */
+export type BlockedWithWrites = Error & { changed_files?: string[] };
+
+/** Attaches the files a write made before it Blocked, so a batch can still report them. */
+export function withWrittenFiles(err: Error, files: string[]): BlockedWithWrites {
+  const carried = err as BlockedWithWrites;
+  carried.changed_files = [...new Set([...(carried.changed_files ?? []), ...files])];
+  return carried;
+}
+
+/** The files an error says were written before it was thrown; empty for any other error. */
+export function writtenFilesOf(err: unknown): string[] {
+  const files = (err as BlockedWithWrites | null)?.changed_files;
+  return Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : [];
+}
+
 /** Deduped and sorted by code unit, so a list sorts the same on every locale. */
 function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort();
@@ -572,6 +588,86 @@ export type RebasedSibling = {
   readiness_reset?: { from: NextPipelineState; to: "draft" };
 };
 
+/** Claim entry → id of another active node that claims it live: what a rebase recomputes claim conflicts from. */
+function implementsOwnersOf(graph: MindPlanGraph, node: MindPlanNode): Map<string, string> {
+  const owners = new Map<string, string>();
+  for (const other of graph.nodes) {
+    if (other.id === node.id || isInactiveNode(other)) continue;
+    for (const entry of other.implements ?? []) if (!owners.has(entry)) owners.set(entry, other.id);
+  }
+  return owners;
+}
+
+/**
+ * One revision carried onto `liveNew` with `rebase`; a `ready` / `in-review` revision whose text
+ * the rebase changed goes back to `draft` (`readiness_reset`). Pure: nothing is written.
+ */
+function carryRevision(
+  nodeId: string,
+  liveOld: RebaseLive,
+  liveNew: RebaseLive & { implementsOwners?: Map<string, string> },
+  revision: Revision,
+  body: string
+): { out: { revision: Revision; body: string }; readiness_reset?: RebasedSibling["readiness_reset"] } {
+  const out = rebase({ liveOld, liveNew, revision, revisionBody: body, nodeId });
+  const state = out.revision.state;
+  if ((state === "ready" || state === "in-review") && contentKey(out.revision, out.body) !== contentKey(revision, body)) {
+    out.revision.state = "draft";
+    return { out, readiness_reset: { from: state, to: "draft" } };
+  }
+  return { out };
+}
+
+/**
+ * True when live moved since the recorded `base` of the revision of `change` (live changed after
+ * it opened: a live patch, or a ship merged in from another branch). Blocked when it is not open.
+ */
+export function revisionBaseStale(node: MindPlanNode, change: string): boolean {
+  const { revision } = loadRevision(node, change);
+  return liveMovedSince(revision, liveSide(node, liveBody(node).body));
+}
+
+/** What `rebaseRevisionOntoLive` did to one revision. */
+export type RevisionRebase = {
+  /** False when the revision's base already matched live: nothing was written. */
+  rebased: boolean;
+  conflicts: RevisionConflict[];
+  /** Present when the rebase changed a `ready` / `in-review` revision's text: it is `draft` again. */
+  readiness_reset?: { from: NextPipelineState; to: "draft" };
+  changed_files: string[];
+};
+
+/**
+ * Carries the open revision of `change` onto current live with the rule a ship applies to its
+ * siblings (`carryRevision`): a section or scalar the revision left untouched takes live's, one
+ * both edited becomes a conflict, every base hash moves to live, deltas are trimmed against live,
+ * claim conflicts are recomputed from `graph`, and a `ready` / `in-review` revision whose text
+ * changed goes back to `draft`. A revision whose base already matches live is left as it is
+ * (`rebased: false`). Blocked when the node has no revision of `change`.
+ */
+export function rebaseRevisionOntoLive(graph: MindPlanGraph, node: MindPlanNode, change: string): RevisionRebase {
+  const loaded = loadRevision(node, change);
+  const liveNow = liveSide(node, liveBody(node).body);
+  if (!liveMovedSince(loaded.revision, liveNow)) {
+    return { rebased: false, conflicts: loaded.revision.conflicts, changed_files: [] };
+  }
+  const carried = carryRevision(
+    node.id,
+    liveNow,
+    { ...liveNow, implementsOwners: implementsOwnersOf(graph, node) },
+    loaded.revision,
+    loaded.body
+  );
+  carried.out.revision.updated_at = nowIso();
+  const written = storeRevision(node, carried.out.revision, carried.out.body);
+  return {
+    rebased: true,
+    conflicts: carried.out.revision.conflicts,
+    ...(carried.readiness_reset ? { readiness_reset: carried.readiness_reset } : {}),
+    changed_files: [written],
+  };
+}
+
 /**
  * Ships the revision of `change`: Blocked when it has unresolved conflicts. When live moved in
  * place since the revision's `base` (a live patch while it was open), the revision is first carried
@@ -611,12 +707,13 @@ export function shipRevision(
   if (liveMovedSince(revision, liveOld)) {
     const own = rebase({ liveOld, liveNew: liveOld, revision, revisionBody: body, nodeId: node.id });
     if (own.revision.conflicts.length > 0) {
-      storeRevision(node, own.revision, own.body);
-      throw blocked(
+      const written = storeRevision(node, own.revision, own.body);
+      // The conflicts are persisted before the Block: callers report the file as written.
+      throw withWrittenFiles(blocked(
         `live "${node.id}" changed in place since revision "${change}" last started from it, and both edited ` +
           `${own.revision.conflicts.map(conflictEntry).join(", ")}; the revision now holds those conflicts. ` +
           `Resolve each with resolve_conflict({ node_id: "${node.id}", change: "${change}", target, take }), then ship again.`
-      );
+      ), [written]);
     }
     revision = own.revision;
     body = own.body;
@@ -643,11 +740,7 @@ export function shipRevision(
   const promotedBody = joinNodeDecisions(withoutOwnedSections(body), liveDecisionSection);
 
   // Siblings onto the new live, in memory.
-  const implementsOwners = new Map<string, string>();
-  for (const other of graph.nodes) {
-    if (other.id === node.id || isInactiveNode(other)) continue;
-    for (const entry of other.implements ?? []) if (!implementsOwners.has(entry)) implementsOwners.set(entry, other.id);
-  }
+  const implementsOwners = implementsOwnersOf(graph, node);
   const liveEdgesNew: Partial<Record<PlannedEdgeType, string[]>> = {};
   for (const type of PLANNED_EDGE_TYPES) if (edges[type]!.length) liveEdgesNew[type] = edges[type];
   const liveNew = {
@@ -658,16 +751,10 @@ export function shipRevision(
     tests: testsNew,
     implementsOwners,
   };
-  const carried = siblings.map((s) => {
-    const out = rebase({ liveOld, liveNew, revision: s.revision, revisionBody: s.body, nodeId: node.id });
-    let readiness_reset: RebasedSibling["readiness_reset"];
-    const state = out.revision.state;
-    if ((state === "ready" || state === "in-review") && contentKey(out.revision, out.body) !== contentKey(s.revision, s.body)) {
-      readiness_reset = { from: state, to: "draft" };
-      out.revision.state = "draft";
-    }
-    return { change: s.change, out, readiness_reset };
-  });
+  const carried = siblings.map((s) => ({
+    change: s.change,
+    ...carryRevision(node.id, liveOld, liveNew, s.revision, s.body),
+  }));
 
   // The writes, put back as they were if one fails.
   const snap: FileSnapshot = new Map();

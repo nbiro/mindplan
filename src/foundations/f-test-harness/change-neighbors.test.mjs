@@ -78,7 +78,7 @@ let diffMisses = 0;
 
 async function raw(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (!res.isError) {
     const result = JSON.parse(text || "{}");
@@ -335,7 +335,7 @@ git("switch", "-q", "-c", "feature");
 
 // --- the change ships: no label fields, the shipped nodes carry no change id ---
 {
-  await call("patch_node_territory", { node_id: "i-b", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "i-b", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   const walked = await call("update_node_status", { scope: "change", change: "feat", new_status: "ship", skip_review: true });
   check(
     "a change walked to ship reports no cleared_neighbors and leaves no change id on its nodes",

@@ -4,11 +4,11 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface: mounts the thirty-three tools its actions define, in a fixed order, behind the version gate, with read/write/destructive annotations from one kind, compact JSON plus structuredContent, small write results unless verbose, and node-scoped drift on reads."
 state: stable
-shipped_at: 2026-11-03T08:20:39.310Z
-revisions: 28
-churn: 1.944
+shipped_at: 2026-11-03T09:48:47.462Z
+revisions: 30
+churn: 3.941
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-11-03T08:20:39.310Z
+updated_at: 2026-11-03T09:48:47.462Z
 split_at: 26
 split_into:
   - i-assess-impact
@@ -35,6 +35,7 @@ exposes:
   - i-change-status
   - i-check-integrity
   - i-claim-files
+  - i-doctor
   - i-edit-brief
   - i-edit-territory
   - i-export-map
@@ -58,6 +59,7 @@ tests:
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/worktree-root.test.mjs
 ---
 
 # MCP tools
@@ -98,6 +100,10 @@ Depends on: `f-mcp-runtime`, `f-tool-kit`, `f-territory-store`.
 
 - **Open revisions (0.18.0).** Mounts `resolve_conflict` (from `i-revise-node`) in `TOOL_ORDER` after `discard_next`; thirty-four tools
 
+## Graph root per call
+
+Every tool takes an optional `root`: an absolute path to a checkout or git worktree whose `mindplan/` the call reads and writes (the default is the server's root). `mount()` adds it to every input schema once, resolves it (Blocked when the path has no `mindplan/` and the tool is not `setup_project` or `doctor`), and runs the version gate, the handler, and the drift envelope inside that root's scope. Results name `root` when it differs from the server's.
+
 ## Acceptance Criteria
 
 - The server registers thirty-three tools in `TOOL_ORDER`, each defined in its action's `tools.ts`; `register.ts` holds no tool schema
@@ -114,3 +120,7 @@ Depends on: `f-mcp-runtime`, `f-tool-kit`, `f-territory-store`.
 ## Attachments
 
 _None._
+
+## Health
+
+Mounts `doctor` (from `i-doctor`) ungated, first in `TOOL_ORDER` after `get_project`.

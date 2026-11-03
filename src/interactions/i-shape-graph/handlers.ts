@@ -56,6 +56,7 @@ import {
 } from "../../foundations/f-revision-model/index.js";
 import { writeRevisionDelta, writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
 import { validatePlannedLink } from "../../foundations/f-compiler-rules/planned.js";
+import { assertNoChangeCycle } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
   assertNoLegacyNext,
@@ -176,6 +177,8 @@ export function linkNodes(args: {
   validateLink(source, target, edge_type);
 
   if (edge_type === "depends_on") {
+    const change = source.shipped_at ? null : source.change || null;
+    assertNoChangeCycle(graph, { source: source_id, target: target_id, change });
     assertAcyclicDependsOn(graph, source_id, target_id);
   }
   gateWrite(graph, [source_id], "link_nodes");
@@ -275,7 +278,10 @@ function linkOnRevision(
   verbose?: boolean
 ): Record<string, unknown> {
   validateLink(source, target, type);
-  if (type === "depends_on") assertAcyclicDependsOn(revisionGraph(graph, change), source.id, target.id);
+  if (type === "depends_on") {
+    assertNoChangeCycle(graph, { source: source.id, target: target.id, change });
+    assertAcyclicDependsOn(revisionGraph(graph, change), source.id, target.id);
+  }
   gateWrite(graph, [source.id], "link_nodes");
   const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source.id) : null;
   if ((withRevision(source, change).next?.[type] ?? []).includes(target.id)) {
@@ -369,6 +375,7 @@ function planEdge(
     throw blocked(`a ${edge_type} edge cannot be planned; planned edges are ${PLANNED_EDGE_TYPES.join(", ")}.`);
   }
   const row = { source: source.id, change, type: edge_type as PlannedEdgeType, target: target.id };
+  if (row.type === "depends_on") assertNoChangeCycle(graph, row);
   validatePlannedLink(graph, row);
   gateWrite(graph, [source.id], "link_nodes");
   // Planned edges are not in the map or the search docs, so neither is refreshed.

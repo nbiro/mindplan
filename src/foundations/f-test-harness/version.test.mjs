@@ -6,7 +6,7 @@
  * is Blocked naming the package; the check fails in the same states; get_skill serves the skills;
  * mindplan-mcp init is gone.
  */
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -38,7 +38,7 @@ function check(label, condition, detail = "") {
   }
 }
 
-const UNGATED = ["get_project", "get_rules", "get_spec", "get_skill", "run_check", "setup_project", "upgrade_project"];
+const UNGATED = ["get_project", "doctor", "get_rules", "get_spec", "get_skill", "run_check", "setup_project", "upgrade_project"];
 
 /** One server session rooted at `root`; call returns { error, text, json }. */
 async function session(root) {
@@ -535,10 +535,11 @@ function runCheck(root) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-gate-list-"));
   const { client } = await session(root);
   const { tools } = await client.listTools();
-  check("the server lists thirty-four tools", tools.length === 34, String(tools.length));
+  check("the server lists thirty-seven tools", tools.length === 37, String(tools.length));
   const names = tools.map((t) => t.name);
   check("setup_project and upgrade_project come last", names.slice(-2).join(",") === "setup_project,upgrade_project", names.slice(-3).join(","));
   check("get_skill follows get_spec", names[names.indexOf("get_spec") + 1] === "get_skill", names.join(","));
+  check("doctor follows get_project", names[names.indexOf("get_project") + 1] === "doctor", names.join(","));
   for (const name of UNGATED) {
     if (name === "setup_project" || name === "upgrade_project" || name === "run_check") continue;
     const res = await client.callTool({ name, arguments: {} });
@@ -546,6 +547,189 @@ function runCheck(root) {
   }
   await client.close();
   check("listing and reading tools created no mindplan/", !fs.existsSync(path.join(root, "mindplan")));
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
+// --- doctor: answers in every gate state ---
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-doctor-"));
+  let client;
+  try {
+    let call;
+    ({ client, call } = await session(root));
+    const none = await call("doctor");
+    check(
+      "doctor answers without a graph with status setup",
+      !none.error && none.json?.graph?.status === "setup" && none.json.graph.server_level === MIGRATION_LEVEL,
+      none.text
+    );
+    check(
+      "doctor reports version, node, root, caches, start time and uptime",
+      none.json?.version === pkgVersion &&
+        none.json.node === process.version &&
+        path.resolve(none.json.root) === path.resolve(root) &&
+        typeof none.json.cache?.graph === "boolean" &&
+        typeof none.json.cache?.search === "boolean" &&
+        !Number.isNaN(Date.parse(none.json.started_at)) &&
+        typeof none.json.uptime_s === "number",
+      none.text
+    );
+    check("doctor on a missing graph creates no mindplan/", !fs.existsSync(path.join(root, "mindplan")));
+    await call("setup_project");
+    const current = await call("doctor");
+    check(
+      "doctor on a current graph reports a numeric load_ms_cached, cache_hit, and no load_error",
+      !current.error &&
+        current.json?.graph?.status === "current" &&
+        current.json.graph.level === MIGRATION_LEVEL &&
+        typeof current.json.load_ms_cached === "number" &&
+        typeof current.json.cache_hit === "boolean" &&
+        !("load_ms" in current.json) &&
+        current.json.load_error === undefined,
+      current.text
+    );
+    const again = await call("doctor");
+    check("doctor sees the graph cache once the graph loaded", again.json?.cache?.graph === true, again.text);
+    check("a second doctor load is a cache hit", again.json?.cache_hit === true, again.text);
+    // A legacy current.mdx beside its id-named twin: a load would delete it, so doctor does not load.
+    await call("create_node", { id: "f-doc", type: "Foundation", title: "Doc", description: "Infra — doc", role: "infra" });
+    const folder = path.join(root, "mindplan", "foundations", "f-doc");
+    fs.copyFileSync(path.join(folder, "f-doc.mdx"), path.join(folder, "current.mdx"));
+    const legacy = await call("doctor");
+    check(
+      "doctor never loads when a load would remove legacy files, and names them",
+      legacy.json?.load_ms_cached === 0 &&
+        String(legacy.json?.load_error).includes("mindplan/foundations/f-doc/current.mdx") &&
+        fs.existsSync(path.join(folder, "current.mdx")),
+      legacy.text
+    );
+    fs.rmSync(path.join(folder, "current.mdx"));
+    await client.close();
+    client = undefined;
+    const stampFile = path.join(root, "mindplan", "version.json");
+    fs.writeFileSync(stampFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(stampFile, "utf-8")), migrations: 3 }) + "\n");
+    ({ client, call } = await session(root));
+    const behind = await call("doctor");
+    check(
+      "doctor answers on a level-3 graph with status upgrade and level 3",
+      !behind.error && behind.json?.graph?.status === "upgrade" && behind.json.graph.level === 3 && behind.json.load_ms_cached === 0,
+      behind.text
+    );
+  } finally {
+    await client?.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+// --- startup: initialize is answered before any graph work; crashes and early exits are logged ---
+/** Spawns the server on `root` with raw stdio; collects stderr lines with arrival order. */
+function rawServer(root, env = {}) {
+  const child = spawn(process.execPath, [serverEntry], {
+    env: { ...process.env, MINDPLAN_ROOT: root, ...env },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const events = [];
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d) => {
+    stdout += d;
+    events.push("stdout");
+  });
+  child.stderr.on("data", (d) => {
+    stderr += d;
+    events.push(`stderr:${d}`);
+  });
+  const exited = new Promise((resolve) => child.on("exit", (code) => resolve(code)));
+  const send = (msg) => child.stdin.write(JSON.stringify(msg) + "\n");
+  const until = (pred, ms) =>
+    new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => (pred() ? resolve(true) : Date.now() - start > ms ? resolve(false) : setTimeout(tick, 20));
+      tick();
+    });
+  return { child, events, exited, send, until, out: () => stdout, err: () => stderr };
+}
+const INITIALIZE = {
+  jsonrpc: "2.0",
+  id: 1,
+  method: "initialize",
+  params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "startup-test", version: "1" } },
+};
+function bigGraph(n) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-big-"));
+  for (let i = 0; i < n; i++) {
+    const id = `j-${String(i).padStart(5, "0")}`;
+    const dir = path.join(root, "mindplan", "capabilities", id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${id}.mdx`),
+      ["---", `id: ${id}`, "type: Capability", `title: Capability ${i}`, "description: A capability.", "state: draft",
+        "created_at: 2026-01-01T00:00:00.000Z", "updated_at: 2026-01-01T00:00:00.000Z", "---", "", "## Purpose", "", `Body of ${id}.`, ""].join("\n")
+    );
+  }
+  fs.writeFileSync(path.join(root, "mindplan", "config.json"), JSON.stringify({ sources: [], exclude: [] }) + "\n");
+  return root;
+}
+{
+  const root = bigGraph(1500);
+  const server = rawServer(root);
+  try {
+    server.send(INITIALIZE);
+    const answered = await server.until(() => server.out().includes("\n"), 15000);
+    const first = server.out().split("\n")[0];
+    let reply = null;
+    try {
+      reply = JSON.parse(first);
+    } catch {
+      reply = null;
+    }
+    check("a 1500-node graph: initialize is answered", answered && reply?.id === 1 && !!reply.result?.serverInfo, first.slice(0, 200));
+    // The graph warm-up waits for the client's initialized notification, so nothing loads before it.
+    await new Promise((r) => setTimeout(r, 500));
+    check("no graph load starts before the client is initialized", !server.err().includes("warm-up started"), server.err());
+    server.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    check("the graph warm-up starts after initialized", await server.until(() => server.err().includes("warm-up started"), 10000), server.err());
+    check("stdout carries only JSON-RPC", server.out().split("\n").filter(Boolean).every((l) => { try { JSON.parse(l); return true; } catch { return false; } }), server.out().slice(0, 300));
+  } finally {
+    server.child.kill();
+    await server.exited;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-early-exit-"));
+  const server = rawServer(root);
+  server.child.stdin.end();
+  const code = await Promise.race([server.exited, new Promise((r) => setTimeout(() => r("timeout"), 10000))]);
+  if (code === "timeout") {
+    server.child.kill();
+    await server.exited;
+  }
+  check(
+    "stdin closed before initialize: the server logs why it exits and exits",
+    code === 0 && server.err().includes("mindplan-mcp: exiting (stdin closed before initialize)"),
+    `${code} ${server.err()}`
+  );
+  check("an early exit writes nothing to stdout", server.out() === "", server.out());
+  fs.rmSync(root, { recursive: true, force: true });
+}
+for (const [mode, label] of [["boot", "an uncaught exception"], ["rejection", "an unhandled rejection"]]) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-crash-"));
+  const server = rawServer(root, { MINDPLAN_TEST_CRASH: mode });
+  server.send(INITIALIZE);
+  await server.until(() => server.out().includes("\n"), 10000);
+  server.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+  const code = await Promise.race([server.exited, new Promise((r) => setTimeout(() => r("timeout"), 10000))]);
+  if (code === "timeout") {
+    server.child.kill();
+    await server.exited;
+  }
+  check(
+    `${label} logs mindplan-mcp: fatal: with its stack and exits 1`,
+    code === 1 && /mindplan-mcp: fatal: .*MINDPLAN_TEST_CRASH/.test(server.err()) && /\n\s+at /.test(server.err()),
+    `${code} ${server.err()}`
+  );
+  check(`${label} writes no non-JSON-RPC to stdout`, server.out().split("\n").filter(Boolean).every((l) => l.startsWith("{")), server.out());
   fs.rmSync(root, { recursive: true, force: true });
 }
 

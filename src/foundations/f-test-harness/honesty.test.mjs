@@ -40,7 +40,7 @@ function check(label, condition, detail = "") {
 }
 
 async function raw(tool, args) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
 }
 async function call(tool, args) {
@@ -190,29 +190,62 @@ fillAndTick("interactions", "i-b");
   await call("set_implementation_files", { replace: true, node_id: "f-tog", files: ["src/f-tog/"] });
   fillAndTick("foundations", "f-tog");
   const togFile = territory("foundations", "f-tog");
-  const ops = "- [ ] Write docs\n- [ ] Write tests\n- [ ] Load test\n- [ ] Manual check\n";
+  const ops = "- [ ] Write docs {#docs}\n- [ ] Write tests\n- [ ] Write tests\n- [ ] Load test\n- [ ] Manual check\n";
   const filled = fs.readFileSync(togFile, "utf-8").replace(/^- \[x\] .*\r?\n?/gm, "");
   fs.writeFileSync(togFile, filled.replace(/(## Atomic Ops\r?\n\r?\n)/, `$1${ops}`));
   await walk("f-tog", ["ready", "in-progress"]);
 
-  const ambiguous = await blocked("patch_node_territory", {
+  const substring = await blocked("patch_node_territory", {
     node_id: "f-tog",
     toggle_checkboxes: [{ contains: "Write", checked: true }],
   });
   check(
-    "an ambiguous toggle is Blocked and lists the matching lines",
-    !!ambiguous && ambiguous.includes("matches 2 checkbox lines") && ambiguous.includes("- [ ] Write docs") && ambiguous.includes("- [ ] Write tests"),
+    "a substring toggle is Blocked and names the items with their ids",
+    !!substring &&
+      substring.includes("no item with that exact text") &&
+      substring.includes('items: "Write docs" {#docs}, "Write tests", "Write tests", "Load test", "Manual check"'),
+    String(substring)
+  );
+  const marker = await blocked("patch_node_territory", {
+    node_id: "f-tog",
+    toggle_checkboxes: [{ contains: "- [ ] Load test", checked: true }],
+  });
+  check("a contains with the checkbox marker is not the item's text: Blocked", !!marker && marker.includes("no item with that exact text"), String(marker));
+  const ambiguous = await blocked("patch_node_territory", {
+    node_id: "f-tog",
+    toggle_checkboxes: [{ contains: "Write tests", checked: true }],
+  });
+  check(
+    "an exact text on several items is Blocked and lists them",
+    !!ambiguous && ambiguous.includes("matches 2 items") && ambiguous.includes("- [ ] Write tests"),
     String(ambiguous)
   );
   const both = await call("patch_node_territory", {
     node_id: "f-tog",
-    toggle_checkboxes: [{ contains: "Write", checked: true, all: true }],
+    toggle_checkboxes: [{ contains: "Write tests", checked: true, all: true }],
   });
   check(
-    "all: true toggles every match and returns the lines",
-    both.toggled?.length === 2 && both.toggled.every((l) => l.startsWith("- [x] Write")) && both.state === "in-progress",
+    "all: true toggles every item with that exact text and returns the lines",
+    both.toggled?.length === 2 && both.toggled.every((l) => l === "- [x] Write tests") && both.state === "in-progress",
     JSON.stringify(both)
   );
+  const byId = await call("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ id: "docs", note: "in the README" }] });
+  check(
+    "a toggle by id ticks the item and writes the note after its tag",
+    byId.toggled?.[0] === "- [x] Write docs {#docs} — note: in the README",
+    JSON.stringify(byId.toggled)
+  );
+  const exactTagged = await call("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ contains: " Write docs ", checked: false }] });
+  check(
+    "the exact text excludes the tag and the annotation, trimmed; unticking strips the note and keeps the tag",
+    exactTagged.toggled?.[0] === "- [ ] Write docs {#docs}",
+    JSON.stringify(exactTagged.toggled)
+  );
+  await call("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ id: "docs", checked: true }] });
+  const noId = await blocked("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ id: "nope", checked: true }] });
+  check("an unknown id is Blocked naming the items", !!noId && noId.includes('no item with id "nope"') && noId.includes("{#docs}"), String(noId));
+  const neither = await blocked("patch_node_territory", { node_id: "f-tog", toggle_checkboxes: [{ checked: true }] });
+  check("a toggle with neither id nor contains is Blocked", !!neither, String(neither));
   const noted = await call("patch_node_territory", {
     node_id: "f-tog",
     toggle_checkboxes: [
@@ -228,9 +261,9 @@ fillAndTick("interactions", "i-b");
   );
   const untick = await call("patch_node_territory", {
     node_id: "f-tog",
-    toggle_checkboxes: [{ contains: "- [x] Manual check", checked: false }],
+    toggle_checkboxes: [{ contains: "Manual check", checked: false }],
   });
-  check("a contains with the checkbox marker still matches, and unticking strips the note", untick.toggled?.[0] === "- [ ] Manual check", JSON.stringify(untick.toggled));
+  check("an annotated item still matches its text, and unticking strips the note", untick.toggled?.[0] === "- [ ] Manual check", JSON.stringify(untick.toggled));
   const noteOnly = await call("patch_node_territory", {
     node_id: "f-tog",
     toggle_checkboxes: [{ contains: "Manual check", note: "verified manually" }],
@@ -525,7 +558,7 @@ fillAndTick("interactions", "i-b");
   await call("open_next", { change: "rev-f-lay", node_id: "f-lay" });
   await call("patch_node_territory", { node_id: "f-lay", section: "## Purpose", text: "Next purpose." });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
-  await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   // A shipped Foundation's revision needs a decision before in-review; recording it is a write too.
   await call("record_decision", {
     node_id: "f-lay",
@@ -725,6 +758,299 @@ fillAndTick("interactions", "i-b");
   );
   const stray = await blocked("update_node_status", { node_id: "f-bad", new_status: "ready", skip_blocked: true });
   check("skip_blocked outside a scoped walk is Blocked", !!stray, String(stray));
+}
+
+// --- item 11: ship part of a change (scope change + nodes); batches that keep going; the change hint ---
+{
+  for (const id of ["f-p1", "f-p2", "f-p3"]) {
+    await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra", change: "part" });
+    fillAndTick("foundations", id);
+    write(`src/${id}/x.ts`, id === "f-p3" ? 'import { b } from "../i-b/b.js";\nexport const x = b;\n' : "export const x = 1;\n");
+    await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
+  }
+  await call("create_node", { id: "i-p", type: "Interaction", title: "Part", description: "User does part", change: "part" });
+  await call("link_nodes", { source_id: "i-p", target_id: "j-app", edge_type: "belongs_to" });
+  await call("link_nodes", { source_id: "i-p", target_id: "f-p3", edge_type: "depends_on" });
+  fillAndTick("interactions", "i-p");
+  write("src/i-p/p.ts", "export const p = 1;\n");
+  await call("set_implementation_files", { replace: true, node_id: "i-p", files: ["src/i-p/"] });
+  const walk = { scope: "change", change: "part", new_status: "ship", skip_review: true };
+
+  const stranger = await blocked("update_node_status", { ...walk, nodes: ["f-p1", "f-ok"] });
+  check(
+    "scope change with a nodes entry that is not a member is Blocked naming the members",
+    !!stranger && stranger.includes('"f-ok"') && ["f-p1", "f-p2", "f-p3", "i-p"].every((id) => stranger.includes(`"${id}"`)),
+    String(stranger)
+  );
+  const stray = await blocked("update_node_status", { scope: "all_open_updates", new_status: "ready", nodes: ["f-p1"] });
+  check("nodes outside scope change is Blocked", !!stray, String(stray));
+
+  const unlisted = await blocked("update_node_status", { ...walk, nodes: ["f-p1", "i-p"] });
+  check(
+    "a listed node whose dependency in the same change is unlisted is refused by the gate",
+    !!unlisted && unlisted.includes("Infrastructure First") && unlisted.includes('"f-p3"') &&
+      (await state("f-p1")).state === "draft",
+    String(unlisted)
+  );
+  const partial = await call("update_node_status", { ...walk, nodes: ["f-p1", "i-p"], skip_blocked: true, dry_run: true });
+  check(
+    "nodes works with skip_blocked and dry_run",
+    partial.plan.every((l) => l.startsWith("f-p1:")) && partial.blocked.map((b) => b.node_id).join() === "i-p",
+    JSON.stringify(partial)
+  );
+
+  const dry = await call("update_node_status", { ...walk, nodes: ["f-p1", "f-p2"], dry_run: true });
+  check(
+    "a dry run with nodes plans only the listed members",
+    dry.blocked === null && dry.plan.length > 0 && dry.plan.every((l) => l.startsWith("f-p1:") || l.startsWith("f-p2:")),
+    JSON.stringify(dry)
+  );
+  const r = await call("update_node_status", { ...walk, nodes: ["f-p1", "f-p2"] });
+  check(
+    "scope change with nodes ships the listed members and leaves the others",
+    r.lines.join() === "f-p1: draft -> stable,f-p2: draft -> stable" &&
+      (await state("f-p3")).state === "draft" &&
+      (await state("i-p")).state === "draft" &&
+      r.skipped_review?.join() === "f-p1,f-p2",
+    JSON.stringify(r)
+  );
+
+  // A batch keeps going past a Blocked item and reports per node.
+  for (const id of ["f-t1", "f-t2", "f-t3"]) {
+    await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra", change: "trio" });
+    fillAndTick("foundations", id);
+    write(`src/${id}/x.ts`, id === "f-t2" ? 'import { b } from "../i-b/b.js";\nexport const x = b;\n' : "export const x = 1;\n");
+    await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
+  }
+  const trio = (new_status) => ({ revisions: ["f-t1", "f-t2", "f-t3"].map((node_id) => ({ node_id, new_status })) });
+  await call("update_node_status", trio("ready"));
+  await call("update_node_status", trio("in-progress"));
+  const batch = await call("update_node_status", trio("in-review"));
+  check(
+    "a batch whose middle item is Blocked moves the other two and reports per node",
+    batch.lines?.join() === "f-t1: in-progress -> in-review,f-t3: in-progress -> in-review" &&
+      batch.results?.length === 3 &&
+      batch.results[0].ok === true && batch.results[0].line === "f-t1: in-progress -> in-review" &&
+      batch.results[1].node_id === "f-t2" && batch.results[1].ok === false && batch.results[1].blocked?.includes("imports:") &&
+      batch.results[2].ok === true &&
+      (await state("f-t2")).state === "in-progress" &&
+      (await state("f-t3")).state === "in-review" &&
+      batch.changed_files?.length > 0,
+    JSON.stringify(batch)
+  );
+  const batchDry = await call("update_node_status", { ...trio("in-review"), dry_run: true });
+  check(
+    "a batch dry run tries every item too",
+    batchDry.results?.length === 3 && batchDry.results.filter((x) => !x.ok).length === 3,
+    JSON.stringify(batchDry)
+  );
+  const none = await blocked("update_node_status", {
+    revisions: [{ node_id: "f-t2", new_status: "in-review" }, { node_id: "f-t1", new_status: "draft" }],
+  });
+  check(
+    "a batch where no item moves is Blocked listing every reason",
+    !!none && none.includes('"f-t2"') && none.includes('"f-t1"') && none.includes("imports:"),
+    String(none)
+  );
+
+  const hint = 'To move the whole change: update_node_status({ scope: "change", change: "trio", new_status: "in-review" })';
+  const single = await blocked("update_node_status", { node_id: "f-t2", new_status: "in-review" });
+  check("a single-node Blocked for a change member ends with the change hint", !!single && single.trimEnd().endsWith(hint), String(single));
+  check("a batch Blocked for a change member ends with the change hint", !!none && none.trimEnd().endsWith(hint), String(none));
+  check("a batch result's blocked reason carries the change hint", batch.results?.[1]?.blocked?.trimEnd().endsWith(hint), JSON.stringify(batch.results));
+  const shipHint = await blocked("update_node_status", { node_id: "f-t2", new_status: "ship" });
+  check(
+    "the ship hint adds skip_review when the node is not in-review",
+    !!shipHint &&
+      shipHint.trimEnd().endsWith(
+        'To move the whole change: update_node_status({ scope: "change", change: "trio", new_status: "ship", skip_review: true })'
+      ),
+    String(shipHint)
+  );
+  await call("create_node", { id: "f-lone", type: "Foundation", title: "Lone", description: "Infra — lone", role: "infra" });
+  const noChange = await blocked("update_node_status", { node_id: "f-lone", new_status: "ship" });
+  check("a node outside any change gets no hint", !!noChange && !noChange.includes("To move the whole change"), String(noChange));
+}
+
+// --- checklist kinds: review and deploy items wait on people ---
+{
+  const read = (file) => fs.readFileSync(file, "utf-8");
+  await call("create_node", { id: "f-hum", type: "Foundation", title: "Human", description: "Infra — human", role: "infra", change: "human" });
+  await call("create_node", { id: "i-hum", type: "Interaction", title: "Hum", description: "Action hum" });
+  await call("link_nodes", { source_id: "i-hum", target_id: "j-app", edge_type: "belongs_to" });
+  await call("link_nodes", { source_id: "i-hum", target_id: "f-hum", edge_type: "depends_on" });
+  write("src/f-hum/index.ts", "export const hum = 1;\n");
+  write("src/i-hum/h.ts", 'import { hum } from "../f-hum/index.js";\nexport const h = hum;\n');
+  await call("set_implementation_files", { replace: true, node_id: "f-hum", files: ["src/f-hum/"] });
+  await call("set_implementation_files", { replace: true, node_id: "i-hum", files: ["src/i-hum/"] });
+  fillAndTick("foundations", "f-hum");
+  fillAndTick("interactions", "i-hum");
+  const humFile = territory("foundations", "f-hum");
+  check(
+    "default Atomic Ops carry the ids spec, impl, verify",
+    /- \[x\] Spec written \{#spec\}/.test(read(humFile)) &&
+      /- \[x\] Implementation complete \{#impl\}/.test(read(humFile)) &&
+      /- \[x\] Verified in target environment \{#verify\}/.test(read(humFile)),
+    read(humFile)
+  );
+
+  const added = await call("patch_node_territory", {
+    node_id: "f-hum",
+    add_checklist_items: [
+      { text: "Security review", id: "sec", kind: "review" },
+      { text: "Deploy to staging", kind: "deploy" },
+    ],
+  });
+  check(
+    "add_checklist_items appends tagged items to the Atomic Ops",
+    added.patched_fields?.includes("add_checklist_items") &&
+      /\{#verify\}\r?\n- \[ \] Security review \{#sec review\}\r?\n- \[ \] Deploy to staging \{#deploy-to-staging deploy\}/.test(read(humFile)),
+    read(humFile)
+  );
+  const dup = await blocked("patch_node_territory", { node_id: "f-hum", add_checklist_items: [{ text: "Again", id: "sec" }] });
+  check("a duplicate checklist id is Blocked", !!dup && dup.includes('"sec"'), String(dup));
+
+  await walk("f-hum", ["ready", "in-progress", "in-review"]);
+  const early = await blocked("update_node_status", { node_id: "f-hum", new_status: "ship" });
+  check("a node with an open review item cannot ship (Completion Check)", !!early && early.includes("Completion Check"), String(early));
+
+  const r = await call("run_check", {});
+  const line = r.info?.find((l) => l.startsWith("waiting on people:"));
+  check(
+    "run_check lists the open review and deploy items in one info line",
+    line === "waiting on people: f-hum: sec (review), deploy-to-staging (deploy)" &&
+      r.output.includes("Info: waiting on people: f-hum: sec (review), deploy-to-staging (deploy)"),
+    JSON.stringify(r.info)
+  );
+  const oriented = await call("orient_for_work", { node_id: "f-hum" });
+  check(
+    "orient_for_work on the node returns its open items",
+    JSON.stringify(oriented.open_items) ===
+      JSON.stringify([
+        { node_id: "f-hum", id: "sec", kind: "review", text: "Security review" },
+        { node_id: "f-hum", id: "deploy-to-staging", kind: "deploy", text: "Deploy to staging" },
+      ]),
+    JSON.stringify(oriented.open_items)
+  );
+  const byChange = await call("orient_for_work", { change: "human" });
+  check("orient_for_work on the change returns one list", byChange.open_items?.length === 2, JSON.stringify(byChange.open_items));
+  const plain = await call("orient_for_work", { node_id: "i-hum" });
+  check("a node with no open human items has no open_items", plain.open_items === undefined, JSON.stringify(plain.open_items));
+
+  // A build item unticked: the dependency still holds up its dependent.
+  await walk("i-hum", ["ready", "in-progress", "in-review"]);
+  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "impl", checked: false }] });
+  const held = await blocked("update_node_status", { node_id: "i-hum", new_status: "ship" });
+  check("a dependency in-review with an unticked build item holds up its dependent", !!held && held.includes("Infrastructure First") && held.includes("f-hum"), String(held));
+  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "impl", checked: true }] });
+  const dependent = await call("update_node_status", { node_id: "i-hum", new_status: "ship" });
+  check(
+    "a dependency in-review with every build item ticked lets its dependent ship",
+    dependent.new_state === "stable" && (await state("f-hum")).state === "in-review",
+    JSON.stringify(dependent)
+  );
+  const still = await blocked("update_node_status", { node_id: "f-hum", new_status: "ship" });
+  check("the dependency itself still cannot ship until its review items are ticked", !!still && still.includes("Completion Check"), String(still));
+  await call("patch_node_territory", {
+    node_id: "f-hum",
+    toggle_checkboxes: [{ id: "sec", note: "reviewed by security" }, { id: "deploy-to-staging", checked: true }],
+  });
+  const after = await call("run_check", {});
+  check("ticked items leave the waiting line", !after.info?.some((l) => l.startsWith("waiting on people:")), JSON.stringify(after.info));
+  const shippedHum = await call("update_node_status", { node_id: "f-hum", new_status: "ship" });
+  check("with every item ticked the dependency ships", shippedHum.new_state === "stable", JSON.stringify(shippedHum));
+}
+
+/** A Foundation (or Interaction) with a claimed file, filled and ticked. */
+async function builtNode(id, type = "Foundation", extra = {}) {
+  const kind = type === "Foundation" ? "foundations" : "interactions";
+  await call("create_node", {
+    id,
+    type,
+    title: `Node ${id}`,
+    description: type === "Foundation" ? `Infra — ${id}` : `Action ${id}`,
+    ...(type === "Foundation" ? { role: "infra" } : {}),
+    ...extra,
+  });
+  if (type === "Interaction") await call("link_nodes", { source_id: id, target_id: "j-app", edge_type: "belongs_to" });
+  write(`src/${id}/index.ts`, `export const v = 1;\n`);
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
+  fillAndTick(kind, id);
+  return territory(kind, id);
+}
+
+// --- every counted checkbox toggles: an Acceptance Criteria box ticks by exact text ---
+{
+  const file = await builtNode("f-ac");
+  const text = fs.readFileSync(file, "utf-8");
+  fs.writeFileSync(file, text.replace("## Atomic Ops", "## Acceptance Criteria\n\n- [ ] Handles empty input\n\n## Atomic Ops"));
+  await walk("f-ac", ["ready", "in-progress", "in-review"]);
+  const held = await blocked("update_node_status", { node_id: "f-ac", new_status: "ship" });
+  check("an unticked Acceptance Criteria box holds the ship (Completion Check)", !!held && held.includes("Completion Check"), String(held));
+  const part = await blocked("patch_node_territory", { node_id: "f-ac", toggle_checkboxes: [{ contains: "empty input", checked: true }] });
+  check("a substring of an Acceptance Criteria box is still Blocked", !!part && part.includes("exact text"), String(part));
+  const ticked = await call("patch_node_territory", { node_id: "f-ac", toggle_checkboxes: [{ contains: "Handles empty input", checked: true }] });
+  check("an Acceptance Criteria box ticks by its exact text", ticked.toggled?.[0] === "- [x] Handles empty input", JSON.stringify(ticked));
+  const shipped = await call("update_node_status", { node_id: "f-ac", new_status: "ship" });
+  check("then the node ships", shipped.new_state === "stable", JSON.stringify(shipped));
+}
+
+// --- the relaxed dependency rule is transitive, needs items, and cannot be undone under a shipped dependent ---
+{
+  // f-base (in-progress) <- f-mid (in-review, build ticked) <- i-top (in-review).
+  await builtNode("f-base");
+  await walk("f-base", ["ready", "in-progress"]);
+  await builtNode("f-mid");
+  await call("link_nodes", { source_id: "f-mid", target_id: "f-base", edge_type: "depends_on" });
+  await walk("f-mid", ["ready", "in-progress", "in-review"]);
+  await builtNode("i-top", "Interaction");
+  await call("link_nodes", { source_id: "i-top", target_id: "f-mid", edge_type: "depends_on" });
+  write("src/i-top/index.ts", 'import { v } from "../f-mid/index.js";\nexport const t = v;\n');
+  await walk("i-top", ["ready", "in-progress", "in-review"]);
+  const transitive = await blocked("update_node_status", { node_id: "i-top", new_status: "ship" });
+  check(
+    "an in-review dependency whose own dependency is in-progress does not count (transitive)",
+    !!transitive && transitive.includes("Infrastructure First") && transitive.includes('"f-mid"'),
+    String(transitive)
+  );
+  await walk("f-base", ["in-review"]);
+  const shipped = await call("update_node_status", { node_id: "i-top", new_status: "ship" });
+  check("once every dependency down the chain is in-review with build items ticked, the dependent ships", shipped.new_state === "stable", JSON.stringify(shipped));
+
+  const cancel = await blocked("update_node_status", { node_id: "f-mid", new_status: "cancelled" });
+  check(
+    "cancelling a dependency a shipped node relies on is Blocked, naming the dependent and both fixes",
+    !!cancel && cancel.includes('"i-top"') && cancel.includes("force_unship") && cancel.includes("Ship"),
+    String(cancel)
+  );
+
+  // A dependency with no checklist item at all proves nothing.
+  // (The shape gate needs a box to reach in-review, so the boxes go after the walk.)
+  const bareFile = await builtNode("f-bare");
+  await walk("f-bare", ["ready", "in-progress", "in-review"]);
+  fs.writeFileSync(bareFile, fs.readFileSync(bareFile, "utf-8").replace(/^\s*[-*+]\s+\[[ xX]\].*$/gm, ""));
+  await builtNode("i-bare", "Interaction");
+  await call("link_nodes", { source_id: "i-bare", target_id: "f-bare", edge_type: "depends_on" });
+  await walk("i-bare", ["ready", "in-progress", "in-review"]);
+  const bare = await blocked("update_node_status", { node_id: "i-bare", new_status: "ship" });
+  check("an in-review dependency with no checklist items does not count", !!bare && bare.includes('"f-bare"'), String(bare));
+
+  // discard_next of an unstable node's revision while a shipped node depends on it.
+  await builtNode("f-unst");
+  await walk("f-unst", ["ready", "in-progress", "in-review", "ship"]);
+  await builtNode("i-unst", "Interaction");
+  await call("link_nodes", { source_id: "i-unst", target_id: "f-unst", edge_type: "depends_on" });
+  await walk("i-unst", ["ready", "in-progress", "in-review", "ship"]);
+  await call("create_node", { id: "bug-unst", type: "Bug", title: "Unst bug", description: "The unst value is wrong." });
+  await call("link_nodes", { source_id: "bug-unst", target_id: "f-unst", edge_type: "affects" });
+  check("the bug makes f-unst unstable", (await state("f-unst")).state === "unstable");
+  await call("open_next", { node_id: "f-unst", change: "unst-fix" });
+  const discard = await blocked("discard_next", { node_id: "f-unst", change: "unst-fix" });
+  check(
+    "discard_next on a non-stable node a shipped node depends on is Blocked, naming the dependent",
+    !!discard && discard.includes('"i-unst"') && discard.includes("force_unship"),
+    String(discard)
+  );
 }
 
 await client.close();

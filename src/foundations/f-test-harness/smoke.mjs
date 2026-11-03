@@ -204,6 +204,21 @@ function nextTerritoryPath(...parts) {
   }
 }
 
+// --- doctor (health report on the sandbox graph) ---
+{
+  const dr = await call("doctor", {});
+  let payload = null;
+  try {
+    payload = JSON.parse(dr.text);
+  } catch {
+    payload = null;
+  }
+  if (dr.error || !payload || path.resolve(payload.root) !== path.resolve(root) || typeof payload.load_ms_cached !== "number" || typeof payload.cache_hit !== "boolean" || !payload.graph?.status) {
+    failures++;
+    console.log(`FAIL doctor reports the root, graph status, load_ms_cached, and cache_hit: ${dr.text.slice(0, 200)}`);
+  } else console.log("ok   doctor reports the root, graph status, load_ms_cached, and cache_hit");
+}
+
 // --- get_rules (mandatory rules only) ---
 {
   const gr = await call("get_rules", {});
@@ -234,10 +249,10 @@ function nextTerritoryPath(...parts) {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
   const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec", "get_skill", "setup_project", "upgrade_project", "resolve_conflict"];
-  if (names.size !== 34 || required.some((n) => !names.has(n))) {
+  if (names.size !== 37 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 34 tools including ${required.join(", ")} (got ${names.size})`);
-  } else console.log(`ok   thirty-four tools registered including ${required.join(", ")}`);
+    console.log(`FAIL expected 37 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   thirty-seven tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
     if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {
@@ -260,7 +275,7 @@ function nextTerritoryPath(...parts) {
   const READ = [
     "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
     "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
-    "list_areas", "get_spec", "get_skill",
+    "list_areas", "get_spec", "get_skill", "doctor",
   ];
   const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
   const annotationProblems = [];
@@ -2212,18 +2227,22 @@ await expectOk("ordered in-review", "update_node_status", {
     { node_id: "f-ord", new_status: "in-review" },
   ],
 });
-await expectBlockedContaining(
-  "ordered ship stops on completion and keeps foundation",
-  "update_node_status",
-  {
+const orderedShip = JSON.parse(
+  await expectOk("ordered ship keeps going past a Blocked item", "update_node_status", {
     revisions: [
       { node_id: "if-ord", new_status: "ship" },
       { node_id: "i-ord", new_status: "ship" },
       { node_id: "f-ord", new_status: "ship" },
     ],
-  },
-  'Ordered status stopped on "i-ord" after applying: f-ord (stable)'
+  })
 );
+if (
+  orderedShip.results?.map((r) => `${r.node_id}:${r.ok}`).join() !== "f-ord:true,i-ord:false,if-ord:false" ||
+  !orderedShip.results[1].blocked?.includes("Completion Check")
+) {
+  failures++;
+  console.log(`FAIL ordered ship per-node results: ${JSON.stringify(orderedShip)}`);
+} else console.log("ok   ordered ship reports per node and moves what passes");
 graph = JSON.parse(await expectOk("graph after ordered stop", "get_mindplan_graph", {}));
 const fOrd = graph.nodes.find((n) => n.id === "f-ord");
 const iOrd = graph.nodes.find((n) => n.id === "i-ord");
@@ -2239,12 +2258,13 @@ if (iOrd?.state !== "in-review") {
 if (ifOrd?.state !== "in-review") {
   failures++;
   console.log(`FAIL if-ord should stay in-review, got ${ifOrd?.state}`);
-} else console.log("ok   later interface was not attempted");
+} else console.log("ok   later interface stayed put (its gate refused it)");
 
 await expectOk("open_next f-ord", "open_next", { change: "rev-f-ord", node_id: "f-ord" });
 const fOrdNext = nextTerritoryPath("foundations", "f-ord");
+// An item's text excludes its {#id} tag.
 const inheritedLabels = [...fs.readFileSync(fOrdNext, "utf-8").matchAll(/^- \[[ xX]\] (.+)$/gm)].map(
-  (match) => match[1]
+  (match) => match[1].replace(/\s*\{#[^}]*\}\s*$/, "")
 );
 await expectOk("inherited complete next checklist", "patch_node_territory", {
   node_id: "f-ord",
@@ -2258,7 +2278,7 @@ await expectOk("inherited complete next checklist", "patch_node_territory", {
 await expectOk("fully checked building checklist is allowed regardless of labels", "patch_node_territory", {
   node_id: "f-ord",
   slot: "next",
-  toggle_checkboxes: [{ contains: "reopened", checked: true }],
+  toggle_checkboxes: [{ contains: `${inheritedLabels[0]} reopened`, checked: true }],
 });
 
 await expectOk("create f-cr", "create_node", {
@@ -2755,7 +2775,7 @@ role: infra
   });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
   await expectOk("tick the revision's ops", "patch_node_territory", {
-    node_id: "f-rules-base", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }],
+    node_id: "f-rules-base", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }],
   });
   for (const status of ["ready", "in-progress", "in-review", "ship"]) {
     await expectOk(`f-rules-base evolution -> ${status}`, "update_node_status", {

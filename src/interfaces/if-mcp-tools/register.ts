@@ -24,7 +24,10 @@ import { TOOLS as CHECK_TOOLS } from "../../interactions/i-check-integrity/tools
 import { TOOLS as EXPORT_TOOLS } from "../../interactions/i-export-map/tools.js";
 import { TOOLS as SETUP_TOOLS } from "../../interactions/i-setup-project/tools.js";
 import { TOOLS as UPGRADE_TOOLS } from "../../interactions/i-upgrade-graph/tools.js";
+import { TOOLS as DOCTOR_TOOLS } from "../../interactions/i-doctor/tools.js";
 import { versionGate } from "../../foundations/f-graph-migrations/status.js";
+import { withRoot } from "../../foundations/f-source-index/root-scope.js";
+import { ROOT_INPUT, resolveCallRoot, withCallRoot } from "./call-root.js";
 import {
   drainRemovedLegacyFiles,
   restoreRemovedLegacyFiles,
@@ -90,7 +93,16 @@ function mount(server: McpServer, def: ToolDef): void {
           return handler(args);
         };
   const callback = guarded(gated, { write: kind !== "read", drift });
-  server.registerTool(def.name, { ...rest, annotations: ANNOTATIONS[kind] }, callback as unknown as ToolCallback<typeof rest.inputSchema>);
+  // Every tool takes `root`: the checkout (or git worktree) whose mindplan/ this one call reads and
+  // writes. The gate, the handler, and the envelope all run inside that root's scope.
+  const rooted = (args: Record<string, unknown> | undefined): ToolResult | Promise<ToolResult> => {
+    const { root, ...toolArgs } = args ?? {};
+    const call = resolveCallRoot(def.name, root as string | undefined);
+    if ("blocked" in call) return { content: [{ type: "text", text: call.blocked }], isError: true };
+    return withRoot(call.root, () => withCallRoot(call, callback(toolArgs)));
+  };
+  const inputSchema = { ...rest.inputSchema, root: ROOT_INPUT };
+  server.registerTool(def.name, { ...rest, inputSchema, annotations: ANNOTATIONS[kind] }, rooted as unknown as ToolCallback<typeof inputSchema>);
 }
 
 /**
@@ -145,6 +157,7 @@ function guarded<A>(
 /** Tool order in tools/list: unchanged from when one file defined every tool. */
 const TOOL_ORDER = [
   "run_check",
+  "acknowledge_warning",
   "get_mindplan_graph",
   "export_mindplan_view",
   "find_related_nodes",
@@ -153,6 +166,7 @@ const TOOL_ORDER = [
   "get_node_context",
   "orient_for_work",
   "get_project",
+  "doctor",
   "get_spec",
   "get_skill",
   "get_rules",
@@ -172,6 +186,7 @@ const TOOL_ORDER = [
   "open_next",
   "discard_next",
   "resolve_conflict",
+  "rebase_revision",
   "get_blast_radius",
   "unlink_nodes",
   "update_node_status",
@@ -198,6 +213,7 @@ export function registerMindPlanTools(server: McpServer): void {
     ...EXPORT_TOOLS,
     ...SETUP_TOOLS,
     ...UPGRADE_TOOLS,
+    ...DOCTOR_TOOLS,
   ];
   const byName = new Map(defs.map((d) => [d.name, d]));
   if (byName.size !== defs.length || byName.size !== TOOL_ORDER.length) {

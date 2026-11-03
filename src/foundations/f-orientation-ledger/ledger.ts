@@ -9,8 +9,14 @@
 import { createHash } from "crypto";
 import type { MindPlanGraph, RuleEntry } from "../f-domain-model/types.js";
 import { resolveNodeRules } from "../f-graph-search/rules.js";
+import { resolveProjectRoot, rootKey } from "../f-source-index/root-scope.js";
 
+/** Keyed by project root + "\0" + node id: orienting in one checkout never unlocks another. */
 const fetched = new Map<string, string>();
+
+function ledgerKey(nodeId: string): string {
+  return `${rootKey(resolveProjectRoot())}\0${nodeId}`;
+}
 let enabled = false;
 
 /** Turn the gate on for this process (the MCP server does, unless `MINDPLAN_ORIENT_GATE=off`). */
@@ -65,14 +71,14 @@ export function rulesFingerprint(graph: MindPlanGraph, nodeId: string): string {
 /** Record that these nodes' full context, rules included, reached the agent. */
 export function recordOriented(graph: MindPlanGraph, nodeIds: string[]): void {
   for (const id of nodeIds) {
-    if (graph.nodes.some((n) => n.id === id)) fetched.set(id, rulesFingerprint(graph, id));
+    if (graph.nodes.some((n) => n.id === id)) fetched.set(ledgerKey(id), rulesFingerprint(graph, id));
   }
 }
 
 /** Why a node's write is not allowed yet, or null when it was fetched with its current rules. */
 export function orientationGap(graph: MindPlanGraph, nodeId: string): "unfetched" | "rules_changed" | null {
   if (!enabled) return null;
-  const at = fetched.get(nodeId);
+  const at = fetched.get(ledgerKey(nodeId));
   if (at === undefined) return "unfetched";
   return at === rulesFingerprint(graph, nodeId) ? null : "rules_changed";
 }

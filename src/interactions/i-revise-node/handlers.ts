@@ -14,14 +14,16 @@ import {
 import {
   discardRevision,
   openRevision,
+  rebaseRevisionOntoLive,
   resolveConflict as resolveRevisionConflict,
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
 import { openChanges, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
-import { blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
+import { assertNoShippedDependentsRelying, blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
 import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.js";
+import { changeCycleGate } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
   assertNoLegacyNext,
@@ -59,6 +61,12 @@ export function openNext(args: {
   validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
   const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
+  // A planned depends_on that closes a cycle with another change's edges could never ship.
+  const plannedDeps = (node.planned ?? []).filter((e) => e.change === change && e.type === "depends_on");
+  if (plannedDeps.length > 0) {
+    const assertNoCycle = changeCycleGate(graph);
+    for (const e of plannedDeps) assertNoCycle({ source: node_id, target: e.target, change });
+  }
   // The revision takes its change's planned edges: each must still be legal before it opens.
   const problems = plannedEdgeProblems(graph, change).filter((p) => p.startsWith(`planned edge ${node_id} -`));
   if (problems.length > 0) {
@@ -142,6 +150,7 @@ function discardRevisionWrite(args: { node_id: string; change?: string; verbose?
       `node "${node_id}" has no open revision to discard (a leftover mirror file is not a revision; upgrade_project removes it).`
     );
   }
+  assertNoShippedDependentsRelying(graph, node, `discard revision "${change}" of`);
   const removed = discardRevision(node, change);
   refreshPersistedMap();
   return {
@@ -194,6 +203,32 @@ export function resolveConflict(args: ResolveConflictArgs): Record<string, unkno
     resolved: target,
     take,
     conflicts: out.conflicts.map(conflictLabel),
+    changed_files: changedFiles(out.changed_files),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
+  };
+}
+
+/**
+ * rebase_revision: carries one open revision onto current live (live moved since it opened: a
+ * sibling shipped on another branch and the branches merged, or live was patched in place), with
+ * the rule a ship applies to its siblings. A revision whose base already matches live is a no-op.
+ */
+export function rebaseRevision(args: { node_id: string; change?: string; verbose?: boolean }): Record<string, unknown> {
+  const { node_id } = args;
+  gateWrite(null, [node_id], "rebase_revision");
+  const graph = loadGraph();
+  const node = findNode(graph, node_id);
+  assertNoLegacyNext(node, "rebase_revision");
+  const change = resolveRevisionChange(node, args.change || undefined);
+  if (change === null) throw blocked(`node "${node_id}" has no open revision to rebase.`);
+  const out = rebaseRevisionOntoLive(graph, node, change);
+  if (out.rebased) refreshPersistedMap();
+  return {
+    node_id,
+    change,
+    rebased: out.rebased,
+    conflicts: out.conflicts.map(conflictLabel),
+    ...(out.readiness_reset ? { readiness_reset: out.readiness_reset } : {}),
     changed_files: changedFiles(out.changed_files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };

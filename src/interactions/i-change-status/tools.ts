@@ -32,8 +32,11 @@ export const TOOLS: ToolDef[] = [
         "ship writes that revision over live, deletes its folder, and rebases the node's other revisions onto the new live (rebased: [{ change, conflicts }]); " +
         "a revision holding conflicts is Blocked at in-review and ship until resolve_conflict clears them. " +
         "Every ship drops the node's Atomic Ops (the shipped node shows its current state, git keeps the ledger). deprecated deletes every open revision. " +
-        "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; stops on the first Blocked and leaves earlier nodes transitioned. " +
+        "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; every item is tried on the graph as the earlier ones left it, " +
+        "and the result lists results: [{ node_id, change?, ok, line?, blocked? }] plus lines for the moved ones; the call is Blocked only when no item moved (listing every reason). " +
         "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
+        'A scoped change walk is the one-call way to ship a change: update_node_status({ scope: "change", change, new_status: "ship" }); add nodes: [...] to walk only those members (the others stay put, and the gates still refuse a listed node that needs an unlisted one). ' +
+        "A Blocked single or batch move of a node in a change ends with the scoped change call that moves the whole change. " +
         "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +
         "A scoped walk is all-or-nothing unless skip_blocked: true, which walks every node that passes its gates, leaves each blocked node (and any node that cannot move without it) where it is, and lists them in blocked with the step and reason. " +
         "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
@@ -70,6 +73,13 @@ export const TOOLS: ToolDef[] = [
         change: CHANGE_ID.optional().describe(
           'The change id walked by scope "change"; with node_id + new_status, which open revision of the node moves (optional when it has at most one).'
         ),
+        nodes: z
+          .array(NODE_ID)
+          .min(1)
+          .optional()
+          .describe(
+            'Scope "change" only: walk just these members of the change (each must be a member); the others stay where they are. Works with dry_run, skip_review, skip_blocked.'
+          ),
         skip_review: z
           .boolean()
           .optional()
@@ -101,7 +111,7 @@ export const TOOLS: ToolDef[] = [
           .min(1)
           .optional()
           .describe(
-            "One revision. Server orders Foundations, Interactions, Interfaces, then Bugs, and stops on the first Blocked. Mutually exclusive with node_id and new_status."
+            "One revision. Server orders Foundations, Interactions, Interfaces, then Bugs, and tries every item (a Blocked item stays put, the rest move). Mutually exclusive with node_id and new_status."
           ),
       },
     },

@@ -43,6 +43,13 @@ import {
   withRevision,
 } from "../f-revision-model/index.js";
 import { assertMinimumTerritoryShape, slotSource } from "./shape.js";
+import { dependencyGate } from "./checklist-gates.js";
+
+export { openHumanItems, type OpenHumanItem } from "./checklist-gates.js";
+
+/** How a dependency stops holding up its dependents' ship. */
+const DEPENDENCY_READY =
+  "A dependency counts once stable, or in-review with at least one checklist item, every build item ticked, and its own dependencies counting the same way.";
 
 export function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
@@ -848,6 +855,7 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
   if (!isPipelineNodeType(node.type)) {
     throw blocked(`only Foundations, Interactions, and Interfaces can ship to production.`);
   }
+  const dependencySatisfied = dependencyGate(graph);
 
   if (node.next) {
     if (node.next.state !== "in-review") {
@@ -864,11 +872,11 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
       const depIds = node.next.depends_on ?? [];
       const deps = depIds.map((id) => findNode(graph, id));
       const foundations = deps.filter((n) => n.type === "Foundation");
-      const notStable = foundations.filter((n) => n.state !== "stable");
+      const notStable = foundations.filter((n) => !dependencySatisfied(n));
       if (notStable.length > 0) {
         const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Infrastructure First. Interaction "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
+          `Infrastructure First. Interaction "${node.id}" next cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
     }
@@ -876,22 +884,22 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     if (node.type === "Interface") {
       const exposedIds = node.next.exposes ?? [];
       const exposed = exposedIds.map((id) => findNode(graph, id));
-      const notStable = exposed.filter((n) => n.state !== "stable");
+      const notStable = exposed.filter((n) => !dependencySatisfied(n));
       if (notStable.length > 0) {
         const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Behavior First. Interface "${node.id}" next cannot ship while exposed Interactions are not stable: ${list}.`
+          `Behavior First. Interface "${node.id}" next cannot ship while exposed Interactions are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
       const depIds = node.next.depends_on ?? [];
       const foundations = depIds
         .map((id) => findNode(graph, id))
         .filter((n) => n.type === "Foundation");
-      const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+      const foundationsNotStable = foundations.filter((n) => !dependencySatisfied(n));
       if (foundationsNotStable.length > 0) {
         const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Infrastructure First. Interface "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
+          `Infrastructure First. Interface "${node.id}" next cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
     }
@@ -912,32 +920,32 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const notStable = foundations.filter((n) => n.state !== "stable");
+    const notStable = foundations.filter((n) => !dependencySatisfied(n));
     if (notStable.length > 0) {
       const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Interaction "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+        `Infrastructure First. Interaction "${node.id}" cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
   }
 
   if (node.type === "Interface") {
     const exposed = edgesFrom(graph, node.id, "exposes");
-    const notStable = exposed.filter((n) => n.state !== "stable");
+    const notStable = exposed.filter((n) => !dependencySatisfied(n));
     if (notStable.length > 0) {
       const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Behavior First. Interface "${node.id}" cannot ship while exposed Interactions are not stable: ${list}.`
+        `Behavior First. Interface "${node.id}" cannot ship while exposed Interactions are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+    const foundationsNotStable = foundations.filter((n) => !dependencySatisfied(n));
     if (foundationsNotStable.length > 0) {
       const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Interface "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+        `Infrastructure First. Interface "${node.id}" cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
   }
@@ -1052,6 +1060,27 @@ const RETIRED_OR_CLOSED = new Set([
 ]);
 
 /**
+ * A shipped node may have shipped on the relaxed dependency rule, relying on a dependency that was
+ * only in review. Cancelling that dependency (pre-ship) or discarding its revision would leave the
+ * dependent relying on something that never ships, so both are Blocked while `node` is not stable
+ * and a stable/unstable node has a live depends_on edge to it (or, for an Interaction, a live
+ * exposes edge from an Interface).
+ */
+export function assertNoShippedDependentsRelying(graph: MindPlanGraph, node: MindPlanNode, action: string): void {
+  if (node.state === "stable") return;
+  const dependents = graph.edges
+    .filter((e) => e.target === node.id && (e.type === "depends_on" || e.type === "exposes"))
+    .map((e) => graph.nodes.find((n) => n.id === e.source))
+    .filter((n): n is MindPlanNode => !!n && isProductionState(n.state));
+  const ids = [...new Set(dependents.map((n) => n.id))].sort();
+  if (ids.length === 0) return;
+  throw blocked(
+    `cannot ${action} "${node.id}": shipped nodes rely on it (${ids.map((id) => `"${id}"`).join(", ")}), and it is not stable yet. ` +
+      `Ship "${node.id}" first, or move those dependents back with force_unship (ask the user; confirm: "unship:<id>").`
+  );
+}
+
+/**
  * Pre-ship abandon: cancel is blocked while `<id>.next.mdx` is open or any active
  * (non-retired) node still depends_on this node — including proposed
  * depends_on on another node's open `<id>.next.mdx`.
@@ -1067,6 +1096,7 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
       `cannot cancel "${node.id}" while an open revision exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
+  assertNoShippedDependentsRelying(graph, node, "cancel");
   const byId = new Map<string, MindPlanNode>();
   for (const dep of dependentsOf(graph, node.id)) {
     if (!RETIRED_OR_CLOSED.has(dep.state)) byId.set(dep.id, dep);

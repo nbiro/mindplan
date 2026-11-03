@@ -45,6 +45,7 @@ import {
   replaceTextInBody,
   toggleCheckboxesInBody,
 } from "../../foundations/f-territory-store/store.js";
+import { appendChecklistItems, type NewChecklistItem } from "../../foundations/f-territory-store/checklist.js";
 import {
   readRevisions,
   revisionAttachmentsDir,
@@ -106,6 +107,8 @@ type PatchTerritoryArgs = {
   role?: FoundationRole;
   body?: string;
   toggle_checkboxes?: CheckboxToggle[];
+  /** Items appended unticked to the picked slot's Atomic Ops. */
+  add_checklist_items?: NewChecklistItem[];
   section?: string;
   text?: string;
   replace?: { find: string; with: string; all?: boolean };
@@ -348,6 +351,10 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
     text = replaceTextInBody(text, args.replace.find, args.replace.with, args.replace.all);
     patched.push("replace");
   }
+  if (args.add_checklist_items?.length) {
+    text = appendChecklistItems(text, args.add_checklist_items).body;
+    patched.push("add_checklist_items");
+  }
   if (toggle_checkboxes?.length) {
     const result = toggleCheckboxesInBody(text, toggle_checkboxes);
     text = result.body;
@@ -380,7 +387,7 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
   }
   if (patched.length === 0 && aliases === undefined) {
     throw blocked(
-      "patch_node_territory requires at least one of title, description, role, body, section, replace, toggle_checkboxes, change_ref, split_into, or aliases."
+      "patch_node_territory requires at least one of title, description, role, body, section, replace, add_checklist_items, toggle_checkboxes, change_ref, split_into, or aliases."
     );
   }
 
@@ -510,7 +517,8 @@ function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
     body !== undefined ||
     args.section !== undefined ||
     args.replace !== undefined ||
-    (toggle_checkboxes?.length ?? 0) > 0
+    (toggle_checkboxes?.length ?? 0) > 0 ||
+    (args.add_checklist_items?.length ?? 0) > 0
   ) {
     const raw = readMarkdown(node, resolvedSlot);
     if (!splitContext(raw)) {
@@ -523,6 +531,7 @@ function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
     role,
     body,
     toggle_checkboxes,
+    add_checklist_items: args.add_checklist_items,
     section: args.section !== undefined ? { heading: args.section, text: args.text! } : undefined,
     replace: args.replace,
     change: args.change,

@@ -78,7 +78,7 @@ let mirrorWrites = 0;
 /** Call a write tool and check that its changed_files covers every file it touched on disk. */
 async function call(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (res.isError) throw new Error(`${tool}: ${text}`);
   const result = JSON.parse(text || "{}");
@@ -112,7 +112,7 @@ async function call(tool, args) {
 
 /** Call a tool expecting a Blocked error; returns its text, or null when it did not block. */
 async function blocked(tool, args) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   return res.isError ? (res.content?.[0]?.text ?? "") : null;
 }
 

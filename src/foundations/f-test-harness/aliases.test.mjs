@@ -38,7 +38,7 @@ function check(label, condition, detail = "") {
   }
 }
 async function raw(tool, args) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
 }
 async function call(tool, args) {

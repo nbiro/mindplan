@@ -49,8 +49,10 @@ import {
   searchNodes,
 } from "../../foundations/f-graph-search/search.js";
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
+import { openHumanItems, openHumanItemsOfChange } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import { changeMembership } from "../../foundations/f-compiler-rules/planned.js";
 import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
+import { cutReply, orients, parseSections, type OrientSection } from "./sections.js";
 import { resolveNodeRules } from "../../foundations/f-graph-search/rules.js";
 import {
   listDecisions,
@@ -357,7 +359,8 @@ export function getNodeContext(args: {
 function orientForChange(
   graph: MindPlanGraph,
   change: string,
-  known: Record<string, string> | undefined
+  known: Record<string, string> | undefined,
+  sections?: Set<OrientSection>
 ): Record<string, unknown> {
   const under = revisionGraph(graph, change);
   const { revisions, planned } = changeMembership(under, change);
@@ -400,14 +403,19 @@ function orientForChange(
       ? { node_id: e.node_id, node_type: e.node_type, version, unchanged: true }
       : { node_id: e.node_id, node_type: e.node_type, version, rules: e.rules };
   });
-  recordOriented(graph, members.map((m) => m.id));
-  return {
-    change,
-    members,
-    rules,
-    decisions: { count: decisionCount, nodes: holders },
-    next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
-  };
+  if (orients(sections)) recordOriented(graph, members.map((m) => m.id));
+  const openItems = openHumanItemsOfChange(graph, change);
+  return cutReply(
+    {
+      change,
+      members,
+      rules,
+      decisions: { count: decisionCount, nodes: holders },
+      ...(openItems.length ? { open_items: openItems } : {}),
+      next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
+    },
+    sections
+  );
 }
 
 /**
@@ -500,8 +508,10 @@ export async function orientForWork(args: {
   slot?: ContextSlot;
   section?: string;
   change?: string;
+  sections?: string[];
 }): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
+  const sections = parseSections(args.sections);
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
     throw blocked(`orient_for_work depth must be one of: ${ORIENT_DEPTHS.join(", ")}.`);
   }
@@ -512,7 +522,7 @@ export async function orientForWork(args: {
         'orient_for_work takes "change" alone (every member of the change) or with "node_id" (that node\'s revision of it): drop "query".'
       );
     }
-    return orientForChange(loadGraph(), args.change, args.known_rules_versions);
+    return orientForChange(loadGraph(), args.change, args.known_rules_versions, sections);
   }
   if (!q && !args.node_id) {
     throw blocked('orient_for_work requires a non-empty "query", "node_id", or "change".');
@@ -564,7 +574,8 @@ export async function orientForWork(args: {
   };
   const split = splitNodeDecisions(graph, node, args, depth);
   const decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
-  recordOriented(graph, [node.id]);
+  // A reply cut to sections without the rules does not orient.
+  if (orients(sections)) recordOriented(graph, [node.id]);
 
   const reply: Record<string, unknown> = {
     query: q,
@@ -580,13 +591,16 @@ export async function orientForWork(args: {
   };
   const shape = shapeReport(view);
   if (shape) reply.shape = shape;
+  // Review and deploy items wait on people: listed so the agent says so instead of ticking them.
+  const openItems = openHumanItems(graph).filter((i) => i.node_id === node.id);
+  if (openItems.length) reply.open_items = openItems;
   if (depth === "rules") {
     const next = context.next as { record?: unknown } | string | null;
     reply.context = {
       record: context.record,
       next: typeof next === "string" ? next : next ? { record: next.record } : null,
     };
-    return reply;
+    return cutReply(reply, sections);
   }
   reply.context = context;
   if (isPipelineNodeType(node.type)) {
@@ -604,7 +618,7 @@ export async function orientForWork(args: {
       : null;
     if (isPipelineNodeType(node.type)) reply.stability = stabilityPayload(graph, node);
   }
-  return reply;
+  return cutReply(reply, sections);
 }
 
 /**

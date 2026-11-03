@@ -24,6 +24,7 @@ import * as path from "path";
 import type { MindPlanNode } from "../f-domain-model/types.js";
 import { dirGitState, treeChanges } from "../f-source-index/git.js";
 import { readBytesRetry } from "../f-source-index/io.js";
+import { rootKey } from "../f-source-index/root-scope.js";
 
 /** Bump when the table or the stored entry shape changes; a mismatch drops every row. */
 export const GRAPH_CACHE_SCHEMA = "2";
@@ -401,7 +402,7 @@ export function graphCacheFor(root: string, packageVersion: string): GraphCache 
   const setting = process.env.MINDPLAN_GRAPH_CACHE;
   if (setting === "off") return null;
   const abs = path.resolve(root);
-  const key = `${abs}\u0000${packageVersion}`;
+  const key = `${rootKey(abs)}\u0000${packageVersion}`;
   let cache = caches.get(key);
   if (!cache) {
     cache = new GraphCache(abs, packageVersion);

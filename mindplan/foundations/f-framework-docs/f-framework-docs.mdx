@@ -4,11 +4,11 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and tests, decisions, and host install docs."
 state: stable
-shipped_at: 2026-11-03T08:20:34.614Z
-revisions: 52
-churn: 27.005
+shipped_at: 2026-11-03T09:48:46.430Z
+revisions: 53
+churn: 27.967
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-03T08:20:34.614Z
+updated_at: 2026-11-03T09:48:46.430Z
 depends_on:
   - f-domain-model
 implements:
@@ -88,6 +88,10 @@ Depends on: `f-domain-model`.
 - **Agent guidance.** SPEC §6.5 specifies the Minimum Territory Shape: the per-type table generated from `TERRITORY_SHAPE` between `<!-- shape-table:start -->` / `<!-- shape-table:end -->` markers, the one-message Blocked, `shape` on `create_node`, `orient_for_work`, and `get_node_context`, and the `shape:` warning; the define-entities skill embeds the same generated table and lists `Purpose` and `Acceptance Criteria` in its section guidance; the playbook stays one screen and points to `shape`, the skill, and `get_spec` (and to `orient_for_work({ change })` after a reconnect). SPEC §8 counts thirty tools and specifies `get_spec` and its topic ids, `orient_for_work({ change })`, the one-message `Blocked: Orientation` (§8.1.2), and `run_check` `info` with `planned:` lines (§8.1, §9.6). README lists `get_spec`, `shape`, `info`, and change-wide orient; `CHANGELOG.md` has the 0.9.0 section. SPEC §3.7 adds Planned edges and Attributed files (members of kind `planned`, `applied_planned`, `cleared_planned`), §5.13 counts attributed schema files, §6.1 lists the `planned` and `attributed` frontmatter fields, §8.2 the `change` input of `link_nodes` / `unlink_nodes` and `attributed` on `set_implementation_files`, §9.6 the planned-edge check and attributed presence, and `get_spec` gains `planned-wiring`; the plan-project skill tells plan-only sessions to plan wiring on shipped nodes and attribute migrations; README and CHANGELOG describe both
 
 - **Merge gate.** Playbook rule 7 gains one line: a PR is merged only after its change is shipped (or moved back to `in-progress`), and `check --merge` (`run_check({ merge: true })`) is the gate. The plan-project skill names the gate where it talks about shipping. `templates/ci/github/mindplan-merge-gate.yml` is the workflow `init --ci github` installs. SPEC specifies `--merge` / `--merge=strict`, `run_check` `merge`, the `Blocked: Merge` lines and the `merge` result (§8.1, §9.6), and `init --ci github`; the README documents the flag, the strict level (whose explicit `--base` also runs dirty-src), the workflow, and making it a required status check; `CHANGELOG.md` gets the 0.6.0 section. SPEC §1.1 requires plan-file I/O to retry a brief lock (`EBUSY` / `UNKNOWN`, and `EPERM` / `EACCES` on Windows), and §9.6 says changed paths are project-relative, the default base is the newer of the local and remote default branch, the workflow goes at the repository top running in the project root, and conflicting merge levels are `Blocked:`
+
+## Release 0.18 remaining items
+
+SPEC, CHANGELOG (the existing 0.18.0 section), README, the playbook, and both skills cover: the `root` argument and the four-step parallel worktree workflow (the orchestrator creates the change on the integration branch; each agent opens and fills revisions in its worktree with `root` and moves them to in-review; merging the branches brings the graph along and `check --after-merge` validates it; the orchestrator ships), `rebase_revision`, partial change walks (`nodes`) and batches that continue, checklist item ids and kinds (`{#id kind}`), the open-human-items lists, compact `run_check` with `nodes` and `acknowledge_warning`, `orient_for_work` `sections`, cycles across changes, the test import scope, and `doctor` with the startup behavior.
 
 ## Acceptance Criteria
 

@@ -56,6 +56,7 @@ import {
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
+import { resolveProjectRoot, rootKey } from "../f-source-index/root-scope.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
@@ -71,6 +72,12 @@ export {
   type MindPlanProjectConfig,
   type WriteProjectConfigResult,
 } from "../f-source-index/config.js";
+import {
+  appendChecklistItems,
+  toggleChecklistItems,
+  type CheckboxToggle,
+  type NewChecklistItem,
+} from "./checklist.js";
 const TYPE_DIRS: Record<NodeType, string> = {
   Capability: "capabilities",
   Foundation: "foundations",
@@ -135,7 +142,7 @@ export const COMPONENTS_DIR = "components";
 
 export type TerritorySlot = "current" | "next";
 export function mindplanRoot(): string {
-  return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR);
+  return path.join(resolveProjectRoot(), MINDPLAN_DIR);
 }
 
 export function agentRoot(): string {
@@ -199,16 +206,28 @@ function legacySlotFilename(slot: TerritorySlot): string {
 
 export type RemovedLegacyFile = { from: string; to: string };
 
-const removedLegacyFiles: RemovedLegacyFile[] = [];
+/** Per project root, so a call on one checkout never drains another checkout's removals. */
+const removedLegacyFilesByRoot = new Map<string, RemovedLegacyFile[]>();
 
-/** Paths deleted because the id-named file was kept. Clears the list. */
+function removedLegacyFiles(): RemovedLegacyFile[] {
+  const key = rootKey(projectRoot());
+  let list = removedLegacyFilesByRoot.get(key);
+  if (!list) {
+    list = [];
+    removedLegacyFilesByRoot.set(key, list);
+  }
+  return list;
+}
+
+/** Paths deleted because the id-named file was kept (under the current root). Clears the list. */
 export function drainRemovedLegacyFiles(): RemovedLegacyFile[] {
-  return removedLegacyFiles.splice(0, removedLegacyFiles.length);
+  const list = removedLegacyFiles();
+  return list.splice(0, list.length);
 }
 
 /** Put drained entries back so the next drain reports them (an async tool result, once it settles). */
 export function restoreRemovedLegacyFiles(entries: RemovedLegacyFile[]): void {
-  removedLegacyFiles.unshift(...entries);
+  removedLegacyFiles().unshift(...entries);
 }
 
 function isRegularFile(filePath: string): boolean {
@@ -259,8 +278,41 @@ export function removeLegacyIfIdNamedExists(
       `Blocked: could not remove ${legacyRel} while keeping ${preferredRel} (${detail}). Fix ${legacyRel} by hand.`
     );
   }
-  removedLegacyFiles.push({ from: legacyRel, to: preferredRel });
+  removedLegacyFiles().push({ from: legacyRel, to: preferredRel });
   return true;
+}
+
+/**
+ * Legacy files a graph load would delete (`removeLegacyIfIdNamedExists`): a `current.mdx` or
+ * `next.mdx` beside its id-named twin, as repo-relative paths. Reads only; never removes.
+ */
+export function pendingLegacyRemovals(): string[] {
+  const out: string[] = [];
+  const root = mindplanRoot();
+  for (const dirName of Object.keys(DIR_TO_TYPE)) {
+    const typePath = path.join(root, dirName);
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(typePath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const folder = path.join(typePath, entry.name);
+      for (const slot of ["current", "next"] as TerritorySlot[]) {
+        const preferred = preferredSlotFilename(entry.name, slot);
+        const legacy = legacySlotFilename(slot);
+        if (preferred.toLowerCase() === legacy.toLowerCase()) continue;
+        const preferredPath = path.join(folder, preferred);
+        const legacyPath = path.join(folder, legacy);
+        if (!isRegularFile(preferredPath) || !isRegularFile(legacyPath)) continue;
+        if (sameFilesystemEntry(preferredPath, legacyPath)) continue;
+        out.push(path.posix.join(MINDPLAN_DIR, dirName, entry.name, legacy));
+      }
+    }
+  }
+  return out.sort();
 }
 
 /**
@@ -402,7 +454,7 @@ export function listAttachments(node: Pick<MindPlanNode, "id" | "type">): string
 }
 
 export function projectRoot(): string {
-  return process.env.MINDPLAN_ROOT ?? process.cwd();
+  return resolveProjectRoot();
 }
 
 /** Creates /mindplan, top-level type directories, and components/ if missing. */
@@ -979,6 +1031,13 @@ export function discoverEdges(nodes: MindPlanNode[]): MindPlanEdge[] {
 export function loadGraph(): MindPlanGraph {
   const nodes = discoverNodes();
   return { version: GRAPH_VERSION, nodes, edges: discoverEdges(nodes) };
+}
+
+/** Whether the last graph load of this root re-parsed no folder (every node came from the graph cache); null without a cache. */
+export function lastGraphLoadFromCache(): boolean | null {
+  const cache = graphCacheFor(projectRoot(), parserVersion());
+  if (!cache) return null;
+  return cache.lastStats.parsed === 0;
 }
 
 /** Returns { id, type } if a territory folder exists for this id. */
@@ -1942,6 +2001,8 @@ export type PatchNodeTerritoryInput = {
   /** Foundation role — same slot rules as title/description. */
   role?: FoundationRole;
   toggle_checkboxes?: CheckboxToggle[];
+  /** Append unticked items to the slot's Atomic Ops (ids unique per slot). */
+  add_checklist_items?: NewChecklistItem[];
   /** Set (or clear with "") the change id of this slot. Grouping metadata, not contract. */
   change?: string;
   /** Set (or clear with "") the branch or PR reference of this slot's change. */
@@ -2049,11 +2110,11 @@ function atomicOpsHeadings(type: NodeType): string[] {
 export function defaultAtomicOps(type: NodeType): string[] {
   switch (type) {
     case "Foundation":
-      return ["- [ ] Spec written", "- [ ] Implementation complete", "- [ ] Verified in target environment"];
+      return ["- [ ] Spec written {#spec}", "- [ ] Implementation complete {#impl}", "- [ ] Verified in target environment {#verify}"];
     case "Interaction":
-      return ["- [ ] Requirements defined", "- [ ] Implementation complete", "- [ ] Tests passing"];
+      return ["- [ ] Requirements defined {#spec}", "- [ ] Implementation complete {#impl}", "- [ ] Tests passing {#verify}"];
     case "Interface":
-      return ["- [ ] Spec written", "- [ ] Implementation complete", "- [ ] Verified against exposed Interactions"];
+      return ["- [ ] Spec written {#spec}", "- [ ] Implementation complete {#impl}", "- [ ] Verified against exposed Interactions {#verify}"];
     default:
       return [];
   }
@@ -2190,91 +2251,17 @@ export function resolveTerritorySlot(
   return "current";
 }
 
-/** One checkbox toggle: match by substring, tick or untick, optionally annotate. */
-export type CheckboxToggle = {
-  contains: string;
-  /** true for [x], false for [ ]. Defaults to true when `note` or `not_applicable` is set. */
-  checked?: boolean;
-  /** Toggle every matching line instead of Blocking on an ambiguous match. */
-  all?: boolean;
-  /** Tick with a note: appends ` — note: <text>`. */
-  note?: string;
-  /** Tick as not applicable: appends ` — n/a: <reason>`. */
-  not_applicable?: string;
-};
-
-const CHECKBOX_LINE = /^\s*[-*+]\s+\[[ xX]\]/;
-/** A trailing annotation written by a toggle: ` — note: …` or ` — n/a: …`. */
-const CHECKBOX_ANNOTATION = /\s+—\s+(?:note|n\/a):.*$/;
-
-function oneLine(value: string, field: string): string {
-  const text = value.replace(/\s*\r?\n\s*/g, " ").trim();
-  if (!text) throw new Error(`Blocked: toggle_checkboxes ${field} must be non-empty.`);
-  return text;
-}
+export type { CheckboxToggle, NewChecklistItem } from "./checklist.js";
 
 /**
- * Toggle checkbox lines by substring. A substring that matches several checkbox lines is
- * Blocked (listing them) unless the toggle passes `all`. A note or not-applicable reason is
- * appended to the line, so the item's own wording never changes; unticking strips it.
- * Returns the new body and the lines as written.
+ * Toggle checklist items by id or exact text (`toggleChecklistItems`): every box the Completion
+ * Check counts matches. Returns the new body and the lines as written.
  */
 export function toggleCheckboxesInBody(
   body: string,
   toggles: CheckboxToggle[]
 ): { body: string; toggled: string[] } {
-  const eol = detectEol(body);
-  const lines = body.split(/\r?\n/);
-  const toggled: string[] = [];
-  for (const toggle of toggles) {
-    if (toggle.note !== undefined && toggle.not_applicable !== undefined) {
-      throw new Error("Blocked: a toggle takes note or not_applicable, not both.");
-    }
-    const annotated = toggle.note !== undefined || toggle.not_applicable !== undefined;
-    const checked = toggle.checked ?? (annotated ? true : undefined);
-    if (checked === undefined) {
-      throw new Error(`Blocked: toggle for "${toggle.contains}" needs checked (true or false).`);
-    }
-    if (!checked && annotated) {
-      throw new Error(
-        `Blocked: note and not_applicable tick the item; they cannot be combined with checked: false.`
-      );
-    }
-    const suffix =
-      toggle.note !== undefined
-        ? ` — note: ${oneLine(toggle.note, "note")}`
-        : toggle.not_applicable !== undefined
-          ? ` — n/a: ${oneLine(toggle.not_applicable, "not_applicable")}`
-          : null;
-
-    const hits: number[] = [];
-    lines.forEach((line, i) => {
-      if (CHECKBOX_LINE.test(line) && line.includes(toggle.contains)) hits.push(i);
-    });
-    if (hits.length === 0) {
-      throw new Error(
-        `Blocked: no checkbox line containing "${toggle.contains}" in territory body.`
-      );
-    }
-    if (hits.length > 1 && !toggle.all) {
-      throw new Error(
-        `Blocked: "${toggle.contains}" matches ${hits.length} checkbox lines; make it unique or pass all: true. Matches:\n` +
-          hits.map((i) => `- ${lines[i].trim()}`).join("\n")
-      );
-    }
-    for (const i of hits) {
-      let line = lines[i].replace(
-        /^(\s*[-*+]\s+)\[[ xX]\]/,
-        (_, prefix) => `${prefix}[${checked ? "x" : " "}]`
-      );
-      // Unticking drops an annotation; a new annotation replaces the old one.
-      if (!checked || suffix !== null) line = line.replace(CHECKBOX_ANNOTATION, "");
-      if (suffix !== null) line = `${line.replace(/\s+$/, "")}${suffix}`;
-      lines[i] = line;
-      toggled.push(line.trim());
-    }
-  }
-  return { body: lines.join(eol), toggled };
+  return toggleChecklistItems(body, toggles);
 }
 
 function patchTerritoryScalars(
@@ -2406,6 +2393,11 @@ export function patchNodeTerritory(
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
   let toggled: string[] | undefined;
+  if (input.add_checklist_items?.length) {
+    body = appendChecklistItems(body, input.add_checklist_items).body;
+    patched_fields.push("add_checklist_items");
+    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
   if (input.toggle_checkboxes?.length) {
     const result = toggleCheckboxesInBody(body, input.toggle_checkboxes);
     body = result.body;
@@ -2422,7 +2414,7 @@ export function patchNodeTerritory(
 
   if (patched_fields.length === 0) {
     throw new Error(
-      "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, toggle_checkboxes, change, or change_ref."
+      "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, add_checklist_items, toggle_checkboxes, change, or change_ref."
     );
   }
 
