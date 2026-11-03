@@ -831,11 +831,19 @@ export function testPresenceFailures(node: MindPlanNode, root: string): string[]
 export function untestedWarning(node: MindPlanNode): string | null {
   if (!isPipelineNodeType(node.type) || isInactiveNode(node)) return null;
   const views = node.next || !node.open_revisions?.length ? [node] : revisionViews(node);
-  const untested = views.some((v) => {
+  const untested = views.find((v) => {
     const active = v.next ? v.next.state : v.state;
     return active === "in-review" && (v.tests?.length ?? 0) === 0;
   });
   if (!untested) return null;
+  // A revision's links go to that revision: set_test_files without change writes live.
+  const change = untested.next?.change;
+  if (change && revisionFor(node, change)) {
+    return (
+      `tests: "${node.id}" is in review with no linked tests (revision "${change}"); link the files that verify it with ` +
+      `set_test_files({ node_id: "${node.id}", change: "${change}", add: [...] }).`
+    );
+  }
   return `tests: "${node.id}" is in review with no linked tests; link the files that verify it with set_test_files.`;
 }
 

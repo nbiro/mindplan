@@ -282,7 +282,8 @@ type NeedsChangeWalk = { node_id: string; changes: string[] };
  * (Foundations, Interactions, Interfaces). `scope: "change"` moves each member's revision of that
  * change, one row per node. The other scopes move each node's only open revision; a node with
  * several has no single revision to move, so it is left in place and listed in `needsChangeWalk`
- * (walk each of its changes with `scope: "change"`).
+ * with the revisions that still have a step toward the target (walk each of those changes with
+ * `scope: "change"`); one with no such revision is not listed.
  */
 function selectScopedNodes(
   graph: MindPlanGraph,
@@ -346,23 +347,40 @@ function selectScopedNodes(
     }
     selected = graph.nodes.filter((n) => ids.has(n.id) && isOpenUpdate(n, true));
   }
+  const several = new Set(selected.filter((n) => openChanges(n).length > 1).map((n) => n.id));
+  // Listed with the revisions that still have a step toward the target; none left, not listed.
   const needsChangeWalk = selected
-    .filter((n) => openChanges(n).length > 1)
-    .map((n) => ({ node_id: n.id, changes: openChanges(n) }));
-  const several = new Set(needsChangeWalk.map((n) => n.node_id));
-  const rows = orderForWalk(
-    graph,
-    selected.filter((n) => !several.has(n.id))
-  ).map((node) => {
-    const change = revisionChangeFor(node, args.new_status!);
-    return { node, ...(change ? { change } : {}) };
-  });
+    .filter((n) => several.has(n.id))
+    .map((n) => ({ node_id: n.id, changes: openChanges(n).filter((c) => stepsToTarget(n, args.new_status!, c).length > 0) }))
+    .filter((n) => n.changes.length > 0);
+  const moving = selected
+    .filter((n) => !several.has(n.id))
+    .map((node) => {
+      const change = revisionChangeFor(node, args.new_status!);
+      return { node, ...(change ? { change } : {}) };
+    });
+  // Ordered on each row's revision view: a depends_on a node's open revision adds counts.
+  let view = graph;
+  for (const change of new Set(moving.flatMap((r) => (r.change ? [r.change] : [])))) view = graphUnder(view, change);
+  const byId = new Map(moving.map((r) => [r.node.id, r]));
+  const rows = orderForWalk(view, moving.map((r) => r.node)).map((node) => byId.get(node.id)!);
   return { rows, needsChangeWalk };
+}
+
+/** The reply's note when a non-change scope moves nothing and leaves nodes for change walks. */
+function noNodeMovedNote(needsChangeWalk: NeedsChangeWalk[], target: string): string {
+  const changes = [...new Set(needsChangeWalk.flatMap((n) => n.changes))].sort();
+  return (
+    `No node moved: every node still to move has several open revisions. Walk each change with ` +
+    `update_node_status({ scope: "change", change, new_status: "${target}" }): ` +
+    `${changes.map((c) => `"${c}"`).join(", ")}.`
+  );
 }
 
 /**
  * Tier order (Foundation, Interaction, Interface), then dependency order within a tier, by the
- * depends_on edges of `graph` (a change walk passes the change's view, `graphUnder`).
+ * depends_on edges of `graph` (a change walk passes the change's view, `graphUnder`; the other
+ * scopes the view of each row's own revision).
  */
 function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode[] {
   const inSet = new Set(nodes.map((n) => n.id));
@@ -775,7 +793,6 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   if (normalized.mode === "scope") {
     const graph = loadGraph();
     const { rows: nodes, needsChangeWalk } = selectScopedNodes(graph, args);
-    const leftInPlace = needsChangeWalk.length ? { needs_change_walk: needsChangeWalk } : {};
     const plan: WalkPlan[] = nodes
       .map(({ node: n, change }) => ({
         node_id: n.id,
@@ -783,6 +800,12 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
         steps: stepsToTarget(n, args.new_status!, change),
       }))
       .filter((row) => row.steps.length > 0);
+    const leftInPlace = needsChangeWalk.length
+      ? {
+          needs_change_walk: needsChangeWalk,
+          ...(plan.length === 0 ? { note: noNodeMovedNote(needsChangeWalk, args.new_status!) } : {}),
+        }
+      : {};
     const skipping = nodesSkippingReview(plan, graph);
     // One decision context (config + git probe) serves the validation and every step.
     const decisionCtx = createDecisionContext(projectRoot());

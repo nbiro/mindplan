@@ -729,6 +729,52 @@ async function shippedFoundation(id) {
   );
 }
 
+// --- node_and_dependents orders by each row's revision: a revision-added depends_on counts ---
+{
+  // "f-nd-a" sorts first by id; its revision's new depends_on f-nd-b must put f-nd-b first.
+  await shippedFoundation("f-nd-a");
+  await shippedFoundation("f-nd-b");
+  await call("open_next", { node_id: "f-nd-b", change: "nd-b" });
+  await call("open_next", { node_id: "f-nd-a", change: "nd-a" });
+  await call("link_nodes", { source_id: "f-nd-a", target_id: "f-nd-b", edge_type: "depends_on", change: "nd-a" });
+  await readyByTools("f-nd-a", "nd-a");
+  await readyByTools("f-nd-b", "nd-b");
+  const walked = await raw("update_node_status", { scope: "node_and_dependents", node_id: "f-nd-b", new_status: "ship", skip_review: true, dry_run: true });
+  const order = walked.error ? [] : (JSON.parse(walked.text).plan ?? []).map((l) => l.split(":")[0]);
+  check(
+    "node_and_dependents moves the seed before a node whose open revision adds depends_on it",
+    !walked.error && order.indexOf("f-nd-b") >= 0 && order.indexOf("f-nd-a") > order.indexOf("f-nd-b"),
+    walked.text
+  );
+}
+
+// --- needs_change_walk lists only revisions with a step left, and a walk that moves nothing says so ---
+{
+  await shippedFoundation("f-nm-two");
+  for (const change of ["nm-a", "nm-b"]) {
+    await call("open_next", { node_id: "f-nm-two", change });
+    await readyByTools("f-nm-two", change);
+    await call("update_node_status", { node_id: "f-nm-two", change, new_status: "ready" });
+  }
+  const atTarget = await raw("update_node_status", { scope: "node_and_dependents", node_id: "f-nm-two", new_status: "ready" });
+  const atRes = atTarget.error ? {} : JSON.parse(atTarget.text);
+  check(
+    "a node whose revisions are all at the target is not listed in needs_change_walk",
+    !atTarget.error && !atRes.needs_change_walk && !atRes.note,
+    atTarget.text
+  );
+  const ahead = await raw("update_node_status", { scope: "node_and_dependents", node_id: "f-nm-two", new_status: "in-progress" });
+  const aheadRes = ahead.error ? {} : JSON.parse(ahead.text);
+  check(
+    "a walk that moves nothing but leaves a node for change walks has empty lines and a note naming the changes",
+    !ahead.error && (aheadRes.lines ?? []).length === 0 &&
+      JSON.stringify(aheadRes.needs_change_walk?.[0]?.changes) === JSON.stringify(["nm-a", "nm-b"]) &&
+      typeof aheadRes.note === "string" && aheadRes.note.includes('"nm-a"') && aheadRes.note.includes('"nm-b"') &&
+      aheadRes.note.includes('scope: "change"'),
+    ahead.text
+  );
+}
+
 // --- scopes other than change leave a node with several open revisions in place and list it ---
 {
   await shippedFoundation("f-nw-two");

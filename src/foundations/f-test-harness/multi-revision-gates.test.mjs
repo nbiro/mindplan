@@ -383,5 +383,22 @@ write("src/shared/s.ts", "export const s = 1;\n");
   ok("planned sources are shipped nodes with entries for C and no revision of C");
 }
 
+// --- The untested hint names the revision's change: set_test_files without change writes live ---
+{
+  const n = node("f-untested", "Foundation", {
+    implements: ["src/own1/"],
+    open_revisions: [revision("alpha", { state: "in-review" }), revision("beta")],
+  });
+  const hint = 'set_test_files({ node_id: "f-untested", change: "alpha", add: [...] })';
+  assert.ok(integrity.untestedWarning(n)?.includes(hint), integrity.untestedWarning(n));
+  assert.ok(integrity.untestedWarning(rules.nodeUnder(n, "alpha"))?.includes(hint));
+  const preShip = node("f-untested-new", "Foundation", { state: "in-review", shipped_at: undefined, change: "alpha" });
+  assert.equal(
+    integrity.untestedWarning(preShip),
+    'tests: "f-untested-new" is in review with no linked tests; link the files that verify it with set_test_files.'
+  );
+  ok("an untested revision in review gets a set_test_files hint naming its change");
+}
+
 fs.rmSync(root, { recursive: true, force: true });
 console.log("multi-revision-gates.test.mjs: all ok");
