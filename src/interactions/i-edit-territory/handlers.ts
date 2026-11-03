@@ -18,11 +18,9 @@ import {
 } from "../../foundations/f-domain-model/types.js";
 import {
   ATTACHMENTS_DIR,
-  NEXT_ATTACHMENTS_DIR,
   attachmentsDir,
   entityRelativePath,
   loadGraph,
-  nextAttachmentsDir,
   patchNodeTerritory as patchNodeTerritoryStore,
   writeNextSplitInto,
   readMarkdown,
@@ -35,7 +33,6 @@ import {
   type TerritorySlot,
   loadProjectConfig,
   writeRevisionFields,
-  nextFileExists,
   entityDir,
   projectRoot,
   hasNodeRulesHeading,
@@ -68,7 +65,6 @@ import { orientationGateEnabled, recordOriented } from "../../foundations/f-orie
 import * as fs from "fs";
 import * as path from "path";
 import {
-  assertNoLegacyNext,
   READINESS_NOTE,
   changedFiles,
   gateWrite,
@@ -173,11 +169,10 @@ function clearSplitRecord(node: MindPlanNode): { paths: string[]; churn: number 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   gateWrite(null, [args.node_id], "patch_node_territory");
   const subject = findNode(loadGraph(), args.node_id);
-  assertNoLegacyNext(subject, "patch_node_territory");
   const revision = targetRevision(subject, args.change, args.slot);
   if (revision !== null) return patchRevisionTerritory(args, revision);
   if (args.slot === "next" && isPipelineNodeType(subject.type) && subject.shipped_at) {
-    // The legacy next file Blocked above, so slot "next" can only mean an open revision.
+    // Slot "next" can only mean an open revision.
     throw blocked(
       `"${subject.id}" has no open revision; slot "next" writes to one. ` +
         `Open it with open_next({ node_id: "${subject.id}", change }), or patch the live slot (slot "current").`
@@ -219,7 +214,7 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
   if (aliases !== undefined) {
     // Aliases are search words, not contract: written to live and an open next alike, on any node,
     // shipped ones included, without open_next or a readiness reset.
-    const written = writeLiveAliases(findNode(loadGraph(), args.node_id), aliases);
+    const written = writeAliasesFrontmatter(findNode(loadGraph(), args.node_id), aliases);
     fields.push("aliases");
     paths.push(...written.paths);
     extra.aliases = written.aliases;
@@ -267,7 +262,7 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
 }
 
 /**
- * The open revision a write on `node` targets, or null for the live / legacy next slots: null when
+ * The open revision a write on `node` targets, or null for the live slot: null when
  * the node has no open revision or `slot` is "current". `change` names the revision (Blocked when
  * the node has none of it: a revision's change is its folder name, so it is never patched); omitted,
  * the node's only open revision (several open: Blocked, naming them).
@@ -282,22 +277,6 @@ function targetRevision(node: MindPlanNode, change: string | undefined, slot: Te
     );
   }
   return resolveRevisionChange(node, change);
-}
-
-/**
- * Writes aliases to live only when the node's open work is held in revision folders (aliases are
- * slot-independent search words); a legacy next file still takes them alongside live.
- */
-function writeLiveAliases(node: MindPlanNode, aliases: string[]): ReturnType<typeof writeAliasesFrontmatter> {
-  if (node.open_revisions?.length && !nextFileExists(node)) {
-    const live: MindPlanNode = { ...node };
-    delete live.next;
-    const written = writeAliasesFrontmatter(live, aliases);
-    if (live.aliases) node.aliases = live.aliases;
-    else delete node.aliases;
-    return written;
-  }
-  return writeAliasesFrontmatter(node, aliases);
 }
 
 function assertNoOwnedHeading(text: string, what: string): void {
@@ -410,7 +389,7 @@ function patchRevisionTerritory(args: PatchTerritoryArgs, change: string): Recor
   }
   const extra: Record<string, unknown> = {};
   if (aliases !== undefined) {
-    const written = writeLiveAliases(node, aliases);
+    const written = writeAliasesFrontmatter(node, aliases);
     patched.push("aliases");
     paths.push(...written.paths);
     extra.aliases = written.aliases;
@@ -449,7 +428,7 @@ function repoRelative(abs: string): string {
 
 /**
  * Where an attachment call writes: the open revision's `attachments/` when it targets one (see
- * `targetRevision`), else the live `attachments/` or the legacy `next-attachments/`.
+ * `targetRevision`), else the live `attachments/`.
  */
 function attachmentTarget(
   node: MindPlanNode,
@@ -464,17 +443,14 @@ function attachmentTarget(
   if (args.change !== undefined) {
     throw blocked(`"${node.id}" has no open revision of change "${args.change}"; it has no open revision.`);
   }
-  const slot: TerritorySlot = args.slot ?? (node.next && isPipelineNodeType(node.type) ? "next" : "current");
-  if (slot === "next" && !node.next) {
+  if (args.slot === "next") {
     throw blocked(
       verb === "put"
         ? `cannot put attachment on next for "${node.id}" — no open revision. Call open_next first.`
         : `cannot remove attachment on next for "${node.id}" — no open revision.`
     );
   }
-  return slot === "next"
-    ? { slot, dir: nextAttachmentsDir(node), relDir: `${entityRelativePath(node)}/${NEXT_ATTACHMENTS_DIR}` }
-    : { slot, dir: attachmentsDir(node), relDir: `${entityRelativePath(node)}/${ATTACHMENTS_DIR}` };
+  return { slot: "current", dir: attachmentsDir(node), relDir: `${entityRelativePath(node)}/${ATTACHMENTS_DIR}` };
 }
 
 function writeNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
@@ -587,7 +563,6 @@ export function patchNodeRules(args: {
   }
   const graph = loadGraph();
   const node = findNode(graph, node_id);
-  assertNoLegacyNext(node, "patch_node_rules");
   const written = writeNodeRules(node, rules);
   // The author holds the rules it just wrote; its orientation stays current. Nodes that inherit
   // them now need a fresh orientation before their next write.
@@ -615,7 +590,6 @@ export function putAttachment(args: {
   gateWrite(graph, [node_id], "put_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
-  assertNoLegacyNext(node, "put_attachment");
   const target = attachmentTarget(node, args, "put");
   if (!isBase64Payload(args.content_base64)) {
     throw blocked("content_base64 is not valid base64.");
@@ -653,7 +627,6 @@ export function removeAttachment(args: {
   gateWrite(graph, [node_id], "remove_attachment");
   const filename = args.filename.trim();
   assertAttachmentBasename(filename, args.filename);
-  assertNoLegacyNext(node, "remove_attachment");
   const target = attachmentTarget(node, args, "remove");
   const dir = target.dir;
   const abs = path.join(dir, filename);

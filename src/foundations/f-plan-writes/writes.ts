@@ -12,9 +12,7 @@ import {
 } from "../../foundations/f-domain-model/types.js";
 import { openChanges } from "../../foundations/f-revision-model/index.js";
 import {
-  isLegacyMirror,
   loadGraph,
-  nextFileExists,
   markdownRelativePath,
   nodeToRecord,
   projectRoot,
@@ -171,19 +169,6 @@ export function mutationTail(
   const open = revisionSummaries(node);
   if (open.length > 0) tail.revisions = open;
   return verbose ? { ...tail, ...buildMutationAnchor(graph, nodeId) } : tail;
-}
-
-/**
- * Blocked when the node still has a `<id>.next.mdx` evolution from before revisions were stored
- * per change: upgrade_project moves it into `revisions/<change>/`.
- */
-export function assertNoLegacyNext(node: MindPlanNode, tool: string): void {
-  if (nextFileExists(node) && !isLegacyMirror(node)) {
-    throw new Error(
-      `Blocked: "${node.id}" still has a ${node.id}.next.mdx evolution from an older release; ${tool} works on revisions/<change>/. ` +
-        `Call upgrade_project to move it, then retry.`
-    );
-  }
 }
 
 /**

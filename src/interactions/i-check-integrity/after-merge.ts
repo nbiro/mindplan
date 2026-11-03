@@ -10,8 +10,8 @@
 import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
-import { NODE_TYPES, type MindPlanGraph } from "../../foundations/f-domain-model/types.js";
-import { MINDPLAN_DIR, typeDir } from "../../foundations/f-territory-store/store.js";
+import { type MindPlanGraph } from "../../foundations/f-domain-model/types.js";
+import { MINDPLAN_DIR, listNodeFolders } from "../../foundations/f-territory-store/store.js";
 import { REVISIONS_DIR, parseRevisionFile, revisionBaseStale } from "../../foundations/f-territory-store/revisions.js";
 import { DECISIONS_DIR, parseDecisionFile } from "../../foundations/f-territory-store/decisions-store.js";
 import { VERSION_RELATIVE_PATH } from "../../foundations/f-territory-store/version.js";
@@ -80,28 +80,9 @@ function conflictMarkerFailures(root: string): string[] {
   return out;
 }
 
-/** Node folders on disk: `{ id, rel, abs }` per type folder entry. */
-function nodeFolders(root: string): { id: string; rel: string; abs: string }[] {
-  const out: { id: string; rel: string; abs: string }[] = [];
-  for (const type of NODE_TYPES) {
-    const dir = typeDir(type);
-    const abs = path.join(root, MINDPLAN_DIR, dir);
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(abs, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      if (e.isDirectory()) out.push({ id: e.name, rel: `${MINDPLAN_DIR}/${dir}/${e.name}`, abs: path.join(abs, e.name) });
-    }
-  }
-  return out;
-}
-
 function duplicateIdFailures(root: string): string[] {
   const byId = new Map<string, string[]>();
-  for (const f of nodeFolders(root)) byId.set(f.id, [...(byId.get(f.id) ?? []), f.rel]);
+  for (const f of listNodeFolders(root)) byId.set(f.id, [...(byId.get(f.id) ?? []), f.rel]);
   const out: string[] = [];
   for (const [id, rels] of [...byId].sort(([a], [b]) => a.localeCompare(b))) {
     if (rels.length < 2) continue;
@@ -137,7 +118,7 @@ function revisionFolders(nodeAbs: string): { change: string; abs: string }[] {
 /** Per node folder: one decision id recorded in two files (live and revision decision folders). */
 function duplicateDecisionFailures(root: string): string[] {
   const out: string[] = [];
-  for (const folder of nodeFolders(root)) {
+  for (const folder of listNodeFolders(root)) {
     const dirs = [path.join(folder.abs, DECISIONS_DIR), ...revisionFolders(folder.abs).map((r) => path.join(r.abs, DECISIONS_DIR))];
     const byId = new Map<string, string[]>();
     for (const file of dirs.flatMap(mdFiles)) {
@@ -163,7 +144,7 @@ function duplicateDecisionFailures(root: string): string[] {
 /** Revision files that no longer parse (the loader would throw on them). */
 function unreadableRevisionFailures(root: string): string[] {
   const out: string[] = [];
-  for (const folder of nodeFolders(root)) {
+  for (const folder of listNodeFolders(root)) {
     for (const rev of revisionFolders(folder.abs)) {
       const file = path.join(rev.abs, `${folder.id}.mdx`);
       if (!fs.existsSync(file)) continue;

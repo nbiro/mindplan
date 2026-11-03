@@ -8,7 +8,6 @@
 
 import type { MindPlanGraph } from "../f-domain-model/types.js";
 import { isInactiveNode, isPipelineNodeType } from "../f-domain-model/types.js";
-import { revisionFor } from "../f-revision-model/index.js";
 import { plannedEdges } from "./planned.js";
 import { blocked } from "./rules.js";
 
@@ -40,7 +39,7 @@ function addTag(m: EdgeTags["tags"], source: string, target: string, change: str
 /**
  * Every depends_on edge of live and every open change, tagged by the change that adds it: a
  * shipped node's live edges (null), each open revision's add delta (its change; its remove delta
- * is recorded), a legacy next's additions (its change), a pre-ship node's edges (its change), and
+ * is recorded), a pre-ship node's edges (its change), and
  * every pending planned depends_on (its change).
  */
 function taggedEdges(graph: MindPlanGraph, extra?: ProposedDependsOn): EdgeTags {
@@ -62,11 +61,6 @@ function taggedEdges(graph: MindPlanGraph, extra?: ProposedDependsOn): EdgeTags 
         if (!s) removed.set(k, (s = new Set()));
         s.add(r.change);
       }
-    }
-    const legacy = n.next && !(n.next.change && revisionFor(n, n.next.change)) ? n.next : undefined;
-    if (legacy) {
-      const live = new Set(n.depends_on ?? []);
-      for (const t of legacy.depends_on ?? []) if (!live.has(t)) addTag(tags, n.id, t, legacy.change || null);
     }
   }
   for (const row of plannedEdges(graph)) {

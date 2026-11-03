@@ -6,7 +6,7 @@
  * `revisions/<change>/<id>.mdx`; ship and discard_next delete the revision folder and list every
  * deleted path. A hand-written leftover `state: mirror` file loads as no revision, warns in
  * run_check, is removed by open_next, and is deleted by force_unship; a `<id>.next.mdx` evolution
- * from an older release blocks the lifecycle tools until upgrade_project. Every write here is also
+ * from an older release is never read (the version gate names upgrade_project). Every write here is also
  * diffed against the sandbox on disk: each mindplan/ file it created, changed, or deleted (the
  * derived map.md excepted) must be in its changed_files, and map.md never is.
  * Run via npm test.
@@ -454,14 +454,13 @@ check(
   check("discarding that revision leaves no revision folder", !exists("mindplan/foundations/f-core/revisions"));
 }
 
-// --- a <id>.next.mdx evolution from an older release blocks the lifecycle tools until upgrade_project ---
+// --- a <id>.next.mdx evolution from an older release is never read (the version gate, off here,
+// sends the graph to upgrade_project: version.test.mjs) ---
 {
   const legacy = nextOf("foundations", "f-core");
   write(legacy, read(liveOf("foundations", "f-core")).replace(/^state:.*$/m, "state: draft"));
-  const open = await blocked("open_next", { node_id: "f-core", change: "late" });
-  check("open_next beside a legacy next file is Blocked naming upgrade_project", !!open && open.includes("upgrade_project"), String(open));
-  const move = await blocked("update_node_status", { node_id: "f-core", new_status: "ready" });
-  check("update_node_status beside a legacy next file is Blocked naming upgrade_project", !!move && move.includes("upgrade_project"), String(move));
+  const ctx = JSON.parse((await client.callTool({ name: "get_node_context", arguments: { node_id: "f-core" } })).content[0].text);
+  check("a legacy next file loads as no revision", ctx.next === null && !ctx.revisions, JSON.stringify(ctx.next));
   fs.rmSync(abs(legacy));
 }
 

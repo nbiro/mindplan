@@ -82,6 +82,28 @@ export function resolveRevisionChange(node: MindPlanNode, change?: string): stri
 }
 
 /**
+ * Which open revision a call on `node` means, and the node as that call sees it: `change` when the
+ * node has a revision of it, else (omitted) the node's only open revision. `view` is
+ * `withRevision(node, change)`, or the node itself when `change` is null (live). With `strict`, a
+ * `change` the node has no revision of, or several open and none named, is Blocked as
+ * `resolveRevisionChange` Blocks; without it both read live (`change: null`).
+ */
+export function pickRevision(
+  node: MindPlanNode,
+  change: string | undefined,
+  opts: { strict: boolean }
+): { change: string | null; view: MindPlanNode } {
+  let picked: string | null;
+  if (opts.strict) picked = resolveRevisionChange(node, change);
+  else if (change !== undefined) picked = revisionFor(node, change) ? change : null;
+  else {
+    const open = openChanges(node);
+    picked = open.length === 1 ? open[0] : null;
+  }
+  return { change: picked, view: picked === null ? node : withRevision(node, picked) };
+}
+
+/**
  * A new node object for live plus the revision of `change`: `next` is that revision materialised
  * as a `NextSlot` (edges and claims = live with the delta applied, decisions = live then the
  * revision's), `tests` is live with the test delta applied, and every other field stays live.

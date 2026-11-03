@@ -242,7 +242,7 @@ export function sectionHeadings(body: string): string[] {
 }
 
 /**
- * Reads a node's body for its headings: the legacy next slot's while one is open, else live.
+ * Reads a node's body for its headings (the live slot).
  * `stamp` (the file's modification time) makes an edit made outside MCP that leaves the
  * frontmatter alone re-read the headings too. `revision`, when given, reads the body of the
  * node's open revision of a change, so each revision's headings are indexed as well.
@@ -254,14 +254,9 @@ export type BodyReader = ((node: MindPlanNode, slot: "current" | "next") => stri
 
 const headingMemo = new Map<string, string[]>();
 
-/** Whether the node's `next` is a legacy `<id>.next.mdx` (not a view of a stored revision). */
-function legacyNext(node: MindPlanNode): boolean {
-  return !!node.next && !(node.open_revisions?.length);
-}
-
 function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined): string[] {
   if (!readBody) return [];
-  const slot = legacyNext(node) ? "next" : "current";
+  const slot = "current";
   let stamp = "";
   try {
     stamp = readBody.stamp?.(node, slot) ?? "";
@@ -270,8 +265,7 @@ function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined): strin
   }
   const revisions = readBody.revision ? (node.open_revisions ?? []) : [];
   const revisionKey = revisions.map((r) => `${r.change}@${r.updated_at}`).join(",");
-  const updated = slot === "next" ? node.next!.updated_at : node.updated_at;
-  const key = `${node.id}\u0000${slot}\u0000${updated}\u0000${stamp}\u0000${revisionKey}`;
+  const key = `${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
   const hit = headingMemo.get(key);
   if (hit) return hit;
   const headings: string[] = [];
@@ -292,23 +286,20 @@ function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined): strin
 const SEARCH_EDGE_FIELDS = ["belongs_to", "depends_on", "exposes", "leads_to", "mounts", "affects"] as const;
 type SearchEdgeField = (typeof SEARCH_EDGE_FIELDS)[number];
 
-/** Live and proposed targets of one edge field: a legacy next's, and every open revision's adds. */
+/** Live and proposed targets of one edge field: live, and every open revision's adds. */
 function edgeTargets(n: MindPlanNode, field: SearchEdgeField): string[] {
   const live = n[field] ?? [];
   if (field === "affects") return [...new Set(live)];
-  const next = n.next?.[field] ?? [];
   const added = (n.open_revisions ?? []).flatMap((r) => r.edges[field]?.add ?? []);
-  return [...new Set([...live, ...next, ...added])];
+  return [...new Set([...live, ...added])];
 }
 
 /**
- * The searchable wording of a node: a legacy next's title and description while one is open, else
- * live; each open revision whose title or description differs adds it, tagged with its change, as
+ * The searchable wording of a node: live title and description; each open revision whose title or description differs adds it, tagged with its change, as
  * an alias (title) and a description clause, so a query finds a revision by its new wording.
  */
 function searchWording(n: MindPlanNode): { title: string; description: string; aliases: string[] } {
   const aliases = [...(n.aliases ?? [])];
-  if (legacyNext(n)) return { title: n.next!.title, description: n.next!.description, aliases };
   let description = n.description;
   for (const r of n.open_revisions ?? []) {
     if (r.title !== n.title) aliases.push(`${r.title} (revision ${r.change})`);
@@ -372,7 +363,6 @@ export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchD
       paths: [
         ...new Set([
           ...(n.implements ?? []),
-          ...(n.next?.implements ?? []),
           ...(n.open_revisions ?? []).flatMap((r) => r.implements.add),
         ]),
       ],

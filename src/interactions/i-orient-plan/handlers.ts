@@ -13,7 +13,6 @@ import {
 } from "../../foundations/f-domain-model/types.js";
 import {
   ATTACHMENTS_DIR,
-  NEXT_ATTACHMENTS_DIR,
   entityDir,
   entityRelativePath,
   markdownRelativePath,
@@ -30,7 +29,7 @@ import {
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
 import { REVISIONS_DIR, readRevisions, revisionRelativeFilePath } from "../../foundations/f-territory-store/revisions.js";
-import { openChanges, resolveRevisionChange, withRevision } from "../../foundations/f-revision-model/index.js";
+import { openChanges, pickRevision, withRevision } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOut } from "../../foundations/f-fan-out/index.js";
 import {
@@ -177,9 +176,9 @@ export function buildNodeContextPayload(
 ): Record<string, unknown> {
   const open = openChanges(node);
   // Several revisions and slot "next" without change: Blocked, naming them.
-  if (opts.change === undefined && opts.slot === "next" && open.length > 1) resolveRevisionChange(node);
-  const change = opts.change ?? (open.length === 1 ? open[0] : undefined);
-  const view = change !== undefined ? withRevision(node, change) : node;
+  const pickedRevision = pickRevision(node, opts.change, { strict: opts.slot === "next" });
+  const change = pickedRevision.change ?? undefined;
+  const view = pickedRevision.view;
   if (opts.slot === "next" && !view.next) {
     throw blocked(`"${node.id}" has no open revision; read slot "current", or open_next first.`);
   }
@@ -220,14 +219,11 @@ export function buildNodeContextPayload(
   if (opts.inherited) {
     payload.inherited_decisions = splitNodeDecisions(graph, node, { ...opts, selfOnly: true }).inherited_decisions;
   }
-  // A revision in the revisions/ store has its own file; a legacy next file is <id>.next.mdx.
   const stored = change !== undefined ? revisionFile(node, change) : undefined;
-  if (view.next) {
+  if (view.next && stored) {
     const next = view.next;
-    payload.next_path = stored ? revisionRelativeFilePath(node, change!) : markdownRelativePath(node, "next");
-    payload.next_attachments_path = stored
-      ? `${rel}/${REVISIONS_DIR}/${change}/${ATTACHMENTS_DIR}`
-      : `${rel}/${NEXT_ATTACHMENTS_DIR}`;
+    payload.next_path = revisionRelativeFilePath(node, change!);
+    payload.next_attachments_path = `${rel}/${REVISIONS_DIR}/${change}/${ATTACHMENTS_DIR}`;
     const record = {
       state: next.state,
       title: next.title,
@@ -242,13 +238,12 @@ export function buildNodeContextPayload(
       ...(next.role ? { role: next.role } : {}),
       ...(next.change ? { change: next.change } : {}),
       ...(next.change_ref ? { change_ref: next.change_ref } : {}),
-      ...(stored?.revision.conflicts.length ? { conflicts: stored.revision.conflicts } : {}),
+      ...(stored.revision.conflicts.length ? { conflicts: stored.revision.conflicts } : {}),
     };
     if (withNextBody) {
-      const body = stored ? stored.body : splitContext(readMarkdown(node, "next"))?.body ?? "";
       payload.next = {
         record,
-        body: cut(withoutOwnedSections(body), "next"),
+        body: cut(withoutOwnedSections(stored.body), "next"),
         ...(index ? { decisions: slotDecisions(graph, view, "next", opts, index) } : {}),
       };
     } else {
@@ -263,7 +258,7 @@ export function buildNodeContextPayload(
 /** What `next` says on a node with several open revisions read without `change`. */
 export const PASS_CHANGE = "pass change to read a revision";
 
-/** The revision of `change` as stored under `revisions/`, or undefined (a legacy next file). */
+/** The revision of `change` as stored under `revisions/`, or undefined when the node has none of it. */
 function revisionFile(node: MindPlanNode, change: string): ReturnType<typeof readRevisions>[number] | undefined {
   if (!node.open_revisions?.some((r) => r.change === change)) return undefined;
   return readRevisions(entityDir(node), node.id).find((r) => r.revision.change === change);
@@ -552,10 +547,8 @@ export async function orientForWork(args: {
 
   const node = findNode(graph, focus);
   // A named change picks that revision; Blocked when the node has none of it.
-  const change = args.change !== undefined ? namedRevisionChange(node, args.change) : undefined;
-  const open = openChanges(node);
-  const viewChange = change ?? (open.length === 1 ? open[0] : undefined);
-  const view = viewChange !== undefined ? withRevision(node, viewChange) : node;
+  const change = args.change;
+  const { view } = pickRevision(node, change, { strict: change !== undefined });
   // The body comes from the active slot unless the caller names one; depth "rules" returns no body,
   // so it reads the live slot only (its next record comes back without the next body).
   // The decisions block is the reply's one copy of the focus's decisions.

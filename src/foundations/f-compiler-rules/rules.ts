@@ -75,24 +75,19 @@ function runMinimumTerritoryShape(
   }
 }
 
-/** True when the node's `next` is the view of one of its open revisions (not a legacy next file). */
+/** True when the node's `next` is the view of one of its open revisions. */
 function nextIsRevisionView(n: MindPlanNode): boolean {
   return Boolean(n.next?.change && revisionFor(n, n.next.change));
 }
 
-/** True when the node has a legacy `<id>.next.mdx` evolution open (its `next` is not a revision view). */
-function hasLegacyNext(n: MindPlanNode): boolean {
-  return Boolean(n.next) && !nextIsRevisionView(n);
-}
-
-/** True when a shipped node has any open evolution: a legacy next file or an open revision. */
+/** True when a shipped node has any open evolution: a `next` view or an open revision. */
 export function hasOpenEvolution(n: MindPlanNode): boolean {
   return Boolean(n.next) || (n.open_revisions?.length ?? 0) > 0;
 }
 
 /**
- * The graph with every `next` view the loader filled from a single open revision removed (a legacy
- * next file stays): live plus legacy evolutions only, so no change's revision is visible.
+ * The graph with every `next` view the loader filled from a single open revision removed: live
+ * only, so no change's revision is visible.
  */
 export function liveGraph(graph: MindPlanGraph): MindPlanGraph {
   if (!graph.nodes.some(nextIsRevisionView)) return graph;
@@ -108,8 +103,7 @@ export function liveGraph(graph: MindPlanGraph): MindPlanGraph {
 }
 
 /**
- * The graph a revision of `change` is judged against: live (plus legacy next files) with only that
- * change's revisions applied (`graphUnder` over `liveGraph`). A next view the loader filled from a
+ * The graph a revision of `change` is judged against: live with only that change's revisions applied (`graphUnder` over `liveGraph`). A next view the loader filled from a
  * revision of another change is invisible here.
  */
 export function revisionGraph(graph: MindPlanGraph, change: string): MindPlanGraph {
@@ -118,7 +112,7 @@ export function revisionGraph(graph: MindPlanGraph, change: string): MindPlanGra
 
 /**
  * The node as change `change` sees it: live plus its revision of `change` (`withRevision`), or the
- * node as is when it has none (a legacy next of that change stays).
+ * node as is when it has none.
  */
 export function nodeUnder(node: MindPlanNode, change: string): MindPlanNode {
   return revisionFor(node, change) ? withRevision(node, change) : node;
@@ -127,16 +121,13 @@ export function nodeUnder(node: MindPlanNode, change: string): MindPlanNode {
 /** True when `n` is a member of change `change` (see `changeMembers`). */
 export function isRevisionOf(n: MindPlanNode, change: string): boolean {
   if (!isPipelineNodeType(n.type)) return false;
-  if (n.shipped_at) {
-    if (revisionFor(n, change)) return true;
-    return hasLegacyNext(n) && n.next!.change === change;
-  }
+  if (n.shipped_at) return Boolean(revisionFor(n, change));
   return n.change === change && n.state !== "cancelled" && n.state !== "deprecated";
 }
 
 /**
  * Open revisions in a change: Foundations, Interactions, and Interfaces that belong to `change` —
- * a shipped node with an open revision of it (or a legacy next file of it), or a pre-ship node
+ * a shipped node with an open revision of it, or a pre-ship node
  * whose live `change` it is and that is not retired. Draft and ready revisions belong too. A
  * shipped member is returned as `nodeUnder(node, change)`: a view whose `next` is that change's
  * revision, so slot-reading code judges this change only. Views are copies: write through the
@@ -146,14 +137,10 @@ export function changeMembers(graph: MindPlanGraph, change: string): MindPlanNod
   return graph.nodes.filter((n) => isRevisionOf(n, change)).map((n) => nodeUnder(n, change));
 }
 
-/** Every change a node is an open revision of: its open revisions, a legacy next's, or its pre-ship change. */
+/** Every change a node is an open revision of: its open revisions, or its pre-ship change. */
 export function nodeChanges(n: MindPlanNode): string[] {
   if (!isPipelineNodeType(n.type)) return [];
-  if (n.shipped_at) {
-    const out = new Set(openChanges(n));
-    if (hasLegacyNext(n) && n.next!.change) out.add(n.next!.change);
-    return [...out].sort();
-  }
+  if (n.shipped_at) return [...new Set(openChanges(n))].sort();
   if (!n.change || n.state === "cancelled" || n.state === "deprecated") return [];
   return [n.change];
 }
@@ -170,14 +157,9 @@ export function changesWithRevisions(graph: MindPlanGraph): Set<string> {
   return out;
 }
 
-/**
- * Every open evolution of a node as a view each: one `nodeUnder` per open revision, plus the node
- * itself for a legacy next file. Empty when none is open.
- */
+/** Every open revision of a node as a view each (`nodeUnder`). Empty when none is open. */
 export function revisionViews(n: MindPlanNode): MindPlanNode[] {
-  const out = openChanges(n).map((c) => nodeUnder(n, c));
-  if (hasLegacyNext(n)) out.push(n);
-  return out;
+  return openChanges(n).map((c) => nodeUnder(n, c));
 }
 
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {
@@ -666,7 +648,7 @@ export function assertEffectiveDependsOnAcyclic(graph: MindPlanGraph): void {
 
 /**
  * Validates open_next preconditions (Rule 9). With `change`, a shipped node may hold several open
- * revisions: only a second revision of the same change (or of a legacy next file's change) is
+ * revisions: only a second revision of the same change is
  * Blocked. Without `change` (legacy callers), any open evolution Blocks.
  */
 export function validateOpenNext(node: MindPlanNode, change?: string): void {
@@ -680,9 +662,9 @@ export function validateOpenNext(node: MindPlanNode, change?: string): void {
   }
   if (change !== undefined) {
     const open = revisionFor(node, change);
-    if (open || (hasLegacyNext(node) && node.next!.change === change)) {
+    if (open) {
       throw blocked(
-        `"${node.id}" already has an open revision of change "${change}" in state "${open?.state ?? node.next!.state}". ` +
+        `"${node.id}" already has an open revision of change "${change}" in state "${open.state}". ` +
           `Edit it (pass change: "${change}"), ship it, or discard_next({ node_id: "${node.id}", change: "${change}" }).`
       );
     }
@@ -1320,7 +1302,6 @@ export function assertNoRevisionConflicts(node: MindPlanNode, change: string | u
  * Resolves and validates a status mutation of one open revision: the node's revision of `change`,
  * judged against `revisionGraph(graph, change)` (live plus that change only). Blocked when the node
  * has no revision of `change`, and at in-review / ship while the revision has rebase conflicts.
- * A legacy next file of `change` is judged as `resolveStatusChange` does.
  */
 export function resolveRevisionStatusChange(
   graph: MindPlanGraph,
@@ -1328,12 +1309,7 @@ export function resolveRevisionStatusChange(
   change: string,
   newStatus: string
 ): StatusChangeResult {
-  if (!revisionFor(node, change)) {
-    if (hasLegacyNext(node) && node.next!.change === change) {
-      return resolveStatusChange(liveGraph(graph), node, newStatus);
-    }
-    resolveRevisionChange(node, change);
-  }
+  if (!revisionFor(node, change)) resolveRevisionChange(node, change);
   const under = revisionGraph(graph, change);
   return resolveNextStatusChange(under, findNode(under, node.id), newStatus);
 }

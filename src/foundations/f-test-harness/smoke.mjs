@@ -2589,15 +2589,16 @@ role: infra
   const nextClashGraphCall = await call("get_mindplan_graph", {});
   const nextClashGraph = nextClashGraphCall.error ? null : JSON.parse(nextClashGraphCall.text);
   const nextClashNode = nextClashGraph?.nodes.find((n) => n.id === "f-nextclash");
+  // The store reads no evolution file: upgrade_project renames and moves them (version gate).
   if (
     nextClashGraphCall.error ||
-    nextClashNode?.next?.description !== "Kept next file" ||
-    fs.existsSync(path.join(nextClashDir, "next.mdx")) ||
-    !nextClashGraph.removed_legacy_files?.includes("mindplan/foundations/f-nextclash/next.mdx")
+    nextClashNode?.next !== undefined ||
+    !fs.existsSync(path.join(nextClashDir, "next.mdx")) ||
+    !fs.existsSync(path.join(nextClashDir, "f-nextclash.next.mdx"))
   ) {
     failures++;
-    console.log(`FAIL both evolution names should keep the id-named file: ${nextClashGraphCall.text}`);
-  } else console.log("ok   both evolution names keep the id-named file and delete next.mdx");
+    console.log(`FAIL the loader should read neither evolution name: ${nextClashGraphCall.text}`);
+  } else console.log("ok   the loader reads neither evolution name and deletes none");
   fs.rmSync(nextClashDir, { recursive: true, force: true });
 }
 

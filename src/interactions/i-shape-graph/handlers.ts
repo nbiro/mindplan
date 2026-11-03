@@ -59,7 +59,6 @@ import { validatePlannedLink } from "../../foundations/f-compiler-rules/planned.
 import { assertNoChangeCycle } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
-  assertNoLegacyNext,
   READINESS_NOTE,
   changedFiles,
   gateWrite,
@@ -168,7 +167,6 @@ export function linkNodes(args: {
   const graph = loadGraph();
   const source = findNode(graph, source_id);
   const target = findNode(graph, target_id);
-  assertNoLegacyNext(source, "link_nodes");
   const revision = linkRevision(source, edge_type, args.change);
   if (revision !== null) return linkOnRevision(graph, source, target, edge_type as PlannedEdgeType, revision, args.verbose);
   if (args.change !== undefined && isPlannedSource(source, args.change)) {
@@ -397,7 +395,6 @@ export function unlinkNodes(args: {
   const { source_id, target_id } = args;
   const graph = loadGraph();
   const source = findNode(graph, source_id);
-  assertNoLegacyNext(source, "unlink_nodes");
   // A planned edge may point at a node deleted since: removing it must not need the target.
   if (args.change !== undefined) {
     if (revisionFor(source, args.change)) return unlinkOnRevision(graph, source, target_id, args.change, args.verbose);

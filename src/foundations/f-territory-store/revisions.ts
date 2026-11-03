@@ -23,7 +23,6 @@ import {
   PLANNED_EDGE_TYPES,
   isFoundationRole,
   isInactiveNode,
-  isMirrorState,
   isNextPipelineState,
   isPipelineNodeType,
   type EdgeDelta,
@@ -42,6 +41,7 @@ import {
   applyDelta,
   emptyDelta,
   PREAMBLE_SECTION,
+  pickRevision,
   rebase,
   resolveRevisionChange,
   revisionFor,
@@ -71,7 +71,6 @@ import {
   oneBlankLineBelowFrontmatter,
   projectRoot,
   readMarkdown,
-  readNextFileState,
   splitContext,
   splitNodeDecisions,
   splitNodeRules,
@@ -348,14 +347,12 @@ export function readRevisions(nodeFolder: string, nodeId: string): RevisionFile[
 }
 
 /**
- * Sets the `next` view the gates still read: a legacy `<id>.next.mdx` evolution keeps its own;
- * otherwise exactly one open revision fills it (`withRevision`), and none or several leave it unset.
+ * Sets the `next` view the gates still read: exactly one open revision fills it (`withRevision`),
+ * and none or several leave it unset.
  */
 export function syncNextView(node: MindPlanNode): void {
-  const legacyState = readNextFileState(node);
-  if (legacyState && !isMirrorState(legacyState)) return;
-  const open = node.open_revisions ?? [];
-  if (open.length === 1) node.next = withRevision(node, open[0].change).next;
+  const { change, view } = pickRevision(node, undefined, { strict: false });
+  if (change !== null) node.next = view.next;
   else delete node.next;
 }
 

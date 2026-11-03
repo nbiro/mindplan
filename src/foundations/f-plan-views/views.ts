@@ -30,10 +30,9 @@ export function isRetired(node: MindPlanNode): boolean {
 
 /**
  * The change a read names on `node`: one of its stored revisions (`resolveRevisionChange`, Blocked
- * when it has none of that change), or the change of a legacy next file not yet migrated.
+ * when it has none of that change).
  */
 export function namedRevisionChange(node: MindPlanNode, change: string): string {
-  if (!node.open_revisions?.length && node.next?.change === change) return change;
   return resolveRevisionChange(node, change)!;
 }
 

@@ -452,6 +452,46 @@ function runCheck(root) {
     client = undefined;
     fs.rmSync(mp("journeys"), { recursive: true, force: true });
 
+    // A branch from before level 4 merges a legacy <id>.next.mdx into a current graph: the store
+    // never reads it, so the gate sends every tool to upgrade_project, which moves it to revisions/.
+    const payLive = mp("interactions", "i-pay", "i-pay.mdx");
+    const payNext = mp("interactions", "i-pay", "i-pay.next.mdx");
+    const liveText = fs.readFileSync(payLive, "utf-8");
+    fs.writeFileSync(payNext, liveText.replace(/^state:.*$/m, "state: draft").replace(/^(type:.*)$/m, "$1\nchange: late-next"));
+    ({ client, call } = await session(root));
+    const nextGate = await call("list_areas");
+    const nextCheck = runCheck(root);
+    check(
+      "a current stamp beside a legacy next file is Blocked naming the file and upgrade_project, in tools and the check",
+      nextGate.error &&
+        nextGate.text.includes("Blocked: Version") &&
+        nextGate.text.includes("mindplan/interactions/i-pay/i-pay.next.mdx") &&
+        nextGate.text.includes("upgrade_project") &&
+        nextCheck.status === 1,
+      nextGate.text + nextCheck.stderr
+    );
+    const nextUp = await call("upgrade_project");
+    check(
+      "upgrade moves the legacy next file into revisions/ and clears the status",
+      !nextUp.error &&
+        JSON.stringify(nextUp.json.migrations.revisionsMoved) === JSON.stringify([{ node_id: "i-pay", change: "late-next" }]) &&
+        !fs.existsSync(payNext) &&
+        fs.existsSync(mp("interactions", "i-pay", "revisions", "late-next", "i-pay.mdx")) &&
+        !(await call("list_areas")).error,
+      nextUp.text.slice(0, 300)
+    );
+    await client.close();
+    client = undefined;
+    fs.rmSync(mp("interactions", "i-pay", "revisions"), { recursive: true, force: true });
+    // A leftover state: mirror twin is no evolution: it never needs an upgrade.
+    fs.writeFileSync(payNext, liveText.replace(/^state:.*$/m, "state: mirror"));
+    ({ client, call } = await session(root));
+    const mirror = await call("list_areas");
+    check("a leftover mirror twin beside a current stamp does not Block", !mirror.error, mirror.text.slice(0, 300));
+    await client.close();
+    client = undefined;
+    fs.rmSync(payNext);
+
     // The same id in both folders cannot be moved.
     fs.mkdirSync(mp("journeys", "j-pay"), { recursive: true });
     fs.writeFileSync(mp("journeys", "j-pay", "j-pay.mdx"), "---\nid: j-pay\ntype: Journey\ntitle: Old\n---\n");

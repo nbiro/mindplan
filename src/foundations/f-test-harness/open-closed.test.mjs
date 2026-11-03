@@ -201,7 +201,22 @@ function check(label, condition, detail = "") {
   const split = {
     ...graph,
     nodes: graph.nodes.map((n) => {
-      if (n.id === "f-core") return { ...n, next: { state: "draft", change: "c-split" } };
+      if (n.id === "f-core") {
+        const revision = {
+          change: "c-split",
+          state: "draft",
+          title: n.title,
+          description: n.description,
+          opened_at: n.updated_at,
+          updated_at: n.updated_at,
+          edges: {},
+          implements: { add: [], remove: [] },
+          tests: { add: [], remove: [] },
+          base: { scalars: {}, sections: {} },
+          conflicts: [],
+        };
+        return { ...n, open_revisions: [revision] };
+      }
       return n;
     }),
   };
