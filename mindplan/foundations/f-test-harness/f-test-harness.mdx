@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T21:13:07.604Z
 revisions: 23
 churn: 11.268
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-11-03T14:05:03.438Z
+updated_at: 2026-11-03T14:35:15.463Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -90,6 +90,7 @@ Depends on: `f-mcp-runtime`.
 - **Graph filters and fan-out.** `src/foundations/f-test-harness/graph-filters.test.mjs` covers `get_mindplan_graph` `state`, `type`, and `change` alone and together, `fields` (id always present, unknown names Blocked), paging over a filtered set, and no parameters equal to the unfiltered output. `src/foundations/f-test-harness/fan-out.test.mjs` covers the `f-fan-out` counting rules (own-change, shipped, retired, and unlabeled targets ignored), `keep_whole` and its supersession, `fan_out.warn_at` validation and threshold, the `fan-out:` line in `run_check` and in a change's warnings, `stability.fan_out` in `orient_for_work`, and `patch_config({ fan_out })`. `npm test` runs both
 - **0.18 second review fixes.** `rebase-flow.test.mjs` covers a change walk (and its dry run) Blocked before writing when a revision would rebase onto live with conflicts; `lean-replies.test.mjs` covers a fenced task line that is neither an item, nor counted, nor toggleable; `check.test.mjs` covers the test-import dependent lookup following pushed and replaced edge lists; `ergonomics.test.mjs` covers a scoped compact check counting no listed warning as `unchanged`; `version.test.mjs` covers `doctor` reporting `cache_hit: false` for a graph with no node folders
 - **0.18 third review fixes.** `rebase-flow.test.mjs` covers `resolve_conflict` on `_preamble` (live's preamble put at the top) and a batch naming one revision with and without its change Blocked as a duplicate; `revision-core.test.mjs` covers a live-only preamble rebased to the top; `after-merge.test.mjs` covers `check --help` calling a stale revision base a warning
+- **0.18 fourth review fixes.** `revision-core.test.mjs` covers CommonMark fence closing; `lean-replies.test.mjs` covers `appendChecklistItems` staying out of fences; `honesty.test.mjs` covers every edit path that undoes a relied-on build item; `revisions-store.test.mjs` covers `resolveConflict` readiness reset and heading-bearing text; `rebase-flow.test.mjs` covers unresolvable batch items Blocking on their own reason; `node-tests.test.mjs` covers removes that match nothing, trailing-slash removes, and legacy entries
 
 ## Attachments
 

@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:47.292Z
 revisions: 11
 churn: 7.215
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-11-03T14:05:03.167Z
+updated_at: 2026-11-03T14:35:15.625Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -50,7 +50,7 @@ Intended files: `src/interfaces/if-cli/`
 
 ## After a merge
 
-`mindplan-mcp check --after-merge` runs the after-merge check; `--root <path>` checks another checkout or worktree. Its `--help` text lists what it Blocks (conflict markers, a node id in two folders, a decision id in two files, a tracked `map.md`, a missing or behind `version.json`, a revision file that does not parse) and says a revision based on an older live is only a warning naming `rebase_revision`.
+`mindplan-mcp check --after-merge` runs the after-merge check; `--root <path>` checks another checkout or worktree. Its `--help` text lists what it Blocks (conflict markers, a node id in two folders, a decision id in two files, a tracked `map.md`, a missing or behind `version.json`, a revision file that does not parse) and says a revision based on an older live is only a warning naming `rebase_revision`, in both the command help and the options help.
 
 ## Acceptance Criteria
 

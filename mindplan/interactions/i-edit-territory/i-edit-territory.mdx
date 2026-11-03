@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:41:45.907Z
 revisions: 6
 churn: 5.76
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-03T12:53:34.844Z
+updated_at: 2026-11-03T14:35:15.042Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -61,7 +61,7 @@ One graph load per call serves the orientation gate and every pre-write check; a
 
 ## Checklist ids and kinds
 
-Unticking a build item on a node in review is Blocked while a stable or unstable node relies on it under the relaxed dependency rule (`f-compiler-rules`), naming the dependents.
+While a stable or unstable node relies on a node in review under the relaxed dependency rule (`f-compiler-rules`), any patch that undoes its build items is Blocked, naming the dependents: the guard judges the body the whole call leaves (toggles, `add_checklist_items`, body, section, and replace together), on a revision's computed body or through the store's `checkBody(before, after)` hook on live, before anything is written. `add_checklist_items` never inserts inside fenced code.
 
 `toggle_checkboxes` items take `id` (a stable item id such as `spec`, `impl`, `verify`, `review-copy`) or `contains`, which must now equal the item's full text (tag and annotations excluded); a substring that is not the whole text is Blocked naming the matching items and their ids. `add_checklist_items: [{ text, id?, kind? }]` appends items to the Atomic Ops section of the picked slot.
 
