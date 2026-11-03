@@ -353,6 +353,25 @@ for (const new_status of SHIP) {
   await call("discard_next", { node_id: "f-sub", change: "pre" });
 }
 
+// --- a batch naming one revision twice (change omitted once, given once) is a duplicate ---
+{
+  await call("open_next", { node_id: "f-sub", change: "dup" });
+  readyRevision("dup");
+  const before = read(revFile("dup"));
+  const dup = await blocked("update_node_status", {
+    revisions: [
+      { node_id: "f-sub", new_status: "ready" },
+      { node_id: "f-sub", change: "dup", new_status: "ready" },
+    ],
+  });
+  check(
+    "a batch listing the only revision with change omitted and with it named is Blocked as a duplicate",
+    !!dup && dup.includes("duplicate") && read(revFile("dup")) === before,
+    String(dup)
+  );
+  await call("discard_next", { node_id: "f-sub", change: "dup" });
+}
+
 // --- a hub Foundation with three dependents takes three changes at once; all ship in sequence ---
 {
   const HUB = "mindplan/foundations/f-static-build/f-static-build.mdx";
