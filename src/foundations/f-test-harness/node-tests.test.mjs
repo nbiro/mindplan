@@ -418,6 +418,32 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
       same(dir.implements, ["src/f-claims/"]),
     JSON.stringify([both.implements, one.implements, dir.implements])
   );
+
+  // A remove that matches no stored entry is Blocked, naming them; one that differs only by a
+  // trailing "/" matches.
+  const missed = await blocked("set_implementation_files", { node_id: "f-claims", remove: ["src/f-claims/a.ts"] });
+  check(
+    "a remove matching no stored entry is Blocked, naming the stored entries",
+    !!missed && missed.includes('"src/f-claims/a.ts"') && missed.includes('"src/f-claims/"'),
+    missed ?? "accepted"
+  );
+  const slashless = await call("set_implementation_files", { node_id: "f-claims", remove: ["src/f-claims"], add: ["src/f-claims/a.ts"] });
+  check("a remove differing only by a trailing slash removes the entry", same(slashless.implements, ["src/f-claims/a.ts"]), JSON.stringify(slashless.implements));
+  // An entry stored before the validator rejected it: an edit that keeps it is Blocked naming the
+  // remove that drops it, and that remove works (a remove entry is matched, not validated).
+  const legacyFile = path.join(root, ...liveOf("f-claims").split("/"));
+  fs.writeFileSync(legacyFile, fs.readFileSync(legacyFile, "utf-8").replace(/^(type: Foundation)$/m, "$1\ntests:\n  - mindplan/legacy.test.mjs"));
+  const legacyKept = await blocked("set_test_files", { node_id: "f-claims", add: ["tests/claims.test.mjs"] });
+  const legacyDropped = await call("set_test_files", {
+    node_id: "f-claims",
+    add: ["tests/claims.test.mjs"],
+    remove: ["mindplan/legacy.test.mjs"],
+  });
+  check(
+    "a stored entry the validator now rejects Blocks an edit that keeps it, naming the remove, and that remove drops it",
+    !!legacyKept && legacyKept.includes('remove: ["mindplan/legacy.test.mjs"]') && same(legacyDropped.tests, ["tests/claims.test.mjs"]),
+    JSON.stringify([legacyKept, legacyDropped.tests])
+  );
 }
 
 // --- open revisions: edits write add / remove deltas into the revision's folder ---

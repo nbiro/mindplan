@@ -156,11 +156,43 @@ function listEdit(tool: string, args: ListEditArgs): ListEdit | null {
   return null;
 }
 
-/** `base` with the edit applied, normalized (each entry validated, deduped, sorted). */
+/** A path as compared for `remove`: trimmed, `/` separators, no leading `./`. */
+function removeKey(entry: string): string {
+  return entry.trim().replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+}
+
+/**
+ * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry is matched, not
+ * validated: it matches a stored entry verbatim, else one that differs from it only by a trailing
+ * `/`; one that matches none is Blocked, naming the stored entries. So a stored entry the
+ * validator now rejects can always be removed; one the edit keeps is Blocked with that fix (every
+ * list the store writes is validated whole).
+ */
 function applyListEdit(base: string[], edit: ListEdit, field: "implements" | "tests"): string[] {
   if ("replace" in edit) return normalizeClaimList(edit.replace, field);
-  const removed = new Set(normalizeClaimList(edit.remove, field));
-  return normalizeClaimList([...base.filter((e) => !removed.has(e)), ...edit.add], field);
+  const removed = new Set<string>();
+  for (const raw of edit.remove) {
+    const key = removeKey(raw);
+    const exact = base.filter((e) => removeKey(e) === key);
+    const hits = exact.length ? exact : base.filter((e) => removeKey(e).replace(/\/$/, "") === key.replace(/\/$/, ""));
+    if (hits.length === 0) {
+      throw blocked(
+        `remove "${raw}" matches no ${field} entry; stored: ${base.length ? base.map((e) => `"${e}"`).join(", ") : "(none)"}. ` +
+          "Pass an entry as stored."
+      );
+    }
+    for (const e of hits) removed.add(e);
+  }
+  const kept = base.filter((e) => !removed.has(e));
+  for (const e of kept) {
+    try {
+      normalizeClaimList([e], field);
+    } catch (err) {
+      const reason = (err as Error).message.replace(/^Blocked:\s*/, "");
+      throw blocked(`stored ${field} entry "${e}" is no longer valid (${reason}). Drop it in the same call: remove: ["${e}"].`);
+    }
+  }
+  return normalizeClaimList([...kept, ...edit.add], field);
 }
 
 function sameDelta(a: EdgeDelta | undefined, b: EdgeDelta): boolean {
