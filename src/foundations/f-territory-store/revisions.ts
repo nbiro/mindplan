@@ -978,20 +978,29 @@ function replaceSection(body: string, heading: string, text: string | undefined)
  * (`"## Spec"`), a scalar field (`"title"`, `"description"`, `"role"`), or a claim path.
  * `take`: `"revision"` keeps the revision's value; `"live"` takes live's (a claim: drops the add);
  * `"text"` writes `text` (sections and scalars only; Blocked without `text`). Removes the conflict
- * and sets `updated_at`. Blocked when the revision holds no such conflict, and when `text` for a
- * section holds another level-2 heading (for `_preamble`, any). Returns the paths written and the
- * conflicts left.
+ * and sets `updated_at`. A resolution that changes a `ready` revision's text or claims sends it
+ * back to `draft` (`readiness_reset`), like any contract write. `opts.checkBody` sees the body
+ * before and after a resolution that changes it, before anything is written; throwing Blocks the
+ * write. Blocked when the revision holds no such conflict, and when `text` for a section holds
+ * another level-2 heading (for `_preamble`, any). Returns the paths written and the conflicts left.
  */
 export function resolveConflict(
   node: MindPlanNode,
   change: string,
   target: string,
   take: "revision" | "live" | "text",
-  text?: string
-): { changed_files: string[]; conflicts: RevisionConflict[] } {
+  text?: string,
+  opts: { checkBody?: (before: string, after: string) => void } = {}
+): {
+  changed_files: string[];
+  conflicts: RevisionConflict[];
+  readiness_reset?: { from: "ready"; to: "draft" };
+} {
   const loaded = loadRevision(node, change);
   const { revision } = loaded;
   let body = loaded.body;
+  const originalKey = contentKey(revision, body);
+  const originalImplements = JSON.stringify(revision.implements);
   const conflict = revision.conflicts.find(
     (c) =>
       (c.kind === "section" && c.section === target) ||
@@ -1060,8 +1069,18 @@ export function resolveConflict(
   } else if (take === "live") {
     revision.implements = { ...revision.implements, add: revision.implements.add.filter((p) => p !== conflict.path) };
   }
+  if (body !== loaded.body) opts.checkBody?.(loaded.body, body);
+  // Taking the revision's own side changes neither text nor claims, so a ready revision stays ready.
+  const changed =
+    contentKey(revision, body) !== originalKey || JSON.stringify(revision.implements) !== originalImplements;
+  const reset = changed && revision.state === "ready";
+  if (reset) revision.state = "draft";
   revision.conflicts = revision.conflicts.filter((c) => c !== conflict);
   revision.updated_at = nowIso();
   const written = storeRevision(node, revision, body);
-  return { changed_files: [written], conflicts: revision.conflicts };
+  return {
+    changed_files: [written],
+    conflicts: revision.conflicts,
+    ...(reset ? { readiness_reset: { from: "ready" as const, to: "draft" as const } } : {}),
+  };
 }

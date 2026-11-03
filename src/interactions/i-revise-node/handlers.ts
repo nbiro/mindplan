@@ -17,10 +17,16 @@ import {
   resolveConflict as resolveRevisionConflict,
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
-import { PREAMBLE_SECTION, conflictLabel, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
+import { PREAMBLE_SECTION, conflictLabel, resolveRevisionChange, revisionFor } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
-import { assertNoShippedDependentsOnRevision, blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
+import {
+  assertNoShippedDependentsOnRevision,
+  assertNoUntickUnderShippedDependents,
+  blocked,
+  findNode,
+  validateOpenNext,
+} from "../../foundations/f-compiler-rules/rules.js";
 import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.js";
 import { changeCycleGate } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
@@ -28,7 +34,9 @@ import {
   changedFiles,
   gateWrite,
   mutationTail,
+  readinessFields,
   refreshPersistedMap,
+  revisionReadinessReset,
   rulesReachingAfterWrite,
   territoryPath,
   withChangeCleanup,
@@ -195,7 +203,11 @@ export function resolveConflict(args: ResolveConflictArgs): Record<string, unkno
   const change = resolveRevisionChange(node, args.change || undefined);
   if (change === null) throw blocked(`node "${node_id}" has no open revision, so it holds no conflict.`);
   const target = args.section !== undefined && args.section !== "" ? sectionTarget(args.section) : (args.field ?? args.claim)!;
-  const out = resolveRevisionConflict(node, change, target, take, args.text);
+  // A resolution is a contract write: it may not take back a build item shipped dependents rely on.
+  const state = revisionFor(node, change)?.state;
+  const out = resolveRevisionConflict(node, change, target, take, args.text, {
+    checkBody: (before, after) => assertNoUntickUnderShippedDependents(graph, node, state, before, after),
+  });
   refreshPersistedMap();
   return {
     node_id,
@@ -203,6 +215,7 @@ export function resolveConflict(args: ResolveConflictArgs): Record<string, unkno
     resolved: target,
     take,
     conflicts: out.conflicts.map(conflictLabel),
+    ...readinessFields(out.readiness_reset ? revisionReadinessReset(change) : null),
     changed_files: changedFiles(out.changed_files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
