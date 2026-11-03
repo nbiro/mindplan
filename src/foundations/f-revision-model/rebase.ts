@@ -13,7 +13,7 @@ import {
   type Revision,
   type RevisionConflict,
 } from "../f-domain-model/types.js";
-import { detectEol, joinSections, normalizedText, splitSections } from "./sections.js";
+import { PREAMBLE_SECTION, detectEol, joinSections, normalizedText, splitSections } from "./sections.js";
 
 /** Sections the store owns (rules, decisions): never hashed, never rebased. */
 const OWNED_HEADINGS = new Set(["## Rules", "## Decisions"]);
@@ -118,7 +118,7 @@ function conflictKey(c: RevisionConflict): string {
  * Body, per level-2 section (and the `_preamble`): the `carry` rule against `revision.base`.
  * The result keeps the revision body's section order, inserts sections the revision never had
  * that new live added before the revision's first `## Rules` / `## Decisions` section (else at
- * the end), and drops sections live deleted that the revision did not touch. The revision's
+ * the end; a `_preamble` at the top), and drops sections live deleted that the revision did not touch. The revision's
  * `## Rules` and `## Decisions` sections pass through unchanged; live's are ignored. Sections are
  * rejoined with one blank line between them, in the revision body's line endings.
  *
@@ -179,13 +179,18 @@ export function rebase(input: RebaseInput): { revision: Revision; body: string }
     if (text !== undefined) kept.push({ owned: false, text });
   }
   const added: { owned: boolean; text: string }[] = [];
+  let preamble: { owned: boolean; text: string } | undefined;
   for (const s of liveSections) {
     if (mineHeadings.has(s.heading)) continue;
     const text = decide(s.heading, undefined);
-    if (text !== undefined) added.push({ owned: false, text });
+    if (text === undefined) continue;
+    if (s.heading === PREAMBLE_SECTION) preamble = { owned: false, text };
+    else added.push({ owned: false, text });
   }
   const at = kept.findIndex((k) => k.owned);
   kept.splice(at === -1 ? kept.length : at, 0, ...added);
+  // Text above the first heading stays above it.
+  if (preamble) kept.unshift(preamble);
   const body = joinSections(kept.map((k) => k.text), eol);
 
   // Scalars.

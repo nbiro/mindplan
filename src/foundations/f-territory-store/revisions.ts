@@ -952,7 +952,8 @@ export function writeRevisionState(
 /**
  * `body` with section `heading` replaced by `text` (heading line included), or removed when
  * `text` is undefined; a missing section is added before `## Rules` / `## Decisions`, else at the
- * end. Sections are rejoined with one blank line between them, in the body's line endings.
+ * end (a missing `_preamble` at the top). Sections are rejoined with one blank line between them,
+ * in the body's line endings.
  */
 function replaceSection(body: string, heading: string, text: string | undefined): string {
   const eol = detectEol(body);
@@ -962,6 +963,8 @@ function replaceSection(body: string, heading: string, text: string | undefined)
     if (at >= 0) parts.splice(at, 1);
   } else if (at >= 0) {
     parts[at] = { heading, text };
+  } else if (heading === PREAMBLE_SECTION) {
+    parts.unshift({ heading, text });
   } else {
     const owned = parts.findIndex((p) => p.heading === "## Rules" || p.heading === "## Decisions");
     parts.splice(owned === -1 ? parts.length : owned, 0, { heading, text });
