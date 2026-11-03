@@ -42,7 +42,7 @@ function addTag(m: EdgeTags["tags"], source: string, target: string, change: str
  * is recorded), a pre-ship node's edges (its change), and
  * every pending planned depends_on (its change).
  */
-function taggedEdges(graph: MindPlanGraph, extra?: ProposedDependsOn): EdgeTags {
+function taggedEdges(graph: MindPlanGraph): EdgeTags {
   const tags: EdgeTags["tags"] = new Map();
   const removed: EdgeTags["removed"] = new Map();
   for (const n of graph.nodes) {
@@ -66,7 +66,6 @@ function taggedEdges(graph: MindPlanGraph, extra?: ProposedDependsOn): EdgeTags 
   for (const row of plannedEdges(graph)) {
     if (row.type === "depends_on") addTag(tags, row.source, row.target, row.change);
   }
-  if (extra) addTag(tags, extra.source, extra.target, extra.change ?? null);
   return { tags, removed };
 }
 
@@ -230,7 +229,7 @@ function classify(ov: Overlay, nodes: string[], labels: (string | null)[]): Chan
   pairs.forEach(([s, d], i) => {
     if (labels[i] === null) return;
     const added = new Set(changesOf(ov, s, d));
-    if (labels[i] !== null) added.add(labels[i]!);
+    added.add(labels[i]!);
     common = common === null ? added : new Set([...common].filter((c) => added.has(c)));
   });
   if (common !== null && (common as Set<string>).size > 0) return null;
@@ -307,20 +306,9 @@ export function changeCycleGate(graph: MindPlanGraph): (edge: ProposedDependsOn)
   return (edge) => {
     if (edge.source === edge.target) return;
     const change = edge.change ?? null;
-    // The proposed edge counts as added by its change even before it is written.
-    const accept = (walk: Walk): ChangeCycle | null => {
-      const k = key(edge.source, edge.target);
-      const had = ov.tags.get(k);
-      const tags = new Set(had ?? []);
-      tags.add(change);
-      ov.tags.set(k, tags);
-      try {
-        return classify(ov, [edge.source, ...walk.nodes.slice(0, -1)], [change, ...walk.labels]);
-      } finally {
-        if (had) ov.tags.set(k, had);
-        else ov.tags.delete(k);
-      }
-    };
+    // The proposed edge closes the walk under its own change (`classify` counts its label as adding it).
+    const accept = (walk: Walk): ChangeCycle | null =>
+      classify(ov, [edge.source, ...walk.nodes.slice(0, -1)], [change, ...walk.labels]);
     const cycle = crossWalk(ov, edge.target, edge.source, change, accept);
     if (!cycle) return;
     const label = edge.change ? `change "${edge.change}"` : "live";
@@ -338,10 +326,10 @@ export function assertNoChangeCycle(graph: MindPlanGraph, edge: ProposedDependsO
 
 /**
  * The check's lines for cross-change cycles: `Blocked: change cycle: …` for each one, or with
- * `change` only those that change takes part in.
+ * `change` only those that change takes part in. Pass `cycles` when `changeCycles(graph)` already ran.
  */
-export function changeCycleFailures(graph: MindPlanGraph, change?: string): string[] {
-  return changeCycles(graph)
+export function changeCycleFailures(graph: MindPlanGraph, change?: string, cycles: ChangeCycle[] = changeCycles(graph)): string[] {
+  return cycles
     .filter((c) => change === undefined || c.changes.includes(change))
     .map((c) => `Blocked: change cycle: ${describeChangeCycle(c)}`);
 }

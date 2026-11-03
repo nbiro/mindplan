@@ -19,8 +19,7 @@ import {
   crossChangeClaimWarnings,
   findAllImportViolations,
   findAllOwnershipConflicts,
-  findImportViolationsForNode,
-  findOwnershipConflicts,
+  changeMemberViolations,
   formatCoverageFix,
   probableOwner,
   routeFamilySplits,
@@ -31,7 +30,11 @@ import {
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
-import { changeCycleFailures } from "../../foundations/f-compiler-rules/change-cycles.js";
+import {
+  changeCycleFailures,
+  changeCycles,
+  type ChangeCycle,
+} from "../../foundations/f-compiler-rules/change-cycles.js";
 import { waitingOnPeopleLine } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import {
   changeMembership,
@@ -198,7 +201,8 @@ function checkChange(
   fullGraph: MindPlanGraph,
   root: string,
   change: string,
-  decisionCtx: DecisionContext
+  decisionCtx: DecisionContext,
+  cycles: ChangeCycle[]
 ): ChangeCheck {
   const graph = revisionGraph(fullGraph, change);
   // Planned sources are listed, not gated: their files do not change until the change opens them.
@@ -211,15 +215,13 @@ function checkChange(
       `Blocked: change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
   }
+  // A shipped member is judged through its revision of this change; a pre-ship member is live.
+  const violations = changeMemberViolations(fullGraph, root, revisions, change);
   for (const node of revisions) {
-    // A shipped member is judged through its revision of this change; a pre-ship member is live.
     const c = revisionFor(node, change) ? change : undefined;
-    for (const v of findImportViolationsForNode(fullGraph, root, node, c)) {
-      failures.push(`Blocked: change "${change}": ${v.message}`);
-    }
-    for (const conflict of findOwnershipConflicts(fullGraph, root, node, c)) {
-      failures.push(`Blocked: change "${change}": ${conflict}`);
-    }
+    const { imports, ownership } = violations.get(node.id)!;
+    for (const v of imports) failures.push(`Blocked: change "${change}": ${v.message}`);
+    for (const conflict of ownership) failures.push(`Blocked: change "${change}": ${conflict}`);
     for (const missing of testPresenceFailures(node, root)) {
       failures.push(`Blocked: change "${change}": ${missing}`);
     }
@@ -230,7 +232,7 @@ function checkChange(
   for (const p of plannedEdgeProblems(graph, change)) {
     failures.push(`Blocked: change "${change}": planned edge ${p.source} -${p.type}-> ${p.target}: ${p.problem}`);
   }
-  for (const f of changeCycleFailures(fullGraph, change)) failures.push(f.replace(/^Blocked: /, `Blocked: change "${change}": `));
+  for (const f of changeCycleFailures(fullGraph, change, cycles)) failures.push(f.replace(/^Blocked: /, `Blocked: change "${change}": `));
   const bySource = new Map<string, string[]>();
   for (const row of plannedEdges(graph, change)) {
     bySource.set(row.source, [...(bySource.get(row.source) ?? []), `${row.type} ${row.target}`]);
@@ -1218,7 +1220,8 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
-    for (const f of changeCycleFailures(graph)) fail(failures, f);
+    const cycles = changeCycles(graph);
+    for (const f of changeCycleFailures(graph, undefined, cycles)) fail(failures, f);
     const probe = dirtyProbe(root);
     const collected = collectWarnings(graph, root, changedAgainstBase(root, probe, options.base));
     warnings.push(...collected.warnings);
@@ -1236,7 +1239,7 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
       checkDirtySrc(graph, buckets, root, probe, options.base, failures);
     }
     if (options.change !== undefined) {
-      changeReport = checkChange(graph, root, options.change, decisionCtx);
+      changeReport = checkChange(graph, root, options.change, decisionCtx, cycles);
     }
     if (options.merge) {
       mergeReport = checkMerge(graph, root, options.merge, options.base, probe, failures);

@@ -58,10 +58,13 @@ export function buildOwnershipIndex(
       for (const f of expandClaims(node.tests, root)) testOwners.set(f, [...(testOwners.get(f) ?? []), node.id]);
     }
     const currentFiles = new Set(expandClaims(node.implements, root));
+    // Each open revision's files (live with its delta applied): together, the open slots' claims.
+    const revisionFiles: Set<string>[] = [];
     if (!RETIRED_STATES.has(node.state)) {
       for (const f of currentFiles) liveClaims.set(f, node.id);
       for (const rev of node.open_revisions ?? []) {
         const revFiles = new Set(expandClaims(applyDelta(node.implements, rev.implements), root));
+        revisionFiles.push(revFiles);
         for (const f of revFiles) {
           const list = revisions.get(f) ?? [];
           list.push({ id: node.id, change: rev.change });
@@ -75,15 +78,20 @@ export function buildOwnershipIndex(
         }
       }
     }
-    const slots = openSlotClaims(node);
-    const nextFiles = slots ? new Set(slots.flatMap((claims) => expandClaims(claims, root))) : null;
-
     if (RETIRED_STATES.has(node.state)) {
       for (const f of currentFiles) {
         if (!retired.has(f)) retired.set(f, node.id);
       }
       continue;
     }
+
+    // `openSlotClaims` expanded: with several open revisions, their files; else the next view's.
+    const nextFiles =
+      revisionFiles.length > 1
+        ? new Set(revisionFiles.flatMap((s) => [...s]))
+        : node.next
+          ? new Set(expandClaims(node.next.implements, root))
+          : null;
 
     if (nextFiles) {
       for (const f of nextFiles) {

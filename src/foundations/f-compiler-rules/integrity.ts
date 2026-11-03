@@ -627,11 +627,15 @@ export type OwnershipConflict = { file: string; a: string; b: string; change: st
  * view's). Two revisions of the same change claiming one file conflict; revisions of different
  * changes never meet in one view (see `crossChangeClaimWarnings`).
  */
-function ownershipConflictsUnder(pass: { change: string | null; graph: MindPlanGraph }, root: string): OwnershipConflict[] {
+function ownershipConflictsUnder(
+  pass: { change: string | null; graph: MindPlanGraph },
+  root: string,
+  filesOf: (n: MindPlanNode) => string[] = (n) => expandClaims(activeClaims(n), root)
+): OwnershipConflict[] {
   const claims = new Map<string, string[]>();
   for (const n of pass.graph.nodes) {
     if (!isPipelineNodeType(n.type) || n.state === "cancelled" || n.state === "deprecated") continue;
-    for (const f of new Set(expandClaims(activeClaims(n), root))) claims.set(f, [...(claims.get(f) ?? []), n.id]);
+    for (const f of new Set(filesOf(n))) claims.set(f, [...(claims.get(f) ?? []), n.id]);
   }
   const byId = new Map(pass.graph.nodes.map((n) => [n.id, n]));
   const revised = (id: string) => pass.change !== null && Boolean(revisionFor(byId.get(id)!, pass.change));
@@ -649,14 +653,21 @@ function ownershipConflictsUnder(pass: { change: string | null; graph: MindPlanG
 
 /**
  * Every ownership conflict: the live view's, then each open change's (live plus that change's
- * revisions). The check and the per-transition gate (`findOwnershipConflicts`) share it.
+ * revisions). The check and the per-transition gate (`findOwnershipConflicts`) share it. Live
+ * claims are expanded once; a change's view re-expands only the nodes it revises.
  */
 export function findAllOwnershipConflicts(graph: MindPlanGraph, root: string): OwnershipConflict[] {
   const changes = new Set<string>();
   for (const n of graph.nodes) for (const c of openChanges(n)) changes.add(c);
+  const live = liveGraph(graph);
+  const liveFiles = new Map(live.nodes.map((n) => [n.id, expandClaims(activeClaims(n), root)]));
   const all = [
-    ...ownershipConflictsUnder({ change: null, graph: liveGraph(graph) }, root),
-    ...[...changes].sort().flatMap((c) => ownershipConflictsUnder({ change: c, graph: revisionGraph(graph, c) }, root)),
+    ...ownershipConflictsUnder({ change: null, graph: live }, root, (n) => liveFiles.get(n.id)!),
+    ...[...changes].sort().flatMap((c) =>
+      ownershipConflictsUnder({ change: c, graph: revisionGraph(graph, c) }, root, (n) =>
+        revisionFor(n, c) ? expandClaims(activeClaims(n), root) : liveFiles.get(n.id) ?? expandClaims(activeClaims(n), root)
+      )
+    ),
   ];
   // A pair live already has (a revision kept the claim) is reported once, as live's.
   const seen = new Set<string>();
@@ -682,6 +693,43 @@ export function findOwnershipConflicts(
   return ownershipConflictsUnder({ change: c, graph: judgeGraph(graph, c) }, root)
     .filter((p) => p.a === node.id || p.b === node.id)
     .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
+}
+
+/**
+ * The import and ownership rules on every member of `change` (`findImportViolationsForNode` and
+ * `findOwnershipConflicts`, each member judged through its revision of the change, else live),
+ * in one pass: each view's ownership index and conflicts are computed once and filtered per member.
+ * Keyed by member id.
+ */
+export function changeMemberViolations(
+  graph: MindPlanGraph,
+  root: string,
+  members: MindPlanNode[],
+  change: string
+): Map<string, { imports: ImportViolation[]; ownership: string[] }> {
+  const passes = new Map<string, RulePass>();
+  const conflicts = new Map<string | null, OwnershipConflict[]>();
+  const out = new Map<string, { imports: ImportViolation[]; ownership: string[] }>();
+  for (const node of members) {
+    const c = gateChange(node, revisionFor(node, change) ? change : undefined);
+    let imports: ImportViolation[] = [];
+    if (isPipelineNodeType(node.type)) {
+      // A live pass depends only on the change a pre-ship member sees (`livePassFor`).
+      const key = c === null ? `live\0${preShipChange(node) ?? ""}` : `change\0${c}`;
+      let pass = passes.get(key);
+      if (!pass) passes.set(key, (pass = c === null ? livePassFor(graph, root, node) : rulePass(graph, root, c)));
+      const owner = inGraph(pass.graph, node);
+      const files = expandClaims(activeClaims(owner), root);
+      imports = scanUnder(pass, root, owner, files, new Set(files));
+    }
+    let pairs = conflicts.get(c);
+    if (!pairs) conflicts.set(c, (pairs = ownershipConflictsUnder({ change: c, graph: judgeGraph(graph, c) }, root)));
+    const ownership = pairs
+      .filter((p) => p.a === node.id || p.b === node.id)
+      .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
+    out.set(node.id, { imports, ownership });
+  }
+  return out;
 }
 
 /**
