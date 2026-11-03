@@ -302,6 +302,26 @@ fs.writeFileSync(
     multi === "## Atomic Ops\n\n- [ ] A {#a}\n  detail of A\n  - nested note\nlazy line\n\n  more about A\n- [ ] B {#b}\n\nAfter the list.\n\n## Rules\n",
     JSON.stringify(multi)
   );
+  // After a blank line, a line continues the item only when indented to its content column (marker
+  // width plus the spaces after it, CommonMark), not merely past the marker.
+  for (const [what, item, tail] of [
+    ["a one-space paragraph under a \"- \" item", "- [ ] A {#a}", "\n after A.\n"],
+    ["a three-space paragraph under a \"-   \" item", "-   [ ] A {#a}", "\n   after A.\n"],
+    ["a one-space fence under a \"- \" item", "- [ ] A {#a}", "\n ```\n code\n ```\n"],
+  ]) {
+    const shallow = checklist.appendChecklistItems(`## Atomic Ops\n\n${item}\n${tail}`, [{ text: "B", id: "b" }]).body;
+    check(
+      `appendChecklistItems does not take ${what} as a continuation`,
+      shallow === `## Atomic Ops\n\n${item}\n- [ ] B {#b}\n${tail}`,
+      JSON.stringify(shallow)
+    );
+  }
+  const deep = checklist.appendChecklistItems("## Atomic Ops\n\n-   [ ] A {#a}\n\n    more about A\n", [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems takes a paragraph indented to the content column as a continuation",
+    deep === "## Atomic Ops\n\n-   [ ] A {#a}\n\n    more about A\n- [ ] B {#b}\n",
+    JSON.stringify(deep)
+  );
   // An indented fence that continues the item is consumed to its close, even across a blank line
   // followed by a column-0 line or a `# comment` inside it: the new item never lands in the fence.
   const fenceBody = "## Atomic Ops\n\n- [ ] A {#a}\n  ```sh\n  run\n\nexit 0\n# comment\n  ```\n\nAfter.\n";
