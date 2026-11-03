@@ -355,7 +355,7 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
   const commits = new Set<string>();
   const baseRef = base ?? defaultBaseRef(cwd);
   if (baseRef) {
-    const diff = git(["diff", "-z", "--name-only", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
+    const diff = git(["diff", "-z", "--name-only", "--no-renames", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
     for (const p of diff.split("\0")) {
       if (p) commits.add(toPosix(p));
     }

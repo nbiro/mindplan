@@ -433,6 +433,24 @@ function subfolderProject(label, nodes) {
   ok("--merge=strict names changed files with non-ASCII names");
 }
 
+// --- A committed rename counts its old path as changed, like an uncommitted one -----------------
+{
+  const { repo, root } = subfolderProject("rename", [
+    { id: "i-touched", type: "Interaction", state: "in-progress", change: "feature" },
+  ]);
+  const git = gitIn(repo);
+  git("init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(root, "src", "i-touched", "old-name.ts"), "export const moved = 1;\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  git("switch", "-q", "-c", "feature");
+  git("mv", path.join(root, "src", "i-touched", "old-name.ts"), path.join(root, "src", "i-touched", "new-name.ts"));
+  git("commit", "-q", "-m", "rename");
+  const dirty = collectDirtySrcPaths(root, "main");
+  assert.deepEqual([...dirty.commits].sort(), ["src/i-touched/new-name.ts", "src/i-touched/old-name.ts"]);
+  ok("a rename committed on the branch lists both its old and new paths as changed");
+}
+
 // --- The default base ignores a stale local main ------------------------------------------------
 {
   const root = sandbox("stale-main", [
