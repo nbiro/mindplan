@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:37.865Z
 revisions: 3
 churn: 2.883
 created_at: 2026-10-31T11:58:03.719Z
-updated_at: 2026-11-03T16:13:41.859Z
+updated_at: 2026-11-03T18:02:46.920Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -50,7 +50,7 @@ Intended files: `src/interactions/i-claim-files/` (`handlers.ts`, `tools.ts`).
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
 
-- **Add and remove (0.18.0).** `set_implementation_files` and `set_test_files` take `add: [...]` and `remove: [...]` (the documented default) and replace the whole list only with `files` plus `replace: true`; `files` without `replace` is Blocked naming both forms. A `remove` entry drops every stored entry with the same key: the normalized path (`validateClaimPath`) when it validates, else the raw path (trimmed, `\` as `/`, leading `./` dropped), with a trailing `/` ignored, so legacy duplicates naming one path go together; one that matches none is Blocked, naming the stored entries. A kept stored entry the validator now rejects is Blocked with the fix `remove: ["<entry>"]`. A revision claim write loads the graph once after writing, for both the revision view and the reply. On a node with open revisions they write deltas to the revision `change` picks; `tests` written without a revision still go to live
+- **Add and remove (0.18.0).** `set_implementation_files` and `set_test_files` take `add: [...]` and `remove: [...]` (the documented default) and replace the whole list only with `files` plus `replace: true`; `files` without `replace` is Blocked naming both forms. A `remove` entry drops every stored entry with the same key: the normalized path (`validateClaimPath`) when it validates, else the raw path (trimmed, `\` as `/`, leading `./` dropped), with a trailing `/` ignored, so legacy duplicates naming one path go together; one that matches none is Blocked, naming the stored entries. A kept stored entry the validator now rejects is Blocked with the fix `remove: ["<entry>"]`. A revision claim write loads the graph once after writing, for both the revision view and the reply. On a node with open revisions `set_implementation_files` writes deltas to the revision `change` picks, judging exclusivity per change (`ownerUnder`: a file the owner's revision of the same change drops is free to claim; two revisions of one change claiming a file stay Blocked); `set_test_files` writes a revision's tests delta only when `change` names it, and without `change` writes live's list whatever revisions are open (test links are evidence, not contract)
 
 - **Cleanup (0.18).** A revision's readiness reset comes from `revisionReadinessResult` (`f-plan-writes`); no legacy-next path remains.
 

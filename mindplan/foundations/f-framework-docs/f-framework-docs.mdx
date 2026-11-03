@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.430Z
 revisions: 53
 churn: 27.967
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-03T17:07:42.781Z
+updated_at: 2026-11-03T18:02:39.191Z
 depends_on:
   - f-domain-model
 implements:
@@ -103,6 +103,7 @@ SPEC, CHANGELOG (the existing 0.18.0 section), README, the playbook, and both sk
 - **Seventh review fixes (0.18.0).** SPEC §5.4 guards only a slot whose build items were all done; claim `remove` prefers an as-written match; a revision's `split_into` holds only its own parts; `add_checklist_items` judges continuation by the content column.
 - **Eighth review fixes (0.18.0).** SPEC: a claim `remove` drops every stored entry naming the same path; checklist continuation expands tabs; after-merge reports unreadable and newer-than-server stamps; the relied-on Block marks `(was done)` items.
 - **Tenth review fixes (0.18.0).** SPEC §3.6 counts a role removal as a role change in the rebase; `resolve_conflict` resets only a ready revision, like every contract write (eleventh review: an in-review revision stays in review).
+- **Full-branch review fixes (0.18.0).** SPEC: change walks order by the change's view; a node with several revisions in an `all_open_updates` / `node_and_dependents` walk is listed in `needs_change_walk`; a sibling rebase ignores claims the owner's revision of the same change drops; `set_test_files` without `change` writes live. The CHANGELOG's `change` and add/remove entries name both exceptions.
 - **Upgrade note (0.18.0).** The 0.18.0 upgrade note tells teams to expect, on the first check after upgrading, imports 0.17 let through: imports in claimed files outside `sources`, and imports that rely on an edge only another open change adds.
 
 ## Acceptance Criteria

@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.755Z
 revisions: 24
 churn: 10.358
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-03T17:07:42.575Z
+updated_at: 2026-11-03T18:02:38.995Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -180,5 +180,7 @@ The loader no longer reads `<id>.next.mdx` (a leftover is a version-gate upgrade
 Parsing and editing a checklist use one line splitter that keeps each line's own ending (CRLF, LF, or a lone CR), so a toggle always edits the line it matched; a line that is not there is Blocked.
 
 Every checkbox the Completion Check counts (the whole body except the owned Rules and Decisions sections, and lines inside a fenced code block, which are example text) is a checklist item; it may end with a tag `{#<id>}` or `{#<id> <kind>}`: `id` is a stable slug, `kind` is `build` (the default when absent), `review` (a human or after-deploy check), or `deploy` (an environment variable or a migration applied live). Default Atomic Ops carry the same ids for every type: `{#spec}`, `{#impl}`, `{#verify}`. The tag is part of the line on disk and is hidden from nothing; `toggleCheckboxesInBody` matches an item by `id` or by its exact text (without tag and annotations), and refuses substring matches. `checklistItems(body)` returns `{ id?, kind, text, checked, line }` for every item, and counts by kind feed the Completion Check; `itemsOfLines` and `countCheckboxesInText` both skip fenced lines, so the two always agree.
+
+**Sibling claim owners.** `implementsOwnersOf(graph, node, change)` skips an owner's claim entry when that owner's revision of the same change drops it, so a file a change moves between nodes is never a claim conflict when a sibling ships or on `rebase_revision`.
 
 **Ship onto live.** `assertRevisionShipsOntoLive` (`revisions.ts`) Blocks a revision whose rebase onto the current live would leave conflicts; `shipRevision` and the change walk's in-memory simulation both call it, so a walk foresees the conflict before it writes. `resolveConflict` writes a section the revision lacks where a rebase would put it (`replaceSection`: a `_preamble` at index 0); a changing resolution resets a ready revision to draft like any contract write (an in-review revision stays in review), and `opts.checkBody` lets the caller judge the resolved body before the write. `patchNodeTerritory` takes the same optional `checkBody(before, after)` hook, called on the final body before anything is written or assigned to the in-memory node (role, change, and change_ref are set only after every Blocked check). `appendChecklistItems` picks its insertion point from unfenced lines only and inserts after the last item's continuation lines (`afterContinuation`, judged against the item's content column, `itemContentColumn`: the marker plus the spaces after it, with tabs expanded to 4-column stops (`columnOf`, `indentColumn`); a fence indented to that column is skipped whole to its close; a fence or a thematic break at the item's indent or shallower ends the item; the insertion point is never inside a fence). A `take: "text"` resolution keeps the section's real heading line (from the revision, else live) and strips a ` (N)` duplicate-key suffix only when neither body has that heading. A graph load reports a cache hit only when it read at least one node folder and parsed none.
