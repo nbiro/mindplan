@@ -7,7 +7,7 @@
 import type { MindPlanGraph, MindPlanNode } from "../f-domain-model/types.js";
 import { isPipelineNodeType } from "../f-domain-model/types.js";
 import { openChanges, withRevision } from "../f-revision-model/index.js";
-import { parseChecklistItems, type ChecklistKind } from "../f-territory-store/checklist.js";
+import { parseChecklistItems, type ChecklistItem, type ChecklistKind } from "../f-territory-store/checklist.js";
 import { slotSource } from "./shape.js";
 
 /** An unticked review or deploy item: work that waits on a person, not the agent. */
@@ -30,7 +30,11 @@ function slotText(node: MindPlanNode, slot: "current" | "next"): string | null {
  * build item, an Acceptance Criteria box included; a text with no item at all proves nothing.
  */
 export function buildItemsTicked(text: string): boolean {
-  const items = parseChecklistItems(text);
+  return buildItemsTickedIn(parseChecklistItems(text));
+}
+
+/** `buildItemsTicked` over items already parsed. */
+export function buildItemsTickedIn(items: ChecklistItem[]): boolean {
   return items.length > 0 && items.every((i) => i.kind !== "build" || i.done);
 }
 
