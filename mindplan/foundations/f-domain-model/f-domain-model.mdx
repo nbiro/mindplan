@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:34.500Z
 revisions: 20
 churn: 12.543
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-11-03T12:53:15.923Z
+updated_at: 2026-11-03T15:50:21.663Z
 implements:
   - src/foundations/f-domain-model/
 tests:
@@ -91,6 +91,8 @@ Depends on: none.
 - `planned` and `attributed` round-trip through the graph load and the graph cache; no planned edge appears in `graph.edges`
 
 - A node with `revisions: 4`, `split_at: 3`, and `split_into: [f-a, f-b]` loads them as a number, a number, and a list, and its record returns them
+
+- A `Revision`'s `split_into` holds only the parts that revision splits out (live's record is not copied in); `withRevision` (`f-revision-model`) adds them to live's list
 
 ## Attachments
 

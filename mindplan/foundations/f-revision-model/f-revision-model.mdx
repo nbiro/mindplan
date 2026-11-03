@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:34.938Z
 revisions: 1
 churn: 1
 created_at: 2026-11-02T08:30:42.295Z
-updated_at: 2026-11-03T15:24:26.510Z
+updated_at: 2026-11-03T15:49:58.954Z
 role: infra
 aliases:
   - "revision"
@@ -39,7 +39,7 @@ Intended files: `src/foundations/f-revision-model/` (`revision.ts`, `rebase.ts`,
 - `applyDelta(live, delta)`, `diffDelta(live, snapshot)`: deltas round-trip (`applyDelta(live, diffDelta(live, s))` equals `s` as a set, sorted)
 - `openChanges(node)`, `revisionFor(node, change)`
 - `resolveRevisionChange(node, change?)`: the given change (Blocked when the node has no revision of it), else the only open revision, else `null` (live) when none is open; several open and no `change` is `Blocked: "<id>" has open revisions "<a>", "<b>"; pass change.`
-- `withRevision(node, change)`: a node-shaped view of live ⊕ that revision, with today's `next` view field filled from it, so gate code that reads `node.next` judges live plus that revision only
+- `withRevision(node, change)`: a node-shaped view of live ⊕ that revision (its `split_into` is live's record plus the parts the revision declares; the revision stores only its own), with today's `next` view field filled from it, so gate code that reads `node.next` judges live plus that revision only
 - `graphUnder(graph, change)`: the graph with every node that has a revision of `change` replaced by `withRevision`; every other node stays live (other changes' revisions are invisible)
 - `splitSections(body)`, `sectionHashes(body)`: level-2 sections plus a `_preamble` entry; `## Rules` and `## Decisions` excluded; hashes are the first 8 hex characters of sha1 of the section text with line endings normalized
 - `rebase(liveOld, liveNew, revision, revisionBody)` → `{ revision, body }`: per section and per scalar, untouched by the revision → take new live; touched only by the revision → keep; both touched with equal text → keep; otherwise keep the revision's text and add a conflict; every base hash moves to new live. A section only new live has is inserted before the revision's `## Rules` / `## Decisions`, except a live-only `_preamble`, which goes at the top. An `add` already in new live and a `remove` no longer in live drop silently; an `implements` add now claimed live by another node becomes a claim conflict
