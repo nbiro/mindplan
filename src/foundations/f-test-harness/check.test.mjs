@@ -665,6 +665,16 @@ await call("discard_next", { node_id: "i-feature" });
   put("src/if-tpl/tpl.test.ts", 'import { reg } from "../f-reg/reg.js";\nexport const t = [reg];\n');
   const passed = await raw2("update_node_status", { node_id: "if-tpl", new_status: "in-review" });
   ok("the in-review gate passes a test importing the registry that mounts it", !passed.error, passed.text);
+  // A folder in `tests` covers production files too; only files that look like tests gain the scope.
+  put("src/if-tpl/helper.ts", 'import { reg } from "../f-reg/reg.js";\nexport const h = reg;\n');
+  await call2("set_test_files", { replace: true, node_id: "if-tpl", files: ["src/if-tpl/"] });
+  const folder = await call2("run_check", { compact: false });
+  ok(
+    "a production file in a folder listed in tests gains no allowance",
+    folder.failures.some((f) => f.includes("src/if-tpl/helper.ts") && f.includes("src/f-reg/reg.ts")) &&
+      !folder.failures.some((f) => f.includes("tpl.test.ts")),
+    JSON.stringify(folder.failures)
+  );
   await c2.close();
   fs.rmSync(root2, { recursive: true, force: true });
 }
