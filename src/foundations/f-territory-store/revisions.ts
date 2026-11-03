@@ -578,12 +578,21 @@ export type RebasedSibling = {
   readiness_reset?: { from: NextPipelineState; to: "draft" };
 };
 
-/** Claim entry → id of another active node that claims it live: what a rebase recomputes claim conflicts from. */
-function implementsOwnersOf(graph: MindPlanGraph, node: MindPlanNode): Map<string, string> {
+/**
+ * Claim entry → id of another active node that claims it live, as change `change` sees it: an entry
+ * that node's own revision of `change` drops is released under that change, the same rule as the
+ * check's `ownerUnder`. What a rebase of the revision of `change` recomputes claim conflicts from.
+ */
+function implementsOwnersOf(graph: MindPlanGraph, node: MindPlanNode, change: string): Map<string, string> {
   const owners = new Map<string, string>();
   for (const other of graph.nodes) {
     if (other.id === node.id || isInactiveNode(other)) continue;
-    for (const entry of other.implements ?? []) if (!owners.has(entry)) owners.set(entry, other.id);
+    const rev = revisionFor(other, change);
+    const kept = rev ? new Set(applyDelta(other.implements, rev.implements)) : null;
+    for (const entry of other.implements ?? []) {
+      if (kept && !kept.has(entry)) continue;
+      if (!owners.has(entry)) owners.set(entry, other.id);
+    }
   }
   return owners;
 }
@@ -644,7 +653,7 @@ export function rebaseRevisionOntoLive(graph: MindPlanGraph, node: MindPlanNode,
   const carried = carryRevision(
     node.id,
     liveNow,
-    { ...liveNow, implementsOwners: implementsOwnersOf(graph, node) },
+    { ...liveNow, implementsOwners: implementsOwnersOf(graph, node, change) },
     loaded.revision,
     loaded.body
   );
@@ -707,7 +716,7 @@ export function assertRevisionShipsOntoLive(node: MindPlanNode, change: string):
  * — cleared when the revision removes it — and the split parts `splitParts` counts linked), with
  * `state` = `opts.newState`, `shipped_at` = `opts.now`, `revisions` and `churn` bumped; the
  * revision's decision files and attachments join live; every sibling is rewritten rebased onto the
- * new live (`implementsOwners` from `graph`), a `ready` / `in-review` sibling whose text the rebase
+ * new live (`implementsOwners` from `graph`, under the sibling's change), a `ready` / `in-review` sibling whose text the rebase
  * changed going back to `draft`; the revision folder is deleted. A failing write puts every file
  * back as it was (and `node` in memory) before the error is rethrown. Returns every path written
  * or deleted and, per sibling, the conflicts it holds after the rebase.
@@ -758,8 +767,7 @@ export function shipRevision(
   const eol = detectEol(body);
   const promotedBody = joinNodeDecisions(withoutOwnedSections(body), liveDecisionSection);
 
-  // Siblings onto the new live, in memory.
-  const implementsOwners = implementsOwnersOf(graph, node);
+  // Siblings onto the new live, in memory; each judges other nodes' claims under its own change.
   const liveEdgesNew: Partial<Record<PlannedEdgeType, string[]>> = {};
   for (const type of PLANNED_EDGE_TYPES) if (edges[type]!.length) liveEdgesNew[type] = edges[type];
   const liveNew = {
@@ -768,11 +776,10 @@ export function shipRevision(
     edges: liveEdgesNew,
     implements: implementsNew,
     tests: testsNew,
-    implementsOwners,
   };
   const carried = siblings.map((s) => ({
     change: s.change,
-    ...carryRevision(node.id, liveOld, liveNew, s.revision, s.body),
+    ...carryRevision(node.id, liveOld, { ...liveNew, implementsOwners: implementsOwnersOf(graph, node, s.change) }, s.revision, s.body),
   }));
 
   // The writes, put back as they were if one fails.

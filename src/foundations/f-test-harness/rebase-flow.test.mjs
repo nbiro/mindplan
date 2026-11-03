@@ -663,6 +663,39 @@ async function shippedFoundation(id) {
   );
 }
 
+// --- a sibling rebase keeps a file another node's revision of the same change releases ---
+{
+  await shippedFoundation("f-mv-src");
+  await shippedFoundation("f-mv-dst");
+  const moved = "src/f-mv-src/index.ts";
+  await call("open_next", { node_id: "f-mv-src", change: "move" });
+  await call("set_implementation_files", { node_id: "f-mv-src", change: "move", remove: [moved] });
+  await call("open_next", { node_id: "f-mv-dst", change: "move" });
+  await call("set_implementation_files", { node_id: "f-mv-dst", change: "move", add: [moved] });
+  await call("open_next", { node_id: "f-mv-dst", change: "other" });
+  await call("patch_node_territory", { node_id: "f-mv-dst", change: "other", section: "## Purpose", text: "Purpose from other." });
+  await readyByTools("f-mv-dst", "other");
+  for (const new_status of ["ready", "in-progress", "in-review"]) {
+    await call("update_node_status", { node_id: "f-mv-dst", change: "other", new_status });
+  }
+  const shipped = await raw("update_node_status", { node_id: "f-mv-dst", change: "other", new_status: "ship" });
+  const after = await call("get_node_context", { node_id: "f-mv-dst", change: "move" });
+  const moveRev = (after.revisions ?? []).find((r) => r.change === "move");
+  check(
+    "shipping a sibling rebases a revision claiming a file its source's revision of that change releases with no claim conflict",
+    !!moveRev && moveRev.conflicts === 0,
+    JSON.stringify({ shipped: shipped.text, revisions: after.revisions })
+  );
+
+  await call("patch_node_territory", { node_id: "f-mv-dst", slot: "current", section: "## Purpose", text: "Purpose patched in place." });
+  const rebased = await call("rebase_revision", { node_id: "f-mv-dst", change: "move" });
+  check(
+    "rebase_revision keeps a file the source's revision of the same change releases, with no claim conflict",
+    rebased.rebased === true && Array.isArray(rebased.conflicts) && rebased.conflicts.length === 0,
+    JSON.stringify(rebased)
+  );
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {
