@@ -13,9 +13,8 @@ import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
-import { rootKey } from "../../foundations/f-source-index/root-scope.js";
+import { CACHE_DIRNAME, rootKey } from "../../foundations/f-source-index/root-scope.js";
 
-const CACHE_DIRNAME = ".mindplan-cache";
 const ACKS_FILE = "acks.json";
 
 /** A warning id: `w-` and ten lowercase hex digits. */

@@ -9,6 +9,9 @@
 import { AsyncLocalStorage } from "async_hooks";
 import * as path from "path";
 
+/** A root's folder of derived caches (graph cache, search index, acks): git-ignored, safe to delete. */
+export const CACHE_DIRNAME = ".mindplan-cache";
+
 const scope = new AsyncLocalStorage<string>();
 
 /** Runs fn with root as the project root for everything it (and what it awaits) resolves. */
