@@ -578,16 +578,32 @@ function runCheck(root) {
     await call("setup_project");
     const current = await call("doctor");
     check(
-      "doctor on a current graph reports a numeric load_ms and no load_error",
+      "doctor on a current graph reports a numeric load_ms_cached, cache_hit, and no load_error",
       !current.error &&
         current.json?.graph?.status === "current" &&
         current.json.graph.level === MIGRATION_LEVEL &&
-        typeof current.json.load_ms === "number" &&
+        typeof current.json.load_ms_cached === "number" &&
+        typeof current.json.cache_hit === "boolean" &&
+        !("load_ms" in current.json) &&
         current.json.load_error === undefined,
       current.text
     );
     const again = await call("doctor");
     check("doctor sees the graph cache once the graph loaded", again.json?.cache?.graph === true, again.text);
+    check("a second doctor load is a cache hit", again.json?.cache_hit === true, again.text);
+    // A legacy current.mdx beside its id-named twin: a load would delete it, so doctor does not load.
+    await call("create_node", { id: "f-doc", type: "Foundation", title: "Doc", description: "Infra — doc", role: "infra" });
+    const folder = path.join(root, "mindplan", "foundations", "f-doc");
+    fs.copyFileSync(path.join(folder, "f-doc.mdx"), path.join(folder, "current.mdx"));
+    const legacy = await call("doctor");
+    check(
+      "doctor never loads when a load would remove legacy files, and names them",
+      legacy.json?.load_ms_cached === 0 &&
+        String(legacy.json?.load_error).includes("mindplan/foundations/f-doc/current.mdx") &&
+        fs.existsSync(path.join(folder, "current.mdx")),
+      legacy.text
+    );
+    fs.rmSync(path.join(folder, "current.mdx"));
     await client.close();
     client = undefined;
     const stampFile = path.join(root, "mindplan", "version.json");
@@ -596,7 +612,7 @@ function runCheck(root) {
     const behind = await call("doctor");
     check(
       "doctor answers on a level-3 graph with status upgrade and level 3",
-      !behind.error && behind.json?.graph?.status === "upgrade" && behind.json.graph.level === 3 && behind.json.load_ms === 0,
+      !behind.error && behind.json?.graph?.status === "upgrade" && behind.json.graph.level === 3 && behind.json.load_ms_cached === 0,
       behind.text
     );
   } finally {

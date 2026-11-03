@@ -213,10 +213,10 @@ function nextTerritoryPath(...parts) {
   } catch {
     payload = null;
   }
-  if (dr.error || !payload || path.resolve(payload.root) !== path.resolve(root) || typeof payload.load_ms !== "number" || !payload.graph?.status) {
+  if (dr.error || !payload || path.resolve(payload.root) !== path.resolve(root) || typeof payload.load_ms_cached !== "number" || typeof payload.cache_hit !== "boolean" || !payload.graph?.status) {
     failures++;
-    console.log(`FAIL doctor reports the root, graph status, and load_ms: ${dr.text.slice(0, 200)}`);
-  } else console.log("ok   doctor reports the root, graph status, and load_ms");
+    console.log(`FAIL doctor reports the root, graph status, load_ms_cached, and cache_hit: ${dr.text.slice(0, 200)}`);
+  } else console.log("ok   doctor reports the root, graph status, load_ms_cached, and cache_hit");
 }
 
 // --- get_rules (mandatory rules only) ---

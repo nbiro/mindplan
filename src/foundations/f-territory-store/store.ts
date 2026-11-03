@@ -283,6 +283,39 @@ export function removeLegacyIfIdNamedExists(
 }
 
 /**
+ * Legacy files a graph load would delete (`removeLegacyIfIdNamedExists`): a `current.mdx` or
+ * `next.mdx` beside its id-named twin, as repo-relative paths. Reads only; never removes.
+ */
+export function pendingLegacyRemovals(): string[] {
+  const out: string[] = [];
+  const root = mindplanRoot();
+  for (const dirName of Object.keys(DIR_TO_TYPE)) {
+    const typePath = path.join(root, dirName);
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(typePath, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const folder = path.join(typePath, entry.name);
+      for (const slot of ["current", "next"] as TerritorySlot[]) {
+        const preferred = preferredSlotFilename(entry.name, slot);
+        const legacy = legacySlotFilename(slot);
+        if (preferred.toLowerCase() === legacy.toLowerCase()) continue;
+        const preferredPath = path.join(folder, preferred);
+        const legacyPath = path.join(folder, legacy);
+        if (!isRegularFile(preferredPath) || !isRegularFile(legacyPath)) continue;
+        if (sameFilesystemEntry(preferredPath, legacyPath)) continue;
+        out.push(path.posix.join(MINDPLAN_DIR, dirName, entry.name, legacy));
+      }
+    }
+  }
+  return out.sort();
+}
+
+/**
  * Filename for this slot. An existing legacy file wins over creating an id-named one.
  * New files use the id name, except a new evolution follows a legacy live file.
  * When both names exist, the legacy file is deleted and the id name is used.
@@ -998,6 +1031,13 @@ export function discoverEdges(nodes: MindPlanNode[]): MindPlanEdge[] {
 export function loadGraph(): MindPlanGraph {
   const nodes = discoverNodes();
   return { version: GRAPH_VERSION, nodes, edges: discoverEdges(nodes) };
+}
+
+/** Whether the last graph load of this root re-parsed no folder (every node came from the graph cache); null without a cache. */
+export function lastGraphLoadFromCache(): boolean | null {
+  const cache = graphCacheFor(projectRoot(), parserVersion());
+  if (!cache) return null;
+  return cache.lastStats.parsed === 0;
 }
 
 /** Returns { id, type } if a territory folder exists for this id. */

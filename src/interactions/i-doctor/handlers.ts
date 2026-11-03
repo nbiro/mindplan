@@ -7,7 +7,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import { graphStatus, type GraphState } from "../../foundations/f-graph-migrations/status.js";
-import { loadGraph, projectRoot } from "../../foundations/f-territory-store/store.js";
+import {
+  lastGraphLoadFromCache,
+  loadGraph,
+  pendingLegacyRemovals,
+  projectRoot,
+} from "../../foundations/f-territory-store/store.js";
 import { packageVersion } from "../../foundations/f-territory-store/version.js";
 import { serverStartedAt } from "../../foundations/f-mcp-runtime/started.js";
 
@@ -16,7 +21,10 @@ export type DoctorReport = {
   node: string;
   root: string;
   graph: { status: GraphState; level: number; server_level: number };
-  load_ms: number;
+  /** How long a graph load took, through the graph cache (it has no bypass); 0 when not loaded. */
+  load_ms_cached: number;
+  /** Every node of that load came from the graph cache (no folder re-parsed). */
+  cache_hit: boolean;
   load_error?: string;
   cache: { graph: boolean; search: boolean };
   started_at: string;
@@ -27,9 +35,10 @@ export type DoctorReport = {
 const CACHE_DIRNAME = ".mindplan-cache";
 
 /**
- * The health report. Never throws. The graph loads only when it is current: a graph that needs
- * setup or an upgrade is not read by code that expects the current format, so its load_ms is 0
- * and load_error names the fix.
+ * The health report. Never throws. The graph loads only when graphStatus says it is current (the
+ * version gate setting does not matter: a graph that needs setup or an upgrade is never read by
+ * code that expects the current format), and never when a load would delete legacy files (a
+ * diagnosis writes nothing): then load_ms_cached is 0 and load_error names why.
  */
 export function doctor(): DoctorReport {
   const root = projectRoot();
@@ -40,17 +49,29 @@ export function doctor(): DoctorReport {
     search: fs.existsSync(path.join(cacheDir, "index.db")),
   };
   let loadMs = 0;
+  let cacheHit = false;
   let loadError: string | undefined;
-  if (status.state === "current" || process.env.MINDPLAN_VERSION_GATE === "off") {
-    const start = performance.now();
-    try {
-      loadGraph();
-      loadMs = Math.round((performance.now() - start) * 10) / 10;
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : String(err);
-    }
-  } else {
+  if (status.state !== "current") {
     loadError = `not loaded: ${status.warning ?? status.state}`;
+  } else {
+    let legacy: string[] = [];
+    try {
+      legacy = pendingLegacyRemovals();
+    } catch {
+      legacy = [];
+    }
+    if (legacy.length > 0) {
+      loadError = `not loaded: a load would remove legacy files beside their id-named twins (${legacy.join(", ")}); any graph tool call removes them`;
+    } else {
+      const start = performance.now();
+      try {
+        loadGraph();
+        loadMs = Math.round((performance.now() - start) * 10) / 10;
+        cacheHit = lastGraphLoadFromCache() === true;
+      } catch (err) {
+        loadError = err instanceof Error ? err.message : String(err);
+      }
+    }
   }
   const started = serverStartedAt();
   return {
@@ -58,7 +79,8 @@ export function doctor(): DoctorReport {
     node: process.version,
     root,
     graph: { status: status.state, level: status.level, server_level: status.required },
-    load_ms: loadMs,
+    load_ms_cached: loadMs,
+    cache_hit: cacheHit,
     ...(loadError !== undefined ? { load_error: loadError } : {}),
     cache,
     started_at: started.toISOString(),
