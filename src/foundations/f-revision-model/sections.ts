@@ -7,7 +7,8 @@
 /** Key of the text above a body's first level-2 heading. */
 export const PREAMBLE_SECTION = "_preamble";
 
-const FENCE_LINE = /^\s*(```|~~~)/;
+/** A fence-like line: its run of three or more backticks or tildes, then the rest of the line. */
+const FENCE_LINE = /^\s*(`{3,}|~{3,})(.*)$/;
 const LEVEL_TWO_LINE = /^##\s+(.+?)\s*$/;
 const RULES_HEADING_LINE = /^## Rules[ \t]*$/;
 const DECISIONS_HEADING_LINE = /^## Decisions[ \t]*$/;
@@ -24,14 +25,22 @@ export function normalizedText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\s+$/, "");
 }
 
-/** Per line: inside a fenced code block (fence lines included). */
+/**
+ * Per line: inside a fenced code block (fence lines included). As in CommonMark, a fence opens on
+ * three or more backticks or tildes (a backtick fence's info string holds no backtick) and closes
+ * only on a run of the same char at least as long with nothing after it but whitespace; any other
+ * fence-like line inside is code.
+ */
 export function fencedLines(lines: string[]): boolean[] {
   let fence: string | null = null;
   return lines.map((raw) => {
-    const f = raw.match(FENCE_LINE);
-    if (!f) return fence !== null;
-    if (fence === null) fence = f[1];
-    else if (fence === f[1]) fence = null;
+    const f = raw.replace(/\r$/, "").match(FENCE_LINE);
+    if (fence === null) {
+      if (!f || (f[1][0] === "`" && f[2].includes("`"))) return false;
+      fence = f[1];
+      return true;
+    }
+    if (f && f[1][0] === fence[0] && f[1].length >= fence.length && f[2].trim() === "") fence = null;
     return true;
   });
 }

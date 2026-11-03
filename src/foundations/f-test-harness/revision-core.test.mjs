@@ -11,7 +11,9 @@ import {
   applyDelta,
   diffDelta,
   emptyDelta,
+  fencedLines,
   graphUnder,
+  levelTwoHeadings,
   openChanges,
   rebase,
   resolveRevisionChange,
@@ -426,6 +428,21 @@ function body(sections) {
   assert.deepEqual(splitSections(out.body).map((s) => s.heading), ["_preamble", "## Spec", "## Rules"]);
   assert.ok(out.body.startsWith("Intro from live."), out.body);
   ok("rebase: a preamble only new live has goes at the top of the body");
+}
+
+// --- fenced code --------------------------------------------------------------------------------
+
+{
+  // A ```` fence holds a ``` line as code; only a fence of the same char, at least as long and
+  // with no info string, closes it.
+  const lines = ["````md", "```", "## Not a heading", "```js", "````", "## Real", "~~~~", "~~~ x", "## Hidden", "~~~~~", "## After"];
+  assert.deepEqual(fencedLines(lines), [true, true, true, true, true, false, true, true, true, true, false]);
+  assert.deepEqual(levelTwoHeadings(lines).map((h) => h.name), ["Real", "After"]);
+  assert.deepEqual(
+    splitSections("Intro\n````\n```\n## Inside\n```\n````\n## Out\nx\n").map((s) => s.heading),
+    ["_preamble", "## Out"],
+  );
+  ok("fenced code: a fence closes only on the same char, at least as long, with no info string");
 }
 
 // --- decision files -----------------------------------------------------------------------------
