@@ -123,6 +123,8 @@ type StatusArgs = {
    * transition moves (optional when it has at most one).
    */
   change?: string;
+  /** With `scope: "change"`: walk only these members of the change; the others stay put. */
+  nodes?: string[];
   /** Let a scoped walk to `ship` move nodes that have not reached in-review. Reported in the result. */
   skip_review?: boolean;
   /** Let a scoped walk move every node that passes its gates and leave the blocked ones in place. */
@@ -155,6 +157,12 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
     if (args.scope === "all_open_updates" && args.node_id) {
       throw blocked('scope "all_open_updates" takes no node_id; use "node_and_dependents" for one node.');
     }
+    if (args.nodes !== undefined && args.scope !== "change") {
+      throw blocked('nodes is only used with scope "change" (the members of the change to walk).');
+    }
+    if (args.nodes !== undefined && (!Array.isArray(args.nodes) || args.nodes.length === 0)) {
+      throw blocked('nodes lists the members of the change to walk; pass at least one, or omit it to walk the whole change.');
+    }
     if (args.scope === "change") {
       if (!args.change) {
         throw blocked('scope "change" requires change (the change id whose revisions walk together).');
@@ -166,6 +174,9 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
       throw blocked('change is only used with scope "change".');
     }
     return { mode: "scope", items: [] };
+  }
+  if (args.nodes !== undefined) {
+    throw blocked('nodes is only used with scope "change" (the members of the change to walk).');
   }
   if (args.change !== undefined && hasList) {
     throw blocked('change picks the revision of a single node (node_id + new_status) or the change of scope "change"; not a revisions list.');
@@ -269,6 +280,18 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[]
       throw blocked(
         `change "${args.change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
       );
+    }
+    if (args.nodes) {
+      // Only the listed members walk; an unlisted member a listed one needs is left to the gates.
+      const strangers = args.nodes.filter((id) => !ids.has(id));
+      if (strangers.length > 0) {
+        throw blocked(
+          `${strangers.map((id) => `"${id}"`).join(", ")} ${strangers.length === 1 ? "is" : "are"} not a member of change "${change}"; ` +
+            `its members: ${selected.map((n) => `"${n.id}"`).join(", ")}.`
+        );
+      }
+      const listed = new Set(args.nodes);
+      selected = selected.filter((n) => listed.has(n.id));
     }
     return orderForWalk(graph, selected).map((node) => ({
       node,
@@ -706,48 +729,62 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     };
   }
 
-  if (args.dry_run) {
-    const graph = loadGraph();
-    const items =
-      normalized.mode === "batch" ? orderStatusRevisions(normalized.items) : normalized.items;
-    const plan: WalkPlan[] = items.map((i) => {
-      const change = revisionChangeFor(findNode(graph, i.node_id), i.new_status, i.change);
-      return { node_id: i.node_id, ...(change ? { change } : {}), steps: [i.new_status] };
-    });
-    const sim = simulateWalk(plan);
-    return {
-      dry_run: true,
-      plan: describePlan(plan, graph),
-      blocked: sim.blocked,
-      ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
-    };
-  }
-  gateWrite(null, normalized.items.map((i) => i.node_id), "update_node_status");
-
   if (normalized.mode === "single") {
-    return applyOneStatus({ ...normalized.items[0], verbose: args.verbose });
+    const item = normalized.items[0];
+    if (args.dry_run) {
+      const graph = loadGraph();
+      let plan: WalkPlan[];
+      try {
+        const change = revisionChangeFor(findNode(graph, item.node_id), item.new_status, item.change);
+        plan = [{ node_id: item.node_id, ...(change ? { change } : {}), steps: [item.new_status] }];
+      } catch (err) {
+        throw withHintsError(err, [item]);
+      }
+      const sim = simulateWalk(plan);
+      return {
+        dry_run: true,
+        plan: describePlan(plan, graph),
+        blocked: sim.blocked ? withHints(sim.blocked, [item]) : null,
+        ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
+      };
+    }
+    try {
+      gateWrite(null, [item.node_id], "update_node_status");
+      return applyOneStatus({ ...item, verbose: args.verbose });
+    } catch (err) {
+      throw withHintsError(err, [item]);
+    }
   }
 
   const ordered = orderStatusRevisions(normalized.items);
+  if (args.dry_run) return dryRunBatch(ordered);
+  try {
+    gateWrite(null, ordered.map((i) => i.node_id), "update_node_status");
+  } catch (err) {
+    throw withHintsError(err, ordered);
+  }
+
+  // Every item is tried, in tier order, on the graph as the earlier items left it.
   const applied: Record<string, unknown>[] = [];
+  const results: BatchResult[] = [];
   const decisionCtx = createDecisionContext(projectRoot());
   for (const rev of ordered) {
     try {
-      applied.push(applyOneStatus({ ...rev, decisionCtx }));
+      const row = applyOneStatus({ ...rev, decisionCtx });
+      applied.push(row);
+      const change = (row.change as string | undefined) ?? rev.change;
+      results.push({ node_id: rev.node_id, ...(change ? { change } : {}), ok: true, line: statusLine(row) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const reason = message.replace(/^Blocked:\s*/, "");
-      const appliedSummary = applied
-        .map((row) => `${String(row.node_id)} (${String(row.new_state)})`)
-        .join(", ");
-      throw new Error(
-        `Blocked: ${reason} Ordered status stopped on "${rev.node_id}"` +
-          (appliedSummary
-            ? ` after applying: ${appliedSummary}. Earlier nodes stay transitioned.`
-            : " before any node in the revision was transitioned.")
-      );
+      results.push({
+        node_id: rev.node_id,
+        ...(rev.change ? { change: rev.change } : {}),
+        ok: false,
+        blocked: withHints(message, [rev]),
+      });
     }
   }
+  if (applied.length === 0) throw new Error(batchBlocked(ordered, results));
   const changed = new Set<string>();
   const warnings = new Set<string>();
   for (const row of applied) {
@@ -763,18 +800,137 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   const last = applied[applied.length - 1] ?? {};
   return {
     ordered: true,
+    results,
     lines: applied.map(statusLine),
     changed_files: [...changed],
     ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
     ...(verbose
       ? {
           applied,
-          stopped_on: null,
           capabilities_recomputed: last.capabilities_recomputed ?? [],
           stability_recomputed: last.stability_recomputed ?? [],
         }
       : {}),
   };
+}
+
+/** One batch item's outcome: its line when it moved, its Blocked reason (with the change hint) when not. */
+type BatchResult = { node_id: string; change?: string; ok: boolean; line?: string; blocked?: string };
+
+const HINT_PREFIX = "To move the whole change:";
+
+/** The Blocked of a batch where no item moved: every item's reason, then the change hints. */
+function batchBlocked(ordered: StatusRevision[], results: BatchResult[]): string {
+  const reasons = results
+    .filter((r) => !r.ok)
+    .map((r) => {
+      const item =
+        ordered.find((i) => i.node_id === r.node_id && i.change === r.change) ??
+        ordered.find((i) => i.node_id === r.node_id);
+      const reason = (r.blocked ?? "").split(`\n${HINT_PREFIX}`)[0].replace(/^Blocked:\s*/, "");
+      return `- "${r.node_id}" -> ${item?.new_status ?? "?"}: ${reason}`;
+    })
+    .join("\n");
+  return withHints(`Blocked: no item of this batch could move; nothing was written.\n${reasons}`, ordered);
+}
+
+/**
+ * A batch dry run: each item is validated on the graph as the items before it would leave it (a
+ * blocked item leaves it unchanged), writing nothing. `blocked` is null when every item passes.
+ */
+function dryRunBatch(ordered: StatusRevision[]): Record<string, unknown> {
+  let graph = loadGraph();
+  const root = projectRoot();
+  const now = new Date().toISOString();
+  const decisionCtx = createDecisionContext(root);
+  const warnings = new Set<string>();
+  const plan: string[] = [];
+  const results: BatchResult[] = [];
+  for (const item of ordered) {
+    let row: WalkPlan;
+    try {
+      const change = revisionChangeFor(findNode(graph, item.node_id), item.new_status, item.change);
+      row = { node_id: item.node_id, ...(change ? { change } : {}), steps: [item.new_status] };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      results.push({ node_id: item.node_id, ...(item.change ? { change: item.change } : {}), ok: false, blocked: withHints(message, [item]) });
+      continue;
+    }
+    const trial = structuredClone(graph);
+    const rowWarnings = new Set<string>();
+    const stop = simulateRow(trial, root, row, now, decisionCtx, rowWarnings);
+    const change = row.change ?? item.change;
+    if (stop) {
+      results.push({
+        node_id: item.node_id,
+        ...(change ? { change } : {}),
+        ok: false,
+        blocked: withHints(`Blocked: ${stop.reason}`, [item]),
+      });
+      continue;
+    }
+    const [line] = describePlan([row], graph);
+    plan.push(line);
+    results.push({ node_id: item.node_id, ...(change ? { change } : {}), ok: true, line });
+    for (const w of rowWarnings) warnings.add(w);
+    graph = trial;
+  }
+  return {
+    dry_run: true,
+    plan,
+    results,
+    blocked: results.every((r) => r.ok) ? null : batchBlocked(ordered, results).replace(
+      "no item of this batch could move; nothing was written.",
+      plan.length === 0 ? "no item of this batch could move." : "these items would not move:"
+    ),
+    ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
+  };
+}
+
+/** Targets a scoped change walk takes; a Blocked move to one of them gets the change hint. */
+const HINT_TARGETS = new Set(["ready", "in-progress", "in-review", "ship"]);
+
+/**
+ * The one-call way to move the change a node's move belongs to (a revision's change, or a
+ * pre-ship node's change); null when the node is in no change or the target is not walkable.
+ */
+function changeHint(item: StatusRevision): string | null {
+  if (!HINT_TARGETS.has(item.new_status)) return null;
+  let node: MindPlanNode;
+  try {
+    node = findNode(loadGraph(), item.node_id);
+  } catch {
+    return null;
+  }
+  if (!isPipelineNodeType(node.type)) return null;
+  let revision: string | undefined;
+  let change: string | undefined;
+  if (!node.shipped_at) {
+    change = node.change || undefined;
+  } else {
+    const open = openChanges(node);
+    revision = item.change && open.includes(item.change) ? item.change : open.length === 1 ? open[0] : undefined;
+    change = revision;
+  }
+  if (!change) return null;
+  const skipReview = item.new_status === "ship" && activeState(node, revision) !== "in-review";
+  return (
+    `${HINT_PREFIX} update_node_status({ scope: "change", change: "${change}", ` +
+    `new_status: "${item.new_status}"${skipReview ? ", skip_review: true" : ""} })`
+  );
+}
+
+/** A Blocked message ending with the change hint of each item that belongs to a change. */
+function withHints(message: string, items: StatusRevision[]): string {
+  if (!message.startsWith("Blocked:")) return message;
+  const hints = [...new Set(items.map(changeHint).filter((h): h is string => h !== null))];
+  return hints.length ? `${message.trimEnd()}\n${hints.join("\n")}` : message;
+}
+
+/** `withHints` on a thrown Blocked; any other error passes through. */
+function withHintsError(err: unknown, items: StatusRevision[]): unknown {
+  if (!(err instanceof Error) || !err.message.startsWith("Blocked:")) return err;
+  return new Error(withHints(err.message, items));
 }
 
 function applyOneStatus(args: {

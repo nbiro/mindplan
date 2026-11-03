@@ -727,6 +727,118 @@ fillAndTick("interactions", "i-b");
   check("skip_blocked outside a scoped walk is Blocked", !!stray, String(stray));
 }
 
+// --- item 11: ship part of a change (scope change + nodes); batches that keep going; the change hint ---
+{
+  for (const id of ["f-p1", "f-p2", "f-p3"]) {
+    await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra", change: "part" });
+    fillAndTick("foundations", id);
+    write(`src/${id}/x.ts`, id === "f-p3" ? 'import { b } from "../i-b/b.js";\nexport const x = b;\n' : "export const x = 1;\n");
+    await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
+  }
+  await call("create_node", { id: "i-p", type: "Interaction", title: "Part", description: "User does part", change: "part" });
+  await call("link_nodes", { source_id: "i-p", target_id: "j-app", edge_type: "belongs_to" });
+  await call("link_nodes", { source_id: "i-p", target_id: "f-p3", edge_type: "depends_on" });
+  fillAndTick("interactions", "i-p");
+  write("src/i-p/p.ts", "export const p = 1;\n");
+  await call("set_implementation_files", { replace: true, node_id: "i-p", files: ["src/i-p/"] });
+  const walk = { scope: "change", change: "part", new_status: "ship", skip_review: true };
+
+  const stranger = await blocked("update_node_status", { ...walk, nodes: ["f-p1", "f-ok"] });
+  check(
+    "scope change with a nodes entry that is not a member is Blocked naming the members",
+    !!stranger && stranger.includes('"f-ok"') && ["f-p1", "f-p2", "f-p3", "i-p"].every((id) => stranger.includes(`"${id}"`)),
+    String(stranger)
+  );
+  const stray = await blocked("update_node_status", { scope: "all_open_updates", new_status: "ready", nodes: ["f-p1"] });
+  check("nodes outside scope change is Blocked", !!stray, String(stray));
+
+  const unlisted = await blocked("update_node_status", { ...walk, nodes: ["f-p1", "i-p"] });
+  check(
+    "a listed node whose dependency in the same change is unlisted is refused by the gate",
+    !!unlisted && unlisted.includes("Infrastructure First") && unlisted.includes('"f-p3"') &&
+      (await state("f-p1")).state === "draft",
+    String(unlisted)
+  );
+  const partial = await call("update_node_status", { ...walk, nodes: ["f-p1", "i-p"], skip_blocked: true, dry_run: true });
+  check(
+    "nodes works with skip_blocked and dry_run",
+    partial.plan.every((l) => l.startsWith("f-p1:")) && partial.blocked.map((b) => b.node_id).join() === "i-p",
+    JSON.stringify(partial)
+  );
+
+  const dry = await call("update_node_status", { ...walk, nodes: ["f-p1", "f-p2"], dry_run: true });
+  check(
+    "a dry run with nodes plans only the listed members",
+    dry.blocked === null && dry.plan.length > 0 && dry.plan.every((l) => l.startsWith("f-p1:") || l.startsWith("f-p2:")),
+    JSON.stringify(dry)
+  );
+  const r = await call("update_node_status", { ...walk, nodes: ["f-p1", "f-p2"] });
+  check(
+    "scope change with nodes ships the listed members and leaves the others",
+    r.lines.join() === "f-p1: draft -> stable,f-p2: draft -> stable" &&
+      (await state("f-p3")).state === "draft" &&
+      (await state("i-p")).state === "draft" &&
+      r.skipped_review?.join() === "f-p1,f-p2",
+    JSON.stringify(r)
+  );
+
+  // A batch keeps going past a Blocked item and reports per node.
+  for (const id of ["f-t1", "f-t2", "f-t3"]) {
+    await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra", change: "trio" });
+    fillAndTick("foundations", id);
+    write(`src/${id}/x.ts`, id === "f-t2" ? 'import { b } from "../i-b/b.js";\nexport const x = b;\n' : "export const x = 1;\n");
+    await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
+  }
+  const trio = (new_status) => ({ revisions: ["f-t1", "f-t2", "f-t3"].map((node_id) => ({ node_id, new_status })) });
+  await call("update_node_status", trio("ready"));
+  await call("update_node_status", trio("in-progress"));
+  const batch = await call("update_node_status", trio("in-review"));
+  check(
+    "a batch whose middle item is Blocked moves the other two and reports per node",
+    batch.lines?.join() === "f-t1: in-progress -> in-review,f-t3: in-progress -> in-review" &&
+      batch.results?.length === 3 &&
+      batch.results[0].ok === true && batch.results[0].line === "f-t1: in-progress -> in-review" &&
+      batch.results[1].node_id === "f-t2" && batch.results[1].ok === false && batch.results[1].blocked?.includes("imports:") &&
+      batch.results[2].ok === true &&
+      (await state("f-t2")).state === "in-progress" &&
+      (await state("f-t3")).state === "in-review" &&
+      batch.changed_files?.length > 0,
+    JSON.stringify(batch)
+  );
+  const batchDry = await call("update_node_status", { ...trio("in-review"), dry_run: true });
+  check(
+    "a batch dry run tries every item too",
+    batchDry.results?.length === 3 && batchDry.results.filter((x) => !x.ok).length === 3,
+    JSON.stringify(batchDry)
+  );
+  const none = await blocked("update_node_status", {
+    revisions: [{ node_id: "f-t2", new_status: "in-review" }, { node_id: "f-t1", new_status: "draft" }],
+  });
+  check(
+    "a batch where no item moves is Blocked listing every reason",
+    !!none && none.includes('"f-t2"') && none.includes('"f-t1"') && none.includes("imports:"),
+    String(none)
+  );
+
+  const hint = 'To move the whole change: update_node_status({ scope: "change", change: "trio", new_status: "in-review" })';
+  const single = await blocked("update_node_status", { node_id: "f-t2", new_status: "in-review" });
+  check("a single-node Blocked for a change member ends with the change hint", !!single && single.trimEnd().endsWith(hint), String(single));
+  check("a batch Blocked for a change member ends with the change hint", !!none && none.trimEnd().endsWith(hint), String(none));
+  check("a batch result's blocked reason carries the change hint", batch.results?.[1]?.blocked?.trimEnd().endsWith(hint), JSON.stringify(batch.results));
+  const shipHint = await blocked("update_node_status", { node_id: "f-t2", new_status: "ship" });
+  check(
+    "the ship hint adds skip_review when the node is not in-review",
+    !!shipHint &&
+      shipHint.trimEnd().endsWith(
+        'To move the whole change: update_node_status({ scope: "change", change: "trio", new_status: "ship", skip_review: true })'
+      ),
+    String(shipHint)
+  );
+  await call("create_node", { id: "f-lone", type: "Foundation", title: "Lone", description: "Infra — lone", role: "infra" });
+  const noChange = await blocked("update_node_status", { node_id: "f-lone", new_status: "ship" });
+  check("a node outside any change gets no hint", !!noChange && !noChange.includes("To move the whole change"), String(noChange));
+}
+
 await client.close();
 if (failures > 0) {
   console.log(`\nhonesty.test.mjs: ${failures} failure(s)`);

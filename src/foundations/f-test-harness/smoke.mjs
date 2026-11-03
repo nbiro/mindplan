@@ -2212,18 +2212,22 @@ await expectOk("ordered in-review", "update_node_status", {
     { node_id: "f-ord", new_status: "in-review" },
   ],
 });
-await expectBlockedContaining(
-  "ordered ship stops on completion and keeps foundation",
-  "update_node_status",
-  {
+const orderedShip = JSON.parse(
+  await expectOk("ordered ship keeps going past a Blocked item", "update_node_status", {
     revisions: [
       { node_id: "if-ord", new_status: "ship" },
       { node_id: "i-ord", new_status: "ship" },
       { node_id: "f-ord", new_status: "ship" },
     ],
-  },
-  'Ordered status stopped on "i-ord" after applying: f-ord (stable)'
+  })
 );
+if (
+  orderedShip.results?.map((r) => `${r.node_id}:${r.ok}`).join() !== "f-ord:true,i-ord:false,if-ord:false" ||
+  !orderedShip.results[1].blocked?.includes("Completion Check")
+) {
+  failures++;
+  console.log(`FAIL ordered ship per-node results: ${JSON.stringify(orderedShip)}`);
+} else console.log("ok   ordered ship reports per node and moves what passes");
 graph = JSON.parse(await expectOk("graph after ordered stop", "get_mindplan_graph", {}));
 const fOrd = graph.nodes.find((n) => n.id === "f-ord");
 const iOrd = graph.nodes.find((n) => n.id === "i-ord");
@@ -2239,7 +2243,7 @@ if (iOrd?.state !== "in-review") {
 if (ifOrd?.state !== "in-review") {
   failures++;
   console.log(`FAIL if-ord should stay in-review, got ${ifOrd?.state}`);
-} else console.log("ok   later interface was not attempted");
+} else console.log("ok   later interface stayed put (its gate refused it)");
 
 await expectOk("open_next f-ord", "open_next", { change: "rev-f-ord", node_id: "f-ord" });
 const fOrdNext = nextTerritoryPath("foundations", "f-ord");
