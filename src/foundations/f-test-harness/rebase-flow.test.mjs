@@ -173,6 +173,11 @@ for (const new_status of SHIP) {
   const shipped = await call("update_node_status", { scope: "change", change: "a", new_status: "ship", skip_review: true });
   const rebasedB = (shipped.rebased ?? []).find((r) => r.change === "b");
   check(
+    "the walk line of a node that keeps another open revision shows live's shipped state",
+    (shipped.lines ?? []).some((l) => /^f-sub: .* -> stable$/.test(l)),
+    JSON.stringify(shipped.lines)
+  );
+  check(
     "a scope change walk ships revision a and reports b rebased with no conflicts",
     !!rebasedB && rebasedB.node_id === "f-sub" && rebasedB.conflicts.length === 0 && noMap(shipped),
     JSON.stringify(shipped)
