@@ -44,7 +44,7 @@ export const TOOLS: ToolDef[] = [
         "A Blocked: Orientation names every unoriented node of the call at once (a scope change walk names orient_for_work({ change })). " +
         "A batch returns one line per node. " +
         "When a ship or cancel leaves a change with no open revisions, its planned edges are dropped (cleared_planned); " +
-        "scope change walks the change's open revisions; the other scopes move each node's only open revision. " +
+        "scope change walks the change's open revisions; the other scopes move each node's only open revision, and leave a node with several in place, listed in needs_change_walk ({ node_id, changes }) to walk with scope change. " +
         "Capability and production stable/unstable are computed automatically.",
       inputSchema: {
         verbose: VERBOSE,

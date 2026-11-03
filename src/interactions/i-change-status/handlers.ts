@@ -274,12 +274,20 @@ function isOpenUpdate(node: MindPlanNode, includePlanned = false): boolean {
 /** A node a scoped walk moves, and which of its open revisions (undefined: live or pre-ship). */
 type ScopedNode = { node: MindPlanNode; change?: string };
 
+/** A selected node a non-change scope leaves in place: it has several open revisions. */
+type NeedsChangeWalk = { node_id: string; changes: string[] };
+
 /**
  * Nodes a scoped call walks with the revision each row moves, in the order they must move
  * (Foundations, Interactions, Interfaces). `scope: "change"` moves each member's revision of that
- * change; the other scopes move each node's only open revision (Blocked when a node has several).
+ * change, one row per node. The other scopes move each node's only open revision; a node with
+ * several has no single revision to move, so it is left in place and listed in `needsChangeWalk`
+ * (walk each of its changes with `scope: "change"`).
  */
-function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[] {
+function selectScopedNodes(
+  graph: MindPlanGraph,
+  args: StatusArgs
+): { rows: ScopedNode[]; needsChangeWalk: NeedsChangeWalk[] } {
   let selected: MindPlanNode[];
   if (args.scope === "all_open_updates") {
     selected = graph.nodes.filter((n) => isOpenUpdate(n));
@@ -306,10 +314,11 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[]
       selected = selected.filter((n) => listed.has(n.id));
     }
     // Ordered on the change's view: a depends_on a member's revision adds counts.
-    return orderForWalk(graphUnder(graph, change), selected).map((node) => ({
+    const rows = orderForWalk(graphUnder(graph, change), selected).map((node) => ({
       node,
       ...(revisionFor(node, change) ? { change } : {}),
     }));
+    return { rows, needsChangeWalk: [] };
   } else {
     const seed = findNode(graph, args.node_id!);
     const ids = new Set<string>([seed.id]);
@@ -337,10 +346,18 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[]
     }
     selected = graph.nodes.filter((n) => ids.has(n.id) && isOpenUpdate(n, true));
   }
-  return orderForWalk(graph, selected).map((node) => {
+  const needsChangeWalk = selected
+    .filter((n) => openChanges(n).length > 1)
+    .map((n) => ({ node_id: n.id, changes: openChanges(n) }));
+  const several = new Set(needsChangeWalk.map((n) => n.node_id));
+  const rows = orderForWalk(
+    graph,
+    selected.filter((n) => !several.has(n.id))
+  ).map((node) => {
     const change = revisionChangeFor(node, args.new_status!);
     return { node, ...(change ? { change } : {}) };
   });
+  return { rows, needsChangeWalk };
 }
 
 /**
@@ -757,7 +774,8 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
 
   if (normalized.mode === "scope") {
     const graph = loadGraph();
-    const nodes = selectScopedNodes(graph, args);
+    const { rows: nodes, needsChangeWalk } = selectScopedNodes(graph, args);
+    const leftInPlace = needsChangeWalk.length ? { needs_change_walk: needsChangeWalk } : {};
     const plan: WalkPlan[] = nodes
       .map(({ node: n, change }) => ({
         node_id: n.id,
@@ -769,7 +787,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     // One decision context (config + git probe) serves the validation and every step.
     const decisionCtx = createDecisionContext(projectRoot());
     if (args.skip_blocked === true) {
-      return walkSkippingBlocked(args, graph, plan, skipping, decisionCtx);
+      return { ...walkSkippingBlocked(args, graph, plan, skipping, decisionCtx), ...leftInPlace };
     }
     const reviewBlock =
       skipping.length > 0 && args.skip_review !== true ? skipReviewBlocked(skipping) : null;
@@ -783,6 +801,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
         plan: describePlan(plan, graph),
         blocked: reviewBlock ?? sim.blocked,
         ...skipped,
+        ...leftInPlace,
         ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
       };
     }
@@ -797,6 +816,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     return {
       ...applyWalk(args, graph, plan, sim.warnings, decisionCtx),
       ...skipped,
+      ...leftInPlace,
     };
   }
 

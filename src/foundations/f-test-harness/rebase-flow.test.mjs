@@ -729,6 +729,33 @@ async function shippedFoundation(id) {
   );
 }
 
+// --- scopes other than change leave a node with several open revisions in place and list it ---
+{
+  await shippedFoundation("f-nw-two");
+  await shippedFoundation("f-nw-one");
+  await call("link_nodes", { source_id: "f-nw-one", target_id: "f-nw-two", edge_type: "depends_on" });
+  await call("open_next", { node_id: "f-nw-two", change: "nw-a" });
+  await call("open_next", { node_id: "f-nw-two", change: "nw-b" });
+  await call("open_next", { node_id: "f-nw-one", change: "nw-c" });
+  const listed = (res) => (res.needs_change_walk ?? []).find((n) => n.node_id === "f-nw-two");
+  const all = await raw("update_node_status", { scope: "all_open_updates", new_status: "ready", dry_run: true });
+  const allRes = all.error ? {} : JSON.parse(all.text);
+  check(
+    "all_open_updates walks the others and lists a node with several open revisions in needs_change_walk",
+    !all.error && JSON.stringify(listed(allRes)?.changes) === JSON.stringify(["nw-a", "nw-b"]) &&
+      (allRes.plan ?? []).includes("f-nw-one: draft -> ready") && !(allRes.plan ?? []).some((l) => l.startsWith("f-nw-two:")),
+    all.text
+  );
+  const deps = await raw("update_node_status", { scope: "node_and_dependents", node_id: "f-nw-two", new_status: "ready" });
+  const depsRes = deps.error ? {} : JSON.parse(deps.text);
+  check(
+    "node_and_dependents moves the dependent and leaves the seed with two revisions in place, listed",
+    !deps.error && !!listed(depsRes) && (depsRes.lines ?? []).some((l) => l.startsWith("f-nw-one:")) &&
+      read("mindplan/foundations/f-nw-two/revisions/nw-a/f-nw-two.mdx").match(/^state: draft$/m) !== null,
+    deps.text
+  );
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {
