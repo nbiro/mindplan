@@ -39,7 +39,10 @@ import {
 } from "../f-domain-model/types.js";
 import {
   applyDelta,
+  conflictLabel,
+  detectEol,
   emptyDelta,
+  joinSections,
   PREAMBLE_SECTION,
   pickRevision,
   rebase,
@@ -71,9 +74,11 @@ import {
   oneBlankLineBelowFrontmatter,
   projectRoot,
   readMarkdown,
+  scanFrontmatter,
   splitContext,
   splitNodeDecisions,
   splitNodeRules,
+  unquote,
   validateChangeInput,
   withFreshAtomicOps,
   withoutAtomicOps,
@@ -152,24 +157,9 @@ function formatItem(value: string): string {
   return /^[A-Za-z0-9_./@=:+*-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
-function unquote(value: string): string {
-  if (!value.startsWith('"')) return value;
-  try {
-    return JSON.parse(value) as string;
-  } catch {
-    return value;
-  }
-}
-
 function listLines(key: string, items: string[] | undefined): string[] {
   if (!items || items.length === 0) return [];
   return [`${key}:`, ...items.map((i) => `  - ${formatItem(i)}`)];
-}
-
-function conflictEntry(c: RevisionConflict): string {
-  if (c.kind === "section") return `section:${c.section}`;
-  if (c.kind === "scalar") return `scalar:${c.field}`;
-  return `claim:${c.path}@${c.owner}`;
 }
 
 /**
@@ -210,9 +200,14 @@ export function formatRevisionFile(
   for (const [heading, hash] of Object.entries(revision.base.sections)) {
     lines.push(`  - ${formatItem(`section:${heading}=${hash}`)}`);
   }
-  lines.push(...listLines("conflicts", revision.conflicts.map(conflictEntry)));
+  lines.push(...listLines("conflicts", revision.conflicts.map(conflictLabel)));
   lines.push("---");
   return oneBlankLineBelowFrontmatter(`${lines.join(eol)}${eol}${body.replace(/\r?\n/g, eol)}`);
+}
+
+/** The revision file's list keys: every `<list>_add` / `<list>_remove` delta, base hashes, conflicts, and the part lists. */
+function isRevisionList(key: string): boolean {
+  return /_(add|remove)$/.test(key) || key === "base" || key === "conflicts" || key === "attributed" || key === "split_into";
 }
 
 function parseConflict(entry: string): RevisionConflict {
@@ -237,22 +232,9 @@ function parseConflict(entry: string): RevisionConflict {
 export function parseRevisionFile(text: string, nodeId: string): { revision: Revision; body: string } {
   const split = splitContext(text);
   if (!split) throw blocked(`revision file of "${nodeId}" has no YAML frontmatter.`);
-  const scalars: Record<string, string> = {};
-  const lists: Record<string, string[]> = {};
-  const lines = split.frontmatter.split(/\r?\n/).slice(1, -1);
-  for (let i = 0; i < lines.length; i++) {
-    const keyOnly = lines[i].match(/^(\w+):\s*$/);
-    if (keyOnly) {
-      const items: string[] = [];
-      while (i + 1 < lines.length && /^\s+-\s+/.test(lines[i + 1])) {
-        items.push(unquote(lines[++i].replace(/^\s+-\s+/, "").trim()));
-      }
-      lists[keyOnly[1]] = items;
-      continue;
-    }
-    const scalar = lines[i].match(/^(\w+):\s*(.*)$/);
-    if (scalar) scalars[scalar[1]] = unquote(scalar[2].trim());
-  }
+  const scanned = scanFrontmatter(split.frontmatter.split(/\r?\n/).slice(1, -1).join("\n"), isRevisionList);
+  const scalars = scanned.scalars;
+  const lists = Object.fromEntries(Object.entries(scanned.lists).map(([k, items]) => [k, items.map(unquote)]));
   if ((scalars.id ?? nodeId) !== nodeId) {
     throw blocked(`revision file names node "${scalars.id}", not "${nodeId}".`);
   }
@@ -382,7 +364,7 @@ function loadRevision(node: MindPlanNode, change: string): { revision: Revision;
 /** The line ending of the node's live file (CRLF when it has any), else LF. */
 function liveEol(node: MindPlanNode): "\n" | "\r\n" {
   try {
-    return readMarkdown(node, "current").includes("\r\n") ? "\r\n" : "\n";
+    return detectEol(readMarkdown(node, "current"));
   } catch {
     return "\n";
   }
@@ -691,7 +673,7 @@ export function shipRevision(
   const loaded = loadRevision(node, change);
   if (loaded.revision.conflicts.length > 0) {
     throw blocked(
-      `revision "${change}" of "${node.id}" has unresolved conflicts (${loaded.revision.conflicts.map(conflictEntry).join(", ")}); ` +
+      `revision "${change}" of "${node.id}" has unresolved conflicts (${loaded.revision.conflicts.map(conflictLabel).join(", ")}); ` +
         `resolve each with resolve_conflict first.`
     );
   }
@@ -708,7 +690,7 @@ export function shipRevision(
       // The conflicts are persisted before the Block: callers report the file as written.
       throw withWrittenFiles(blocked(
         `live "${node.id}" changed in place since revision "${change}" last started from it, and both edited ` +
-          `${own.revision.conflicts.map(conflictEntry).join(", ")}; the revision now holds those conflicts. ` +
+          `${own.revision.conflicts.map(conflictLabel).join(", ")}; the revision now holds those conflicts. ` +
           `Resolve each with resolve_conflict({ node_id: "${node.id}", change: "${change}", target, take }), then ship again.`
       ), [written]);
     }
@@ -733,7 +715,7 @@ export function shipRevision(
   const newParts = splitParts(graph, withRevision({ ...node, open_revisions: [revision] }, change));
   // Live decisions still in the `## Decisions` section stay there until the migration splits them.
   const liveDecisionSection = splitNodeDecisions(splitNodeRules(before.body).body).section;
-  const eol = body.includes("\r\n") ? "\r\n" : "\n";
+  const eol = detectEol(body);
   const promotedBody = joinNodeDecisions(withoutOwnedSections(body), liveDecisionSection);
 
   // Siblings onto the new live, in memory.
@@ -912,18 +894,13 @@ export function writeRevisionState(
   return { changed_files: [storeRevision(node, revision, body)] };
 }
 
-/** Text as compared and rejoined: LF line endings, trailing whitespace dropped. */
-function normalizedText(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\s+$/, "");
-}
-
 /**
  * `body` with section `heading` replaced by `text` (heading line included), or removed when
  * `text` is undefined; a missing section is added before `## Rules` / `## Decisions`, else at the
  * end. Sections are rejoined with one blank line between them, in the body's line endings.
  */
 function replaceSection(body: string, heading: string, text: string | undefined): string {
-  const eol = body.includes("\r\n") ? "\r\n" : "\n";
+  const eol = detectEol(body);
   const parts = splitSections(body).map((s) => ({ heading: s.heading, text: s.text }));
   const at = parts.findIndex((p) => p.heading === heading);
   if (text === undefined) {
@@ -934,8 +911,7 @@ function replaceSection(body: string, heading: string, text: string | undefined)
     const owned = parts.findIndex((p) => p.heading === "## Rules" || p.heading === "## Decisions");
     parts.splice(owned === -1 ? parts.length : owned, 0, { heading, text });
   }
-  const kept = parts.map((p) => normalizedText(p.text)).filter((t) => t.length > 0);
-  return kept.length ? `${kept.join("\n\n")}\n`.replace(/\n/g, eol) : "";
+  return joinSections(parts.map((p) => p.text), eol);
 }
 
 /**
@@ -963,7 +939,7 @@ export function resolveConflict(
       (c.kind === "claim" && c.path === target)
   );
   if (!conflict) {
-    const held = revision.conflicts.map(conflictEntry);
+    const held = revision.conflicts.map(conflictLabel);
     throw blocked(
       `revision "${change}" of "${node.id}" holds no conflict on "${target}"; conflicts: ${held.length ? held.join(", ") : "(none)"}.`
     );

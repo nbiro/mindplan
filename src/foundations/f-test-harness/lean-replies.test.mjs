@@ -253,14 +253,14 @@ fs.writeFileSync(
   const items = checklist.parseChecklistItems(body);
   check(
     "parseChecklistItems reads ids, kinds, text, state, and section of every counted box (Rules left out)",
-    JSON.stringify(items.map(({ id, kind, text, checked, done, section, index }) => ({ id, kind, text, checked, done, section, index }))) ===
+    JSON.stringify(items.map(({ id, kind, text, checked, done, section }) => ({ id, kind, text, checked, done, section }))) ===
       JSON.stringify([
-        { id: "purpose", kind: "build", text: "Purpose box", checked: false, done: false, section: "Purpose", index: 0 },
-        { id: "spec", kind: "build", text: "Spec written", checked: true, done: true, section: "Atomic Ops", index: 1 },
-        { id: "sec", kind: "review", text: "Security review", checked: false, done: false, section: "Atomic Ops", index: 2 },
-        { id: "ship", kind: "deploy", text: "Ship it", checked: true, done: false, section: "Atomic Ops", index: 3 },
-        { kind: "build", text: "Plain item", checked: false, done: false, section: "Atomic Ops", index: 4 },
-        { kind: "build", text: "Odd tag {#Bad}", checked: true, done: true, section: "Atomic Ops", index: 5 },
+        { id: "purpose", kind: "build", text: "Purpose box", checked: false, done: false, section: "Purpose" },
+        { id: "spec", kind: "build", text: "Spec written", checked: true, done: true, section: "Atomic Ops" },
+        { id: "sec", kind: "review", text: "Security review", checked: false, done: false, section: "Atomic Ops" },
+        { id: "ship", kind: "deploy", text: "Ship it", checked: true, done: false, section: "Atomic Ops" },
+        { kind: "build", text: "Plain item", checked: false, done: false, section: "Atomic Ops" },
+        { kind: "build", text: "Odd tag {#Bad}", checked: true, done: true, section: "Atomic Ops" },
       ]) && items[1].line === 6 && store.countCheckboxesInText(body).unchecked + store.countCheckboxesInText(body).checked === items.length,
     JSON.stringify(items)
   );

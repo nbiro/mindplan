@@ -179,13 +179,6 @@ export function revisionSummaries(node: MindPlanNode): { change: string; state: 
   return readSummaries(node).map(({ change, state, conflicts }) => ({ change, state, conflicts }));
 }
 
-/** A conflict as one short label: `section:## Spec`, `scalar:title`, `claim:<path>@<owner>`. */
-export function conflictLabel(c: RevisionConflict): string {
-  if (c.kind === "section") return `section:${c.section}`;
-  if (c.kind === "scalar") return `scalar:${c.field}`;
-  return `claim:${c.path}@${c.owner}`;
-}
-
 /**
  * Every change id with an open revision anywhere: a pre-ship node's live change, a legacy next
  * file's change, and each open revision of a shipped node.

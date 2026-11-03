@@ -37,6 +37,7 @@ import {
   writtenFilesOf,
 } from "../../foundations/f-territory-store/revisions.js";
 import {
+  conflictLabel,
   openChanges,
   pickRevision,
   resolveRevisionChange,
@@ -65,7 +66,6 @@ import {
 import { assertDecisionForReview, createDecisionContext, type DecisionContext } from "../../foundations/f-compiler-rules/decisions.js";
 import {
   changedFiles,
-  conflictLabel,
   gateWrite,
   mutationTail,
   refreshPersistedMap,

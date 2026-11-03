@@ -18,7 +18,7 @@ import {
   type NodeType,
   type Revision,
 } from "../f-domain-model/types.js";
-import { diffDelta, scalarHashes, sectionHashes } from "../f-revision-model/index.js";
+import { detectEol, diffDelta, scalarHashes, sectionHashes } from "../f-revision-model/index.js";
 import { RM_MAX_RETRIES, readFileRetry, unlinkRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
 import { decisionFileName, decisionsDir, parseDecisionFile } from "../f-territory-store/decisions-store.js";
 import { REVISIONS_DIR, formatRevisionFile, parseRevisionFile } from "../f-territory-store/revisions.js";
@@ -252,7 +252,7 @@ export function moveNextToRevisions(): RevisionMoved[] {
     if (next.role) revision.role = next.role;
     if (next.attributed.length > 0) revision.attributed = next.attributed;
     if (next.split_into.length > 0) revision.split_into = next.split_into;
-    const eol = liveRaw.includes("\r\n") ? "\r\n" : "\n";
+    const eol = detectEol(liveRaw);
     const body = withoutOwnedSections(next.body);
     const text = formatRevisionFile(id, liveFm.scalars.type as NodeType, revision, body, eol);
 
@@ -302,7 +302,7 @@ export function splitDecisionSections(): DecisionsSplit[] {
     if (!parts) continue;
     const { body, section } = splitNodeDecisions(parts.body);
     if (body === parts.body) continue;
-    const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+    const eol = detectEol(raw);
     const entries = decisionEntries(section, repoRelative(live));
     writeDecisionEntries(decisionsDir(folder), entries, repoRelative(live), eol);
     // A section at the end leaves its leading blank line (and, in CRLF files, a lone \r): end on one EOL.
@@ -336,7 +336,7 @@ export function ignoreMapLine(): boolean {
   const current = fs.existsSync(ignoreFile) ? readFileRetry(ignoreFile) : "";
   const listed = current.split(/\r?\n/).some((l) => ["map.md", "/map.md"].includes(l.trim()));
   if (listed) return false;
-  const eol = current.includes("\r\n") ? "\r\n" : "\n";
+  const eol = detectEol(current);
   const sep = current === "" || current.endsWith("\n") ? "" : eol;
   writeFileRetry(ignoreFile, `${current}${sep}map.md${eol}`);
   return true;

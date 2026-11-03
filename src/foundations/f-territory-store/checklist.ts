@@ -8,6 +8,8 @@
  * reviewing it), or `deploy` (a person deploying it).
  */
 
+import { detectEol, fencedLines, levelTwoHeadings, ownedLines } from "../f-revision-model/index.js";
+
 export const CHECKLIST_KINDS = ["build", "review", "deploy"] as const;
 export type ChecklistKind = (typeof CHECKLIST_KINDS)[number];
 
@@ -28,8 +30,6 @@ export type ChecklistItem = {
   line: number;
   /** The `## ` heading the item sits under (as written, trimmed); empty above the first heading. */
   section: string;
-  /** Position among the items. */
-  index: number;
 };
 
 /** One checkbox toggle: an item by `id`, or by its exact text (`contains`). */
@@ -54,9 +54,6 @@ export type NewChecklistItem = { text: string; id?: string; kind?: ChecklistKind
 const CHECKLIST_SECTIONS = ["atomic ops", "checklist", "fix checklist"];
 /** A task-list line, as the Completion Check counts it (`countCheckboxesInText`). */
 const ITEM_LINE = /^(\s*[-*+]\s+)\[([ xX])\](.*)$/;
-const RULES_HEADING_LINE = /^## Rules[ \t]*$/;
-const DECISIONS_HEADING_LINE = /^## Decisions[ \t]*$/;
-const SECTION_BREAK_LINE = /^#{1,2}[ \t]/;
 /** A trailing annotation written by a toggle: ` — note: …` or ` — n/a: …`. */
 const ANNOTATION = /\s+—\s+(?:note|n\/a):.*$/;
 const EMPTY_NA = /\s—\s+n\/a:\s*$/;
@@ -94,71 +91,22 @@ export function slugifyChecklistText(text: string): string {
 
 /** Line ranges `[start, end)` (heading excluded) of the checklist sections in `lines`. */
 function checklistRanges(lines: string[]): [number, number][] {
-  const headings: { index: number; name: string }[] = [];
-  let fence: string | null = null;
-  lines.forEach((line, index) => {
-    const f = line.match(/^\s*(```|~~~)/);
-    if (f) {
-      if (fence === null) fence = f[1];
-      else if (fence === f[1]) fence = null;
-      return;
-    }
-    if (fence !== null) return;
-    const m = line.match(/^##\s+(.+?)\s*$/);
-    if (m) headings.push({ index, name: m[1].trim().toLowerCase() });
-  });
+  const headings = levelTwoHeadings(lines);
   const ranges: [number, number][] = [];
   headings.forEach((h, i) => {
-    if (!CHECKLIST_SECTIONS.includes(h.name)) return;
+    if (!CHECKLIST_SECTIONS.includes(h.name.toLowerCase())) return;
     ranges.push([h.index + 1, i + 1 < headings.length ? headings[i + 1].index : lines.length]);
   });
   return ranges;
 }
 
-/** Per line: inside a fenced code block (fence lines included). */
-function fencedLines(lines: string[]): boolean[] {
-  let fence: string | null = null;
-  return lines.map((raw) => {
-    const f = raw.match(/^\s*(```|~~~)/);
-    if (!f) return fence !== null;
-    if (fence === null) fence = f[1];
-    else if (fence === f[1]) fence = null;
-    return true;
-  });
-}
-
-/**
- * Per line: inside a section the node owns apart from its text, exactly as the Completion Check
- * strips them (`withoutOwnedSections`): the first `## Rules` section (to the next level-1/2
- * heading), then, in what remains, the first `## Decisions` section outside fenced code.
- */
-function ownedLines(lines: string[]): boolean[] {
-  const owned = lines.map(() => false);
-  const rulesStart = lines.findIndex((l) => RULES_HEADING_LINE.test(l));
-  if (rulesStart !== -1) {
-    let end = rulesStart + 1;
-    while (end < lines.length && !SECTION_BREAK_LINE.test(lines[end])) end++;
-    for (let i = rulesStart; i < end; i++) owned[i] = true;
-  }
-  const rest = lines.map((_, i) => i).filter((i) => !owned[i]);
-  const restLines = rest.map((i) => lines[i]);
-  const fenced = fencedLines(restLines);
-  const start = restLines.findIndex((l, i) => !fenced[i] && DECISIONS_HEADING_LINE.test(l));
-  if (start !== -1) {
-    let end = start + 1;
-    while (end < restLines.length && (fenced[end] || !SECTION_BREAK_LINE.test(restLines[end]))) end++;
-    for (let k = start; k < end; k++) owned[rest[k]] = true;
-  }
-  return owned;
-}
-
-function parseLine(line: string, lineIndex: number, index: number, section: string): ChecklistItem | null {
+function parseLine(line: string, lineIndex: number, section: string): ChecklistItem | null {
   const m = line.match(ITEM_LINE);
   if (!m) return null;
   const checked = m[2] !== " ";
   const rest = (m[3] ?? "").trim();
   const emptyNa = checked && EMPTY_NA.test(` ${rest}`);
-  let text = rest.replace(ANNOTATION, "").replace(/\s+—\s+n\/a:\s*$/, "");
+  let text = rest.replace(ANNOTATION, "");
   let id: string | undefined;
   let kind: ChecklistKind = "build";
   const tag = text.match(TAG);
@@ -167,7 +115,7 @@ function parseLine(line: string, lineIndex: number, index: number, section: stri
     if (tag[2]) kind = tag[2] as ChecklistKind;
     text = text.slice(0, tag.index);
   }
-  return { ...(id ? { id } : {}), kind, text: text.trim(), checked, done: checked && !emptyNa, line: lineIndex, section, index };
+  return { ...(id ? { id } : {}), kind, text: text.trim(), checked, done: checked && !emptyNa, line: lineIndex, section };
 }
 
 /**
@@ -178,7 +126,10 @@ export function parseChecklistItems(body: string): ChecklistItem[] {
   return itemsOfLines(splitLines(body).lines);
 }
 
-/** The checklist items of `lines` (see parseChecklistItems); each item's `line` indexes `lines`. */
+/**
+ * The checklist items of `lines` (see parseChecklistItems); each item's `line` indexes `lines`.
+ * The sections the store owns are skipped exactly as `withoutOwnedSections` strips them.
+ */
 function itemsOfLines(lines: string[]): ChecklistItem[] {
   const owned = ownedLines(lines);
   const fenced = fencedLines(lines);
@@ -191,7 +142,7 @@ function itemsOfLines(lines: string[]): ChecklistItem[] {
       section = heading[1].trim();
       continue;
     }
-    const item = parseLine(lines[i], i, items.length, section);
+    const item = parseLine(lines[i], i, section);
     if (item) items.push(item);
   }
   return items;
@@ -203,10 +154,6 @@ export function describeChecklistItems(items: ChecklistItem[]): string {
   return items
     .map((i) => `"${i.text}"${i.id ? ` ${formatChecklistTag(i.id, i.kind)}` : i.kind !== "build" ? ` (${i.kind})` : ""}`)
     .join(", ");
-}
-
-function detectEol(text: string): "\r\n" | "\n" {
-  return text.includes("\r\n") ? "\r\n" : "\n";
 }
 
 /**
@@ -312,7 +259,7 @@ export function toggleChecklistItems(
         (_, prefix) => `${prefix}[${checked ? "x" : " "}]`
       );
       // Unticking drops an annotation; a new annotation replaces the old one.
-      if (!checked || suffix !== null) line = line.replace(ANNOTATION, "").replace(/\s+—\s+n\/a:\s*$/, "");
+      if (!checked || suffix !== null) line = line.replace(ANNOTATION, "");
       if (suffix !== null) line = `${line.replace(/\s+$/, "")}${suffix}`;
       lines[hit.line] = line;
       toggled.push(line.trim());

@@ -50,6 +50,7 @@ import {
   NODE_TYPES,
   PLANNED_EDGE_TYPES,
 } from "../f-domain-model/types.js";
+import { decisionsSectionRange, detectEol, levelTwoHeadings, rulesSectionRange } from "../f-revision-model/index.js";
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
@@ -524,107 +525,76 @@ function isListField(key: string): key is ListField {
   return (LIST_FIELDS as readonly string[]).includes(key);
 }
 
-/** Parses YAML frontmatter scalars and MCP edge / implements array fields. */
-export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return null;
+/** A frontmatter value as written: a JSON-quoted string decoded, anything else verbatim. */
+export function unquote(value: string): string {
+  if (!value.startsWith('"')) return value;
+  try {
+    return JSON.parse(value) as string;
+  } catch {
+    return value;
+  }
+}
 
+/**
+ * The one frontmatter scanner: the lines inside a `---` block into scalars (a JSON-quoted value
+ * decoded) and the lists `isList` names, written as a block (`key:` then `  - item` lines) or
+ * inline (`key: [a, b]`). List items stay raw: trimmed, inline ones stripped of their quotes, not
+ * decoded. A key `isList` does not name is a scalar.
+ */
+export function scanFrontmatter(
+  inner: string,
+  isList: (key: string) => boolean
+): { scalars: Record<string, string>; lists: Record<string, string[]> } {
   const scalars: Record<string, string> = {};
-  const arrays: Record<EdgeField, string[]> = {
-    belongs_to: [],
-    depends_on: [],
-    exposes: [],
-    leads_to: [],
-    affects: [],
-    mounts: [],
-  };
-  let implementsList: string[] = [];
-  let addedClaims: string[] = [];
-  let testsList: string[] = [];
-  let aliasesList: string[] = [];
-  let plannedList: PlannedEdge[] = [];
-  let attributedList: string[] = [];
-  let splitIntoList: string[] = [];
-  const toPlanned = (items: string[]) =>
-    items.map(parsePlannedItem).filter((e): e is PlannedEdge => e !== null);
-  const unquote = (item: string) => {
-    if (!item.startsWith('"')) return item;
-    try {
-      return JSON.parse(item) as string;
-    } catch {
-      return item;
-    }
-  };
-
-  const lines = match[1].split(/\r?\n/);
+  const lists: Record<string, string[]> = {};
+  const lines = inner.split(/\r?\n/);
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-
-    const keyOnly = line.match(/^([\w]+):\s*$/);
-    if (keyOnly && isListField(keyOnly[1])) {
-      const field = keyOnly[1];
+    const keyOnly = line.match(/^(\w+):\s*$/);
+    if (keyOnly && isList(keyOnly[1])) {
       const items: string[] = [];
       i++;
       while (i < lines.length && /^\s+-\s+/.test(lines[i])) {
         items.push(lines[i].replace(/^\s+-\s+/, "").trim());
         i++;
       }
-      if (field === "implements") implementsList = items;
-      else if (field === "added_claims") addedClaims = items;
-      else if (field === "tests") testsList = items;
-      else if (field === "aliases") aliasesList = items.map(unquote);
-      else if (field === "planned") plannedList = toPlanned(items);
-      else if (field === "attributed") attributedList = items;
-      else if (field === "split_into") splitIntoList = items;
-      else arrays[field] = items;
+      lists[keyOnly[1]] = items;
       continue;
     }
-
-    const inlineArray = line.match(/^([\w]+):\s*\[(.*)\]\s*$/);
-    if (inlineArray && isListField(inlineArray[1])) {
-      const field = inlineArray[1];
-      const inner = inlineArray[2].trim();
-      const items = inner
-        ? inner.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
+    const inlineArray = line.match(/^(\w+):\s*\[(.*)\]\s*$/);
+    if (inlineArray && isList(inlineArray[1])) {
+      const items = inlineArray[2].trim();
+      lists[inlineArray[1]] = items
+        ? items.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
         : [];
-      if (field === "implements") implementsList = items;
-      else if (field === "added_claims") addedClaims = items;
-      else if (field === "tests") testsList = items;
-      else if (field === "aliases") aliasesList = items.map(unquote);
-      else if (field === "planned") plannedList = toPlanned(items);
-      else if (field === "attributed") attributedList = items;
-      else if (field === "split_into") splitIntoList = items;
-      else arrays[field] = items;
       i++;
       continue;
     }
-
-    const scalar = line.match(/^([\w]+):\s*(.*)$/);
-    if (scalar) {
-      let val = scalar[2].trim();
-      if (val.startsWith('"')) {
-        try {
-          val = JSON.parse(val) as string;
-        } catch {
-          /* use raw */
-        }
-      }
-      scalars[scalar[1]] = val;
-    }
+    const scalar = line.match(/^(\w+):\s*(.*)$/);
+    if (scalar) scalars[scalar[1]] = unquote(scalar[2].trim());
     i++;
   }
+  return { scalars, lists };
+}
 
+/** Parses YAML frontmatter scalars and MCP edge / implements array fields. */
+export function parseFrontmatter(raw: string): ParsedFrontmatter | null {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
+  const { scalars, lists } = scanFrontmatter(match[1], isListField);
+  const list = (field: ListField): string[] => lists[field] ?? [];
+  const arrays = Object.fromEntries(EDGE_FIELDS.map((f) => [f, list(f)])) as Record<EdgeField, string[]>;
   return {
     scalars,
     arrays,
-    implements: implementsList,
-    added_claims: addedClaims,
-    tests: testsList,
-    aliases: aliasesList,
-    planned: plannedList,
-    attributed: attributedList,
-    split_into: splitIntoList,
+    implements: list("implements"),
+    added_claims: list("added_claims"),
+    tests: list("tests"),
+    aliases: list("aliases").map(unquote),
+    planned: list("planned").map(parsePlannedItem).filter((e): e is PlannedEdge => e !== null),
+    attributed: list("attributed"),
+    split_into: list("split_into"),
   };
 }
 
@@ -1567,10 +1537,9 @@ const ATTACHMENTS_HEADING_LINE = /^## Attachments[ \t]*$/;
  */
 export function splitNodeRules(text: string): { body: string; rules: string } {
   const lines = text.split("\n");
-  const start = lines.findIndex((line) => NODE_RULES_HEADING_LINE.test(line.replace(/\r$/, "")));
-  if (start === -1) return { body: text, rules: "" };
-  let end = start + 1;
-  while (end < lines.length && !SECTION_BREAK_LINE.test(lines[end])) end++;
+  const range = rulesSectionRange(lines);
+  if (!range) return { body: text, rules: "" };
+  const [start, end] = range;
   const rules = lines
     .slice(start + 1, end)
     .join("\n")
@@ -1591,7 +1560,7 @@ export function hasNodeRulesHeading(text: string): boolean {
 export function joinNodeRules(body: string, rules: string): string {
   const text = rules.replace(/\r\n/g, "\n").trim();
   if (!text) return body;
-  const nl = body.includes("\r\n") ? "\r\n" : "\n";
+  const nl = detectEol(body);
   const section = `${NODE_RULES_HEADING}\n\n${text}\n`.replace(/\n/g, nl);
   const lines = body.split("\n");
   const at = lines.findIndex((line) => ATTACHMENTS_HEADING_LINE.test(line.replace(/\r$/, "")));
@@ -1679,18 +1648,9 @@ export function withoutOwnedSections(text: string): string {
  */
 export function splitNodeDecisions(text: string): { body: string; section: string } {
   const lines = text.split("\n");
-  let fence: string | null = null;
-  const fenced = lines.map((raw) => {
-    const f = raw.match(/^\s*(```|~~~)/);
-    if (!f) return fence !== null;
-    if (fence === null) fence = f[1];
-    else if (fence === f[1]) fence = null;
-    return true;
-  });
-  const start = lines.findIndex((line, i) => !fenced[i] && NODE_DECISIONS_HEADING_LINE.test(line.replace(/\r$/, "")));
-  if (start === -1) return { body: text, section: "" };
-  let end = start + 1;
-  while (end < lines.length && (fenced[end] || !SECTION_BREAK_LINE.test(lines[end]))) end++;
+  const range = decisionsSectionRange(lines);
+  if (!range) return { body: text, section: "" };
+  const [start, end] = range;
   const section = lines
     .slice(start + 1, end)
     .join("\n")
@@ -1713,7 +1673,7 @@ export function hasNodeDecisionsHeading(text: string): boolean {
 export function joinNodeDecisions(body: string, section: string): string {
   const text = section.replace(/\r\n/g, "\n").replace(/^\n+/, "").replace(/\s+$/, "");
   if (!text) return body;
-  const nl = body.includes("\r\n") ? "\r\n" : "\n";
+  const nl = detectEol(body);
   const block = `${NODE_DECISIONS_HEADING}\n\n${text}\n`.replace(/\n/g, nl);
   const lines = body.split("\n");
   let at = lines.findIndex((line) => NODE_RULES_HEADING_LINE.test(line.replace(/\r$/, "")));
@@ -1954,30 +1914,8 @@ export type PatchNodeTerritoryInput = {
   slot?: TerritorySlot;
 };
 
-function detectEol(text: string): "\r\n" | "\n" {
-  return text.includes("\r\n") ? "\r\n" : "\n";
-}
-
 export function normalizeHeadingName(heading: string): string {
   return heading.replace(/^\s*##\s*/, "").trim();
-}
-
-/** Level-2 heading lines of a body, by line index; a '## ' line inside a fenced code block is code. */
-function levelTwoHeadings(lines: string[]): { index: number; name: string }[] {
-  const headings: { index: number; name: string }[] = [];
-  let fence: string | null = null;
-  lines.forEach((line, index) => {
-    const f = line.match(/^\s*(```|~~~)/);
-    if (f) {
-      if (fence === null) fence = f[1];
-      else if (fence === f[1]) fence = null;
-      return;
-    }
-    if (fence !== null) return;
-    const m = line.match(/^##\s+(.+?)\s*$/);
-    if (m) headings.push({ index, name: m[1] });
-  });
-  return headings;
 }
 
 /** The level-2 heading named `heading` (case-insensitive); Blocked when missing, listing the sections. */
@@ -2423,7 +2361,7 @@ function applyChangeScalars(
   input: { change?: string; change_ref?: string }
 ): string {
   validateChangeInput(input);
-  const nl = frontmatter.includes("\r\n") ? "\r\n" : "\n";
+  const nl = detectEol(frontmatter);
   let out = frontmatter;
   for (const key of ["change", "change_ref"] as const) {
     const value = input[key];
