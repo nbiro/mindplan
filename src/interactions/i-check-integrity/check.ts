@@ -78,6 +78,7 @@ import {
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 import { afterMergeFindings } from "./after-merge.js";
+import { revisionSummaries } from "../../foundations/f-plan-views/views.js";
 import { compactCheckResult, recordSeen, scopeWarnings, warningIds } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
@@ -720,12 +721,10 @@ function ownerAllowsCommitDiff(
 }
 
 /** The open revisions of a node with several, as drift and dirty-src lines name them; else undefined. */
+/** With several open revisions: each one's change and state, sorted by change; else undefined. */
 function revisionStates(node: MindPlanNode): { change: string; state: string }[] | undefined {
-  const revs = node.open_revisions ?? [];
-  if (revs.length < 2) return undefined;
-  return [...revs]
-    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
-    .map((r) => ({ change: r.change, state: r.state }));
+  if ((node.open_revisions?.length ?? 0) < 2) return undefined;
+  return revisionSummaries(node).map(({ change, state }) => ({ change, state }));
 }
 
 function describeOwner(node: MindPlanNode): string {

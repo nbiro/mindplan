@@ -1773,7 +1773,8 @@ export function parseDecisions(section: string): DecisionRecord[] {
   return out;
 }
 
-function oneLineValue(value: string): string {
+/** A value as one line: line breaks (and the space around them) collapse to one space, trimmed. */
+export function oneLineValue(value: string): string {
   return value.replace(/\s*\r?\n\s*/g, " ").trim();
 }
 

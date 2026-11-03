@@ -73,13 +73,11 @@ function openDatabase(file: string): Database | null {
   }
 }
 
-/** Subfolders of a node folder whose every file shapes the node's record (open revisions, decision files). */
-export const STAMPED_SUBFOLDERS = ["revisions", "decisions"];
-
 /**
- * Stamps of a folder's `.mdx` files (any case: Windows and macOS open `a.MDX` as `a.mdx`) and of
- * every file under its `revisions/` and `decisions/` (named by POSIX path from the folder), sorted
- * by name.
+ * Stamps of the files that shape a node folder's record, named by POSIX path from the folder and
+ * sorted by name: its `.mdx` files (any case: Windows and macOS open `a.MDX` as `a.mdx`), every
+ * file under `decisions/`, and in each `revisions/<change>/` its `.mdx` files and every file under
+ * its `decisions/`. Attachments never shape a record, so they are not stamped.
  */
 export function folderStamps(abs: string): FileStamp[] {
   const out: FileStamp[] = [];
@@ -97,14 +95,15 @@ export function folderStamps(abs: string): FileStamp[] {
       // Gone between the listing and the stat: treated as absent.
     }
   };
-  const walk = (rel: string): void => {
-    let entries: fs.Dirent[];
+  const entriesOf = (rel: string): fs.Dirent[] => {
     try {
-      entries = fs.readdirSync(path.join(abs, rel), { withFileTypes: true });
+      return fs.readdirSync(path.join(abs, rel), { withFileTypes: true });
     } catch {
-      return;
+      return [];
     }
-    for (const entry of entries) {
+  };
+  const walk = (rel: string): void => {
+    for (const entry of entriesOf(rel)) {
       const child = `${rel}/${entry.name}`;
       if (entry.isDirectory()) walk(child);
       else stamp(child);
@@ -112,7 +111,17 @@ export function folderStamps(abs: string): FileStamp[] {
   };
   for (const name of names) {
     if (name.toLowerCase().endsWith(".mdx")) stamp(name);
-    else if (STAMPED_SUBFOLDERS.includes(name)) walk(name);
+    else if (name === "decisions") walk(name);
+    else if (name === "revisions") {
+      for (const change of entriesOf(name).filter((e) => e.isDirectory())) {
+        for (const entry of entriesOf(`${name}/${change.name}`)) {
+          const child = `${name}/${change.name}/${entry.name}`;
+          if (entry.isDirectory()) {
+            if (entry.name === "decisions") walk(child);
+          } else if (entry.name.toLowerCase().endsWith(".mdx")) stamp(child);
+        }
+      }
+    }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -390,11 +399,14 @@ export class GraphCache {
   }
 }
 
+/** Open caches, least recently used first; at most `MAX_OPEN_CACHES` stay open. */
 const caches = new Map<string, GraphCache>();
+const MAX_OPEN_CACHES = 4;
 
 /**
- * The cache of a project root (one per process). `MINDPLAN_GRAPH_CACHE`: `off` disables it (null),
- * `git` or `stamps` forces that mode whatever the plan's size; unset chooses by size.
+ * The cache of a project root (one per process; the least recently used beyond the last four roots
+ * is closed). `MINDPLAN_GRAPH_CACHE`: `off` disables it (null), `git` or `stamps` forces that mode
+ * whatever the plan's size; unset chooses by size.
  */
 export function graphCacheFor(root: string, packageVersion: string): GraphCache | null {
   const setting = process.env.MINDPLAN_GRAPH_CACHE;
@@ -402,9 +414,13 @@ export function graphCacheFor(root: string, packageVersion: string): GraphCache 
   const abs = path.resolve(root);
   const key = `${rootKey(abs)}\u0000${packageVersion}`;
   let cache = caches.get(key);
-  if (!cache) {
-    cache = new GraphCache(abs, packageVersion);
-    caches.set(key, cache);
+  if (cache) caches.delete(key);
+  else cache = new GraphCache(abs, packageVersion);
+  caches.set(key, cache);
+  for (const [oldest, evicted] of caches) {
+    if (caches.size <= MAX_OPEN_CACHES) break;
+    evicted.close();
+    caches.delete(oldest);
   }
   cache.gitModeMinFolders = setting === "git" ? 0 : setting === "stamps" ? Infinity : GIT_MODE_MIN_FOLDERS;
   return cache;
