@@ -591,7 +591,10 @@ function capWarnings(warnings: Iterable<string>): string[] {
 
 /** One line per node: `id: from -> to`, `to` being the revision's state while it is open. */
 function statusLine(row: Record<string, unknown>): string {
-  const to = (row.revision_state as string | undefined) ?? (row.next_state as string | null) ?? String(row.new_state);
+  // A ship lands on live: show live's state, never a sibling revision's that the reply also carries.
+  const to = row.promoted_next
+    ? String(row.new_state)
+    : (row.revision_state as string | undefined) ?? (row.next_state as string | null) ?? String(row.new_state);
   return `${String(row.node_id)}: ${String(row.previous_state)} -> ${to}`;
 }
 
