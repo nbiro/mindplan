@@ -322,6 +322,21 @@ fs.writeFileSync(
     deep === "## Atomic Ops\n\n-   [ ] A {#a}\n\n    more about A\n- [ ] B {#b}\n",
     JSON.stringify(deep)
   );
+  // Tabs expand to 4-column tab stops (CommonMark) when indentation is measured: a tab-indented
+  // paragraph reaches a "- " item's content column, and a tab after the marker puts the content
+  // column at 4, so a three-space paragraph does not continue that item.
+  const tabbed = checklist.appendChecklistItems("## Atomic Ops\n\n- [ ] A {#a}\n\n\tmore about A\n", [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems takes a tab-indented paragraph as a continuation",
+    tabbed === "## Atomic Ops\n\n- [ ] A {#a}\n\n\tmore about A\n- [ ] B {#b}\n",
+    JSON.stringify(tabbed)
+  );
+  const tabMarker = checklist.appendChecklistItems("## Atomic Ops\n\n-\t[ ] A {#a}\n\n   after A.\n", [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems measures a tab after the marker to the next tab stop",
+    tabMarker === "## Atomic Ops\n\n-\t[ ] A {#a}\n- [ ] B {#b}\n\n   after A.\n",
+    JSON.stringify(tabMarker)
+  );
   // An indented fence that continues the item is consumed to its close, even across a blank line
   // followed by a column-0 line or a `# comment` inside it: the new item never lands in the fence.
   const fenceBody = "## Atomic Ops\n\n- [ ] A {#a}\n  ```sh\n  run\n\nexit 0\n# comment\n  ```\n\nAfter.\n";

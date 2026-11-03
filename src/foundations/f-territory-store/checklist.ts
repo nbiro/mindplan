@@ -346,15 +346,27 @@ const CONTINUATION_BREAK = /^(?:#{1,6}[ \t]|[ \t]*(?:[-*+]|\d+[.)])[ \t])/;
 /** A thematic break (`---`, `***`, `___`, spaces allowed between): never a lazy continuation. */
 const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 
+/** The column `prefix` (whitespace and a marker) ends at, tabs expanded to 4-column tab stops (CommonMark). */
+function columnOf(prefix: string): number {
+  let col = 0;
+  for (const ch of prefix) col = ch === "	" ? col + 4 - (col % 4) : col + 1;
+  return col;
+}
+
+/** A line's indentation in columns, tabs expanded to 4-column tab stops. */
+function indentColumn(line: string): number {
+  return columnOf(line.slice(0, line.length - line.trimStart().length));
+}
+
 /**
  * The content column of a list item whose leading indent, marker, and following whitespace are
- * `lead` (CommonMark): the marker's end plus the spaces after it, or plus one space when five or
- * more follow (the item then starts with indented code).
+ * `lead` (CommonMark, tabs to 4-column stops): the marker's end plus the whitespace after it, or
+ * plus one column when five or more follow (the item then starts with indented code).
  */
 function itemContentColumn(lead: string): number {
-  const indent = lead.length - lead.trimStart().length;
-  const spaces = lead.length - indent - 1;
-  return spaces > 4 ? indent + 2 : lead.length;
+  const markerEnd = indentColumn(lead) + 1;
+  const end = columnOf(lead);
+  return end - markerEnd > 4 ? markerEnd + 1 : end;
 }
 
 /**
@@ -372,8 +384,7 @@ function afterContinuation(lines: string[], fenceEnds: number[], from: number, e
   for (let j = from; j < end; j++) {
     const line = lines[j];
     if (line.trim() === "") continue;
-    const indent = line.length - line.trimStart().length;
-    const inside = indent >= contentColumn;
+    const inside = indentColumn(line) >= contentColumn;
     const afterBlank = j > last;
     // `j` is never inside a fence here: the item line before `from` is outside one, and a fence
     // reached is either skipped whole or ends the scan.
