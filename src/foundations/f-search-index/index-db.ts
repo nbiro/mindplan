@@ -9,11 +9,12 @@ import { createHash } from "crypto";
 import * as fs from "fs";
 import { createRequire } from "module";
 import * as path from "path";
+import { CACHE_DIRNAME } from "../f-source-index/root-scope.js";
 
 /** Bump when the tables or the indexed text change; a mismatch drops and rebuilds the cache. */
 export const INDEX_SCHEMA_VERSION = "3";
 
-export const CACHE_DIRNAME = ".mindplan-cache";
+/** The search index's file in the root's cache folder (CACHE_DIRNAME). */
 export const INDEX_FILENAME = "index.db";
 
 /** One node as search sees it: the fields that are indexed and embedded. */

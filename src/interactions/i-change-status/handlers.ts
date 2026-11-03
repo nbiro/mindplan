@@ -748,13 +748,13 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
         const change = revisionChangeFor(findNode(graph, item.node_id), item.new_status, item.change);
         plan = [{ node_id: item.node_id, ...(change ? { change } : {}), steps: [item.new_status] }];
       } catch (err) {
-        throw withHintsError(err, [item]);
+        throw withHintsError(err, [item], graph);
       }
       const sim = simulateWalk(plan);
       return {
         dry_run: true,
         plan: describePlan(plan, graph),
-        blocked: sim.blocked ? withHints(sim.blocked, [item]) : null,
+        blocked: sim.blocked ? withHints(sim.blocked, [item], graph) : null,
         ...(sim.warnings.length ? { warnings: capWarnings(sim.warnings) } : {}),
       };
     }
@@ -780,6 +780,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   // Files a Blocked item wrote before it Blocked (a ship that persisted its conflicts).
   const blockedWrites = new Set<string>();
   const decisionCtx = createDecisionContext(projectRoot());
+  const blockedItems: { result: BatchResult; rev: StatusRevision }[] = [];
   for (const rev of ordered) {
     try {
       const row = applyOneStatus({ ...rev, decisionCtx });
@@ -789,16 +790,21 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       for (const f of writtenFilesOf(err)) blockedWrites.add(f);
-      results.push({
+      const result: BatchResult = {
         node_id: rev.node_id,
         ...(rev.change ? { change: rev.change } : {}),
         ok: false,
-        blocked: withHints(message, [rev]),
-      });
+        blocked: message,
+      };
+      results.push(result);
+      blockedItems.push({ result, rev });
     }
   }
+  // The change hints read the graph once, as the batch left it.
+  const hintGraph = blockedItems.length > 0 ? loadHintGraph() : null;
+  for (const { result, rev } of blockedItems) result.blocked = withHints(result.blocked!, [rev], hintGraph);
   if (applied.length === 0) {
-    const text = batchBlocked(ordered, results);
+    const text = batchBlocked(ordered, results, hintGraph);
     if (blockedWrites.size === 0) throw new Error(text);
     throw withWrittenFiles(
       new Error(wroteLine(text.replace("; nothing was written.", "."), blockedWrites)),
@@ -820,6 +826,8 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   const last = applied[applied.length - 1] ?? {};
   return {
     ordered: true,
+    // Batches keep going past a Blocked item: say so at the top, not only per result.
+    ...(blockedItems.length > 0 ? { partial: true, blocked_count: blockedItems.length } : {}),
     results,
     lines: applied.map(statusLine),
     changed_files: [...changed],
@@ -840,7 +848,7 @@ type BatchResult = { node_id: string; change?: string; ok: boolean; line?: strin
 const HINT_PREFIX = "To move the whole change:";
 
 /** The Blocked of a batch where no item moved: every item's reason, then the change hints. */
-function batchBlocked(ordered: StatusRevision[], results: BatchResult[]): string {
+function batchBlocked(ordered: StatusRevision[], results: BatchResult[], graph: MindPlanGraph | null): string {
   const reasons = results
     .filter((r) => !r.ok)
     .map((r) => {
@@ -851,15 +859,19 @@ function batchBlocked(ordered: StatusRevision[], results: BatchResult[]): string
       return `- "${r.node_id}" -> ${item?.new_status ?? "?"}: ${reason}`;
     })
     .join("\n");
-  return withHints(`Blocked: no item of this batch could move; nothing was written.\n${reasons}`, ordered);
+  return withHints(`Blocked: no item of this batch could move; nothing was written.\n${reasons}`, ordered, graph);
 }
 
 /**
  * A batch dry run: each item is validated on the graph as the items before it would leave it (a
  * blocked item leaves it unchanged), writing nothing. `blocked` is null when every item passes.
+ * One working copy carries the simulation: a row touches only its own node (and that node's
+ * outgoing edges), so a blocked row restores those instead of cloning the graph per item.
  */
 function dryRunBatch(ordered: StatusRevision[]): Record<string, unknown> {
-  let graph = loadGraph();
+  // The change hints describe the graph as it is on disk; the simulation runs on one copy of it.
+  const loaded = loadGraph();
+  const graph = structuredClone(loaded);
   const root = projectRoot();
   const now = new Date().toISOString();
   const decisionCtx = createDecisionContext(root);
@@ -873,33 +885,36 @@ function dryRunBatch(ordered: StatusRevision[]): Record<string, unknown> {
       row = { node_id: item.node_id, ...(change ? { change } : {}), steps: [item.new_status] };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      results.push({ node_id: item.node_id, ...(item.change ? { change: item.change } : {}), ok: false, blocked: withHints(message, [item]) });
+      results.push({ node_id: item.node_id, ...(item.change ? { change: item.change } : {}), ok: false, blocked: withHints(message, [item], loaded) });
       continue;
     }
-    const trial = structuredClone(graph);
+    const [line] = describePlan([row], graph);
+    const at = graph.nodes.findIndex((n) => n.id === row.node_id);
+    const savedNode = structuredClone(graph.nodes[at]);
+    const savedEdges = graph.edges;
     const rowWarnings = new Set<string>();
-    const stop = simulateRow(trial, root, row, now, decisionCtx, rowWarnings);
+    const stop = simulateRow(graph, root, row, now, decisionCtx, rowWarnings);
     const change = row.change ?? item.change;
     if (stop) {
+      graph.nodes[at] = savedNode;
+      graph.edges = savedEdges;
       results.push({
         node_id: item.node_id,
         ...(change ? { change } : {}),
         ok: false,
-        blocked: withHints(`Blocked: ${stop.reason}`, [item]),
+        blocked: withHints(`Blocked: ${stop.reason}`, [item], loaded),
       });
       continue;
     }
-    const [line] = describePlan([row], graph);
     plan.push(line);
     results.push({ node_id: item.node_id, ...(change ? { change } : {}), ok: true, line });
     for (const w of rowWarnings) warnings.add(w);
-    graph = trial;
   }
   return {
     dry_run: true,
     plan,
     results,
-    blocked: results.every((r) => r.ok) ? null : batchBlocked(ordered, results).replace(
+    blocked: results.every((r) => r.ok) ? null : batchBlocked(ordered, results, loaded).replace(
       "no item of this batch could move; nothing was written.",
       plan.length === 0 ? "no item of this batch could move." : "these items would not move:"
     ),
@@ -910,15 +925,24 @@ function dryRunBatch(ordered: StatusRevision[]): Record<string, unknown> {
 /** Targets a scoped change walk takes; a Blocked move to one of them gets the change hint. */
 const HINT_TARGETS = new Set(["ready", "in-progress", "in-review", "ship"]);
 
+/** The graph the change hints read, loaded once per reply; null when it does not load. */
+function loadHintGraph(): MindPlanGraph | null {
+  try {
+    return loadGraph();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The one-call way to move the change a node's move belongs to (a revision's change, or a
  * pre-ship node's change); null when the node is in no change or the target is not walkable.
  */
-function changeHint(item: StatusRevision): string | null {
-  if (!HINT_TARGETS.has(item.new_status)) return null;
+function changeHint(item: StatusRevision, graph: MindPlanGraph | null): string | null {
+  if (!HINT_TARGETS.has(item.new_status) || !graph) return null;
   let node: MindPlanNode;
   try {
-    node = findNode(loadGraph(), item.node_id);
+    node = findNode(graph, item.node_id);
   } catch {
     return null;
   }
@@ -941,16 +965,16 @@ function changeHint(item: StatusRevision): string | null {
 }
 
 /** A Blocked message ending with the change hint of each item that belongs to a change. */
-function withHints(message: string, items: StatusRevision[]): string {
+function withHints(message: string, items: StatusRevision[], graph: MindPlanGraph | null): string {
   if (!message.startsWith("Blocked:")) return message;
-  const hints = [...new Set(items.map(changeHint).filter((h): h is string => h !== null))];
+  const hints = [...new Set(items.map((item) => changeHint(item, graph)).filter((h): h is string => h !== null))];
   return hints.length ? `${message.trimEnd()}\n${hints.join("\n")}` : message;
 }
 
 /** `withHints` on a thrown Blocked; any other error passes through. */
-function withHintsError(err: unknown, items: StatusRevision[]): unknown {
+function withHintsError(err: unknown, items: StatusRevision[], graph?: MindPlanGraph): unknown {
   if (!(err instanceof Error) || !err.message.startsWith("Blocked:")) return err;
-  return withWrittenFiles(new Error(withHints(err.message, items)), writtenFilesOf(err));
+  return withWrittenFiles(new Error(withHints(err.message, items, graph ?? loadHintGraph())), writtenFilesOf(err));
 }
 
 /** A Blocked reply carries no changed_files: name the files written before the Block in its text. */

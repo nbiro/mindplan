@@ -157,60 +157,65 @@ function changesOf(ov: Overlay, source: string, target: string): string[] {
 type Walk = { nodes: string[]; labels: (string | null)[] };
 
 /**
- * One breadth-first search from `from` to `to` over the overlay (O(V+E): each node is visited at
- * most twice, before and after the walk mixes changes). The walk carries a change label: it starts
- * as `start` (null: none yet, the first non-live edge picks one), an edge live and not removed by
- * that change or added by it keeps the label, and any other edge marks the walk as crossing into
- * another change. Returns the first walk that reaches `to` crossing, or null. `within` limits the
- * search to a node set; `budget` caps the states explored (shared across calls).
+ * One breadth-first search from `from` to `to` over the overlay. The walk carries a change label:
+ * it starts as `start` (null: none yet, the first non-live edge picks one), an edge live and not
+ * removed by that change or added by it keeps the label, and any other edge marks the walk as
+ * crossing into another change. A node is seen once per label and crossing (so a node first
+ * reached under one label never prunes another label's walk: O((V+E) x changes)). Each walk that
+ * reaches `to` crossing goes to `accept`; the first cycle it accepts is returned, else the search
+ * goes on (null when none). A walk ends at `to` and never re-enters `from`. `within` limits the search to a node set; `budget` caps the states
+ * explored (shared across calls).
  */
 function crossWalk(
   ov: Overlay,
   from: string,
   to: string,
   start: string | null,
+  accept: (walk: Walk) => ChangeCycle | null,
   within?: Set<string>,
   budget?: { left: number }
-): Walk | null {
+): ChangeCycle | null {
   type State = { node: string; label: string | null; cross: boolean; parent: number; edge: string | null };
   const states: State[] = [{ node: from, label: start, cross: false, parent: -1, edge: null }];
-  const seenPlain = new Set<string>([from]);
-  const seenCross = new Set<string>();
+  const stateKey = (node: string, label: string | null, cross: boolean): string =>
+    `${node}\u0000${label ?? ""}\u0000${cross ? "x" : ""}`;
+  const seen = new Set<string>([stateKey(from, start, false)]);
   for (let head = 0; head < states.length; head++) {
     if (budget && budget.left-- <= 0) return null;
     const cur = states[head];
     for (const w of ov.adj.get(cur.node) ?? []) {
-      if (within && !within.has(w)) continue;
+      if ((within && !within.has(w)) || w === from) continue;
       const k = key(cur.node, w);
       const tags = ov.tags.get(k)!;
       const live = tags.has(null);
       const removed = cur.label !== null && (ov.removed.get(k)?.has(cur.label) ?? false);
       const added = changesOf(ov, cur.node, w);
-      let label = cur.label;
-      let cross = cur.cross;
-      let edge: string | null;
-      if (live && !removed) edge = null;
-      else if (label !== null && tags.has(label)) edge = label;
-      else if (added.length === 0) continue; // a live edge this walk's change removes
-      else if (label === null && !cross) {
-        label = added[0];
-        edge = label;
-      } else {
-        edge = added[0];
-        cross = true;
-      }
-      const seen = cross ? seenCross : seenPlain;
-      if (seen.has(w)) continue;
-      seen.add(w);
-      states.push({ node: w, label, cross, parent: head, edge });
-      if (w === to && cross) {
-        const nodes: string[] = [];
-        const labels: (string | null)[] = [];
-        for (let i = states.length - 1; i >= 0; i = states[i].parent) {
-          nodes.unshift(states[i].node);
-          if (states[i].parent >= 0) labels.unshift(states[i].edge);
+      // The labels this edge can be taken under: one walk each.
+      const steps: { label: string | null; cross: boolean; edge: string | null }[] = [];
+      if (live && !removed) steps.push({ label: cur.label, cross: cur.cross, edge: null });
+      else if (cur.label !== null && tags.has(cur.label)) steps.push({ label: cur.label, cross: cur.cross, edge: cur.label });
+      else if (cur.label === null && !cur.cross) for (const c of added) steps.push({ label: c, cross: false, edge: c });
+      else if (added.length > 0) steps.push({ label: cur.label, cross: true, edge: added[0] });
+      for (const step of steps) {
+        // A walk ends at `to`: one still inside a single change is not a cross-change cycle.
+        if (w === to && !step.cross) continue;
+        const sk = stateKey(w, step.label, step.cross);
+        if (seen.has(sk)) continue;
+        states.push({ node: w, label: step.label, cross: step.cross, parent: head, edge: step.edge });
+        if (w === to) {
+          const nodes: string[] = [];
+          const labels: (string | null)[] = [];
+          for (let i = states.length - 1; i >= 0; i = states[i].parent) {
+            nodes.unshift(states[i].node);
+            if (states[i].parent >= 0) labels.unshift(states[i].edge);
+          }
+          const cycle = accept({ nodes, labels });
+          if (cycle) return cycle;
+          // Rejected: `to` stays open to another walk, and is not walked on from.
+          states.pop();
+          continue;
         }
-        return { nodes, labels };
+        seen.add(sk);
       }
     }
   }
@@ -273,10 +278,10 @@ export function changeCycles(graph: MindPlanGraph): ChangeCycle[] {
     search: for (const [s, d] of changeEdges) {
       for (const c of changesOf(ov, s, d)) {
         if (budget.left <= 0) break search;
-        const walk = crossWalk(ov, d, s, c, comp, budget);
-        if (!walk) continue;
-        // The walk runs d … s; the closing edge s -> d is taken under c.
-        const cycle = classify(ov, [s, ...walk.nodes.slice(0, -1)], [c, ...walk.labels]);
+        // Each walk runs d … s; the closing edge s -> d is taken under c.
+        const accept = (walk: Walk): ChangeCycle | null =>
+          classify(ov, [s, ...walk.nodes.slice(0, -1)], [c, ...walk.labels]);
+        const cycle = crossWalk(ov, d, s, c, accept, comp, budget);
         if (cycle) {
           out.push(cycle);
           break search;
@@ -301,25 +306,28 @@ export function describeChangeCycle(cycle: ChangeCycle): string {
  * A gate over one overlay of `graph` (built once): Blocked when the depends_on edge
  * `source -> target` (under `change`, or live) would close, or already closes, a dependency cycle
  * whose edges come from two or more changes. Each call is one search from the edge's target back
- * to its source. open_next asserts every planned edge it applies through one gate.
+ * to its source (each walk reaching it is classified until one closes such a cycle). open_next asserts every planned edge it applies through one gate.
  */
 export function changeCycleGate(graph: MindPlanGraph): (edge: ProposedDependsOn) => void {
   const ov = buildOverlay(graph);
   return (edge) => {
     if (edge.source === edge.target) return;
     const change = edge.change ?? null;
-    const walk = crossWalk(ov, edge.target, edge.source, change);
-    if (!walk) return;
-    const nodes = [edge.source, ...walk.nodes.slice(0, -1)];
     // The proposed edge counts as added by its change even before it is written.
-    const k = key(edge.source, edge.target);
-    const had = ov.tags.get(k);
-    const tags = new Set(had ?? []);
-    tags.add(change);
-    ov.tags.set(k, tags);
-    const cycle = classify(ov, nodes, [change, ...walk.labels]);
-    if (had) ov.tags.set(k, had);
-    else ov.tags.delete(k);
+    const accept = (walk: Walk): ChangeCycle | null => {
+      const k = key(edge.source, edge.target);
+      const had = ov.tags.get(k);
+      const tags = new Set(had ?? []);
+      tags.add(change);
+      ov.tags.set(k, tags);
+      try {
+        return classify(ov, [edge.source, ...walk.nodes.slice(0, -1)], [change, ...walk.labels]);
+      } finally {
+        if (had) ov.tags.set(k, had);
+        else ov.tags.delete(k);
+      }
+    };
+    const cycle = crossWalk(ov, edge.target, edge.source, change, accept);
     if (!cycle) return;
     const label = edge.change ? `change "${edge.change}"` : "live";
     throw blocked(

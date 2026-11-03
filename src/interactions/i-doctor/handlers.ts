@@ -15,6 +15,9 @@ import {
 } from "../../foundations/f-territory-store/store.js";
 import { packageVersion } from "../../foundations/f-territory-store/version.js";
 import { serverStartedAt } from "../../foundations/f-mcp-runtime/started.js";
+import { DB_FILENAME } from "../../foundations/f-graph-cache/cache.js";
+import { INDEX_FILENAME } from "../../foundations/f-search-index/index-db.js";
+import { CACHE_DIRNAME } from "../../foundations/f-source-index/root-scope.js";
 
 export type DoctorReport = {
   version: string;
@@ -31,9 +34,6 @@ export type DoctorReport = {
   uptime_s: number;
 };
 
-/** Derived caches live beside the graph, in the project root. */
-const CACHE_DIRNAME = ".mindplan-cache";
-
 /**
  * The health report. Never throws. The graph loads only when graphStatus says it is current (the
  * version gate setting does not matter: a graph that needs setup or an upgrade is never read by
@@ -45,8 +45,8 @@ export function doctor(): DoctorReport {
   const status = graphStatus();
   const cacheDir = path.join(root, CACHE_DIRNAME);
   const cache = {
-    graph: fs.existsSync(path.join(cacheDir, "graph.db")),
-    search: fs.existsSync(path.join(cacheDir, "index.db")),
+    graph: fs.existsSync(path.join(cacheDir, DB_FILENAME)),
+    search: fs.existsSync(path.join(cacheDir, INDEX_FILENAME)),
   };
   let loadMs = 0;
   let cacheHit = false;

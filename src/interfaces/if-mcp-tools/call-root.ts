@@ -34,29 +34,59 @@ function sameRoot(a: string, b: string): boolean {
 }
 
 /**
- * The root a call names, resolved. Blocked when it has no mindplan/ folder (except for the tools
- * that create or diagnose one). No `root` means the server's own root.
+ * The root a call names, resolved. Blocked unless it is an absolute path to an existing directory
+ * (for every tool), and when it has no mindplan/ folder (except for the tools that create or
+ * diagnose one). No `root` means the server's own root.
  */
 export function resolveCallRoot(tool: string, root: string | undefined): CallRoot | { blocked: string } {
   if (root === undefined || root === "") return { root: undefined, foreign: false };
+  if (!path.isAbsolute(root)) {
+    return { blocked: `Blocked: root "${root}" must be an absolute path to a checkout or git worktree` };
+  }
   const resolved = path.resolve(root);
+  let isDirectory = false;
+  try {
+    isDirectory = fs.statSync(resolved).isDirectory();
+  } catch {
+    isDirectory = false;
+  }
+  if (!isDirectory) return { blocked: `Blocked: root "${root}" is not an existing directory` };
   if (!ROOTLESS_TOOLS.has(tool) && !fs.existsSync(path.join(resolved, MINDPLAN_DIR))) {
     return { blocked: `Blocked: root "${root}" has no mindplan/ folder` };
   }
   return { root: resolved, foreign: !sameRoot(resolved, resolveProjectRoot()) };
 }
 
+function isJsonText(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Names the root on a result from another root. An object payload gains `root` unless it already
+ * has one (a payload's own `root` is never overwritten); an array or other JSON payload has no field
+ * to carry it and stays untouched. Only a Blocked/error text or a plain string payload is suffixed.
+ */
 function markRoot(result: ToolResult, root: string): ToolResult {
-  // A Blocked/error text or a plain string payload has no field to carry the root: suffix it.
-  if (result.isError || !result.structuredContent) {
+  const suffixed = (): ToolResult => {
     const suffix = ` (root: ${root})`;
     return {
       ...result,
       content: result.content.map((c) => (c.type === "text" && !c.text.endsWith(suffix) ? { ...c, text: `${c.text}${suffix}` } : c)),
     };
+  };
+  if (result.isError) return suffixed();
+  if (result.structuredContent) {
+    if (Object.prototype.hasOwnProperty.call(result.structuredContent, "root")) return result;
+    const structuredContent = { ...result.structuredContent, root };
+    return { ...result, content: [{ type: "text", text: JSON.stringify(structuredContent) }], structuredContent };
   }
-  const structuredContent = { ...result.structuredContent, root };
-  return { ...result, content: [{ type: "text", text: JSON.stringify(structuredContent) }], structuredContent };
+  if (result.content.some((c) => c.type === "text" && isJsonText(c.text))) return result;
+  return suffixed();
 }
 
 /** A result from another root than the server's says which root it read or wrote. */

@@ -33,7 +33,10 @@ import {
 } from "../f-domain-model/types.js";
 import {
   claimEntryExists,
+  expandClaims,
 } from "../f-source-index/claims.js";
+import { listResolvedImports } from "../f-source-index/imports.js";
+import { parseChecklistItems, type ChecklistItem } from "../f-territory-store/checklist.js";
 import { countCheckboxesInText } from "../f-territory-store/store.js";
 import {
   graphUnder,
@@ -1060,23 +1063,112 @@ const RETIRED_OR_CLOSED = new Set([
 ]);
 
 /**
- * A shipped node may have shipped on the relaxed dependency rule, relying on a dependency that was
- * only in review. Cancelling that dependency (pre-ship) or discarding its revision would leave the
- * dependent relying on something that never ships, so both are Blocked while `node` is not stable
- * and a stable/unstable node has a live depends_on edge to it (or, for an Interaction, a live
- * exposes edge from an Interface).
+ * The stable/unstable nodes that may have shipped on the relaxed dependency rule, relying on `node`
+ * while it was only in review: those with a live depends_on edge to it (or, for an Interaction, a
+ * live exposes edge from an Interface), while `node` is not stable. Sorted by id; none once stable.
  */
-export function assertNoShippedDependentsRelying(graph: MindPlanGraph, node: MindPlanNode, action: string): void {
-  if (node.state === "stable") return;
-  const dependents = graph.edges
-    .filter((e) => e.target === node.id && (e.type === "depends_on" || e.type === "exposes"))
-    .map((e) => graph.nodes.find((n) => n.id === e.source))
-    .filter((n): n is MindPlanNode => !!n && isProductionState(n.state));
-  const ids = [...new Set(dependents.map((n) => n.id))].sort();
+export function shippedDependentsRelying(graph: MindPlanGraph, node: MindPlanNode): MindPlanNode[] {
+  if (node.state === "stable") return [];
+  const byId = new Map<string, MindPlanNode>();
+  for (const e of graph.edges) {
+    if (e.target !== node.id || (e.type !== "depends_on" && e.type !== "exposes")) continue;
+    const source = graph.nodes.find((n) => n.id === e.source);
+    if (source && source.id !== node.id && isProductionState(source.state)) byId.set(source.id, source);
+  }
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+const RELYING_FIX =
+  'or move those dependents back with force_unship (ask the user; confirm: "unship:<id>").';
+
+/**
+ * A shipped node may have shipped on the relaxed dependency rule, relying on a dependency that was
+ * only in review. Cancelling that dependency (pre-ship), or taking back what made it count, would
+ * leave the dependent relying on something that never ships, so it is Blocked while `node` is not
+ * stable and a stable/unstable node depends on it (`shippedDependentsRelying`). `what` names the
+ * act, e.g. `cancel "f-x"`.
+ */
+export function assertNoShippedDependentsRelying(graph: MindPlanGraph, node: MindPlanNode, what: string): void {
+  const ids = shippedDependentsRelying(graph, node).map((n) => n.id);
   if (ids.length === 0) return;
   throw blocked(
-    `cannot ${action} "${node.id}": shipped nodes rely on it (${ids.map((id) => `"${id}"`).join(", ")}), and it is not stable yet. ` +
-      `Ship "${node.id}" first, or move those dependents back with force_unship (ask the user; confirm: "unship:<id>").`
+    `cannot ${what}: shipped nodes rely on "${node.id}" (${ids.map((id) => `"${id}"`).join(", ")}), and it is not stable yet. ` +
+      `Ship "${node.id}" first, ${RELYING_FIX}`
+  );
+}
+
+/**
+ * The relied-on slot may not lose what made it count: a move of `node`'s active slot back from
+ * in-review (to in-progress, the only step back) is Blocked while stable/unstable nodes rely on it.
+ */
+export function assertNoRetreatUnderShippedDependents(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  from: string,
+  to: string
+): void {
+  if (from !== "in-review" || to === SHIP_TRANSITION || to === "cancelled" || to === "in-review") return;
+  assertNoShippedDependentsRelying(graph, node, `move "${node.id}" back from in-review to "${to}"`);
+}
+
+/**
+ * Unticking a build item of `node`'s active slot while it is in review is Blocked while
+ * stable/unstable nodes rely on it: they shipped on every build item being ticked. `before` and
+ * `after` are the slot text around the toggle.
+ */
+export function assertNoUntickUnderShippedDependents(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  slotState: string | undefined,
+  before: string,
+  after: string
+): void {
+  if (slotState !== "in-review") return;
+  const unticked = untickedBuildItems(before, after);
+  if (unticked.length === 0) return;
+  assertNoShippedDependentsRelying(
+    graph,
+    node,
+    `untick build item(s) ${unticked.map((t) => `"${t}"`).join(", ")} of "${node.id}" in review`
+  );
+}
+
+/** Build items ticked in `before` and no longer done in `after` (matched by id, else by text). */
+function untickedBuildItems(before: string, after: string): string[] {
+  const label = (i: ChecklistItem): string => i.id ?? i.text;
+  const done = new Set(parseChecklistItems(before).filter((i) => i.kind === "build" && i.done).map(label));
+  const undone = parseChecklistItems(after).filter((i) => i.kind === "build" && !i.done && done.has(label(i)));
+  return [...new Set(undone.map(label))];
+}
+
+/**
+ * Discarding revision `change` of a shipped node is Blocked when a stable/unstable dependent relied
+ * on that revision's view: one of its owned files imports a file that only the revision claims
+ * (live does not). A dependent that rests on live alone does not hold the discard.
+ */
+export function assertNoShippedDependentsOnRevision(graph: MindPlanGraph, node: MindPlanNode, change: string): void {
+  if (!node.shipped_at) return;
+  const dependents = shippedDependentsRelying(graph, node);
+  if (dependents.length === 0) return;
+  const liveFiles = new Set(expandClaims(node.implements));
+  const onlyRevision = new Set(
+    expandClaims(withRevision(node, change).next?.implements).filter((f) => !liveFiles.has(f))
+  );
+  if (onlyRevision.size === 0) return;
+  const relying: string[] = [];
+  for (const dep of dependents) {
+    for (const file of expandClaims(dep.implements)) {
+      const hit = listResolvedImports(file).find((imp) => onlyRevision.has(imp.to));
+      if (hit) {
+        relying.push(`"${dep.id}" (${hit.from} imports ${hit.to})`);
+        break;
+      }
+    }
+  }
+  if (relying.length === 0) return;
+  throw blocked(
+    `cannot discard revision "${change}" of "${node.id}": shipped nodes rely on files only that revision claims: ` +
+      `${relying.join(", ")}. Ship the revision first, ${RELYING_FIX}`
   );
 }
 
@@ -1096,7 +1188,7 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
       `cannot cancel "${node.id}" while an open revision exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
-  assertNoShippedDependentsRelying(graph, node, "cancel");
+  assertNoShippedDependentsRelying(graph, node, `cancel "${node.id}"`);
   const byId = new Map<string, MindPlanNode>();
   for (const dep of dependentsOf(graph, node.id)) {
     if (!RETIRED_OR_CLOSED.has(dep.state)) byId.set(dep.id, dep);
@@ -1171,6 +1263,7 @@ function resolveNextStatusChange(
         `Allowed from "${current}": ${EXECUTION_TRANSITIONS[current]?.join(", ") || "(none)"}.`
     );
   }
+  assertNoRetreatUnderShippedDependents(graph, node, current, newStatus);
 
   if (node.type === "Interaction") {
     validateInteractionRulesForEdges(
@@ -1340,6 +1433,7 @@ export function resolveStatusChange(
   if (newStatus === "cancelled") {
     validateCancelTransition(graph, node);
   }
+  assertNoRetreatUnderShippedDependents(graph, node, current, newStatus);
 
   if (node.type === "Interaction") {
     validateInteractionRules(graph, node, newStatus);

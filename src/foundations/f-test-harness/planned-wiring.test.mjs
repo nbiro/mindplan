@@ -385,6 +385,40 @@ check("open_next is Blocked on a planned edge that closes a cross-change cycle",
     JSON.stringify(found)
   );
 
+  // a -> e -> b in x, b -> c in y (and z), c -> a live; the decoy a -> d -> b in z is walked first
+  // (d sorts before e) and reaches b under z, where b -> c stays inside z. Reaching b under z must
+  // not prune the walk that reaches it under x: x and y close the cycle.
+  const decoy = {
+    version: 1,
+    nodes: [
+      shipped("a", {
+        planned: [{ change: "z", type: "depends_on", target: "d" }, { change: "x", type: "depends_on", target: "e" }],
+      }),
+      shipped("b", { planned: [{ change: "y", type: "depends_on", target: "c" }, { change: "z", type: "depends_on", target: "c" }] }),
+      shipped("c", { depends_on: ["a"] }),
+      shipped("d", { planned: [{ change: "z", type: "depends_on", target: "b" }] }),
+      shipped("e", { planned: [{ change: "x", type: "depends_on", target: "b" }] }),
+    ],
+    edges: [{ source: "c", target: "a", type: "depends_on" }],
+  };
+  const decoyFound = cycles.changeCycles(decoy);
+  check(
+    "changeCycles finds the x/y cycle past a decoy walk under z",
+    decoyFound.length === 1 && JSON.stringify(decoyFound[0].changes) === JSON.stringify(["x", "y"]),
+    JSON.stringify(decoyFound)
+  );
+  let decoyGate = null;
+  try {
+    cycles.changeCycleGate(decoy)({ source: "c", target: "a" });
+  } catch (err) {
+    decoyGate = err.message;
+  }
+  check(
+    "the link gate finds the x/y cycle past a decoy walk under z",
+    !!decoyGate && decoyGate.includes('across changes "x", "y"') && decoyGate.includes("c -> a -> e -> b -> c"),
+    String(decoyGate)
+  );
+
   // 2,000 nodes, dense planned depends_on edges across 20 changes.
   let seed = 7;
   const rand = (n) => {

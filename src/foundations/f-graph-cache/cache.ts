@@ -24,7 +24,7 @@ import * as path from "path";
 import type { MindPlanNode } from "../f-domain-model/types.js";
 import { dirGitState, treeChanges } from "../f-source-index/git.js";
 import { readBytesRetry } from "../f-source-index/io.js";
-import { rootKey } from "../f-source-index/root-scope.js";
+import { CACHE_DIRNAME, rootKey } from "../f-source-index/root-scope.js";
 
 /** Bump when the table or the stored entry shape changes; a mismatch drops every row. */
 export const GRAPH_CACHE_SCHEMA = "2";
@@ -33,8 +33,8 @@ export const GIT_MODE_MIN_FOLDERS = 1000;
 /** A stamp taken this close to a file's mtime may miss an edit in the same clock tick. */
 export const RACY_MS = 2000;
 
-const CACHE_DIRNAME = ".mindplan-cache";
-const DB_FILENAME = "graph.db";
+/** The graph cache's file in the root's cache folder (CACHE_DIRNAME). */
+export const DB_FILENAME = "graph.db";
 
 /** One file of a node folder as last seen. */
 export type FileStamp = { name: string; size: number; mtimeMs: number };

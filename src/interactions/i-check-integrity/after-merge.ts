@@ -16,12 +16,13 @@ import { REVISIONS_DIR, parseRevisionFile, revisionBaseStale } from "../../found
 import { DECISIONS_DIR, parseDecisionFile } from "../../foundations/f-territory-store/decisions-store.js";
 import { VERSION_RELATIVE_PATH } from "../../foundations/f-territory-store/version.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
+import { CACHE_DIRNAME } from "../../foundations/f-source-index/root-scope.js";
 
 const PREFIX = "Blocked: after-merge:";
 /** A warning text: run_check prints it as `Warning: after-merge: …`. */
 const WARNING_PREFIX = "after-merge:";
 /** Derived and machine-local folders under mindplan/: never scanned. */
-const SKIPPED_DIRS = new Set([".mindplan-cache", ".git", "node_modules"]);
+const SKIPPED_DIRS = new Set([CACHE_DIRNAME, ".git", "node_modules"]);
 
 function posix(rel: string): string {
   return rel.split(path.sep).join("/");

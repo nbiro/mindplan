@@ -21,7 +21,7 @@ import {
 import { openChanges, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
-import { assertNoShippedDependentsRelying, blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
+import { assertNoShippedDependentsOnRevision, blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
 import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.js";
 import { changeCycleGate } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
@@ -150,7 +150,7 @@ function discardRevisionWrite(args: { node_id: string; change?: string; verbose?
       `node "${node_id}" has no open revision to discard (a leftover mirror file is not a revision; upgrade_project removes it).`
     );
   }
-  assertNoShippedDependentsRelying(graph, node, `discard revision "${change}" of`);
+  assertNoShippedDependentsOnRevision(graph, node, change);
   const removed = discardRevision(node, change);
   refreshPersistedMap();
   return {
