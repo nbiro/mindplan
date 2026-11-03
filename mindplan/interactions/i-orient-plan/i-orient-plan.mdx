@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:41:55.485Z
 revisions: 26
 churn: 4.887
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-11-03T09:41:55.485Z
+updated_at: 2026-11-03T11:16:17.686Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -110,5 +110,7 @@ Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-r
 _None._
 
 ## Open human items
+
+The items are read for the focus node and its revisions only (`openHumanItemsOfNode`), never by scanning the whole graph.
 
 `orient_for_work({ node_id })` returns `open_items: [{ id?, kind, text, change? }]` for the node's unticked `review` and `deploy` items, and `orient_for_work({ change })` one list for the whole change.

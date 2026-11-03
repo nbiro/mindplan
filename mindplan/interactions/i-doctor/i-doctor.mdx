@@ -4,11 +4,24 @@ type: Interaction
 title: "Check the server's health"
 description: "Agent or human calls doctor to see the server's version, the graph root it serves, the graph's migration level, and how long the graph took to load, so a slow or missing attach is diagnosable without raw stdio."
 state: stable
-shipped_at: 2026-11-03T09:41:36.314Z
-revisions: 1
-churn: 1
+shipped_at: 2026-11-03T11:14:59.278Z
+revisions: 2
+churn: 1.999
 created_at: 2026-11-03T08:22:07.430Z
-updated_at: 2026-11-03T09:41:36.314Z
+updated_at: 2026-11-03T11:14:59.278Z
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-graph-migrations
+  - f-mcp-runtime
+  - f-search-index
+  - f-territory-store
+  - f-tool-kit
+implements:
+  - src/interactions/i-doctor/
+tests:
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
 aliases:
   - "health"
   - "doctor"
@@ -16,18 +29,6 @@ aliases:
   - "server status"
   - "attach"
   - "startup"
-belongs_to:
-  - j-agent-onboarding
-depends_on:
-  - f-tool-kit
-  - f-territory-store
-  - f-graph-migrations
-  - f-mcp-runtime
-implements:
-  - src/interactions/i-doctor/
-tests:
-  - src/foundations/f-test-harness/smoke.mjs
-  - src/foundations/f-test-harness/version.test.mjs
 ---
 
 # Check the server's health
@@ -48,6 +49,7 @@ Intended files: `src/interactions/i-doctor/` (`handlers.ts`, `tools.ts`).
 - `doctor({ root? })` returns `{ version, node, root, graph: { status, level, server_level }, load_ms, cache: { graph, search }, started_at, uptime_s }`: `version` from the package, `root` the graph root this call resolved, `status` from `graphStatus()` (`current`, `setup`, `upgrade`, or `newer`), `load_ms_cached` the duration of a `loadGraph()` through the graph cache for that root with `cache_hit` (the cache has no bypass), only when the status is `current` and loading would remove no legacy file (otherwise `load_error` names why), the server's start time from `f-mcp-runtime`, and whether the graph and search caches are present
 - It never writes; a load error is reported, not thrown
 - Mounted by `if-mcp-tools` with `gate: false`
+- Cache names come from their owners: the cache folder from `f-source-index`, `graph.db` from `f-graph-cache`, `index.db` from `f-search-index`
 
 ## Acceptance Criteria
 

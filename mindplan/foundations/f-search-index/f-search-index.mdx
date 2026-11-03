@@ -8,7 +8,7 @@ shipped_at: 2026-10-26T00:04:46.126Z
 revisions: 1
 churn: 1
 created_at: 2026-10-25T21:51:39.591Z
-updated_at: 2026-11-03T10:00:28.391Z
+updated_at: 2026-11-03T11:16:18.307Z
 depends_on:
   - f-source-index
 implements:
@@ -55,6 +55,7 @@ Package: `src/foundations/f-search-index/`
 
 Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
 
+- **Index file name.** `index-db.ts` exports `INDEX_FILENAME` and reads the cache folder name from `f-source-index`.
 - **One index per root.** Open indexes are keyed by `rootKey(root)` (`f-source-index/root-scope.ts`: resolved, lowercased on Windows), so one server serving several worktree roots, or one root spelled with two casings, never opens two handles on one `index.db`.
 
 ## Acceptance Criteria

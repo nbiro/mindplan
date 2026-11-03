@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:35.293Z
 revisions: 2
 churn: 1.831
 created_at: 2026-10-26T07:49:32.173Z
-updated_at: 2026-11-03T10:00:28.488Z
+updated_at: 2026-11-03T11:16:18.141Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -47,6 +47,7 @@ Intended files: `src/foundations/f-graph-cache/`
 
 - **Open revisions (0.18.0).** Folder stamps cover every file under `revisions/*/` and `decisions/` as well as the node folder's `*.mdx`, so an edit inside a revision or a new decision file re-parses the node; `parserVersion` hashes the revision and decision readers too
 
+- **Cache file name.** `cache.ts` exports `DB_FILENAME` (`graph.db`) so readers such as `doctor` never repeat it.
 - **One cache per root.** In-memory caches are keyed by `rootKey(root)` (`f-source-index/root-scope.ts`: resolved, lowercased on Windows) and the package version, so a call on another worktree root, or the same root spelled with another casing, reads the right `graph.db` once.
 
 ## Acceptance Criteria

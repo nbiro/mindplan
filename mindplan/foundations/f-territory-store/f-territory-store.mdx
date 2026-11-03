@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.755Z
 revisions: 24
 churn: 10.358
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-03T09:48:46.755Z
+updated_at: 2026-11-03T11:16:17.474Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -172,5 +172,7 @@ Depends on: `f-domain-model`, `f-source-index`.
 _None._
 
 ## Checklist items
+
+Parsing and editing a checklist use one line splitter that keeps each line's own ending (CRLF, LF, or a lone CR), so a toggle always edits the line it matched; a line that is not there is Blocked.
 
 Every checkbox the Completion Check counts (the whole body except the owned Rules and Decisions sections) is a checklist item; it may end with a tag `{#<id>}` or `{#<id> <kind>}`: `id` is a stable slug, `kind` is `build` (the default when absent), `review` (a human or after-deploy check), or `deploy` (an environment variable or a migration applied live). Default Atomic Ops carry the same ids for every type: `{#spec}`, `{#impl}`, `{#verify}`. The tag is part of the line on disk and is hidden from nothing; `toggleCheckboxesInBody` matches an item by `id` or by its exact text (without tag and annotations), and refuses substring matches. `checklistItems(body)` returns `{ id?, kind, text, checked, line }` for every item, and counts by kind feed the Completion Check.

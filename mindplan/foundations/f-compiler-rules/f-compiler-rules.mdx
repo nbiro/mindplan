@@ -4,11 +4,11 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, additivity), change members (revisions, planned sources), checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-11-03T09:42:06.443Z
-revisions: 30
-churn: 17.9
+shipped_at: 2026-11-03T11:22:44.234Z
+revisions: 31
+churn: 18.871
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-03T09:42:06.443Z
+updated_at: 2026-11-03T11:22:44.234Z
 split_at: 8
 split_into:
   - f-source-index
@@ -171,6 +171,8 @@ A test file of node A (a file A's `tests` list matches that also looks like a te
 _None._
 
 ## Checklist kinds
+
+While a stable or unstable node relies on a non-stable node under the relaxed rule, the guards also Block moving that node back from `in-review` and unticking one of its build items while its slot is in review; `discard_next` on a shipped node's revision is Blocked only when a dependent's files import a file only that revision claims. `openHumanItemsOfNode(node)` lists one node's open review and deploy items. The cross-change cycle search keeps a seen set per change label, so a path reached first under one change never hides another change's cycle.
 
 - The Completion Check at ship still needs every item ticked, `review` and `deploy` included.
 - At `in-review`, only `build` items must be ticked.

@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.632Z
 revisions: 14
 churn: 10.728
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-11-03T09:48:46.632Z
+updated_at: 2026-11-03T11:16:17.576Z
 depends_on:
   - f-domain-model
   - f-revision-model
@@ -65,6 +65,8 @@ Depends on: `f-domain-model`.
 - **Open revisions (0.18.0).** `buildOwnershipIndex` keeps `live` and `revisions: Map<file, { id, change }[]>`; `ownerUnder(buckets, file, change)` resolves a file under one change (that change's revision claim first, then live minus its removes), and released files are per change. `claimantsOf` returns `{ id, via: "live" | "revision", change? }`. A file live claims or any revision adds counts as covered
 
 ## Graph root per call
+
+`root-scope.ts` also exports `rootKey(root)` (resolved, lowercased on Windows), the one key every per-root map uses, and `CACHE_DIRNAME`, the derived cache folder every reader of `.mindplan-cache` imports.
 
 One `resolveProjectRoot(root?)` serves claims, config, imports, git probes, and the universe, and reads the current call's root (see `f-territory-store`) before `MINDPLAN_ROOT` and the working directory; the five private copies are gone.
 

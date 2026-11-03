@@ -2,13 +2,13 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface: mounts the thirty-three tools its actions define, in a fixed order, behind the version gate, with read/write/destructive annotations from one kind, compact JSON plus structuredContent, small write results unless verbose, and node-scoped drift on reads."
+description: "MCP stdio Interface: mounts the thirty-seven tools its actions define, in a fixed order, behind the version gate, each with an optional graph root, read/write/destructive annotations from one kind, compact JSON plus structuredContent, small write results unless verbose, and node-scoped drift on reads."
 state: stable
-shipped_at: 2026-11-03T09:48:47.462Z
-revisions: 30
-churn: 3.941
+shipped_at: 2026-11-03T11:22:44.655Z
+revisions: 31
+churn: 4.935
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-11-03T09:48:47.462Z
+updated_at: 2026-11-03T11:22:44.655Z
 split_at: 26
 split_into:
   - i-assess-impact
@@ -101,6 +101,8 @@ Depends on: `f-mcp-runtime`, `f-tool-kit`, `f-territory-store`.
 - **Open revisions (0.18.0).** Mounts `resolve_conflict` (from `i-revise-node`) in `TOOL_ORDER` after `discard_next`; thirty-four tools
 
 ## Graph root per call
+
+`root` must be an absolute path to an existing directory for every tool (`setup_project` and `doctor` included), and must hold `mindplan/` for every other tool; anything else is Blocked before the handler runs. A result from another root gains `root` only when its object payload has none; JSON array payloads are left as they are, and only Blocked texts and plain strings end with ` (root: <path>)`.
 
 Every tool takes an optional `root`: an absolute path to a checkout or git worktree whose `mindplan/` the call reads and writes (the default is the server's root). `mount()` adds it to every input schema once, resolves it (Blocked when the path has no `mindplan/` and the tool is not `setup_project` or `doctor`), and runs the version gate, the handler, and the drift envelope inside that root's scope. Results name `root` when it differs from the server's.
 

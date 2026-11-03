@@ -4,11 +4,11 @@ type: Interaction
 title: "Revise a shipped node"
 description: "Agent opens a revision of a shipped node, with its planned edges applied and a hotspot warning when it ships far above the graph's pace, or discards the revision."
 state: stable
-shipped_at: 2026-11-03T09:48:47.148Z
-revisions: 5
-churn: 4.879
+shipped_at: 2026-11-03T11:22:44.501Z
+revisions: 6
+churn: 5.872
 created_at: 2026-10-31T11:58:03.620Z
-updated_at: 2026-11-03T09:48:47.148Z
+updated_at: 2026-11-03T11:22:44.501Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -51,6 +51,10 @@ Intended files: `src/interactions/i-revise-node/` (`handlers.ts`, `tools.ts`).
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
 
 - **Open revisions (0.18.0).** `open_next` requires `change` and opens `revisions/<change>/` from live (with that change's planned edges as add deltas and base hashes of live); it is Blocked only when that change is already open on the node, so several changes can revise one node at once. `discard_next` takes `change` (optional when only one is open). New tool `resolve_conflict({ node_id, change, section | field | claim, take: "mine" | "live" | "text", text? })` settles one rebase conflict and refreshes its base hash
+
+## Discard guard
+
+`discard_next` is Blocked when a stable or unstable dependent's files import a file that only the discarded revision claims, naming the dependents and the files; any other discard goes ahead.
 
 ## Rebase on demand
 

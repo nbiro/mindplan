@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:41:45.907Z
 revisions: 6
 churn: 5.76
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-03T09:41:45.907Z
+updated_at: 2026-11-03T11:16:17.990Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -56,6 +56,8 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-s
 - **Open revisions (0.18.0).** `patch_node_territory`, `put_attachment`, and `remove_attachment` take `change` to pick the revision (optional with at most one open); `slot: "next"` means that revision. Editing a section of a revision that has a conflict on it leaves the conflict until `resolve_conflict`
 
 ## Checklist ids and kinds
+
+Unticking a build item on a node in review is Blocked while a stable or unstable node relies on it under the relaxed dependency rule (`f-compiler-rules`), naming the dependents.
 
 `toggle_checkboxes` items take `id` (a stable item id such as `spec`, `impl`, `verify`, `review-copy`) or `contains`, which must now equal the item's full text (tag and annotations excluded); a substring that is not the whole text is Blocked naming the matching items and their ids. `add_checklist_items: [{ text, id?, kind? }]` appends items to the Atomic Ops section of the picked slot.
 

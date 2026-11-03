@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T21:13:07.604Z
 revisions: 23
 churn: 11.268
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-11-03T09:41:25.442Z
+updated_at: 2026-11-03T11:16:18.689Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -66,6 +66,7 @@ Depends on: `f-mcp-runtime`.
 
 - **Open revisions (0.18.0).** `revision-core.test.mjs` (pure model and rebase matrix), `revisions-store.test.mjs` (storage, ship rebases a sibling, cache invalidation), `multi-revision-gates.test.mjs` (gates judge live plus one change), `rebase-flow.test.mjs` (two changes on one hub node over MCP: carried section, conflict, `resolve_conflict`, ship), and `upgrade-revisions.test.mjs` (level-4 migration of next files, decision sections, and map.md); the existing suites assert revision folders instead of next files, pass `change` to `open_next`, claim and link tests with `add` / `remove` (`replace: true` only to replace a list), expect decisions as `decisions/<id>.md` files and `map.md` never in `changed_files`, and count thirty-four tools
 
+- **Review fixes (0.18).** `lean-replies.test.mjs` covers checklist lines with a lone CR; `honesty.test.mjs` partial batches and the relaxed-rule guards; `worktree-root.test.mjs` root validation and JSON payloads on another root; `planned-wiring.test.mjs` the decoy-path cycle case.
 - **Rest of 0.18.** `worktree-root.test.mjs` (the `root` argument: writes land in the named worktree only, orientation per root, root casing, interleaved async calls never cross roots, a root without `mindplan/` Blocked) and `after-merge.test.mjs` (a git merge of two branches that both changed one node: stale base warning, `rebase_revision`, conflict markers, duplicate ids, tracked map.md, the CLI `--after-merge --root`); `honesty.test.mjs` adds change walks with `nodes`, batches that continue with per-node `results`, the change hint, checklist ids and kinds and the relaxed transitive dependency rule; `ergonomics.test.mjs` the compact `run_check`, session-scoped unchanged warnings, `acknowledge_warning`, and `nodes`; `orient-gate.test.mjs` `sections`; `planned-wiring.test.mjs` cycles across changes; `check.test.mjs` the test-file import scope; `version.test.mjs` `doctor`, startup before the graph loads, and fatal/exit logging; suites tick checklists by id
 
 ## Acceptance Criteria
