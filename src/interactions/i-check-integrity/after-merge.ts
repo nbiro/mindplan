@@ -173,8 +173,11 @@ function versionFailures(root: string): string[] {
   }
   // graphStatus reads the scoped root: judge the checkout at `root`, not the process's own.
   const status = withRoot(root, graphStatus);
-  if (status.state !== "upgrade") return [];
-  return [`${PREFIX} ${VERSION_RELATIVE_PATH} is behind this graph: ${status.warning}`];
+  // An unreadable stamp is an "upgrade" state too; its warning says so.
+  if (status.state === "upgrade") return [`${PREFIX} ${VERSION_RELATIVE_PATH} is behind this graph: ${status.warning}`];
+  // A merge brought in an upgrade from a newer mindplan-mcp: the warning names the package to install.
+  if (status.state === "server-behind") return [`${PREFIX} ${VERSION_RELATIVE_PATH} is newer than this server: ${status.warning}`];
+  return [];
 }
 
 /**

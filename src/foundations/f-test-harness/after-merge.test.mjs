@@ -275,29 +275,45 @@ check("the merge carried A's live into b", read(LIVE).includes("Spec from A.") &
 
 // --- the version finding judges the root it is given, not the process's own ---
 {
-  const stale = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-after-merge-stale-"));
-  fs.mkdirSync(path.join(stale, "mindplan"), { recursive: true });
-  fs.writeFileSync(path.join(stale, "mindplan", "version.json"), JSON.stringify({ package: "0.12.0", graph: 1 }) + "\n");
   const { afterMergeFindings } = await import(new URL("../../../dist/interactions/i-check-integrity/after-merge.js", import.meta.url).href);
-  const saved = { gate: process.env.MINDPLAN_VERSION_GATE, root: process.env.MINDPLAN_ROOT };
-  delete process.env.MINDPLAN_VERSION_GATE;
-  // The process's own root is this repo, whose graph is current.
-  process.env.MINDPLAN_ROOT = toolRoot;
-  let found;
-  try {
-    found = afterMergeFindings(null, stale);
-  } finally {
-    if (saved.gate === undefined) delete process.env.MINDPLAN_VERSION_GATE;
-    else process.env.MINDPLAN_VERSION_GATE = saved.gate;
-    if (saved.root === undefined) delete process.env.MINDPLAN_ROOT;
-    else process.env.MINDPLAN_ROOT = saved.root;
-  }
+  const findingsFor = (stampText) => {
+    const stale = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-after-merge-stale-"));
+    fs.mkdirSync(path.join(stale, "mindplan"), { recursive: true });
+    fs.writeFileSync(path.join(stale, "mindplan", "version.json"), stampText);
+    const saved = { gate: process.env.MINDPLAN_VERSION_GATE, root: process.env.MINDPLAN_ROOT };
+    delete process.env.MINDPLAN_VERSION_GATE;
+    // The process's own root is this repo, whose graph is current.
+    process.env.MINDPLAN_ROOT = toolRoot;
+    try {
+      return afterMergeFindings(null, stale);
+    } finally {
+      if (saved.gate === undefined) delete process.env.MINDPLAN_VERSION_GATE;
+      else process.env.MINDPLAN_VERSION_GATE = saved.gate;
+      if (saved.root === undefined) delete process.env.MINDPLAN_ROOT;
+      else process.env.MINDPLAN_ROOT = saved.root;
+      fs.rmSync(stale, { recursive: true, force: true, maxRetries: 5 });
+    }
+  };
+  const found = findingsFor(JSON.stringify({ package: "0.12.0", graph: 1 }) + "\n");
   check(
     "after-merge reports a version.json behind the graph at the root it checks, not the process's root",
     found.failures.some((f) => f.includes("version.json is behind this graph")),
     JSON.stringify(found.failures)
   );
-  fs.rmSync(stale, { recursive: true, force: true, maxRetries: 5 });
+  // A stamp newer than this server (a merge brought in an upgrade from a newer mindplan-mcp) names
+  // the package to install, as the version gate does.
+  const ahead = findingsFor(JSON.stringify({ package: "99.0.0", graph: 1, migrations: 999 }) + "\n");
+  check(
+    "after-merge reports a version.json newer than this server, naming the package to install",
+    ahead.failures.some((f) => f.includes("version.json is newer than this server") && f.includes("npm install -D mindplan-mcp@99.0.0")),
+    JSON.stringify(ahead.failures)
+  );
+  const unreadable = findingsFor("{ not json\n");
+  check(
+    "after-merge reports an unreadable version.json",
+    unreadable.failures.some((f) => f.includes("version.json is unreadable") && f.includes("upgrade_project")),
+    JSON.stringify(unreadable.failures)
+  );
 }
 
 await client.close();
