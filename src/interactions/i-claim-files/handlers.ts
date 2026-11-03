@@ -157,50 +157,36 @@ function listEdit(tool: string, args: ListEditArgs): ListEdit | null {
   return null;
 }
 
-/** A path as compared for `remove`: trimmed, `/` separators, no leading `./`. */
-function removeKey(entry: string): string {
-  return entry.trim().replace(/\\/g, "/").replace(/^(\.\/)+/, "");
-}
-
 /**
- * The forms a path is compared by for `remove`: its raw key, and its normalized form when it
- * validates (like an add). So an entry stored before normalization, or one the validator now
- * rejects, still matches as stored.
+ * The key a path is matched by for `remove`: its normalized form when it validates (like an add),
+ * else its raw key (trimmed, `/` separators, no leading `./`); a trailing `/` is ignored. So an
+ * entry stored before normalization, or one the validator now rejects, still matches.
  */
-function removeForms(entry: string, field: "implements" | "tests"): string[] {
-  const forms = [removeKey(entry)];
+function removeKey(entry: string, field: "implements" | "tests"): string {
+  let key: string;
   try {
-    forms.push(validateClaimPath(entry, field));
+    key = validateClaimPath(entry, field);
   } catch {
-    // Raw key only.
+    key = entry.trim().replace(/\\/g, "/").replace(/^(\.\/)+/, "");
   }
-  return forms;
+  return key.replace(/\/$/, "");
 }
 
 /**
- * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry equal to stored
- * entries as written (or differing only by a trailing `/`) removes those only. Failing that, it
- * matches a stored entry when either its raw key or its normalized form (when it validates) equals the stored
- * entry's raw key or normalized form; failing that, when they differ only by a trailing `/`. One
- * that matches none is Blocked, naming the stored entries. So a stored entry the validator now
- * rejects, or one stored un-normalized, can always be removed as stored; one the edit keeps is
- * Blocked with that fix (every list the store writes is validated whole).
+ * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry drops every
+ * stored entry whose key equals its key: the normalized form when it validates, else the raw
+ * path, a trailing `/` ignored. Legacy duplicates that name the same path are dropped together.
+ * One that matches none is Blocked, naming the stored entries. So a stored entry the validator
+ * now rejects, or one stored un-normalized, can always be removed as stored; one the edit keeps
+ * is Blocked with that fix (every list the store writes is validated whole).
  */
 function applyListEdit(base: string[], edit: ListEdit, field: "implements" | "tests"): string[] {
   if ("replace" in edit) return normalizeClaimList(edit.replace, field);
   const removed = new Set<string>();
-  const stored = base.map((e) => ({ e, forms: removeForms(e, field) }));
-  const matches = (a: string[], b: string[], strip: (s: string) => string): boolean =>
-    a.some((x) => b.some((y) => strip(x) === strip(y)));
-  const slashless = (x: string): string => x.replace(/\/$/, "");
+  const stored = base.map((e) => ({ e, key: removeKey(e, field) }));
   for (const raw of edit.remove) {
-    // An entry stored exactly as passed (or differing only by a trailing "/") is the one meant:
-    // remove only it, so legacy duplicates that normalize alike are not all dropped.
-    const asStored = base.filter((e) => e === raw);
-    const rawHits = asStored.length ? asStored : base.filter((e) => slashless(e) === slashless(raw));
-    const forms = removeForms(raw, field);
-    const exact = rawHits.length ? rawHits : stored.filter((s) => matches(forms, s.forms, (x) => x)).map((s) => s.e);
-    const hits = exact.length ? exact : stored.filter((s) => matches(forms, s.forms, slashless)).map((s) => s.e);
+    const key = removeKey(raw, field);
+    const hits = stored.filter((s) => s.key === key).map((s) => s.e);
     if (hits.length === 0) {
       throw blocked(
         `remove "${raw}" matches no ${field} entry; stored: ${base.length ? base.map((e) => `"${e}"`).join(", ") : "(none)"}. ` +
