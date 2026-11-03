@@ -317,7 +317,15 @@ export function appendChecklistItems(
   const [start, end] = ranges[0];
   const fenced = fencedLines(lines);
   let at = start;
-  for (let i = start; i < end; i++) if (!fenced[i] && ITEM_LINE.test(lines[i])) at = i + 1;
+  let itemIndent = -1;
+  for (let i = start; i < end; i++) {
+    const m = fenced[i] ? null : lines[i].match(ITEM_LINE);
+    if (m) {
+      at = i + 1;
+      itemIndent = m[1].length - m[1].trimStart().length;
+    }
+  }
+  if (itemIndent >= 0) at = afterContinuation(lines, fenced, at, end, itemIndent);
   if (at === start) {
     const insert = ["", ...added, ...(lines[start] === undefined || lines[start].trim() === "" ? [] : [""])];
     // Keep one blank line under the heading.
@@ -330,4 +338,34 @@ export function appendChecklistItems(
     breaks.splice(at, 0, ...added.map(() => eol));
   }
   return { body: joinLines(lines, breaks, eol), added };
+}
+
+const CONTINUATION_BREAK = /^(?:#{1,6}[ \t]|[ \t]*(?:[-*+]|\d+[.)])[ \t])/;
+
+/**
+ * The line index just past the continuation lines of the item that ends before `from` (its marker
+ * indented `itemIndent`), within `[from, end)`: lines indented past the marker (blank lines between
+ * them included), lazy lines straight after it, and fenced code that opens among them. A heading,
+ * a list item at the item's level or shallower, or an unindented line after a blank line ends it.
+ */
+function afterContinuation(lines: string[], fenced: boolean[], from: number, end: number, itemIndent: number): number {
+  let last = from;
+  for (let j = from; j < end; j++) {
+    const line = lines[j];
+    if (line.trim() === "") continue;
+    if (fenced[j] && j === last && j > from) {
+      last = j + 1;
+      continue;
+    }
+    const indent = line.length - line.trimStart().length;
+    const afterBlank = j > last;
+    if (/^#{1,6}[ \t]/.test(line)) break;
+    if (CONTINUATION_BREAK.test(line) && indent <= itemIndent) break;
+    if (indent > itemIndent || !afterBlank) {
+      last = j + 1;
+      continue;
+    }
+    break;
+  }
+  return last;
 }

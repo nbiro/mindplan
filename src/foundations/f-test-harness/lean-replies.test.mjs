@@ -291,6 +291,17 @@ fs.writeFileSync(
   );
   const empty = checklist.appendChecklistItems("## Atomic Ops\n\n## Rules\n", [{ text: "C", id: "c" }]).body;
   check("appendChecklistItems fills an empty section", empty === "## Atomic Ops\n\n- [ ] C {#c}\n\n## Rules\n", JSON.stringify(empty));
+  // A multi-line last item keeps its continuation lines (indented, lazy, and an indented paragraph
+  // after a blank line); the new item goes after them, not between.
+  const multi = checklist.appendChecklistItems(
+    "## Atomic Ops\n\n- [ ] A {#a}\n  detail of A\n  - nested note\nlazy line\n\n  more about A\n\nAfter the list.\n\n## Rules\n",
+    [{ text: "B", id: "b" }]
+  ).body;
+  check(
+    "appendChecklistItems adds after a multi-line last item's continuation lines",
+    multi === "## Atomic Ops\n\n- [ ] A {#a}\n  detail of A\n  - nested note\nlazy line\n\n  more about A\n- [ ] B {#b}\n\nAfter the list.\n\n## Rules\n",
+    JSON.stringify(multi)
+  );
   // A lone CR before the Atomic Ops: parse and edit split lines the same way, and each break stays as written.
   const loneCr = "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [ ] B {#b}\r\n";
   const ticked = checklist.toggleChecklistItems(loneCr, [{ id: "b", checked: true }]).body;
