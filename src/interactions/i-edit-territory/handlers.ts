@@ -40,7 +40,7 @@ import {
   replaceTextInBody,
   toggleCheckboxesInBody,
 } from "../../foundations/f-territory-store/store.js";
-import { appendChecklistItems, toggleChecklistItems, type NewChecklistItem } from "../../foundations/f-territory-store/checklist.js";
+import { appendChecklistItems, type NewChecklistItem } from "../../foundations/f-territory-store/checklist.js";
 import {
   loadRevision,
   revisionAttachmentsDir,
@@ -337,12 +337,13 @@ function patchRevisionTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, 
   }
   if (toggle_checkboxes?.length) {
     const result = toggleCheckboxesInBody(text, toggle_checkboxes);
-    assertNoUntickUnderShippedDependents(graph, node, revisionFor(node, change)?.state, text, result.body);
     text = result.body;
     toggled = result.toggled;
     patched.push("toggle_checkboxes");
   }
   const bodyWrite = patched.length > 0;
+  // Judged on the body every edit of the call leaves, whichever edit took a tick back.
+  if (bodyWrite) assertNoUntickUnderShippedDependents(graph, node, revisionFor(node, change)?.state, file.body, text);
   const scalars: RevisionScalarsPatch = {};
   if (title !== undefined) {
     scalars.title = title;
@@ -500,19 +501,11 @@ function writeNodeTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs): Rec
     if (!splitContext(raw)) {
       throw blocked(`${resolvedSlot} file for "${node_id}" has no YAML frontmatter.`);
     }
-    if (toggle_checkboxes?.length) {
-      // A toggle that would not apply is Blocked by the write itself, with its own reason.
-      let toggledRaw: string | null = null;
-      try {
-        toggledRaw = toggleChecklistItems(raw, toggle_checkboxes).body;
-      } catch {
-        toggledRaw = null;
-      }
-      const slotState = resolvedSlot === "next" ? node.next?.state : node.state;
-      if (toggledRaw !== null) assertNoUntickUnderShippedDependents(graph, node, slotState, raw, toggledRaw);
-    }
   }
+  const slotState = resolvedSlot === "next" ? node.next?.state : node.state;
   const result = patchNodeTerritoryStore(node, {
+    // The store hands over the body every edit of the call leaves, before it writes anything.
+    checkBody: (before, after) => assertNoUntickUnderShippedDependents(graph, node, slotState, before, after),
     title,
     description,
     role,

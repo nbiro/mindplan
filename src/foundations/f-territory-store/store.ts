@@ -1914,6 +1914,11 @@ export type PatchNodeTerritoryInput = {
   replace?: { find: string; with: string; all?: boolean };
   /** Override default slot selection. */
   slot?: TerritorySlot;
+  /**
+   * Called with the slot's body (owned sections left out) before and after every edit of the
+   * call, before anything is written; throwing Blocks the whole write.
+   */
+  checkBody?: (before: string, after: string) => void;
 };
 
 export function normalizeHeadingName(heading: string): string {
@@ -2296,6 +2301,8 @@ export function patchNodeTerritory(
       "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, add_checklist_items, toggle_checkboxes, change, or change_ref."
     );
   }
+
+  input.checkBody?.(bodyWithoutOwned, body);
 
   // An in-place claim marker clears once the live body names its path verbatim.
   if (slot === "current" && node.added_claims?.length) {

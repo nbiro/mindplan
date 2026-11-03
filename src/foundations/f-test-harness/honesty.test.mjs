@@ -1049,6 +1049,32 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   );
   const retick = await raw("patch_node_territory", { node_id: "f-mid", toggle_checkboxes: [{ id: "impl", note: "still done" }] });
   check("annotating a ticked build item of a relied-on dependency stays allowed", !retick.error, retick.text);
+  // Every edit is judged on the body it leaves, not only toggle_checkboxes.
+  const midBefore = fs.readFileSync(territory("foundations", "f-mid"), "utf-8");
+  const addBuild = await blocked("patch_node_territory", { node_id: "f-mid", add_checklist_items: [{ text: "One more step", id: "more" }] });
+  const replaceUntick = await blocked("patch_node_territory", {
+    node_id: "f-mid",
+    replace: { find: "- [x] Implementation complete", with: "- [ ] Implementation complete" },
+  });
+  const replaceDrop = await blocked("patch_node_territory", {
+    node_id: "f-mid",
+    replace: { find: midBefore.match(/^- \[x\] Implementation complete.*$/m)[0], with: "" },
+  });
+  // A toggle naming an item the same call's section edit adds still runs the guard on the result.
+  const sectionUntick = await blocked("patch_node_territory", {
+    node_id: "f-mid",
+    section: "## Atomic Ops",
+    text: "- [ ] Implementation complete {#impl}\n- [ ] Fresh {#fresh}",
+    toggle_checkboxes: [{ id: "fresh", checked: true }],
+  });
+  check(
+    "adding an unticked build item, or a replace or section edit that unticks or drops one, of a relied-on dependency in review is Blocked",
+    [addBuild, replaceUntick, replaceDrop, sectionUntick].every((b) => !!b && b.includes('"i-top"') && b.includes("force_unship")) &&
+      fs.readFileSync(territory("foundations", "f-mid"), "utf-8") === midBefore,
+    JSON.stringify({ addBuild, replaceUntick, replaceDrop, sectionUntick })
+  );
+  const addReview = await raw("patch_node_territory", { node_id: "f-mid", add_checklist_items: [{ text: "QA sign-off", id: "qa", kind: "review" }] });
+  check("adding a review item to a relied-on dependency in review stays allowed", !addReview.error, addReview.text);
 
   // A dependency with no checklist item at all proves nothing.
   // (The shape gate needs a box to reach in-review, so the boxes go after the walk.)
