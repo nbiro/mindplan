@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:22:44.366Z
 revisions: 6
 churn: 5.847
 created_at: 2026-10-31T11:58:03.397Z
-updated_at: 2026-11-03T13:31:04.211Z
+updated_at: 2026-11-03T14:05:03.287Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -56,7 +56,7 @@ Intended files: `src/interactions/i-change-status/` (`handlers.ts`, `tools.ts`).
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
 
-- **Open revisions (0.18.0).** `update_node_status` takes `change` to pick a node's revision (optional when it has at most one); the scoped `change` walk moves each member's revision of that change; validation runs on `graphUnder(graph, change)` and `promoteInMemory` uses `withRevision`. Ship calls `shipRevision`, which rebases the node's other revisions and lists `rebased: [{ change, conflicts }]` in the result. A walk (and its dry run) foresees that rebase: before a revision ships, `simulateRow` runs `assertRevisionShipsOntoLive` (`f-territory-store`), so a revision rebased onto a newer live is Blocked in memory rather than failing halfway through the writes
+- **Open revisions (0.18.0).** `update_node_status` takes `change` to pick a node's revision (optional when it has at most one); the scoped `change` walk moves each member's revision of that change; validation runs on `graphUnder(graph, change)` and `promoteInMemory` uses `withRevision`. Ship calls `shipRevision`, which rebases the node's other revisions and lists `rebased: [{ change, conflicts }]` in the result. A walk (and its dry run) foresees that rebase: before a revision ships, `simulateRow` runs `assertRevisionShipsOntoLive` (`f-territory-store`), so a revision rebased onto a newer live is Blocked in memory rather than failing halfway through the writes. A batch's duplicate check keys each item on the revision it resolves to (`revisionChangeFor`), so one revision listed once with its change omitted and once with it named is Blocked as a duplicate
 
 ## Cleanup (0.18)
 

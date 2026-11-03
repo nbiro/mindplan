@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:34.938Z
 revisions: 1
 churn: 1
 created_at: 2026-11-02T08:30:42.295Z
-updated_at: 2026-11-03T12:53:16.935Z
+updated_at: 2026-11-03T14:04:48.645Z
 role: infra
 aliases:
   - "revision"
@@ -42,7 +42,7 @@ Intended files: `src/foundations/f-revision-model/` (`revision.ts`, `rebase.ts`,
 - `withRevision(node, change)`: a node-shaped view of live ⊕ that revision, with today's `next` view field filled from it, so gate code that reads `node.next` judges live plus that revision only
 - `graphUnder(graph, change)`: the graph with every node that has a revision of `change` replaced by `withRevision`; every other node stays live (other changes' revisions are invisible)
 - `splitSections(body)`, `sectionHashes(body)`: level-2 sections plus a `_preamble` entry; `## Rules` and `## Decisions` excluded; hashes are the first 8 hex characters of sha1 of the section text with line endings normalized
-- `rebase(liveOld, liveNew, revision, revisionBody)` → `{ revision, body }`: per section and per scalar, untouched by the revision → take new live; touched only by the revision → keep; both touched with equal text → keep; otherwise keep the revision's text and add a conflict; every base hash moves to new live. An `add` already in new live and a `remove` no longer in live drop silently; an `implements` add now claimed live by another node becomes a claim conflict
+- `rebase(liveOld, liveNew, revision, revisionBody)` → `{ revision, body }`: per section and per scalar, untouched by the revision → take new live; touched only by the revision → keep; both touched with equal text → keep; otherwise keep the revision's text and add a conflict; every base hash moves to new live. A section only new live has is inserted before the revision's `## Rules` / `## Decisions`, except a live-only `_preamble`, which goes at the top. An `add` already in new live and a `remove` no longer in live drop silently; an `implements` add now claimed live by another node becomes a claim conflict
 - `sections.ts` is the one fence-aware level-2 heading scanner (`splitSections`, `joinSections`, the owned Rules/Decisions ranges), used by `rebase`, the territory store, and checklist parsing so they cannot disagree
 - `conflictLabel(conflict)` formats a conflict for files and replies; `pickRevision(node, change?, { strict })` returns which revision a call means and its view (strict Blocks when several are open and no change is given); `detectEol` and `normalizedText` are the shared line-ending helpers
 - No module-level state; every function is pure over its arguments

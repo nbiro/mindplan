@@ -177,8 +177,9 @@ Check options:
   --merge=strict            Also Block in-progress nodes whose claimed files changed against
                             the base (default: the main/master merge base)
   --after-merge             After merging a branch that changed mindplan/: Block conflict
-                            markers, duplicate node or decision ids, revisions based on an
-                            older live (rebase_revision), a tracked map.md, a stale version.json
+                            markers, duplicate node or decision ids, an unparsable revision
+                            file, a tracked map.md, a stale version.json; Warn on revisions
+                            based on an older live (rebase_revision)
   --root <path>             Check the checkout at <path> (default: MINDPLAN_ROOT, else cwd)
 
 Environment:
