@@ -31,6 +31,7 @@ export const TOOLS: ToolDef[] = [
         "An unclaimed source file is Blocked: Coverage with its probable owner and the claim call. " +
         "Pass change to also run the in-review gate on every member of that change: its open revisions (shipped nodes with planned edges are listed, not gated), with an additivity: info line and change.additivity (new nodes, reopened shipped nodes with their fan-in). A shipped node with no open next whose claimed files changed against the base gets every stale-text signal. " +
         "Pass merge before telling the user a PR is ready to merge: it Blocks every node still in review (ship its change, or move it back to in-progress), and with \"strict\" also in-progress nodes whose claimed files changed against base; results carry merge grouped by change. " +
+        "Pass after_merge after merging a branch that changed the graph: each leftover of the merge is a Blocked: after-merge: line with its fix. " +
         "Moves to in-review and ship run this check on the node's files themselves.",
       inputSchema: {
         base: z
@@ -46,8 +47,14 @@ export const TOOLS: ToolDef[] = [
           .describe(
             "Merge gate: true Blocks in-review nodes and Bugs; \"strict\" also Blocks in-progress nodes whose claimed files changed against base (default: the main/master merge base)."
           ),
+        after_merge: z
+          .boolean()
+          .optional()
+          .describe(
+            "After merging a branch that changed mindplan/: also Block git conflict markers, a node id in two folders, a decision id in two files, revisions whose base no longer matches live (fix: rebase_revision), a tracked mindplan/map.md, and a missing or behind version.json."
+          ),
       },
     },
-    ({ base, change, merge }) => runCheckHandler({ base, change, merge })
+    ({ base, change, merge, after_merge }) => runCheckHandler({ base, change, merge, after_merge })
   ),
 ];

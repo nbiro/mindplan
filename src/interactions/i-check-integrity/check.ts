@@ -75,6 +75,7 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
+import { afterMergeFailures } from "./after-merge.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -108,6 +109,8 @@ export interface CheckOptions {
    * changed against `base` (default: `defaultBaseRef`).
    */
   merge?: MergeLevel;
+  /** Also report what a git merge of two graph-changing branches left behind (`after-merge.ts`). */
+  after_merge?: boolean;
 }
 
 export type MergeLevel = true | "strict";
@@ -1204,6 +1207,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   if (process.env.MINDPLAN_VERSION_GATE !== "off") {
     const status = graphStatus();
     if (status.state !== "current") {
+      if (options.after_merge) failures.push(...afterMergeFailures(null, root));
       fail(failures, `Blocked: Version — ${status.warning}`);
       if (options.cwd) {
         if (prev === undefined) delete process.env.MINDPLAN_ROOT;
@@ -1220,6 +1224,8 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     graph = loadGraph();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // After a merge, name what broke the load (conflict markers, a file that no longer parses) first.
+    if (options.after_merge) failures.push(...afterMergeFailures(null, root));
     fail(failures, `graph load failed: ${message}`);
     if (options.cwd) {
       if (prev === undefined) delete process.env.MINDPLAN_ROOT;
@@ -1229,6 +1235,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   }
 
   try {
+    if (options.after_merge) failures.push(...afterMergeFailures(graph, root));
     const buckets = checkExclusivity(graph, root, failures, warnings);
     const universe = listUniverseFiles(root);
     checkCoverage(graph, root, buckets, universe, failures);
@@ -1301,9 +1308,9 @@ export function renderCheckOutput(result: CheckResult): string {
  * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings and info.
  */
 export function runCheckHandler(
-  args: { base?: string; change?: string; merge?: MergeLevel } = {}
+  args: { base?: string; change?: string; merge?: MergeLevel; after_merge?: boolean } = {}
 ): Record<string, unknown> {
-  const result = runIntegrityCheck({ base: args.base, change: args.change, merge: args.merge });
+  const result = runIntegrityCheck({ base: args.base, change: args.change, merge: args.merge, after_merge: args.after_merge });
   return {
     ok: result.ok,
     output: renderCheckOutput(result),

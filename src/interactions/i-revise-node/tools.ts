@@ -16,6 +16,7 @@ import {
 import {
   discardNext,
   openNext,
+  rebaseRevision,
   resolveConflict,
 } from "./handlers.js";
 
@@ -92,5 +93,23 @@ export const TOOLS: ToolDef[] = [
     },
     ({ node_id, change, section, field, claim, take, text, verbose }) =>
       resolveConflict({ node_id, change, section, field, claim, take, text, verbose })
+  ),
+  defineTool(
+    "rebase_revision",
+    {
+      kind: "write",
+      title: "Rebase a revision onto live",
+      description:
+        "Call when run_check({ after_merge: true }) reports a revision whose base no longer matches live (live changed on another branch, e.g. a sibling revision shipped there and the branches merged). " +
+        "Carries the open revision onto current live with the rule a ship applies to its siblings: a section or field the revision did not touch takes live's text, one both edited becomes a conflict (resolve_conflict), deltas already live drop, claim conflicts are recomputed, and a ready / in-review revision whose text changed goes back to draft (readiness_reset). " +
+        "Pass change when the node has several open revisions. A revision already based on live is left as it is (rebased: false). " +
+        "Result: { node_id, change, rebased, conflicts, readiness_reset?, changed_files }.",
+      inputSchema: {
+        verbose: VERBOSE,
+        node_id: NODE_ID.describe("Id of the node whose open revision to rebase."),
+        change: CHANGE_ARG,
+      },
+    },
+    ({ node_id, change, verbose }) => rebaseRevision({ node_id, change, verbose })
   ),
 ];
