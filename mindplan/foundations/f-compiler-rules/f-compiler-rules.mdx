@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:22:44.234Z
 revisions: 31
 churn: 18.871
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-03T14:35:14.981Z
+updated_at: 2026-11-03T15:02:10.008Z
 split_at: 8
 split_into:
   - f-source-index
@@ -176,7 +176,7 @@ Planned-edge problems are structured (`PlannedEdgeIssue`) and formatted by calle
 
 ## Checklist kinds
 
-While a stable or unstable node relies on a non-stable node under the relaxed rule, the guards also Block moving that node back from `in-review` and, while its slot is in review, any edit that undoes its build items (`undoneBuildItems` compares the body before and after the whole call: a build item ticked before that is now unticked or gone, or a new unticked build item); `discard_next` on a shipped node's revision is Blocked only when a dependent's files import a file only that revision claims. `openHumanItemsOfNode(node)` lists one node's open review and deploy items. The cross-change cycle search keeps a seen set per change label, so a path reached first under one change never hides another change's cycle.
+While a stable or unstable node relies on a non-stable node under the relaxed rule, the guards also Block moving that node back from `in-review` and, while its slot is in review, any edit that undoes its build items (`undoneBuildItems` counts build items in the body before and after the whole call and Blocks when the number not done rises or the number done falls, naming the items; counting, not matching labels, lets a ticked item reworded in place pass); `discard_next` on a shipped node's revision is Blocked only when a dependent's files import a file only that revision claims. `openHumanItemsOfNode(node)` lists one node's open review and deploy items. The cross-change cycle search keeps a seen set per change label, so a path reached first under one change never hides another change's cycle.
 
 - The Completion Check at ship still needs every item ticked, `review` and `deploy` included.
 - At `in-review`, only `build` items must be ticked.
