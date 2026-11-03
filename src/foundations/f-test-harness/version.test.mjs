@@ -535,7 +535,7 @@ function runCheck(root) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-gate-list-"));
   const { client } = await session(root);
   const { tools } = await client.listTools();
-  check("the server lists thirty-four tools", tools.length === 34, String(tools.length));
+  check("the server lists thirty-seven tools", tools.length === 37, String(tools.length));
   const names = tools.map((t) => t.name);
   check("setup_project and upgrade_project come last", names.slice(-2).join(",") === "setup_project,upgrade_project", names.slice(-3).join(","));
   check("get_skill follows get_spec", names[names.indexOf("get_spec") + 1] === "get_skill", names.join(","));

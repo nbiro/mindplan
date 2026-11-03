@@ -653,7 +653,7 @@ await call("discard_next", { node_id: "i-feature" });
   for (const h of ["Purpose", "Kind", "Spec", "Acceptance Criteria"]) {
     await call2("patch_node_territory", { node_id: "if-tpl", section: `## ${h}`, text: `Real ${h.toLowerCase()} for the template.` });
   }
-  await call2("patch_node_territory", { node_id: "if-tpl", toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+  await call2("patch_node_territory", { node_id: "if-tpl", toggle_checkboxes: ["spec", "impl", "verify"].map((id) => ({ id, checked: true })) });
   await call2("update_node_status", { node_id: "if-tpl", new_status: "ready" });
   await call2("update_node_status", { node_id: "if-tpl", new_status: "in-progress" });
   const gated = await raw2("update_node_status", { node_id: "if-tpl", new_status: "in-review" });
