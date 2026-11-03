@@ -204,6 +204,21 @@ function nextTerritoryPath(...parts) {
   }
 }
 
+// --- doctor (health report on the sandbox graph) ---
+{
+  const dr = await call("doctor", {});
+  let payload = null;
+  try {
+    payload = JSON.parse(dr.text);
+  } catch {
+    payload = null;
+  }
+  if (dr.error || !payload || path.resolve(payload.root) !== path.resolve(root) || typeof payload.load_ms !== "number" || !payload.graph?.status) {
+    failures++;
+    console.log(`FAIL doctor reports the root, graph status, and load_ms: ${dr.text.slice(0, 200)}`);
+  } else console.log("ok   doctor reports the root, graph status, and load_ms");
+}
+
 // --- get_rules (mandatory rules only) ---
 {
   const gr = await call("get_rules", {});
@@ -260,7 +275,7 @@ function nextTerritoryPath(...parts) {
   const READ = [
     "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
     "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
-    "list_areas", "get_spec", "get_skill",
+    "list_areas", "get_spec", "get_skill", "doctor",
   ];
   const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
   const annotationProblems = [];
