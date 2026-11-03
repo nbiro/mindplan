@@ -78,6 +78,7 @@ import {
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 import { afterMergeFailures } from "./after-merge.js";
+import { compactCheckResult, recordSeen, scopeWarnings } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -1290,19 +1291,31 @@ export function renderCheckOutput(result: CheckResult): string {
 }
 
 /**
- * `run_check` MCP handler: the same text `mindplan-mcp check` prints, plus the parts split out.
- * `output` is `mindplan-mcp check: ok` or one `Blocked:` line per failure, then warnings and info.
+ * `run_check` MCP handler. `compact: true` (the MCP default) returns counts, failures, and only the
+ * warnings not seen in the previous check nor acknowledged (compact.ts); otherwise it returns
+ * the text `mindplan-mcp check` prints, plus the parts split out. `nodes` scopes warnings.
  */
 export function runCheckHandler(
-  args: { base?: string; change?: string; merge?: MergeLevel; after_merge?: boolean } = {}
+  args: {
+    base?: string;
+    change?: string;
+    merge?: MergeLevel;
+    after_merge?: boolean;
+    compact?: boolean;
+    nodes?: string[];
+  } = {}
 ): Record<string, unknown> {
-  const result = runIntegrityCheck({ base: args.base, change: args.change, merge: args.merge, after_merge: args.after_merge });
-  return {
-    ok: result.ok,
-    output: renderCheckOutput(result),
-    failures: result.failures,
-    warnings: result.warnings,
-    info: result.info,
+  const result = runIntegrityCheck({
+    base: args.base,
+    change: args.change,
+    merge: args.merge,
+    after_merge: args.after_merge,
+  });
+  const nodes = args.nodes?.length ? new Set(args.nodes) : undefined;
+  const root = projectRoot();
+  const seen = recordSeen(root, result.warnings, nodes);
+  const { kept, outside } = scopeWarnings(result.warnings, nodes);
+  const extras = {
     ...(result.change
       ? { change: { id: result.change.id, members: result.change.members, additivity: result.change.additivity } }
       : {}),
@@ -1310,5 +1323,17 @@ export function runCheckHandler(
     ...(result.removedLegacyFiles.length
       ? { removed_legacy_files: result.removedLegacyFiles.map((f) => f.from) }
       : {}),
+  };
+  if (args.compact === true) {
+    return { ...compactCheckResult({ ok: result.ok, failures: result.failures, warnings: kept, outside, seen, root }), ...extras };
+  }
+  const scoped = { ...result, warnings: kept };
+  return {
+    ok: result.ok,
+    output: renderCheckOutput(scoped),
+    failures: result.failures,
+    warnings: kept,
+    info: result.info,
+    ...extras,
   };
 }

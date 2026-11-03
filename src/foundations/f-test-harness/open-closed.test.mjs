@@ -282,7 +282,7 @@ const client = new Client({ name: "open-closed-test", version: "0.1.0" });
 await client.connect(transport);
 
 async function raw(tool, args) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   return { error: Boolean(res.isError), text: res.content?.[0]?.text ?? "" };
 }
 async function call(tool, args) {

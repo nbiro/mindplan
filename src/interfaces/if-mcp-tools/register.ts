@@ -157,6 +157,7 @@ function guarded<A>(
 /** Tool order in tools/list: unchanged from when one file defined every tool. */
 const TOOL_ORDER = [
   "run_check",
+  "acknowledge_warning",
   "get_mindplan_graph",
   "export_mindplan_view",
   "find_related_nodes",

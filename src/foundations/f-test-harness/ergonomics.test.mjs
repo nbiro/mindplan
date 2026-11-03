@@ -39,6 +39,8 @@ function check(label, condition, detail = "") {
 }
 
 async function raw(tool, args) {
+  // run_check is compact by default; the checks here read its full shape unless they pass compact.
+  if (tool === "run_check") args = { compact: false, ...args };
   const res = await client.callTool({ name: tool, arguments: args });
   return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
 }
@@ -616,6 +618,110 @@ for (const status of ["ready", "in-progress"]) {
   check("output writes the over-budget diagram in full", big.written_to === "docs/big.mmd" && bigOnDisk.length > 80000);
   const cliView = runCli(["view"]);
   check("the CLI prints the over-budget diagram without the budget", cliView.status === 0 && cliView.stdout.length > 80000);
+}
+
+
+// --- run_check output size: compact by default, seen warnings counted, acknowledged ones hidden ---
+{
+  const compactCall = async (args = {}) => {
+    const res = await client.callTool({ name: "run_check", arguments: args });
+    const text = res.content?.[0]?.text ?? "";
+    if (res.isError) throw new Error(`run_check: ${text}`);
+    return { text, json: JSON.parse(text) };
+  };
+  const long = (i, extra = "") =>
+    `Visitor reads long capability ${i}${extra}: ` + "a description padded well past the search row limit ".repeat(8);
+  for (let i = 0; i < 30; i++) {
+    await call("create_node", { id: `j-long-${i}`, type: "Capability", title: `Long ${i}`, description: long(i) });
+  }
+  const fullText = (await raw("run_check", {})).text;
+  const full = JSON.parse(fullText);
+  // The full check above saw every warning, so a compact run right after reports them as unchanged.
+  const first = await compactCall();
+  const c = first.json;
+  check(
+    "compact run_check is the default: { ok, counts, failures, warnings, acknowledged, unchanged }, no output copy",
+    typeof c.ok === "boolean" &&
+      !("output" in c) &&
+      !("info" in c) &&
+      Array.isArray(c.failures) &&
+      Array.isArray(c.warnings) &&
+      typeof c.acknowledged === "number" &&
+      typeof c.unchanged === "number" &&
+      c.counts?.description >= 30,
+    first.text.slice(0, 300)
+  );
+  check(
+    `a second run lists seen warnings as unchanged (${Buffer.byteLength(first.text)} vs ${Buffer.byteLength(fullText)} bytes full)`,
+    c.warnings.length === 0 &&
+      c.unchanged === full.warnings.length &&
+      Buffer.byteLength(first.text) * 10 < Buffer.byteLength(fullText),
+    JSON.stringify({ warnings: c.warnings.length, unchanged: c.unchanged, full: full.warnings.length })
+  );
+  // New warnings come back as { id, text } objects, once.
+  await call("create_node", { id: "j-long-new", type: "Capability", title: "Long new", description: long("new") });
+  const fresh = (await compactCall()).json;
+  const newOnes = fresh.warnings.filter((w) => w.text.includes('"j-long-new"'));
+  check(
+    "a new warning shows with a w- id and its text; the rest stay unchanged",
+    newOnes.length >= 1 &&
+      fresh.warnings.length === newOnes.length &&
+      fresh.warnings.every((w) => /^w-[0-9a-f]{10}$/.test(w.id) && typeof w.text === "string") &&
+      fresh.unchanged === full.warnings.length,
+    JSON.stringify(fresh.warnings)
+  );
+  const again = (await compactCall()).json;
+  check("and is unchanged on the next run", again.warnings.length === 0, JSON.stringify(again.warnings));
+
+  // Acknowledged: hidden and counted until its text changes.
+  const target = newOnes.find((w) => w.text.includes("characters"));
+  const ack = await call("acknowledge_warning", { id: target.id });
+  check("acknowledge_warning returns the acknowledged ids", JSON.stringify(ack.acknowledged) === JSON.stringify([target.id]), JSON.stringify(ack));
+  const bad = await blocked("acknowledge_warning", { id: "nope" });
+  check("acknowledge_warning Blocks an id that is not a warning id", bad !== null && bad.includes("w-"), String(bad));
+  const acked = (await compactCall()).json;
+  check(
+    "an acknowledged warning is excluded and counted",
+    acked.acknowledged === 1 && acked.unchanged === full.warnings.length + newOnes.length - 1,
+    JSON.stringify(acked)
+  );
+  await call("patch_node_territory", { node_id: "j-long-new", description: long("new", " and more") });
+  const changed = (await compactCall()).json;
+  const reshown = changed.warnings.filter((w) => w.text.includes('"j-long-new"') && w.text.includes("characters"));
+  check(
+    "a changed text gets a new id and shows again",
+    reshown.length === 1 && reshown[0].id !== target.id && changed.acknowledged === 0,
+    JSON.stringify(changed)
+  );
+
+  // nodes scope: warnings for those nodes only; the rest counted as out_of_scope.
+  await call("patch_node_territory", { node_id: "j-long-3", description: long(3, " rescoped") });
+  await call("patch_node_territory", { node_id: "j-long-4", description: long(4, " rescoped") });
+  const scoped = (await compactCall({ nodes: ["j-long-3"] })).json;
+  check(
+    "nodes limits warnings to those nodes and counts the rest as out_of_scope",
+    scoped.warnings.length === 1 &&
+      scoped.warnings[0].text.includes('"j-long-3"') &&
+      scoped.counts.description === 1 &&
+      scoped.counts.out_of_scope > 30,
+    JSON.stringify(scoped)
+  );
+  const later = (await compactCall()).json;
+  check(
+    "a scoped run marks only its own warnings seen: the out-of-scope new one shows on the next full run",
+    later.warnings.length === 1 && later.warnings[0].text.includes('"j-long-4"'),
+    JSON.stringify(later.warnings)
+  );
+  const scopedFull = await call("run_check", { nodes: ["j-long-3"] });
+  check(
+    "compact: false keeps the full shape (output, string warnings), scoped by nodes",
+    typeof scopedFull.output === "string" &&
+      scopedFull.warnings.every((w) => typeof w === "string" && w.includes('"j-long-3"')) &&
+      scopedFull.warnings.length === 1,
+    JSON.stringify(scopedFull.warnings)
+  );
+  const cli = runCli(["check"]);
+  check("the CLI keeps printing the full output", cli.status === 0 && (cli.stdout + cli.stderr).includes('Warning: description: "j-long-0"'));
 }
 
 await client.close();
