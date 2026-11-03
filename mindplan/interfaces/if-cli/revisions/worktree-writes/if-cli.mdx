@@ -1,0 +1,69 @@
+---
+id: if-cli
+type: Interface
+change: worktree-writes
+change_ref: "feat/worktree-writes"
+state: in-progress
+opened_at: 2026-11-03T08:21:51.156Z
+updated_at: 2026-11-03T08:25:02.525Z
+title: "CLI"
+description: "CLI for check (--base, --merge, --merge=strict) and view: parses argv, prints the shared check output and warnings, prints legacy removals, and sets the exit code; setup and upgrade are MCP tools, not commands."
+base:
+  - title=700b401c
+  - description=bcec1325
+  - role=da39a3ee
+  - section:_preamble=2b080dc1
+  - "section:## Purpose=d40221c3"
+  - "section:## Kind=f4906309"
+  - "section:## Exposed Interactions=bd1b5a39"
+  - "section:## Spec=b4898736"
+  - "section:## Acceptance Criteria=d5dde28a"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# CLI
+
+## Purpose
+
+CLI Interface for `mindplan-mcp` subcommands. Owns argv parsing, help, output, and exit codes only. There is no `init`: setting up and upgrading a project are the MCP tools `setup_project` and `upgrade_project`, because the judgment parts (agent files, the brief) need an agent and the migrations need the server anyway. `check` prints exactly what the `run_check` tool returns, so the CLI and the agent tool cannot drift apart, and CI fails on a graph that needs setup or upgrade.
+
+## Kind
+
+CLI command surface.
+
+## Exposed Interactions
+
+- `i-check-integrity` — `check` (default ownership; `--base` opt-in; `--merge`, `--merge=strict`)
+- `i-export-map` — `view` / `export`
+
+## Spec
+
+Intended files: `src/interfaces/if-cli/`
+
+- Commands: no argument starts the MCP server (`f-mcp-runtime`); `check`, `view` / `export`, `help`. Any other command, `init` included, is `Unknown command` and exit 1; for `init` the message adds that setup and upgrade are now the MCP tools `setup_project` and `upgrade_project`
+- `check` prints `renderCheckOutput(result)`: `mindplan-mcp check: ok` on stdout, or the `Blocked:` lines on stderr and exit 1; `Warning:` lines follow either way and never change the exit code
+- `check --merge` runs the merge gate (`merge: true`); `--merge=strict` the strict level (`merge: "strict"`), with `--base <ref>` as its base (an explicit `--base` also runs dirty-src, as without `--merge`). Any other `--merge=` value is `Blocked: unknown merge level`, and `--merge` with `--merge=strict` is `Blocked:` (pass one level). Help documents both
+- `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
+- Help lists the commands and says how to set up or upgrade a project (register the MCP server, then `setup_project` / `upgrade_project`)
+
+## After a merge
+
+`mindplan-mcp check --after-merge` runs the after-merge check; `--root <path>` checks another checkout or worktree.
+
+## Acceptance Criteria
+
+- `mindplan-mcp init` exits non-zero and names `setup_project` and `upgrade_project`
+- Help has no `init` section and names both tools
+- `check` output matches the `run_check` tool's `output`; warnings print without failing the check
+- No domain logic under this Interface
+- Verified via smoke
+
+## Atomic Ops
+
+- [ ] Spec written
+- [ ] Implementation complete
+- [ ] Verified against exposed Interactions
+
+## Attachments
+
+_None._

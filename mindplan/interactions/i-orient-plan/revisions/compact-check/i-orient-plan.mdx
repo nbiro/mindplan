@@ -1,0 +1,87 @@
+---
+id: i-orient-plan
+type: Interaction
+change: compact-check
+change_ref: "feat/worktree-writes"
+state: in-progress
+opened_at: 2026-11-03T08:22:05.535Z
+updated_at: 2026-11-03T08:25:06.809Z
+title: "Orient on the plan"
+description: "Agent orients before work: ranked rows or a full node (versioned rules, own decisions, body by slot and section, files, blast radius, stability, shape), a whole change in one call, node context and implementation, and related-node search."
+base:
+  - title=529b7fab
+  - description=baf3dfdc
+  - role=da39a3ee
+  - section:_preamble=a1bdbbd6
+  - "section:## Purpose=52d2bfdf"
+  - "section:## Actor & Trigger=b95b2a3b"
+  - "section:## Execution Logic=8fbe2491"
+  - "section:## Acceptance Criteria=3cc141e7"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# Orient on the plan
+
+## Purpose
+
+Read-path orientation on one node or one change. `orient_for_work` returns the rules that apply to the focus node, each labeled with the node it came from, and the decisions that shaped it, at every depth: the reasoning behind a shared design reaches the agent before it touches anything, which is the moment it would otherwise simplify the design back into the problem it avoided. Because orientation runs before every action, it can be asked for less: a `depth` says whether the agent needs only the rules and record, also the body, or the full neighborhood, blast radius, and stability. A full reply also records the node as oriented, which is what lets the write actions' gate pass. The brief (`i-read-brief`), the blast radius alone (`i-assess-impact`), and graph-wide browsing (`i-browse-graph`) are separate actions.
+
+## Actor & Trigger
+
+- **Actor:** coding agent or human via MCP (`if-mcp-tools`) or console API (`if-console-api`)
+- **Trigger:** MCP/HTTP orient tools; `get_project` / `get_rules` with no arguments; `orient_for_work` with a focus
+
+## Execution Logic
+
+Intended files: `src/interactions/i-orient-plan/` (`handlers.ts`, `tools.ts`).
+
+This action covers `orient_for_work`, `get_node_context`, `get_node_implementation`, and `find_related_nodes`. The blast radius is `i-assess-impact`'s (`get_blast_radius`), the brief `i-read-brief`'s (`get_project`, `get_rules`, `get_spec`), and the paged graph, areas, and decision lists `i-browse-graph`'s; the payloads they share live in `f-plan-views`.
+
+- **Hybrid ranking.** `find_related_nodes` and `orient_for_work` rank through `searchNodes` (`f-graph-search`) with the project root and `territoryBodyReader()` (`f-territory-store`), and are async (the query embedding); both take `area` (a Capability id; anything else is Blocked) and rank only its members
+- **Summary first.** `orient_for_work({ query })` without `node_id` returns `{ query, matches, focus: null, next }`: rows `{ id, type, state, title, description (70 characters), area?, score }`, default 8, no body, rules, or decisions. A clear winner (`clearWinner`: its exact id, the only match, or twice the next score, looking one match past the limit) comes back in full with `auto_focus: true`. `orient_for_work({ node_id })` returns the full node: `rules`, `decisions`, `context`, from `depth: "body"` on `files` (`nodeOwnedFiles`) for a pipeline node; `full` adds the 1-hop `nodes` / `edges`, `blast_radius` (`buildBlastRadiusPayload`, `f-plan-views`), and for a pipeline node `stability` (`{ fan_in, rate, median_rate, revisions?, split_at?, split_into?, hotspot?, fan_out? }`, `f-compiler-rules`); `fan_out` (`{ count, changes }`, `fanOut`, `f-fan-out`) is present for a pre-ship Foundation, Interaction, or Interface, even at 0 and whether or not the node is kept whole, so an agent planning a node sees how many other unshipped changes it already reaches before the check warns
+- **Rules block.** `{ node_id, entries }` from `reachingRules` (live edges plus an open revision's proposed ones), ordered self, `belongs_to`, `depends_on`, `affects`; each entry carries `version` (`rulesVersion`, `f-plan-views`); `known_rules_versions` leaves out known text (`unchanged: true`); `null` without a focus; never the project brief rules
+- **Orientation ledger.** Every full reply and every `get_node_context` records the node with `recordOriented` (`f-orientation-ledger`), which is what lets the write actions' gate pass; `get_node_context` returns `resolved_rules` because it counts as orienting
+- **Depth.** `full` (default), `body` (no neighborhood or blast radius, which are not computed), `rules` (the record only)
+- **One slot, one section.** Both tools take `slot` (`orient_for_work` defaults to the active slot, `get_node_context` to both; `slot: "next"` without a revision is Blocked) and `section` (each returned body cut to that `## heading`; a missing heading is Blocked and lists the sections); `depth: "rules"` ignores both
+- **Decisions.** `orient_for_work` returns `decisions` at every depth: `{ node_id, entries, inherited_decisions }`, the focus's own (`via: self`; a Bug: the nodes it affects) and `{ count, nodes }` for the inherited ones, with `include_inherited_decisions` adding them (whole at distance 1, one line beyond) and `include_superseded` adding superseded ones; compact entries at `depth: "rules"`. Its `context` leaves decisions out (the block is the reply's only copy). `get_node_context` keeps `decisions` and `next.decisions` (superseded left out unless asked), adds `inherited_decisions`, and returns `body` without `## Rules` and `## Decisions`
+- **Shape up front.** Every full reply and `get_node_context` carry `shape` (`shapeReport`) while the node has a transition ahead
+- **Change-wide orientation.** `orient_for_work({ change, known_rules_versions? })` returns `{ change, members, rules, decisions }` over `changeMembership` (revisions and planned sources, each with `kind` and `rules_from`) plus the other active nodes holding an active decision recorded under the change (`kind: "decision"`, from `listDecisions`; a decision gives its node no change id, so these are not change members elsewhere), each rule source once, and records every member, so one call clears the gate for a scoped walk; a change with none of these, or `change` with `query` or `node_id`, is Blocked
+- **Implementation.** `get_node_implementation` expands glob claims to concrete files (`files` / `next_files`) and finds a path's owner through a glob claim; node records carry `change` / `change_ref` and `tests`
+
+Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`, `f-orientation-ledger`, `f-tool-kit`, `f-fan-out`.
+
+- **Open revisions (0.18.0).** `orient_for_work({ node_id })` and `get_node_context` list `revisions: [{ change, state, conflicts }]` for every open revision, take `change` to return that revision's view (live ⊕ it) and body, and say which revision a given change id unlocks (`unlocks`); `orient_for_work({ change })` lists each member's revision of the change
+
+## Reply sections
+
+`orient_for_work` takes `sections: [...]` (any of `rules`, `decisions`, `record`, `body`, `files`, `shape`, `revisions`, `open_items`, `blast_radius`, `stability`, `neighborhood`) and returns only those parts of a full reply; omitted, the reply is unchanged. Orientation is recorded whenever `rules` is among the returned sections (always, when `sections` is omitted).
+
+## Acceptance Criteria
+
+- A query-only `orient_for_work` returns rows only, under 2 KB for 10 rows; an exact id query auto-focuses; `orient_for_work({ node_id })` returns record, body, rules, own decisions, owned files, blast radius, and stability
+- A full reply and `get_node_context` count as orienting on the node
+- A search with `area` returns only that area's members and is at least as fast as a whole-graph search; a non-Capability `area` is Blocked
+- Each `orient_for_work` rules entry carries `version`; a known version leaves out that entry's text, and a changed node rules text comes back with a new version
+- `orient_for_work` on an Interaction returns its own rules, its Capability's, and its Foundations' (transitive), each naming its source and `via`; on a Capability only the Capability's own; on a Bug the resolved rules of the nodes it affects; siblings never appear in each other's `rules`; `rules` is `null` without a focus and `entries` is `[]` when no rules apply
+- `depth: rules` returns rules and the record only; `depth: body` adds the body; neither returns `blast_radius`, `nodes`, `edges`, or `stability`
+- `get_node_context` `body` excludes the Rules and Decisions sections, which come back as `rules` and `decisions`; a superseded decision is left out unless `include_superseded`
+- `orient_for_work` on an Interaction returns only its own decisions by default, with `inherited_decisions.count` and `nodes`; with `include_inherited_decisions` it returns its Foundation's decision labeled with the Foundation's id, and one-line entries past distance 1; on a node shaped like skyloom's `i-contact-platform` the default reply carries one decision and `inherited_decisions.count` 12; on a Bug it returns the decisions of the nodes it affects
+- An `orient_for_work` reply carries the focus's decisions once (no `context.decisions` or `context.next.decisions`)
+- With a revision open, `orient_for_work` at `depth: "body"` returns only the next body; `slot: "current"` returns only the live body; `get_node_context` returns both unless `slot` is passed; `slot: "next"` without a revision is Blocked
+- `section` returns only that section of each returned body and Blocks on a missing heading, listing the sections
+- A full reply on a scaffolded draft lists every required section with `missing` or `stub`; a shipped node with no open revision has no `shape`
+- `orient_for_work({ change })` on a change with three members returns their rules once per source and records all three; a known version leaves its text out
+- `orient_for_work({ change })` lists a shipped node that holds a decision under the change once, with `kind: "decision"`, and records it; a node that is already a revision keeps that kind; a change whose only trace is decisions returns those holders instead of Blocked
+- A glob claim expands to concrete files in `get_node_implementation`, and a path under it resolves to its owner; `get_node_context` returns a node's `tests` list
+- A full reply on a pipeline node carries `stability` with `fan_in`, `rate`, and `median_rate`, plus `hotspot` when the node is one; on a pre-ship Foundation, Interaction, or Interface it also carries `fan_out: { count, changes }` (count 0 when none), and a shipped node's has no `fan_out`
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Requirements defined
+- [ ] Implementation complete
+- [ ] Tests passing
+
+## Attachments
+
+_None._
