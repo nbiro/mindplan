@@ -110,21 +110,26 @@ function humanItems(text: string | null, node_id: string, change?: string): Open
  * legacy next file counts as its change's revision), sorted by node.
  */
 export function openHumanItems(graph: MindPlanGraph): OpenHumanItem[] {
-  const out: OpenHumanItem[] = [];
   const nodes = [...graph.nodes].sort((a, b) => a.id.localeCompare(b.id));
-  for (const node of nodes) {
-    if (!isPipelineNodeType(node.type)) continue;
-    if (!node.shipped_at) {
-      if (node.state === "cancelled" || node.state === "deprecated") continue;
-      out.push(...humanItems(slotText(node, "current"), node.id));
-      continue;
-    }
-    for (const change of openChanges(node)) {
-      out.push(...humanItems(slotText(withRevision(node, change), "next"), node.id, change));
-    }
-    if (node.next && !(node.next.change && revisionFor(node, node.next.change))) {
-      out.push(...humanItems(slotText(node, "next"), node.id, node.next.change));
-    }
+  return nodes.flatMap(openHumanItemsOfNode);
+}
+
+/**
+ * One node's unticked review / deploy items: its live slot while pre-ship (none once cancelled or
+ * deprecated), else each open revision's (a legacy next file counts as its change's revision).
+ */
+export function openHumanItemsOfNode(node: MindPlanNode): OpenHumanItem[] {
+  if (!isPipelineNodeType(node.type)) return [];
+  if (!node.shipped_at) {
+    if (node.state === "cancelled" || node.state === "deprecated") return [];
+    return humanItems(slotText(node, "current"), node.id);
+  }
+  const out: OpenHumanItem[] = [];
+  for (const change of openChanges(node)) {
+    out.push(...humanItems(slotText(withRevision(node, change), "next"), node.id, change));
+  }
+  if (node.next && !(node.next.change && revisionFor(node, node.next.change))) {
+    out.push(...humanItems(slotText(node, "next"), node.id, node.next.change));
   }
   return out;
 }

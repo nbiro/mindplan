@@ -49,7 +49,7 @@ import {
   searchNodes,
 } from "../../foundations/f-graph-search/search.js";
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
-import { openHumanItems, openHumanItemsOfChange } from "../../foundations/f-compiler-rules/checklist-gates.js";
+import { openHumanItemsOfChange, openHumanItemsOfNode } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import { changeMembership } from "../../foundations/f-compiler-rules/planned.js";
 import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
 import { cutReply, orients, parseSections, type OrientSection } from "./sections.js";
@@ -592,7 +592,7 @@ export async function orientForWork(args: {
   const shape = shapeReport(view);
   if (shape) reply.shape = shape;
   // Review and deploy items wait on people: listed so the agent says so instead of ticking them.
-  const openItems = openHumanItems(graph).filter((i) => i.node_id === node.id);
+  const openItems = openHumanItemsOfNode(node);
   if (openItems.length) reply.open_items = openItems;
   if (depth === "rules") {
     const next = context.next as { record?: unknown } | string | null;
