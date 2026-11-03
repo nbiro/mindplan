@@ -7,16 +7,15 @@
  */
 
 import { createHash } from "crypto";
-import * as path from "path";
 import type { MindPlanGraph, RuleEntry } from "../f-domain-model/types.js";
 import { resolveNodeRules } from "../f-graph-search/rules.js";
-import { resolveProjectRoot } from "../f-source-index/root-scope.js";
+import { resolveProjectRoot, rootKey } from "../f-source-index/root-scope.js";
 
 /** Keyed by project root + "\0" + node id: orienting in one checkout never unlocks another. */
 const fetched = new Map<string, string>();
 
 function ledgerKey(nodeId: string): string {
-  return `${path.resolve(resolveProjectRoot())}\0${nodeId}`;
+  return `${rootKey(resolveProjectRoot())}\0${nodeId}`;
 }
 let enabled = false;
 

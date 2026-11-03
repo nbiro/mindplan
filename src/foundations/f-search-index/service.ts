@@ -5,6 +5,7 @@
 
 import * as path from "path";
 import { loadProjectConfig } from "../f-source-index/config.js";
+import { rootKey } from "../f-source-index/root-scope.js";
 import { SearchIndex, sqliteUnavailableReason, type SearchDoc } from "./index-db.js";
 import {
   DEFAULT_SEARCH_MODEL,
@@ -46,7 +47,8 @@ const loggedSqlite = { done: false };
  */
 export function searchIndexFor(rootPath: string, model: string): SearchIndex | null {
   const root = path.resolve(rootPath);
-  const open = indexes.get(root);
+  const key = rootKey(root);
+  const open = indexes.get(key);
   if (open && open.model === model) return open.index;
   open?.index?.close();
   let index: SearchIndex | null = null;
@@ -60,7 +62,7 @@ export function searchIndexFor(rootPath: string, model: string): SearchIndex | n
     if (reason) console.error(`MindPlan search: ${reason}.`);
     loggedSqlite.done = true;
   }
-  indexes.set(root, { model, index });
+  indexes.set(key, { model, index });
   return index;
 }
 

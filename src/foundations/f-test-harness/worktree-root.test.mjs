@@ -127,6 +127,20 @@ try {
     "link_nodes with root writes B's edge",
     /f-shared/.test(fs.readFileSync(nodeFile(B, "interactions", "i-only-b"), "utf-8"))
   );
+  check(
+    "a Blocked text from another root names that root",
+    gated.text.endsWith(` (root: ${path.resolve(B)})`),
+    gated.text.slice(-200)
+  );
+
+  // --- Windows paths are case-insensitive: orienting under one casing unlocks the other ---
+  if (process.platform === "win32") {
+    await s.call("create_node", { id: "f-case", type: "Foundation", title: "Case", description: "Infra — case", role: "infra", root: B });
+    const upper = B.toUpperCase();
+    await s.call("orient_for_work", { node_id: "f-case", root: upper });
+    const cased = await s.raw("patch_node_territory", { node_id: "f-case", description: "Infra — case edited", root: B.toLowerCase() });
+    check("orienting with one root casing unlocks a write with another (win32)", !cased.error, cased.text.slice(0, 200));
+  }
 
   // --- run_check reads the named root ---
   const checkB = await s.call("run_check", { root: B });

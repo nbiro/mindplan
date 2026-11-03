@@ -8,7 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { z } from "zod";
 
-import { resolveProjectRoot } from "../../foundations/f-source-index/root-scope.js";
+import { resolveProjectRoot, rootKey } from "../../foundations/f-source-index/root-scope.js";
 import { MINDPLAN_DIR } from "../../foundations/f-territory-store/store.js";
 
 export const ROOT_INPUT = z
@@ -30,9 +30,7 @@ type ToolResult = {
 export type CallRoot = { root: string | undefined; foreign: boolean };
 
 function sameRoot(a: string, b: string): boolean {
-  const ra = path.resolve(a);
-  const rb = path.resolve(b);
-  return process.platform === "win32" ? ra.toLowerCase() === rb.toLowerCase() : ra === rb;
+  return rootKey(a) === rootKey(b);
 }
 
 /**
@@ -49,7 +47,14 @@ export function resolveCallRoot(tool: string, root: string | undefined): CallRoo
 }
 
 function markRoot(result: ToolResult, root: string): ToolResult {
-  if (result.isError || !result.structuredContent) return result;
+  // A Blocked/error text or a plain string payload has no field to carry the root: suffix it.
+  if (result.isError || !result.structuredContent) {
+    const suffix = ` (root: ${root})`;
+    return {
+      ...result,
+      content: result.content.map((c) => (c.type === "text" && !c.text.endsWith(suffix) ? { ...c, text: `${c.text}${suffix}` } : c)),
+    };
+  }
   const structuredContent = { ...result.structuredContent, root };
   return { ...result, content: [{ type: "text", text: JSON.stringify(structuredContent) }], structuredContent };
 }

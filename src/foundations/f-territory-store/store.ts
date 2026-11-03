@@ -56,7 +56,7 @@ import {
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
-import { resolveProjectRoot } from "../f-source-index/root-scope.js";
+import { resolveProjectRoot, rootKey } from "../f-source-index/root-scope.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
@@ -210,7 +210,7 @@ export type RemovedLegacyFile = { from: string; to: string };
 const removedLegacyFilesByRoot = new Map<string, RemovedLegacyFile[]>();
 
 function removedLegacyFiles(): RemovedLegacyFile[] {
-  const key = path.resolve(projectRoot());
+  const key = rootKey(projectRoot());
   let list = removedLegacyFilesByRoot.get(key);
   if (!list) {
     list = [];
