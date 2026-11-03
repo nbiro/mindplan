@@ -295,6 +295,22 @@ export function parseRevisionFile(text: string, nodeId: string): { revision: Rev
 // ---------------------------------------------------------------------------
 
 /**
+ * The folder names under `<nodeFolder>/revisions/` (one per open revision, named by its change),
+ * sorted; a missing or unreadable folder is empty. Never throws.
+ */
+export function revisionFolderNames(nodeFolder: string): string[] {
+  try {
+    return fs
+      .readdirSync(path.join(nodeFolder, REVISIONS_DIR), { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Every open revision under `<nodeFolder>/revisions/`, sorted by change id. A folder whose
  * `<nodeId>.mdx` is missing is skipped; a file whose frontmatter does not parse into a `Revision`
  * (unknown state, change id not matching its folder name) is Blocked naming the path. Each
@@ -303,14 +319,8 @@ export function parseRevisionFile(text: string, nodeId: string): { revision: Rev
  */
 export function readRevisions(nodeFolder: string, nodeId: string): RevisionFile[] {
   const dir = path.join(nodeFolder, REVISIONS_DIR);
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
   const out: RevisionFile[] = [];
-  for (const name of entries.filter((e) => e.isDirectory()).map((e) => e.name).sort()) {
+  for (const name of revisionFolderNames(nodeFolder)) {
     const file = path.join(dir, name, liveMdxFilename(nodeId));
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
     let parsed: { revision: Revision; body: string };

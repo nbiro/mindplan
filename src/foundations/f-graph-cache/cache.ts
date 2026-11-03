@@ -24,7 +24,7 @@ import * as path from "path";
 import type { MindPlanNode } from "../f-domain-model/types.js";
 import { dirGitState, treeChanges } from "../f-source-index/git.js";
 import { readBytesRetry } from "../f-source-index/io.js";
-import { CACHE_DIRNAME, rootKey } from "../f-source-index/root-scope.js";
+import { ensureCacheDir, rootKey } from "../f-source-index/root-scope.js";
 
 /** Bump when the table or the stored entry shape changes; a mismatch drops every row. */
 export const GRAPH_CACHE_SCHEMA = "2";
@@ -188,11 +188,9 @@ export class GraphCache {
   }
 
   private static openStore(root: string, version: string): Database | null {
-    const dir = path.join(root, CACHE_DIRNAME);
+    let dir: string;
     try {
-      fs.mkdirSync(dir, { recursive: true });
-      const ignore = path.join(dir, ".gitignore");
-      if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "# Derived MindPlan caches; safe to delete.\n*\n", "utf-8");
+      dir = ensureCacheDir(root);
     } catch {
       return null;
     }

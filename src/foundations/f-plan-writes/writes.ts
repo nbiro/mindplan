@@ -8,6 +8,7 @@ import { revisionSummaries as readSummaries } from "../../foundations/f-plan-vie
 import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import { openChanges, revisionFor } from "../../foundations/f-revision-model/index.js";
 import { writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
+import { MAP_REL } from "../../foundations/f-source-index/git.js";
 import {
   loadGraph,
   markdownRelativePath,
@@ -69,12 +70,6 @@ export function syncNodes(nodes: MindPlanNode[]): string[] {
   }
   return paths;
 }
-
-/**
- * Project-relative path of the auto-persisted Mermaid snapshot. `refreshPersistedMap` rewrites it
- * after every write, but it is derived and never listed in `changed_files`.
- */
-export const MAP_REL = "mindplan/map.md";
 
 /** Repo-relative path of a node's live or evolution territory MDX. */
 export function territoryPath(

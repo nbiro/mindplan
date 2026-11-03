@@ -6,7 +6,6 @@
  * after the earlier levels. Owned by Foundation f-graph-migrations.
  */
 
-import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -19,12 +18,12 @@ import {
 } from "../f-domain-model/types.js";
 import { detectEol, diffDelta, scalarHashes, sectionHashes } from "../f-revision-model/index.js";
 import { RM_MAX_RETRIES, readFileRetry, unlinkRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
+import { MAP_REL, git } from "../f-source-index/git.js";
 import { repoRelative } from "../f-source-index/root-scope.js";
 import { decisionFileName, decisionsDir, parseDecisionFile } from "../f-territory-store/decisions-store.js";
 import { REVISIONS_DIR, formatRevisionFile, parseRevisionFile } from "../f-territory-store/revisions.js";
 import {
   ATTACHMENTS_DIR,
-  MINDPLAN_DIR,
   liveMdxFilename,
   mindplanRoot,
   parseDecisions,
@@ -313,16 +312,6 @@ export function splitDecisionSections(): DecisionsSplit[] {
   return split;
 }
 
-const MAP_REL = `${MINDPLAN_DIR}/map.md`;
-
-function git(args: string[]): string | null {
-  try {
-    return execFileSync("git", args, { cwd: projectRoot(), encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Lists `map.md` in `mindplan/.gitignore` (creating the file) unless a line already ignores it.
  * True when it wrote the file. setup_project starts every new graph with it.
@@ -346,9 +335,9 @@ export function ignoreMapLine(): boolean {
  */
 export function ignoreDerivedMap(): boolean {
   const mapAbs = path.join(mindplanRoot(), "map.md");
-  const tracked = git(["ls-files", "--error-unmatch", "--", MAP_REL]) !== null;
+  const tracked = git(["ls-files", "--error-unmatch", "--", MAP_REL], projectRoot()) !== null;
   if (!tracked && !fs.existsSync(mapAbs)) return false;
   let changed = ignoreMapLine();
-  if (tracked && git(["rm", "--cached", "--quiet", "--", MAP_REL]) !== null) changed = true;
+  if (tracked && git(["rm", "--cached", "--quiet", "--", MAP_REL], projectRoot()) !== null) changed = true;
   return changed;
 }

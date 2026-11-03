@@ -3,7 +3,6 @@
  * Used by `mindplan-mcp check` (CLI) — not MCP stdio.
  */
 
-import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import type { MindPlanGraph, MindPlanNode } from "../../foundations/f-domain-model/types.js";
@@ -67,7 +66,7 @@ import {
   hotspotWarning,
   type ChangeAdditivity,
 } from "../../foundations/f-compiler-rules/open-closed.js";
-import { defaultBaseRef, repoPrefix } from "../../foundations/f-source-index/git.js";
+import { defaultBaseRef, repoPrefix, runGit } from "../../foundations/f-source-index/git.js";
 import {
   drainRemovedLegacyFiles,
   loadGraph,
@@ -78,8 +77,8 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { afterMergeFailures, afterMergeWarnings } from "./after-merge.js";
-import { compactCheckResult, recordSeen, scopeWarnings } from "./compact.js";
+import { afterMergeFindings } from "./after-merge.js";
+import { compactCheckResult, recordSeen, scopeWarnings, warningIds } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -293,11 +292,7 @@ function git(args: string[], cwd: string, required: boolean): string {
   try {
     // Trim only the trailing newline. A leading space is the unstaged half of
     // porcelain (` D path`); trimming it corrupts the first path.
-    return execFileSync("git", args, {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).replace(/\s+$/, "");
+    return runGit(args, cwd).replace(/\s+$/, "");
   } catch (err) {
     if (!required) return "";
     const detail =
@@ -1193,7 +1188,7 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   if (process.env.MINDPLAN_VERSION_GATE !== "off") {
     const status = graphStatus();
     if (status.state !== "current") {
-      if (options.after_merge) failures.push(...afterMergeFailures(null, root, { skipVersion: true }));
+      if (options.after_merge) failures.push(...afterMergeFindings(null, root, { skipVersion: true }).failures);
       fail(failures, `Blocked: Version — ${status.warning}`);
       return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
     }
@@ -1207,15 +1202,16 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // After a merge, name what broke the load (conflict markers, a file that no longer parses) first.
-    if (options.after_merge) failures.push(...afterMergeFailures(null, root));
+    if (options.after_merge) failures.push(...afterMergeFindings(null, root).failures);
     fail(failures, `graph load failed: ${message}`);
     return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
   }
 
   try {
     if (options.after_merge) {
-      failures.push(...afterMergeFailures(graph, root));
-      warnings.push(...afterMergeWarnings(graph));
+      const afterMerge = afterMergeFindings(graph, root);
+      failures.push(...afterMerge.failures);
+      warnings.push(...afterMerge.warnings);
     }
     const buckets = checkExclusivity(graph, root, failures, warnings);
     const universe = listUniverseFiles(root);
@@ -1317,7 +1313,8 @@ export function runCheckHandler(
   };
   if (args.compact === true) {
     // Only a compact check records what it showed; a full one lists everything and records nothing.
-    const seen = recordSeen(root, result.warnings, nodes);
+    const ids = warningIds(result.warnings);
+    const seen = recordSeen(root, result.warnings, ids, nodes);
     return {
       ...compactCheckResult({
         ok: result.ok,
@@ -1326,6 +1323,7 @@ export function runCheckHandler(
         info: result.info,
         outside,
         seen,
+        ids,
         root,
         scoped: nodes !== undefined,
       }),
