@@ -111,7 +111,7 @@ async function tickAll(id) {
   const ctx = await call("get_node_context", { node_id: id });
   const body = ctx.next?.body ?? ctx.body ?? "";
   if (!/^\s*[-*+]\s+\[ \]/m.test(body)) return;
-  await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 }
 
 const decisionWarnings = (result, id) =>
@@ -472,7 +472,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   check("recording on a ready revision does not reset readiness", onReady.next_state === "ready", JSON.stringify(onReady));
   await walk("f-bookings", ["in-progress"]);
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
-  await call("patch_node_territory", { node_id: "f-bookings", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-bookings", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   await walk("f-bookings", ["in-review", "ship"]);
   const live = read(territory("foundations", "f-bookings"));
   check(
@@ -516,7 +516,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   );
   // open_next starts a fresh ledger, so each revision ticks its own ops before it ships.
   for (const node_id of ["i-cancel", "f-db"]) {
-    await call("patch_node_territory", { node_id, toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+    await call("patch_node_territory", { node_id, toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   }
   const shipped = await call("update_node_status", {
     scope: "change",

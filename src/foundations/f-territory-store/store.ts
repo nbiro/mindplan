@@ -71,6 +71,12 @@ export {
   type MindPlanProjectConfig,
   type WriteProjectConfigResult,
 } from "../f-source-index/config.js";
+import {
+  appendChecklistItems,
+  toggleChecklistItems,
+  type CheckboxToggle,
+  type NewChecklistItem,
+} from "./checklist.js";
 const TYPE_DIRS: Record<NodeType, string> = {
   Capability: "capabilities",
   Foundation: "foundations",
@@ -1942,6 +1948,8 @@ export type PatchNodeTerritoryInput = {
   /** Foundation role — same slot rules as title/description. */
   role?: FoundationRole;
   toggle_checkboxes?: CheckboxToggle[];
+  /** Append unticked items to the slot's Atomic Ops (ids unique per slot). */
+  add_checklist_items?: NewChecklistItem[];
   /** Set (or clear with "") the change id of this slot. Grouping metadata, not contract. */
   change?: string;
   /** Set (or clear with "") the branch or PR reference of this slot's change. */
@@ -2049,11 +2057,11 @@ function atomicOpsHeadings(type: NodeType): string[] {
 export function defaultAtomicOps(type: NodeType): string[] {
   switch (type) {
     case "Foundation":
-      return ["- [ ] Spec written", "- [ ] Implementation complete", "- [ ] Verified in target environment"];
+      return ["- [ ] Spec written {#spec}", "- [ ] Implementation complete {#impl}", "- [ ] Verified in target environment {#verify}"];
     case "Interaction":
-      return ["- [ ] Requirements defined", "- [ ] Implementation complete", "- [ ] Tests passing"];
+      return ["- [ ] Requirements defined {#spec}", "- [ ] Implementation complete {#impl}", "- [ ] Tests passing {#verify}"];
     case "Interface":
-      return ["- [ ] Spec written", "- [ ] Implementation complete", "- [ ] Verified against exposed Interactions"];
+      return ["- [ ] Spec written {#spec}", "- [ ] Implementation complete {#impl}", "- [ ] Verified against exposed Interactions {#verify}"];
     default:
       return [];
   }
@@ -2190,91 +2198,17 @@ export function resolveTerritorySlot(
   return "current";
 }
 
-/** One checkbox toggle: match by substring, tick or untick, optionally annotate. */
-export type CheckboxToggle = {
-  contains: string;
-  /** true for [x], false for [ ]. Defaults to true when `note` or `not_applicable` is set. */
-  checked?: boolean;
-  /** Toggle every matching line instead of Blocking on an ambiguous match. */
-  all?: boolean;
-  /** Tick with a note: appends ` — note: <text>`. */
-  note?: string;
-  /** Tick as not applicable: appends ` — n/a: <reason>`. */
-  not_applicable?: string;
-};
-
-const CHECKBOX_LINE = /^\s*[-*+]\s+\[[ xX]\]/;
-/** A trailing annotation written by a toggle: ` — note: …` or ` — n/a: …`. */
-const CHECKBOX_ANNOTATION = /\s+—\s+(?:note|n\/a):.*$/;
-
-function oneLine(value: string, field: string): string {
-  const text = value.replace(/\s*\r?\n\s*/g, " ").trim();
-  if (!text) throw new Error(`Blocked: toggle_checkboxes ${field} must be non-empty.`);
-  return text;
-}
+export type { CheckboxToggle, NewChecklistItem } from "./checklist.js";
 
 /**
- * Toggle checkbox lines by substring. A substring that matches several checkbox lines is
- * Blocked (listing them) unless the toggle passes `all`. A note or not-applicable reason is
- * appended to the line, so the item's own wording never changes; unticking strips it.
- * Returns the new body and the lines as written.
+ * Toggle checklist items by id or exact text (`toggleChecklistItems`): only Atomic Ops / Checklist
+ * items match. Returns the new body and the lines as written.
  */
 export function toggleCheckboxesInBody(
   body: string,
   toggles: CheckboxToggle[]
 ): { body: string; toggled: string[] } {
-  const eol = detectEol(body);
-  const lines = body.split(/\r?\n/);
-  const toggled: string[] = [];
-  for (const toggle of toggles) {
-    if (toggle.note !== undefined && toggle.not_applicable !== undefined) {
-      throw new Error("Blocked: a toggle takes note or not_applicable, not both.");
-    }
-    const annotated = toggle.note !== undefined || toggle.not_applicable !== undefined;
-    const checked = toggle.checked ?? (annotated ? true : undefined);
-    if (checked === undefined) {
-      throw new Error(`Blocked: toggle for "${toggle.contains}" needs checked (true or false).`);
-    }
-    if (!checked && annotated) {
-      throw new Error(
-        `Blocked: note and not_applicable tick the item; they cannot be combined with checked: false.`
-      );
-    }
-    const suffix =
-      toggle.note !== undefined
-        ? ` — note: ${oneLine(toggle.note, "note")}`
-        : toggle.not_applicable !== undefined
-          ? ` — n/a: ${oneLine(toggle.not_applicable, "not_applicable")}`
-          : null;
-
-    const hits: number[] = [];
-    lines.forEach((line, i) => {
-      if (CHECKBOX_LINE.test(line) && line.includes(toggle.contains)) hits.push(i);
-    });
-    if (hits.length === 0) {
-      throw new Error(
-        `Blocked: no checkbox line containing "${toggle.contains}" in territory body.`
-      );
-    }
-    if (hits.length > 1 && !toggle.all) {
-      throw new Error(
-        `Blocked: "${toggle.contains}" matches ${hits.length} checkbox lines; make it unique or pass all: true. Matches:\n` +
-          hits.map((i) => `- ${lines[i].trim()}`).join("\n")
-      );
-    }
-    for (const i of hits) {
-      let line = lines[i].replace(
-        /^(\s*[-*+]\s+)\[[ xX]\]/,
-        (_, prefix) => `${prefix}[${checked ? "x" : " "}]`
-      );
-      // Unticking drops an annotation; a new annotation replaces the old one.
-      if (!checked || suffix !== null) line = line.replace(CHECKBOX_ANNOTATION, "");
-      if (suffix !== null) line = `${line.replace(/\s+$/, "")}${suffix}`;
-      lines[i] = line;
-      toggled.push(line.trim());
-    }
-  }
-  return { body: lines.join(eol), toggled };
+  return toggleChecklistItems(body, toggles);
 }
 
 function patchTerritoryScalars(
@@ -2406,6 +2340,11 @@ export function patchNodeTerritory(
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
   let toggled: string[] | undefined;
+  if (input.add_checklist_items?.length) {
+    body = appendChecklistItems(body, input.add_checklist_items).body;
+    patched_fields.push("add_checklist_items");
+    frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
+  }
   if (input.toggle_checkboxes?.length) {
     const result = toggleCheckboxesInBody(body, input.toggle_checkboxes);
     body = result.body;
@@ -2422,7 +2361,7 @@ export function patchNodeTerritory(
 
   if (patched_fields.length === 0) {
     throw new Error(
-      "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, toggle_checkboxes, change, or change_ref."
+      "Blocked: patch_node_territory requires at least one of title, description, role, body, section, replace, add_checklist_items, toggle_checkboxes, change, or change_ref."
     );
   }
 

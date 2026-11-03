@@ -32,6 +32,7 @@ import {
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
+import { waitingOnPeopleLine } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import {
   changeMembership,
   plannedEdgeProblems,
@@ -1246,6 +1247,8 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     warnings.push(...collectHotspotWarnings(graph, root));
     warnings.push(...collectFanOutWarnings(graph, root));
+    const waiting = waitingOnPeopleLine(graph);
+    if (waiting) info.push(waiting);
     if (options.base !== undefined) {
       checkDirtySrc(graph, buckets, root, probe, options.base, failures);
     }

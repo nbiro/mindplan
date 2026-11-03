@@ -410,7 +410,7 @@ try {
   );
 
   // The in-review gate on a shipped Foundation's revision names the additive alternative.
-  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   for (const new_status of ["ready", "in-progress"]) await call("update_node_status", { node_id: "f-core", new_status });
   const gate = await raw("update_node_status", { node_id: "f-core", new_status: "in-review" });
   check(
@@ -493,7 +493,7 @@ try {
   await foundation("f-lib");
   await ship("f-lib");
   await call("link_nodes", { source_id: "f-a", target_id: "f-lib", edge_type: "depends_on" });
-  await call("patch_node_territory", { node_id: "f-a", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-a", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   await call("record_decision", { node_id: "f-a", decision: "Use the new lib.", alternatives: ["Inline it"], why: "Shared.", change: "c-4" });
   for (const new_status of ["ready", "in-progress", "in-review", "ship"]) await call("update_node_status", { node_id: "f-a", new_status });
   const user = (await call("orient_for_work", { node_id: "f-a", depth: "rules" })).context.record;
@@ -507,7 +507,7 @@ try {
   await call("force_unship", { node_id: "f-b", confirm: "unship:f-b", new_status: "ready" });
   const unshipped = (await call("orient_for_work", { node_id: "f-b", depth: "rules" })).context.record;
   check("force_unship keeps the rate with the time it is as of", unshipped.churn > 0.9 && typeof unshipped.churn_at === "string", JSON.stringify(unshipped));
-  await call("patch_node_territory", { node_id: "f-b", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-b", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   for (const new_status of ["ready", "in-progress", "in-review", "ship"]) await call("update_node_status", { node_id: "f-b", new_status });
   const reshipped = (await call("orient_for_work", { node_id: "f-b", depth: "rules" })).context.record;
   check(
