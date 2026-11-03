@@ -267,7 +267,8 @@ function memoRootKey(root: string): string {
   return process.platform === "win32" ? abs.toLowerCase() : abs;
 }
 
-function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined, root: string): string[] {
+/** `rootKey` is `memoRootKey(root)`, computed once per `searchDocs` call. */
+function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined, rootKey: string): string[] {
   if (!readBody) return [];
   const slot = "current";
   let stamp = "";
@@ -278,7 +279,7 @@ function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined, root: 
   }
   const revisions = readBody.revision ? (node.open_revisions ?? []) : [];
   const revisionKey = revisions.map((r) => `${r.change}@${r.updated_at}`).join(",");
-  const key = `${memoRootKey(root)}\u0000${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
+  const key = `${rootKey}\u0000${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
   const hit = headingMemo.get(key);
   if (hit) return hit;
   const headings: string[] = [];
@@ -347,7 +348,8 @@ export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader, root = "
     return [...titles];
   };
   // A heading most nodes share (a scaffold section) says nothing about any one of them.
-  const headings = new Map(graph.nodes.map((n) => [n.id, headingsOf(n, readBody, root)]));
+  const rootKey = memoRootKey(root);
+  const headings = new Map(graph.nodes.map((n) => [n.id, headingsOf(n, readBody, rootKey)]));
   const seen = new Map<string, number>();
   for (const list of headings.values()) {
     for (const h of new Set(list.map((x) => x.toLowerCase()))) seen.set(h, (seen.get(h) ?? 0) + 1);

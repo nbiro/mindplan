@@ -273,6 +273,33 @@ check("the merge carried A's live into b", read(LIVE).includes("Spec from A.") &
   );
 }
 
+// --- the version finding judges the root it is given, not the process's own ---
+{
+  const stale = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-after-merge-stale-"));
+  fs.mkdirSync(path.join(stale, "mindplan"), { recursive: true });
+  fs.writeFileSync(path.join(stale, "mindplan", "version.json"), JSON.stringify({ package: "0.12.0", graph: 1 }) + "\n");
+  const { afterMergeFindings } = await import(new URL("../../../dist/interactions/i-check-integrity/after-merge.js", import.meta.url).href);
+  const saved = { gate: process.env.MINDPLAN_VERSION_GATE, root: process.env.MINDPLAN_ROOT };
+  delete process.env.MINDPLAN_VERSION_GATE;
+  // The process's own root is this repo, whose graph is current.
+  process.env.MINDPLAN_ROOT = toolRoot;
+  let found;
+  try {
+    found = afterMergeFindings(null, stale);
+  } finally {
+    if (saved.gate === undefined) delete process.env.MINDPLAN_VERSION_GATE;
+    else process.env.MINDPLAN_VERSION_GATE = saved.gate;
+    if (saved.root === undefined) delete process.env.MINDPLAN_ROOT;
+    else process.env.MINDPLAN_ROOT = saved.root;
+  }
+  check(
+    "after-merge reports a version.json behind the graph at the root it checks, not the process's root",
+    found.failures.some((f) => f.includes("version.json is behind this graph")),
+    JSON.stringify(found.failures)
+  );
+  fs.rmSync(stale, { recursive: true, force: true, maxRetries: 5 });
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 if (failures > 0) {

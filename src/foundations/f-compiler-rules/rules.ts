@@ -45,7 +45,7 @@ import {
   withRevision,
 } from "../f-revision-model/index.js";
 import { assertMinimumTerritoryShape, slotSource } from "./shape.js";
-import { dependencyGate } from "./checklist-gates.js";
+import { buildItemsTicked, dependencyGate } from "./checklist-gates.js";
 
 export { openHumanItems, type OpenHumanItem } from "./checklist-gates.js";
 
@@ -1078,15 +1078,15 @@ export function assertNoRetreatUnderShippedDependents(
 }
 
 /**
- * Undoing a build item of `node`'s active slot while it is in review is Blocked while
- * stable/unstable nodes rely on it: they shipped on every build item being ticked. `before` and
- * `after` are the slot text before and after every edit of one call (toggles, added items, body,
- * section, and replace edits, conflict resolution), so no edit path can take a tick back. A call
- * may not raise the number of build items not done (an untick, or an added unticked item), lower
- * the number done (done work removed), or leave a build item done before present but not done
- * (matched by id when tagged, else by exact text), so a swap that keeps both counts is caught too.
- * A ticked item reworded in place passes (its old label is gone, not present-but-undone), and so
- * does ticking an open one.
+ * Taking back a build item of `node`'s active slot while it is in review is Blocked while
+ * stable/unstable nodes rely on it. Dependents can only have shipped relying on the slot when
+ * every build item was done (the relaxed dependency rule, `buildItemsTicked`), so the guard holds
+ * only when the body before the call met that rule: then the body after may hold no build item
+ * not done and no fewer done build items. A body that already had an open build item was not
+ * relied on, and its build items are not guarded. `before` and `after` are the slot text before
+ * and after every edit of one call (toggles, added items, body, section, and replace edits,
+ * conflict resolution), so no edit path can take a tick back. Rewording a done item that stays
+ * done passes, as does adding a done one.
  */
 export function assertNoUntickUnderShippedDependents(
   graph: MindPlanGraph,
@@ -1096,6 +1096,7 @@ export function assertNoUntickUnderShippedDependents(
   after: string
 ): void {
   if (slotState !== "in-review" || before === after) return;
+  if (!buildItemsTicked(before)) return;
   const undone = undoneBuildItems(before, after);
   if (!undone) return;
   assertNoShippedDependentsRelying(
@@ -1106,59 +1107,21 @@ export function assertNoUntickUnderShippedDependents(
 }
 
 /**
- * What one call undoes among the build items: `null` when no build item done before is present
- * but not done, the number not done did not rise, and the number done did not fall; otherwise a
- * phrase naming what triggered. Items present but no longer done are named outright. A count
- * change names the labels behind it outright only when no other label could account for it (no
- * open label vanished for a rise, no done label appeared for a fall); otherwise it names them as
- * possible, since a reworded item and a removed one look alike by label.
+ * What one call takes back from a slot whose build items were all done: `null` when the body
+ * after has no build item not done and no fewer done build items; otherwise a phrase naming the
+ * build items not done and stating the done count before and after.
  */
 function undoneBuildItems(before: string, after: string): string | null {
-  const key = (i: ChecklistItem): string => i.id ?? i.text;
-  const quote = (k: string): string => `"${k}"`;
   const build = (body: string): ChecklistItem[] => parseChecklistItems(body).filter((i) => i.kind === "build");
-  const tally = (items: ChecklistItem[]): Map<string, number> => {
-    const m = new Map<string, number>();
-    for (const i of items) m.set(key(i), (m.get(key(i)) ?? 0) + 1);
-    return m;
-  };
-  const sum = (m: Map<string, number>): number => [...m.values()].reduce((a, b) => a + b, 0);
-  /** Keys whose count in `to` exceeds their count in `from`. */
-  const grown = (from: Map<string, number>, to: Map<string, number>): string[] =>
-    [...to].filter(([k, n]) => n > (from.get(k) ?? 0)).map(([k]) => k);
-  const named = (keys: string[], certain: boolean): string =>
-    keys.length === 0 ? "" : `: ${certain ? "" : "possibly "}${keys.map(quote).join(", ")}`;
-  const beforeItems = build(before);
+  const doneBefore = build(before).filter((i) => i.done).length;
   const afterItems = build(after);
-  const present = new Set(afterItems.map(key));
-  const openBefore = tally(beforeItems.filter((i) => !i.done));
-  const openAfter = tally(afterItems.filter((i) => !i.done));
-  const doneBefore = tally(beforeItems.filter((i) => i.done));
-  const doneAfter = tally(afterItems.filter((i) => i.done));
-
+  const open = afterItems.filter((i) => !i.done);
+  const doneAfter = afterItems.length - open.length;
+  if (open.length === 0 && doneAfter >= doneBefore) return null;
   const parts: string[] = [];
-  // Done before, still present after, but fewer of that label done.
-  const undone = grown(doneAfter, doneBefore).filter((k) => present.has(k));
-  if (undone.length > 0) parts.push(`build items done before would be present but not done: ${undone.map(quote).join(", ")}`);
-  // More not done: labels newly not done (beyond those named above) are the candidates, certain
-  // only when no open label vanished.
-  if (sum(openAfter) > sum(openBefore)) {
-    const fresh = grown(openBefore, openAfter).filter((k) => !undone.includes(k));
-    if (undone.length === 0 || fresh.length > 0) {
-      const certain = grown(openAfter, openBefore).length === 0;
-      parts.push(`build items not done would rise from ${sum(openBefore)} to ${sum(openAfter)}${named(fresh, certain)}`);
-    }
-  }
-  // Fewer done: done labels gone from the body are the candidates, certain only when no done
-  // label appeared (a ticked item reworded in place would).
-  if (sum(doneAfter) < sum(doneBefore)) {
-    const gone = grown(doneAfter, doneBefore).filter((k) => !present.has(k));
-    if (undone.length === 0 || gone.length > 0) {
-      const certain = grown(doneBefore, doneAfter).length === 0;
-      parts.push(`done build items would fall from ${sum(doneBefore)} to ${sum(doneAfter)}${named(gone, certain)}`);
-    }
-  }
-  return parts.length > 0 ? parts.join("; ") : null;
+  if (open.length > 0) parts.push(`not done: ${open.map((i) => `"${i.id ?? i.text}"`).join(", ")}`);
+  parts.push(`done build items ${doneBefore} before, ${doneAfter} after`);
+  return parts.join("; ");
 }
 
 /**

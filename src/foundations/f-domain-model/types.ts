@@ -166,7 +166,7 @@ export interface Revision {
   tests: EdgeDelta;
   /** Files this revision adds in another node's claimed folder (see `MindPlanNode.attributed`). */
   attributed?: string[];
-  /** The live `split_into` plus the parts this revision splits out. */
+  /** The parts this revision splits out (patch_node_territory); live's record is not copied in. */
   split_into?: string[];
   /** Decisions recorded under this revision (its `decisions/` folder), in recorded order. */
   decisions?: DecisionRecord[];

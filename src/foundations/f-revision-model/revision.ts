@@ -126,7 +126,8 @@ export function withRevision(node: MindPlanNode, change: string): MindPlanNode {
   if (rev.change_ref) next.change_ref = rev.change_ref;
   next.decisions = [...(node.decisions ?? []), ...(rev.decisions ?? [])];
   if (rev.attributed?.length) next.attributed = [...rev.attributed];
-  if (rev.split_into?.length) next.split_into = [...rev.split_into];
+  // The revision stores the parts it declares; its view carries live's record plus those.
+  if (rev.split_into?.length) next.split_into = [...new Set([...(node.split_into ?? []), ...rev.split_into])];
   return { ...node, next, tests: applyDelta(node.tests, rev.tests) };
 }
 

@@ -361,7 +361,9 @@ function patchRevisionTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, 
   }
   let splitList: string[] | undefined;
   if (split_into !== undefined) {
-    splitList = [...new Set([...(node.split_into ?? []), ...split_into.map((id) => id.trim()).filter(Boolean)])];
+    // The parts this revision declares, replacing what it declared before (live's record is not
+    // copied in; the ship adds these to it). `[]` clears them.
+    splitList = [...new Set(split_into.map((id) => id.trim()).filter(Boolean))];
     scalars.split_into = splitList;
     patched.push("split_into");
   }

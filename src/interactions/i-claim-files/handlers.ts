@@ -178,8 +178,9 @@ function removeForms(entry: string, field: "implements" | "tests"): string[] {
 }
 
 /**
- * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry matches a stored
- * entry when either its raw key or its normalized form (when it validates) equals the stored
+ * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry equal to stored
+ * entries as written (or differing only by a trailing `/`) removes those only. Failing that, it
+ * matches a stored entry when either its raw key or its normalized form (when it validates) equals the stored
  * entry's raw key or normalized form; failing that, when they differ only by a trailing `/`. One
  * that matches none is Blocked, naming the stored entries. So a stored entry the validator now
  * rejects, or one stored un-normalized, can always be removed as stored; one the edit keeps is
@@ -191,12 +192,15 @@ function applyListEdit(base: string[], edit: ListEdit, field: "implements" | "te
   const stored = base.map((e) => ({ e, forms: removeForms(e, field) }));
   const matches = (a: string[], b: string[], strip: (s: string) => string): boolean =>
     a.some((x) => b.some((y) => strip(x) === strip(y)));
+  const slashless = (x: string): string => x.replace(/\/$/, "");
   for (const raw of edit.remove) {
+    // An entry stored exactly as passed (or differing only by a trailing "/") is the one meant:
+    // remove only it, so legacy duplicates that normalize alike are not all dropped.
+    const asStored = base.filter((e) => e === raw);
+    const rawHits = asStored.length ? asStored : base.filter((e) => slashless(e) === slashless(raw));
     const forms = removeForms(raw, field);
-    const exact = stored.filter((s) => matches(forms, s.forms, (x) => x)).map((s) => s.e);
-    const hits = exact.length
-      ? exact
-      : stored.filter((s) => matches(forms, s.forms, (x) => x.replace(/\/$/, ""))).map((s) => s.e);
+    const exact = rawHits.length ? rawHits : stored.filter((s) => matches(forms, s.forms, (x) => x)).map((s) => s.e);
+    const hits = exact.length ? exact : stored.filter((s) => matches(forms, s.forms, slashless)).map((s) => s.e);
     if (hits.length === 0) {
       throw blocked(
         `remove "${raw}" matches no ${field} entry; stored: ${base.length ? base.map((e) => `"${e}"`).join(", ") : "(none)"}. ` +

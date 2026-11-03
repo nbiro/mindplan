@@ -318,15 +318,15 @@ export function appendChecklistItems(
   const fenceEnds = fenceBlockEnds(lines);
   const fenced = fenceEnds.map((e) => e >= 0);
   let at = start;
-  let itemIndent = -1;
+  let contentColumn = -1;
   for (let i = start; i < end; i++) {
     const m = fenced[i] ? null : lines[i].match(ITEM_LINE);
     if (m) {
       at = i + 1;
-      itemIndent = m[1].length - m[1].trimStart().length;
+      contentColumn = itemContentColumn(m[1]);
     }
   }
-  if (itemIndent >= 0) at = afterContinuation(lines, fenceEnds, at, end, itemIndent);
+  if (contentColumn >= 0) at = afterContinuation(lines, fenceEnds, at, end, contentColumn);
   if (at === start) {
     const insert = ["", ...added, ...(lines[start] === undefined || lines[start].trim() === "" ? [] : [""])];
     // Keep one blank line under the heading.
@@ -341,39 +341,51 @@ export function appendChecklistItems(
   return { body: joinLines(lines, breaks, eol), added };
 }
 
-/** A heading, or a list item marker: ends the item when not indented past its marker. */
+/** A heading, or a list item marker: ends the item when indented less than its content column. */
 const CONTINUATION_BREAK = /^(?:#{1,6}[ \t]|[ \t]*(?:[-*+]|\d+[.)])[ \t])/;
 /** A thematic break (`---`, `***`, `___`, spaces allowed between): never a lazy continuation. */
 const THEMATIC_BREAK = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 
 /**
- * The line index just past the continuation lines of the item that ends before `from` (its marker
- * indented `itemIndent`), within `[from, end)`: lines indented past the marker (blank lines between
- * them included), lazy lines straight after it, and fenced code indented past the marker, consumed
- * whole to its closing fence. A heading, a list item or thematic break at the item's level or
- * shallower, a fence not indented past the marker, or an unindented line after a blank line ends
- * it (as in CommonMark, a thematic break or a fence is never a lazy line). The index returned is
- * never inside fenced code: a fence that runs past `end` ends the scan before it.
- * `fenceEnds` is `fenceBlockEnds(lines)`.
+ * The content column of a list item whose leading indent, marker, and following whitespace are
+ * `lead` (CommonMark): the marker's end plus the spaces after it, or plus one space when five or
+ * more follow (the item then starts with indented code).
  */
-function afterContinuation(lines: string[], fenceEnds: number[], from: number, end: number, itemIndent: number): number {
+function itemContentColumn(lead: string): number {
+  const indent = lead.length - lead.trimStart().length;
+  const spaces = lead.length - indent - 1;
+  return spaces > 4 ? indent + 2 : lead.length;
+}
+
+/**
+ * The line index just past the continuation lines of the item that ends before `from` (its content
+ * column `contentColumn`, as `itemContentColumn` gives it), within `[from, end)`: lines indented to
+ * the content column (blank lines between them included), lazy lines straight after it, and fenced
+ * code indented to the content column, consumed whole to its closing fence. A heading, a list item
+ * or thematic break indented less than the content column, a fence indented less, or a line
+ * indented less after a blank line ends it (as in CommonMark, a thematic break or a fence is never
+ * a lazy line). The index returned is never inside fenced code: a fence that runs past `end` ends
+ * the scan before it. `fenceEnds` is `fenceBlockEnds(lines)`.
+ */
+function afterContinuation(lines: string[], fenceEnds: number[], from: number, end: number, contentColumn: number): number {
   let last = from;
   for (let j = from; j < end; j++) {
     const line = lines[j];
     if (line.trim() === "") continue;
     const indent = line.length - line.trimStart().length;
+    const inside = indent >= contentColumn;
     const afterBlank = j > last;
     // `j` is never inside a fence here: the item line before `from` is outside one, and a fence
     // reached is either skipped whole or ends the scan.
     if (fenceEnds[j] >= 0) {
-      if (indent <= itemIndent || fenceEnds[j] > end) break;
+      if (!inside || fenceEnds[j] > end) break;
       last = fenceEnds[j];
       j = last - 1;
       continue;
     }
-    if (CONTINUATION_BREAK.test(line) && indent <= itemIndent) break;
-    if (THEMATIC_BREAK.test(line) && indent <= itemIndent) break;
-    if (indent > itemIndent || !afterBlank) {
+    if (CONTINUATION_BREAK.test(line) && !inside) break;
+    if (THEMATIC_BREAK.test(line) && !inside) break;
+    if (inside || !afterBlank) {
       last = j + 1;
       continue;
     }

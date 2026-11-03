@@ -20,7 +20,7 @@ import {
 import { decisionFileNames, decisionsDir, parseDecisionFile } from "../../foundations/f-territory-store/decisions-store.js";
 import { VERSION_RELATIVE_PATH } from "../../foundations/f-territory-store/version.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { CACHE_DIRNAME, repoRelative } from "../../foundations/f-source-index/root-scope.js";
+import { CACHE_DIRNAME, repoRelative, withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { MAP_REL, git } from "../../foundations/f-source-index/git.js";
 
 const PREFIX = "Blocked: after-merge:";
@@ -171,7 +171,8 @@ function versionFailures(root: string): string[] {
   if (!fs.existsSync(path.join(root, ...VERSION_RELATIVE_PATH.split("/")))) {
     return [`${PREFIX} ${VERSION_RELATIVE_PATH} is missing (a merge dropped it). Call upgrade_project, then commit the upgrade on its own.`];
   }
-  const status = graphStatus();
+  // graphStatus reads the scoped root: judge the checkout at `root`, not the process's own.
+  const status = withRoot(root, graphStatus);
   if (status.state !== "upgrade") return [];
   return [`${PREFIX} ${VERSION_RELATIVE_PATH} is behind this graph: ${status.warning}`];
 }
