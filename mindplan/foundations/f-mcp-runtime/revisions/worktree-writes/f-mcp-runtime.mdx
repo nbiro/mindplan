@@ -3,9 +3,9 @@ id: f-mcp-runtime
 type: Foundation
 change: worktree-writes
 change_ref: "feat/worktree-writes"
-state: in-progress
+state: in-review
 opened_at: 2026-11-03T08:21:50.513Z
-updated_at: 2026-11-03T08:25:01.601Z
+updated_at: 2026-11-03T09:42:07.407Z
 title: "MCP runtime"
 description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, get_rules and orient_for_work before each action, the plan-project skill via get_skill); scopes drift to the node a result is about."
 base:
@@ -15,6 +15,7 @@ base:
   - section:_preamble=de6bf6e7
   - "section:## Purpose=493a6303"
   - "section:## Shared Substrate Spec=55bf52ac"
+  - "section:## Startup and health=9cfb77d8"
   - "section:## Acceptance Criteria=76377b29"
   - "section:## Attachments=3bcf4e16"
 ---
@@ -64,10 +65,14 @@ Drift and the search warm-up use the root of the call they serve; the server war
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment
 
 ## Attachments
 
 _None._
+
+## Startup and health
+
+`initialize` is answered before any graph load, migration check, or model load. The process installs `uncaughtException` and `unhandledRejection` handlers that write the reason to stderr (`mindplan-mcp: fatal: …`) before exiting, and logs the exit code and reason on any early exit. It records its start time and the duration of each graph load for `doctor`.

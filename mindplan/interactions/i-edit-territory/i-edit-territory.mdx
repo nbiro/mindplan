@@ -4,11 +4,11 @@ type: Interaction
 title: "Edit a node's territory"
 description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, a revision's change id, aliases, declared splits, node rules, and attachments."
 state: stable
-shipped_at: 2026-11-03T08:20:38.060Z
-revisions: 5
-churn: 4.766
+shipped_at: 2026-11-03T09:41:45.907Z
+revisions: 6
+churn: 5.76
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-03T08:20:38.060Z
+updated_at: 2026-11-03T09:41:45.907Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -54,6 +54,10 @@ Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`)
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
 
 - **Open revisions (0.18.0).** `patch_node_territory`, `put_attachment`, and `remove_attachment` take `change` to pick the revision (optional with at most one open); `slot: "next"` means that revision. Editing a section of a revision that has a conflict on it leaves the conflict until `resolve_conflict`
+
+## Checklist ids and kinds
+
+`toggle_checkboxes` items take `id` (a stable item id such as `spec`, `impl`, `verify`, `review-copy`) or `contains`, which must now equal the item's full text (tag and annotations excluded); a substring that is not the whole text is Blocked naming the matching items and their ids. `add_checklist_items: [{ text, id?, kind? }]` appends items to the Atomic Ops section of the picked slot.
 
 ## Acceptance Criteria
 

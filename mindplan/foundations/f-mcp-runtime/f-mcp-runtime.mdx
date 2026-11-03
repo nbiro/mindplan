@@ -4,19 +4,19 @@ type: Foundation
 title: "MCP runtime"
 description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, get_rules and orient_for_work before each action, the plan-project skill via get_skill); scopes drift to the node a result is about."
 state: stable
-shipped_at: 2026-10-31T20:33:28.832Z
-revisions: 22
-churn: 1
+shipped_at: 2026-11-03T09:41:36.202Z
+revisions: 23
+churn: 1.943
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-31T20:33:28.832Z
+updated_at: 2026-11-03T09:41:36.202Z
 split_at: 21
 split_into:
   - f-orientation-ledger
 depends_on:
-  - f-territory-store
   - f-framework-docs
   - f-graph-search
   - f-orientation-ledger
+  - f-territory-store
 implements:
   - src/foundations/f-mcp-runtime/
   - src/index.ts
@@ -52,6 +52,10 @@ Package: `src/foundations/f-mcp-runtime/`
 - After `server.connect`, starts `warmSearchIndex(projectRoot(), loadForSearch, territoryBodyReader())` (`f-graph-search`) without awaiting it: the search model loads and the graph is indexed in the background, and no tool call waits on it. `loadForSearch` drains the legacy files its graph load removed and reports them on stderr, so they never land in an unrelated tool call's `changed_files`
 
 Depends on: `f-territory-store`, `f-framework-docs`, `f-graph-search`, `f-orientation-ledger`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
+
+## Startup and health
+
+`initialize` is answered before any graph load, migration check, or model load. The process installs `uncaughtException` and `unhandledRejection` handlers that write the reason to stderr (`mindplan-mcp: fatal: …`) before exiting, and logs the exit code and reason on any early exit. It records its start time and the duration of each graph load for `doctor`.
 
 ## Acceptance Criteria
 

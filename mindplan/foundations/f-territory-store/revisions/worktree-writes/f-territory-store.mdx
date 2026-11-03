@@ -3,9 +3,9 @@ id: f-territory-store
 type: Foundation
 change: worktree-writes
 change_ref: "feat/worktree-writes"
-state: in-progress
+state: in-review
 opened_at: 2026-11-03T08:21:49.814Z
-updated_at: 2026-11-03T08:25:01.342Z
+updated_at: 2026-11-03T09:42:07.272Z
 title: "Territory store"
 description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, revision change ids, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
 base:
@@ -15,6 +15,7 @@ base:
   - section:_preamble=40b9ea5f
   - "section:## Purpose=3a735dbb"
   - "section:## Shared Substrate Spec=6d19d641"
+  - "section:## Checklist items=25747218"
   - "section:## Acceptance Criteria=91378ebd"
   - "section:## Attachments=3bcf4e16"
 ---
@@ -152,10 +153,14 @@ Depends on: `f-domain-model`, `f-source-index`.
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment
 
 ## Attachments
 
 _None._
+
+## Checklist items
+
+Every checkbox the Completion Check counts (the whole body except the owned Rules and Decisions sections) is a checklist item; it may end with a tag `{#<id>}` or `{#<id> <kind>}`: `id` is a stable slug, `kind` is `build` (the default when absent), `review` (a human or after-deploy check), or `deploy` (an environment variable or a migration applied live). Default Atomic Ops carry the same ids for every type: `{#spec}`, `{#impl}`, `{#verify}`. The tag is part of the line on disk and is hidden from nothing; `toggleCheckboxesInBody` matches an item by `id` or by its exact text (without tag and annotations), and refuses substring matches. `checklistItems(body)` returns `{ id?, kind, text, checked, line }` for every item, and counts by kind feed the Completion Check.

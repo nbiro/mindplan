@@ -4,11 +4,11 @@ type: Interaction
 title: "Change a node's status"
 description: "Agent moves a node along the build or bug pipeline: one node, an ordered batch, or a scoped walk with dry run that can walk past blocked members; ship and promotion count revisions and record declared splits; force_unship undoes a ship."
 state: stable
-shipped_at: 2026-11-03T08:20:37.444Z
-revisions: 4
-churn: 3.86
+shipped_at: 2026-11-03T09:41:45.089Z
+revisions: 5
+churn: 4.855
 created_at: 2026-10-31T11:58:03.397Z
-updated_at: 2026-11-03T08:20:37.444Z
+updated_at: 2026-11-03T09:41:45.089Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -57,6 +57,12 @@ Intended files: `src/interactions/i-change-status/` (`handlers.ts`, `tools.ts`).
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
 
 - **Open revisions (0.18.0).** `update_node_status` takes `change` to pick a node's revision (optional when it has at most one); the scoped `change` walk moves each member's revision of that change; validation runs on `graphUnder(graph, change)` and `promoteInMemory` uses `withRevision`. Ship calls `shipRevision`, which rebases the node's other revisions and lists `rebased: [{ change, conflicts }]` in the result
+
+## Partial walks and batches
+
+- A `scope: "change"` walk takes `nodes: [...]`: only those members of the change walk (each must be a member; others stay put). A listed node whose `depends_on` target is an unshipped member of the same change that is not listed (or not walking to the same target) is still refused by the gates.
+- A `revisions` batch no longer stops at the first Blocked: every item is tried in tier order on the graph as the earlier items left it, and the result lists `results: [{ node_id, change?, ok, line?, blocked? }]`; the call is Blocked only when no item moved.
+- Every Blocked a single-node move returns for a node that is a member of a change names the scoped walk that moves the whole change: `update_node_status({ scope: "change", change, new_status, skip_review?, skip_blocked? })`.
 
 ## Acceptance Criteria
 

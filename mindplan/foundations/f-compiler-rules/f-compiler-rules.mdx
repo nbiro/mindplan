@@ -4,11 +4,11 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, additivity), change members (revisions, planned sources), checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-11-03T08:20:35.735Z
-revisions: 27
-churn: 14.919
+shipped_at: 2026-11-03T09:42:06.443Z
+revisions: 30
+churn: 17.9
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-03T08:20:35.735Z
+updated_at: 2026-11-03T09:42:06.443Z
 split_at: 8
 split_into:
   - f-source-index
@@ -108,6 +108,10 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 - **Open revisions (0.18.0).** Every gate (Infrastructure First, Behavior First, Coverage, imports, ownership, shape, the decision gate, the Completion Check) judges a revision against `graphUnder(graph, change)`: live plus that change only. `changeMembers` and `changesWithRevisions` read `open_revisions`. A move to `in-review` is Blocked while the revision has `conflicts`, naming `resolve_conflict`. `revisionHasDecision` reads decision files and accepts a decision whose `nodes` lists the node. One import and ownership implementation serves the full check and the per-transition gates
 
+## Test import scope
+
+A test file of node A (a file A's `tests` list matches that also looks like a test: `*.test.*`, `*.spec.*`, or a `__tests__` / `test` / `tests` path segment) may import, read-only, files owned by A itself and by A's direct dependents (nodes with a `depends_on`, `exposes`, or `mounts` edge to A), without an edge, so a template's starter test can import the registry that reads the template. Every other import from a test file follows the import matrix as before. The full check and the transition gates share this rule.
+
 ## Acceptance Criteria
 
 - A mirror twin does not block `open_next`
@@ -165,3 +169,15 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 ## Attachments
 
 _None._
+
+## Checklist kinds
+
+- The Completion Check at ship still needs every item ticked, `review` and `deploy` included.
+- At `in-review`, only `build` items must be ticked.
+- Infrastructure First and Behavior First treat a dependency as satisfied for a dependent when it is stable, or when its active slot is `in-review` with checklist items that are all ticked except `review` / `deploy` ones (every counted checkbox without such a kind is a build item) and its own dependencies are satisfied the same way (transitive, memoized; a cycle never satisfies). A slot with no checklist items must be stable. The dependency still cannot ship until its own items are ticked.
+- `cancelled` and `discard_next` are Blocked while the node is not stable and a stable or unstable node has a live `depends_on` / `exposes` edge to it, naming those dependents.
+- `openHumanItems(graph)` lists every unticked `review` and `deploy` item: `{ node_id, change?, id?, kind, text }`.
+
+## Cycles across changes
+
+`changeCycles(graph)` builds the depends_on graph over live plus every open change at once (each revision's add deltas, each pre-ship node's edges, and every planned `depends_on`), tags each edge with the change that adds it, and returns every cycle whose edges come from two or more changes: `{ changes: [...], path: [node ids], edges: [{ source, target, change }] }`. `assertNoChangeCycle(graph, edge)` Blocks a new edge that would close such a cycle, naming the changes and the path.

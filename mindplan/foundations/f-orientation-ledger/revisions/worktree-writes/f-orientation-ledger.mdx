@@ -3,11 +3,13 @@ id: f-orientation-ledger
 type: Foundation
 change: worktree-writes
 change_ref: "feat/worktree-writes"
-state: in-progress
+state: in-review
 opened_at: 2026-11-03T08:21:50.225Z
-updated_at: 2026-11-03T08:25:00.714Z
+updated_at: 2026-11-03T09:42:06.998Z
 title: "Orientation ledger"
 description: "Infra — the in-memory record of which nodes had their full context and rules fetched in this MCP session, with a fingerprint of the rules that reached them, and the gate that blocks writes on a node until it was fetched with its current rules."
+tests_add:
+  - src/foundations/f-test-harness/worktree-root.test.mjs
 base:
   - title=3922d06a
   - description=eac2599c
@@ -55,9 +57,9 @@ The ledger is keyed by the resolved graph root and the node id, so orienting on 
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment
 
 ## Attachments
 

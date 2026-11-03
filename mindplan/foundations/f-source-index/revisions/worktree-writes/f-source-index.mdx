@@ -3,9 +3,9 @@ id: f-source-index
 type: Foundation
 change: worktree-writes
 change_ref: "feat/worktree-writes"
-state: in-progress
+state: in-review
 opened_at: 2026-11-03T08:21:50.069Z
-updated_at: 2026-11-03T08:25:00.966Z
+updated_at: 2026-11-03T09:42:07.139Z
 title: "Source index"
 description: "Infra — ownership universe, claim expansion (files, directories, globs), folder dominance for in-place claims, the decision-gate, hotspot, fan-out, and search settings in mindplan/config.json and their MCP write, and read-only git probes for files a branch adds and the plan's tree and dirty paths."
 base:
@@ -15,6 +15,7 @@ base:
   - section:_preamble=e47371d6
   - "section:## Purpose=d205d9b0"
   - "section:## Shared Substrate Spec=9c8eb95b"
+  - "section:## Test import scope=68e128fc"
   - "section:## Acceptance Criteria=d53918f8"
   - "section:## Attachments=3bcf4e16"
 ---
@@ -83,10 +84,14 @@ One `resolveProjectRoot(root?)` serves claims, config, imports, git probes, and 
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment
 
 ## Attachments
 
 _None._
+
+## Test import scope
+
+The ownership index also maps each test file to the nodes whose `tests` list matches it (`testOwnersOf(buckets, file)`), so the import rule can apply the test scope.

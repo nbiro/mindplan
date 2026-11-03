@@ -3,11 +3,14 @@ id: i-check-integrity
 type: Interaction
 change: worktree-writes
 change_ref: "feat/worktree-writes"
-state: in-progress
+state: in-review
 opened_at: 2026-11-03T08:21:50.717Z
-updated_at: 2026-11-03T08:25:01.879Z
+updated_at: 2026-11-03T09:42:07.564Z
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, hotspots, and fan-out, checks one change, and runs the merge gate."
+tests_add:
+  - src/foundations/f-test-harness/after-merge.test.mjs
+  - src/foundations/f-test-harness/worktree-root.test.mjs
 base:
   - title=64b1ee3a
   - description=c40ee7e8
@@ -16,8 +19,10 @@ base:
   - "section:## Purpose=4b2fe8e3"
   - "section:## Actor & Trigger=b3012943"
   - "section:## PRD / Execution Logic=2d2ac116"
+  - "section:## Compact output=6a427362"
   - "section:## Acceptance Criteria=f67c8a53"
   - "section:## Attachments=3bcf4e16"
+  - "section:## Open human items=de01c054"
 ---
 
 # Check integrity
@@ -74,7 +79,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 
 ## After a merge
 
-`run_check({ after_merge: true })` (CLI `check --after-merge`) validates the graph a git merge produced: git conflict markers in any `mindplan/` file, two nodes created with one id in different folders, a revision whose `base` no longer matches live (live changed on the other branch: fix `rebase_revision({ node_id, change })`), a decision id held by two files, a tracked `mindplan/map.md`, and a `version.json` behind the graph's revisions. Each is a `Blocked: after-merge: …` line with its fix; the rest of the check runs as usual. `runIntegrityCheck` reads the call's root and never writes `MINDPLAN_ROOT`.
+`run_check({ after_merge: true })` (CLI `check --after-merge`) validates the graph a git merge produced: git conflict markers in any `mindplan/` file, two nodes created with one id in different folders, a revision file that no longer parses, a decision id held by two files, a tracked `mindplan/map.md`, and a missing or behind `version.json`, each a `Blocked: after-merge: …` line with its fix; a revision whose `base` no longer matches live is a `Warning: after-merge: …` naming `rebase_revision({ node_id, change })` (ship rebases it anyway); the rest of the check runs as usual. `runIntegrityCheck` reads the call's root and never writes `MINDPLAN_ROOT`.
 
 ## Acceptance Criteria
 
@@ -115,10 +120,20 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 
 ## Atomic Ops
 
-- [ ] Requirements defined
-- [ ] Implementation complete
-- [ ] Tests passing
+- [x] Requirements defined
+- [x] Implementation complete
+- [x] Tests passing
 
 ## Attachments
 
 _None._
+
+## Open human items
+
+The check lists every unticked `review` and `deploy` checklist item in one compact `Info: waiting on people: …` block (`<node>[ (revision <change>)]: <id or text> (<kind>)`, grouped by node); it never changes `ok`.
+
+## Compact output
+
+- `run_check` over MCP is compact by default (`compact: true`): `{ ok, counts: { <category>: n }, failures, warnings, info, acknowledged, unchanged }` where `warnings` lists only warnings this MCP session has not already returned for this root (kept in memory per server process; `compact: false` records nothing) and not acknowledged, except that with `nodes` every warning on those nodes is listed; each line appears once (no separate `output` copy). `compact: false` returns today's full shape (`output`, `failures`, `warnings`, `info`). The CLI prints the full output.
+- `nodes: [...]` limits warnings and the per-node checks to those nodes (graph-wide failures still count); `change` already scopes to a change.
+- Every warning carries a stable id (`w-` + 10 hex of sha1 over category, node, and the warning text). `acknowledge_warning({ id })` (or `ids`) stores the id in `.mindplan-cache/acks.json` (per checkout, git-ignored); an acknowledged warning is left out and counted under `acknowledged` until its text changes (a new text is a new id).
