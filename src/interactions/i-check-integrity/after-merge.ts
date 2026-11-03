@@ -16,17 +16,13 @@ import { REVISIONS_DIR, parseRevisionFile, revisionBaseStale } from "../../found
 import { DECISIONS_DIR, parseDecisionFile } from "../../foundations/f-territory-store/decisions-store.js";
 import { VERSION_RELATIVE_PATH } from "../../foundations/f-territory-store/version.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { CACHE_DIRNAME } from "../../foundations/f-source-index/root-scope.js";
+import { CACHE_DIRNAME, repoRelative } from "../../foundations/f-source-index/root-scope.js";
 
 const PREFIX = "Blocked: after-merge:";
 /** A warning text: run_check prints it as `Warning: after-merge: …`. */
 const WARNING_PREFIX = "after-merge:";
 /** Derived and machine-local folders under mindplan/: never scanned. */
 const SKIPPED_DIRS = new Set([CACHE_DIRNAME, ".git", "node_modules"]);
-
-function posix(rel: string): string {
-  return rel.split(path.sep).join("/");
-}
 
 /** Every file under `dir`, absolute, skipping derived folders. */
 function walkFiles(dir: string): string[] {
@@ -73,7 +69,7 @@ function conflictMarkerFailures(root: string): string[] {
     if (bytes.includes(0)) continue; // binary attachment
     const line = conflictMarkerLine(bytes.toString("utf-8"));
     if (line > 0) {
-      const rel = posix(path.relative(root, abs));
+      const rel = repoRelative(abs, root);
       out.push(`${PREFIX} ${rel}:${line} holds git conflict markers. Resolve the conflict in that file (keep one side or merge both), then commit.`);
     }
   }
@@ -128,7 +124,7 @@ function duplicateDecisionFailures(root: string): string[] {
       } catch {
         id = undefined;
       }
-      if (id) byId.set(id, [...(byId.get(id) ?? []), posix(path.relative(root, file))]);
+      if (id) byId.set(id, [...(byId.get(id) ?? []), repoRelative(file, root)]);
     }
     for (const [id, files] of byId) {
       if (files.length < 2) continue;
@@ -153,7 +149,7 @@ function unreadableRevisionFailures(root: string): string[] {
       } catch (err) {
         const message = (err instanceof Error ? err.message : String(err)).replace(/^Blocked:\s*/, "");
         out.push(
-          `${PREFIX} ${posix(path.relative(root, file))} does not parse (${message}). Fix the file (resolve any conflict in it), then run the check again.`
+          `${PREFIX} ${repoRelative(file, root)} does not parse (${message}). Fix the file (resolve any conflict in it), then run the check again.`
         );
       }
     }

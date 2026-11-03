@@ -60,7 +60,7 @@ import {
   scopedRemovedLegacyFiles,
   type RemovedLegacyFile,
 } from "../f-source-index/root-scope.js";
-import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
+import { RM_MAX_RETRIES, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
 import { readRevisions, syncNextView } from "./revisions.js";
@@ -515,10 +515,6 @@ function rawNamedListItems(inner: string, field: string): string[] {
     items.push(lines[i].replace(/^\s+-\s+/, "").trim());
   }
   return items;
-}
-
-function isEdgeField(key: string): key is EdgeField {
-  return (EDGE_FIELDS as readonly string[]).includes(key);
 }
 
 function isListField(key: string): key is ListField {

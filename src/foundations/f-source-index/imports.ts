@@ -5,11 +5,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { isInUniverse } from "./universe.js";
-import { resolveProjectRoot } from "./root-scope.js";
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
-}
+import { resolveProjectRoot, toPosix } from "./root-scope.js";
 
 const IMPORT_FROM =
   /\b(?:import|export)(?:\s+type)?(?:[\s\w{},*]+|\s*\*\s*as\s+\w+|\s+\w+)?\s+from\s*['"]([^'"]+)['"]/g;

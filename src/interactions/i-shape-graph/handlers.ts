@@ -54,12 +54,12 @@ import {
   revisionFor,
   withRevision,
 } from "../../foundations/f-revision-model/index.js";
-import { writeRevisionDelta, writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
+import { writeRevisionDelta } from "../../foundations/f-territory-store/revisions.js";
 import { validatePlannedLink } from "../../foundations/f-compiler-rules/planned.js";
 import { assertNoChangeCycle } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
-  READINESS_NOTE,
+  revisionReadinessResult,
   changedFiles,
   gateWrite,
   mutationTail,
@@ -250,19 +250,6 @@ function linkRevision(source: MindPlanNode, edgeType: string, change: string | u
   return resolveRevisionChange(source);
 }
 
-/** A contract write to a ready revision sends it back to draft; returns the reset and files. */
-function resetReadyRevision(
-  node: MindPlanNode,
-  change: string
-): { reset: Record<string, unknown> | null; files: string[] } {
-  if (revisionFor(node, change)?.state !== "ready") return { reset: null, files: [] };
-  const written = writeRevisionState(node, change, "draft");
-  return {
-    reset: { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE },
-    files: written.changed_files,
-  };
-}
-
 /**
  * link_nodes on an open revision: the edge joins the revision's add delta (and leaves its remove
  * delta), so live gains it only when the revision ships. Checked against live plus that revision.
@@ -290,7 +277,7 @@ function linkOnRevision(
     add: [...d.add, target.id],
     remove: d.remove.filter((id) => id !== target.id),
   }).changed_files;
-  const readiness = resetReadyRevision(source, change);
+  const readiness = revisionReadinessResult(source, change);
   refreshPersistedMap();
   return {
     linked: { source: source.id, target: target.id, type },
@@ -334,7 +321,7 @@ function unlinkOnRevision(
       }).changed_files
     );
   }
-  const readiness = resetReadyRevision(source, change);
+  const readiness = revisionReadinessResult(source, change);
   refreshPersistedMap();
   return {
     removed: types.length,

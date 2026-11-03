@@ -14,12 +14,12 @@ import {
   DECISION_ID_PATTERN,
   PLANNED_EDGE_TYPES,
   isFoundationRole,
-  type DecisionRecord,
   type NodeType,
   type Revision,
 } from "../f-domain-model/types.js";
 import { detectEol, diffDelta, scalarHashes, sectionHashes } from "../f-revision-model/index.js";
 import { RM_MAX_RETRIES, readFileRetry, unlinkRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
+import { repoRelative } from "../f-source-index/root-scope.js";
 import { decisionFileName, decisionsDir, parseDecisionFile } from "../f-territory-store/decisions-store.js";
 import { REVISIONS_DIR, formatRevisionFile, parseRevisionFile } from "../f-territory-store/revisions.js";
 import {
@@ -51,10 +51,6 @@ const DECISION_HEADING_LINE = /^###[ \t]+\S/;
 
 function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
-}
-
-function repoRelative(abs: string): string {
-  return path.relative(projectRoot(), abs).split(path.sep).join("/");
 }
 
 /** Node folders (with a live `<id>.mdx`) under the given type folders, sorted by type then id. */

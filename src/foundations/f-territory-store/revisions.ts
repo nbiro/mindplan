@@ -56,6 +56,7 @@ import {
   type RebaseLive,
 } from "../f-revision-model/index.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
+import { repoRelative } from "../f-source-index/root-scope.js";
 import {
   assertNoDecisionClash,
   decisionFolderFiles,
@@ -342,16 +343,15 @@ export function syncNextView(node: MindPlanNode): void {
 // Writers
 // ---------------------------------------------------------------------------
 
-function repoRelative(abs: string): string {
-  return path.relative(projectRoot(), abs).split(path.sep).join("/");
-}
-
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Reads the revision of `change` from disk (decisions from memory); Blocked when it is not open. */
-function loadRevision(node: MindPlanNode, change: string): { revision: Revision; body: string } {
+/**
+ * Reads the revision of `change` from disk (decisions from memory); Blocked when it is not open
+ * or its file is missing.
+ */
+export function loadRevision(node: MindPlanNode, change: string): { revision: Revision; body: string } {
   resolveRevisionChange(node, change);
   const file = revisionFilePath(node, change);
   if (!fs.existsSync(file)) throw blocked(`revision file of "${node.id}" for change "${change}" is missing (${file}).`);
@@ -825,6 +825,60 @@ export function writeRevisionDelta(
   return { changed_files: [storeRevision(node, revision, body)] };
 }
 
+/** The scalars `writeRevision` patches; `role: null` removes the role, `change_ref: ""` clears it. */
+export type RevisionScalarsPatch = {
+  title?: string;
+  description?: string;
+  role?: FoundationRole | null;
+  change_ref?: string;
+  attributed?: string[];
+  split_into?: string[];
+};
+
+/**
+ * One write of the revision of `change`: any of a new body (its `## Rules` and `## Decisions`
+ * sections are ignored: rules are slot-independent, decisions live in files), scalars, and pipeline
+ * `state`, applied to one loaded revision and stored once with a new `updated_at`. Everything is
+ * checked before the write. Blocked when the node has no revision of `change`.
+ */
+export function writeRevision(
+  node: MindPlanNode,
+  change: string,
+  patch: { body?: string; scalars?: RevisionScalarsPatch; state?: NextPipelineState }
+): { changed_files: string[] } {
+  const scalars = patch.scalars ?? {};
+  if (scalars.change_ref !== undefined) validateChangeInput({ change_ref: scalars.change_ref });
+  if (scalars.role != null && !isFoundationRole(scalars.role)) {
+    throw blocked(`invalid Foundation role "${scalars.role}". Allowed: assembler, infra, design-system, adapter.`);
+  }
+  if (patch.state !== undefined && !isNextPipelineState(patch.state)) {
+    throw blocked(`invalid revision state "${patch.state}". Allowed: draft, ready, in-progress, in-review.`);
+  }
+  const loaded = loadRevision(node, change);
+  const revision = loaded.revision;
+  const body = patch.body === undefined ? loaded.body : withoutOwnedSections(patch.body);
+  if (scalars.title !== undefined) revision.title = scalars.title;
+  if (scalars.description !== undefined) revision.description = scalars.description;
+  if (scalars.role === null) {
+    delete revision.role;
+    revision.role_removed = true;
+  } else if (scalars.role !== undefined) {
+    revision.role = scalars.role;
+    delete revision.role_removed;
+  }
+  if (scalars.change_ref === "") delete revision.change_ref;
+  else if (scalars.change_ref !== undefined) revision.change_ref = scalars.change_ref;
+  for (const key of ["attributed", "split_into"] as const) {
+    const value = scalars[key];
+    if (value === undefined) continue;
+    if (value.length > 0) revision[key] = [...new Set(value)];
+    else delete revision[key];
+  }
+  if (patch.state !== undefined) revision.state = patch.state;
+  revision.updated_at = nowIso();
+  return { changed_files: [storeRevision(node, revision, body)] };
+}
+
 /**
  * Patches the revision's scalars: a key present in `patch` replaces the stored value (`role`
  * `null` removes the role, so the ship clears live's; `change_ref` `""` clears it); sets `updated_at`. Blocked when the node has no
@@ -833,39 +887,9 @@ export function writeRevisionDelta(
 export function writeRevisionScalars(
   node: MindPlanNode,
   change: string,
-  patch: {
-    title?: string;
-    description?: string;
-    role?: FoundationRole | null;
-    change_ref?: string;
-    attributed?: string[];
-    split_into?: string[];
-  }
+  patch: RevisionScalarsPatch
 ): { changed_files: string[] } {
-  if (patch.change_ref !== undefined) validateChangeInput({ change_ref: patch.change_ref });
-  if (patch.role != null && !isFoundationRole(patch.role)) {
-    throw blocked(`invalid Foundation role "${patch.role}". Allowed: assembler, infra, design-system, adapter.`);
-  }
-  const { revision, body } = loadRevision(node, change);
-  if (patch.title !== undefined) revision.title = patch.title;
-  if (patch.description !== undefined) revision.description = patch.description;
-  if (patch.role === null) {
-    delete revision.role;
-    revision.role_removed = true;
-  } else if (patch.role !== undefined) {
-    revision.role = patch.role;
-    delete revision.role_removed;
-  }
-  if (patch.change_ref === "") delete revision.change_ref;
-  else if (patch.change_ref !== undefined) revision.change_ref = patch.change_ref;
-  for (const key of ["attributed", "split_into"] as const) {
-    const value = patch[key];
-    if (value === undefined) continue;
-    if (value.length > 0) revision[key] = [...new Set(value)];
-    else delete revision[key];
-  }
-  revision.updated_at = nowIso();
-  return { changed_files: [storeRevision(node, revision, body)] };
+  return writeRevision(node, change, { scalars: patch });
 }
 
 /**
@@ -874,9 +898,7 @@ export function writeRevisionScalars(
  * `updated_at`. Blocked when the node has no revision of `change`.
  */
 export function writeRevisionBody(node: MindPlanNode, change: string, body: string): { changed_files: string[] } {
-  const { revision } = loadRevision(node, change);
-  revision.updated_at = nowIso();
-  return { changed_files: [storeRevision(node, revision, withoutOwnedSections(body))] };
+  return writeRevision(node, change, { body });
 }
 
 /** Sets the revision's pipeline `state` and `updated_at`. Blocked when the node has no revision of `change`. */
@@ -885,13 +907,7 @@ export function writeRevisionState(
   change: string,
   state: NextPipelineState
 ): { changed_files: string[] } {
-  if (!isNextPipelineState(state)) {
-    throw blocked(`invalid revision state "${state}". Allowed: draft, ready, in-progress, in-review.`);
-  }
-  const { revision, body } = loadRevision(node, change);
-  revision.state = state;
-  revision.updated_at = nowIso();
-  return { changed_files: [storeRevision(node, revision, body)] };
+  return writeRevision(node, change, { state });
 }
 
 /**

@@ -58,7 +58,7 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
-import { withRoot } from "../../foundations/f-source-index/root-scope.js";
+import { toPosix, withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import {
@@ -287,10 +287,6 @@ class GitError extends Error {
 
 function fail(failures: string[], message: string): void {
   failures.push(message.startsWith("Blocked:") ? message : `Blocked: ${message}`);
-}
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
 }
 
 function git(args: string[], cwd: string, required: boolean): string {

@@ -3,7 +3,6 @@
  * planned edges and the hotspot warning), discard_next, and resolve_conflict.
  */
 
-import { type MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import {
   entityRelativePath,
   loadGraph,
@@ -18,7 +17,7 @@ import {
   resolveConflict as resolveRevisionConflict,
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
-import { conflictLabel, openChanges, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
+import { conflictLabel, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
 import { assertNoShippedDependentsOnRevision, blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";

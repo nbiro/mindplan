@@ -61,3 +61,13 @@ export function rootKey(root: string): string {
 export function resolveProjectRoot(root?: string): string {
   return root ?? currentRoot() ?? process.env.MINDPLAN_ROOT ?? process.cwd();
 }
+
+/** A platform path with POSIX separators. */
+export function toPosix(p: string): string {
+  return p.split(path.sep).join("/");
+}
+
+/** Repo-relative POSIX path of an absolute path under `root` (default: the project root). */
+export function repoRelative(abs: string, root: string = resolveProjectRoot()): string {
+  return toPosix(path.relative(root, abs));
+}

@@ -5,11 +5,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { matchGlob } from "./universe.js";
-import { resolveProjectRoot } from "./root-scope.js";
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
-}
+import { resolveProjectRoot, toPosix } from "./root-scope.js";
 
 function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);

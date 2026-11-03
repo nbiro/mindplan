@@ -13,7 +13,6 @@ import {
 } from "../../foundations/f-domain-model/types.js";
 import {
   ATTACHMENTS_DIR,
-  entityDir,
   entityRelativePath,
   markdownRelativePath,
   listAttachments,
@@ -28,7 +27,12 @@ import {
   territoryBodyReader,
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
-import { REVISIONS_DIR, readRevisions, revisionRelativeFilePath } from "../../foundations/f-territory-store/revisions.js";
+import {
+  REVISIONS_DIR,
+  loadRevision,
+  revisionFilePath,
+  revisionRelativeFilePath,
+} from "../../foundations/f-territory-store/revisions.js";
 import { openChanges, pickRevision, withRevision } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOut } from "../../foundations/f-fan-out/index.js";
@@ -259,9 +263,10 @@ export function buildNodeContextPayload(
 export const PASS_CHANGE = "pass change to read a revision";
 
 /** The revision of `change` as stored under `revisions/`, or undefined when the node has none of it. */
-function revisionFile(node: MindPlanNode, change: string): ReturnType<typeof readRevisions>[number] | undefined {
+function revisionFile(node: MindPlanNode, change: string): ReturnType<typeof loadRevision> | undefined {
   if (!node.open_revisions?.some((r) => r.change === change)) return undefined;
-  return readRevisions(entityDir(node), node.id).find((r) => r.revision.change === change);
+  if (!fs.existsSync(revisionFilePath(node, change))) return undefined;
+  return loadRevision(node, change);
 }
 
 /** The Capability an `area` names; Blocked when it is not a Capability. */

@@ -6,11 +6,7 @@ import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { loadProjectConfig, type MindPlanProjectConfig } from "./config.js";
-import { CACHE_DIRNAME, resolveProjectRoot } from "./root-scope.js";
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
-}
+import { CACHE_DIRNAME, resolveProjectRoot, toPosix } from "./root-scope.js";
 
 /** Minimal glob match for `*`, `**`, and `?` (POSIX path segments). */
 export function matchGlob(pattern: string, filePath: string): boolean {

@@ -5,12 +5,9 @@
  */
 
 import { revisionSummaries as readSummaries } from "../../foundations/f-plan-views/views.js";
-import {
-  type MindPlanGraph,
-  type MindPlanNode,
-  type RevisionConflict,
-} from "../../foundations/f-domain-model/types.js";
-import { openChanges } from "../../foundations/f-revision-model/index.js";
+import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
+import { openChanges, revisionFor } from "../../foundations/f-revision-model/index.js";
+import { writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
 import {
   loadGraph,
   markdownRelativePath,
@@ -35,7 +32,6 @@ import {
   recordOriented,
   rulesFingerprint,
 } from "../../foundations/f-orientation-ledger/ledger.js";
-import * as path from "path";
 
 /**
  * Blocked: Orientation unless every node was oriented on in this session with the rules that apply
@@ -194,9 +190,10 @@ function changeIsOpen(graph: MindPlanGraph, change: string): boolean {
   return changeMembers(graph, change).length > 0 || graph.nodes.some((n) => openChanges(n).includes(change));
 }
 
-/** What a readiness reset reports: the slot that left `ready`. */
+/** What a readiness reset reports: the slot (and, for a revision, its change) that left `ready`. */
 export type ReadinessReset = {
   slot: TerritorySlot;
+  change?: string;
   from: "ready";
   to: "draft";
   note: string;
@@ -220,6 +217,21 @@ export function readinessResult(
     reset: { slot, from: "ready", to: "draft", note: READINESS_NOTE },
     files: [territoryPath(node, slot)],
   };
+}
+
+/** The reset a contract write reports when it sends the revision of `change` from ready back to draft. */
+export function revisionReadinessReset(change: string): ReadinessReset {
+  return { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE };
+}
+
+/** A contract write to a ready revision sends it back to draft; returns the reset and files. */
+export function revisionReadinessResult(
+  node: MindPlanNode,
+  change: string
+): { reset: ReadinessReset | null; files: string[] } {
+  if (revisionFor(node, change)?.state !== "ready") return { reset: null, files: [] };
+  const written = writeRevisionState(node, change, "draft");
+  return { reset: revisionReadinessReset(change), files: written.changed_files };
 }
 
 export function readinessFields(reset: ReadinessReset | null): Record<string, unknown> {
