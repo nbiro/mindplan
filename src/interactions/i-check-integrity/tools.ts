@@ -28,7 +28,7 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call before in-review, before ship, and before telling the user the work is done. " +
         "Runs the same check as `mindplan-mcp check`: graph load, exclusivity, coverage, presence (claims, and linked tests once a node is in review or shipped), leftovers, and the import matrix. " +
-        "Returns compact by default: { ok, counts: { <category>: n, out_of_scope? }, failures, warnings: [{ id, text }], acknowledged, unchanged }, where warnings are only those not shown by the previous check of this root and not acknowledged (acknowledge_warning), and unchanged / acknowledged count the rest; a changed text gets a new id. " +
+        "Returns compact by default: { ok, counts: { <category>: n, out_of_scope? }, failures, warnings: [{ id, text }], info, acknowledged, unchanged }, where warnings are only those not shown by an earlier compact check of this root in this session and not acknowledged (acknowledge_warning), and unchanged / acknowledged count the rest; with nodes, every warning of those nodes is listed again; a changed text gets a new id. " +
         "Pass compact: false for { ok, output, failures, warnings, info }: output is exactly what the CLI prints (`mindplan-mcp check: ok`, or one Blocked: line per failure with the fix for each illegal import, then Warning: and Info: lines). " +
         "Warnings flag draft nodes missing required sections (shape:), stale territory text, next-slot imports (one release before they Block), split route families, revisions in review with no linked tests, hotspots (hotspot: a shipped node shipping far more often than the project's median lately, ranked by fan-in, with its recent change groups), fan-out (fan-out: a pre-ship node whose depends_on targets sit in several other unshipped changes, so it may need to know every feature of a kind; invert it onto a Foundation contract, or record keep_whole), and leftover mirror twins from releases before 0.8.0 (upgrade_project removes them), and never fail the check; info lists paths a plan names before building them (planned:), one line per node. " +
         "A graph that needs setup_project or upgrade_project fails with Blocked: Version. " +
@@ -55,12 +55,12 @@ export const TOOLS: ToolDef[] = [
           .boolean()
           .optional()
           .describe(
-            "After merging a branch that changed mindplan/: also Block git conflict markers, a node id in two folders, a decision id in two files, revisions whose base no longer matches live (fix: rebase_revision), a tracked mindplan/map.md, and a missing or behind version.json."
+            "After merging a branch that changed mindplan/: also Block git conflict markers, a node id in two folders, a decision id in two files, a tracked mindplan/map.md, and a missing or behind version.json; a revision whose base no longer matches live is a Warning: after-merge: (fix: rebase_revision)."
           ),
         compact: z
           .boolean()
           .optional()
-          .describe("Default true: counts plus only new warnings with ids. false: the full output, every warning as text, and info."),
+          .describe("Default true: counts, info, and only new warnings with ids. false: the full output, every warning as text, and info."),
         nodes: z
           .array(NODE_ID)
           .optional()

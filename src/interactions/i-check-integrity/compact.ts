@@ -1,19 +1,21 @@
 /**
  * Compact run_check results: each warning gets a stable id (`w-` + 10 hex of sha1 over its
- * category, node id, and text), the ids a check of this root showed are kept in
- * `.mindplan-cache/check-seen.json`, and acknowledged ids in `.mindplan-cache/acks.json`
- * (acknowledge_warning). A compact result lists only warnings neither seen before nor
- * acknowledged and counts the rest, so a repeated check stays small. `nodes` scopes warnings to
- * those nodes; failures stay graph-wide.
+ * category, node id, and text), the ids a compact check of this root showed are kept in memory
+ * for this server process (one MCP session: another agent's server never hides a warning from
+ * this one), and acknowledged ids in `.mindplan-cache/acks.json` (acknowledge_warning). A compact
+ * result lists only warnings neither seen earlier in this session nor acknowledged and counts the
+ * rest, so a repeated check stays small. `nodes` scopes warnings to those nodes and lists every one
+ * of them again (an agent scoped to its own nodes always sees their warnings); failures stay
+ * graph-wide.
  */
 
 import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
+import { rootKey } from "../../foundations/f-source-index/root-scope.js";
 
 const CACHE_DIRNAME = ".mindplan-cache";
-const SEEN_FILE = "check-seen.json";
 const ACKS_FILE = "acks.json";
 
 /** A warning id: `w-` and ten lowercase hex digits. */
@@ -72,23 +74,28 @@ function writeIds(file: string, ids: Iterable<string>): void {
   fs.writeFileSync(file, JSON.stringify({ ids: [...ids].sort() }) + "\n");
 }
 
+/** Warning ids each root's compact checks showed in this process (one MCP server = one session). */
+const seenByRoot = new Map<string, Set<string>>();
+
+/** Forget every seen warning (tests). */
+export function resetSeenWarnings(): void {
+  seenByRoot.clear();
+}
+
 /**
- * Records what this check showed. A scoped check showed only its own warnings: those are seen
- * now, and an out-of-scope warning stays seen only if an earlier check showed it.
+ * Records what this compact check showed and returns what earlier ones in this session showed.
+ * A scoped check showed only its own warnings: those are seen now, and an out-of-scope warning
+ * stays seen only if an earlier check showed it.
  */
 export function recordSeen(root: string, warnings: string[], nodes?: Set<string>): Set<string> {
-  const file = cacheFile(root, SEEN_FILE);
-  const previous = readIds(file);
+  const key = rootKey(root);
+  const previous = seenByRoot.get(key) ?? new Set<string>();
   const next = new Set<string>();
   for (const w of warnings) {
     const id = warningId(w);
     if (!nodes || inScope(w, nodes) || previous.has(id)) next.add(id);
   }
-  try {
-    writeIds(file, next);
-  } catch {
-    // A read-only checkout still gets its check; the next one just shows everything again.
-  }
+  seenByRoot.set(key, next);
   return previous;
 }
 
@@ -100,16 +107,20 @@ export function scopeWarnings(warnings: string[], nodes?: Set<string>): { kept: 
 }
 
 /**
- * The compact result: per-category counts of the scoped warnings, every failure once, the
- * warnings neither seen in the previous check nor acknowledged, and how many were each.
+ * The compact result: per-category counts of the scoped warnings, every failure once, the info
+ * lines, the warnings not acknowledged and not seen in an earlier check of this session (with
+ * `scoped`, seen ones are listed too), and how many were acknowledged or seen before.
  */
 export function compactCheckResult(input: {
   ok: boolean;
   failures: string[];
   warnings: string[];
+  info: string[];
   outside: number;
   seen: Set<string>;
   root: string;
+  /** The check was scoped by `nodes`: list every in-scope warning, seen or not. */
+  scoped?: boolean;
 }): Record<string, unknown> {
   const acks = readIds(cacheFile(input.root, ACKS_FILE));
   const counts: Record<string, number> = {};
@@ -120,9 +131,15 @@ export function compactCheckResult(input: {
     const category = warningCategory(text);
     counts[category] = (counts[category] ?? 0) + 1;
     const id = warningId(text);
-    if (acks.has(id)) acknowledged++;
-    else if (input.seen.has(id)) unchanged++;
-    else shown.push({ id, text });
+    if (acks.has(id)) {
+      acknowledged++;
+      continue;
+    }
+    if (input.seen.has(id)) {
+      unchanged++;
+      if (!input.scoped) continue;
+    }
+    shown.push({ id, text });
   }
   if (input.outside > 0) counts.out_of_scope = input.outside;
   return {
@@ -130,6 +147,7 @@ export function compactCheckResult(input: {
     counts,
     failures: [...new Set(input.failures)],
     warnings: shown,
+    info: input.info,
     acknowledged,
     unchanged,
   };

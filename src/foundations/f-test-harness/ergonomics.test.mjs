@@ -636,14 +636,21 @@ for (const status of ["ready", "in-progress"]) {
   }
   const fullText = (await raw("run_check", {})).text;
   const full = JSON.parse(fullText);
-  // The full check above saw every warning, so a compact run right after reports them as unchanged.
+  // A full check records nothing: the first compact run of the session lists every warning.
+  const listed = (await compactCall()).json;
+  check(
+    "a full check records nothing, so the first compact run lists every warning",
+    listed.warnings.length === full.warnings.length && listed.unchanged === 0,
+    JSON.stringify({ warnings: listed.warnings.length, unchanged: listed.unchanged, full: full.warnings.length })
+  );
+  check("compact run_check carries the info lines", JSON.stringify(listed.info) === JSON.stringify(full.info), JSON.stringify(listed.info));
   const first = await compactCall();
   const c = first.json;
   check(
-    "compact run_check is the default: { ok, counts, failures, warnings, acknowledged, unchanged }, no output copy",
+    "compact run_check is the default: { ok, counts, failures, warnings, info, acknowledged, unchanged }, no output copy",
     typeof c.ok === "boolean" &&
       !("output" in c) &&
-      !("info" in c) &&
+      Array.isArray(c.info) &&
       Array.isArray(c.failures) &&
       Array.isArray(c.warnings) &&
       typeof c.acknowledged === "number" &&
@@ -706,6 +713,12 @@ for (const status of ["ready", "in-progress"]) {
       scoped.counts.out_of_scope > 30,
     JSON.stringify(scoped)
   );
+  const rescoped = (await compactCall({ nodes: ["j-long-3"] })).json;
+  check(
+    "a repeat scoped run still lists every warning of its nodes, counting them unchanged",
+    rescoped.warnings.length === 1 && rescoped.warnings[0].text.includes('"j-long-3"') && rescoped.unchanged === 1,
+    JSON.stringify(rescoped)
+  );
   const later = (await compactCall()).json;
   check(
     "a scoped run marks only its own warnings seen: the out-of-scope new one shows on the next full run",
@@ -720,6 +733,15 @@ for (const status of ["ready", "in-progress"]) {
       scopedFull.warnings.length === 1,
     JSON.stringify(scopedFull.warnings)
   );
+  await call("patch_node_territory", { node_id: "j-long-5", description: long(5, " unseen") });
+  await call("run_check", {});
+  const afterFull = (await compactCall()).json;
+  check(
+    "a compact: false check records nothing: the new warning still shows on the next compact run",
+    afterFull.warnings.some((w) => w.text.includes('"j-long-5"')),
+    JSON.stringify(afterFull.warnings)
+  );
+  check("no seen file is written", !fs.existsSync(path.join(root, ".mindplan-cache", "check-seen.json")));
   const cli = runCli(["check"]);
   check("the CLI keeps printing the full output", cli.status === 0 && (cli.stdout + cli.stderr).includes('Warning: description: "j-long-0"'));
 }

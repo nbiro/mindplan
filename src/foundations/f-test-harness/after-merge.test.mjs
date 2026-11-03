@@ -63,9 +63,10 @@ function git(...args) {
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout;
 }
-function cli(args) {
-  const env = { ...process.env };
+function cli(args, extraEnv = {}) {
+  const env = { ...process.env, ...extraEnv };
   delete env.MINDPLAN_ROOT;
+  for (const [k, v] of Object.entries(extraEnv)) if (v === undefined) delete env[k];
   const r = spawnSync(process.execPath, [serverEntry, "check", ...args], { cwd: toolRoot, encoding: "utf-8", env });
   return { status: r.status, out: `${r.stdout}${r.stderr}` };
 }
@@ -116,6 +117,14 @@ git("commit", "-q", "-m", "base");
 {
   const clean = await call("run_check", { after_merge: true });
   check("after_merge passes on a clean checkout", clean.ok, clean.output);
+  // The fixture has no version stamp: with the gate on, the check stops at Blocked: Version, once.
+  const gated = cli(["--after-merge", "--root", root], { MINDPLAN_VERSION_GATE: undefined });
+  const versionLines = gated.out.split(/\r?\n/).filter((l) => l.includes("version.json") || l.startsWith("Blocked: Version"));
+  check(
+    "a version-blocked after-merge check names the version problem once",
+    gated.status === 1 && versionLines.length === 1 && versionLines[0].startsWith("Blocked: Version"),
+    gated.out
+  );
 }
 
 // --- branch a ships c1 (spec); branch b holds c2 (purpose, ready) ---
@@ -142,20 +151,24 @@ check("the merge carried A's live into b", read(LIVE).includes("Spec from A.") &
 
 // --- the stale base, and rebase_revision ---
 {
-  const stale = await call("run_check", { after_merge: true });
-  const line = stale.failures.find((f) => f.startsWith("Blocked: after-merge:") && f.includes('revision "c2" of "f-sub"'));
+  const stale = await call("run_check", { after_merge: true, compact: false });
+  const line = stale.warnings.find((w) => w.startsWith("after-merge:") && w.includes('revision "c2" of "f-sub"'));
   check(
-    "run_check({ after_merge }) reports c2's stale base with the rebase_revision fix",
-    !stale.ok && !!line && line.includes('rebase_revision({ node_id: "f-sub", change: "c2" })'),
+    "run_check({ after_merge }) warns about c2's stale base with the rebase_revision fix (ship rebases anyway)",
+    stale.ok && !!line && line.includes('rebase_revision({ node_id: "f-sub", change: "c2" })') && !stale.failures.some((f) => f.includes('"c2"')),
     stale.output
   );
-  const plain = await call("run_check", {});
-  check("the default check does not run the after-merge findings", !plain.failures.some((f) => f.includes("after-merge")), plain.output);
+  const plain = await call("run_check", { compact: false });
+  check(
+    "the default check does not run the after-merge findings",
+    !plain.failures.some((f) => f.includes("after-merge")) && !plain.warnings.some((w) => w.startsWith("after-merge:")),
+    plain.output
+  );
 
   const printed = cli(["--after-merge", "--root", root]);
   check(
-    "CLI check --after-merge --root prints the same finding and exits 1",
-    printed.status === 1 && printed.out.includes(line ?? "<none>"),
+    "CLI check --after-merge --root prints the same warning and exits 0",
+    printed.status === 0 && printed.out.includes(`Warning: ${line ?? "<none>"}`),
     printed.out
   );
 
@@ -179,8 +192,12 @@ check("the merge carried A's live into b", read(LIVE).includes("Spec from A.") &
   const again = await call("rebase_revision", { node_id: "f-sub", change: "c2" });
   check("a revision already based on live is a no-op", again.rebased === false && (again.changed_files ?? []).length === 0, JSON.stringify(again));
 
-  const passed = await call("run_check", { after_merge: true });
-  check("after rebase_revision the after-merge check passes", passed.ok, passed.output);
+  const passed = await call("run_check", { after_merge: true, compact: false });
+  check(
+    "after rebase_revision the after-merge check passes without the warning",
+    passed.ok && !passed.warnings.some((w) => w.startsWith("after-merge:")),
+    passed.output
+  );
   const cliPassed = cli(["--after-merge", "--root", root]);
   check("CLI check --after-merge passes too", cliPassed.status === 0 && cliPassed.out.includes("mindplan-mcp check: ok"), cliPassed.out);
 }

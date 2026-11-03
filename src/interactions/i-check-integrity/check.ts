@@ -78,7 +78,7 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
-import { afterMergeFailures } from "./after-merge.js";
+import { afterMergeFailures, afterMergeWarnings } from "./after-merge.js";
 import { compactCheckResult, recordSeen, scopeWarnings } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
@@ -1207,7 +1207,7 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   if (process.env.MINDPLAN_VERSION_GATE !== "off") {
     const status = graphStatus();
     if (status.state !== "current") {
-      if (options.after_merge) failures.push(...afterMergeFailures(null, root));
+      if (options.after_merge) failures.push(...afterMergeFailures(null, root, { skipVersion: true }));
       fail(failures, `Blocked: Version — ${status.warning}`);
       return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
     }
@@ -1227,7 +1227,10 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   }
 
   try {
-    if (options.after_merge) failures.push(...afterMergeFailures(graph, root));
+    if (options.after_merge) {
+      failures.push(...afterMergeFailures(graph, root));
+      warnings.push(...afterMergeWarnings(graph));
+    }
     const buckets = checkExclusivity(graph, root, failures, warnings);
     const universe = listUniverseFiles(root);
     checkCoverage(graph, root, buckets, universe, failures);
@@ -1316,7 +1319,6 @@ export function runCheckHandler(
   });
   const nodes = args.nodes?.length ? new Set(args.nodes) : undefined;
   const root = projectRoot();
-  const seen = recordSeen(root, result.warnings, nodes);
   const { kept, outside } = scopeWarnings(result.warnings, nodes);
   const extras = {
     ...(result.change
@@ -1328,7 +1330,21 @@ export function runCheckHandler(
       : {}),
   };
   if (args.compact === true) {
-    return { ...compactCheckResult({ ok: result.ok, failures: result.failures, warnings: kept, outside, seen, root }), ...extras };
+    // Only a compact check records what it showed; a full one lists everything and records nothing.
+    const seen = recordSeen(root, result.warnings, nodes);
+    return {
+      ...compactCheckResult({
+        ok: result.ok,
+        failures: result.failures,
+        warnings: kept,
+        info: result.info,
+        outside,
+        seen,
+        root,
+        scoped: nodes !== undefined,
+      }),
+      ...extras,
+    };
   }
   const scoped = { ...result, warnings: kept };
   return {

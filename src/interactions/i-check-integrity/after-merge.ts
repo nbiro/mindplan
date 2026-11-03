@@ -1,7 +1,9 @@
 /**
  * After-merge check (`run_check({ after_merge: true })`, `mindplan-mcp check --after-merge`): what
  * a git merge of two branches that both changed the graph can leave behind. Each finding is a
- * `Blocked: after-merge: …` line naming its fix. The file-level findings read `mindplan/` directly
+ * `Blocked: after-merge: …` line naming its fix, except a revision whose base live moved past: that
+ * is a `Warning: after-merge:` (ship rebases it anyway, and an in-place live edit on the same branch
+ * does the same). The file-level findings read `mindplan/` directly
  * and never throw, so a file the loader cannot parse (conflict markers) is reported, not crashed on.
  */
 
@@ -16,6 +18,8 @@ import { VERSION_RELATIVE_PATH } from "../../foundations/f-territory-store/versi
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 
 const PREFIX = "Blocked: after-merge:";
+/** A warning text: run_check prints it as `Warning: after-merge: …`. */
+const WARNING_PREFIX = "after-merge:";
 /** Derived and machine-local folders under mindplan/: never scanned. */
 const SKIPPED_DIRS = new Set([".mindplan-cache", ".git", "node_modules"]);
 
@@ -200,9 +204,13 @@ function versionFailures(root: string): string[] {
   return [`${PREFIX} ${VERSION_RELATIVE_PATH} is behind this graph: ${status.warning}`];
 }
 
-/** Open revisions whose recorded base no longer matches live: live changed on the other branch. */
-function staleBaseFailures(graph: MindPlanGraph): string[] {
+/**
+ * Open revisions that cannot be read (failures), and those whose recorded base no longer matches
+ * live (warnings: live changed on the other branch, or in place on this one).
+ */
+function staleBaseFindings(graph: MindPlanGraph): { failures: string[]; warnings: string[] } {
   const out: string[] = [];
+  const warnings: string[] = [];
   for (const node of graph.nodes) {
     for (const rev of node.open_revisions ?? []) {
       let stale: boolean;
@@ -214,21 +222,26 @@ function staleBaseFailures(graph: MindPlanGraph): string[] {
         continue;
       }
       if (!stale) continue;
-      out.push(
-        `${PREFIX} revision "${rev.change}" of "${node.id}" is based on a live "${node.id}" that changed since (live moved on the other branch). ` +
-          `Carry it onto live: rebase_revision({ node_id: "${node.id}", change: "${rev.change}" }), then resolve any conflict it reports with resolve_conflict.`
+      warnings.push(
+        `${WARNING_PREFIX} revision "${rev.change}" of "${node.id}" is based on a live "${node.id}" that changed since (live moved on the other branch). ` +
+          `Carry it onto live: rebase_revision({ node_id: "${node.id}", change: "${rev.change}" }), then resolve any conflict it reports with resolve_conflict (ship rebases it too).`
       );
     }
   }
-  return out;
+  return { failures: out, warnings };
 }
 
 /**
- * Every after-merge finding for the checkout at `root` (MINDPLAN_ROOT must point at it). `graph`
- * is the loaded graph, or null when it failed to load: the file-level findings still run, so
- * whatever broke the load is named. Never throws.
+ * Every after-merge Blocked finding for the checkout at `root` (MINDPLAN_ROOT must point at it).
+ * `graph` is the loaded graph, or null when it failed to load: the file-level findings still run,
+ * so whatever broke the load is named. `skipVersion` leaves out the version.json findings (the
+ * caller already reports `Blocked: Version`). Never throws.
  */
-export function afterMergeFailures(graph: MindPlanGraph | null, root: string): string[] {
+export function afterMergeFailures(
+  graph: MindPlanGraph | null,
+  root: string,
+  options: { skipVersion?: boolean } = {}
+): string[] {
   const out: string[] = [];
   const guarded = (fn: () => string[]): void => {
     try {
@@ -242,7 +255,16 @@ export function afterMergeFailures(graph: MindPlanGraph | null, root: string): s
   guarded(() => unreadableRevisionFailures(root));
   guarded(() => duplicateDecisionFailures(root));
   guarded(() => mapTrackedFailures(root));
-  guarded(() => versionFailures(root));
-  if (graph) guarded(() => staleBaseFailures(graph));
+  if (!options.skipVersion) guarded(() => versionFailures(root));
+  if (graph) guarded(() => staleBaseFindings(graph).failures);
   return out;
+}
+
+/** The after-merge warnings (`after-merge: …` texts): revisions whose base live moved past. Never throws. */
+export function afterMergeWarnings(graph: MindPlanGraph): string[] {
+  try {
+    return staleBaseFindings(graph).warnings;
+  } catch {
+    return [];
+  }
 }
