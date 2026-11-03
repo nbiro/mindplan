@@ -39,6 +39,7 @@ import {
 } from "../../foundations/f-territory-store/revisions.js";
 import {
   conflictLabel,
+  graphUnder,
   openChanges,
   pickRevision,
   resolveRevisionChange,
@@ -304,7 +305,8 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[]
       const listed = new Set(args.nodes);
       selected = selected.filter((n) => listed.has(n.id));
     }
-    return orderForWalk(graph, selected).map((node) => ({
+    // Ordered on the change's view: a depends_on a member's revision adds counts.
+    return orderForWalk(graphUnder(graph, change), selected).map((node) => ({
       node,
       ...(revisionFor(node, change) ? { change } : {}),
     }));
@@ -341,7 +343,10 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[]
   });
 }
 
-/** Tier order (Foundation, Interaction, Interface), then dependency order within a tier. */
+/**
+ * Tier order (Foundation, Interaction, Interface), then dependency order within a tier, by the
+ * depends_on edges of `graph` (a change walk passes the change's view, `graphUnder`).
+ */
 function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode[] {
   const inSet = new Set(nodes.map((n) => n.id));
   const done = new Set<string>();

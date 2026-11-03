@@ -619,6 +619,50 @@ for (const new_status of SHIP) {
   for (const change of ["ir2", "ir3"]) await call("discard_next", { node_id: id, change });
 }
 
+/** Ticks a revision's default ops and records its decision, so it can walk to ship. */
+async function readyByTools(id, change) {
+  await call("patch_node_territory", {
+    node_id: id,
+    change,
+    toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }],
+  });
+  await call("record_decision", {
+    node_id: id,
+    change,
+    decision: `Revise ${id} under ${change}.`,
+    alternatives: [`A new node that depends_on ${id}: the contract itself changes.`],
+    why: "The contract must change in place.",
+  });
+}
+
+/** A shipped Foundation with one claimed file. */
+async function shippedFoundation(id) {
+  await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
+  write(`src/${id}/index.ts`, "export const v = 1;\n");
+  await call("set_implementation_files", { node_id: id, add: [`src/${id}/index.ts`] });
+  fillAndTick(abs(`mindplan/foundations/${id}/${id}.mdx`));
+  for (const new_status of SHIP) await call("update_node_status", { node_id: id, new_status });
+}
+
+// --- a change walk orders by the change's edges: a shipped member's revision depending on a new member ---
+{
+  await shippedFoundation("f-wo-a");
+  await call("create_node", { id: "f-wo-b", type: "Foundation", title: "f-wo-b", description: "Infra — f-wo-b", role: "infra", change: "walk-order" });
+  write("src/f-wo-b/index.ts", "export const v = 1;\n");
+  await call("set_implementation_files", { node_id: "f-wo-b", add: ["src/f-wo-b/index.ts"] });
+  fillAndTick(abs("mindplan/foundations/f-wo-b/f-wo-b.mdx"));
+  await call("open_next", { node_id: "f-wo-a", change: "walk-order" });
+  await call("link_nodes", { source_id: "f-wo-a", target_id: "f-wo-b", edge_type: "depends_on", change: "walk-order" });
+  await readyByTools("f-wo-a", "walk-order");
+  const walked = await raw("update_node_status", { scope: "change", change: "walk-order", new_status: "ship", skip_review: true });
+  const order = walked.error ? [] : (JSON.parse(walked.text).lines ?? []).map((l) => l.split(":")[0]);
+  check(
+    "a change walk moves the new Foundation a member's revision depends_on before that member",
+    !walked.error && order.indexOf("f-wo-b") >= 0 && order.indexOf("f-wo-b") < order.indexOf("f-wo-a"),
+    walked.text
+  );
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {
