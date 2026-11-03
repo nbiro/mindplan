@@ -51,6 +51,7 @@ import {
   revisionViews,
 } from "./rules.js";
 import { slotSource } from "./shape.js";
+import { testImportAllowed } from "./test-imports.js";
 
 const SOURCE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
@@ -205,7 +206,7 @@ function scanFiles(
       if (!toOwnerId) continue;
       const to = byId.get(toOwnerId);
       if (!to) continue;
-      if (importAllowed(owner, to, graph)) continue;
+      if (importAllowed(owner, to, graph) || testImportAllowed(graph, buckets, file, to)) continue;
       const remedy = resolveImportRemedy(owner, to, graph);
       const base =
         `imports: "${file}" (owner "${owner.id}") may not import "${edge.to}" (${describeTarget(to)}).`;

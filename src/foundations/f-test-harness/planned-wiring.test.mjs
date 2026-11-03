@@ -302,6 +302,64 @@ check("with a decision under its change the move passes", !reviewed.error, revie
 await call("update_node_status", { node_id: "f-db", new_status: "ship" });
 check("ship drops the attributed list", !live("mindplan/foundations/f-db/f-db.mdx").includes("attributed:"));
 
+// --- cycles across changes: each change alone is acyclic, together they could never ship ---
+write("src/sa/sa.ts", "export const sa = 1;\n");
+write("src/sb/sb.ts", "export const sb = 1;\n");
+write("src/sc/sc.ts", "export const sc = 1;\n");
+for (const id of ["f-sa", "f-sb", "f-sc"]) {
+  await call("create_node", { id, type: "Foundation", title: `Sky ${id}`, description: `Adapter — sky part ${id}`, role: "adapter", change: "sky-base" });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id.slice(2)}/`] });
+  await complete(id, "Foundation");
+}
+const skyBase = await raw("update_node_status", { scope: "change", change: "sky-base", new_status: "ship", skip_review: true });
+check("the sky base ships", !skyBase.error, skyBase.text);
+await call("open_next", { node_id: "f-sa", change: "ai-builder" });
+await call("link_nodes", { source_id: "f-sa", target_id: "f-sb", edge_type: "depends_on", change: "ai-builder" });
+await call("open_next", { node_id: "f-sb", change: "ai-builder" });
+const sameChange = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "ai-builder" });
+check(
+  "a cycle within one change is still caught by the acyclic check",
+  sameChange.error && sameChange.text.includes("dependency cycle") && !sameChange.text.includes("across changes"),
+  sameChange.text
+);
+await call("discard_next", { node_id: "f-sb", change: "ai-builder" });
+const plannedBack = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "platform-settings" });
+check(
+  "a planned depends_on back into another change's edge is Blocked as a cross-change cycle",
+  plannedBack.error &&
+    plannedBack.text.includes('Blocked: depends_on "f-sb" -> "f-sa" (change "platform-settings") would close a dependency cycle across changes "ai-builder", "platform-settings": f-sb -> f-sa -> f-sb.') &&
+    plannedBack.text.includes("Foundation both depend on"),
+  plannedBack.text
+);
+await call("open_next", { node_id: "f-sb", change: "platform-settings" });
+await call("open_next", { node_id: "f-sb", change: "other-sky" });
+const revisionBack = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "platform-settings" });
+check(
+  "a revision depends_on back into another change's edge is Blocked as a cross-change cycle",
+  revisionBack.error && revisionBack.text.includes("across changes \"ai-builder\", \"platform-settings\""),
+  revisionBack.text
+);
+await call("discard_next", { node_id: "f-sb", change: "platform-settings" });
+await call("discard_next", { node_id: "f-sb", change: "other-sky" });
+// A cycle written before the rule existed: plan a harmless edge, then point it back by hand.
+await call("link_nodes", { source_id: "f-sb", target_id: "f-sc", edge_type: "depends_on", change: "platform-settings" });
+const sbRel = "mindplan/foundations/f-sb/f-sb.mdx";
+fs.writeFileSync(path.join(root, sbRel), live(sbRel).replace("- platform-settings depends_on f-sc", "- platform-settings depends_on f-sa"));
+const cycleCheck = await call("run_check", {});
+check(
+  "run_check reports an existing cross-change cycle",
+  !cycleCheck.ok && cycleCheck.failures.some((f) => f.startsWith('Blocked: change cycle: changes "ai-builder", "platform-settings"')),
+  JSON.stringify(cycleCheck.failures)
+);
+const memberCheck = await call("run_check", { change: "platform-settings" });
+check(
+  "run_check({ change }) reports it for a member change",
+  !memberCheck.ok && memberCheck.failures.some((f) => f.includes("change cycle:") && f.includes("platform-settings")),
+  JSON.stringify(memberCheck.failures)
+);
+const openBack = await raw("open_next", { node_id: "f-sb", change: "platform-settings" });
+check("open_next is Blocked on a planned edge that closes a cross-change cycle", openBack.error && openBack.text.includes("across changes"), openBack.text);
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {

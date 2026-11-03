@@ -588,6 +588,87 @@ fs.writeFileSync(
 git("add", "-A", "src/interactions/i-feature");
 await call("discard_next", { node_id: "i-feature" });
 
+// --- test-file import scope: a node's test may import its own direct dependents ---
+{
+  const root2 = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-testscope-"));
+  const put = (rel, text) => {
+    fs.mkdirSync(path.dirname(path.join(root2, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root2, rel), text);
+  };
+  put("mindplan/config.json", JSON.stringify({ sources: ["src/**"], exclude: [] }) + "\n");
+  put("src/if-tpl/tpl.ts", "export const tpl = 1;\n");
+  put("src/if-tpl/tpl.test.ts", "export const t = 1;\n");
+  put("src/f-reg/reg.ts", 'import { tpl } from "../if-tpl/tpl.js";\nexport const reg = [tpl];\n');
+  put("src/f-other/other.ts", "export const other = 1;\n");
+  const t2 = new StdioClientTransport({
+    command: process.execPath,
+    args: [serverEntry],
+    env: { ...process.env, MINDPLAN_ROOT: root2, MINDPLAN_ORIENT_GATE: "off" },
+  });
+  const c2 = new Client({ name: "check-test-scope", version: "0.1.0" });
+  await c2.connect(t2);
+  const raw2 = async (tool, args) => {
+    const res = await c2.callTool({ name: tool, arguments: args });
+    return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
+  };
+  const call2 = async (tool, args) => {
+    const r2 = await raw2(tool, args);
+    if (r2.error) throw new Error(`${tool}: ${r2.text}`);
+    return JSON.parse(r2.text);
+  };
+  const ok = (label, cond, detail = "") => {
+    if (cond) console.log(`ok   ${label}`);
+    else {
+      failures++;
+      console.log(`FAIL ${label}${detail ? `: ${detail}` : ""}`);
+    }
+  };
+  await call2("create_node", { id: "j-tpl", type: "Capability", title: "Templates", description: "Users pick templates." });
+  await call2("create_node", { id: "i-pick", type: "Interaction", title: "Pick a template", description: "User picks a template.", change: "tpl" });
+  await call2("link_nodes", { source_id: "i-pick", target_id: "j-tpl", edge_type: "belongs_to" });
+  await call2("create_node", { id: "if-tpl", type: "Interface", title: "Template", description: "Template entry point.", change: "tpl" });
+  await call2("create_node", { id: "f-reg", type: "Foundation", title: "Registry", description: "Assembler — template registry", role: "assembler", change: "tpl" });
+  await call2("create_node", { id: "f-other", type: "Foundation", title: "Other", description: "Infra — unrelated", role: "infra", change: "tpl" });
+  await call2("link_nodes", { source_id: "if-tpl", target_id: "i-pick", edge_type: "exposes" });
+  await call2("link_nodes", { source_id: "f-reg", target_id: "if-tpl", edge_type: "mounts" });
+  await call2("set_implementation_files", { replace: true, node_id: "if-tpl", files: ["src/if-tpl/"] });
+  await call2("set_implementation_files", { replace: true, node_id: "f-reg", files: ["src/f-reg/"] });
+  await call2("set_implementation_files", { replace: true, node_id: "f-other", files: ["src/f-other/"] });
+  await call2("set_test_files", { replace: true, node_id: "if-tpl", files: ["src/if-tpl/tpl.test.ts"] });
+  put(
+    "src/if-tpl/tpl.test.ts",
+    'import { reg } from "../f-reg/reg.js";\nimport { other } from "../f-other/other.js";\nexport const t = [reg, other];\n'
+  );
+  const both = await call2("run_check", {});
+  ok(
+    "a node's test may import a direct dependent (the registry that mounts it)",
+    !both.failures.some((f) => f.includes("tpl.test.ts") && f.includes("src/f-reg/reg.ts")),
+    JSON.stringify(both.failures)
+  );
+  ok(
+    "a node's test importing an unrelated node is still Blocked",
+    both.failures.some((f) => f.includes("tpl.test.ts") && f.includes("src/f-other/other.ts")),
+    JSON.stringify(both.failures)
+  );
+  for (const h of ["Purpose", "Kind", "Spec", "Acceptance Criteria"]) {
+    await call2("patch_node_territory", { node_id: "if-tpl", section: `## ${h}`, text: `Real ${h.toLowerCase()} for the template.` });
+  }
+  await call2("patch_node_territory", { node_id: "if-tpl", toggle_checkboxes: [{ contains: " ", checked: true, all: true }] });
+  await call2("update_node_status", { node_id: "if-tpl", new_status: "ready" });
+  await call2("update_node_status", { node_id: "if-tpl", new_status: "in-progress" });
+  const gated = await raw2("update_node_status", { node_id: "if-tpl", new_status: "in-review" });
+  ok(
+    "the in-review gate agrees: Blocked on the unrelated import only",
+    gated.error && gated.text.includes("src/f-other/other.ts") && !gated.text.includes("src/f-reg/reg.ts"),
+    gated.text
+  );
+  put("src/if-tpl/tpl.test.ts", 'import { reg } from "../f-reg/reg.js";\nexport const t = [reg];\n');
+  const passed = await raw2("update_node_status", { node_id: "if-tpl", new_status: "in-review" });
+  ok("the in-review gate passes a test importing the registry that mounts it", !passed.error, passed.text);
+  await c2.close();
+  fs.rmSync(root2, { recursive: true, force: true });
+}
+
 await client.close();
 
 if (failures > 0) {

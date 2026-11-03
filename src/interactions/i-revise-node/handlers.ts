@@ -23,6 +23,7 @@ import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
 import { blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
 import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.js";
+import { assertNoChangeCycle } from "../../foundations/f-compiler-rules/change-cycles.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
   assertNoLegacyNext,
@@ -60,6 +61,10 @@ export function openNext(args: {
   validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
   const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
+  // A planned depends_on that closes a cycle with another change's edges could never ship.
+  for (const e of node.planned ?? []) {
+    if (e.change === change && e.type === "depends_on") assertNoChangeCycle(graph, { source: node_id, target: e.target, change });
+  }
   // The revision takes its change's planned edges: each must still be legal before it opens.
   const problems = plannedEdgeProblems(graph, change).filter((p) => p.startsWith(`planned edge ${node_id} -`));
   if (problems.length > 0) {
