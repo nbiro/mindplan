@@ -490,6 +490,21 @@ try {
   );
   const afterSplit = await call("run_check", {});
   check("after the split run_check no longer reports the root as a hotspot", !afterSplit.warnings.some((w) => w.startsWith('hotspot: "f-core"')), JSON.stringify(afterSplit.warnings));
+  // A revision of a node with a live split record holds only the parts it declares: split_into: []
+  // clears them, and the revision file keeps no copy of live's record.
+  const reopened = await call("open_next", { node_id: "f-core", change: "c-5" });
+  const revFile = path.join(root, "mindplan", "foundations", "f-core", "revisions", reopened.change ?? "c-5", "f-core.mdx");
+  const declared = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-b"] });
+  const declaredText = fs.readFileSync(revFile, "utf-8");
+  const unmarked = await call("patch_node_territory", { node_id: "f-core", split_into: [] });
+  const unmarkedText = fs.readFileSync(revFile, "utf-8");
+  check(
+    "split_into on a revision records only the parts it declares, and split_into: [] clears them",
+    declared.split_into?.join(",") === "f-b" && /^split_into:\n {2}- f-b$/m.test(declaredText) && !declaredText.includes("- f-part") &&
+      Array.isArray(unmarked.split_into) && unmarked.split_into.length === 0 && !/^split_into:/m.test(unmarkedText),
+    JSON.stringify({ declared: declared.split_into, unmarked: unmarked.split_into, unmarkedText })
+  );
+  await call("discard_next", { node_id: "f-core", change: "c-5" });
   // Clearing the split record in place: the count stays, the split goes.
   const cleared = await call("patch_node_territory", { node_id: "f-core", split_into: [] });
   const afterClear = (await call("orient_for_work", { node_id: "f-core", depth: "rules" })).context.record;
