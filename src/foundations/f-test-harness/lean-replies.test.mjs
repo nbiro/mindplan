@@ -305,6 +305,23 @@ fs.writeFileSync(
     crAppended === "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [ ] B {#b}\r\n- [ ] C {#c}\r\n",
     JSON.stringify(crAppended)
   );
+  // A task line inside a fenced code block is example text: no item, no count, no toggle.
+  const fencedBody = "## Purpose\n\n```md\n- [ ] step\n```\n\n## Atomic Ops\n\n- [x] Real {#real}\n";
+  const fencedItems = checklist.parseChecklistItems(fencedBody);
+  const fencedCount = store.countCheckboxesInText(fencedBody);
+  let fencedToggle = "";
+  try {
+    checklist.toggleChecklistItems(fencedBody, [{ text: "step", checked: true }]);
+  } catch (err) {
+    fencedToggle = err.message;
+  }
+  check(
+    "a fenced `- [ ] step` is not an item, is not counted, and a toggle by its text is Blocked",
+    JSON.stringify(fencedItems.map((i) => i.text)) === JSON.stringify(["Real"]) &&
+      fencedCount.unchecked === 0 && fencedCount.checked === 1 &&
+      fencedToggle.startsWith("Blocked:"),
+    JSON.stringify({ fencedItems, fencedCount, fencedToggle })
+  );
 }
 
 // --- first ship drops the ledger from live and writes no next file ---

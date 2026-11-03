@@ -136,8 +136,9 @@ function itemsOfLines(lines: string[]): ChecklistItem[] {
   const items: ChecklistItem[] = [];
   let section = "";
   for (let i = 0; i < lines.length; i++) {
-    if (owned[i]) continue;
-    const heading = !fenced[i] && lines[i].match(/^##\s+(.+?)\s*$/);
+    // A line inside a fenced code block is example text: neither a heading nor an item.
+    if (owned[i] || fenced[i]) continue;
+    const heading = lines[i].match(/^##\s+(.+?)\s*$/);
     if (heading) {
       section = heading[1].trim();
       continue;
