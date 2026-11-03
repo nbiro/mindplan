@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T21:13:07.604Z
 revisions: 23
 churn: 11.268
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-11-03T16:48:26.498Z
+updated_at: 2026-11-03T17:07:42.716Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -95,7 +95,7 @@ Depends on: `f-mcp-runtime`.
 - **0.18 sixth review fixes.** `honesty.test.mjs` covers a tick swap Blocked and the reword-plus-remove message; `lean-replies.test.mjs` covers fences and thematic breaks after the last item; `revision-core.test.mjs` covers `fenceBlockEnds`; `node-tests.test.mjs` covers removing a legacy `./` entry as stored or normalized; `search-index.test.mjs` covers one memo entry for two spellings of a root
 - **0.18 seventh review fixes.** `honesty.test.mjs` covers the relied-on guard from a fully ticked slot (swap, untick-reword-tick, reword-remove, unticked twin Blocked; reword in place and ticked add allowed) and a slot with an open item left free; `node-tests.test.mjs` covers removing one of two legacy duplicate spellings; `open-closed.test.mjs` covers a revision's `split_into` holding only its own parts and `[]` clearing them; `lean-replies.test.mjs` covers the content column; `after-merge.test.mjs` covers the version stamp of the checked root
 - **0.18 eighth review fixes.** `node-tests.test.mjs` covers a remove dropping every stored spelling of one path; `lean-replies.test.mjs` covers tab-expanded indentation; `open-closed.test.mjs` covers the deduped split warning; `after-merge.test.mjs` covers a server-behind and an unreadable stamp, and reports an upgrade state as needing `upgrade_project` with the version gate's warning;
-- **0.18 tenth review fixes.** `revision-core.test.mjs` covers a role removal conflicting with a live role change; `rebase-flow.test.mjs` covers `resolve_conflict` sending an in-review revision to draft; `merge-gate.test.mjs` covers non-ASCII and space-holding paths under `core.quotepath=true` `honesty.test.mjs` covers the `(was done)` marks
+- **0.18 tenth review fixes.** `revision-core.test.mjs` covers a role removal conflicting with a live role change; `rebase-flow.test.mjs` covers `resolve_conflict` keeping an in-review revision in review and resetting a ready one to draft; `merge-gate.test.mjs` covers non-ASCII and space-holding paths under `core.quotepath=true` `honesty.test.mjs` covers the `(was done)` marks
 
 ## Attachments
 
