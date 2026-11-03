@@ -29,6 +29,7 @@ export {
   PREAMBLE_SECTION,
   decisionsSectionRange,
   detectEol,
+  fenceBlockEnds,
   fencedLines,
   joinSections,
   levelTwoHeadings,

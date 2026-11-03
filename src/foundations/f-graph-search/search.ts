@@ -6,6 +6,7 @@
  * `rankNodes` is the token scoring alone: the fallback, and pure.
  */
 
+import * as path from "path";
 import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "../f-domain-model/types.js";
 import type { SearchDoc } from "../f-search-index/index-db.js";
 import type { Embedder } from "../f-search-index/embedder.js";
@@ -254,6 +255,18 @@ export type BodyReader = ((node: MindPlanNode, slot: "current" | "next") => stri
 
 const headingMemo = new Map<string, string[]>();
 
+/**
+ * `root` as the heading memo keys it: resolved, and lowercased on Windows, so one checkout spelled
+ * two ways (casing, separators, a trailing `/`) is one entry. The same rule as f-source-index's
+ * `rootKey`, kept local: f-graph-search does not import f-source-index. An empty root (a caller
+ * with one graph) stays empty.
+ */
+function memoRootKey(root: string): string {
+  if (!root) return "";
+  const abs = path.resolve(root);
+  return process.platform === "win32" ? abs.toLowerCase() : abs;
+}
+
 function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined, root: string): string[] {
   if (!readBody) return [];
   const slot = "current";
@@ -265,7 +278,7 @@ function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined, root: 
   }
   const revisions = readBody.revision ? (node.open_revisions ?? []) : [];
   const revisionKey = revisions.map((r) => `${r.change}@${r.updated_at}`).join(",");
-  const key = `${root}\u0000${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
+  const key = `${memoRootKey(root)}\u0000${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
   const hit = headingMemo.get(key);
   if (hit) return hit;
   const headings: string[] = [];

@@ -148,6 +148,25 @@ ok("search docs: headings, area, entry points, retired flag, revision wording");
 ok("search docs: the heading memo is per project root");
 
 {
+  // One root spelled two ways (a trailing separator, a "." segment, and on Windows another casing
+  // and backslashes) is one memo entry: the second spelling reads no body.
+  let reads = 0;
+  const read = (n) => {
+    reads++;
+    return n.id === "f-mail" ? "# T\n\n## Spelled routing\n" : "";
+  };
+  read.stamp = () => "spelled-stamp";
+  const base = path.join(os.tmpdir(), "mindplan-memo-root");
+  searchDocs(graph, read, base);
+  const first = reads;
+  const other = process.platform === "win32" ? `${base.toUpperCase().replace(/\\/g, "/")}/./` : `${base}/./`;
+  const again = searchDocs(graph, read, other).find((d) => d.id === "f-mail");
+  assert.deepEqual(again.headings, ["Spelled routing"]);
+  assert.equal(reads, first, "a second spelling of the same root reuses the memo");
+}
+ok("search docs: the heading memo keys one root spelled two ways once");
+
+{
   const docsMap = new Map(docs.map((d) => [d.id, d]));
   const clear = fuseRankings([["f-mail", "if-site", "i-send-enquiry", "j-enquiries"]], { docs: docsMap });
   assert.equal(clear[0].id, "f-mail", "the graph boost never reorders a clear winner");

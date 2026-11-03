@@ -448,6 +448,16 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
     !!legacyKept && legacyKept.includes('remove: ["mindplan/legacy.test.mjs"]') && same(legacyDropped.tests, ["tests/claims.test.mjs"]),
     JSON.stringify([legacyKept, legacyDropped.tests])
   );
+  // A legacy entry stored un-normalized ("." segment) is removed when passed as stored, and when
+  // passed normalized.
+  fs.writeFileSync(legacyFile, fs.readFileSync(legacyFile, "utf-8").replace(/^tests:$/m, "tests:\n  - tests/./dot.test.mjs\n  - tests/./two.test.mjs"));
+  const dotAsStored = await call("set_test_files", { node_id: "f-claims", remove: ["tests/./dot.test.mjs"] });
+  const dotNormalized = await call("set_test_files", { node_id: "f-claims", remove: ["tests/two.test.mjs"] });
+  check(
+    "a legacy un-normalized stored entry is removed when passed as stored or normalized",
+    !dotAsStored.tests?.some((t) => t.includes("dot.test")) && same(dotNormalized.tests, ["tests/claims.test.mjs"]),
+    JSON.stringify([dotAsStored, dotNormalized.tests])
+  );
 }
 
 // --- open revisions: edits write add / remove deltas into the revision's folder ---

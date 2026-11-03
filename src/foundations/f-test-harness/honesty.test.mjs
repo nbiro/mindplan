@@ -1075,8 +1075,8 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   );
   const addReview = await raw("patch_node_territory", { node_id: "f-mid", add_checklist_items: [{ text: "QA sign-off", id: "qa", kind: "review" }] });
   check("adding a review item to a relied-on dependency in review stays allowed", !addReview.error, addReview.text);
-  // Build items are counted, not matched by label: a reworded ticked item passes, and an added
-  // unticked item whose label equals a ticked one is still Blocked.
+  // Build items are counted as well as matched by label: a reworded ticked item passes, and an
+  // added unticked item whose label equals a ticked one is still Blocked.
   const implLine = fs.readFileSync(territory("foundations", "f-mid"), "utf-8").match(/^- \[x\] Implementation complete.*$/m)[0];
   const addTicked = await raw("patch_node_territory", {
     node_id: "f-mid",
@@ -1100,6 +1100,40 @@ async function builtNode(id, type = "Foundation", extra = {}) {
       fs.readFileSync(territory("foundations", "f-mid"), "utf-8") === midReworded,
     String(addTwin)
   );
+  // A swap keeps both counts: unticking a done item while ticking an open one is still Blocked,
+  // naming the item that is present but no longer done. (The open item is written straight in:
+  // adding it through the tool is Blocked.)
+  const midFile = territory("foundations", "f-mid");
+  fs.writeFileSync(midFile, midReworded.replace(/^(- \[x\] Wire it all up.*)$/m, "$1\n- [ ] Polish {#polish}"));
+  const midWithOpen = fs.readFileSync(midFile, "utf-8");
+  const swap = await blocked("patch_node_territory", {
+    node_id: "f-mid",
+    toggle_checkboxes: [
+      { id: "polish", checked: true },
+      { contains: "Wire it all up", checked: false },
+    ],
+  });
+  check(
+    "swapping a tick (untick a done build item, tick an open one) on a relied-on dependency in review is Blocked, naming the unticked item",
+    !!swap && swap.includes('"i-top"') && swap.includes('"Wire it all up"') && !swap.includes('"polish"') &&
+      fs.readFileSync(midFile, "utf-8") === midWithOpen,
+    String(swap)
+  );
+  // Rewording one done item while removing another: the done count falls; the message states the
+  // counts and does not call the reworded item lost outright.
+  const implNow = midWithOpen.match(/^- \[x\] Implementation complete.*$/m)[0];
+  const rewordDrop = await blocked("patch_node_territory", {
+    node_id: "f-mid",
+    replace: { find: `${implNow}\n- [x] Wire it all up`, with: "- [x] Wire everything up" },
+  });
+  const fell = String(rewordDrop).match(/done build items would fall from (\d+) to (\d+): possibly /);
+  check(
+    "rewording one done build item while removing another is Blocked, stating the counts and naming the candidates as possible",
+    !!fell && Number(fell[1]) - Number(fell[2]) === 1 && rewordDrop.includes('"impl"') &&
+      !rewordDrop.includes("present but not done") && fs.readFileSync(midFile, "utf-8") === midWithOpen,
+    String(rewordDrop)
+  );
+  fs.writeFileSync(midFile, midReworded);
 
   // A dependency with no checklist item at all proves nothing.
   // (The shape gate needs a box to reach in-review, so the boxes go after the walk.)

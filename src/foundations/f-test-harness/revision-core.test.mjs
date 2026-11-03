@@ -11,6 +11,7 @@ import {
   applyDelta,
   diffDelta,
   emptyDelta,
+  fenceBlockEnds,
   fencedLines,
   graphUnder,
   levelTwoHeadings,
@@ -438,6 +439,10 @@ function body(sections) {
   const lines = ["````md", "```", "## Not a heading", "```js", "````", "## Real", "~~~~", "~~~ x", "## Hidden", "~~~~~", "## After"];
   assert.deepEqual(fencedLines(lines), [true, true, true, true, true, false, true, true, true, true, false]);
   assert.deepEqual(levelTwoHeadings(lines).map((h) => h.name), ["Real", "After"]);
+  // Each fenced line knows where its block ends; back-to-back fences are separate blocks, and an
+  // unclosed fence runs to the end.
+  assert.deepEqual(fenceBlockEnds(lines), [5, 5, 5, 5, 5, -1, 10, 10, 10, 10, -1]);
+  assert.deepEqual(fenceBlockEnds(["```", "a", "```", "```", "b"]), [3, 3, 3, 5, 5]);
   assert.deepEqual(
     splitSections("Intro\n````\n```\n## Inside\n```\n````\n## Out\nx\n").map((s) => s.heading),
     ["_preamble", "## Out"],
