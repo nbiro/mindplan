@@ -658,6 +658,43 @@ export function rebaseRevisionOntoLive(graph: MindPlanGraph, node: MindPlanNode,
 }
 
 /**
+ * The revision as a ship carries it onto current live (`liveNow`): unchanged when its base still
+ * matches live, else rebased with `rebase` (a section or scalar both edited becomes a conflict).
+ * Pure: nothing is written.
+ */
+function revisionOntoCurrentLive(
+  node: MindPlanNode,
+  loaded: { revision: Revision; body: string },
+  liveNow: RebaseLive
+): { revision: Revision; body: string } {
+  if (!liveMovedSince(loaded.revision, liveNow)) return loaded;
+  const own = rebase({ liveOld: liveNow, liveNew: liveNow, revision: loaded.revision, revisionBody: loaded.body, nodeId: node.id });
+  return { revision: own.revision, body: own.body };
+}
+
+/** The Block a ship raises when carrying its revision onto live that moved in place yields conflicts. */
+function shipRebaseConflictMessage(nodeId: string, change: string, conflicts: RevisionConflict[]): string {
+  return (
+    `live "${nodeId}" changed in place since revision "${change}" last started from it, and both edited ` +
+    `${conflicts.map(conflictLabel).join(", ")}; the revision now holds those conflicts. ` +
+    `Resolve each with resolve_conflict({ node_id: "${nodeId}", change: "${change}", target, take }), then ship again.`
+  );
+}
+
+/**
+ * The check `shipRevision` makes before its first write, without writing: Blocked with the same
+ * message when the revision of `change` would gain conflicts on being carried onto current live
+ * (live changed in place since it opened). A validated walk uses it to foresee that Block.
+ */
+export function assertRevisionShipsOntoLive(node: MindPlanNode, change: string): void {
+  const loaded = loadRevision(node, change);
+  const own = revisionOntoCurrentLive(node, loaded, liveSide(node, liveBody(node).body));
+  if (own !== loaded && own.revision.conflicts.length > 0) {
+    throw blocked(shipRebaseConflictMessage(node.id, change, own.revision.conflicts));
+  }
+}
+
+/**
  * Ships the revision of `change`: Blocked when it has unresolved conflicts. When live moved in
  * place since the revision's `base` (a live patch while it was open), the revision is first carried
  * onto current live with `rebase`; a section or scalar both changed is stored on the revision as a
@@ -691,22 +728,14 @@ export function shipRevision(
   const liveOld = liveSide(node, before.body);
 
   // The revision onto live as it is now: live may have been patched in place while it was open.
-  let revision = loaded.revision;
-  let body = loaded.body;
-  if (liveMovedSince(revision, liveOld)) {
-    const own = rebase({ liveOld, liveNew: liveOld, revision, revisionBody: body, nodeId: node.id });
-    if (own.revision.conflicts.length > 0) {
-      const written = storeRevision(node, own.revision, own.body);
-      // The conflicts are persisted before the Block: callers report the file as written.
-      throw withWrittenFiles(blocked(
-        `live "${node.id}" changed in place since revision "${change}" last started from it, and both edited ` +
-          `${own.revision.conflicts.map(conflictLabel).join(", ")}; the revision now holds those conflicts. ` +
-          `Resolve each with resolve_conflict({ node_id: "${node.id}", change: "${change}", target, take }), then ship again.`
-      ), [written]);
-    }
-    revision = own.revision;
-    body = own.body;
+  const own = revisionOntoCurrentLive(node, loaded, liveOld);
+  if (own.revision.conflicts.length > 0) {
+    const written = storeRevision(node, own.revision, own.body);
+    // The conflicts are persisted before the Block: callers report the file as written.
+    throw withWrittenFiles(blocked(shipRebaseConflictMessage(node.id, change, own.revision.conflicts)), [written]);
   }
+  const revision = own.revision;
+  const body = own.body;
 
   // Everything that can Block, before the first write.
   const siblings = (node.open_revisions ?? [])

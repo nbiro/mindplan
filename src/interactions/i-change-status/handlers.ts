@@ -29,6 +29,7 @@ import {
   removeLegacyMirror,
 } from "../../foundations/f-territory-store/store.js";
 import {
+  assertRevisionShipsOntoLive,
   discardRevision,
   shipRevision,
   syncNextView,
@@ -479,6 +480,8 @@ function simulateRow(
           for (const w of staleTextWarnings(graph, root, node, undefined, undefined, row.change).warnings) warnings.add(w);
         }
         if (resolved.promote_next) {
+          // The rebase the ship runs when live moved in place since the revision opened.
+          assertRevisionShipsOntoLive(node, row.change);
           promoteInMemory(graph, node, row.change, resolved.state, now);
         } else {
           const rev = revisionFor(node, row.change)!;
