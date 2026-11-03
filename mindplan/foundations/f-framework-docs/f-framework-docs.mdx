@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.430Z
 revisions: 53
 churn: 27.967
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-03T15:02:10.518Z
+updated_at: 2026-11-03T15:24:26.987Z
 depends_on:
   - f-domain-model
 implements:
@@ -99,6 +99,7 @@ SPEC, CHANGELOG (the existing 0.18.0 section), README, the playbook, and both sk
 - **Third review fixes (0.18.0).** SPEC says a rebase inserts a section new live added before the revision's `## Rules` / `## Decisions`, with text above the first heading at the top, and `resolve_conflict` takes `"_preamble"` as a section.
 - **Fourth review fixes (0.18.0).** SPEC §5.4 says any edit that undoes a relied-on build item is Blocked; `resolve_conflict` resets readiness, returns `readiness_reset`, and refuses heading-bearing text; a claim or test `remove` matching nothing is Blocked.
 - **Fifth review fixes (0.18.0).** SPEC §5.4 says the relied-on guard counts build items (not done rises or done falls), so a ticked item reworded in place passes.
+- **Sixth review fixes (0.18.0).** SPEC §5.4 adds the present-but-not-done rule (a tick swap is Blocked); claim `remove` matching compares raw and normalized forms on both sides; `add_checklist_items` says where items land.
 - **Upgrade note (0.18.0).** The 0.18.0 upgrade note tells teams to expect, on the first check after upgrading, imports 0.17 let through: imports in claimed files outside `sources`, and imports that rely on an edge only another open change adds.
 
 ## Acceptance Criteria
