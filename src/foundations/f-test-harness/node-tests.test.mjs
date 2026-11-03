@@ -429,6 +429,10 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
   );
   const slashless = await call("set_implementation_files", { node_id: "f-claims", remove: ["src/f-claims"], add: ["src/f-claims/a.ts"] });
   check("a remove differing only by a trailing slash removes the entry", same(slashless.implements, ["src/f-claims/a.ts"]), JSON.stringify(slashless.implements));
+  // A remove entry is normalized like an add ("." segments, backslashes) before it is matched.
+  const dotted = await call("set_implementation_files", { node_id: "f-claims", remove: ["src/./f-claims\\a.ts"], add: ["src/f-claims/b.ts"] });
+  check("a remove with a \".\" segment or backslash removes the entry it normalizes to", same(dotted.implements, ["src/f-claims/b.ts"]), JSON.stringify(dotted.implements));
+  await call("set_implementation_files", { node_id: "f-claims", files: ["src/f-claims/a.ts"], replace: true });
   // An entry stored before the validator rejected it: an edit that keeps it is Blocked naming the
   // remove that drops it, and that remove works (a remove entry is matched, not validated).
   const legacyFile = path.join(root, ...liveOf("f-claims").split("/"));
