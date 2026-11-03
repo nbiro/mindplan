@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:36.136Z
 revisions: 5
 churn: 4.794
 created_at: 2026-10-31T19:40:48.290Z
-updated_at: 2026-11-03T08:20:36.136Z
+updated_at: 2026-11-03T12:53:16.356Z
 depends_on:
   - f-compiler-rules
   - f-domain-model
@@ -57,6 +57,7 @@ Intended files: `src/foundations/f-graph-migrations/` (`migrations.ts`, `status.
 
 Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain-model`.
 
+- **Leftover next files (0.18).** `graphStatus()` reports a current graph that still holds a `<id>.next.mdx` beside a node file (not a `state: mirror` twin) as `upgrade`, and `upgrade_project` moves it; node folders are listed with the store's `listNodeFolders`, except `level4.ts`, which keeps its own pinned list so the migration never follows later folder changes. Level 4 uses the shared path, line-ending, and git helpers.
 - **Migration level 4 (0.18.0).** Moves each `<id>.next.mdx` and `next-attachments/` to `revisions/<change>/` (a next file without a change gets `rev-<id>`), turns its snapshot edges, claims, and tests into deltas against live, and records base hashes from the current live file; splits every `## Decisions` section into `decisions/<decision-id>.md` files; removes the tracked `mindplan/map.md` and adds it to `mindplan/.gitignore`. A frozen copy of the old next-file reader lives in `legacy-next.ts`. The report lists `revisionsMoved`, `decisionsSplit`, and `mapIgnored`; every step is idempotent
 
 ## Acceptance Criteria

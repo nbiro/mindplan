@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:14:59.278Z
 revisions: 2
 churn: 1.999
 created_at: 2026-11-03T08:22:07.430Z
-updated_at: 2026-11-03T11:14:59.278Z
+updated_at: 2026-11-03T12:53:34.743Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -49,7 +49,7 @@ Intended files: `src/interactions/i-doctor/` (`handlers.ts`, `tools.ts`).
 - `doctor({ root? })` returns `{ version, node, root, graph: { status, level, server_level }, load_ms, cache: { graph, search }, started_at, uptime_s }`: `version` from the package, `root` the graph root this call resolved, `status` from `graphStatus()` (`current`, `setup`, `upgrade`, or `newer`), `load_ms_cached` the duration of a `loadGraph()` through the graph cache for that root with `cache_hit` (the cache has no bypass), only when the status is `current` and loading would remove no legacy file (otherwise `load_error` names why), the server's start time from `f-mcp-runtime`, and whether the graph and search caches are present
 - It never writes; a load error is reported, not thrown
 - Mounted by `if-mcp-tools` with `gate: false`
-- Cache names come from their owners: the cache folder from `f-source-index`, `graph.db` from `f-graph-cache`, `index.db` from `f-search-index`
+- The cache path comes from `cacheDir` (`f-source-index`); cache names come from their owners: the cache folder from `f-source-index`, `graph.db` from `f-graph-cache`, `index.db` from `f-search-index`
 
 ## Acceptance Criteria
 

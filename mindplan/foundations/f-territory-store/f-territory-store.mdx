@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.755Z
 revisions: 24
 churn: 10.358
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-03T11:16:17.474Z
+updated_at: 2026-11-03T12:53:17.507Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -170,6 +170,10 @@ Depends on: `f-domain-model`, `f-source-index`.
 ## Attachments
 
 _None._
+
+## Cleanup (0.18)
+
+The loader no longer reads `<id>.next.mdx` (a leftover is a version-gate upgrade; only `state: mirror` twins are removed); `scanFrontmatter` backs node and revision frontmatter; `writeRevision` applies body, scalars, and readiness to one loaded revision and writes it once; `loadRevision` reads one named revision; `listNodeFolders(root)` lists node folders for the loader, the after-merge check, and the version status; sections and checklists use `f-revision-model`'s scanner.
 
 ## Checklist items
 

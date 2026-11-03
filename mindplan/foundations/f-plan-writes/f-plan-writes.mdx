@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:36.842Z
 revisions: 3
 churn: 2.883
 created_at: 2026-10-31T11:57:22.450Z
-updated_at: 2026-11-03T08:20:36.842Z
+updated_at: 2026-11-03T12:53:16.794Z
 depends_on:
   - f-compiler-rules
   - f-graph-search
@@ -52,6 +52,7 @@ No tool handlers live here; each write action owns its own.
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-orientation-ledger`, `f-view-projection`.
 
+- **Cleanup (0.18).** `revisionReadinessResult(node, change)` builds a revision's readiness reset for every write tool; `MAP_REL` comes from `f-source-index`.
 - **Open revisions (0.18.0).** `mutationTail` reports `revisions: [{ change, state }]` for a node with open revisions instead of one `next_state`; `withChangeCleanup` compares the set of changes with open revisions before and after a write; the map refresh still runs but `mindplan/map.md` is never in `changed_files`
 
 ## Acceptance Criteria

@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.430Z
 revisions: 53
 churn: 27.967
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-03T11:16:18.499Z
+updated_at: 2026-11-03T12:53:16.042Z
 depends_on:
   - f-domain-model
 implements:
@@ -93,6 +93,7 @@ Depends on: `f-domain-model`.
 
 SPEC, CHANGELOG (the existing 0.18.0 section), README, the playbook, and both skills cover: the `root` argument and the four-step parallel worktree workflow (the orchestrator creates the change on the integration branch; each agent opens and fills revisions in its worktree with `root` and moves them to in-review; merging the branches brings the graph along and `check --after-merge` validates it; the orchestrator ships), `rebase_revision`, partial change walks (`nodes`) and batches that continue, checklist item ids and kinds (`{#id kind}`), the open-human-items lists, compact `run_check` with `nodes` and `acknowledge_warning`, `orient_for_work` `sections`, cycles across changes, the test import scope, and `doctor` with the startup behavior.
 
+- **Cleanup (0.18.0).** SPEC says a leftover `<id>.next.mdx` is reported by the version gate and moved by `upgrade_project`; the per-tool legacy-next Blocked rules are gone.
 - **Review fixes (0.18.0).** SPEC states `partial` / `blocked_count` on batches (§3.7), the relaxed-rule guards on moving back, unticking, and discarding (§5.4), and that `root` must be an absolute path to an existing directory (§8, Appendix A).
 - **Upgrade note (0.18.0).** The 0.18.0 upgrade note tells teams to expect, on the first check after upgrading, imports 0.17 let through: imports in claimed files outside `sources`, and imports that rely on an edge only another open change adds.
 

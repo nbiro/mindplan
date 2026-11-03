@@ -2,13 +2,13 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface: mounts the thirty-seven tools its actions define, in a fixed order, behind the version gate, each with an optional graph root, read/write/destructive annotations from one kind, compact JSON plus structuredContent, small write results unless verbose, and node-scoped drift on reads."
+description: "MCP stdio Interface: mounts its actions' thirty-seven tools in a fixed order behind the version gate, each with an optional graph root, with annotations from one tool kind, compact JSON plus structuredContent, small write results, and node-scoped drift on reads."
 state: stable
-shipped_at: 2026-11-03T11:22:44.655Z
-revisions: 31
-churn: 4.935
+shipped_at: 2026-11-03T12:59:23.927Z
+revisions: 32
+churn: 5.927
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-11-03T11:22:44.655Z
+updated_at: 2026-11-03T12:59:23.927Z
 split_at: 26
 split_into:
   - i-assess-impact
@@ -101,6 +101,8 @@ Depends on: `f-mcp-runtime`, `f-tool-kit`, `f-territory-store`.
 - **Open revisions (0.18.0).** Mounts `resolve_conflict` (from `i-revise-node`) in `TOOL_ORDER` after `discard_next`; thirty-four tools
 
 ## Graph root per call
+
+The root label and the removed-legacy-files list are shaped inside `guarded` from the call's own scope (`f-source-index` root scope), not patched onto results afterwards.
 
 `root` must be an absolute path to an existing directory for every tool (`setup_project` and `doctor` included), and must hold `mindplan/` for every other tool; anything else is Blocked before the handler runs. A result from another root gains `root` only when its object payload has none; JSON array payloads are left as they are, and only Blocked texts and plain strings end with ` (root: <path>)`.
 

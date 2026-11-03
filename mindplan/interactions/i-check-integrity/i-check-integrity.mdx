@@ -4,11 +4,11 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, hotspots, and fan-out, checks one change, and runs the merge gate."
 state: stable
-shipped_at: 2026-11-03T09:48:47.012Z
-revisions: 31
-churn: 22.297
+shipped_at: 2026-11-03T12:59:23.768Z
+revisions: 32
+churn: 23.229
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-03T11:16:17.842Z
+updated_at: 2026-11-03T12:59:23.768Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -16,6 +16,7 @@ depends_on:
   - f-fan-out
   - f-graph-migrations
   - f-mcp-runtime
+  - f-plan-views
   - f-revision-model
   - f-source-index
   - f-territory-store
@@ -88,6 +89,10 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 **Tool definition.** `run_check` is defined in this action's `tools.ts` (`defineTool`, `f-tool-kit`) and mounted by `if-mcp-tools`.
 
 - **Open revisions (0.18.0).** The check reads every open revision: imports and ownership per change on `graphUnder`, presence and stale text per revision, the merge gate per revision (`slot: "revision"`, its change), and a `conflicts:` warning per revision with unresolved conflicts
+
+## Shared helpers
+
+The check reads revision summaries from `f-plan-views` (`revisionSummaries`), computes the change-cycle search once per run, builds each change's import and ownership verdicts once before filtering them per member, and reads `mindplan/` in one walk for every after-merge finding (`afterMergeFindings`). Warning ids hash the warning text alone and are computed once per run.
 
 ## After a merge
 

@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:34.716Z
 revisions: 10
 churn: 1
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-11-03T08:20:34.716Z
+updated_at: 2026-11-03T12:53:16.481Z
 split_at: 9
 split_into:
   - f-search-index
@@ -69,6 +69,7 @@ Package: `src/foundations/f-graph-search/`
 
 Depends on: `f-domain-model`, `f-search-index`.
 
+- **Cleanup (0.18).** No legacy-next handling remains; a node's revision decisions come from its open revisions only.
 - **Open revisions (0.18.0).** Search docs index every open revision's title, description, and headings tagged with its change; decision listing reads decision files (node folder and revision folders) and supersession works across them
 
 ## Acceptance Criteria

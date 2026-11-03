@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:36.314Z
 revisions: 3
 churn: 2.894
 created_at: 2026-10-31T11:57:22.526Z
-updated_at: 2026-11-03T08:20:36.314Z
+updated_at: 2026-11-03T12:53:16.631Z
 depends_on:
   - f-compiler-rules
   - f-graph-search
@@ -41,6 +41,7 @@ Intended files: `src/foundations/f-plan-views/` (`views.ts`)
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-source-index`.
 
+- **One revision summary (0.18).** `revisionSummaries(node)` is the one `{ change, state, conflicts }` shape, used by orient, write results, and the check.
 - **Open revisions (0.18.0).** The blast radius of a node or a change reads `graphUnder(graph, change)` for a change and lists a node's open revisions by change
 
 ## Acceptance Criteria

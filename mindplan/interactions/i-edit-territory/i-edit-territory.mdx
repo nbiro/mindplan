@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:41:45.907Z
 revisions: 6
 churn: 5.76
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-03T11:16:17.990Z
+updated_at: 2026-11-03T12:53:34.844Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -54,6 +54,10 @@ Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`)
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
 
 - **Open revisions (0.18.0).** `patch_node_territory`, `put_attachment`, and `remove_attachment` take `change` to pick the revision (optional with at most one open); `slot: "next"` means that revision. Editing a section of a revision that has a conflict on it leaves the conflict until `resolve_conflict`
+
+## Cleanup (0.18)
+
+One graph load per call serves the orientation gate and every pre-write check; a patch on a revision reads only that revision (`loadRevision`) and writes it once (`writeRevision`), body, scalars, and readiness together.
 
 ## Checklist ids and kinds
 
