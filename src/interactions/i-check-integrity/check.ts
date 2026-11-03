@@ -293,8 +293,9 @@ function fail(failures: string[], message: string): void {
 
 function git(args: string[], cwd: string, required: boolean): string {
   try {
-    // Trim only the trailing newline. A leading space is the unstaged half of
-    // porcelain (` D path`); trimming it corrupts the first path.
+    // Trim only trailing whitespace. A leading space is the unstaged half of porcelain
+    // (` D path`); trimming it corrupts the first path. A NUL-terminated (-z) list ends in NUL,
+    // so its last path keeps any trailing space of its own.
     return runGit(args, cwd).replace(/\s+$/, "");
   } catch (err) {
     if (!required) return "";
@@ -310,15 +311,16 @@ function git(args: string[], cwd: string, required: boolean): string {
   }
 }
 
+/**
+ * Paths of `git status --porcelain -z --no-renames`: NUL-terminated `XY <path>` records, each path
+ * verbatim (no C-quoting, so a non-ASCII or quoted name reads as it is on disk).
+ */
 function parsePorcelainSrcPaths(porcelain: string): string[] {
   const paths: string[] = [];
-  for (const line of porcelain.split("\n")) {
-    if (!line.trim()) continue;
-    const rest = line.slice(3);
-    const arrow = rest.indexOf(" -> ");
-    const file = arrow >= 0 ? rest.slice(arrow + 4) : rest;
-    const cleaned = file.replace(/^"|"$/g, "").trim();
-    if (cleaned) paths.push(toPosix(cleaned));
+  for (const record of porcelain.split("\0")) {
+    if (record.length < 4) continue;
+    const file = record.slice(3);
+    if (file) paths.push(toPosix(file));
   }
   return paths;
 }
@@ -338,7 +340,9 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
 
   // Porcelain paths are relative to the repository top and claims to the project root: limit the
   // status to the project root and strip its prefix (diff --relative does both for commits).
-  const porcelain = git(["status", "--porcelain", "-uall", "--", "."], cwd, true);
+  // -z: paths verbatim, never C-quoted (core.quotePath would escape a non-ASCII name).
+  // --no-renames: a rename is its deleted and added paths, both dirty.
+  const porcelain = git(["status", "--porcelain", "-z", "--no-renames", "-uall", "--", "."], cwd, true);
   const prefix = repoPrefix(cwd) ?? "";
   const workingTree = [
     ...new Set(
@@ -351,9 +355,8 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
   const commits = new Set<string>();
   const baseRef = base ?? defaultBaseRef(cwd);
   if (baseRef) {
-    const diff = git(["diff", "--name-only", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
-    for (const line of diff.split("\n")) {
-      const p = line.trim();
+    const diff = git(["diff", "-z", "--name-only", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
+    for (const p of diff.split("\0")) {
       if (p) commits.add(toPosix(p));
     }
   } else if (explicitBase) {

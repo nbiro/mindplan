@@ -431,6 +431,37 @@ function body(sections) {
   ok("rebase: a preamble only new live has goes at the top of the body");
 }
 
+{
+  // A revision that removes the role touches `role`: live changing it under the revision is a
+  // conflict (the removal kept); live leaving it alone keeps the removal with no conflict.
+  const scalars = { title: "Store", description: "Infra — the store.", role: "infra" };
+  const liveBody = body([["## Spec", "s0"]]);
+  const removing = revision("feat-r", {
+    title: "Store",
+    description: "Infra — the store.",
+    role_removed: true,
+    base: { scalars: scalarHashes(scalars), sections: sectionHashes(liveBody) },
+  });
+  const run = (liveNewScalars) =>
+    rebase({
+      liveOld: { scalars, body: liveBody },
+      liveNew: { scalars: liveNewScalars, body: liveBody },
+      revision: removing,
+      revisionBody: liveBody,
+      nodeId: "f-store",
+    }).revision;
+  const changed = run({ ...scalars, role: "adapter" });
+  assert.deepEqual(changed.conflicts, [{ kind: "scalar", field: "role" }], "live changed the role the revision removes");
+  assert.equal(changed.role_removed, true, "the removal is kept under the conflict");
+  assert.equal(changed.role, undefined);
+  const untouched = run({ ...scalars, title: "Store renamed" });
+  assert.deepEqual(untouched.conflicts, [], "live left the role alone");
+  assert.equal(untouched.role_removed, true);
+  const bothRemoved = run({ title: "Store", description: "Infra — the store." });
+  assert.deepEqual(bothRemoved.conflicts, [], "live removed the role too");
+  ok("rebase: role_removed counts as touching the role (conflict when live changed it)");
+}
+
 // --- fenced code --------------------------------------------------------------------------------
 
 {

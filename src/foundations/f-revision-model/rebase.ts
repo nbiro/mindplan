@@ -122,7 +122,8 @@ function conflictKey(c: RevisionConflict): string {
  * `## Rules` and `## Decisions` sections pass through unchanged; live's are ignored. Sections are
  * rejoined with one blank line between them, in the revision body's line endings.
  *
- * Scalars (title, description, role): the same rule; a revision with no `role` keeps none.
+ * Scalars (title, description, role): the same rule; a revision with no `role` keeps none, and one
+ * with `role_removed` counts as setting the role to none (live changing it too is a conflict).
  * Deltas: an add already in new live and a remove no longer in new live drop silently; an
  * `implements` add another node claims live (`implementsOwners`) becomes a claim conflict.
  * Existing section and scalar conflicts are kept unless new live now reads the revision's text. Every base hash moves to new live.
@@ -203,10 +204,22 @@ export function rebase(input: RebaseInput): { revision: Revision; body: string }
   const title = scalar("title");
   const description = scalar("description");
   let role: FoundationRole | undefined;
+  let roleRemoved = false;
   if (revision.role !== undefined) {
     const r = carry(baseScalars.role, revision.role, hash(revision.role), liveNew.scalars.role, liveScalarHashes.role);
     if (r.conflict) conflicts.push({ kind: "scalar", field: "role" });
     role = r.value;
+  } else if (revision.role_removed) {
+    // Removing the role touches `role` (its value: none). Live left it alone or removed it too →
+    // still removed; live changed it → a conflict, the removal kept. A base with no role makes the
+    // removal a no-op: the revision then keeps whatever role live has.
+    const removedHash = hash("");
+    if (baseScalars.role !== removedHash) {
+      roleRemoved = true;
+      if (liveScalarHashes.role !== baseScalars.role && liveScalarHashes.role !== removedHash) {
+        conflicts.push({ kind: "scalar", field: "role" });
+      }
+    }
   }
 
   // Deltas.
@@ -240,5 +253,7 @@ export function rebase(input: RebaseInput): { revision: Revision; body: string }
   };
   if (role === undefined) delete out.role;
   else out.role = role;
+  if (roleRemoved) out.role_removed = true;
+  else delete out.role_removed;
   return { revision: out, body };
 }

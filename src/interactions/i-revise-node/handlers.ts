@@ -215,7 +215,7 @@ export function resolveConflict(args: ResolveConflictArgs): Record<string, unkno
     resolved: target,
     take,
     conflicts: out.conflicts.map(conflictLabel),
-    ...readinessFields(out.readiness_reset ? revisionReadinessReset(change) : null),
+    ...readinessFields(out.readiness_reset ? revisionReadinessReset(change, out.readiness_reset.from) : null),
     changed_files: changedFiles(out.changed_files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };

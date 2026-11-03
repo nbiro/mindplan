@@ -189,13 +189,17 @@ function changeIsOpen(graph: MindPlanGraph, change: string): boolean {
 export type ReadinessReset = {
   slot: TerritorySlot;
   change?: string;
-  from: "ready";
+  from: "ready" | "in-review";
   to: "draft";
   note: string;
 };
 
 export const READINESS_NOTE =
   "This revision was ready; a contract write sent it back to draft. Review the contract and self-ready it again.";
+
+/** The note of a reset from in-review: the text under review changed, so it is reviewed again. */
+export const IN_REVIEW_RESET_NOTE =
+  "This revision was in review; a write changed its text and sent it back to draft. Review the contract and walk it to in-review again.";
 
 /**
  * Report a readiness reset the store made during a contract write (`demoteReadySlot`).
@@ -214,9 +218,9 @@ export function readinessResult(
   };
 }
 
-/** The reset a contract write reports when it sends the revision of `change` from ready back to draft. */
-export function revisionReadinessReset(change: string): ReadinessReset {
-  return { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE };
+/** The reset a contract write reports when it sends the revision of `change` from ready (or in-review) back to draft. */
+export function revisionReadinessReset(change: string, from: ReadinessReset["from"] = "ready"): ReadinessReset {
+  return { slot: "next", change, from, to: "draft", note: from === "ready" ? READINESS_NOTE : IN_REVIEW_RESET_NOTE };
 }
 
 /** A contract write to a ready revision sends it back to draft; returns the reset and files. */
