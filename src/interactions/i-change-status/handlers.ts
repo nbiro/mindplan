@@ -507,6 +507,29 @@ function simulateRow(
 type BlockedMember = { node_id: string; step: string; reason: string };
 
 /**
+ * `simulateRow` on `graph` in place. A row touches only its own node and that node's outgoing
+ * edges, so a blocked row puts back those two instead of the caller cloning the graph per row.
+ */
+function trialRow(
+  graph: MindPlanGraph,
+  root: string,
+  row: WalkPlan,
+  now: string,
+  decisionCtx: DecisionContext,
+  warnings: Set<string>
+): { step: string; reason: string } | null {
+  const at = graph.nodes.findIndex((n) => n.id === row.node_id);
+  const savedNode = at >= 0 ? structuredClone(graph.nodes[at]) : null;
+  const savedEdges = graph.edges;
+  const stop = simulateRow(graph, root, row, now, decisionCtx, warnings);
+  if (stop && savedNode) {
+    graph.nodes[at] = savedNode;
+    graph.edges = savedEdges;
+  }
+  return stop;
+}
+
+/**
  * `skip_blocked`: each node's whole walk is validated on a copy of the graph that already holds
  * the nodes validated before it. A node blocked at any step keeps its state (no partial steps), so
  * a later node that cannot move without it is blocked by the gates in turn.
@@ -517,7 +540,8 @@ function simulateSkippingBlocked(
   reviewSkippers: Set<string>,
   decisionCtx: DecisionContext
 ): { walkable: WalkPlan[]; blocked: BlockedMember[]; warnings: string[] } {
-  let graph = start;
+  // One working copy: a blocked row is put back (`trialRow`), so `start` stays as loaded.
+  const graph = structuredClone(start);
   const root = projectRoot();
   const now = new Date().toISOString();
   const warnings = new Set<string>();
@@ -533,14 +557,12 @@ function simulateSkippingBlocked(
       });
       continue;
     }
-    const trial = structuredClone(graph);
     const rowWarnings = new Set<string>();
-    const stop = simulateRow(trial, root, row, now, decisionCtx, rowWarnings);
+    const stop = trialRow(graph, root, row, now, decisionCtx, rowWarnings);
     if (stop) {
       blockedRows.push({ node_id: row.node_id, ...stop });
       continue;
     }
-    graph = trial;
     walkable.push(row);
     for (const w of rowWarnings) warnings.add(w);
   }
@@ -647,6 +669,30 @@ function applyWalk(
   };
 }
 
+/**
+ * After a state write: recompute stability and Capability states, persist the nodes that changed,
+ * and refresh the map. Returns the synced paths and the reply's `*_recomputed` lists.
+ */
+function recomputeAndSync(graph: MindPlanGraph): {
+  synced: string[];
+  recomputed: {
+    stability_recomputed: { id: string; state: string }[];
+    capabilities_recomputed: { id: string; state: string }[];
+  };
+} {
+  const changedStability = recomputeStability(graph);
+  const changedCapabilities = recomputeCapabilityStates(graph);
+  const synced = syncNodes([...changedStability, ...changedCapabilities]);
+  refreshPersistedMap();
+  return {
+    synced,
+    recomputed: {
+      stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+      capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
+    },
+  };
+}
+
 /** A scoped walk with `skip_blocked`: walks every node that passes and lists the ones left behind. */
 function walkSkippingBlocked(
   args: StatusArgs,
@@ -656,7 +702,7 @@ function walkSkippingBlocked(
   decisionCtx: DecisionContext
 ): Record<string, unknown> {
   const reviewSkippers = new Set(args.skip_review === true ? [] : skipping);
-  // Each row is tried on a clone, so `graph` stays as loaded for describePlan and the writes.
+  // The rows are tried on a copy, so `graph` stays as loaded for describePlan and the writes.
   const sim = simulateSkippingBlocked(graph, plan, reviewSkippers, decisionCtx);
   const walkedIds = new Set(sim.walkable.map((row) => row.node_id));
   const skippedReview = skipping.filter((id) => walkedIds.has(id));
@@ -887,15 +933,10 @@ function dryRunBatch(ordered: StatusRevision[]): Record<string, unknown> {
       continue;
     }
     const [line] = describePlan([row], graph);
-    const at = graph.nodes.findIndex((n) => n.id === row.node_id);
-    const savedNode = structuredClone(graph.nodes[at]);
-    const savedEdges = graph.edges;
     const rowWarnings = new Set<string>();
-    const stop = simulateRow(graph, root, row, now, decisionCtx, rowWarnings);
+    const stop = trialRow(graph, root, row, now, decisionCtx, rowWarnings);
     const change = row.change ?? item.change;
     if (stop) {
-      graph.nodes[at] = savedNode;
-      graph.edges = savedEdges;
       results.push({
         node_id: item.node_id,
         ...(change ? { change } : {}),
@@ -1056,10 +1097,7 @@ function applyOneStatus(args: {
     }
   }
 
-  const changedStability = recomputeStability(graph);
-  const changedCapabilities = recomputeCapabilityStates(graph);
-  const synced = syncNodes([...changedStability, ...changedCapabilities]);
-  refreshPersistedMap();
+  const { synced, recomputed } = recomputeAndSync(graph);
 
   const files = [territoryPath(node, "current"), ...removed, ...synced];
 
@@ -1071,8 +1109,7 @@ function applyOneStatus(args: {
     shipped_at: node.shipped_at,
     promoted_next: false,
     ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
-    stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
-    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
+    ...recomputed,
     changed_files: changedFiles(files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
@@ -1119,10 +1156,7 @@ function applyRevisionStatus(
     throw blocked(`"${resolved.state}" is not a revision state; a revision moves draft -> ready -> in-progress -> in-review -> ship.`);
   }
 
-  const changedStability = recomputeStability(graph);
-  const changedCapabilities = recomputeCapabilityStates(graph);
-  const synced = syncNodes([...changedStability, ...changedCapabilities]);
-  refreshPersistedMap();
+  const { synced, recomputed } = recomputeAndSync(graph);
 
   const revisionState = revisionFor(node, change)?.state;
   return {
@@ -1135,8 +1169,7 @@ function applyRevisionStatus(
     promoted_next: promoted,
     ...(rebased.length ? { rebased } : {}),
     ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
-    stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
-    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
+    ...recomputed,
     changed_files: changedFiles([...files, ...synced]),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
@@ -1197,10 +1230,7 @@ export function forceUnship(args: {
   // A leftover mirror twin from a release before 0.8.0 is not kept on an unshipped node.
   const removedMirror = removeLegacyMirror(node);
 
-  const changedStability = recomputeStability(graph);
-  const changedCapabilities = recomputeCapabilityStates(graph);
-  const synced = syncNodes([...changedStability, ...changedCapabilities]);
-  refreshPersistedMap();
+  const { synced, recomputed } = recomputeAndSync(graph);
 
   const files = [territoryPath(node), ...removedMirror, ...synced];
 
@@ -1210,8 +1240,7 @@ export function forceUnship(args: {
     new_state: node.state,
     shipped_at: null,
     force_unship: true,
-    stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
-    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
+    ...recomputed,
     changed_files: changedFiles(files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
