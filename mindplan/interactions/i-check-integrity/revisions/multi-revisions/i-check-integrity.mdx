@@ -3,9 +3,9 @@ id: i-check-integrity
 type: Interaction
 change: multi-revisions
 change_ref: "feat/multi-revisions"
-state: in-progress
+state: in-review
 opened_at: 2026-11-02T08:30:57.748Z
-updated_at: 2026-11-02T08:33:27.175Z
+updated_at: 2026-11-03T08:15:16.999Z
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): it Blocks unclaimed files, illegal imports, missing tests, and a graph needing setup or upgrade, warns about stale text, shape gaps, missing decisions, hotspots, and fan-out, checks one change, and runs the merge gate."
 depends_on_add:
@@ -113,9 +113,9 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 
 ## Atomic Ops
 
-- [ ] Requirements defined
-- [ ] Implementation complete
-- [ ] Tests passing
+- [x] Requirements defined
+- [x] Implementation complete
+- [x] Tests passing
 
 ## Attachments
 

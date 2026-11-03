@@ -3,9 +3,9 @@ id: f-graph-cache
 type: Foundation
 change: multi-revisions
 change_ref: "feat/multi-revisions"
-state: in-progress
+state: in-review
 opened_at: 2026-11-02T08:30:42.553Z
-updated_at: 2026-11-02T08:33:24.926Z
+updated_at: 2026-11-03T08:15:14.802Z
 title: "Graph cache"
 description: "Adapter — keeps parsed node records in memory and in .mindplan-cache/graph.db, and decides per node folder whether a record can be reused, from git (clean at the current tree) or from file stamps and hashes, so a load re-parses only changed files."
 role: adapter
@@ -66,9 +66,9 @@ Intended files: `src/foundations/f-graph-cache/`
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment — note: full npm test passes
 
 ## Attachments
 

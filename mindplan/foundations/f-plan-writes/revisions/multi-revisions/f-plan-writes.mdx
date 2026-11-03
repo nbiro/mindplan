@@ -3,13 +3,14 @@ id: f-plan-writes
 type: Foundation
 change: multi-revisions
 change_ref: "feat/multi-revisions"
-state: in-progress
+state: in-review
 opened_at: 2026-11-02T08:30:43.072Z
-updated_at: 2026-11-02T08:33:26.542Z
+updated_at: 2026-11-03T08:15:16.266Z
 title: "Plan writes"
 description: "Infra — the plumbing every graph-write action shares: the orientation write gate, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it."
 role: infra
 depends_on_add:
+  - f-plan-views
   - f-revision-model
 base:
   - title=d254ce52
@@ -57,9 +58,9 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment — note: full npm test passes
 
 ## Attachments
 

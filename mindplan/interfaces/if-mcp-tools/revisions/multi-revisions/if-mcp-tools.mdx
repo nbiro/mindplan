@@ -3,9 +3,9 @@ id: if-mcp-tools
 type: Interface
 change: multi-revisions
 change_ref: "feat/multi-revisions"
-state: in-progress
+state: in-review
 opened_at: 2026-11-02T08:30:58.361Z
-updated_at: 2026-11-02T08:33:28.600Z
+updated_at: 2026-11-03T08:15:18.420Z
 title: "MCP tools"
 description: "MCP stdio Interface: mounts the thirty-three tools its actions define, in a fixed order, behind the version gate, with read/write/destructive annotations from one kind, compact JSON plus structuredContent, small write results unless verbose, and node-scoped drift on reads."
 split_into:
@@ -88,9 +88,9 @@ Depends on: `f-mcp-runtime`, `f-tool-kit`, `f-territory-store`.
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified against exposed Interactions
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified against exposed Interactions — note: full npm test passes; smoke counts thirty-four tools
 
 ## Attachments
 

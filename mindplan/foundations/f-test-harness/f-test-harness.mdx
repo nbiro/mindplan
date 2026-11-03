@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T21:13:07.604Z
 revisions: 23
 churn: 11.268
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-11-02T08:33:10.534Z
+updated_at: 2026-11-03T08:15:09.668Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -64,7 +64,7 @@ Depends on: `f-mcp-runtime`.
 - **Agent guidance.** `agent-guidance.test.mjs` (run by `npm test`) covers: the shape table embedded in the define-entities skill and SPEC equal to `shapeTableMarkdown()`; `shape` on `create_node`, `orient_for_work`, and `get_node_context`; the `shape:` warning; one Blocked listing every gap; `get_spec` (listing, `territory-shape` under 3 KB with the table, an unknown topic, every topic resolving, a tool name); `planned:` info lines for a plan-only change and "at build time" lines; and across two server sessions, a change walk Blocked once for every unoriented member, then cleared by one `orient_for_work({ change })`, which also records a node holding only a decision under the change as oriented. Smoke counts thirty tools including `get_spec`
 - **Planned wiring.** `planned-wiring.test.mjs` (run by `npm test`) covers: a planned `exposes` on a shipped Interface (live list unchanged, not a graph edge, on the record), Blocked duplicates, shapes, and cycles; a cancelled target failing `run_check({ change })` and Blocking `open_next`; the `planned` member, `Info: planned edges:`, and `planned_edges` in the change radius; `unlink_nodes` with `change`; `open_next` applying the edge, a discard leaving it planned, ship making it live, and the closing change reporting `cleared_planned`; a planned edge to a deleted node still removable, an unreadable planned item kept through a write, a CRLF live file opening a CRLF next file, and an unapplied entry still listed after the change id is set on an open revision; and attribution (Blocked glob, unclaimed file, and shipped node with no revision; the decision warning and `Blocked: Decision` naming the migration; the radius listing it; ship dropping the list)
 
-- **Open revisions (0.18.0).** `revision-core.test.mjs` (pure model and rebase matrix), `revisions-store.test.mjs` (storage, ship rebases a sibling, cache invalidation), `multi-revision-gates.test.mjs` (gates judge live plus one change), `rebase-flow.test.mjs` (two changes on one hub node over MCP: carried section, conflict, `resolve_conflict`, ship), and `upgrade-revisions.test.mjs` (level-4 migration of next files, decision sections, and map.md); the existing suites assert revisions instead of next files
+- **Open revisions (0.18.0).** `revision-core.test.mjs` (pure model and rebase matrix), `revisions-store.test.mjs` (storage, ship rebases a sibling, cache invalidation), `multi-revision-gates.test.mjs` (gates judge live plus one change), `rebase-flow.test.mjs` (two changes on one hub node over MCP: carried section, conflict, `resolve_conflict`, ship), and `upgrade-revisions.test.mjs` (level-4 migration of next files, decision sections, and map.md); the existing suites assert revision folders instead of next files, pass `change` to `open_next`, claim and link tests with `add` / `remove` (`replace: true` only to replace a list), expect decisions as `decisions/<id>.md` files and `map.md` never in `changed_files`, and count thirty-four tools
 
 ## Acceptance Criteria
 

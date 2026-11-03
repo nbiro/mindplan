@@ -3,9 +3,9 @@ id: f-orientation-ledger
 type: Foundation
 change: multi-revisions
 change_ref: "feat/multi-revisions"
-state: in-progress
+state: in-review
 opened_at: 2026-11-02T08:30:43.177Z
-updated_at: 2026-11-02T08:33:24.571Z
+updated_at: 2026-11-03T08:15:14.402Z
 title: "Orientation ledger"
 description: "Infra — the in-memory record of which nodes had their full context and rules fetched in this MCP session, with a fingerprint of the rules that reached them, and the gate that blocks writes on a node until it was fetched with its current rules."
 role: infra
@@ -52,9 +52,9 @@ Depends on: `f-graph-search`, `f-domain-model`.
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment — note: full npm test passes
 
 ## Attachments
 

@@ -3,9 +3,9 @@ id: i-upgrade-graph
 type: Interaction
 change: multi-revisions
 change_ref: "feat/multi-revisions"
-state: in-progress
+state: in-review
 opened_at: 2026-11-02T08:30:58.207Z
-updated_at: 2026-11-02T08:33:28.392Z
+updated_at: 2026-11-03T08:15:18.241Z
 title: "Upgrade the graph"
 description: "Agent calls upgrade_project when the graph is behind the server: it runs the pending migrations, stamps the new level, and returns what changed plus the agent-file leftovers to remove."
 base:
@@ -57,6 +57,6 @@ Depends on: `f-graph-migrations`, `f-tool-kit`.
 
 ## Atomic Ops
 
-- [ ] Requirements defined
-- [ ] Implementation complete
-- [ ] Tests passing
+- [x] Requirements defined
+- [x] Implementation complete
+- [x] Tests passing

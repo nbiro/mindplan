@@ -3,9 +3,9 @@ id: f-revision-model
 type: Foundation
 title: "Revision model"
 description: "Infra — the pure rules for a node's open revisions: edge, claim, and test deltas against live, the live-plus-one-revision view gates read, which revision a call means, and the section-hash rebase that carries or conflicts sibling revisions when one ships."
-state: in-progress
+state: in-review
 created_at: 2026-11-02T08:30:42.295Z
-updated_at: 2026-11-02T08:33:24.677Z
+updated_at: 2026-11-03T08:15:14.530Z
 role: infra
 change: "multi-revisions"
 change_ref: "feat/multi-revisions"
@@ -55,6 +55,6 @@ Depends on: `f-domain-model`.
 
 ## Atomic Ops
 
-- [ ] Spec written
-- [ ] Implementation complete
-- [ ] Verified in target environment
+- [x] Spec written
+- [x] Implementation complete
+- [x] Verified in target environment — note: revision-core and rebase-flow suites and the full npm test pass
