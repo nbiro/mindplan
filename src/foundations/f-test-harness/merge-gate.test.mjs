@@ -450,6 +450,7 @@ function subfolderProject(label, nodes) {
   assert.deepEqual([...dirty.commits].sort(), ["src/i-touched/new-name.ts", "src/i-touched/old-name.ts"]);
   ok("a rename committed on the branch lists both its old and new paths as changed");
   const strictRename = cli(root, ["--merge=strict", "--base", "main"]);
+  assert.equal(strictRename.status, 1, strictRename.out);
   const renameLine = strictRename.out.split("\n").find((l) => l.startsWith("Blocked: Merge (strict):")) ?? "";
   assert.match(renameLine, /"src\/i-touched\/old-name\.ts"/, strictRename.out);
   ok("--merge=strict names a renamed file's old path");

@@ -707,7 +707,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   const moved = decisionWarnings(await call("run_check", {}), "f-store");
   check(
     "a migration moved to a new path with git mv on the branch counts as new",
-    moved.some((w) => w.includes("002_store.sql")),
+    moved.some((w) => w.includes("002_store.sql")) && !moved.some((w) => w.includes("001_store.sql")),
     JSON.stringify(moved)
   );
   git("mv", "src/f-store/migrations/002_store.sql", "src/f-store/migrations/001_store.sql");
