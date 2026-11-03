@@ -175,7 +175,11 @@ function parseLine(line: string, lineIndex: number, index: number, section: stri
  * counts, each with the `## ` section it sits under.
  */
 export function parseChecklistItems(body: string): ChecklistItem[] {
-  const lines = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  return itemsOfLines(splitLines(body).lines);
+}
+
+/** The checklist items of `lines` (see parseChecklistItems); each item's `line` indexes `lines`. */
+function itemsOfLines(lines: string[]): ChecklistItem[] {
   const owned = ownedLines(lines);
   const fenced = fencedLines(lines);
   const items: ChecklistItem[] = [];
@@ -205,6 +209,31 @@ function detectEol(text: string): "\r\n" | "\n" {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }
 
+/**
+ * The one line splitter parse and edit share: every CRLF, LF, or lone CR ends a line, and
+ * `breaks[i]` keeps the break that followed `lines[i]`, so a write puts each one back as it was.
+ */
+function splitLines(text: string): { lines: string[]; breaks: string[] } {
+  const lines: string[] = [];
+  const breaks: string[] = [];
+  const re = /\r\n|\r|\n/g;
+  let last = 0;
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+    lines.push(text.slice(last, m.index));
+    breaks.push(m[0]);
+    last = m.index + m[0].length;
+  }
+  lines.push(text.slice(last));
+  return { lines, breaks };
+}
+
+/** `lines` joined with their own breaks; a line without one (an inserted line) takes `eol`. */
+function joinLines(lines: string[], breaks: string[], eol: string): string {
+  let out = "";
+  for (let i = 0; i < lines.length; i++) out += i < lines.length - 1 ? lines[i] + (breaks[i] ?? eol) : lines[i];
+  return out;
+}
+
 function oneLine(value: string, field: string): string {
   const text = value.replace(/\s*\r?\n\s*/g, " ").trim();
   if (!text) throw new Error(`Blocked: toggle_checkboxes ${field} must be non-empty.`);
@@ -224,7 +253,7 @@ export function toggleChecklistItems(
   toggles: CheckboxToggle[]
 ): { body: string; toggled: string[] } {
   const eol = detectEol(body);
-  const lines = body.split(/\r?\n/);
+  const { lines, breaks } = splitLines(body);
   const toggled: string[] = [];
   for (const toggle of toggles) {
     const label = toggle.id !== undefined ? `id "${toggle.id}"` : `"${toggle.contains}"`;
@@ -251,7 +280,7 @@ export function toggleChecklistItems(
           ? ` — n/a: ${oneLine(toggle.not_applicable, "not_applicable")}`
           : null;
 
-    const items = parseChecklistItems(lines.join("\n"));
+    const items = itemsOfLines(lines);
     let hits: ChecklistItem[];
     if (toggle.id !== undefined) {
       hits = items.filter((i) => i.id === toggle.id);
@@ -275,6 +304,9 @@ export function toggleChecklistItems(
       }
     }
     for (const hit of hits) {
+      if (lines[hit.line] === undefined) {
+        throw new Error(`Blocked: toggle for ${label} names line ${hit.line + 1}, which the slot does not have; nothing was written.`);
+      }
       let line = lines[hit.line].replace(
         /^(\s*[-*+]\s+)\[[ xX]\]/,
         (_, prefix) => `${prefix}[${checked ? "x" : " "}]`
@@ -286,7 +318,7 @@ export function toggleChecklistItems(
       toggled.push(line.trim());
     }
   }
-  return { body: lines.join(eol), toggled };
+  return { body: joinLines(lines, breaks, eol), toggled };
 }
 
 /**
@@ -299,12 +331,12 @@ export function appendChecklistItems(
   items: NewChecklistItem[]
 ): { body: string; added: string[] } {
   const eol = detectEol(body);
-  const lines = body.split(/\r?\n/);
+  const { lines, breaks } = splitLines(body);
   const ranges = checklistRanges(lines);
   if (ranges.length === 0) {
     throw new Error('Blocked: add_checklist_items needs a "## Atomic Ops" section in the slot; add one with section or body first.');
   }
-  const existing = parseChecklistItems(body);
+  const existing = itemsOfLines(lines);
   const ids = new Set(existing.flatMap((i) => (i.id ? [i.id] : [])));
   const added: string[] = [];
   for (const raw of items) {
@@ -342,8 +374,10 @@ export function appendChecklistItems(
     const skip = lines[start]?.trim() === "" ? 1 : 0;
     const block = skip ? [...added, ...(lines[start + 1]?.trim() ? [""] : [])] : insert;
     lines.splice(start + skip, 0, ...block);
+    breaks.splice(start + skip, 0, ...block.map(() => eol));
   } else {
     lines.splice(at, 0, ...added);
+    breaks.splice(at, 0, ...added.map(() => eol));
   }
-  return { body: lines.join(eol), added };
+  return { body: joinLines(lines, breaks, eol), added };
 }

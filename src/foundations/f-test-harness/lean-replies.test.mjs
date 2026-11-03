@@ -291,6 +291,20 @@ fs.writeFileSync(
   );
   const empty = checklist.appendChecklistItems("## Atomic Ops\n\n## Rules\n", [{ text: "C", id: "c" }]).body;
   check("appendChecklistItems fills an empty section", empty === "## Atomic Ops\n\n- [ ] C {#c}\n\n## Rules\n", JSON.stringify(empty));
+  // A lone CR before the Atomic Ops: parse and edit split lines the same way, and each break stays as written.
+  const loneCr = "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [ ] B {#b}\r\n";
+  const ticked = checklist.toggleChecklistItems(loneCr, [{ id: "b", checked: true }]).body;
+  check(
+    "toggleChecklistItems after a lone CR ticks the item named and keeps every line break",
+    ticked === "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [x] B {#b}\r\n",
+    JSON.stringify(ticked)
+  );
+  const crAppended = checklist.appendChecklistItems(loneCr, [{ text: "C", id: "c" }]).body;
+  check(
+    "appendChecklistItems after a lone CR keeps the CR and adds a CRLF line",
+    crAppended === "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [ ] B {#b}\r\n- [ ] C {#c}\r\n",
+    JSON.stringify(crAppended)
+  );
 }
 
 // --- first ship drops the ledger from live and writes no next file ---
