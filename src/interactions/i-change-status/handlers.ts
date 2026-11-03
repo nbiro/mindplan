@@ -31,7 +31,9 @@ import {
 import {
   discardRevision,
   shipRevision,
+  withWrittenFiles,
   writeRevisionState,
+  writtenFilesOf,
 } from "../../foundations/f-territory-store/revisions.js";
 import {
   openChanges,
@@ -615,7 +617,12 @@ function applyWalk(
   for (const row of plan) {
     let first: Record<string, unknown> | null = null;
     for (const step of row.steps) {
-      last = applyOneStatus({ node_id: row.node_id, new_status: step, change: row.change, decisionCtx });
+      try {
+        last = applyOneStatus({ node_id: row.node_id, new_status: step, change: row.change, decisionCtx });
+      } catch (err) {
+        // A step the validation could not foresee (a ship that hit conflicts): name what was written.
+        throw withWroteLine(err, changed);
+      }
       first = first ?? last;
       for (const f of (last.changed_files as string[] | undefined) ?? []) changed.add(f);
       for (const r of (last.rebased as Record<string, unknown>[] | undefined) ?? []) rebased.push({ node_id: row.node_id, ...r });
@@ -752,7 +759,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       gateWrite(null, [item.node_id], "update_node_status");
       return applyOneStatus({ ...item, verbose: args.verbose });
     } catch (err) {
-      throw withHintsError(err, [item]);
+      throw withWroteLine(withHintsError(err, [item]));
     }
   }
 
@@ -767,6 +774,8 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   // Every item is tried, in tier order, on the graph as the earlier items left it.
   const applied: Record<string, unknown>[] = [];
   const results: BatchResult[] = [];
+  // Files a Blocked item wrote before it Blocked (a ship that persisted its conflicts).
+  const blockedWrites = new Set<string>();
   const decisionCtx = createDecisionContext(projectRoot());
   for (const rev of ordered) {
     try {
@@ -776,6 +785,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       results.push({ node_id: rev.node_id, ...(change ? { change } : {}), ok: true, line: statusLine(row) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      for (const f of writtenFilesOf(err)) blockedWrites.add(f);
       results.push({
         node_id: rev.node_id,
         ...(rev.change ? { change: rev.change } : {}),
@@ -784,8 +794,15 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       });
     }
   }
-  if (applied.length === 0) throw new Error(batchBlocked(ordered, results));
-  const changed = new Set<string>();
+  if (applied.length === 0) {
+    const text = batchBlocked(ordered, results);
+    if (blockedWrites.size === 0) throw new Error(text);
+    throw withWrittenFiles(
+      new Error(wroteLine(text.replace("; nothing was written.", "."), blockedWrites)),
+      [...blockedWrites]
+    );
+  }
+  const changed = new Set<string>(blockedWrites);
   const warnings = new Set<string>();
   for (const row of applied) {
     const files = row.changed_files;
@@ -930,7 +947,21 @@ function withHints(message: string, items: StatusRevision[]): string {
 /** `withHints` on a thrown Blocked; any other error passes through. */
 function withHintsError(err: unknown, items: StatusRevision[]): unknown {
   if (!(err instanceof Error) || !err.message.startsWith("Blocked:")) return err;
-  return new Error(withHints(err.message, items));
+  return withWrittenFiles(new Error(withHints(err.message, items)), writtenFilesOf(err));
+}
+
+/** A Blocked reply carries no changed_files: name the files written before the Block in its text. */
+function wroteLine(message: string, files: Iterable<string>): string {
+  const list = [...new Set(files)];
+  return list.length ? `${message.trimEnd()}\nWrote: ${list.join(", ")}.` : message;
+}
+
+/** The error with a `Wrote:` line for the files written before it (none: the error as is). */
+function withWroteLine(err: unknown, earlier: Iterable<string> = []): unknown {
+  if (!(err instanceof Error)) return err;
+  const files = [...new Set([...earlier, ...writtenFilesOf(err)])];
+  if (files.length === 0) return err;
+  return withWrittenFiles(new Error(wroteLine(err.message, files)), files);
 }
 
 function applyOneStatus(args: {

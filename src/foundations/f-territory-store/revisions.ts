@@ -127,6 +127,22 @@ function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
 }
 
+/** A Blocked error thrown after some files were already written (`changed_files`, repo-relative). */
+export type BlockedWithWrites = Error & { changed_files?: string[] };
+
+/** Attaches the files a write made before it Blocked, so a batch can still report them. */
+export function withWrittenFiles(err: Error, files: string[]): BlockedWithWrites {
+  const carried = err as BlockedWithWrites;
+  carried.changed_files = [...new Set([...(carried.changed_files ?? []), ...files])];
+  return carried;
+}
+
+/** The files an error says were written before it was thrown; empty for any other error. */
+export function writtenFilesOf(err: unknown): string[] {
+  const files = (err as BlockedWithWrites | null)?.changed_files;
+  return Array.isArray(files) ? files.filter((f): f is string => typeof f === "string") : [];
+}
+
 /** Deduped and sorted by code unit, so a list sorts the same on every locale. */
 function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort();
@@ -691,12 +707,13 @@ export function shipRevision(
   if (liveMovedSince(revision, liveOld)) {
     const own = rebase({ liveOld, liveNew: liveOld, revision, revisionBody: body, nodeId: node.id });
     if (own.revision.conflicts.length > 0) {
-      storeRevision(node, own.revision, own.body);
-      throw blocked(
+      const written = storeRevision(node, own.revision, own.body);
+      // The conflicts are persisted before the Block: callers report the file as written.
+      throw withWrittenFiles(blocked(
         `live "${node.id}" changed in place since revision "${change}" last started from it, and both edited ` +
           `${own.revision.conflicts.map(conflictEntry).join(", ")}; the revision now holds those conflicts. ` +
           `Resolve each with resolve_conflict({ node_id: "${node.id}", change: "${change}", target, take }), then ship again.`
-      );
+      ), [written]);
     }
     revision = own.revision;
     body = own.body;

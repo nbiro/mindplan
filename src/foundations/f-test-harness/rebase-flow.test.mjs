@@ -281,7 +281,42 @@ for (const new_status of SHIP) {
       read(LIVE).includes("Purpose patched in place."),
     shipW.text
   );
+  check(
+    "the single-node Blocked names the revision file it wrote the conflicts to",
+    shipW.text.trimEnd().endsWith(`Wrote: ${revFile("w")}.`),
+    shipW.text
+  );
   await call("discard_next", { node_id: "f-sub", change: "w" });
+
+  // The same conflict inside a batch: the ship Blocks, the other item moves, and changed_files
+  // still lists the revision file the ship wrote its conflicts to.
+  await call("create_node", { id: "f-batchmate", type: "Foundation", title: "Batchmate", description: "Infra — batchmate", role: "infra" });
+  write("src/f-batchmate/index.ts", "export const v = 1;\n");
+  await call("set_implementation_files", { node_id: "f-batchmate", add: ["src/f-batchmate/index.ts"] });
+  fillAndTick(abs("mindplan/foundations/f-batchmate/f-batchmate.mdx"));
+  await call("open_next", { node_id: "f-sub", change: "v" });
+  setSection(revFile("v"), "Purpose", "Purpose from V.");
+  await call("patch_node_territory", { node_id: "f-sub", slot: "current", section: "## Purpose", text: "Purpose patched in place again." });
+  readyRevision("v");
+  for (const new_status of ["ready", "in-progress", "in-review"]) {
+    await call("update_node_status", { node_id: "f-sub", change: "v", new_status });
+  }
+  const batch = await call("update_node_status", {
+    revisions: [
+      { node_id: "f-sub", change: "v", new_status: "ship" },
+      { node_id: "f-batchmate", new_status: "ready" },
+    ],
+  });
+  const shipRow = batch.results?.find((r) => r.node_id === "f-sub");
+  check(
+    "a batch item that Blocks after persisting conflicts still lists the file in changed_files",
+    shipRow?.ok === false &&
+      batch.results?.find((r) => r.node_id === "f-batchmate")?.ok === true &&
+      batch.changed_files?.includes(revFile("v")) &&
+      /conflicts:\r?\n\s+- "?section:## Purpose/.test(read(revFile("v"))),
+    JSON.stringify(batch)
+  );
+  await call("discard_next", { node_id: "f-sub", change: "v" });
 }
 
 // --- a hub Foundation with three dependents takes three changes at once; all ship in sequence ---
