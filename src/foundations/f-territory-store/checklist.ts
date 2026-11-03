@@ -312,10 +312,12 @@ export function appendChecklistItems(
     if (id !== undefined) ids.add(id);
     added.push(formatChecklistLine({ text, id, kind }));
   }
-  // After the section's last item (or its heading when it has none).
+  // After the section's last item (or its heading when it has none); a task line inside fenced
+  // code is example text, not an item, so new items never land inside a fence.
   const [start, end] = ranges[0];
+  const fenced = fencedLines(lines);
   let at = start;
-  for (let i = start; i < end; i++) if (ITEM_LINE.test(lines[i])) at = i + 1;
+  for (let i = start; i < end; i++) if (!fenced[i] && ITEM_LINE.test(lines[i])) at = i + 1;
   if (at === start) {
     const insert = ["", ...added, ...(lines[start] === undefined || lines[start].trim() === "" ? [] : [""])];
     // Keep one blank line under the heading.

@@ -1078,9 +1078,10 @@ export function assertNoRetreatUnderShippedDependents(
 }
 
 /**
- * Unticking a build item of `node`'s active slot while it is in review is Blocked while
+ * Undoing a build item of `node`'s active slot while it is in review is Blocked while
  * stable/unstable nodes rely on it: they shipped on every build item being ticked. `before` and
- * `after` are the slot text around the toggle.
+ * `after` are the slot text before and after every edit of one call (toggles, added items, body,
+ * section, and replace edits, conflict resolution), so no edit path can take a tick back.
  */
 export function assertNoUntickUnderShippedDependents(
   graph: MindPlanGraph,
@@ -1089,22 +1090,29 @@ export function assertNoUntickUnderShippedDependents(
   before: string,
   after: string
 ): void {
-  if (slotState !== "in-review") return;
-  const unticked = untickedBuildItems(before, after);
-  if (unticked.length === 0) return;
+  if (slotState !== "in-review" || before === after) return;
+  const undone = undoneBuildItems(before, after);
+  if (undone.length === 0) return;
   assertNoShippedDependentsRelying(
     graph,
     node,
-    `untick build item(s) ${unticked.map((t) => `"${t}"`).join(", ")} of "${node.id}" in review`
+    `untick, remove, or add unticked build item(s) ${undone.map((t) => `"${t}"`).join(", ")} of "${node.id}" in review`
   );
 }
 
-/** Build items ticked in `before` and no longer done in `after` (matched by id, else by text). */
-function untickedBuildItems(before: string, after: string): string[] {
+/**
+ * Build items (matched by id, else by text) done in `before` and not done or gone in `after`, plus
+ * those `after` adds without being done: each leaves the slot with a build item not done.
+ */
+function undoneBuildItems(before: string, after: string): string[] {
   const label = (i: ChecklistItem): string => i.id ?? i.text;
-  const done = new Set(parseChecklistItems(before).filter((i) => i.kind === "build" && i.done).map(label));
-  const undone = parseChecklistItems(after).filter((i) => i.kind === "build" && !i.done && done.has(label(i)));
-  return [...new Set(undone.map(label))];
+  const beforeItems = parseChecklistItems(before).filter((i) => i.kind === "build");
+  const afterItems = parseChecklistItems(after).filter((i) => i.kind === "build");
+  const known = new Set(beforeItems.map(label));
+  const doneAfter = new Set(afterItems.filter((i) => i.done).map(label));
+  const out = beforeItems.filter((i) => i.done && !doneAfter.has(label(i))).map(label);
+  out.push(...afterItems.filter((i) => !i.done && !known.has(label(i))).map(label));
+  return [...new Set(out)];
 }
 
 /**

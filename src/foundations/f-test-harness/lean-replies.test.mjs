@@ -322,6 +322,15 @@ fs.writeFileSync(
       fencedToggle.startsWith("Blocked:"),
     JSON.stringify({ fencedItems, fencedCount, fencedToggle })
   );
+  // A task line inside a fence after the last item is code: new items go after the last real item.
+  const fencedAfter = "## Atomic Ops\n\n- [ ] A {#a}\n\n```md\n- [ ] example\n```\n";
+  const fencedAppended = checklist.appendChecklistItems(fencedAfter, [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems never inserts inside fenced code",
+    fencedAppended === "## Atomic Ops\n\n- [ ] A {#a}\n- [ ] B {#b}\n\n```md\n- [ ] example\n```\n" &&
+      checklist.parseChecklistItems(fencedAppended).some((i) => i.id === "b"),
+    JSON.stringify(fencedAppended)
+  );
 }
 
 // --- first ship drops the ledger from live and writes no next file ---

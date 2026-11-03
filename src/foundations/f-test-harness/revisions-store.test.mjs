@@ -364,6 +364,71 @@ foundation("f-core");
   ok("role removal is stored on the revision and clears live's role at ship");
 }
 
+// --- resolve_conflict text stays one section --------------------------------------------------
+
+{
+  foundation("f-onesec", { body: "Intro.\n\n## Spec\n\nSpec text.\n\n## Notes\n\nNotes text.\n" });
+  openRevision(node("f-onesec"), "sec", {});
+  const file = revisionFilePath(node("f-onesec"), "sec");
+  const opened = node("f-onesec").open_revisions[0];
+  const conflicts = [{ kind: "section", section: "_preamble" }, { kind: "section", section: "## Spec" }];
+  fs.writeFileSync(file, formatRevisionFile("f-onesec", "Foundation", { ...opened, conflicts }, bodyOf(file)));
+  const before = fs.readFileSync(file, "utf-8");
+  blocked(() => resolveConflict(node("f-onesec"), "sec", "_preamble", "text", "New intro.\n\n## Sneaky\n\nNot a preamble."), /## Sneaky/);
+  blocked(() => resolveConflict(node("f-onesec"), "sec", "## Spec", "text", "## Spec\n\nNew spec.\n\n## Extra\n\nMore."), /## Extra/);
+  blocked(() => resolveConflict(node("f-onesec"), "sec", "## Spec", "text", "New spec.\n\n## Extra\n\nMore."), /## Extra/);
+  assert.equal(fs.readFileSync(file, "utf-8"), before);
+  // A heading inside fenced code is code, not a section.
+  resolveConflict(node("f-onesec"), "sec", "_preamble", "text", "New intro.\n\n````md\n```\n## Example\n```\n````");
+  resolveConflict(node("f-onesec"), "sec", "## Spec", "text", "## Spec\n\nNew spec.");
+  const body = bodyOf(file);
+  assert.match(body, /^New intro\./);
+  assert.match(body, /## Spec\n\nNew spec\./);
+  assert.deepEqual(node("f-onesec").open_revisions[0].conflicts, []);
+  ok("resolveConflict take text: a level-2 heading outside fences that would start a new section is Blocked");
+}
+
+// --- resolve_conflict is a contract write: readiness reset and the body check ---------------------
+
+{
+  foundation("f-ready", { body: "## Spec\n\nSpec text.\n\n## Atomic Ops\n\n- [x] Done {#done}\n" });
+  openRevision(node("f-ready"), "rd", {});
+  writeRevisionBody(node("f-ready"), "rd", "## Spec\n\nSpec text.\n\n## Atomic Ops\n\n- [x] Done {#done}\n");
+  const file = revisionFilePath(node("f-ready"), "rd");
+  const setConflicts = (state, conflicts) => {
+    const r = node("f-ready").open_revisions[0];
+    fs.writeFileSync(file, formatRevisionFile("f-ready", "Foundation", { ...r, state, conflicts }, bodyOf(file)));
+  };
+  // Taking the revision's own side changes nothing it was judged on: it stays ready.
+  setConflicts("ready", [{ kind: "section", section: "## Spec" }]);
+  const kept = resolveConflict(node("f-ready"), "rd", "## Spec", "revision");
+  assert.equal(kept.readiness_reset, undefined);
+  assert.equal(node("f-ready").open_revisions[0].state, "ready");
+  // Taking text changes it: back to draft, reported.
+  setConflicts("ready", [{ kind: "section", section: "## Spec" }]);
+  const reset = resolveConflict(node("f-ready"), "rd", "## Spec", "text", "New spec.");
+  assert.deepEqual(reset.readiness_reset, { from: "ready", to: "draft" });
+  assert.equal(node("f-ready").open_revisions[0].state, "draft");
+  assert.match(bodyOf(file), /New spec\./);
+  // The body check sees the body before and after, and a throw writes nothing.
+  setConflicts("in-review", [{ kind: "section", section: "## Atomic Ops" }]);
+  const before = fs.readFileSync(file, "utf-8");
+  let seen = null;
+  blocked(
+    () =>
+      resolveConflict(node("f-ready"), "rd", "## Atomic Ops", "text", "- [ ] Done {#done}", {
+        checkBody: (b, a) => {
+          seen = [b, a];
+          throw new Error("Blocked: no untick.");
+        },
+      }),
+    /no untick/
+  );
+  assert.ok(seen && /- \[x\] Done/.test(seen[0]) && /- \[ \] Done/.test(seen[1]), JSON.stringify(seen));
+  assert.equal(fs.readFileSync(file, "utf-8"), before);
+  ok("resolveConflict: a changing resolution sends a ready revision to draft; the body check runs before the write");
+}
+
 // --- a CRLF node gets CRLF revision files -------------------------------------------------------
 
 {
