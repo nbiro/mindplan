@@ -304,13 +304,24 @@ await foundation("f-dep");
 {
   await call("open_next", { node_id: "f-core", change: "c-core" });
   const liveBefore = testsIn(liveOf("f-core"));
+  // Without change, test links are evidence on live even while a revision is open.
+  const onLive = await call("set_test_files", { node_id: "f-core", add: ["tests/dep.test.mjs"] });
+  check(
+    "set_test_files without change on a node with an open revision writes live, not the revision",
+    same(testsIn(liveOf("f-core")), [...liveBefore, "tests/dep.test.mjs"].sort()) &&
+      same(onLive.changed_files, [liveOf("f-core")]) &&
+      listIn(revOf("f-core", "c-core"), "tests_add").length === 0,
+    JSON.stringify({ onLive, live: testsIn(liveOf("f-core")) })
+  );
+  await call("set_test_files", { node_id: "f-core", remove: ["tests/dep.test.mjs"] });
   const res = await call("set_test_files", {
     node_id: "f-core",
+    change: "c-core",
     files: ["tests/core.test.mjs", "tests/extra/one.test.mjs"], replace: true,
   });
   const delta = () => ({ add: listIn(revOf("f-core", "c-core"), "tests_add"), remove: listIn(revOf("f-core", "c-core"), "tests_remove") });
   check(
-    "set_test_files with an open revision writes the revision's tests delta and leaves live alone",
+    "set_test_files with change writes that revision's tests delta and leaves live alone",
     same(testsIn(liveOf("f-core")), liveBefore) &&
       same(res.tests, ["tests/core.test.mjs", "tests/extra/one.test.mjs"]) &&
       same(delta(), { add: ["tests/extra/one.test.mjs"], remove: ["tests/extra/"] }) &&
@@ -343,7 +354,7 @@ await foundation("f-dep");
 // --- discard keeps the live list; an empty list removes the field ---
 {
   await call("open_next", { change: "rev-f-dep", node_id: "f-dep" });
-  await call("set_test_files", { node_id: "f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"], replace: true });
+  await call("set_test_files", { node_id: "f-dep", change: "rev-f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"], replace: true });
   await call("discard_next", { node_id: "f-dep" });
   check(
     "discard_next drops the tests written during the revision, keeps live, and deletes the revision folder",
@@ -505,7 +516,7 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
 
   const revOf = (change) => `mindplan/foundations/f-rev/revisions/${change}/f-rev.mdx`;
   const rev = (change) => parseRevisionFile(readRel(revOf(change)), "f-rev");
-  const liveBefore = readRel(liveOf("f-rev"));
+  let liveBefore = readRel(liveOf("f-rev"));
 
   const ambiguous = await blocked("link_nodes", { source_id: "f-rev", target_id: "f-dep", edge_type: "depends_on" });
   check(
@@ -553,8 +564,17 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
     JSON.stringify(reset)
   );
 
-  const testsAmbiguous = await blocked("set_test_files", { node_id: "f-rev", add: ["tests/core.test.mjs"] });
-  check("set_test_files with two open revisions and no change is Blocked", testsAmbiguous?.includes('"c-one"'), testsAmbiguous ?? "accepted");
+  const revsBefore = [readRel(revOf("c-one")), readRel(revOf("c-two"))];
+  const testsLive = await call("set_test_files", { node_id: "f-rev", add: ["tests/dep.test.mjs"] });
+  check(
+    "set_test_files with two open revisions and no change writes live's list and no revision",
+    testsIn(liveOf("f-rev")).includes("tests/dep.test.mjs") &&
+      same(testsLive.changed_files, [liveOf("f-rev")]) &&
+      readRel(revOf("c-one")) === revsBefore[0] &&
+      readRel(revOf("c-two")) === revsBefore[1],
+    JSON.stringify(testsLive)
+  );
+  liveBefore = readRel(liveOf("f-rev"));
   const testRes = await call("set_test_files", { node_id: "f-rev", add: ["tests/core.test.mjs"], change: "c-one" });
   check(
     "set_test_files add on a revision writes a tests delta there, live untouched",
