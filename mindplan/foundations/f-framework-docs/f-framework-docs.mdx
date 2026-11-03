@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:48:46.430Z
 revisions: 53
 churn: 27.967
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-03T15:49:59.472Z
+updated_at: 2026-11-03T16:13:42.260Z
 depends_on:
   - f-domain-model
 implements:
@@ -101,6 +101,7 @@ SPEC, CHANGELOG (the existing 0.18.0 section), README, the playbook, and both sk
 - **Fifth review fixes (0.18.0).** SPEC §5.4 says the relied-on guard counts build items (not done rises or done falls), so a ticked item reworded in place passes.
 - **Sixth review fixes (0.18.0).** SPEC §5.4 adds the present-but-not-done rule (a tick swap is Blocked); claim `remove` matching compares raw and normalized forms on both sides; `add_checklist_items` says where items land.
 - **Seventh review fixes (0.18.0).** SPEC §5.4 guards only a slot whose build items were all done; claim `remove` prefers an as-written match; a revision's `split_into` holds only its own parts; `add_checklist_items` judges continuation by the content column.
+- **Eighth review fixes (0.18.0).** SPEC: a claim `remove` drops every stored entry naming the same path; checklist continuation expands tabs; after-merge reports unreadable and newer-than-server stamps; the relied-on Block marks `(was done)` items.
 - **Upgrade note (0.18.0).** The 0.18.0 upgrade note tells teams to expect, on the first check after upgrading, imports 0.17 let through: imports in claimed files outside `sources`, and imports that rely on an edge only another open change adds.
 
 ## Acceptance Criteria

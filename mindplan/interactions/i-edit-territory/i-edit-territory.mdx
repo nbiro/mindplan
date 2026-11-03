@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:41:45.907Z
 revisions: 6
 churn: 5.76
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-03T15:49:59.150Z
+updated_at: 2026-11-03T16:13:41.978Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -61,7 +61,7 @@ One graph load per call serves the orientation gate and every pre-write check; a
 
 ## Checklist ids and kinds
 
-While a stable or unstable node relies on a node in review under the relaxed dependency rule (`f-compiler-rules`), any patch that undoes its build items is Blocked, naming the dependents: the guard judges the body the whole call leaves (toggles, `add_checklist_items`, body, section, and replace together), on a revision's computed body or through the store's `checkBody(before, after)` hook on live, before anything is written. `add_checklist_items` never inserts inside fenced code or between an item and its continuation lines. `split_into` on a revision writes only the parts that revision declares, replacing earlier ones; `[]` clears them. The handler leaves the frontmatter and open-revision checks to the store, so a missing slot is Blocked once, by the store.
+While a stable or unstable node relies on a node in review under the relaxed dependency rule (`f-compiler-rules`), any patch that undoes its build items is Blocked, naming the dependents: the guard judges the body the whole call leaves (toggles, `add_checklist_items`, body, section, and replace together), on a revision's computed body or through the store's `checkBody(before, after)` hook on live, before anything is written. `add_checklist_items` never inserts inside fenced code or between an item and its continuation lines. `split_into` on a revision writes only the parts that revision declares, replacing earlier ones; `[]` clears them. The unlinked-part warning (`unlinkedSplitParts`) judges the deduped list the call wrote and skips parts live already records. The handler leaves the frontmatter and open-revision checks to the store, so a missing slot is Blocked once, by the store.
 
 `toggle_checkboxes` items take `id` (a stable item id such as `spec`, `impl`, `verify`, `review-copy`) or `contains`, which must now equal the item's full text (tag and annotations excluded); a substring that is not the whole text is Blocked naming the matching items and their ids. `add_checklist_items: [{ text, id?, kind? }]` appends items to the Atomic Ops section of the picked slot.
 
