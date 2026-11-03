@@ -56,6 +56,7 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
+import { withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import {
@@ -1092,11 +1093,11 @@ export interface DriftOptions {
  * Returns null when there is nothing to report or git cannot be read. Does not change default check.
  */
 export function buildDriftReport(options: DriftOptions = {}): DriftReport | null {
-  const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
-  const prev = process.env.MINDPLAN_ROOT;
-  if (options.cwd) {
-    process.env.MINDPLAN_ROOT = root;
-  }
+  return withRoot(options.cwd, () => driftReportInScope(options));
+}
+
+function driftReportInScope(options: DriftOptions): DriftReport | null {
+  const root = projectRoot();
   try {
     loadProjectConfig(root);
     const graph = loadGraph();
@@ -1177,11 +1178,6 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
     return report;
   } catch {
     return null;
-  } finally {
-    if (options.cwd) {
-      if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-      else process.env.MINDPLAN_ROOT = prev;
-    }
   }
 }
 
@@ -1189,26 +1185,22 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
  * Run integrity checks. Loads the territory graph from disk.
  */
 export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
+  return withRoot(options.cwd, () => integrityCheckInScope(options));
+}
+
+function integrityCheckInScope(options: CheckOptions): CheckResult {
   const failures: string[] = [];
   const warnings: string[] = [];
   const info: string[] = [];
   let changeReport: ChangeCheck | undefined;
   let mergeReport: MergeReport | undefined;
-  const root = options.cwd ? path.resolve(options.cwd) : projectRoot();
-  const prev = process.env.MINDPLAN_ROOT;
-  if (options.cwd) {
-    process.env.MINDPLAN_ROOT = root;
-  }
+  const root = projectRoot();
 
   // A graph that needs setup or an upgrade is not checked: the code may misread it.
   if (process.env.MINDPLAN_VERSION_GATE !== "off") {
     const status = graphStatus();
     if (status.state !== "current") {
       fail(failures, `Blocked: Version — ${status.warning}`);
-      if (options.cwd) {
-        if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-        else process.env.MINDPLAN_ROOT = prev;
-      }
       return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
     }
   }
@@ -1221,10 +1213,6 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     fail(failures, `graph load failed: ${message}`);
-    if (options.cwd) {
-      if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-      else process.env.MINDPLAN_ROOT = prev;
-    }
     return { ok: false, failures, warnings, info, removedLegacyFiles: drainRemovedLegacyFiles() };
   }
 
@@ -1258,11 +1246,6 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     fail(failures, message);
-  } finally {
-    if (options.cwd) {
-      if (prev === undefined) delete process.env.MINDPLAN_ROOT;
-      else process.env.MINDPLAN_ROOT = prev;
-    }
   }
 
   if (changeReport) {

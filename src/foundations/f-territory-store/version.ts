@@ -7,6 +7,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { resolveProjectRoot } from "../f-source-index/root-scope.js";
 import { readFileRetry, writeFileRetry } from "../f-source-index/io.js";
 
 const MINDPLAN_DIR = "mindplan";
@@ -27,7 +28,7 @@ export type ProjectVersion = {
 };
 
 function stampPath(): string {
-  return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR, VERSION_FILENAME);
+  return path.join(resolveProjectRoot(), MINDPLAN_DIR, VERSION_FILENAME);
 }
 
 /**

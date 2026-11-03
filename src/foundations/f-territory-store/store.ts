@@ -56,6 +56,7 @@ import {
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
+import { resolveProjectRoot } from "../f-source-index/root-scope.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
@@ -135,7 +136,7 @@ export const COMPONENTS_DIR = "components";
 
 export type TerritorySlot = "current" | "next";
 export function mindplanRoot(): string {
-  return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR);
+  return path.join(resolveProjectRoot(), MINDPLAN_DIR);
 }
 
 export function agentRoot(): string {
@@ -199,16 +200,28 @@ function legacySlotFilename(slot: TerritorySlot): string {
 
 export type RemovedLegacyFile = { from: string; to: string };
 
-const removedLegacyFiles: RemovedLegacyFile[] = [];
+/** Per project root, so a call on one checkout never drains another checkout's removals. */
+const removedLegacyFilesByRoot = new Map<string, RemovedLegacyFile[]>();
 
-/** Paths deleted because the id-named file was kept. Clears the list. */
+function removedLegacyFiles(): RemovedLegacyFile[] {
+  const key = path.resolve(projectRoot());
+  let list = removedLegacyFilesByRoot.get(key);
+  if (!list) {
+    list = [];
+    removedLegacyFilesByRoot.set(key, list);
+  }
+  return list;
+}
+
+/** Paths deleted because the id-named file was kept (under the current root). Clears the list. */
 export function drainRemovedLegacyFiles(): RemovedLegacyFile[] {
-  return removedLegacyFiles.splice(0, removedLegacyFiles.length);
+  const list = removedLegacyFiles();
+  return list.splice(0, list.length);
 }
 
 /** Put drained entries back so the next drain reports them (an async tool result, once it settles). */
 export function restoreRemovedLegacyFiles(entries: RemovedLegacyFile[]): void {
-  removedLegacyFiles.unshift(...entries);
+  removedLegacyFiles().unshift(...entries);
 }
 
 function isRegularFile(filePath: string): boolean {
@@ -259,7 +272,7 @@ export function removeLegacyIfIdNamedExists(
       `Blocked: could not remove ${legacyRel} while keeping ${preferredRel} (${detail}). Fix ${legacyRel} by hand.`
     );
   }
-  removedLegacyFiles.push({ from: legacyRel, to: preferredRel });
+  removedLegacyFiles().push({ from: legacyRel, to: preferredRel });
   return true;
 }
 
@@ -402,7 +415,7 @@ export function listAttachments(node: Pick<MindPlanNode, "id" | "type">): string
 }
 
 export function projectRoot(): string {
-  return process.env.MINDPLAN_ROOT ?? process.cwd();
+  return resolveProjectRoot();
 }
 
 /** Creates /mindplan, top-level type directories, and components/ if missing. */

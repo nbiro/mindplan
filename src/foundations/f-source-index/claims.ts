@@ -5,10 +5,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { matchGlob } from "./universe.js";
-
-function resolveProjectRoot(root?: string): string {
-  return root ?? process.env.MINDPLAN_ROOT ?? process.cwd();
-}
+import { resolveProjectRoot } from "./root-scope.js";
 
 function toPosix(p: string): string {
   return p.split(path.sep).join("/");
