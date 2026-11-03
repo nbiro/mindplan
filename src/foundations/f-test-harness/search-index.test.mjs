@@ -133,6 +133,21 @@ assert.match(embedText(enquiry), /^Interaction: Send an enquiry\. .* Area: Enqui
 ok("search docs: headings, area, entry points, retired flag, revision wording");
 
 {
+  // One server serves several roots: the heading memo keys on the root, so two checkouts whose
+  // node shares id, updated_at, and stamp still index their own headings.
+  const reader = (heading) => {
+    const read = (n) => (n.id === "f-mail" ? `# T\n\n## ${heading}\n` : "");
+    read.stamp = () => "same-stamp";
+    return read;
+  };
+  const a = searchDocs(graph, reader("Alpha routing"), "/root-a").find((d) => d.id === "f-mail");
+  const b = searchDocs(graph, reader("Beta routing"), "/root-b").find((d) => d.id === "f-mail");
+  assert.deepEqual(a.headings, ["Alpha routing"]);
+  assert.deepEqual(b.headings, ["Beta routing"], "a second root does not reuse the first root's headings");
+}
+ok("search docs: the heading memo is per project root");
+
+{
   const docsMap = new Map(docs.map((d) => [d.id, d]));
   const clear = fuseRankings([["f-mail", "if-site", "i-send-enquiry", "j-enquiries"]], { docs: docsMap });
   assert.equal(clear[0].id, "f-mail", "the graph boost never reorders a clear winner");

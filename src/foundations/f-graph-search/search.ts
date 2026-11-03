@@ -254,7 +254,7 @@ export type BodyReader = ((node: MindPlanNode, slot: "current" | "next") => stri
 
 const headingMemo = new Map<string, string[]>();
 
-function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined): string[] {
+function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined, root: string): string[] {
   if (!readBody) return [];
   const slot = "current";
   let stamp = "";
@@ -265,7 +265,7 @@ function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined): strin
   }
   const revisions = readBody.revision ? (node.open_revisions ?? []) : [];
   const revisionKey = revisions.map((r) => `${r.change}@${r.updated_at}`).join(",");
-  const key = `${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
+  const key = `${root}\u0000${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
   const hit = headingMemo.get(key);
   if (hit) return hit;
   const headings: string[] = [];
@@ -313,9 +313,10 @@ function searchWording(n: MindPlanNode): { title: string; description: string; a
  * node being reshaped is found by its new wording), its area (Capability titles reached through
  * belongs_to, through the Interactions an Interface exposes, or through the Interactions a Bug
  * affects), its entry points (the Interfaces that expose it), its aliases, its section headings
- * (minus those most nodes share), and its claimed paths.
+ * (minus those most nodes share), and its claimed paths. `root` (the project root the graph was
+ * read from) keys the heading memo, since one server serves several roots.
  */
-export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchDoc[] {
+export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader, root = ""): SearchDoc[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const capabilitiesOf = (n: MindPlanNode): string[] =>
     edgeTargets(n, "belongs_to")
@@ -333,7 +334,7 @@ export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchD
     return [...titles];
   };
   // A heading most nodes share (a scaffold section) says nothing about any one of them.
-  const headings = new Map(graph.nodes.map((n) => [n.id, headingsOf(n, readBody)]));
+  const headings = new Map(graph.nodes.map((n) => [n.id, headingsOf(n, readBody, root)]));
   const seen = new Map<string, number>();
   for (const list of headings.values()) {
     for (const h of new Set(list.map((x) => x.toLowerCase()))) seen.set(h, (seen.get(h) ?? 0) + 1);
@@ -495,7 +496,7 @@ export async function searchNodes(
   const q = query.trim();
   if (!q) return [];
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_FIND_LIMIT, 1), MAX_FIND_LIMIT);
-  const docs = searchDocs(graph, opts.readBody);
+  const docs = searchDocs(graph, opts.readBody, opts.root);
   const backend = await prepareSearch(
     opts.root,
     docs,
@@ -589,7 +590,7 @@ export function areaMembers(graph: MindPlanGraph, capabilityId: string): Set<str
 /** After a graph write: sync the search cache now and embed what changed in the background. */
 export function refreshSearchIndex(graph: MindPlanGraph, root: string, readBody?: BodyReader): void {
   try {
-    refreshSearch(root, searchDocs(graph, readBody));
+    refreshSearch(root, searchDocs(graph, readBody, root));
   } catch (err) {
     console.error(`MindPlan search: refresh failed (${err instanceof Error ? err.message : String(err)}).`);
   }
@@ -604,5 +605,5 @@ export function warmSearchIndex(
   loadGraph: () => MindPlanGraph,
   readBody?: BodyReader
 ): Promise<void> {
-  return warmSearch(root, () => searchDocs(loadGraph(), readBody));
+  return warmSearch(root, () => searchDocs(loadGraph(), readBody, root));
 }
