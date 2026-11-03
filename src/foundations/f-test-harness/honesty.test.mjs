@@ -1033,6 +1033,22 @@ async function builtNode(id, type = "Foundation", extra = {}) {
     !!cancel && cancel.includes('"i-top"') && cancel.includes("force_unship") && cancel.includes("Ship"),
     String(cancel)
   );
+  const back = await blocked("update_node_status", { node_id: "f-mid", new_status: "in-progress" });
+  check(
+    "moving a relied-on dependency back from in-review is Blocked, naming the dependent and both fixes",
+    !!back && back.includes('"i-top"') && back.includes("back from in-review") && back.includes("force_unship") &&
+      (await state("f-mid")).state === "in-review",
+    String(back)
+  );
+  const untick = await blocked("patch_node_territory", { node_id: "f-mid", toggle_checkboxes: [{ id: "impl", checked: false }] });
+  check(
+    "unticking a build item of a relied-on dependency in review is Blocked, naming the dependent",
+    !!untick && untick.includes('"i-top"') && untick.includes('"impl"') && untick.includes("force_unship") &&
+      /- \[x\] Implementation complete \{#impl\}/.test(fs.readFileSync(territory("foundations", "f-mid"), "utf-8")),
+    String(untick)
+  );
+  const retick = await raw("patch_node_territory", { node_id: "f-mid", toggle_checkboxes: [{ id: "impl", note: "still done" }] });
+  check("annotating a ticked build item of a relied-on dependency stays allowed", !retick.error, retick.text);
 
   // A dependency with no checklist item at all proves nothing.
   // (The shape gate needs a box to reach in-review, so the boxes go after the walk.)
@@ -1054,13 +1070,27 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   await call("create_node", { id: "bug-unst", type: "Bug", title: "Unst bug", description: "The unst value is wrong." });
   await call("link_nodes", { source_id: "bug-unst", target_id: "f-unst", edge_type: "affects" });
   check("the bug makes f-unst unstable", (await state("f-unst")).state === "unstable");
+  // The revision claims a file live does not, and the shipped dependent imports it: it relied on
+  // the revision's view, so the discard is Blocked.
   await call("open_next", { node_id: "f-unst", change: "unst-fix" });
+  write("app/f-unst/extra.ts", "export const extra = 2;\n");
+  await call("set_implementation_files", { node_id: "f-unst", change: "unst-fix", add: ["app/f-unst/extra.ts"] });
+  write("src/i-unst/index.ts", 'import { extra } from "../../app/f-unst/extra.js";\nexport const v = extra;\n');
   const discard = await blocked("discard_next", { node_id: "f-unst", change: "unst-fix" });
   check(
-    "discard_next on a non-stable node a shipped node depends on is Blocked, naming the dependent",
-    !!discard && discard.includes('"i-unst"') && discard.includes("force_unship"),
+    "discard_next of a revision whose claims a shipped dependent imports is Blocked, naming the dependent and the import",
+    !!discard && discard.includes('"i-unst"') && discard.includes("app/f-unst/extra.ts") && discard.includes("force_unship"),
     String(discard)
   );
+  // A dependent that rests on live alone does not hold the discard.
+  write("src/i-unst/index.ts", "export const v = 1;\n");
+  const discarded = await raw("discard_next", { node_id: "f-unst", change: "unst-fix" });
+  check(
+    "discard_next of a revision no shipped dependent relies on is allowed, even while the node is unstable",
+    !discarded.error && JSON.parse(discarded.text).discarded === true,
+    discarded.text
+  );
+  remove("app/f-unst");
 }
 
 await client.close();
