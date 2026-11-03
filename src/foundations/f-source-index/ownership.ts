@@ -143,7 +143,7 @@ export function releasedUnder(buckets: OwnershipBuckets, change: string): Map<st
  * delta applied); else its `next` (a legacy next file, or the loader's view of its only revision);
  * null when nothing is open.
  */
-export function openSlotClaims(node: MindPlanNode): string[][] | null {
+function openSlotClaims(node: MindPlanNode): string[][] | null {
   const revs = node.open_revisions ?? [];
   if (revs.length > 1) return revs.map((r) => applyDelta(node.implements, r.implements));
   return node.next ? [node.next.implements ?? []] : null;

@@ -25,7 +25,7 @@ import {
   schemaClaimEntries,
   type OtherClaims,
 } from "../f-source-index/dominance.js";
-import { applyDelta, openChanges, revisionFor } from "../f-revision-model/index.js";
+import { openChanges, revisionFor } from "../f-revision-model/index.js";
 import { listResolvedImports } from "../f-source-index/imports.js";
 import {
   buildOwnershipIndex,

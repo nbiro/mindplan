@@ -22,7 +22,7 @@ import {
   type MindPlanNode,
   type Revision,
 } from "../f-domain-model/types.js";
-import { openChanges, pickRevision, revisionFor, withRevision } from "../f-revision-model/index.js";
+import { openChanges, pickRevision, revisionFor } from "../f-revision-model/index.js";
 import { claimCoversPath, expandClaims } from "../f-source-index/claims.js";
 import {
   decisionGateSettings,
@@ -170,17 +170,7 @@ function newClaimedSchemaFiles(node: MindPlanNode, ctx: DecisionContext): string
   return added ? schema.filter((f) => added.has(f)) : [];
 }
 
-/** Why the revision of `change` on `node` is decision-worthy; `[]` when it is not (or is not open). */
-export function decisionTriggers(
-  graph: MindPlanGraph,
-  node: MindPlanNode,
-  ctx: DecisionContext,
-  change?: string | null
-): DecisionTrigger[] {
-  const s = subjectOf(graph, node, change);
-  return triggersOf(s, ctx);
-}
-
+/** Why the subject's revision is decision-worthy; `[]` when it is not (or is not open). */
 function triggersOf(s: Subject, ctx: DecisionContext): DecisionTrigger[] {
   const node = s.view;
   if (!isOpenRevision(node, null)) return [];

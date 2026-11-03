@@ -345,15 +345,6 @@ export interface DecisionEntry extends DecisionRecord {
 }
 
 /**
- * A node's decisions: the open next slot's while a shipped node evolves (that file starts as a
- * copy of live), else the live file's.
- */
-export function activeDecisions(node: MindPlanNode): DecisionRecord[] {
-  if (node.next) return node.next.decisions ?? [];
-  return node.decisions ?? [];
-}
-
-/**
  * The change an open revision belongs to: the next slot's while a shipped node evolves,
  * the live one before first ship, and none for a shipped node with no open next (a leftover
  * live `change` there, from releases before 0.15.0, is ignored until the migration strips it).

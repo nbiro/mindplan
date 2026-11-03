@@ -10,10 +10,10 @@
 
 import { detectEol, fencedLines, levelTwoHeadings, ownedLines } from "../f-revision-model/index.js";
 
-export const CHECKLIST_KINDS = ["build", "review", "deploy"] as const;
+const CHECKLIST_KINDS = ["build", "review", "deploy"] as const;
 export type ChecklistKind = (typeof CHECKLIST_KINDS)[number];
 
-export function isChecklistKind(value: string): value is ChecklistKind {
+function isChecklistKind(value: string): value is ChecklistKind {
   return (CHECKLIST_KINDS as readonly string[]).includes(value);
 }
 
@@ -67,18 +67,18 @@ export function formatChecklistTag(id: string | undefined, kind: ChecklistKind =
 }
 
 /** An item's markdown line: `- [ ] <text> {#id kind}`. */
-export function formatChecklistLine(item: NewChecklistItem, checked = false): string {
+function formatChecklistLine(item: NewChecklistItem, checked = false): string {
   const tag = formatChecklistTag(item.id, item.kind);
   return `- [${checked ? "x" : " "}] ${item.text}${tag ? ` ${tag}` : ""}`;
 }
 
 /** True for a lowercase slug id. */
-export function isChecklistId(id: string): boolean {
+function isChecklistId(id: string): boolean {
   return ID.test(id);
 }
 
 /** A lowercase slug of `text`, for an item given a kind but no id. */
-export function slugifyChecklistText(text: string): string {
+function slugifyChecklistText(text: string): string {
   return (
     text
       .toLowerCase()
@@ -149,7 +149,7 @@ function itemsOfLines(lines: string[]): ChecklistItem[] {
 }
 
 /** `"Spec written" {#spec}, "Review copy" {#copy review}` — the items a Blocked names. */
-export function describeChecklistItems(items: ChecklistItem[]): string {
+function describeChecklistItems(items: ChecklistItem[]): string {
   if (items.length === 0) return "(none)";
   return items
     .map((i) => `"${i.text}"${i.id ? ` ${formatChecklistTag(i.id, i.kind)}` : i.kind !== "build" ? ` (${i.kind})` : ""}`)

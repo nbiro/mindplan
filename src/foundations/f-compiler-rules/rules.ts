@@ -16,7 +16,6 @@ import type {
   ProductionState,
 } from "../f-domain-model/types.js";
 import {
-  activeChange,
   BUG_STATES,
   BUG_TRANSITIONS,
   EXECUTION_STATES,
@@ -80,11 +79,6 @@ function nextIsRevisionView(n: MindPlanNode): boolean {
   return Boolean(n.next?.change && revisionFor(n, n.next.change));
 }
 
-/** True when a shipped node has any open evolution: a `next` view or an open revision. */
-export function hasOpenEvolution(n: MindPlanNode): boolean {
-  return Boolean(n.next) || (n.open_revisions?.length ?? 0) > 0;
-}
-
 /**
  * The graph with every `next` view the loader filled from a single open revision removed: live
  * only, so no change's revision is visible.
@@ -145,11 +139,6 @@ export function nodeChanges(n: MindPlanNode): string[] {
   return [n.change];
 }
 
-/** A node that is an open revision of some change (see `changeMembers`). */
-export function isOpenChangeRevision(n: MindPlanNode): boolean {
-  return nodeChanges(n).length > 0;
-}
-
 /** Every change id that has at least one open revision. */
 export function changesWithRevisions(graph: MindPlanGraph): Set<string> {
   const out = new Set<string>();
@@ -182,11 +171,6 @@ export function interactionsOfCapability(graph: MindPlanGraph, capabilityId: str
     .filter((e) => e.type === "belongs_to" && e.target === capabilityId)
     .map((e) => findNode(graph, e.source))
     .filter((n) => n.type === "Interaction");
-}
-
-/** @deprecated Use interactionsOfCapability */
-export function workflowsOfCapability(graph: MindPlanGraph, capabilityId: string): MindPlanNode[] {
-  return interactionsOfCapability(graph, capabilityId);
 }
 
 function isShipped(node: MindPlanNode): boolean {
