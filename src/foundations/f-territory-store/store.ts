@@ -2254,8 +2254,8 @@ export function resolveTerritorySlot(
 export type { CheckboxToggle, NewChecklistItem } from "./checklist.js";
 
 /**
- * Toggle checklist items by id or exact text (`toggleChecklistItems`): only Atomic Ops / Checklist
- * items match. Returns the new body and the lines as written.
+ * Toggle checklist items by id or exact text (`toggleChecklistItems`): every box the Completion
+ * Check counts matches. Returns the new body and the lines as written.
  */
 export function toggleCheckboxesInBody(
   body: string,

@@ -1,6 +1,8 @@
 /**
- * Checklist items: the task-list lines of a node's Atomic Ops (a Foundation's Checklist, a Bug's
- * Fix Checklist). An item may end with a tag `{#<id>}` or `{#<id> <kind>}` before any
+ * Checklist items: every task-list line the Completion Check counts — the whole body (or MDX
+ * file) except the sections the node owns apart from its text (`## Rules`, `## Decisions`). Most
+ * live under Atomic Ops (a Foundation's Checklist, a Bug's Fix Checklist), but an Acceptance
+ * Criteria box counts the same. An item may end with a tag `{#<id>}` or `{#<id> <kind>}` before any
  * ` — note:` / ` — n/a:` annotation: the id is a lowercase slug, stable across rewording, and the
  * kind says who closes it — `build` (the default: the agent building it), `review` (a person
  * reviewing it), or `deploy` (a person deploying it).
@@ -24,6 +26,8 @@ export type ChecklistItem = {
   done: boolean;
   /** 0-based line index in the text parsed. */
   line: number;
+  /** The `## ` heading the item sits under (as written, trimmed); empty above the first heading. */
+  section: string;
   /** Position among the items. */
   index: number;
 };
@@ -48,7 +52,11 @@ export type CheckboxToggle = {
 export type NewChecklistItem = { text: string; id?: string; kind?: ChecklistKind };
 
 const CHECKLIST_SECTIONS = ["atomic ops", "checklist", "fix checklist"];
-const ITEM_LINE = /^(\s*[-*+]\s+)\[([ xX])\](?:\s+(.*))?$/;
+/** A task-list line, as the Completion Check counts it (`countCheckboxesInText`). */
+const ITEM_LINE = /^(\s*[-*+]\s+)\[([ xX])\](.*)$/;
+const RULES_HEADING_LINE = /^## Rules[ \t]*$/;
+const DECISIONS_HEADING_LINE = /^## Decisions[ \t]*$/;
+const SECTION_BREAK_LINE = /^#{1,2}[ \t]/;
 /** A trailing annotation written by a toggle: ` — note: …` or ` — n/a: …`. */
 const ANNOTATION = /\s+—\s+(?:note|n\/a):.*$/;
 const EMPTY_NA = /\s—\s+n\/a:\s*$/;
@@ -107,11 +115,48 @@ function checklistRanges(lines: string[]): [number, number][] {
   return ranges;
 }
 
-function parseLine(line: string, lineIndex: number, index: number): ChecklistItem | null {
+/** Per line: inside a fenced code block (fence lines included). */
+function fencedLines(lines: string[]): boolean[] {
+  let fence: string | null = null;
+  return lines.map((raw) => {
+    const f = raw.match(/^\s*(```|~~~)/);
+    if (!f) return fence !== null;
+    if (fence === null) fence = f[1];
+    else if (fence === f[1]) fence = null;
+    return true;
+  });
+}
+
+/**
+ * Per line: inside a section the node owns apart from its text, exactly as the Completion Check
+ * strips them (`withoutOwnedSections`): the first `## Rules` section (to the next level-1/2
+ * heading), then, in what remains, the first `## Decisions` section outside fenced code.
+ */
+function ownedLines(lines: string[]): boolean[] {
+  const owned = lines.map(() => false);
+  const rulesStart = lines.findIndex((l) => RULES_HEADING_LINE.test(l));
+  if (rulesStart !== -1) {
+    let end = rulesStart + 1;
+    while (end < lines.length && !SECTION_BREAK_LINE.test(lines[end])) end++;
+    for (let i = rulesStart; i < end; i++) owned[i] = true;
+  }
+  const rest = lines.map((_, i) => i).filter((i) => !owned[i]);
+  const restLines = rest.map((i) => lines[i]);
+  const fenced = fencedLines(restLines);
+  const start = restLines.findIndex((l, i) => !fenced[i] && DECISIONS_HEADING_LINE.test(l));
+  if (start !== -1) {
+    let end = start + 1;
+    while (end < restLines.length && (fenced[end] || !SECTION_BREAK_LINE.test(restLines[end]))) end++;
+    for (let k = start; k < end; k++) owned[rest[k]] = true;
+  }
+  return owned;
+}
+
+function parseLine(line: string, lineIndex: number, index: number, section: string): ChecklistItem | null {
   const m = line.match(ITEM_LINE);
   if (!m) return null;
   const checked = m[2] !== " ";
-  const rest = (m[3] ?? "").replace(/\s+$/, "");
+  const rest = (m[3] ?? "").trim();
   const emptyNa = checked && EMPTY_NA.test(` ${rest}`);
   let text = rest.replace(ANNOTATION, "").replace(/\s+—\s+n\/a:\s*$/, "");
   let id: string | undefined;
@@ -122,18 +167,28 @@ function parseLine(line: string, lineIndex: number, index: number): ChecklistIte
     if (tag[2]) kind = tag[2] as ChecklistKind;
     text = text.slice(0, tag.index);
   }
-  return { ...(id ? { id } : {}), kind, text: text.trim(), checked, done: checked && !emptyNa, line: lineIndex, index };
+  return { ...(id ? { id } : {}), kind, text: text.trim(), checked, done: checked && !emptyNa, line: lineIndex, section, index };
 }
 
-/** The checklist items of a body (or a whole MDX file): task-list lines under its checklist sections. */
+/**
+ * The checklist items of a body (or a whole MDX file): every task-list line the Completion Check
+ * counts, each with the `## ` section it sits under.
+ */
 export function parseChecklistItems(body: string): ChecklistItem[] {
   const lines = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const owned = ownedLines(lines);
+  const fenced = fencedLines(lines);
   const items: ChecklistItem[] = [];
-  for (const [start, end] of checklistRanges(lines)) {
-    for (let i = start; i < end; i++) {
-      const item = parseLine(lines[i], i, items.length);
-      if (item) items.push(item);
+  let section = "";
+  for (let i = 0; i < lines.length; i++) {
+    if (owned[i]) continue;
+    const heading = !fenced[i] && lines[i].match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      section = heading[1].trim();
+      continue;
     }
+    const item = parseLine(lines[i], i, items.length, section);
+    if (item) items.push(item);
   }
   return items;
 }
@@ -157,7 +212,8 @@ function oneLine(value: string, field: string): string {
 }
 
 /**
- * Toggle checklist items by id or exact text. Only the checklist sections' items match; a text
+ * Toggle checklist items by id or exact text. Every box the Completion Check counts matches (any
+ * section but Rules and Decisions); a text
  * that is not exactly one item's (tag and annotation excluded) is Blocked, naming the items. Text
  * matching several items is Blocked unless the toggle passes `all`. A note or not-applicable
  * reason is appended to the line, so the item's own wording never changes; unticking strips it.

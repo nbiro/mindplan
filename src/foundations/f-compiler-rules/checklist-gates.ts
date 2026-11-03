@@ -24,18 +24,18 @@ function slotText(node: MindPlanNode, slot: "current" | "next"): string | null {
   return slotSource(node, slot).text;
 }
 
-/** True when every `build` item of the text's checklist is ticked (review and deploy items may stay open). */
+/**
+ * True when the text has at least one checklist item and every `build` item is ticked (review and
+ * deploy items may stay open). Every counted checkbox that is not tagged review or deploy is a
+ * build item, an Acceptance Criteria box included; a text with no item at all proves nothing.
+ */
 export function buildItemsTicked(text: string): boolean {
-  return parseChecklistItems(text).every((i) => i.kind !== "build" || i.done);
+  const items = parseChecklistItems(text);
+  return items.length > 0 && items.every((i) => i.kind !== "build" || i.done);
 }
 
-/**
- * Whether `dep` lets a dependent ship (Infrastructure First / Behavior First): it is stable, or its
- * active slot is in-review with every build item ticked. The active slot is the live file of a
- * pre-ship node, else its open revision (`next` on a revision view, as `revisionGraph` gives it).
- */
-export function dependencySatisfied(dep: MindPlanNode): boolean {
-  if (dep.state === "stable") return true;
+/** The active slot of `dep` is in-review with every build item ticked (the relaxed rule, this node only). */
+function relaxedReady(dep: MindPlanNode): boolean {
   if (dep.shipped_at) {
     if (dep.next?.state !== "in-review") return false;
     const text = slotText(dep, "next");
@@ -44,6 +44,58 @@ export function dependencySatisfied(dep: MindPlanNode): boolean {
   if (dep.state !== "in-review") return false;
   const text = slotText(dep, "current");
   return text !== null && buildItemsTicked(text);
+}
+
+/**
+ * What `dep` itself waits on, in the slot the relaxed rule judges: its depends_on targets, and for
+ * an Interface its exposed Interactions (Behavior First). A shipped node's open revision carries
+ * its own lists; otherwise the graph's live edges.
+ */
+function prerequisites(graph: MindPlanGraph, dep: MindPlanNode): string[] {
+  if (dep.shipped_at && dep.next) {
+    return [...(dep.next.depends_on ?? []), ...(dep.type === "Interface" ? (dep.next.exposes ?? []) : [])];
+  }
+  return graph.edges
+    .filter((e) => e.source === dep.id && (e.type === "depends_on" || (dep.type === "Interface" && e.type === "exposes")))
+    .map((e) => e.target);
+}
+
+/**
+ * Whether dependencies let a dependent ship (Infrastructure First / Behavior First), memoized per
+ * graph: a dependency is stable, or its active slot is in-review with at least one checklist item
+ * and every build item ticked, and each of its own prerequisites (depends_on, and an Interface's
+ * exposes) is satisfied the same way, transitively. The active slot is the live file of a pre-ship
+ * node, else its open revision (`next` on a revision view, as `revisionGraph` gives it). A cycle
+ * is never satisfied by the relaxed rule.
+ */
+export function dependencyGate(graph: MindPlanGraph): (dep: MindPlanNode) => boolean {
+  const memo = new Map<string, boolean>();
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const satisfied = (dep: MindPlanNode): boolean => {
+    if (dep.state === "stable") return true;
+    const known = memo.get(dep.id);
+    if (known !== undefined) return known;
+    // In progress: a cycle back to this node is not satisfied.
+    memo.set(dep.id, false);
+    let ok = relaxedReady(dep);
+    if (ok) {
+      for (const id of prerequisites(graph, dep)) {
+        const target = byId.get(id);
+        if (!target || !satisfied(target)) {
+          ok = false;
+          break;
+        }
+      }
+    }
+    memo.set(dep.id, ok);
+    return ok;
+  };
+  return satisfied;
+}
+
+/** One-off `dependencyGate(graph)(dep)`. */
+export function dependencySatisfied(graph: MindPlanGraph, dep: MindPlanNode): boolean {
+  return dependencyGate(graph)(dep);
 }
 
 function humanItems(text: string | null, node_id: string, change?: string): OpenHumanItem[] {

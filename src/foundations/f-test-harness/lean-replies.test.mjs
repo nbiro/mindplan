@@ -22,6 +22,7 @@ const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)
 const serverEntry = path.join(toolRoot, "dist/index.js");
 const store = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-territory-store/store.js")).href);
 const checklist = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-territory-store/checklist.js")).href);
+const gates = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-compiler-rules/checklist-gates.js")).href);
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-lean-replies-"));
 console.log("Lean-replies sandbox:", root);
@@ -235,7 +236,7 @@ fs.writeFileSync(
   const body = [
     "## Purpose",
     "",
-    "- [ ] Not an item {#purpose}",
+    "- [ ] Purpose box {#purpose}",
     "",
     "## Atomic Ops",
     "",
@@ -251,16 +252,23 @@ fs.writeFileSync(
   ].join("\r\n");
   const items = checklist.parseChecklistItems(body);
   check(
-    "parseChecklistItems reads ids, kinds, text, and state from the Atomic Ops only",
-    JSON.stringify(items.map(({ id, kind, text, checked, done, index }) => ({ id, kind, text, checked, done, index }))) ===
+    "parseChecklistItems reads ids, kinds, text, state, and section of every counted box (Rules left out)",
+    JSON.stringify(items.map(({ id, kind, text, checked, done, section, index }) => ({ id, kind, text, checked, done, section, index }))) ===
       JSON.stringify([
-        { id: "spec", kind: "build", text: "Spec written", checked: true, done: true, index: 0 },
-        { id: "sec", kind: "review", text: "Security review", checked: false, done: false, index: 1 },
-        { id: "ship", kind: "deploy", text: "Ship it", checked: true, done: false, index: 2 },
-        { kind: "build", text: "Plain item", checked: false, done: false, index: 3 },
-        { kind: "build", text: "Odd tag {#Bad}", checked: true, done: true, index: 4 },
-      ]) && items[0].line === 6,
+        { id: "purpose", kind: "build", text: "Purpose box", checked: false, done: false, section: "Purpose", index: 0 },
+        { id: "spec", kind: "build", text: "Spec written", checked: true, done: true, section: "Atomic Ops", index: 1 },
+        { id: "sec", kind: "review", text: "Security review", checked: false, done: false, section: "Atomic Ops", index: 2 },
+        { id: "ship", kind: "deploy", text: "Ship it", checked: true, done: false, section: "Atomic Ops", index: 3 },
+        { kind: "build", text: "Plain item", checked: false, done: false, section: "Atomic Ops", index: 4 },
+        { kind: "build", text: "Odd tag {#Bad}", checked: true, done: true, section: "Atomic Ops", index: 5 },
+      ]) && items[1].line === 6 && store.countCheckboxesInText(body).unchecked + store.countCheckboxesInText(body).checked === items.length,
     JSON.stringify(items)
+  );
+  check(
+    "buildItemsTicked needs at least one item, and an untagged Acceptance Criteria box is a build item",
+    !gates.buildItemsTicked("## Purpose\n\nNo boxes here.\n") &&
+      !gates.buildItemsTicked("## Acceptance Criteria\n\n- [ ] Handles empty input\n\n## Atomic Ops\n\n- [x] Done\n") &&
+      gates.buildItemsTicked("## Acceptance Criteria\n\n- [x] Handles empty input\n- [ ] Sign-off {#sign review}\n")
   );
   check(
     "formatChecklistTag writes {#id} for build and {#id kind} otherwise",

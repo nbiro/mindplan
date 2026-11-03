@@ -961,6 +961,98 @@ fillAndTick("interactions", "i-b");
   check("with every item ticked the dependency ships", shippedHum.new_state === "stable", JSON.stringify(shippedHum));
 }
 
+/** A Foundation (or Interaction) with a claimed file, filled and ticked. */
+async function builtNode(id, type = "Foundation", extra = {}) {
+  const kind = type === "Foundation" ? "foundations" : "interactions";
+  await call("create_node", {
+    id,
+    type,
+    title: `Node ${id}`,
+    description: type === "Foundation" ? `Infra — ${id}` : `Action ${id}`,
+    ...(type === "Foundation" ? { role: "infra" } : {}),
+    ...extra,
+  });
+  if (type === "Interaction") await call("link_nodes", { source_id: id, target_id: "j-app", edge_type: "belongs_to" });
+  write(`src/${id}/index.ts`, `export const v = 1;\n`);
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
+  fillAndTick(kind, id);
+  return territory(kind, id);
+}
+
+// --- every counted checkbox toggles: an Acceptance Criteria box ticks by exact text ---
+{
+  const file = await builtNode("f-ac");
+  const text = fs.readFileSync(file, "utf-8");
+  fs.writeFileSync(file, text.replace("## Atomic Ops", "## Acceptance Criteria\n\n- [ ] Handles empty input\n\n## Atomic Ops"));
+  await walk("f-ac", ["ready", "in-progress", "in-review"]);
+  const held = await blocked("update_node_status", { node_id: "f-ac", new_status: "ship" });
+  check("an unticked Acceptance Criteria box holds the ship (Completion Check)", !!held && held.includes("Completion Check"), String(held));
+  const part = await blocked("patch_node_territory", { node_id: "f-ac", toggle_checkboxes: [{ contains: "empty input", checked: true }] });
+  check("a substring of an Acceptance Criteria box is still Blocked", !!part && part.includes("exact text"), String(part));
+  const ticked = await call("patch_node_territory", { node_id: "f-ac", toggle_checkboxes: [{ contains: "Handles empty input", checked: true }] });
+  check("an Acceptance Criteria box ticks by its exact text", ticked.toggled?.[0] === "- [x] Handles empty input", JSON.stringify(ticked));
+  const shipped = await call("update_node_status", { node_id: "f-ac", new_status: "ship" });
+  check("then the node ships", shipped.new_state === "stable", JSON.stringify(shipped));
+}
+
+// --- the relaxed dependency rule is transitive, needs items, and cannot be undone under a shipped dependent ---
+{
+  // f-base (in-progress) <- f-mid (in-review, build ticked) <- i-top (in-review).
+  await builtNode("f-base");
+  await walk("f-base", ["ready", "in-progress"]);
+  await builtNode("f-mid");
+  await call("link_nodes", { source_id: "f-mid", target_id: "f-base", edge_type: "depends_on" });
+  await walk("f-mid", ["ready", "in-progress", "in-review"]);
+  await builtNode("i-top", "Interaction");
+  await call("link_nodes", { source_id: "i-top", target_id: "f-mid", edge_type: "depends_on" });
+  write("src/i-top/index.ts", 'import { v } from "../f-mid/index.js";\nexport const t = v;\n');
+  await walk("i-top", ["ready", "in-progress", "in-review"]);
+  const transitive = await blocked("update_node_status", { node_id: "i-top", new_status: "ship" });
+  check(
+    "an in-review dependency whose own dependency is in-progress does not count (transitive)",
+    !!transitive && transitive.includes("Infrastructure First") && transitive.includes('"f-mid"'),
+    String(transitive)
+  );
+  await walk("f-base", ["in-review"]);
+  const shipped = await call("update_node_status", { node_id: "i-top", new_status: "ship" });
+  check("once every dependency down the chain is in-review with build items ticked, the dependent ships", shipped.new_state === "stable", JSON.stringify(shipped));
+
+  const cancel = await blocked("update_node_status", { node_id: "f-mid", new_status: "cancelled" });
+  check(
+    "cancelling a dependency a shipped node relies on is Blocked, naming the dependent and both fixes",
+    !!cancel && cancel.includes('"i-top"') && cancel.includes("force_unship") && cancel.includes("Ship"),
+    String(cancel)
+  );
+
+  // A dependency with no checklist item at all proves nothing.
+  // (The shape gate needs a box to reach in-review, so the boxes go after the walk.)
+  const bareFile = await builtNode("f-bare");
+  await walk("f-bare", ["ready", "in-progress", "in-review"]);
+  fs.writeFileSync(bareFile, fs.readFileSync(bareFile, "utf-8").replace(/^\s*[-*+]\s+\[[ xX]\].*$/gm, ""));
+  await builtNode("i-bare", "Interaction");
+  await call("link_nodes", { source_id: "i-bare", target_id: "f-bare", edge_type: "depends_on" });
+  await walk("i-bare", ["ready", "in-progress", "in-review"]);
+  const bare = await blocked("update_node_status", { node_id: "i-bare", new_status: "ship" });
+  check("an in-review dependency with no checklist items does not count", !!bare && bare.includes('"f-bare"'), String(bare));
+
+  // discard_next of an unstable node's revision while a shipped node depends on it.
+  await builtNode("f-unst");
+  await walk("f-unst", ["ready", "in-progress", "in-review", "ship"]);
+  await builtNode("i-unst", "Interaction");
+  await call("link_nodes", { source_id: "i-unst", target_id: "f-unst", edge_type: "depends_on" });
+  await walk("i-unst", ["ready", "in-progress", "in-review", "ship"]);
+  await call("create_node", { id: "bug-unst", type: "Bug", title: "Unst bug", description: "The unst value is wrong." });
+  await call("link_nodes", { source_id: "bug-unst", target_id: "f-unst", edge_type: "affects" });
+  check("the bug makes f-unst unstable", (await state("f-unst")).state === "unstable");
+  await call("open_next", { node_id: "f-unst", change: "unst-fix" });
+  const discard = await blocked("discard_next", { node_id: "f-unst", change: "unst-fix" });
+  check(
+    "discard_next on a non-stable node a shipped node depends on is Blocked, naming the dependent",
+    !!discard && discard.includes('"i-unst"') && discard.includes("force_unship"),
+    String(discard)
+  );
+}
+
 await client.close();
 if (failures > 0) {
   console.log(`\nhonesty.test.mjs: ${failures} failure(s)`);
