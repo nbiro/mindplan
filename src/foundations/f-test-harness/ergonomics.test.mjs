@@ -715,8 +715,8 @@ for (const status of ["ready", "in-progress"]) {
   );
   const rescoped = (await compactCall({ nodes: ["j-long-3"] })).json;
   check(
-    "a repeat scoped run still lists every warning of its nodes, counting them unchanged",
-    rescoped.warnings.length === 1 && rescoped.warnings[0].text.includes('"j-long-3"') && rescoped.unchanged === 1,
+    "a repeat scoped run still lists every warning of its nodes, and a listed warning is not counted unchanged",
+    rescoped.warnings.length === 1 && rescoped.warnings[0].text.includes('"j-long-3"') && rescoped.unchanged === 0,
     JSON.stringify(rescoped)
   );
   const later = (await compactCall()).json;

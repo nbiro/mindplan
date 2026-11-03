@@ -106,7 +106,7 @@ export function scopeWarnings(warnings: string[], nodes?: Set<string>): { kept: 
 /**
  * The compact result: per-category counts of the scoped warnings, every failure once, the info
  * lines, the warnings not acknowledged and not seen in an earlier check of this session (with
- * `scoped`, seen ones are listed too), and how many were acknowledged or seen before.
+ * `scoped`, seen ones are listed too), and how many were acknowledged or left out as seen before.
  */
 export function compactCheckResult(input: {
   ok: boolean;
@@ -134,9 +134,10 @@ export function compactCheckResult(input: {
       acknowledged++;
       continue;
     }
-    if (input.seen.has(id)) {
+    // `unchanged` counts only the seen warnings left out of the list.
+    if (input.seen.has(id) && !input.scoped) {
       unchanged++;
-      if (!input.scoped) continue;
+      continue;
     }
     shown.push({ id, text });
   }
