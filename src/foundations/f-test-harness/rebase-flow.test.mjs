@@ -446,6 +446,62 @@ for (const new_status of SHIP) {
   await call("discard_next", { node_id: "f-z", change: "d2" });
 }
 
+// --- a change walk whose last member's live moved in place: the walk foresees the ship's conflict ---
+{
+  const members = ["f-m1", "f-m2", "f-m3"];
+  const memberLive = (id) => `mindplan/foundations/${id}/${id}.mdx`;
+  const memberRev = (id) => `mindplan/foundations/${id}/revisions/trio/${id}.mdx`;
+  for (const id of members) {
+    await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
+    write(`src/${id}/index.ts`, "export const v = 1;\n");
+    await call("set_implementation_files", { node_id: id, add: [`src/${id}/index.ts`] });
+    fillAndTick(abs(memberLive(id)));
+    for (const new_status of SHIP) await call("update_node_status", { node_id: id, new_status });
+    await call("open_next", { node_id: id, change: "trio" });
+    await call("patch_node_territory", { node_id: id, change: "trio", section: "## Purpose", text: `Purpose of ${id} from trio.` });
+    await call("patch_node_territory", {
+      node_id: id,
+      change: "trio",
+      toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }],
+    });
+    await call("record_decision", {
+      node_id: id,
+      change: "trio",
+      decision: `Revise ${id} under trio.`,
+      alternatives: [`A new node that depends_on ${id}: the contract itself changes.`],
+      why: "The purpose must change in place.",
+    });
+  }
+  await call("patch_node_territory", { node_id: "f-m3", slot: "current", section: "## Purpose", text: "Purpose of f-m3 patched in place." });
+  const revBefore = read(memberRev("f-m3"));
+
+  const walk = await blocked("update_node_status", { scope: "change", change: "trio", new_status: "ship", skip_review: true });
+  check(
+    "a change walk Blocks before any write when a member's ship would hit a rebase conflict",
+    !!walk && walk.includes("f-m3") && walk.includes("section:## Purpose") && walk.includes("Nothing was written") &&
+      ["f-m1", "f-m2"].every((id) => exists(memberRev(id)) && !read(memberLive(id)).includes("from trio.")) &&
+      read(memberRev("f-m3")) === revBefore,
+    String(walk)
+  );
+
+  const skipping = await call("update_node_status", {
+    scope: "change",
+    change: "trio",
+    new_status: "ship",
+    skip_review: true,
+    skip_blocked: true,
+  });
+  const left = (skipping.blocked ?? []).find((b) => b.node_id === "f-m3");
+  check(
+    "skip_blocked ships the other members and lists the conflicted one blocked with the conflict",
+    ["f-m1", "f-m2"].every((id) => !exists(memberRev(id)) && read(memberLive(id)).includes(`Purpose of ${id} from trio.`)) &&
+      !!left && left.step === "ship" && left.reason.includes("section:## Purpose") &&
+      exists(memberRev("f-m3")) && read(memberLive("f-m3")).includes("patched in place."),
+    JSON.stringify(skipping)
+  );
+  await call("discard_next", { node_id: "f-m3", change: "trio" });
+}
+
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {

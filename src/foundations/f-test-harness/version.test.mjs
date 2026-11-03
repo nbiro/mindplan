@@ -630,9 +630,12 @@ function runCheck(root) {
     );
     const again = await call("doctor");
     check("doctor sees the graph cache once the graph loaded", again.json?.cache?.graph === true, again.text);
-    check("a second doctor load is a cache hit", again.json?.cache_hit === true, again.text);
+    check("doctor on a freshly set-up graph with no nodes reports no cache hit", again.json?.cache_hit === false, again.text);
     // A legacy current.mdx beside its id-named twin: a load would delete it, so doctor does not load.
     await call("create_node", { id: "f-doc", type: "Foundation", title: "Doc", description: "Infra — doc", role: "infra" });
+    await call("doctor");
+    const hit = await call("doctor");
+    check("a second doctor load of a graph with a node is a cache hit", hit.json?.cache_hit === true, hit.text);
     const folder = path.join(root, "mindplan", "foundations", "f-doc");
     fs.copyFileSync(path.join(folder, "f-doc.mdx"), path.join(folder, "current.mdx"));
     const legacy = await call("doctor");

@@ -50,7 +50,7 @@ import {
   NODE_TYPES,
   PLANNED_EDGE_TYPES,
 } from "../f-domain-model/types.js";
-import { decisionsSectionRange, detectEol, levelTwoHeadings, rulesSectionRange } from "../f-revision-model/index.js";
+import { decisionsSectionRange, detectEol, fencedLines, levelTwoHeadings, rulesSectionRange } from "../f-revision-model/index.js";
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
@@ -938,11 +938,11 @@ export function loadGraph(): MindPlanGraph {
   return { version: GRAPH_VERSION, nodes, edges: discoverEdges(nodes) };
 }
 
-/** Whether the last graph load of this root re-parsed no folder (every node came from the graph cache); null without a cache. */
+/** Whether the last graph load of this root read at least one folder and re-parsed none (every node came from the graph cache); null without a cache. */
 export function lastGraphLoadFromCache(): boolean | null {
   const cache = graphCacheFor(projectRoot(), parserVersion());
   if (!cache) return null;
-  return cache.lastStats.parsed === 0;
+  return cache.lastStats.folders > 0 && cache.lastStats.parsed === 0;
 }
 
 /** Returns { id, type } if a territory folder exists for this id. */
@@ -1491,12 +1491,17 @@ function normalizeNewlines(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-/** Counts markdown task-list checkboxes in a territory body or full MDX string. */
+/**
+ * Counts markdown task-list checkboxes in a territory body or full MDX string. A line inside a
+ * fenced code block is example text, not a box: skipped, as the checklist parser skips it.
+ */
 export function countCheckboxesInText(text: string): {
   unchecked: number;
   checked: number;
 } {
-  const normalized = withoutOwnedSections(normalizeNewlines(text));
+  const lines = withoutOwnedSections(normalizeNewlines(text)).split("\n");
+  const fenced = fencedLines(lines);
+  const normalized = lines.filter((_, i) => !fenced[i]).join("\n");
   // A not-applicable tick with no reason is not done.
   const emptyNa = normalized.match(/^[ \t]*[-*+][ \t]+\[[xX]\].*[ \t]—[ \t]+n\/a:[ \t]*$/gm)?.length ?? 0;
   const unchecked = (normalized.match(/^\s*[-*+]\s+\[ \]/gm)?.length ?? 0) + emptyNa;

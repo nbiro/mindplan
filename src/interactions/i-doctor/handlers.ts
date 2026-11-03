@@ -26,7 +26,7 @@ export type DoctorReport = {
   graph: { status: GraphState; level: number; server_level: number };
   /** How long a graph load took, through the graph cache (it has no bypass); 0 when not loaded. */
   load_ms_cached: number;
-  /** Every node of that load came from the graph cache (no folder re-parsed). */
+  /** That load read at least one node folder and every node came from the graph cache (no folder re-parsed). */
   cache_hit: boolean;
   load_error?: string;
   cache: { graph: boolean; search: boolean };

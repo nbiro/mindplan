@@ -27,7 +27,20 @@ export function looksLikeTestFile(file: string): boolean {
  * Other changes' revisions do not count.
  */
 function isDirectDependent(graph: MindPlanGraph, nodeId: string, targetId: string): boolean {
-  return graph.edges.some((e) => e.source === nodeId && e.target === targetId && DEPENDENT_EDGES.has(e.type));
+  return dependentEdgeKeys(graph).has(`${nodeId}\0${targetId}`);
+}
+
+/** Per graph: its `edges` array (and length) and the `source\0target` key of each dependent edge in it. */
+const dependentKeysByGraph = new WeakMap<MindPlanGraph, { edges: MindPlanGraph["edges"]; length: number; keys: Set<string> }>();
+
+/** The `source\0target` keys of `graph`'s dependent edges, built once per graph (again when `edges` is replaced or grows). */
+function dependentEdgeKeys(graph: MindPlanGraph): Set<string> {
+  const cached = dependentKeysByGraph.get(graph);
+  if (cached && cached.edges === graph.edges && cached.length === graph.edges.length) return cached.keys;
+  const keys = new Set<string>();
+  for (const e of graph.edges) if (DEPENDENT_EDGES.has(e.type)) keys.add(`${e.source}\0${e.target}`);
+  dependentKeysByGraph.set(graph, { edges: graph.edges, length: graph.edges.length, keys });
+  return keys;
 }
 
 /**

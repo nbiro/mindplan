@@ -8,7 +8,7 @@ import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 // Spawned servers rank by keyword only: no model download or load during tests.
@@ -677,6 +677,24 @@ await call("discard_next", { node_id: "i-feature" });
   );
   await c2.close();
   fs.rmSync(root2, { recursive: true, force: true });
+
+  // The dependent-edge lookup is built once per graph and follows a replaced or grown edge list.
+  const { testImportAllowed } = await import(
+    pathToFileURL(path.join(toolRoot, "dist/foundations/f-compiler-rules/test-imports.js")).href
+  );
+  const buckets = { testOwners: new Map([["src/a/a.test.ts", ["a"]]]) };
+  const reg = { id: "reg" };
+  const g = { nodes: [], edges: [{ source: "reg", target: "a", type: "belongs_to" }] };
+  const before = testImportAllowed(g, buckets, "src/a/a.test.ts", reg);
+  g.edges.push({ source: "reg", target: "a", type: "mounts" });
+  const grown = testImportAllowed(g, buckets, "src/a/a.test.ts", reg);
+  g.edges = [{ source: "reg", target: "b", type: "depends_on" }];
+  const replaced = testImportAllowed(g, buckets, "src/a/a.test.ts", reg);
+  ok(
+    "test import scope: only a dependent edge counts, and the lookup follows edges pushed or replaced",
+    before === false && grown === true && replaced === false,
+    JSON.stringify({ before, grown, replaced })
+  );
 }
 
 await client.close();
