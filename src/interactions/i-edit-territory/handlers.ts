@@ -145,6 +145,15 @@ function validateSplitInto(graph: MindPlanGraph, node: MindPlanNode, ids: string
 }
 
 /**
+ * The declared parts the split_into warning names: those live does not already record (the ship
+ * records only new ones) whose linking edge is not yet in place.
+ */
+function unlinkedSplitParts(graph: MindPlanGraph, node: MindPlanNode, parts: string[]): string[] {
+  const live = new Set(node.split_into ?? []);
+  return parts.filter((id) => !live.has(id) && !splitPartLinked(graph, node, id));
+}
+
+/**
  * Removes a wrong split record from a shipped node in place: `split_at` and `split_into` go, the
  * revision count stays, and the ship rate is replayed from the node file's git history without the
  * split's reset (kept as stored outside git). Returns the paths written and the new rate.
@@ -228,7 +237,7 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
     fields.push("split_into");
     paths.push(...written.paths);
     extra.split_into = written.split_into;
-    const unlinked = split_into.filter((id) => !splitPartLinked(fresh!, target!, id));
+    const unlinked = unlinkedSplitParts(fresh!, target!, written.split_into);
     if (unlinked.length > 0) {
       extra.warnings = [
         `split_into: "${args.node_id}" does not yet ${splitLinkHint(target!)} for ` +
@@ -398,7 +407,7 @@ function patchRevisionTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, 
     extra.split_into = splitList;
     const under = revisionGraph(loadGraph(), change);
     const revised = findNode(under, node.id);
-    const unlinked = split_into!.filter((id) => !splitPartLinked(under, revised, id));
+    const unlinked = unlinkedSplitParts(under, revised, splitList);
     if (unlinked.length > 0) {
       extra.warnings = [
         `split_into: "${node.id}" does not yet ${splitLinkHint(revised)} for ` +

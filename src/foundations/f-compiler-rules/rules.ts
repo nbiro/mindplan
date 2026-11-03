@@ -45,7 +45,7 @@ import {
   withRevision,
 } from "../f-revision-model/index.js";
 import { assertMinimumTerritoryShape, slotSource } from "./shape.js";
-import { buildItemsTicked, dependencyGate } from "./checklist-gates.js";
+import { buildItemsTickedIn, dependencyGate } from "./checklist-gates.js";
 
 export { openHumanItems, type OpenHumanItem } from "./checklist-gates.js";
 
@@ -1096,8 +1096,9 @@ export function assertNoUntickUnderShippedDependents(
   after: string
 ): void {
   if (slotState !== "in-review" || before === after) return;
-  if (!buildItemsTicked(before)) return;
-  const undone = undoneBuildItems(before, after);
+  const beforeItems = parseChecklistItems(before);
+  if (!buildItemsTickedIn(beforeItems)) return;
+  const undone = undoneBuildItems(beforeItems, after);
   if (!undone) return;
   assertNoShippedDependentsRelying(
     graph,
@@ -1107,20 +1108,31 @@ export function assertNoUntickUnderShippedDependents(
 }
 
 /**
- * What one call takes back from a slot whose build items were all done: `null` when the body
- * after has no build item not done and no fewer done build items; otherwise a phrase naming the
- * build items not done and stating the done count before and after.
+ * What one call takes back from a slot whose build items were all done (`beforeItems`, parsed from
+ * the body before): `null` when the body after has no build item not done and no fewer done build
+ * items; otherwise a phrase naming the build items not done after the call, each marked
+ * "(was done)" when a done item of the same id (or, untagged, the same text) went with it, and
+ * stating the done count before and after.
  */
-function undoneBuildItems(before: string, after: string): string | null {
-  const build = (body: string): ChecklistItem[] => parseChecklistItems(body).filter((i) => i.kind === "build");
-  const doneBefore = build(before).filter((i) => i.done).length;
-  const afterItems = build(after);
+function undoneBuildItems(beforeItems: ChecklistItem[], after: string): string | null {
+  const doneBefore = beforeItems.filter((i) => i.kind === "build" && i.done);
+  const afterItems = parseChecklistItems(after).filter((i) => i.kind === "build");
   const open = afterItems.filter((i) => !i.done);
   const doneAfter = afterItems.length - open.length;
-  if (open.length === 0 && doneAfter >= doneBefore) return null;
+  if (open.length === 0 && doneAfter >= doneBefore.length) return null;
+  // Done items of the body before that the body after no longer holds done, by id or text.
+  const key = (i: ChecklistItem): string => (i.id ? `#${i.id}` : `=${i.text}`);
+  const lost = new Map<string, number>();
+  for (const i of doneBefore) lost.set(key(i), (lost.get(key(i)) ?? 0) + 1);
+  for (const i of afterItems) if (i.done && lost.get(key(i))) lost.set(key(i), lost.get(key(i))! - 1);
+  const named = open.map((i) => {
+    const wasDone = (lost.get(key(i)) ?? 0) > 0;
+    if (wasDone) lost.set(key(i), lost.get(key(i))! - 1);
+    return `"${i.id ?? i.text}"${wasDone ? " (was done)" : ""}`;
+  });
   const parts: string[] = [];
-  if (open.length > 0) parts.push(`not done: ${open.map((i) => `"${i.id ?? i.text}"`).join(", ")}`);
-  parts.push(`done build items ${doneBefore} before, ${doneAfter} after`);
+  if (open.length > 0) parts.push(`not done after this call: ${named.join(", ")}`);
+  parts.push(`done build items ${doneBefore.length} before, ${doneAfter} after`);
   return parts.join("; ");
 }
 

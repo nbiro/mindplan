@@ -1097,7 +1097,7 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   const addTwin = await blocked("patch_node_territory", { node_id: "f-mid", add_checklist_items: [{ text: "Wire it all up" }] });
   check(
     "adding an unticked build item whose text equals a ticked one, on a relied-on dependency in review, is Blocked, naming it",
-    !!addTwin && addTwin.includes('"i-top"') && addTwin.includes('not done: "Wire it all up"') &&
+    !!addTwin && addTwin.includes('"i-top"') && addTwin.includes('not done after this call: "Wire it all up";') &&
       fs.readFileSync(midFile, "utf-8") === midReworded,
     String(addTwin)
   );
@@ -1109,7 +1109,7 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   });
   check(
     "swapping a tick (untick a done build item, add a ticked one) on a relied-on dependency in review is Blocked, naming the unticked item",
-    !!swap && swap.includes('"i-top"') && swap.includes('not done: "Wire it all up"') && !swap.includes('"polish"') &&
+    !!swap && swap.includes('"i-top"') && swap.includes('not done after this call: "Wire it all up" (was done)') && !swap.includes('"polish"') &&
       swap.includes("done build items 4 before, 4 after") && fs.readFileSync(midFile, "utf-8") === midReworded,
     String(swap)
   );
@@ -1122,7 +1122,7 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   });
   check(
     "unticking and rewording one build item while ticking another, on a relied-on dependency in review, is Blocked, naming the reworded item",
-    !!untickRewordTick && untickRewordTick.includes('"i-top"') && untickRewordTick.includes('not done: "Wire it up again"') &&
+    !!untickRewordTick && untickRewordTick.includes('"i-top"') && untickRewordTick.includes('not done after this call: "Wire it up again";') &&
       !untickRewordTick.includes('"polish"') && fs.readFileSync(midFile, "utf-8") === midReworded,
     String(untickRewordTick)
   );
@@ -1135,7 +1135,7 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   check(
     "rewording one done build item while removing another is Blocked, stating the done count change",
     !!rewordDrop && rewordDrop.includes('"i-top"') && rewordDrop.includes("done build items 4 before, 3 after") &&
-      !rewordDrop.includes("not done:") && !rewordDrop.includes("possibly") && fs.readFileSync(midFile, "utf-8") === midReworded,
+      !rewordDrop.includes("not done after") && !rewordDrop.includes("possibly") && fs.readFileSync(midFile, "utf-8") === midReworded,
     String(rewordDrop)
   );
   // A slot that already had an open build item was not relied on: its build items are not guarded.

@@ -458,17 +458,32 @@ check("the sandbox passes the check at the end", final.ok, JSON.stringify(final.
     !dotAsStored.tests?.some((t) => t.includes("dot.test")) && same(dotNormalized.tests, ["tests/claims.test.mjs"]),
     JSON.stringify([dotAsStored, dotNormalized.tests])
   );
-  // Legacy duplicates (one stored un-normalized, one normalized): a remove that equals one stored
-  // entry as written drops that entry only, not every entry it normalizes to.
-  fs.writeFileSync(legacyFile, fs.readFileSync(legacyFile, "utf-8").replace(/^tests:$/m, "tests:\n  - tests/./dup.test.mjs\n  - tests/dup.test.mjs"));
+  // Legacy duplicates (one stored un-normalized, one normalized) name the same path: a remove
+  // of either spelling drops both.
+  const dupLine = "tests:\n  - tests/./dup.test.mjs\n  - tests/dup.test.mjs";
+  fs.writeFileSync(legacyFile, fs.readFileSync(legacyFile, "utf-8").replace(/^tests:$/m, dupLine));
   const dupRaw = await call("set_test_files", { node_id: "f-claims", remove: ["tests/./dup.test.mjs"] });
   check(
-    "a remove equal to one stored entry as written drops that entry only, keeping its normalized twin",
-    same(dupRaw.tests, ["tests/claims.test.mjs", "tests/dup.test.mjs"]),
+    "a remove of the un-normalized spelling drops both legacy duplicates",
+    same(dupRaw.tests, ["tests/claims.test.mjs"]),
     JSON.stringify(dupRaw.tests)
   );
+  fs.writeFileSync(legacyFile, fs.readFileSync(legacyFile, "utf-8").replace(/^tests:$/m, dupLine));
   const dupNormalized = await call("set_test_files", { node_id: "f-claims", remove: ["tests/dup.test.mjs"] });
-  check("the normalized twin is then removed as stored", same(dupNormalized.tests, ["tests/claims.test.mjs"]), JSON.stringify(dupNormalized.tests));
+  check(
+    "a remove of the normalized spelling drops both legacy duplicates",
+    same(dupNormalized.tests, ["tests/claims.test.mjs"]),
+    JSON.stringify(dupNormalized.tests)
+  );
+  // A legacy "./" twin of a normalized claim: removing the normalized path drops the twin too, so
+  // the remove is not undone when the kept list is normalized.
+  fs.writeFileSync(legacyFile, fs.readFileSync(legacyFile, "utf-8").replace(/^implements:$/m, "implements:\n  - ./src/f-claims/a.ts"));
+  const twin = await call("set_implementation_files", { node_id: "f-claims", remove: ["src/f-claims/a.ts"], add: ["src/f-claims/b.ts"] });
+  check(
+    "removing a claim drops its legacy \"./\" twin too",
+    same(twin.implements, ["src/f-claims/b.ts"]),
+    JSON.stringify(twin.implements)
+  );
 }
 
 // --- open revisions: edits write add / remove deltas into the revision's folder ---
