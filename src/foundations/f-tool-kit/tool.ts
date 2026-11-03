@@ -60,6 +60,11 @@ export const CHANGE_ID = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-_]*$/, "change ids are slugs: lowercase letters, digits, - and _");
 
+/** Which open revision of a shipped node a call acts on (resolveRevisionChange). */
+export const CHANGE_ARG = CHANGE_ID.optional().describe(
+  "Which open revision of the node (its change id). May be omitted when the node has at most one open revision."
+);
+
 export const CHANGE_REF = z
   .string()
   .optional()

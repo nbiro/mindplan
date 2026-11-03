@@ -4,16 +4,17 @@ type: Interaction
 title: "Record a decision"
 description: "Agent records a design decision on the node it shapes, with the rejected alternatives, supersession, and keep_whole."
 state: stable
-shipped_at: 2026-10-31T23:05:25.678Z
-revisions: 3
-churn: 2.989
+shipped_at: 2026-11-03T08:20:38.429Z
+revisions: 4
+churn: 3.829
 created_at: 2026-10-31T11:58:04.384Z
-updated_at: 2026-11-01T10:53:13.639Z
+updated_at: 2026-11-03T08:20:38.429Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-record-decision/
@@ -48,6 +49,8 @@ Intended files: `src/interactions/i-record-decision/` (`handlers.ts`, `tools.ts`
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-domain-model`, `f-tool-kit`.
 
+- **Decision files (0.18.0).** `record_decision` writes one `decisions/<decision-id>.md` file (in the revision folder `change` picks, else the node folder), never rewriting another; an id already used anywhere on the node is Blocked
+
 ## Acceptance Criteria
 
 - `record_decision` writes a structured entry that `list_decisions` returns; on a node with an open evolution it lands in the next file only
@@ -58,48 +61,6 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-s
 - `keep_whole: true` is written and read back, and the node stops being a hotspot until the decision is superseded
 - A Bug is refused with the nodes it affects named
 - Verified via `npm test`
-
-## Decisions
-
-### d-record-refuses-bugs
-
-- Decision: record_decision refuses Bugs; the decision goes on the node the fix shapes (carried over from d-bugs-hold-no-decisions on the deprecated i-steer-plan).
-- Alternatives:
-  - Allow decisions on Bugs (nothing inherits from a Bug, so the reasoning would never reach the next agent)
-- Why: Decisions are only useful where inheritance delivers them.
-- Change: hotspot-splits
-- Date: 2026-10-31
-
-### d-record-optional-id
-
-- Decision: record_decision takes an optional id and otherwise generates one from the decision's first words (carried over from d-optional-decision-id on the deprecated i-steer-plan).
-- Alternatives:
-  - Require an id (more friction for every record)
-  - Always generate (no stable, readable names like d-capacity-on-booking)
-- Why: Readable ids matter for supersedes, but a missing id should not block recording the reason.
-- Change: hotspot-splits
-- Date: 2026-10-31
-
-### d-decision-sets-no-label
-
-- Decision: record_decision never writes the node's change label: a decision on a shipped node with no open next records its change id on the decision only and does not make the node a neighbor of that change.
-- Alternatives:
-  - Keep labeling and have run_check --merge and the merge gate clear neighbor labels of every change with no open revision (a check would start writing the graph, and in-flight neighbor-only changes would lose their labels at every merge check)
-  - Keep labeling and rely on users clearing stale labels by hand with patch_node_territory change: "" (the stale-label bug stays the default)
-- Why: A label groups live work; a decision on a shipped node is reasoning, not an in-place edit, and a change that only records decisions never opens a revision, so nothing ever cleared its labels and finished changes kept listing shipped nodes as members.
-- Consequences: A neighbor that should join a change while only a decision is recorded on it is labeled explicitly with patch_node_territory, set_implementation_files, or set_test_files (change). list_decisions({ change }) still finds the decision.
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
-### d-decision-change-from-revision-only
-
-- Decision: record_decision tags a decision with its change argument, else the node's open revision's change, else none; it never reads or writes a label.
-- Alternatives:
-  - Keep the fallback to a neighbor's label (labels are removed)
-- Why: Labels no longer exist; the change argument still lets a decision on a shipped node join a change's reasoning trail.
-- Supersedes: d-decision-sets-no-label
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
 
 ## Attachments
 

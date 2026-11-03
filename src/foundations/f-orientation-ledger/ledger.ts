@@ -29,25 +29,28 @@ export function resetOrientationLedger(): void {
 }
 
 /**
- * The graph with each open revision's proposed `belongs_to` / `depends_on` edges added to its
- * live ones: a revision is built against the rules its new edges bring, before it ships.
+ * The graph with every open revision's proposed `belongs_to` / `depends_on` edges added to its
+ * live ones (the union over all of a node's revisions, plus a legacy next file's): a revision is
+ * built against the rules its new edges bring, before it ships, and orienting once covers writes
+ * to any of the node's revisions.
  */
 export function withProposedEdges(graph: MindPlanGraph): MindPlanGraph {
-  const union = (a: string[] | undefined, b: string[] | undefined) =>
-    b?.length ? [...new Set([...(a ?? []), ...b])] : a;
+  const union = (a: string[] | undefined, b: string[]) => (b.length ? [...new Set([...(a ?? []), ...b])] : a);
   return {
     ...graph,
-    nodes: graph.nodes.map((n) =>
-      n.next
-        ? { ...n, belongs_to: union(n.belongs_to, n.next.belongs_to), depends_on: union(n.depends_on, n.next.depends_on) }
-        : n
-    ),
+    nodes: graph.nodes.map((n) => {
+      const revisions = n.open_revisions ?? [];
+      if (!n.next && revisions.length === 0) return n;
+      const belongs = [...(n.next?.belongs_to ?? []), ...revisions.flatMap((r) => r.edges.belongs_to?.add ?? [])];
+      const depends = [...(n.next?.depends_on ?? []), ...revisions.flatMap((r) => r.edges.depends_on?.add ?? [])];
+      return { ...n, belongs_to: union(n.belongs_to, belongs), depends_on: union(n.depends_on, depends) };
+    }),
   };
 }
 
 /**
  * The node rules that reach a node for the work at hand: `resolveNodeRules` over live edges plus
- * the proposed edges of open revisions. What orientation shows and what the gate fingerprints.
+ * the proposed edges of every open revision. What orientation shows and what the gate fingerprints.
  */
 export function reachingRules(graph: MindPlanGraph, nodeId: string): RuleEntry[] {
   return resolveNodeRules(withProposedEdges(graph), nodeId);

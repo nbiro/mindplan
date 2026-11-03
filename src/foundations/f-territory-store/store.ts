@@ -2,18 +2,19 @@
  * File system persistence for MindPlan.
  *
  * Layout (relative to the project root, i.e. MINDPLAN_ROOT or process.cwd()):
- *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation)
+ *   /mindplan/map.md                       — auto-generated Mermaid snapshot (after each mutation; git-ignored)
  *   /mindplan/components/                  — project-specific MDX components (opaque to the compiler)
  *   /mindplan/capabilities/<id>/<id>.mdx          (legacy: current.mdx)
- *   /mindplan/foundations/<id>/<id>.mdx       (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
- *   /mindplan/interactions/<id>/<id>.mdx      (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
- *   /mindplan/interfaces/<id>/<id>.mdx        (+ optional <id>.next.mdx; legacy: current.mdx / next.mdx)
+ *   /mindplan/foundations/<id>/<id>.mdx       (+ revisions/<change>/<id>.mdx per open revision; legacy: current.mdx)
+ *   /mindplan/interactions/<id>/<id>.mdx      (+ revisions/<change>/<id>.mdx per open revision; legacy: current.mdx)
+ *   /mindplan/interfaces/<id>/<id>.mdx        (+ revisions/<change>/<id>.mdx per open revision; legacy: current.mdx)
  *   /mindplan/bugs/<id>/<id>.mdx              (legacy: current.mdx)
  *
  * Owned source files are declared via server-owned `implements` (not prescribed folders).
  * Live node records and outgoing edge arrays live in the live MDX YAML frontmatter.
- * While evolving a shipped Foundation/Interaction/Interface, the evolution file holds the draft pipeline + proposed edges.
- * A shipped node has `<id>.next.mdx` only while a revision is open; ship and discard delete it.
+ * A shipped node's open revisions live under `revisions/<change>/` (revisions.ts); ship and
+ * discard delete the folder. A `<id>.next.mdx` from a release before migration level 4 is still
+ * read (the older migrations need it), but every write tool Blocks beside it naming upgrade_project.
  * New files use the id names. An existing current.mdx / next.mdx stays in use.
  * When both names exist for one slot, the id-named file is kept and the legacy file is deleted.
  * Callers report those deletions via drainRemovedLegacyFiles().
@@ -57,6 +58,9 @@ import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js"
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
+import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
+import { readRevisions } from "./revisions.js";
+import { withRevision } from "../f-revision-model/index.js";
 
 export {
   CONFIG_FILENAME,
@@ -321,14 +325,6 @@ export function nextAttachmentsDir(node: Pick<MindPlanNode, "id" | "type">): str
 /** True when the next-slot path exists on disk (an open evolution, or a leftover mirror). */
 export function nextFileExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
   return fs.existsSync(markdownPath(node, "next"));
-}
-
-/**
- * @deprecated Prefer `nextFileExists` (path on disk) or `node.next` (open evolution).
- * Kept for callers that only need "path present"; does not mean an evolution is open.
- */
-export function nextExists(node: Pick<MindPlanNode, "id" | "type">): boolean {
-  return nextFileExists(node);
 }
 
 /** Read `state:` from a next-slot file without requiring a pipeline state. */
@@ -850,7 +846,15 @@ let cachedParserVersion: string | null = null;
 export function parserVersion(): string {
   if (cachedParserVersion === null) {
     const h = createHash("sha1");
-    for (const rel of ["./store.js", "../f-domain-model/types.js", "../f-source-index/claims.js", "../f-graph-cache/cache.js"]) {
+    for (const rel of [
+      "./store.js",
+      "./revisions.js",
+      "./decisions-store.js",
+      "../f-domain-model/types.js",
+      "../f-revision-model/revision.js",
+      "../f-source-index/claims.js",
+      "../f-graph-cache/cache.js",
+    ]) {
       try {
         h.update(fs.readFileSync(fileURLToPath(new URL(rel, import.meta.url))));
       } catch {
@@ -862,7 +866,12 @@ export function parserVersion(): string {
   return cachedParserVersion;
 }
 
-/** Assembles one node from its folder's <id>.mdx (+ optional <id>.next.mdx); null when it has no live file. */
+/**
+ * Assembles one node from its folder's <id>.mdx (+ optional <id>.next.mdx), its `decisions/*.md`
+ * (appended to the live decisions), and its open revisions under `revisions/`; null when it has
+ * no live file. A legacy next file fills `next`; otherwise exactly one open revision fills it as
+ * the live-plus-revision view (`withRevision`), and several leave it unset.
+ */
 function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
   const currentFile = existingSlotFile(folder.abs, folder.id, "current", folder.rel);
   if (!currentFile) return null;
@@ -880,6 +889,18 @@ function parseNodeFolder(folder: NodeFolder): MindPlanNode | null {
       const evolution = parseNextSlot(folder.id, nextFile);
       if (evolution) node.next = evolution;
     }
+  }
+  const fileDecisions = readDecisionFiles(decisionsDir(folder.abs));
+  if (fileDecisions.length > 0) node.decisions = [...(node.decisions ?? []), ...fileDecisions];
+  const revisions = readRevisions(folder.abs, folder.id);
+  if (revisions.length > 0) {
+    if (!isPipelineNodeType(folder.type)) {
+      throw new Error(
+        `Blocked: revisions/ is only allowed for Foundations, Interactions, and Interfaces (found on ${folder.type} "${folder.id}").`
+      );
+    }
+    node.open_revisions = revisions.map((r) => r.revision);
+    if (!node.next && revisions.length === 1) node.next = withRevision(node, revisions[0].revision.change).next;
   }
   return node;
 }
@@ -989,11 +1010,30 @@ export function nodeExists(id: string): boolean {
   return false;
 }
 
+/**
+ * The file a slot reads: `current` is the live file; `next` is the open revision's
+ * `revisions/<change>/<id>.mdx` when the node's `next` is the view of a stored revision
+ * (`withRevision`, or the loader's single-revision view), else `<id>.next.mdx` (a legacy file the
+ * readers only name so they can Block with upgrade_project).
+ */
+export function slotFilePath(node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot): string {
+  const viewChange = slot === "next" ? (node as Partial<MindPlanNode>).next?.change : undefined;
+  if (viewChange && (node as Partial<MindPlanNode>).open_revisions?.some((r) => r.change === viewChange)) {
+    return revisionMarkdownPath(node, viewChange);
+  }
+  return markdownPath(node, slot);
+}
+
+/** Absolute path of the open revision file of `change`: `<node folder>/revisions/<change>/<id>.mdx`. */
+export function revisionMarkdownPath(node: Pick<MindPlanNode, "id" | "type">, change: string): string {
+  return path.join(entityDir(node), "revisions", change, liveMdxFilename(node.id));
+}
+
 export function readMarkdown(
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot = "current"
 ): string {
-  const file = markdownPath(node, slot);
+  const file = slotFilePath(node, slot);
   if (!fs.existsSync(file)) {
     throw new Error(
       `Blocked: ${slot} file not found for node "${node.id}" (expected at ${file}).`
@@ -1002,23 +1042,34 @@ export function readMarkdown(
   return readFileRetry(file);
 }
 
+/** Full text of the node's open revision file of `change`. Throws when it is missing. */
+export function readRevisionMarkdown(node: Pick<MindPlanNode, "id" | "type">, change: string): string {
+  return readFileRetry(revisionMarkdownPath(node, change));
+}
+
 /**
  * Body reader for search (section headings): `readMarkdown`, plus a `stamp` so a search re-reads a
  * body edited outside MCP even when its frontmatter is unchanged: the graph cache's content key for
- * a node it loaded (no file access), else the slot file's size and mtime.
+ * a node it loaded (no file access), else the slot file's size and mtime. `revision` reads an open
+ * revision's file, so every revision's headings are indexed the same way on every path (orient,
+ * the write refresh, the server warm-up).
  */
 export function territoryBodyReader(): ((
   node: Pick<MindPlanNode, "id" | "type">,
   slot: TerritorySlot
-) => string) & { stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => string } {
+) => string) & {
+  stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => string;
+  revision: (node: Pick<MindPlanNode, "id" | "type">, change: string) => string;
+} {
   const read = (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => readMarkdown(node, slot);
   return Object.assign(read, {
     stamp: (node: Pick<MindPlanNode, "id" | "type">, slot: TerritorySlot) => {
       const key = graphCacheFor(projectRoot(), parserVersion())?.contentKey(node as MindPlanNode);
       if (key) return key;
-      const st = fs.statSync(markdownPath(node, slot));
+      const st = fs.statSync(slotFilePath(node, slot));
       return `${st.size}:${st.mtimeMs}`;
     },
+    revision: (node: Pick<MindPlanNode, "id" | "type">, change: string) => readRevisionMarkdown(node, change),
   });
 }
 
@@ -1589,8 +1640,8 @@ export function writeNodeRules(
   }
   assertValidNodeRules(rules);
   const text = rules.replace(/\r\n/g, "\n").trim();
+  // Rules live on the live file only: an open revision never carries them.
   const slots: TerritorySlot[] = ["current"];
-  if (node.next) slots.push("next");
   const paths: string[] = [];
   for (const slot of slots) {
     const raw = readMarkdown(node, slot);
@@ -1625,14 +1676,23 @@ export function withoutOwnedSections(text: string): string {
 /**
  * Splits a territory body (or full MDX) into the body without the `## Decisions` section and the
  * section's text (heading excluded, surrounding blank lines trimmed, CR removed). The section runs
- * from a `## Decisions` line to the next level-1/2 heading or EOF. Only the first section is read.
+ * from a `## Decisions` line to the next level-1/2 heading or EOF; as in `splitSections`, a heading
+ * inside a fenced code block is code, not a boundary. Only the first section is read.
  */
 export function splitNodeDecisions(text: string): { body: string; section: string } {
   const lines = text.split("\n");
-  const start = lines.findIndex((line) => NODE_DECISIONS_HEADING_LINE.test(line.replace(/\r$/, "")));
+  let fence: string | null = null;
+  const fenced = lines.map((raw) => {
+    const f = raw.match(/^\s*(```|~~~)/);
+    if (!f) return fence !== null;
+    if (fence === null) fence = f[1];
+    else if (fence === f[1]) fence = null;
+    return true;
+  });
+  const start = lines.findIndex((line, i) => !fenced[i] && NODE_DECISIONS_HEADING_LINE.test(line.replace(/\r$/, "")));
   if (start === -1) return { body: text, section: "" };
   let end = start + 1;
-  while (end < lines.length && !SECTION_BREAK_LINE.test(lines[end])) end++;
+  while (end < lines.length && (fenced[end] || !SECTION_BREAK_LINE.test(lines[end]))) end++;
   const section = lines
     .slice(start + 1, end)
     .join("\n")
@@ -1672,17 +1732,22 @@ const DECISION_ALTERNATIVE_LINE = /^[ \t]+[-*][ \t]+(.+)$/;
 
 /**
  * Parses the `### <id>` entries of a Decisions section. Lines outside an entry, entries whose id
- * is not a decision id, and entries with no `Decision:` value are skipped.
+ * is not a decision id, and entries with no `Decision:` value are skipped. A field may wrap: a
+ * non-blank line right below a `Decision:`, `Why:`, or `Consequences:` line (or an alternative)
+ * that is not itself a field continues it, joined with one space. Unknown fields are ignored.
  */
 export function parseDecisions(section: string): DecisionRecord[] {
   const out: DecisionRecord[] = [];
   let current: DecisionRecord | null = null;
   let inAlternatives = false;
+  /** The value a wrapped line continues; null after a blank line or another field. */
+  let wrapping: "decision" | "why" | "consequences" | "alternative" | null = null;
   for (const raw of section.replace(/\r/g, "").split("\n")) {
     const heading = raw.match(DECISION_ENTRY_HEADING);
     if (heading) {
       if (current?.decision) out.push(current);
       inAlternatives = false;
+      wrapping = null;
       current = DECISION_ID_PATTERN.test(heading[1])
         ? { id: heading[1], decision: "", alternatives: [], why: "" }
         : null;
@@ -1692,28 +1757,49 @@ export function parseDecisions(section: string): DecisionRecord[] {
     const alternative = raw.match(DECISION_ALTERNATIVE_LINE);
     if (inAlternatives && alternative) {
       current.alternatives.push(alternative[1].trim());
+      wrapping = "alternative";
       continue;
     }
     const field = raw.match(DECISION_FIELD_LINE);
     if (!field) {
-      if (raw.trim()) inAlternatives = false;
+      const more = raw.trim();
+      if (!more) {
+        wrapping = null;
+        continue;
+      }
+      if (wrapping === "alternative" && current.alternatives.length > 0) {
+        current.alternatives[current.alternatives.length - 1] += ` ${more}`;
+      } else if (wrapping === "decision" || wrapping === "why") {
+        current[wrapping] = current[wrapping] ? `${current[wrapping]} ${more}` : more;
+      } else if (wrapping === "consequences") {
+        current.consequences = current.consequences ? `${current.consequences} ${more}` : more;
+      } else {
+        inAlternatives = false;
+      }
       continue;
     }
     inAlternatives = false;
+    wrapping = null;
     const value = field[2].trim();
     switch (field[1].toLowerCase()) {
       case "decision":
         current.decision = value;
+        wrapping = "decision";
         break;
       case "alternatives":
         inAlternatives = true;
-        if (value) current.alternatives.push(value);
+        if (value) {
+          current.alternatives.push(value);
+          wrapping = "alternative";
+        }
         break;
       case "why":
         current.why = value;
+        wrapping = "why";
         break;
       case "consequences":
         if (value) current.consequences = value;
+        wrapping = "consequences";
         break;
       case "supersedes":
         if (value) current.supersedes = value;
@@ -1753,43 +1839,6 @@ export function formatDecisionEntry(record: DecisionRecord): string {
   if (record.date) lines.push(`- Date: ${record.date}`);
   if (record.keep_whole) lines.push("- Keep whole: true");
   return lines.join("\n");
-}
-
-/**
- * The only writer of the `## Decisions` section. Appends one entry to the active slot (the open
- * next file while a shipped node evolves, else the live file).
- * Frontmatter, state, and readiness are untouched: a decision explains the contract, it does not
- * change it. Returns the slot and repo-relative paths written.
- */
-export function appendDecision(
-  node: MindPlanNode,
-  record: DecisionRecord
-): { slot: TerritorySlot; paths: string[] } {
-  if (isInactiveNode(node)) {
-    throw new Error(
-      `Blocked: "${node.id}" is ${node.state}; decisions cannot be recorded on a retired or closed node.`
-    );
-  }
-  const slot: TerritorySlot = node.next ? "next" : "current";
-  const raw = readMarkdown(node, slot);
-  const match = raw.match(/^(---\r?\n[\s\S]*?\r?\n---\r?\n?)([\s\S]*)$/);
-  if (!match) {
-    throw new Error(`Blocked: ${slot} file for "${node.id}" has no YAML frontmatter.`);
-  }
-  const { body: withoutRules, rules } = splitNodeRules(match[2]);
-  const { body, section } = splitNodeDecisions(withoutRules);
-  const entry = formatDecisionEntry(record);
-  const nextSection = section ? `${section}\n\n${entry}` : entry;
-  // joinNodeDecisions writes the section in the body's own line endings.
-  const written = joinNodeRules(joinNodeDecisions(body, nextSection), rules);
-  writeMarkdown(node, `${match[1]}${written}`, slot);
-  const paths = [markdownRelativePath(node, slot)];
-  if (slot === "next" && node.next) {
-    node.next.decisions = [...(node.next.decisions ?? []), record];
-  } else {
-    node.decisions = [...(node.decisions ?? []), record];
-  }
-  return { slot, paths };
 }
 
 /**
@@ -2126,7 +2175,7 @@ export function resolveTerritorySlot(
   if (explicit) {
     if (explicit === "next" && !node.next) {
       throw new Error(
-        `Blocked: node "${node.id}" has no open evolution (a leftover mirror file is not a revision; call open_next first).`
+        `Blocked: node "${node.id}" has no open revision (a leftover mirror file is not a revision; call open_next first).`
       );
     }
     return explicit;
@@ -2485,7 +2534,7 @@ export function writeChangeFrontmatter(
 ): void {
   if (input.change === undefined && input.change_ref === undefined) return;
   if (slot === "next" && !node.next) {
-    throw new Error(`Blocked: node "${node.id}" has no open evolution to carry a change id.`);
+    throw new Error(`Blocked: node "${node.id}" has no open revision to carry a change id.`);
   }
   const { file, raw, fence } = requireMutableFrontmatter(node, slot);
   const patched = applyChangeScalars(fence, input);
@@ -2505,168 +2554,56 @@ export function clearAddedClaims(node: MindPlanNode): boolean {
   return true;
 }
 
-/**
- * Opens an evolution: writes `<id>.next.mdx` from the live file in state `draft` (replacing a
- * leftover `mirror` file).
- * The revision gets a fresh list of unticked default Atomic Ops (`withFreshAtomicOps`); the rest of
- * the body is the live text until the agent edits the successor.
- */
-export function openNextSlot(
-  node: MindPlanNode,
-  meta?: { title?: string; description?: string }
-): NextSlot {
-  if (node.next) {
-    throw new Error(
-      `Blocked: "${node.id}" already has a ${territorySlotFilename(node, "next")} evolution in state "${node.next.state}".`
-    );
-  }
-  const nextPath = markdownPath(node, "next");
-  const existingState = readNextFileState(node);
-  if (existingState && !isMirrorState(existingState)) {
-    throw new Error(
-      `Blocked: "${node.id}" next file has unexpected state "${existingState}". ` +
-        `Expected a missing file (or a leftover ${MIRROR_STATE} file, which open_next replaces).`
-    );
-  }
-  if (fs.existsSync(nextPath) && !fs.statSync(nextPath).isFile()) {
-    throw new Error(
-      `Blocked: cannot open "${node.id}": ${path.basename(nextPath)} exists and is not a file.`
-    );
-  }
-
-  const now = new Date().toISOString();
-  const raw = readMarkdown(node, "current");
-  const match = raw.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)/);
-  if (!match) {
-    throw new Error(`Blocked: live file for "${node.id}" has no YAML frontmatter.`);
-  }
-  // Planned edges stay on live (the handler applies the revision's own); attribution is per revision.
-  const eol = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-  let inner = stripNamedListLines(stripNamedListLines(match[2], "planned"), "attributed")
-    .replace(/\r?\n/g, eol)
-    .replace(/^state:\s*.*$/m, "state: draft");
-  if (/^updated_at:/m.test(inner)) {
-    inner = inner.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
-  } else {
-    const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-    inner = `${inner}${nl}updated_at: ${now}`;
-  }
-  // When this revision opened: the decision gate only counts change-id decisions from then on.
-  {
-    const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-    inner = `${inner.replace(/\r?\nopened_at:.*$/m, "")}${nl}opened_at: ${now}`;
-  }
-  const title = meta?.title;
-  const description = meta?.description;
-  if (title !== undefined) {
-    if (/^title:/m.test(inner)) {
-      inner = inner.replace(/^title:.*$/m, () => `title: ${JSON.stringify(title)}`);
-    } else {
-      const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-      inner = `${inner}${nl}title: ${JSON.stringify(title)}`;
-    }
-  }
-  if (description !== undefined) {
-    if (/^description:/m.test(inner)) {
-      inner = inner.replace(/^description:.*$/m, () => `description: ${JSON.stringify(description)}`);
-    } else {
-      const nl = match[1].endsWith("\r\n") ? "\r\n" : "\n";
-      inner = `${inner}${nl}description: ${JSON.stringify(description)}`;
-    }
-  }
-  // The revision starts its own Atomic Ops; the shipped ledger is not copied forward.
-  const rest = withFreshAtomicOps(raw.slice(match[0].length), node.type);
-  // Bypass writeMarkdown's guard: a leftover mirror file is replaced here.
-  writeTerritoryFile(nextPath, `${match[1]}${inner}${match[3]}${rest}`);
-
-  fs.mkdirSync(nextAttachmentsDir(node), { recursive: true });
-  const keep = path.join(nextAttachmentsDir(node), ".gitkeep");
-  if (!fs.existsSync(keep)) writeFileRetry(keep, "");
-
-  const parsed = parseFrontmatter(readFileRetry(nextPath));
-  if (!parsed) {
-    throw new Error(`Blocked: next file for "${node.id}" unreadable after open_next.`);
-  }
-  const slot: NextSlot = {
-    state: "draft",
-    title: parsed.scalars.title ?? node.title,
-    description: parsed.scalars.description ?? node.description,
-    updated_at: now,
-    opened_at: now,
-  };
-  if (parsed.arrays.belongs_to.length) slot.belongs_to = [...parsed.arrays.belongs_to];
-  if (parsed.arrays.depends_on.length) slot.depends_on = [...parsed.arrays.depends_on];
-  if (parsed.arrays.exposes.length) slot.exposes = [...parsed.arrays.exposes];
-  if (parsed.arrays.leads_to.length) slot.leads_to = [...parsed.arrays.leads_to];
-  if (parsed.arrays.mounts.length) slot.mounts = [...parsed.arrays.mounts];
-  if (parsed.implements.length) slot.implements = [...parsed.implements];
-  if (parsed.scalars.role && isFoundationRole(parsed.scalars.role)) {
-    slot.role = parsed.scalars.role;
-  } else if (node.role) {
-    slot.role = node.role;
-  }
-  return slot;
-}
+/** What a ship writes over the live file: the shipping revision's scalars, lists, and body. */
+export type PromotedLive = {
+  title: string;
+  description: string;
+  role?: FoundationRole;
+  edges: Partial<Record<PlannedEdgeType, string[]>>;
+  implements: string[];
+  tests: string[];
+  aliases: string[];
+  /** The shipping change: its planned edges are dropped from live. */
+  change?: string;
+  /** Parts this ship splits out of the node. */
+  splitInto?: string[];
+  /** The new live body without its `## Rules` section (live's rules are joined back). */
+  body: string;
+  /** Line endings of the written file. */
+  eol: string;
+  /** Text between the closing frontmatter fence and the body. */
+  separator: string;
+};
 
 /**
- * Abandons an in-flight evolution: deletes `<id>.next.mdx` and `next-attachments/`. Returns the
- * paths deleted.
+ * Rewrites the live file of a shipping node from `p` with production state: bumps `revisions`
+ * and `churn` (reset by a split), keeps live's rules and other changes' planned edges, strips the
+ * Atomic Ops, drops `added_claims` and `attributed`, and updates `node` to match. Shared by
+ * `promoteNextSlot` and `shipRevision`; attachments and the revision's files are the caller's.
  */
-export function discardNextSlot(node: Pick<MindPlanNode, "id" | "type">): string[] {
-  const nextFile = markdownPath(node, "next");
-  if (!fs.existsSync(nextFile)) {
-    throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to discard.`);
-  }
-  return deleteNextSlotFiles(node);
-}
-
-/**
- * Promotes `<id>.next.mdx` over `<id>.mdx`: copies next body/scalars/edges into the live file with
- * production state, then deletes the next file and `next-attachments/`.
- */
-export function promoteNextSlot(
+export function writePromotedLive(
   node: MindPlanNode,
   productionState: string,
   shippedAt: string,
-  opts: { splitInto?: string[] } = {}
+  p: PromotedLive
 ): void {
-  if (!node.next) {
-    throw new Error(`Blocked: node "${node.id}" has no ${territorySlotFilename(node, "next")} to promote.`);
-  }
-  const nextRaw = readMarkdown(node, "next");
-  const nextSplit = splitContext(nextRaw);
-  if (!nextSplit) {
-    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
-  }
-  const nextParsed = parseFrontmatter(nextRaw);
-  if (!nextParsed) {
-    throw new Error(`Blocked: next file for "${node.id}" has no YAML frontmatter.`);
-  }
-
-  const title = nextParsed.scalars.title ?? node.next.title;
-  const description = nextParsed.scalars.description ?? node.next.description;
-  const belongs_to = nextParsed.arrays.belongs_to;
-  const depends_on = nextParsed.arrays.depends_on;
-  const exposes = nextParsed.arrays.exposes;
-  const leads_to = nextParsed.arrays.leads_to;
-  const mounts = nextParsed.arrays.mounts;
-  const implementsList = nextParsed.implements;
-  const testsList = nextParsed.tests;
-  const aliasesList = nextParsed.aliases;
-  const role =
-    nextParsed.scalars.role && isFoundationRole(nextParsed.scalars.role)
-      ? (nextParsed.scalars.role as FoundationRole)
-      : node.next.role ?? node.role;
-  // The shipped change's planned edges are now real (or were dropped on purpose); other changes keep theirs.
-  const shippedChange = nextParsed.scalars.change ?? node.next.change;
+  const { title, description, role } = p;
+  const belongs_to = p.edges.belongs_to ?? [];
+  const depends_on = p.edges.depends_on ?? [];
+  const exposes = p.edges.exposes ?? [];
+  const leads_to = p.edges.leads_to ?? [];
+  const mounts = p.edges.mounts ?? [];
+  const implementsList = p.implements;
+  const testsList = p.tests;
+  const aliasesList = p.aliases;
   const liveParsed = parseFrontmatter(readMarkdown(node, "current"));
-  const plannedKept = (liveParsed?.planned ?? []).filter((e) => e.change !== shippedChange);
+  const plannedKept = (liveParsed?.planned ?? []).filter((e) => e.change !== p.change);
   // One more ship; a revision that split parts out of the node records where the split happened.
   const revisions = (positiveInt(liveParsed?.scalars.revisions) ?? 1) + 1;
-  const splitInto = [...new Set([...(liveParsed?.split_into ?? []), ...(opts.splitInto ?? [])])];
-  const splitAt = opts.splitInto?.length ? revisions : positiveInt(liveParsed?.scalars.split_at);
+  const splitInto = [...new Set([...(liveParsed?.split_into ?? []), ...(p.splitInto ?? [])])];
+  const splitAt = p.splitInto?.length ? revisions : positiveInt(liveParsed?.scalars.split_at);
   // A split hands the reasons for change to the parts, so the root's recent rate starts over.
-  const churn = opts.splitInto?.length
+  const churn = p.splitInto?.length
     ? 0
     : churnAfterShip(
         nonNegativeNumber(liveParsed?.scalars.churn),
@@ -2715,11 +2652,11 @@ export function promoteNextSlot(
   }
   if (implementsList.length > 0) {
     frontmatterLines.push("implements:");
-    for (const p of implementsList) frontmatterLines.push(`  - ${p}`);
+    for (const entry of implementsList) frontmatterLines.push(`  - ${entry}`);
   }
   if (testsList.length > 0) {
     frontmatterLines.push("tests:");
-    for (const p of testsList) frontmatterLines.push(`  - ${p}`);
+    for (const entry of testsList) frontmatterLines.push(`  - ${entry}`);
   }
   if (aliasesList.length > 0) {
     frontmatterLines.push("aliases:");
@@ -2736,26 +2673,8 @@ export function promoteNextSlot(
 
   const liveRules = readNodeRules(node, "current");
   // A shipped node keeps no Atomic Ops: the ledger was for this ship, and git keeps it.
-  const promotedBody = joinNodeRules(withoutAtomicOps(splitNodeRules(nextSplit.body).body, node.type), liveRules);
-  // The live file takes the next file's line endings.
-  writeMarkdown(
-    node,
-    `${frontmatterLines.join(detectEol(nextRaw))}${nextSplit.separator}${promotedBody}`,
-    "current"
-  );
-
-  // Merge next-attachments into attachments when present
-  const nextAtt = nextAttachmentsDir(node);
-  if (fs.existsSync(nextAtt)) {
-    const dest = attachmentsDir(node);
-    fs.mkdirSync(dest, { recursive: true });
-    for (const entry of fs.readdirSync(nextAtt, { withFileTypes: true })) {
-      if (!entry.isFile() || entry.name === ".gitkeep") continue;
-      copyFileRetry(path.join(nextAtt, entry.name), path.join(dest, entry.name));
-    }
-  }
-
-  discardNextSlot(node);
+  const promotedBody = joinNodeRules(withoutAtomicOps(p.body, node.type), liveRules);
+  writeMarkdown(node, `${frontmatterLines.join(p.eol)}${p.separator}${promotedBody}`, "current");
 
   node.title = title;
   node.description = description;
@@ -2787,7 +2706,6 @@ export function promoteNextSlot(
   if (plannedKept.length > 0) node.planned = plannedKept;
   else delete node.planned;
   delete node.attributed;
-  delete node.next;
 }
 
 /**
@@ -2915,7 +2833,8 @@ export function writeTestsFrontmatter(
     throw new Error(`Blocked: "${node.id}" is ${node.state}; tests cannot be linked to a retired node.`);
   }
   const normalized = normalizeClaimList(entries, "tests");
-  const slots: TerritorySlot[] = node.next ? ["current", "next"] : ["current"];
+  // A legacy next file holds its own copy; an open revision (a `next` view) does not.
+  const slots: TerritorySlot[] = node.next && !node.open_revisions?.length ? ["current", "next"] : ["current"];
   const paths: string[] = [];
   let changed = false;
   for (const slot of slots) {
@@ -2970,7 +2889,8 @@ export function writeAliasesFrontmatter(
     throw new Error(`Blocked: "${node.id}" is ${node.state}; aliases cannot be set on a retired or closed node.`);
   }
   const normalized = normalizeAliases(node.id, entries);
-  const slots: TerritorySlot[] = node.next ? ["current", "next"] : ["current"];
+  // A legacy next file holds its own copy; an open revision (a `next` view) does not.
+  const slots: TerritorySlot[] = node.next && !node.open_revisions?.length ? ["current", "next"] : ["current"];
   const paths: string[] = [];
   let changed = false;
   for (const slot of slots) {

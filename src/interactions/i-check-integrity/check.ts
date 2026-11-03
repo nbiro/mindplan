@@ -17,7 +17,9 @@ import {
   STALE_PATHS_ONLY,
   coverageFix,
   createCoverageFixContext,
+  crossChangeClaimWarnings,
   findAllImportViolations,
+  findAllOwnershipConflicts,
   findImportViolationsForNode,
   findOwnershipConflicts,
   formatCoverageFix,
@@ -28,7 +30,7 @@ import {
   testPresenceFailures,
   untestedWarning,
 } from "../../foundations/f-compiler-rules/integrity.js";
-import { changeMembers } from "../../foundations/f-compiler-rules/rules.js";
+import { revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
 import {
   changeMembership,
@@ -73,6 +75,7 @@ import {
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
+import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
 const MID_PIPELINE = new Set(["in-progress", "in-review"]);
@@ -114,7 +117,8 @@ export interface MergeNode {
   id: string;
   type: string;
   state: string;
-  slot: "live" | "next";
+  /** `revision`: an open revision stored under `revisions/<change>/`; `next`: a legacy next file. */
+  slot: "live" | "next" | "revision";
   files?: string[];
 }
 
@@ -135,6 +139,8 @@ export interface ChangeCheck {
     id: string;
     type: string;
     kind: "revision" | "planned";
+    /** The change id, on a revision member. */
+    change?: string;
     state: string;
     next_state: string | null;
   }[];
@@ -161,16 +167,33 @@ export interface CheckResult {
 }
 
 /**
- * The in-review gate on every revision of a change: import and ownership violations on its
+ * The slots the check reads on a node: each open revision as its own view (`withRevision`, tagged
+ * with its change), else the node itself (live, or live plus a legacy next file).
+ */
+function slotViews(node: MindPlanNode): { change: string | null; view: MindPlanNode }[] {
+  const open = node.open_revisions ?? [];
+  if (open.length === 0) return [{ change: null, view: node }];
+  return open.map((r) => ({ change: r.change, view: withRevision(node, r.change) }));
+}
+
+/** How a check line names a node's open slot: `next` (legacy, or a node's only revision), else `revision "<change>"`. */
+function slotLabel(node: MindPlanNode, change: string | null): string {
+  return change === null || (node.open_revisions?.length ?? 0) <= 1 ? "next" : `revision "${change}"`;
+}
+
+/**
+ * The in-review gate on every revision of a change, judged on `revisionGraph(graph, change)` (each
+ * member's revision of the change, every other node live): import and ownership violations on its
  * active-slot files (Blocked), every stale-text signal (warnings; planned paths go to info), and
  * its decision and fan-out warnings.
  */
 function checkChange(
-  graph: MindPlanGraph,
+  fullGraph: MindPlanGraph,
   root: string,
   change: string,
   decisionCtx: DecisionContext
 ): ChangeCheck {
+  const graph = revisionGraph(fullGraph, change);
   // Planned sources are listed, not gated: their files do not change until the change opens them.
   const { revisions, planned } = changeMembership(graph, change);
   const failures: string[] = [];
@@ -182,16 +205,18 @@ function checkChange(
     );
   }
   for (const node of revisions) {
-    for (const v of findImportViolationsForNode(graph, root, node)) {
+    // A shipped member is judged through its revision of this change; a pre-ship member is live.
+    const c = revisionFor(node, change) ? change : undefined;
+    for (const v of findImportViolationsForNode(fullGraph, root, node, c)) {
       failures.push(`Blocked: change "${change}": ${v.message}`);
     }
-    for (const conflict of findOwnershipConflicts(graph, root, node)) {
+    for (const conflict of findOwnershipConflicts(fullGraph, root, node, c)) {
       failures.push(`Blocked: change "${change}": ${conflict}`);
     }
     for (const missing of testPresenceFailures(node, root)) {
       failures.push(`Blocked: change "${change}": ${missing}`);
     }
-    const stale = staleTextWarnings(graph, root, node, undefined, STALE_ALL);
+    const stale = staleTextWarnings(fullGraph, root, node, undefined, STALE_ALL, c);
     warnings.push(...stale.warnings);
     info.push(...stale.info);
   }
@@ -211,7 +236,7 @@ function checkChange(
   const fanOut = fanOutSettings(loadProjectConfig(root));
   const fanOutCtx = fanOutContext(graph);
   for (const node of revisions) {
-    warnings.push(...decisionWarnings(graph, node, decisionCtx));
+    warnings.push(...decisionWarnings(fullGraph, node, decisionCtx, revisionFor(node, change) ? change : null));
     const f = fanOutFor(graph, node, fanOut, fanOutCtx);
     if (f) warnings.push(fanOutWarning(f));
     const untested = untestedWarning(node);
@@ -221,6 +246,7 @@ function checkChange(
     id: n.id,
     type: n.type,
     kind,
+    ...(kind === "revision" ? { change } : {}),
     state: n.state,
     next_state: n.next?.state ?? null,
   });
@@ -338,52 +364,43 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
   };
 }
 
+/**
+ * Exclusivity per view (`findAllOwnershipConflicts`): a file two nodes claim live fails, and under
+ * each change a file a revision of that change claims while another node claims it too fails,
+ * naming the change. A file only revisions of different changes claim (on different nodes) never
+ * meets in one view: it warns (`crossChangeClaimWarnings`), since the second to ship rebases into
+ * a claim conflict.
+ */
 function checkExclusivity(
   graph: MindPlanGraph,
   root: string,
-  failures: string[]
+  failures: string[],
+  warnings: string[]
 ): OwnershipBuckets {
-  const claims: { file: string; owner: string }[] = [];
-
-  for (const node of graph.nodes) {
-    if (!isPipelineNodeType(node.type)) continue;
-    if (RETIRED_STATES.has(node.state)) continue;
-    if (node.next) {
-      for (const f of expandClaims(node.next.implements, root)) {
-        claims.push({ file: f, owner: node.id });
-      }
-      const nextSet = new Set(expandClaims(node.next.implements, root));
-      for (const f of expandClaims(node.implements, root)) {
-        if (nextSet.has(f)) claims.push({ file: f, owner: node.id });
-      }
-    } else {
-      for (const f of expandClaims(node.implements, root)) {
-        claims.push({ file: f, owner: node.id });
-      }
-    }
+  const groups = new Map<string, { file: string; change: string | null; ids: Set<string> }>();
+  for (const p of findAllOwnershipConflicts(graph, root)) {
+    const key = `${p.file}\n${p.change ?? ""}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { file: p.file, change: p.change, ids: new Set() }));
+    g.ids.add(p.a);
+    g.ids.add(p.b);
   }
-
-  const byFile = new Map<string, Set<string>>();
-  for (const c of claims) {
-    let set = byFile.get(c.file);
-    if (!set) {
-      set = new Set();
-      byFile.set(c.file, set);
-    }
-    set.add(c.owner);
+  const failed = new Set<string>();
+  const ordered = [...groups.values()].sort(
+    (a, b) => (a.change === null ? 0 : 1) - (b.change === null ? 0 : 1) || (a.change ?? "").localeCompare(b.change ?? "")
+  );
+  for (const g of ordered) {
+    if (failed.has(g.file)) continue;
+    failed.add(g.file);
+    const list = [...g.ids].sort().map((id) => `"${id}"`).join(", ");
+    const under = g.change === null ? "" : ` under change "${g.change}"`;
+    fail(failures, `exclusivity: "${g.file}" claimed by multiple nodes${under}: ${list}.`);
   }
-  for (const [file, owners] of byFile) {
-    if (owners.size > 1) {
-      fail(
-        failures,
-        `exclusivity: "${file}" claimed by multiple nodes: ${[...owners]
-          .sort()
-          .map((id) => `"${id}"`)
-          .join(", ")}.`
-      );
-    }
+  for (const w of crossChangeClaimWarnings(graph, root)) {
+    const file = /^ownership: "([^"]+)"/.exec(w)?.[1];
+    if (file && failed.has(file)) continue;
+    warnings.push(w);
   }
-
   return buildOwnershipIndex(graph, root);
 }
 
@@ -445,20 +462,39 @@ function checkPresence(graph: MindPlanGraph, root: string, failures: string[]): 
       : undefined;
     checkSlot(node.implements, "live", liveNeedsPresence, released);
 
-    if (node.next && node.next.state === "in-review") {
-      checkSlot(node.next.implements, "next", true);
-    }
-    for (const missing of testPresenceFailures(node, root)) fail(failures, missing);
-    // A revision in review must have written the files it attributes to itself.
-    const reviewSlot = node.next ? node.next : node;
-    if (reviewSlot.state === "in-review") {
-      for (const f of reviewSlot.attributed ?? []) {
-        if (!fs.existsSync(path.join(root, ...f.split("/")))) {
-          fail(failures, `presence: "${node.id}" attributed file missing on disk: "${f}".`);
+    // Each open revision (or a legacy next) on its own: a node may hold several.
+    const lines = new Set<string>();
+    for (const { change, view } of slotViews(node)) {
+      if (view.next && view.next.state === "in-review") {
+        checkSlot(view.next.implements, slotLabel(node, change), true);
+      }
+      for (const missing of testPresenceFailures(view, root)) lines.add(missing);
+      // A revision in review must have written the files it attributes to itself.
+      const reviewSlot = view.next ? view.next : view;
+      if (reviewSlot.state === "in-review") {
+        for (const f of reviewSlot.attributed ?? []) {
+          if (!fs.existsSync(path.join(root, ...f.split("/")))) {
+            lines.add(`presence: "${node.id}" attributed file missing on disk: "${f}".`);
+          }
         }
       }
     }
+    for (const line of lines) fail(failures, line);
   }
+}
+
+/** One `conflicts:` warning per open revision that still holds unresolved rebase conflicts. */
+function conflictWarnings(graph: MindPlanGraph): string[] {
+  const warnings: string[] = [];
+  for (const node of graph.nodes) {
+    for (const r of node.open_revisions ?? []) {
+      if (r.conflicts.length === 0) continue;
+      warnings.push(
+        `conflicts: "${node.id}" revision "${r.change}" has ${r.conflicts.length} unresolved rebase conflict(s); resolve_conflict before in-review.`
+      );
+    }
+  }
+  return warnings;
 }
 
 /**
@@ -517,7 +553,13 @@ function checkImports(
   warnings: string[]
 ): void {
   const scanned = [
-    ...new Set([...universe, ...buckets.live.keys(), ...buckets.next.keys(), ...buckets.released.keys()]),
+    ...new Set([
+      ...universe,
+      ...buckets.live.keys(),
+      ...buckets.next.keys(),
+      ...buckets.released.keys(),
+      ...buckets.revisions.keys(),
+    ]),
   ].sort((a, b) => a.localeCompare(b));
   const seen = new Set<string>();
   for (const violation of findAllImportViolations(graph, buckets, root, scanned)) {
@@ -549,43 +591,51 @@ function collectWarnings(
 ): { warnings: string[]; info: string[] } {
   const editedInPlace = (node: MindPlanNode): boolean =>
     changed !== null && (node.implements ?? []).some((claim) => changed.some((rel) => claimCoversPath(claim, rel)));
-  const warnings: string[] = [];
-  const info: string[] = [];
+  const warnings = new Set<string>();
+  const info = new Set<string>();
   for (const node of graph.nodes) {
-    // Description quality (every node type; never fails the check).
-    warnings.push(...descriptionWarnings(node));
-    const shape = shapeWarning(node);
-    if (shape) warnings.push(shape);
-    if (!isPipelineNodeType(node.type)) continue;
-    if (RETIRED_STATES.has(node.state)) continue;
-    const active = node.next ? node.next.state : node.state;
-    const scope =
-      active === "in-review"
-        ? STALE_ALL
-        : !node.next && isProductionState(node.state)
-          ? editedInPlace(node)
-            ? STALE_ALL
-            : STALE_PATHS_ONLY
-          : null;
-    if (scope) {
-      const stale = staleTextWarnings(graph, root, node, undefined, scope);
-      warnings.push(...stale.warnings);
-      info.push(...stale.info);
+    // Each open revision is read on its own view (live plus that revision).
+    for (const { change, view } of slotViews(node)) {
+      // Description quality (every node type; never fails the check), per open revision.
+      for (const w of descriptionWarnings(node, change ?? undefined)) warnings.add(w);
+      const shape = shapeWarning(view);
+      if (shape) warnings.add(shape);
+      if (!isPipelineNodeType(node.type)) continue;
+      if (RETIRED_STATES.has(node.state)) continue;
+      const active = view.next ? view.next.state : view.state;
+      const scope =
+        active === "in-review"
+          ? STALE_ALL
+          : !view.next && isProductionState(view.state)
+            ? editedInPlace(view)
+              ? STALE_ALL
+              : STALE_PATHS_ONLY
+            : null;
+      if (scope) {
+        const stale = staleTextWarnings(graph, root, view, undefined, scope);
+        for (const w of stale.warnings) warnings.add(w);
+        for (const line of stale.info) info.add(line);
+      }
+      const untested = untestedWarning(view);
+      if (untested) warnings.add(untested);
     }
-    const untested = untestedWarning(node);
-    if (untested) warnings.push(untested);
   }
-  return { warnings, info };
+  return { warnings: [...warnings], info: [...info] };
 }
 
 /**
- * Decision warnings: every open revision (any pre-ship state, or a shipped node's open next) that
- * is decision-worthy and has no decision yet. Moving it to in-review Blocks until one is recorded.
+ * Decision warnings: every open revision (any pre-ship state, a shipped node's legacy next, or
+ * each stored revision judged under its change) that is decision-worthy and has no decision yet.
+ * Moving it to in-review Blocks until one is recorded.
  */
 function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): string[] {
-  const warnings: string[] = [];
-  for (const node of graph.nodes) warnings.push(...decisionWarnings(graph, node, ctx));
-  return warnings;
+  const warnings = new Set<string>();
+  for (const node of graph.nodes) {
+    for (const { change } of slotViews(node)) {
+      for (const w of decisionWarnings(graph, node, ctx, change)) warnings.add(w);
+    }
+  }
+  return [...warnings];
 }
 
 /**
@@ -613,27 +663,82 @@ function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
   );
 }
 
-function ownerAllowsWorkingTree(graph: MindPlanGraph, node: MindPlanNode): boolean {
-  if (node.next) {
-    if (ACTIVE_BUILD.has(node.next.state)) return true;
+/**
+ * A node's open slots for the dirty-file rules: each open revision (with its change), else a
+ * legacy next file (change `null`). Empty when nothing is open.
+ */
+function openSlots(node: MindPlanNode): { change: string | null; state: string }[] {
+  const revs = node.open_revisions ?? [];
+  if (revs.length > 0) return revs.map((r) => ({ change: r.change, state: r.state }));
+  return node.next ? [{ change: null, state: node.next.state }] : [];
+}
+
+/** True when the node's open revision of `change` claims `rel` (live with its delta applied). */
+function revisionClaims(buckets: OwnershipBuckets, node: MindPlanNode, change: string, rel: string): boolean {
+  return (buckets.revisions.get(rel) ?? []).some((c) => c.id === node.id && c.change === change);
+}
+
+/**
+ * True when one of the node's open slots in `states` may be touching `rel`: a legacy next always;
+ * a revision when it claims the file (live ⊕ its delta) or the file is a live claim it releases.
+ */
+function openSlotAllows(
+  buckets: OwnershipBuckets,
+  node: MindPlanNode,
+  rel: string,
+  states: Set<string>
+): boolean {
+  return openSlots(node).some(
+    (s) =>
+      states.has(s.state) &&
+      (s.change === null || revisionClaims(buckets, node, s.change, rel) || buckets.liveClaims.get(rel) === node.id)
+  );
+}
+
+function ownerAllowsWorkingTree(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  node: MindPlanNode,
+  rel: string
+): boolean {
+  if (openSlots(node).length > 0) {
+    if (openSlotAllows(buckets, node, rel, ACTIVE_BUILD)) return true;
     return bugAllowsDirty(graph, node.id);
   }
   if (ACTIVE_BUILD.has(node.state)) return true;
-  // A shipped node's files are edited in place: stable/unstable with no open next.
+  // A shipped node's files are edited in place: stable/unstable with no open revision.
   if (isProductionState(node.state)) return true;
   return bugAllowsDirty(graph, node.id);
 }
 
-function ownerAllowsCommitDiff(graph: MindPlanGraph, node: MindPlanNode): boolean {
-  if (node.next) {
-    if (MID_PIPELINE.has(node.next.state)) return true;
+function ownerAllowsCommitDiff(
+  graph: MindPlanGraph,
+  buckets: OwnershipBuckets,
+  node: MindPlanNode,
+  rel: string
+): boolean {
+  if (openSlots(node).length > 0) {
+    if (openSlotAllows(buckets, node, rel, MID_PIPELINE)) return true;
     return bugAllowsDirty(graph, node.id);
   }
   if (CLAIMED_OR_CONCLUDED.has(node.state)) return true;
   return bugAllowsDirty(graph, node.id);
 }
 
+/** The open revisions of a node with several, as drift and dirty-src lines name them; else undefined. */
+function revisionStates(node: MindPlanNode): { change: string; state: string }[] | undefined {
+  const revs = node.open_revisions ?? [];
+  if (revs.length < 2) return undefined;
+  return [...revs]
+    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
+    .map((r) => ({ change: r.change, state: r.state }));
+}
+
 function describeOwner(node: MindPlanNode): string {
+  const revs = revisionStates(node);
+  if (revs) {
+    return `"${node.id}" is "${node.state}" (revisions: ${revs.map((r) => `"${r.change}" ${r.state}`).join(", ")})`;
+  }
   return `"${node.id}" is "${node.state}"` + (node.next ? ` (next: ${node.next.state})` : "");
 }
 
@@ -701,7 +806,7 @@ function checkDirtySrc(
 
   const checkPath = (
     rel: string,
-    allow: (g: MindPlanGraph, n: MindPlanNode) => boolean,
+    allow: (g: MindPlanGraph, b: OwnershipBuckets, n: MindPlanNode, rel: string) => boolean,
     hint: string
   ): void => {
     if (!universe.has(rel) && !exclusiveOwner(buckets, rel) && !ownerOfFile(buckets, rel)) {
@@ -719,7 +824,7 @@ function checkDirtySrc(
       fail(failures, `dirty path "${rel}" maps to unknown node "${ownerId}".`);
       return;
     }
-    if (!allow(graph, node)) {
+    if (!allow(graph, buckets, node, rel)) {
       fail(
         failures,
         `dirty file "${rel}" while ${describeOwner(node)}. ${hint}`
@@ -733,7 +838,7 @@ function checkDirtySrc(
     checkPath(
       rel,
       ownerAllowsWorkingTree,
-      "Uncommitted changes require in-progress (or next in-progress), a shipped owner with no open next, or a Bug in fixing/in-review."
+      "Uncommitted changes require in-progress (or a revision in-progress), a shipped owner with no open revision, or a Bug in fixing/in-review."
     );
   }
 
@@ -744,7 +849,7 @@ function checkDirtySrc(
     checkPath(
       rel,
       ownerAllowsCommitDiff,
-      "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or next in-progress/in-review, or a Bug in fixing/in-review."
+      "Committed diffs require in-progress/in-review/stable/unstable/cancelled/deprecated, or a revision in-progress/in-review, or a Bug in fixing/in-review."
     );
   }
 }
@@ -760,9 +865,8 @@ function mergeShipCall(node: MergeNode, change: string | null): string {
 }
 
 function mergeLine(node: MergeNode, change: string | null, base: string | undefined): string {
-  const where = `"${node.id}" (${node.type}, ${node.slot === "next" ? "next " : ""}${node.state}, ${
-    change ? `change "${change}"` : "no change"
-  })`;
+  const slot = node.slot === "live" ? "" : `${node.slot} `;
+  const where = `"${node.id}" (${node.type}, ${slot}${node.state}, ${change ? `change "${change}"` : "no change"})`;
   if (node.type === "Bug") {
     return (
       `Blocked: Merge: ${where}: the fix is finished but the bug is not resolved. ` +
@@ -838,16 +942,19 @@ function checkMerge(
     }
     if (!isPipelineNodeType(node.type)) continue;
     if (RETIRED_STATES.has(node.state)) continue;
-    const slot = node.next ? "next" : "live";
-    const state = node.next ? node.next.state : node.state;
-    const change = activeChange(node) ?? null;
-    if (state === "in-review") {
-      found.push({ change, node: { id: node.id, type: node.type, state, slot } });
-    } else if (state === "in-progress" && changed) {
-      const claims = (node.next ? node.next.implements : node.implements) ?? [];
-      const files = changed.filter((rel) => claims.some((claim) => claimCoversPath(claim, rel)));
-      if (files.length > 0) {
-        found.push({ change, node: { id: node.id, type: node.type, state, slot, files } });
+    // Each open revision is gated on its own, under its change.
+    for (const { change: revision, view } of slotViews(node)) {
+      const slot = revision !== null ? "revision" : view.next ? "next" : "live";
+      const state = view.next ? view.next.state : view.state;
+      const change = revision ?? activeChange(view) ?? null;
+      if (state === "in-review") {
+        found.push({ change, node: { id: node.id, type: node.type, state, slot } });
+      } else if (state === "in-progress" && changed) {
+        const claims = (view.next ? view.next.implements : view.implements) ?? [];
+        const files = changed.filter((rel) => claims.some((claim) => claimCoversPath(claim, rel)));
+        if (files.length > 0) {
+          found.push({ change, node: { id: node.id, type: node.type, state, slot, files } });
+        }
       }
     }
   }
@@ -883,8 +990,15 @@ export type DriftPath = {
   owner_id: string;
   state: string;
   next_state: string | null;
+  /** Present when the owner has several open revisions (`next_state` is then null). */
+  revisions?: { change: string; state: string }[];
   class: DriftClass;
 };
+
+function driftRevisions(node: MindPlanNode): { revisions?: { change: string; state: string }[] } {
+  const revisions = revisionStates(node);
+  return revisions ? { revisions } : {};
+}
 
 export type DriftReport = {
   paths: DriftPath[];
@@ -917,8 +1031,12 @@ function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
     .sort((a, b) => a.id.localeCompare(b.id));
   let best: { id: string; viaNext: boolean; len: number } | null = null;
   for (const node of nodes) {
+    // Every open revision's claims (live with its delta), else a legacy next's, then live.
+    const revs = node.open_revisions ?? [];
     const slots: { claims: string[] | undefined; viaNext: boolean }[] = [
-      { claims: node.next?.implements, viaNext: true },
+      ...(revs.length > 0
+        ? revs.map((r) => ({ claims: applyDelta(node.implements, r.implements), viaNext: true }))
+        : [{ claims: node.next?.implements, viaNext: true }]),
       { claims: node.implements, viaNext: false },
     ];
     for (const slot of slots) {
@@ -938,15 +1056,25 @@ function ownerFromClaims(graph: MindPlanGraph, rel: string): string | null {
   return best?.id ?? null;
 }
 
-/** True when the owner has an open update that is allowed to be editing `rel` right now. */
+/**
+ * True when the owner has an open update that is allowed to be editing `rel` right now: an
+ * in-progress legacy next or open revision that claims the file (each revision read as live with
+ * its delta), a pre-ship node in progress, or a Bug in fixing/in-review.
+ */
 function hasOpenUpdateFor(
   graph: MindPlanGraph,
   buckets: OwnershipBuckets,
   node: MindPlanNode,
   rel: string
 ): boolean {
-  if (node.next) {
-    if (ACTIVE_BUILD.has(node.next.state) && buckets.next.get(rel) === node.id) return true;
+  const slots = openSlots(node);
+  if (slots.length > 0) {
+    for (const s of slots) {
+      if (!ACTIVE_BUILD.has(s.state)) continue;
+      if (s.change === null ? buckets.next.get(rel) === node.id : revisionClaims(buckets, node, s.change, rel)) {
+        return true;
+      }
+    }
     return bugAllowsDirty(graph, node.id);
   }
   if (!node.shipped_at && ACTIVE_BUILD.has(node.state)) return true;
@@ -1010,6 +1138,7 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
           owner_id: node.id,
           state: node.state,
           next_state: node.next?.state ?? null,
+          ...driftRevisions(node),
           class: "claimed_missing",
         });
         continue;
@@ -1023,6 +1152,7 @@ export function buildDriftReport(options: DriftOptions = {}): DriftReport | null
         owner_id: node.id,
         state: node.state,
         next_state: node.next?.state ?? null,
+        ...driftRevisions(node),
         class: "owner_idle",
       });
     }
@@ -1099,7 +1229,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
   }
 
   try {
-    const buckets = checkExclusivity(graph, root, failures);
+    const buckets = checkExclusivity(graph, root, failures, warnings);
     const universe = listUniverseFiles(root);
     checkCoverage(graph, root, buckets, universe, failures);
     checkPresence(graph, root, failures);
@@ -1110,6 +1240,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     warnings.push(...collected.warnings);
     info.push(...collected.info);
     warnings.push(...legacyMirrorWarnings(graph));
+    warnings.push(...conflictWarnings(graph));
     warnings.push(...routeFamilySplits(graph, buckets, universe));
     const decisionCtx = createDecisionContext(root);
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));

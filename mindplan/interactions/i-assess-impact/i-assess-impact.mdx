@@ -4,11 +4,11 @@ type: Interaction
 title: "Assess impact"
 description: "Agent asks what a change to a node, or a whole change, reaches: dependents, affected files, tests, rules impact, decisions, planned edges, and additivity."
 state: stable
-shipped_at: 2026-11-01T11:12:14.344Z
-revisions: 3
-churn: 2.967
+shipped_at: 2026-11-03T08:20:37.037Z
+revisions: 4
+churn: 3.841
 created_at: 2026-10-31T11:58:04.548Z
-updated_at: 2026-11-01T11:12:14.344Z
+updated_at: 2026-11-03T08:20:37.037Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -43,6 +43,8 @@ Intended files: `src/interactions/i-assess-impact/` (`handlers.ts`, `tools.ts`).
 - Exactly one of `node_id` or `change`; a read: no orientation gate, drift attached
 
 Depends on: `f-plan-views`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-domain-model`, `f-tool-kit`.
+
+- **Open revisions (0.18.0).** `get_blast_radius({ change })` merges the radius of every revision of the change, judged on `graphUnder`
 
 ## Acceptance Criteria
 

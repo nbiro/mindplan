@@ -127,8 +127,8 @@ async function session() {
 {
   const { client, raw, call } = await session();
   const writes = [
-    ["set_implementation_files", { node_id: "f-cards", files: ["src/pay/"] }],
-    ["set_test_files", { node_id: "f-cards", files: ["src/pay/pay.test.mjs"] }],
+    ["set_implementation_files", { replace: true, node_id: "f-cards", files: ["src/pay/"] }],
+    ["set_test_files", { replace: true, node_id: "f-cards", files: ["src/pay/pay.test.mjs"] }],
     ["patch_node_territory", { node_id: "f-cards", section: "## Purpose", text: "Card processor adapter." }],
     ["patch_node_territory", { node_id: "f-cards", toggle_checkboxes: [{ contains: "Spec written", checked: true }] }],
     ["patch_node_rules", { node_id: "f-cards", rules: "- Never log card numbers." }],
@@ -142,7 +142,7 @@ async function session() {
     statusBlocked.error && statusBlocked.text.includes('orient_for_work({ node_id: "i-refund-0" })'),
     statusBlocked.text.slice(0, 160)
   );
-  const openBlocked = await raw("open_next", { node_id: "f-ledger" });
+  const openBlocked = await raw("open_next", { change: "rev-f-ledger", node_id: "f-ledger" });
   check("open_next on an unoriented node is Blocked: Orientation", openBlocked.error && openBlocked.text.startsWith("Blocked: Orientation:"), openBlocked.text.slice(0, 120));
   for (const [tool, args] of writes) {
     const r = await raw(tool, args);
@@ -167,7 +167,7 @@ async function session() {
   await call("orient_for_work", { node_id: "i-refund-0", depth: "rules" });
   check("update_node_status succeeds after orienting", !(await raw("update_node_status", { node_id: "i-refund-0", new_status: "cancelled" })).error);
   await call("orient_for_work", { node_id: "f-ledger", depth: "rules" });
-  const openAfter = await raw("open_next", { node_id: "f-ledger" });
+  const openAfter = await raw("open_next", { change: "rev-f-ledger", node_id: "f-ledger" });
   check(
     "after orienting, open_next reaches its own lifecycle check",
     openAfter.error && !openAfter.text.startsWith("Blocked: Orientation"),

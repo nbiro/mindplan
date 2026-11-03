@@ -59,6 +59,17 @@ const call = async (tool, args) => {
   return JSON.parse(r.text);
 };
 const live = (rel) => fs.readFileSync(path.join(root, rel), "utf-8");
+/**
+ * The open evolution file of `<dir>/<id>` for `change`: the revision file
+ * (`revisions/<change>/<id>.mdx`) when one exists, else a legacy `<id>.next.mdx`.
+ */
+const openSlot = (dir, id, change) => {
+  const revision = `${dir}/${id}/revisions/${change}/${id}.mdx`;
+  return fs.existsSync(path.join(root, revision)) ? live(revision) : live(`${dir}/${id}/${id}.next.mdx`);
+};
+/** True when a slot's text lists `target` under `type` (a full list, or a revision's `<type>_add` delta). */
+const listsEdge = (text, type, target) =>
+  new RegExp(`(?:^|\\n)${type}(?:_add)?:\\r?\\n(\\s+- .*\\r?\\n)*\\s+- ${target}(?:\\r?\\n|$)`).test(text);
 
 const SECTIONS = {
   Foundation: ["## Purpose", "## Shared Substrate Spec", "## Acceptance Criteria"],
@@ -79,10 +90,10 @@ await call("create_node", { id: "f-db", type: "Foundation", title: "Database", d
 await call("create_node", { id: "f-root", type: "Foundation", title: "Root", description: "Assembler — composition root with the migrations folder", role: "assembler", change: "base" });
 await call("create_node", { id: "i-old", type: "Interaction", title: "Read a page", description: "Visitor reads a page.", change: "base" });
 await call("create_node", { id: "if-dash", type: "Interface", title: "Dashboard", description: "Dashboard entry point for staff.", change: "base" });
-await call("set_implementation_files", { node_id: "f-db", files: ["src/db/"] });
-await call("set_implementation_files", { node_id: "f-root", files: ["src/root/"] });
-await call("set_implementation_files", { node_id: "i-old", files: ["src/old/"] });
-await call("set_implementation_files", { node_id: "if-dash", files: ["src/dash/"] });
+await call("set_implementation_files", { replace: true, node_id: "f-db", files: ["src/db/"] });
+await call("set_implementation_files", { replace: true, node_id: "f-root", files: ["src/root/"] });
+await call("set_implementation_files", { replace: true, node_id: "i-old", files: ["src/old/"] });
+await call("set_implementation_files", { replace: true, node_id: "if-dash", files: ["src/dash/"] });
 await call("link_nodes", { source_id: "f-root", target_id: "f-db", edge_type: "depends_on" });
 await call("link_nodes", { source_id: "i-old", target_id: "j-site", edge_type: "belongs_to" });
 await call("link_nodes", { source_id: "i-old", target_id: "f-db", edge_type: "depends_on" });
@@ -102,7 +113,7 @@ check("the base ships", !base.error, base.text);
 
 // --- planned edges ---
 await call("create_node", { id: "i-new", type: "Interaction", title: "Edit a page", description: "Staff edits a page.", change: "feat" });
-await call("set_implementation_files", { node_id: "i-new", files: ["src/new/"] });
+await call("set_implementation_files", { replace: true, node_id: "i-new", files: ["src/new/"] });
 await call("link_nodes", { source_id: "i-new", target_id: "j-site", edge_type: "belongs_to" });
 await call("link_nodes", { source_id: "i-new", target_id: "f-db", edge_type: "depends_on" });
 
@@ -187,8 +198,8 @@ check(
 );
 check(
   "the next file has the edge and no planned: list",
-  /exposes:\r?\n(\s+- .*\r?\n)*\s+- i-new/.test(live("mindplan/interfaces/if-dash/if-dash.next.mdx")) &&
-    !live("mindplan/interfaces/if-dash/if-dash.next.mdx").includes("planned:")
+  listsEdge(openSlot("mindplan/interfaces", "if-dash", "feat"), "exposes", "i-new") &&
+    !openSlot("mindplan/interfaces", "if-dash", "feat").includes("planned:")
 );
 const whileOpen = await call("run_check", { change: "feat" });
 check(
@@ -230,13 +241,13 @@ fs.writeFileSync(path.join(root, dashRel), withBogus.replace(/\r?\n/g, "\r\n"));
 await call("unlink_nodes", { source_id: "if-dash", target_id: "i-third", change: "c3" });
 check("an unreadable planned item survives a planned write", live(dashRel).includes("c9 bogus_type i-third"), live(dashRel).split("---")[1]);
 await call("link_nodes", { source_id: "if-dash", target_id: "i-third", edge_type: "exposes", change: "c3" });
-await call("open_next", { node_id: "if-dash" });
-const crlfNext = live("mindplan/interfaces/if-dash/if-dash.next.mdx").split("---")[1];
-check("open_next keeps a CRLF live file's line endings in the next file", !/[^\r]\n/.test(crlfNext), JSON.stringify(crlfNext.slice(0, 120)));
-await call("patch_node_territory", { node_id: "if-dash", change: "c3" });
+await call("open_next", { change: "rev-if-dash", node_id: "if-dash" });
+// The revision file's frontmatter is server-written (LF); its body is the live body, CRLF kept.
+const crlfNext = live("mindplan/interfaces/if-dash/revisions/rev-if-dash/if-dash.mdx").split(/\r?\n---\r?\n/).slice(1).join("---");
+check("open_next keeps a CRLF live file's line endings in the revision body", !/[^\r]\n/.test(crlfNext), JSON.stringify(crlfNext.slice(0, 120)));
 const lateChange = await call("run_check", { change: "c3" });
 check(
-  "a planned edge the revision never applied stays listed after the change id is set on it",
+  "a planned edge of another change stays listed while a revision of a different change is open",
   lateChange.info.some((l) => l.startsWith('planned edges: "if-dash" plans exposes i-third')),
   JSON.stringify(lateChange.info)
 );

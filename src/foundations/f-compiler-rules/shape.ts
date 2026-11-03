@@ -7,7 +7,37 @@
 
 import type { FoundationRole, MindPlanNode } from "../f-domain-model/types.js";
 import { isInactiveNode, isOpenBugState, isPipelineNodeType } from "../f-domain-model/types.js";
-import { readMarkdown, splitContext, territorySlotFilename } from "../f-territory-store/store.js";
+import { revisionFor, withRevision } from "../f-revision-model/index.js";
+import { REVISIONS_DIR, revisionRelativeFilePath } from "../f-territory-store/revisions.js";
+import {
+  markdownRelativePath,
+  readMarkdown,
+  splitContext,
+  territorySlotFilename,
+} from "../f-territory-store/store.js";
+
+/** Where a slot's text lives: its full file text (null when missing), its name in the node folder, and its repo path. */
+export type SlotSource = { text: string | null; file: string; relPath: string };
+
+/**
+ * The file a slot reads. `current` is the live file. `next` is the open revision file
+ * (`revisions/<change>/<id>.mdx`) when the node's `next` is the view of an open revision (a node
+ * from `withRevision` / `graphUnder`, or the loader's single-revision view), else the legacy
+ * `<id>.next.mdx`. Gate code that reads slot "next" on a revision view so reads that revision.
+ */
+export function slotSource(node: MindPlanNode, slot: "current" | "next"): SlotSource {
+  let text: string | null = null;
+  try {
+    text = readMarkdown(node, slot);
+  } catch {
+    text = null;
+  }
+  const change = slot === "next" ? node.next?.change : undefined;
+  if (change && revisionFor(node, change)) {
+    return { text, file: `${REVISIONS_DIR}/${change}/${node.id}.mdx`, relPath: revisionRelativeFilePath(node, change) };
+  }
+  return { text, file: territorySlotFilename(node, slot), relPath: markdownRelativePath(node, slot) };
+}
 
 export type ShapedNodeType = "Foundation" | "Interaction" | "Interface" | "Bug";
 export type ShapeGate = "ready" | "in-review" | "ship" | "resolved";
@@ -156,8 +186,10 @@ export type ShapeSectionStatus = {
 type ShapeProblem = { single: string; item: string };
 
 function slotBody(node: MindPlanNode, slot: "current" | "next"): string {
+  const { text } = slotSource(node, slot);
+  if (text === null) return "";
   try {
-    return splitContext(readMarkdown(node, slot))?.body ?? "";
+    return splitContext(text)?.body ?? "";
   } catch {
     return "";
   }
@@ -192,7 +224,7 @@ function roleMissing(node: MindPlanNode, slot: "current" | "next"): boolean {
 function shapeProblems(node: MindPlanNode, slot: "current" | "next"): ShapeProblem[] {
   if (!isShapedType(node.type)) return [];
   const shape = TERRITORY_SHAPE[node.type];
-  const file = territorySlotFilename(node, slot);
+  const file = slotSource(node, slot).file;
   const body = slotBody(node, slot);
   const where = `"${node.id}"/${file}`;
   const problems: ShapeProblem[] = [];
@@ -259,7 +291,7 @@ export function assertMinimumTerritoryShape(
   if (problems.length === 1) {
     throw shapeBlocked(`Minimum Territory Shape. ${problems[0].single}`);
   }
-  const file = territorySlotFilename(node, slot);
+  const file = slotSource(node, slot).file;
   const list = problems.map((p, i) => `(${i + 1}) ${p.item}`).join("; ");
   throw shapeBlocked(
     `Minimum Territory Shape. "${node.id}"/${file} has ${problems.length} problems: ${list}. ` +
@@ -283,11 +315,18 @@ function activeShapeSlot(node: MindPlanNode): "current" | "next" | null {
   return node.shipped_at ? null : "current";
 }
 
+/** The node as one change's revision sees it (`withRevision`), or as is with no change given. */
+function viewFor(node: MindPlanNode, change?: string): MindPlanNode {
+  return change !== undefined && revisionFor(node, change) ? withRevision(node, change) : node;
+}
+
 /**
  * Required sections of the slot a node's next transition checks, each present, missing, or stub.
  * Null for a Capability, a retired node, a closed Bug, and a shipped node with no open revision.
+ * With `change`, the slot is the node's open revision of that change.
  */
-export function shapeReport(node: MindPlanNode): ShapeReport | null {
+export function shapeReport(input: MindPlanNode, change?: string): ShapeReport | null {
+  const node = viewFor(input, change);
   const slot = activeShapeSlot(node);
   if (!slot || !isShapedType(node.type)) return null;
   const shape = TERRITORY_SHAPE[node.type];
@@ -304,7 +343,8 @@ export function shapeReport(node: MindPlanNode): ShapeReport | null {
  * `shape: "<id>" is missing "## X" and has stub "## Y" (required before ready)` for a draft slot,
  * or a Bug before in-review; null when the shape is complete or the node is past that point.
  */
-export function shapeWarning(node: MindPlanNode): string | null {
+export function shapeWarning(input: MindPlanNode, change?: string): string | null {
+  const node = viewFor(input, change);
   const slot = activeShapeSlot(node);
   if (!slot) return null;
   const state = slot === "next" ? node.next!.state : node.state;
@@ -319,7 +359,8 @@ export function shapeWarning(node: MindPlanNode): string | null {
   if (stubs.length) parts.push(`has stub ${stubs.join(", ")}`);
   if (report.role) parts.push("has no role");
   if (parts.length === 0) return null;
-  const label = slot === "next" ? `"${node.id}" (next)` : `"${node.id}"`;
+  const label =
+    slot === "next" ? `"${node.id}" (${change !== undefined ? `revision "${change}"` : "next"})` : `"${node.id}"`;
   return `shape: ${label} ${parts.join(" and ")} (required before ${isBug ? "in-review" : "ready"}).`;
 }
 

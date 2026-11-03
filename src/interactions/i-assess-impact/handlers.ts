@@ -6,7 +6,7 @@
 import { type MindPlanGraph } from "../../foundations/f-domain-model/types.js";
 import { loadGraph } from "../../foundations/f-territory-store/store.js";
 import { changeAdditivity } from "../../foundations/f-compiler-rules/open-closed.js";
-import { blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
+import { blocked, findNode, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { changeMembership, plannedEdges } from "../../foundations/f-compiler-rules/planned.js";
 import { nodeDecisions } from "../../foundations/f-graph-search/decisions.js";
 import {
@@ -14,6 +14,7 @@ import {
   DependentDecisionsSummary,
   VIA_ORDER,
   buildBlastRadiusPayload,
+  namedRevisionChange,
 } from "../../foundations/f-plan-views/views.js";
 
 export function getBlastRadius(args: {
@@ -22,26 +23,27 @@ export function getBlastRadius(args: {
   include_retired?: boolean;
   include_dependent_decisions?: boolean;
 }): Record<string, unknown> {
-  if ((args.node_id === undefined) === (args.change === undefined)) {
-    throw blocked('get_blast_radius takes exactly one of "node_id" or "change".');
+  if (args.node_id === undefined && args.change === undefined) {
+    throw blocked('get_blast_radius takes "node_id", "change", or both (a node\'s revision of that change).');
   }
   const graph = loadGraph();
-  if (args.change !== undefined) {
-    return buildChangeBlastRadiusPayload(graph, args.change, {
-      include_retired: args.include_retired,
-      include_dependent_decisions: args.include_dependent_decisions,
-    });
-  }
-  const node = findNode(graph, args.node_id!);
-  return buildBlastRadiusPayload(graph, node, {
+  const opts = {
     include_retired: args.include_retired,
     include_dependent_decisions: args.include_dependent_decisions,
-  });
+  };
+  if (args.node_id === undefined) return buildChangeBlastRadiusPayload(graph, args.change!, opts);
+  const live = findNode(graph, args.node_id);
+  if (args.change === undefined) return buildBlastRadiusPayload(graph, live, opts);
+  // That node's revision of the change, judged on the graph the change would ship into.
+  const change = namedRevisionChange(live, args.change);
+  const under = revisionGraph(graph, change);
+  return { ...buildBlastRadiusPayload(under, findNode(under, live.id), opts), change };
 }
 
 /**
- * Blast radius of a whole change: the radii of its members (open revisions and the shipped nodes
- * with planned edges under it) merged. `affected` keeps each node's smallest distance and
+ * Blast radius of a whole change: the radii of its members (each node's revision of it and the
+ * shipped nodes with planned edges under it) merged, judged on `revisionGraph(graph, change)` so
+ * other changes' revisions stay invisible. `affected` keeps each node's smallest distance and
  * leaves out the members themselves; files group by owner.
  */
 export function buildChangeBlastRadiusPayload(
@@ -49,6 +51,7 @@ export function buildChangeBlastRadiusPayload(
   change: string,
   opts: { include_retired?: boolean; include_dependent_decisions?: boolean } = {}
 ): Record<string, unknown> {
+  graph = revisionGraph(graph, change);
   // A shipped node with planned wiring under the change is a member too: its contract will change.
   const { revisions, planned } = changeMembership(graph, change);
   const plannedIds = new Set(planned.map((n) => n.id));
@@ -119,6 +122,7 @@ export function buildChangeBlastRadiusPayload(
       id: m.id,
       type: m.type,
       kind: plannedIds.has(m.id) ? "planned" : "revision",
+      ...(plannedIds.has(m.id) ? {} : { change }),
       state: m.state,
       next_state: m.next?.state ?? null,
     })),

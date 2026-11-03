@@ -31,10 +31,11 @@ export const TOOLS: ToolDef[] = [
         "When the focus is an Interaction, also returns reachability. " +
         "decisions lists the active decisions held by the focus; dependent_decisions ({ count, nodes }) names the dependents that hold decisions a change would reach, and include_dependent_decisions adds their one-line entries to decisions. " +
         "tests lists the linked test files of the focus and every owner in affected_files: the suites to run. " +
+        "A node with open revisions lists them in open_revisions ([{ change, state }]); pass change with node_id to judge that node's revision of it on the graph the change would ship into. " +
         "Pass change instead of node_id for the merged radius of every member of a change (open revisions and shipped nodes with planned edges; members carry kind revision | planned), its planned_edges, and additivity ({ summary, new_nodes, revised, planned }): whether the change only adds nodes or reopens shipped ones, each with its fan-in.",
       inputSchema: {
         node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),
-        change: CHANGE_ID.optional().describe("A change id: merge the blast radius of all its open revisions and planned sources."),
+        change: CHANGE_ID.optional().describe("A change id: alone, merge the blast radius of all its open revisions and planned sources; with node_id, that node's revision of it."),
         include_retired: z
           .boolean()
           .optional()

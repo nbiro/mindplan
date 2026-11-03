@@ -301,7 +301,7 @@ function write(rel, content) {
 async function foundation(id) {
   await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
   write(`src/${id}/index.ts`, `export const ${id.replace(/-/g, "_")} = 1;\n`);
-  await call("set_implementation_files", { node_id: id, files: [`src/${id}/`] });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
   const file = path.join(root, "mindplan", "foundations", id, `${id}.mdx`);
   let text = fs.readFileSync(file, "utf-8");
   text = text.replace(/^_.*?_$/gm, (line) => (line.includes("attachments/") ? line : "Open-closed filled territory."));
@@ -458,7 +458,7 @@ try {
   const marked = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-part"] });
   check(
     "split_into marks the revision and keeps it in progress",
-    marked.split_into?.join(",") === "f-part" && marked.next_state === "in-progress" && marked.changed_files.includes("mindplan/foundations/f-core/f-core.next.mdx"),
+    marked.split_into?.join(",") === "f-part" && marked.next_state === "in-progress" && marked.changed_files.includes(`mindplan/foundations/f-core/revisions/${marked.change}/f-core.mdx`),
     JSON.stringify(marked)
   );
   for (const new_status of ["in-review", "ship"]) await call("update_node_status", { node_id: "f-core", new_status });

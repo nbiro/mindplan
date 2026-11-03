@@ -4,11 +4,11 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: the systems dialect, tool hints, graph-first features, the handoff check, changes and neighbors, claims and tests, decisions, and host install docs."
 state: stable
-shipped_at: 2026-11-02T08:16:45.889Z
-revisions: 51
-churn: 26.614
+shipped_at: 2026-11-03T08:20:34.614Z
+revisions: 52
+churn: 27.005
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-02T08:16:45.889Z
+updated_at: 2026-11-03T08:20:34.614Z
 depends_on:
   - f-domain-model
 implements:
@@ -67,6 +67,8 @@ Claims: `SPEC.md`, `README.md`, `templates/`
 
 - **Claimed imports and skip_blocked (0.18.0).** SPEC §9.6 says the default check runs the import matrix over the universe plus every file a non-retired node claims, so it Blocks what the in-review gate Blocks; §3.7 adds "Walking past blocked members" and §8.2 `update_node_status` specifies `skip_blocked` (input, effect, the `blocked: [{ node_id, step, reason }]` output and its dry run, and the two errors). The playbook's rule 3 adds one sentence: a scoped walk is all-or-nothing, and `skip_blocked: true` walks the members that pass and lists the rest in `blocked`. README's ship bullet names `skip_blocked`; `CHANGELOG.md` has the 0.18.0 section; `package.json` and `package-lock.json` go to 0.18.0
 
+- **Open revisions and decision files (0.18.0).** SPEC §1.1 shows the `revisions/<change>/` and `decisions/` layout and that `map.md` is derived and git-ignored; §3.6–§3.7 replace the single next slot with one revision per change (deltas, base hashes, rebase on ship, conflicts, `resolve_conflict`, gates on live plus one change); §6.1.2 moves decisions to files; §8 adds `change` to every revision tool, `resolve_conflict`, add/remove on claims and tests, and thirty-four tools; §1.1.2 and §8.2 specify migration level 4. The playbook and the plan-project and define-entities skills say a node may have several open revisions, to pass `change`, and that `add` is the default for claims and tests. `CHANGELOG.md` 0.18.0 gets the section and a migration note
+
 Depends on: `f-domain-model`.
 - **Linked tests.** SPEC documents the `tests` frontmatter field, `set_test_files`, linked-test presence in the check and the in-review / ship gate, the untested in-review warning, and `tests` in the blast radius. The playbook's handoff step links the files that verify a node with `set_test_files` before in-review, and `CHANGELOG.md` gets the release section
 
@@ -106,58 +108,6 @@ Depends on: `f-domain-model`.
 - SPEC, README, and the skills describe a next file that exists only while a revision is open (no standing twin), the check's leftover-twin warning, and init's removal of twins; CHANGELOG has a 0.8.0 section
 - The shape table embedded in SPEC §6.5 and the define-entities skill equals `shapeTableMarkdown()` (`agent-guidance.test.mjs`); every `get_spec` topic resolves against SPEC.md; the playbook stays one screen with no checklist text; SPEC counts thirty tools; CHANGELOG has a 0.9.0 section
 - No SPEC, README, playbook, stub, guide, or skill text names Journey as a type; SPEC §2.0.0 has the established-equivalents table for every type and edge, marked non-normative; the playbook's and README's type tables name the established term; CHANGELOG has a 0.17.0 section that says to run `upgrade_project`
-
-## Decisions
-
-### d-docs-stay-whole
-
-- Decision: The framework docs (SPEC, CHANGELOG, README, skills, playbook) stay one node: they change with every release because they describe every behavior.
-- Alternatives:
-  - Split SPEC from the skills and templates (each release still edits both, so both parts would be hotspots and every feature would revise two nodes)
-- Why: A docs node's ship rate tracks the project's release rate by design, so a high rate here is not a smell.
-- Change: hotspot-splits
-- Date: 2026-10-31
-- Keep whole: true
-
-### d-filters-fan-out-one-change
-
-- Decision: Graph filters and the fan-out warning ship as one change (graph-filters-fan-out) with one docs revision and one 0.14.0 release.
-- Alternatives:
-  - Two changes in sequence (a shipped node holds one open revision, so the second feature's docs revision would wait for the first to ship)
-- Why: Both features edit SPEC and the skills; the owner chose one PR over sequencing the docs revision.
-- Change: graph-filters-fan-out
-- Date: 2026-10-31
-
-### d-type-names-only
-
-- Decision: The type names (Journey, Interaction, Interface, Foundation, Bug) are the only vocabulary for node types, in docs, skills, warnings, and with the user; no plain-word synonyms.
-- Alternatives:
-  - Keep the plain-word glossary (area, action, entry point, building block) beside the type names: two names per type confused the owner and let agents drift between them
-  - Rename list_areas and the area parameter to Journey wording too: a breaking tool-contract change, kept out of this release
-- Why: One name per type is easier to follow than two layers, and the spec already fixes the type names.
-- Consequences: Prose must say Journey, Interaction, Interface, Foundation, or Bug even where a plain word would read more naturally; list_areas and area keep their names until a tool-contract change renames them.
-- Change: spec-type-names
-- Date: 2026-10-31
-
-### d-established-equivalents-anchor
-
-- Decision: SPEC names, for each type and edge, its closest established architecture term and where MindPlan differs from it, as a one-time anchor; the type names stay the only words used.
-- Alternatives:
-  - A plain-word glossary (removed in 0.16.0): it offered other words to use, and agents used them instead of the type names
-  - No mapping: agents meet five unfamiliar names and rebuild their meaning from rules alone, when they already know use cases, adapters, and business capabilities
-- Why: Agents and people map a new name onto a concept they already know; saying which concept, and where it differs, gives them that prior without making the known term a synonym.
-- Consequences: The equivalents table is non-normative, and README, playbook, and skills still MUST NOT use the established terms as synonyms for a type.
-- Change: capability-type
-- Date: 2026-11-01
-
-### d-docs-check-claimed-imports-skip
-
-- Decision: The docs for check-claimed-imports and skip-blocked-walk ship as one f-framework-docs revision under skip-blocked-walk, in one 0.18.0 release.
-- Alternatives:
-  - Two docs revisions in sequence (a shipped node holds one open revision, so the second change's docs would wait for the first to ship)
-- Why: Both changes edit SPEC and the CHANGELOG in one PR; one revision keeps the release a single docs promotion, as d-filters-fan-out-one-change did.
-- Change: skip-blocked-walk
-- Date: 2026-11-02
 
 ## Attachments
 

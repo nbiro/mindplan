@@ -4,16 +4,17 @@ type: Foundation
 title: "Graph migrations"
 description: "Infra — the ordered, idempotent graph migrations (legacy filenames and config, shipped Atomic Ops, mirror twins, revision backfill, retired agent files, change labels on shipped nodes), the migration level and stamp, the version gate, and the tree diff setup and upgrade report."
 state: stable
-shipped_at: 2026-11-01T11:12:14.234Z
-revisions: 4
-churn: 3.962
+shipped_at: 2026-11-03T08:20:36.136Z
+revisions: 5
+churn: 4.794
 created_at: 2026-10-31T19:40:48.290Z
-updated_at: 2026-11-01T11:12:14.234Z
+updated_at: 2026-11-03T08:20:36.136Z
 depends_on:
-  - f-territory-store
-  - f-source-index
   - f-compiler-rules
   - f-domain-model
+  - f-revision-model
+  - f-source-index
+  - f-territory-store
 implements:
   - src/foundations/f-graph-migrations/
 tests:
@@ -56,6 +57,8 @@ Intended files: `src/foundations/f-graph-migrations/` (`migrations.ts`, `status.
 
 Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain-model`.
 
+- **Migration level 4 (0.18.0).** Moves each `<id>.next.mdx` and `next-attachments/` to `revisions/<change>/` (a next file without a change gets `rev-<id>`), turns its snapshot edges, claims, and tests into deltas against live, and records base hashes from the current live file; splits every `## Decisions` section into `decisions/<decision-id>.md` files; removes the tracked `mindplan/map.md` and adds it to `mindplan/.gitignore`. A frozen copy of the old next-file reader lives in `legacy-next.ts`. The report lists `revisionsMoved`, `decisionsSplit`, and `mapIgnored`; every step is idempotent
+
 ## Acceptance Criteria
 
 - `graphStatus()` is `setup` without `mindplan/`, `upgrade` for a graph with no stamp or a stamp without `migrations`, `current` after `runMigrations` + `stampGraph`, and `server-behind` for a stamp whose level is above `MIGRATION_LEVEL`
@@ -66,63 +69,3 @@ Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain
 - `migrateJourneysToCapabilities` moves a Journey folder with its attachments to `capabilities/`, rewrites its type, keeps its id and body, removes the empty `journeys/`, and Blocks on an id that exists in both; a second run moves nothing; a hand-moved Capability with `type: Journey` is repaired; a `journeys/` folder without a live file neither moves nor blocks
 - `graphStatus()` is `upgrade` for a level-3 stamp while `mindplan/journeys/` holds a node folder
 - Verified via `npm test`
-
-## Decisions
-
-### d-block-on-pending-migration
-
-- Decision: mindplan/version.json records the migration level the graph reached ({ package, graph, migrations }); every gated tool and the check are Blocked while that level is below the server's newest migration (call upgrade_project), above it or on a newer graph format (upgrade mindplan-mcp), or while no graph exists (call setup_project); a release without a new migration changes nothing.
-- Alternatives:
-  - Keep warning on any package mismatch and never Block (d-version-stamp-file): an agent on a new server keeps writing an old-format graph it may misread
-  - Block on any package version difference: every patch release forces an upgrade commit in every repo even when no migration changed anything
-  - Run pending migrations automatically at server start: an unasked-for diff lands in whatever change the agent is working on, and a teammate on an older server cannot read it
-- Why: Migrations change the graph's shape, so code that expects the new shape must not read or write the old one; tying the Block to the migration level, not the package version, keeps releases without migrations free.
-- Consequences: A release that adds a migration must raise MIGRATION_LEVEL; every project then runs upgrade_project once in its own commit. A branch opened before an upgrade that adds an old-format node is caught by the check, and rerunning upgrade_project fixes it. Test fixtures without a stamp set MINDPLAN_VERSION_GATE=off.
-- Supersedes: d-version-stamp-file
-- Change: setup-upgrade
-- Date: 2026-10-31
-
-### d-migrate-stale-change-labels
-
-- Decision: Migration level 2 clears the change label of every shipped neighbor whose change has no open revision and no pre-ship member, and reports each { node_id, change } in staleChangeLabelsCleared.
-- Alternatives:
-  - Clear only labels whose change also holds a decision on that node (misses labels left by older decision-then-claim sequences, and cannot tell which write set the label)
-  - No migration: leave existing stale labels for users to clear by hand (every repo keeps finished changes listing shipped nodes)
-- Why: A label with no open revision behind it cannot be told apart from the stale labels record_decision left, and upgrade_project is a reviewed commit of its own, so the report shows what was cleared.
-- Consequences: A neighbor-only change in flight at upgrade time (shipped nodes labeled, no revision yet) loses its labels; relabel with patch_node_territory change. Raises MIGRATION_LEVEL to 2, so every project runs upgrade_project once.
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
-### d-migrate-strip-change-labels
-
-- Decision: Migration level 2 strips the change scalar (and any change_ref) from every shipped, non-retired node with no open next and reports each { node_id, change } in staleChangeLabelsCleared; it runs on every upgrade (idempotent, a no-op once no label exists).
-- Alternatives:
-  - Clear only labels whose change has no open revision (labels no longer exist as a concept, so a live one is as meaningless as a stale one)
-  - Rename the report field to changeLabelsCleared (0.15.0 is unreleased, but the existing name already reached tests and docs; keeping it avoids churn)
-- Why: With labels removed, any change scalar on such a node is leftover state; stripping all of them makes the invariant hold, and an old branch merged later is cleaned on the next upgrade instead of keeping its labels.
-- Supersedes: d-migrate-stale-change-labels
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
-### d-migrate-strip-all-live-labels
-
-- Decision: Migration level 2 strips the live change and change_ref from every shipped, non-retired pipeline node, with or without an open next, and reports each { node_id, change } in staleChangeLabelsCleared; it runs on every upgrade.
-- Alternatives:
-  - Only nodes with no open next (open_next before 0.15.0 left the label on live beside the revision; after a discard that label could no longer be cleared, since change on such a node is Blocked)
-  - Also make discard_next drop a live change (covers only that path; the migration already makes the invariant hold everywhere)
-- Why: A shipped node's live change is never read while a revision is open (activeChange and promotion use the next slot's), so stripping it everywhere is safe and closes the gap the review found.
-- Supersedes: d-migrate-strip-change-labels
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
-### d-capability-migration-moves-folders
-
-- Decision: Migration level 3 moves each mindplan/journeys/<id>/ folder to mindplan/capabilities/<id>/ and rewrites its type frontmatter, and nothing reads the old folder or the old type name at load time.
-- Alternatives:
-  - Accept both Journey and Capability when loading: a compatibility layer the project rules rule out, and two names for one type is what the rename removes
-  - Also rename ids (j- to c-): ids are stable names that commits, decisions, code comments, and other branches reference, so renaming them breaks more than it tidies
-  - Rewrite Journey in node bodies too: prose may use the word in its UX sense, and the migration cannot tell which
-- Why: The version gate already Blocks every tool until upgrade_project runs, so a one-way move in code is enough and the loader stays single-named.
-- Consequences: A branch cut before the upgrade that adds a node under journeys/ needs upgrade_project again after it merges; graphStatus reports upgrade while journeys/ holds a node folder, whatever the stamp says.
-- Change: capability-type
-- Date: 2026-11-01

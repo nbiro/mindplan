@@ -8,7 +8,8 @@
  * - Inside git (and above `GIT_MODE_MIN_FOLDERS`), a record is reused untouched when it was parsed
  *   while its folder was clean at tree T, git status lists nothing under the folder now, and the
  *   folder did not change between T and the current tree.
- * - Otherwise the folder's `.mdx` files are compared by stamp (name, size, mtime). A stamp taken
+ * - Otherwise the folder's `.mdx` files and every file under its `revisions/` and `decisions/`
+ *   are compared by stamp (name, size, mtime). A stamp taken
  *   within `RACY_MS` of a file's mtime is not trusted: such a folder is hashed when parsed, and
  *   re-read and compared by hash until its stamps settle. Anything else re-parses the folder.
  *
@@ -42,7 +43,7 @@ export type CacheEntry = {
   record: MindPlanNode | null;
   files: FileStamp[];
   /**
-   * SHA-1 over the folder's `.mdx` names and bytes, taken only when a stamp was too recent to
+   * SHA-1 over the stamped files' names and bytes, taken only when a stamp was too recent to
    * trust (hashing every folder would double the reads of a cold load); null otherwise.
    */
   hash: string | null;
@@ -71,7 +72,14 @@ function openDatabase(file: string): Database | null {
   }
 }
 
-/** Stamps of a folder's `.mdx` files (any case: Windows and macOS open `a.MDX` as `a.mdx`), sorted by name. */
+/** Subfolders of a node folder whose every file shapes the node's record (open revisions, decision files). */
+export const STAMPED_SUBFOLDERS = ["revisions", "decisions"];
+
+/**
+ * Stamps of a folder's `.mdx` files (any case: Windows and macOS open `a.MDX` as `a.mdx`) and of
+ * every file under its `revisions/` and `decisions/` (named by POSIX path from the folder), sorted
+ * by name.
+ */
 export function folderStamps(abs: string): FileStamp[] {
   const out: FileStamp[] = [];
   let names: string[];
@@ -80,14 +88,30 @@ export function folderStamps(abs: string): FileStamp[] {
   } catch {
     return out;
   }
-  for (const name of names) {
-    if (!name.toLowerCase().endsWith(".mdx")) continue;
+  const stamp = (name: string): void => {
     try {
       const st = fs.statSync(path.join(abs, name));
       if (st.isFile()) out.push({ name, size: st.size, mtimeMs: st.mtimeMs });
     } catch {
       // Gone between the listing and the stat: treated as absent.
     }
+  };
+  const walk = (rel: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(path.join(abs, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(child);
+      else stamp(child);
+    }
+  };
+  for (const name of names) {
+    if (name.toLowerCase().endsWith(".mdx")) stamp(name);
+    else if (STAMPED_SUBFOLDERS.includes(name)) walk(name);
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }

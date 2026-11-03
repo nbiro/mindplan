@@ -4,16 +4,17 @@ type: Interaction
 title: "Change a node's status"
 description: "Agent moves a node along the build or bug pipeline: one node, an ordered batch, or a scoped walk with dry run that can walk past blocked members; ship and promotion count revisions and record declared splits; force_unship undoes a ship."
 state: stable
-shipped_at: 2026-11-02T08:16:45.958Z
-revisions: 3
-churn: 2.927
+shipped_at: 2026-11-03T08:20:37.444Z
+revisions: 4
+churn: 3.86
 created_at: 2026-10-31T11:58:03.397Z
-updated_at: 2026-11-02T08:16:45.958Z
+updated_at: 2026-11-03T08:20:37.444Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-change-status/
@@ -55,6 +56,8 @@ Intended files: `src/interactions/i-change-status/` (`handlers.ts`, `tools.ts`).
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
 
+- **Open revisions (0.18.0).** `update_node_status` takes `change` to pick a node's revision (optional when it has at most one); the scoped `change` walk moves each member's revision of that change; validation runs on `graphUnder(graph, change)` and `promoteInMemory` uses `withRevision`. Ship calls `shipRevision`, which rebases the node's other revisions and lists `rebased: [{ change, conflicts }]` in the result
+
 ## Acceptance Criteria
 
 - Moving a node whose file has an import violation to `in-review` or `ship` is Blocked, and the Blocked text names the fix
@@ -69,19 +72,6 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-
 - First ship writes `revisions: 1` and `churn: 1`; each promotion adds one; shipping a revision marked with `split_into` records `split_at`, the parts, and `churn: 0`; a reship after `force_unship` counts one more and keeps the decayed rate
 - A scoped walk over a change with three unoriented members is Blocked once, naming all three and `orient_for_work({ change })`
 - Verified via `npm test`
-
-## Decisions
-
-### d-scoped-walk-takes-skip-blocked
-
-- Decision: A scoped walk takes `skip_blocked: true` to walk every member that passes its gates and leave each blocked member (and whatever cannot move without it) where it is, listing them in `blocked`; the default stays all-or-nothing.
-- Alternatives:
-  - An explicit `scope: "nodes"` with `node_ids` (the agent must first work out which members are finished, which the walk's own validation already knows)
-  - Make partial walks the default (an agent expecting the whole change to ship would silently leave members behind)
-- Why: The user chose it: a change that holds finished and blocked members should ship its finished ones in one call, and the walk already validates each step, so it can tell which members pass.
-- Consequences: A blocked member moves no step at all, so it is never left half-walked; callers must read `blocked` to see what stayed behind.
-- Change: skip-blocked-walk
-- Date: 2026-11-02
 
 ## Attachments
 

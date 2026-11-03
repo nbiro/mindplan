@@ -18,6 +18,7 @@ import { RETIRED_STATES } from "../../foundations/f-source-index/ownership.js";
 import { blastRadiusDependents, interactionReachability, interfacesExposing } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
 import { nodeDecisions, supersessionIndex } from "../../foundations/f-graph-search/decisions.js";
+import { resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 
 export type AffectedFileVia = "focus" | "dependent" | "exposing" | "importer";
 
@@ -25,6 +26,47 @@ export const VIA_ORDER: AffectedFileVia[] = ["focus", "dependent", "exposing", "
 
 export function isRetired(node: MindPlanNode): boolean {
   return RETIRED_STATES.has(node.state);
+}
+
+/**
+ * The change a read names on `node`: one of its stored revisions (`resolveRevisionChange`, Blocked
+ * when it has none of that change), or the change of a legacy next file not yet migrated.
+ */
+export function namedRevisionChange(node: MindPlanNode, change: string): string {
+  if (!node.open_revisions?.length && node.next?.change === change) return change;
+  return resolveRevisionChange(node, change)!;
+}
+
+/** One open revision as a read reply lists it: no body, deltas, or base. */
+export type RevisionSummary = { change: string; state: string; title?: string; conflicts: number };
+
+/**
+ * A node's open revisions, sorted by change id, lean: change, state, the title when it differs
+ * from live, and how many rebase conflicts are unresolved. `[]` when none is open.
+ */
+export function revisionSummaries(node: MindPlanNode): RevisionSummary[] {
+  return [...(node.open_revisions ?? [])]
+    .sort((a, b) => (a.change < b.change ? -1 : a.change > b.change ? 1 : 0))
+    .map((r) => ({
+      change: r.change,
+      state: r.state,
+      ...(r.title !== node.title ? { title: r.title } : {}),
+      conflicts: r.conflicts.length,
+    }));
+}
+
+/**
+ * Claims a node's open work adds beside live: a legacy next's (or the loader's single-revision
+ * view's), and with several open revisions, every revision's adds.
+ */
+function openClaims(node: MindPlanNode): string[] {
+  return [...(node.next?.implements ?? []), ...(node.open_revisions ?? []).flatMap((r) => r.implements.add)];
+}
+
+/** Files attributed to the node's open work: its open slot's (every revision's), else live's. */
+function openAttributed(node: MindPlanNode): string[] {
+  if ((node.open_revisions?.length ?? 0) > 1) return node.open_revisions!.flatMap((r) => r.attributed ?? []);
+  return (node.next ? node.next.attributed : node.attributed) ?? [];
 }
 
 /** Reverse-depends_on blast radius; Interaction focus also includes reachability + affected_files. */
@@ -77,14 +119,12 @@ export function buildBlastRadiusPayload(
     for (const p of expandClaims(owner.implements, root)) {
       group.files.add(p);
     }
-    if (owner.next) {
-      for (const p of expandClaims(owner.next.implements, root)) {
-        group.files.add(p);
-      }
+    for (const p of expandClaims(openClaims(owner), root)) {
+      group.files.add(p);
     }
-    // Files the revision adds in another node's folder count as the revision's own.
+    // Files a revision adds in another node's folder count as the revision's own.
     if (via === "focus") {
-      for (const p of (owner.next ? owner.next.attributed : owner.attributed) ?? []) group.files.add(p);
+      for (const p of openAttributed(owner)) group.files.add(p);
     }
   };
 
@@ -106,14 +146,14 @@ export function buildBlastRadiusPayload(
   // Importers: other nodes whose files import focus-owned files
   const focusFiles = new Set([
     ...expandClaims(node.implements, root),
-    ...(node.next ? expandClaims(node.next.implements, root) : []),
+    ...expandClaims(openClaims(node), root),
   ]);
   if (focusFiles.size > 0) {
     for (const other of graph.nodes) {
       if (other.id === node.id || !isPipelineNodeType(other.type)) continue;
       const otherFiles = [
         ...expandClaims(other.implements, root),
-        ...(other.next ? expandClaims(other.next.implements, root) : []),
+        ...expandClaims(openClaims(other), root),
       ];
       let importsFocus = false;
       for (const f of otherFiles) {
@@ -151,6 +191,9 @@ export function buildBlastRadiusPayload(
     affected_files,
     tests: [...tests].sort((a, b) => a.localeCompare(b)),
     rules_impact: rulesImpact(graph, node),
+    ...(node.open_revisions?.length
+      ? { open_revisions: revisionSummaries(node).map(({ change, state }) => ({ change, state })) }
+      : {}),
     ...blastRadiusDecisions(graph, node, visibleEntries, opts.include_dependent_decisions === true),
   };
   if (node.type === "Interaction") {

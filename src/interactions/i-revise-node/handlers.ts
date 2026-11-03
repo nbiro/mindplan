@@ -1,27 +1,32 @@
 /**
- * Revise a shipped node — owned by i-revise-node: open_next (with planned edges and the hotspot
- * warning) and discard_next.
+ * Revise a shipped node — owned by i-revise-node: open_next (one open revision per change, with
+ * planned edges and the hotspot warning), discard_next, and resolve_conflict.
  */
 
 import { type MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import {
-  NEXT_ATTACHMENTS_DIR,
-  addEdgeToFrontmatter,
-  discardNextSlot,
   entityRelativePath,
   loadGraph,
   loadProjectConfig,
-  openNextSlot,
+  removeLegacyMirror,
   validateChangeInput,
-  writeChangeFrontmatter,
 } from "../../foundations/f-territory-store/store.js";
+import {
+  discardRevision,
+  openRevision,
+  resolveConflict as resolveRevisionConflict,
+  revisionRelativeFilePath,
+} from "../../foundations/f-territory-store/revisions.js";
+import { openChanges, resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
 import { blocked, findNode, validateOpenNext } from "../../foundations/f-compiler-rules/rules.js";
 import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.js";
 import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
+  assertNoLegacyNext,
   changedFiles,
+  conflictLabel,
   gateWrite,
   mutationTail,
   refreshPersistedMap,
@@ -29,25 +34,6 @@ import {
   territoryPath,
   withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
-
-/**
- * After open_next: add the planned edges of the revision's change to the next slot (skipping any
- * already there). They stay on live until the revision ships, so a discard leaves them planned.
- */
-function applyPlannedEdges(node: MindPlanNode): string[] {
-  const change = node.next?.change;
-  if (!change || !node.next) return [];
-  const applied: string[] = [];
-  for (const e of node.planned ?? []) {
-    if (e.change !== change) continue;
-    const current = node.next[e.type] ?? [];
-    if (current.includes(e.target)) continue;
-    addEdgeToFrontmatter(node, e.type, e.target);
-    node.next[e.type] = [...current, e.target];
-    applied.push(`${node.id} -${e.type}-> ${e.target}`);
-  }
-  return applied;
-}
 
 export function openNext(args: {
   verbose?: boolean;
@@ -57,43 +43,62 @@ export function openNext(args: {
   change?: string;
   change_ref?: string;
 }): Record<string, unknown> {
-  gateWrite(null, [args.node_id], "open_next");
   const { node_id, title, description } = args;
+  const change = args.change || undefined;
+  if (!change) {
+    throw blocked(
+      `open_next needs change: every revision of a shipped node belongs to one change id (a slug, e.g. "add-export"). ` +
+        `Retry with open_next({ node_id: "${node_id}", change: "<change-id>" }).`
+    );
+  }
+  gateWrite(null, [node_id], "open_next");
   validateChangeInput(args);
   const graph = loadGraph();
   const node = findNode(graph, node_id);
-  validateOpenNext(node);
+  assertNoLegacyNext(node, "open_next");
+  validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
   const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
   // The revision takes its change's planned edges: each must still be legal before it opens.
-  const revisionChange = args.change || undefined;
-  if (revisionChange) {
-    const problems = plannedEdgeProblems(graph, revisionChange).filter((p) =>
-      p.startsWith(`planned edge ${node_id} -`)
+  const problems = plannedEdgeProblems(graph, change).filter((p) => p.startsWith(`planned edge ${node_id} -`));
+  if (problems.length > 0) {
+    throw blocked(
+      `open_next would apply planned edges that are no longer legal: ${problems.join("; ")}. ` +
+        `Remove each with unlink_nodes({ source_id: "${node_id}", target_id, change: "${change}" }), then retry.`
     );
-    if (problems.length > 0) {
-      throw blocked(
-        `open_next would apply planned edges that are no longer legal: ${problems.join("; ")}. ` +
-          `Remove each with unlink_nodes({ source_id: "${node_id}", target_id, change: "${revisionChange}" }), then retry.`
-      );
-    }
   }
-  const next = openNextSlot(node, { title, description });
-  node.next = next;
-  writeChangeFrontmatter(node, { change: args.change, change_ref: args.change_ref }, "next");
+  const planned = (node.planned ?? []).filter((e) => e.change === change);
+  const applied = planned
+    .filter((e) => !(node[e.type] ?? []).includes(e.target))
+    .map((e) => `${node_id} -${e.type}-> ${e.target}`);
   const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, node_id) : null;
-  const applied = applyPlannedEdges(node);
-  const rel = entityRelativePath(node);
-  const current = territoryPath(node, "current");
-  const next_path = territoryPath(node, "next");
+  // A leftover mirror file from before 0.8.0 is not a revision: opening one removes it.
+  const removedMirror = removeLegacyMirror(node);
+  const opened = openRevision(node, change, {
+    change_ref: args.change_ref,
+    title,
+    description,
+    plannedAdds: planned,
+  });
   refreshPersistedMap();
+  const rel = entityRelativePath(node);
+  const revisionPath = revisionRelativeFilePath(node, change);
+  const { revision } = opened;
   return {
     node_id,
     live_state: node.state,
-    next,
+    change,
+    revision: {
+      change,
+      state: revision.state,
+      title: revision.title,
+      description: revision.description,
+      opened_at: revision.opened_at,
+      ...(revision.change_ref ? { change_ref: revision.change_ref } : {}),
+    },
     folder: rel,
-    current,
-    next_path,
+    current: territoryPath(node, "current"),
+    revision_path: revisionPath,
     ...(applied.length ? { applied_planned: applied } : {}),
     ...(openClosed
       ? {
@@ -107,43 +112,89 @@ export function openNext(args: {
                 `A new node that depends_on "${node_id}" and adds the behavior without revising it: <why it lost>`,
               ],
               why: "<the constraint that makes revising it the right call>",
-              ...(next.change ? { change: next.change } : {}),
+              change,
             },
           },
         }
       : {}),
     // Applied belongs_to / depends_on can bring new rules: return them so the node stays oriented.
     ...(applied.length ? rulesReachingAfterWrite(node_id, rulesBefore) : {}),
-    changed_files: changedFiles(
-      [next_path, `${rel}/${NEXT_ATTACHMENTS_DIR}/.gitkeep`],
-      true
-    ),
+    changed_files: changedFiles([...opened.changed_files, ...removedMirror]),
+    // `revisions` lists every open revision of the node: this one and its siblings.
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
 
-export function discardNext(args: { node_id: string; verbose?: boolean }): Record<string, unknown> {
+export function discardNext(args: { node_id: string; change?: string; verbose?: boolean }): Record<string, unknown> {
   // Discarding a change's last revision closes it: its planned edges go with it.
-  return withChangeCleanup(() => discardNextSlotWrite(args));
+  return withChangeCleanup(() => discardRevisionWrite(args));
 }
 
-function discardNextSlotWrite(args: { node_id: string; verbose?: boolean }): Record<string, unknown> {
+function discardRevisionWrite(args: { node_id: string; change?: string; verbose?: boolean }): Record<string, unknown> {
   const { node_id } = args;
+  gateWrite(null, [node_id], "discard_next");
   const graph = loadGraph();
   const node = findNode(graph, node_id);
-  if (!node.next) {
+  assertNoLegacyNext(node, "discard_next");
+  const change = resolveRevisionChange(node, args.change || undefined);
+  if (change === null) {
     throw blocked(
-      `node "${node_id}" has no open evolution to discard (a leftover mirror file is not a revision; upgrade_project removes it).`
+      `node "${node_id}" has no open revision to discard (a leftover mirror file is not a revision; upgrade_project removes it).`
     );
   }
-  const removed = discardNextSlot(node);
-  delete node.next;
+  const removed = discardRevision(node, change);
   refreshPersistedMap();
   return {
     node_id,
+    change,
     discarded: true,
     live_state: node.state,
-    changed_files: changedFiles(removed, true),
+    changed_files: changedFiles(removed.changed_files),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
+  };
+}
+
+export type ResolveConflictArgs = {
+  node_id: string;
+  change?: string;
+  section?: string;
+  field?: "title" | "description" | "role";
+  claim?: string;
+  take: "revision" | "live" | "text";
+  text?: string;
+  verbose?: boolean;
+};
+
+/** A section target as stored on the conflict: `"## Heading"` (a bare heading gets the `## `). */
+function sectionTarget(section: string): string {
+  const trimmed = section.trim();
+  return trimmed.startsWith("#") ? trimmed : `## ${trimmed}`;
+}
+
+export function resolveConflict(args: ResolveConflictArgs): Record<string, unknown> {
+  const { node_id, take } = args;
+  const targets = [args.section, args.field, args.claim].filter((t) => t !== undefined && t !== "");
+  if (targets.length !== 1) {
+    throw blocked("resolve_conflict takes exactly one of section, field, or claim (the conflict to resolve).");
+  }
+  if (take === "text" && args.text === undefined) {
+    throw blocked('take "text" needs text: the value to write in place of both sides.');
+  }
+  gateWrite(null, [node_id], "resolve_conflict");
+  const graph = loadGraph();
+  const node = findNode(graph, node_id);
+  const change = resolveRevisionChange(node, args.change || undefined);
+  if (change === null) throw blocked(`node "${node_id}" has no open revision, so it holds no conflict.`);
+  const target = args.section !== undefined && args.section !== "" ? sectionTarget(args.section) : (args.field ?? args.claim)!;
+  const out = resolveRevisionConflict(node, change, target, take, args.text);
+  refreshPersistedMap();
+  return {
+    node_id,
+    change,
+    resolved: target,
+    take,
+    conflicts: out.conflicts.map(conflictLabel),
+    changed_files: changedFiles(out.changed_files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }

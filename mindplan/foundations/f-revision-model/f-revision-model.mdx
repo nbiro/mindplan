@@ -1,0 +1,55 @@
+---
+id: f-revision-model
+type: Foundation
+title: "Revision model"
+description: "Infra — the pure rules for a node's open revisions: edge, claim, and test deltas against live, the live-plus-one-revision view gates read, which revision a call means, and the section-hash rebase that carries or conflicts sibling revisions when one ships."
+state: stable
+shipped_at: 2026-11-03T08:20:34.938Z
+revisions: 1
+churn: 1
+created_at: 2026-11-02T08:30:42.295Z
+updated_at: 2026-11-03T08:20:34.938Z
+role: infra
+aliases:
+  - "revision"
+  - "rebase"
+  - "delta"
+  - "conflict"
+  - "open revisions"
+  - "several revisions"
+depends_on:
+  - f-domain-model
+implements:
+  - src/foundations/f-revision-model/
+tests:
+  - src/foundations/f-test-harness/revision-core.test.mjs
+---
+
+# Revision model
+
+## Purpose
+
+The pure rules every reader and writer of a shipped node's open revisions shares, kept out of the hotspot `f-domain-model` and `f-compiler-rules`. A shipped node can hold several open revisions at once, one per change id, so features that touch one hub node no longer queue behind each other's ship. A revision stores edges, claims, and test links as deltas against live, and remembers the hash of each live section it started from, so shipping one revision rebases the others like git.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-revision-model/` (`revision.ts`, `rebase.ts`, `index.ts`).
+
+- **Types** (defined in `f-domain-model/types.ts`, imported here; this Foundation adds only functions): `EdgeDelta { add: string[]; remove: string[] }`; `RevisionConflict` (`{ kind: "section", section }`, `{ kind: "scalar", field: "title" | "description" | "role" }`, `{ kind: "claim", path, owner }`); `Revision { change, change_ref?, state, opened_at, updated_at, title, description, role?, edges: Partial<Record<edge type, EdgeDelta>>, implements: EdgeDelta, tests: EdgeDelta, attributed?, split_into?, decisions?, base: { scalars, sections }, conflicts }`. A shipped node's `open_revisions?: Revision[]` holds one per change; pre-ship nodes keep their live `change` and have none
+- `applyDelta(live, delta)`, `diffDelta(live, snapshot)`: deltas round-trip (`applyDelta(live, diffDelta(live, s))` equals `s` as a set, sorted)
+- `openChanges(node)`, `revisionFor(node, change)`
+- `resolveRevisionChange(node, change?)`: the given change (Blocked when the node has no revision of it), else the only open revision, else `null` (live) when none is open; several open and no `change` is `Blocked: "<id>" has open revisions "<a>", "<b>"; pass change.`
+- `withRevision(node, change)`: a node-shaped view of live ⊕ that revision, with today's `next` view field filled from it, so gate code that reads `node.next` judges live plus that revision only
+- `graphUnder(graph, change)`: the graph with every node that has a revision of `change` replaced by `withRevision`; every other node stays live (other changes' revisions are invisible)
+- `splitSections(body)`, `sectionHashes(body)`: level-2 sections plus a `_preamble` entry; `## Rules` and `## Decisions` excluded; hashes are the first 8 hex characters of sha1 of the section text with line endings normalized
+- `rebase(liveOld, liveNew, revision, revisionBody)` → `{ revision, body }`: per section and per scalar, untouched by the revision → take new live; touched only by the revision → keep; both touched with equal text → keep; otherwise keep the revision's text and add a conflict; every base hash moves to new live. An `add` already in new live and a `remove` no longer in live drop silently; an `implements` add now claimed live by another node becomes a claim conflict
+- No module-level state; every function is pure over its arguments
+
+Depends on: `f-domain-model`.
+
+## Acceptance Criteria
+
+- Delta round trip, `withRevision` and `graphUnder` (one change visible, the others not) are covered by `revision-core.test.mjs`
+- The rebase matrix (untouched, theirs, mine, both, both identical, section added or deleted, scalars, dropped deltas, claim conflict) is covered by `revision-core.test.mjs`
+- `resolveRevisionChange` returns the only revision, `null` with none, and Blocks with several, naming them
+- Verified via `npm test`

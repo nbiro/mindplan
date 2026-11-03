@@ -4,11 +4,11 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface: mounts the thirty-three tools its actions define, in a fixed order, behind the version gate, with read/write/destructive annotations from one kind, compact JSON plus structuredContent, small write results unless verbose, and node-scoped drift on reads."
 state: stable
-shipped_at: 2026-10-31T20:33:29.299Z
-revisions: 27
-churn: 1
+shipped_at: 2026-11-03T08:20:39.310Z
+revisions: 28
+churn: 1.944
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-10-31T20:33:29.299Z
+updated_at: 2026-11-03T08:20:39.310Z
 split_at: 26
 split_into:
   - i-assess-impact
@@ -25,25 +25,25 @@ split_into:
   - i-revise-node
   - i-shape-graph
 depends_on:
-  - f-mcp-runtime
-  - f-tool-kit
-  - f-territory-store
   - f-graph-migrations
+  - f-mcp-runtime
+  - f-territory-store
+  - f-tool-kit
 exposes:
-  - i-orient-plan
-  - i-export-map
-  - i-check-integrity
-  - i-change-status
-  - i-shape-graph
-  - i-edit-territory
-  - i-revise-node
-  - i-claim-files
-  - i-record-decision
-  - i-edit-brief
   - i-assess-impact
-  - i-read-brief
   - i-browse-graph
+  - i-change-status
+  - i-check-integrity
+  - i-claim-files
+  - i-edit-brief
+  - i-edit-territory
+  - i-export-map
+  - i-orient-plan
+  - i-read-brief
+  - i-record-decision
+  - i-revise-node
   - i-setup-project
+  - i-shape-graph
   - i-upgrade-graph
 implements:
   - src/interfaces/if-mcp-tools/
@@ -96,6 +96,8 @@ The entry point mounts; it defines no tool. Each exposed action owns its tools i
 
 Depends on: `f-mcp-runtime`, `f-tool-kit`, `f-territory-store`.
 
+- **Open revisions (0.18.0).** Mounts `resolve_conflict` (from `i-revise-node`) in `TOOL_ORDER` after `discard_next`; thirty-four tools
+
 ## Acceptance Criteria
 
 - The server registers thirty-three tools in `TOOL_ORDER`, each defined in its action's `tools.ts`; `register.ts` holds no tool schema
@@ -108,40 +110,6 @@ Depends on: `f-mcp-runtime`, `f-tool-kit`, `f-territory-store`.
 - A default write result has no `anchor` and no `drift`; `verbose: true` adds both; non-empty scoped drift attaches to read results except `get_project`, `get_rules`, `get_spec`, and `run_check`
 - Every input field each tool's schema declares reaches its handler (smoke, and the suites of each action)
 - Verified via `npm test`
-
-## Decisions
-
-### d-annotations-from-tool-kind
-
-- Decision: MCP annotations are derived from one read / write / destructive kind per tool, the same kind that drives drift and verbose, and openWorldHint is always false.
-- Alternatives:
-  - Hand-write an annotations object on each of the twenty-seven registrations (a new tool can be added with a kind and no hint, and two tables drift)
-  - Mark every write destructiveHint: true to be safe (every patch would prompt like a delete, and the host could not tell discard_next from patch_node_territory)
-- Why: The host decides from the hints which calls need a per-call confirmation; one kind keeps the hint and the envelope behavior in one place so they cannot disagree.
-- Consequences: A destructive tool is one that removes data or edges no undo restores (unlink_nodes, remove_attachment, discard_next, force_unship); a replace-with-empty write stays write. Adding a tool means naming its kind.
-- Change: mcp-audit-fixes
-- Date: 2026-10-20
-
-### d-compact-json-with-structured-content
-
-- Decision: Successful object results are compact JSON text plus a structuredContent mirror, with no outputSchema declared.
-- Alternatives:
-  - Keep pretty-printed text only (about a third more tokens on every result, and a client has to parse prose)
-  - Declare an outputSchema per tool as well (twenty-seven more schemas in tools/list, which the host loads into context, for validation no client asked for)
-- Why: structuredContent lets a client read the result without parsing and costs nothing, while the text copy stays for hosts that ignore it; the schema would cost context on every session.
-- Consequences: A test that compares result text byte for byte must parse it instead; string payloads and error results stay text-only.
-- Change: mcp-audit-fixes
-- Date: 2026-10-20
-
-### d-skill-routing-in-instructions-only
-
-- Decision: Tool descriptions describe their tool only; the routing to the plan-project skill lives once in the server instructions.
-- Alternatives:
-  - Keep 'Follow the plan-project skill' in each graph-write description (fourteen copies of one sentence, and a pattern the connector review criteria reject as pulling behavior from an external source)
-- Why: The instructions pointer already carries the routing and is read on initialize; repeating it per tool adds context on every session and fails directory review for no gain.
-- Consequences: The instructions sentence must name the graph writes the skill covers, since no description will.
-- Change: mcp-audit-fixes
-- Date: 2026-10-20
 
 ## Attachments
 

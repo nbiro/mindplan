@@ -18,6 +18,7 @@ import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { collectDirtySrcPaths, runCheckHandler } from "../../../dist/interactions/i-check-integrity/check.js";
+import { formatRevisionFile } from "../../../dist/foundations/f-territory-store/revisions.js";
 // Spawned servers rank by keyword only: no model download or load during tests.
 process.env.MINDPLAN_SEARCH ??= "keyword";
 
@@ -44,8 +45,9 @@ function frontmatter(fields) {
 }
 
 /**
- * Write one node. `state` is the live state; `next` is an open next's state, or "mirror" for a
- * standing twin (shipped nodes always get one). Pipeline nodes claim `src/<id>/`.
+ * Write one node. `state` is the live state; `next` is the state of the shipped node's open
+ * revision (`revisions/<change>/<id>.mdx`), or "mirror" for a leftover twin file from an older
+ * release (not a revision). Pipeline nodes claim `src/<id>/`.
  */
 function writeNode(root, { id, type, state, next, change }) {
   const dir = path.join(root, "mindplan", FOLDERS[type], id);
@@ -68,12 +70,25 @@ function writeNode(root, { id, type, state, next, change }) {
   };
   const body = `# Node ${id}\n\n## Purpose\n\nFixture body for ${id}.\n`;
   fs.writeFileSync(path.join(dir, `${id}.mdx`), frontmatter(base) + "\n" + body, "utf-8");
-  if (shipped) {
-    const twin = next === undefined || next === "mirror";
-    const nextFields = twin
-      ? { ...base, state: "mirror" }
-      : { ...base, state: next, opened_at: STAMP, change: change ? `"${change}"` : undefined };
-    fs.writeFileSync(path.join(dir, `${id}.next.mdx`), frontmatter(nextFields) + "\n" + body, "utf-8");
+  if (shipped && next === "mirror") {
+    fs.writeFileSync(path.join(dir, `${id}.next.mdx`), frontmatter({ ...base, state: "mirror" }) + "\n" + body, "utf-8");
+  } else if (shipped && next !== undefined) {
+    const revision = {
+      change,
+      state: next,
+      opened_at: STAMP,
+      updated_at: STAMP,
+      title: `Node ${id}`,
+      description: `Builder runs ${id} for the merge-gate fixture.`,
+      edges: {},
+      implements: { add: [], remove: [] },
+      tests: { add: [], remove: [] },
+      base: { scalars: {}, sections: {} },
+      conflicts: [],
+    };
+    const revDir = path.join(dir, "revisions", change);
+    fs.mkdirSync(revDir, { recursive: true });
+    fs.writeFileSync(path.join(revDir, `${id}.mdx`), formatRevisionFile(id, type, revision, body), "utf-8");
   }
   // A retired node's files would be leftovers.
   if (pipeline && state !== "cancelled" && state !== "deprecated") {
@@ -128,7 +143,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   assert.equal(gated.status, 1, gated.out);
   const line = gated.out.split("\n").find((l) => l.startsWith("Blocked: Merge:"));
   assert.ok(line, gated.out);
-  assert.match(line, /"f-shared" \(Foundation, next in-review, change "add-thing"\)/);
+  assert.match(line, /"f-shared" \(Foundation, revision in-review, change "add-thing"\)/);
   assert.ok(
     line.includes('update_node_status({ scope: "change", change: "add-thing", new_status: "ship" })'),
     line
@@ -142,7 +157,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   assert.deepEqual(result.merge, {
     level: "default",
     changes: [
-      { change: "add-thing", nodes: [{ id: "f-shared", type: "Foundation", state: "in-review", slot: "next" }] },
+      { change: "add-thing", nodes: [{ id: "f-shared", type: "Foundation", state: "in-review", slot: "revision" }] },
     ],
   });
   ok("runCheckHandler({ merge: true }) returns the CLI's failures and the grouped merge report");
@@ -277,7 +292,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   const dirty = handler(root, { merge: "strict" });
   assert.deepEqual(
     dirty.merge.changes[0].nodes.map((n) => [n.id, n.slot]),
-    [["f-evolving", "next"], ["i-touched", "live"]]
+    [["f-evolving", "revision"], ["i-touched", "live"]]
   );
   ok("strict counts working-tree edits and an open next, with the default base");
 

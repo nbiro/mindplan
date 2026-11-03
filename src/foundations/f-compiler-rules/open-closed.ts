@@ -12,8 +12,20 @@ import {
   type MindPlanGraph,
   type MindPlanNode,
 } from "../f-domain-model/types.js";
+import { openChanges } from "../f-revision-model/index.js";
 import type { HotspotSettings } from "../f-source-index/config.js";
 import { changeMembership } from "./planned.js";
+
+/**
+ * Every decision a node holds: live, its open next, and each open revision's (by id, so the
+ * loader's single-revision next view does not count one twice).
+ */
+function allDecisions(node: MindPlanNode): DecisionRecord[] {
+  const records = new Map<string, DecisionRecord>();
+  const revisionDecisions = (node.open_revisions ?? []).flatMap((r) => r.decisions ?? []);
+  for (const d of [...(node.decisions ?? []), ...(node.next?.decisions ?? []), ...revisionDecisions]) records.set(d.id, d);
+  return [...records.values()];
+}
 
 /** Edges into a node that a change to its contract reaches first. */
 const FAN_IN_EDGES = new Set(["depends_on", "exposes", "mounts"]);
@@ -55,15 +67,14 @@ export type ChurnEntry = { change: string; date?: string; reasons: string[] };
 /**
  * The distinct changes that shaped `node`, oldest first: the change id of each of its decisions
  * (live and open next, superseded included, since a superseded decision still records a revision;
- * the first build's change counts like any other) plus a shipped node's open revision's change.
+ * the first build's change counts like any other) plus the change of each of a shipped node's
+ * open revisions.
  * `reasons` are the decision sentences recorded under that change. The node keeps no revision
  * log; decisions are the record and git keeps the rest.
  */
 export function nodeChurn(node: MindPlanNode): ChurnEntry[] {
-  const records = new Map<string, DecisionRecord>();
-  for (const d of [...(node.decisions ?? []), ...(node.next?.decisions ?? [])]) records.set(d.id, d);
   const byChange = new Map<string, ChurnEntry>();
-  for (const d of records.values()) {
+  for (const d of allDecisions(node)) {
     if (!d.change) continue;
     let entry = byChange.get(d.change);
     if (!entry) {
@@ -73,8 +84,9 @@ export function nodeChurn(node: MindPlanNode): ChurnEntry[] {
     if (d.date && (!entry.date || d.date < entry.date)) entry.date = d.date;
     entry.reasons.push(d.decision);
   }
-  const open = node.next?.change;
-  if (open && !byChange.has(open)) byChange.set(open, { change: open, reasons: [] });
+  const open = new Set(openChanges(node));
+  if (node.next?.change) open.add(node.next.change);
+  for (const c of [...open].sort()) if (!byChange.has(c)) byChange.set(c, { change: c, reasons: [] });
   // Undated entries (the open revision's change with no decision yet) sort last: they are newest.
   return [...byChange.values()].sort(
     (a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.change.localeCompare(b.change)
@@ -94,7 +106,7 @@ export function recentRate(
 ): number {
   const stored = node.churn ?? 0;
   const base = node.shipped_at ? decayChurn(stored, node.shipped_at, now.toISOString(), settings.half_life_days) : 0;
-  return base + (node.next || opening ? 1 : 0);
+  return base + (node.next || node.open_revisions?.length || opening ? 1 : 0);
 }
 
 /**
@@ -117,19 +129,22 @@ function rateCandidates(graph: MindPlanGraph): MindPlanNode[] {
 export function graphRateMedian(graph: MindPlanGraph, settings: HotspotSettings, now: Date = new Date()): number {
   // Open revisions are not ships yet: a change that opens many nodes must not raise the bar for all.
   const rates = rateCandidates(graph)
-    .map((n) => recentRate({ ...n, next: undefined }, settings, now))
+    .map((n) => recentRate({ ...n, next: undefined, open_revisions: undefined }, settings, now))
     .sort((a, b) => a - b);
   if (rates.length === 0) return 0;
   const mid = Math.floor(rates.length / 2);
   return rates.length % 2 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2;
 }
 
-/** Ids of every decision some active record supersedes, anywhere in the graph. */
-function supersededIds(graph: MindPlanGraph): Set<string> {
+/**
+ * Ids of every decision some active record supersedes, anywhere in the graph: live, a legacy next,
+ * and every open revision's decisions.
+ */
+export function supersededIds(graph: MindPlanGraph): Set<string> {
   const ids = new Set<string>();
   for (const n of graph.nodes) {
     if (isRetired(n)) continue;
-    for (const d of [...(n.decisions ?? []), ...(n.next?.decisions ?? [])]) if (d.supersedes) ids.add(d.supersedes);
+    for (const d of allDecisions(n)) if (d.supersedes) ids.add(d.supersedes);
   }
   return ids;
 }
@@ -139,9 +154,7 @@ function supersededIds(graph: MindPlanGraph): Set<string> {
  * stays one node. `superseded` comes from `hotspotContext` when many nodes are asked.
  */
 export function keepsWhole(node: MindPlanNode, superseded: Set<string>): boolean {
-  return [...(node.decisions ?? []), ...(node.next?.decisions ?? [])].some(
-    (d) => d.keep_whole && !superseded.has(d.id)
-  );
+  return allDecisions(node).some((d) => d.keep_whole && !superseded.has(d.id));
 }
 
 export type Hotspot = {
@@ -362,21 +375,8 @@ export function splitPartProblem(graph: MindPlanGraph, node: MindPlanNode, partI
   return null;
 }
 
-/**
- * Whether a marked part counts when `node`'s open revision ships, by the edge that keeps imports
- * legal: a Foundation depends_on its parts (it stays the composition root), an Interaction shares
- * a Capability with them (the behavior moved to sibling actions), an Interface exposes them.
- */
-export function splitPartLinked(graph: MindPlanGraph, node: MindPlanNode, partId: string): boolean {
-  const next = node.next;
-  if (!next) return false;
-  if (node.type === "Foundation") return (next.depends_on ?? []).includes(partId);
-  if (node.type === "Interface") return (next.exposes ?? []).includes(partId);
-  const part = graph.nodes.find((n) => n.id === partId);
-  // The revision's own Capabilities, as its ship will write them.
-  const capabilities = new Set(next.belongs_to ?? []);
-  return (part?.next?.belongs_to ?? part?.belongs_to ?? []).some((j) => capabilities.has(j));
-}
+// The split-part rules are pure revision rules: the store's ship and the walk's dry run share them.
+export { splitPartLinked, splitParts } from "../f-revision-model/index.js";
 
 /** The edge a marked part still needs before the ship records it, for the split_into warning. */
 export function splitLinkHint(node: MindPlanNode): string {

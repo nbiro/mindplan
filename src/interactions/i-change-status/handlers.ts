@@ -3,7 +3,7 @@
  * dry run, ship and promotion with revision counts and declared splits) and force_unship.
  */
 
-import { splitPartLinked } from "../../foundations/f-compiler-rules/open-closed.js";
+import { splitParts } from "../../foundations/f-compiler-rules/open-closed.js";
 import {
   churnAfterShip,
   decayChurn,
@@ -11,19 +11,14 @@ import {
   isPipelineNodeType,
   type MindPlanGraph,
   type MindPlanNode,
+  type ProductionState,
 } from "../../foundations/f-domain-model/types.js";
 import {
-  ATTACHMENTS_DIR,
-  NEXT_ATTACHMENTS_DIR,
   deleteNextSlotFiles,
-  entityRelativePath,
   loadGraph,
-  markdownRelativePath,
   loadProjectConfig,
-  nextAttachmentsDir,
   projectRoot,
   patchFrontmatter,
-  promoteNextSlot,
   writeRevisionFields,
   readMarkdown,
   writeMarkdown,
@@ -33,21 +28,41 @@ import {
   stripLiveAtomicOps,
   freshLiveAtomicOps,
 } from "../../foundations/f-territory-store/store.js";
+import {
+  discardRevision,
+  shipRevision,
+  writeRevisionState,
+} from "../../foundations/f-territory-store/revisions.js";
+import {
+  openChanges,
+  resolveRevisionChange,
+  revisionFor,
+  withRevision,
+} from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import {
   blocked,
   changeMembers,
   findNode,
+  liveGraph,
   recomputeCapabilityStates,
   recomputeStability,
   resolveForceUnship,
+  resolveRevisionStatusChange,
   resolveStatusChange,
+  revisionGraph,
 } from "../../foundations/f-compiler-rules/rules.js";
-import { assertCheckCleanForNode, staleTextWarnings } from "../../foundations/f-compiler-rules/integrity.js";
+import {
+  assertCheckCleanForNode,
+  assertCheckCleanForRevision,
+  preShipChange,
+  staleTextWarnings,
+} from "../../foundations/f-compiler-rules/integrity.js";
 import { assertDecisionForReview, createDecisionContext, type DecisionContext } from "../../foundations/f-compiler-rules/decisions.js";
-import * as fs from "fs";
 import {
   changedFiles,
+  assertNoLegacyNext,
+  conflictLabel,
   gateWrite,
   mutationTail,
   refreshPersistedMap,
@@ -56,32 +71,6 @@ import {
   withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
 
-/**
- * Paths touched when discarding or promoting a next slot.
- * When `includeCopiedAttachments` is true (promote), also lists
- * `attachments/<file>` targets for each non-.gitkeep next-attachment file.
- */
-export function nextSlotFsChangedFiles(
-  node: Pick<MindPlanNode, "id" | "type">,
-  opts: { includeCopiedAttachments: boolean }
-): string[] {
-  const rel = entityRelativePath(node);
-  const nextAttRel = `${rel}/${NEXT_ATTACHMENTS_DIR}`;
-  const attRel = `${rel}/${ATTACHMENTS_DIR}`;
-  const files = [markdownRelativePath(node, "next"), nextAttRel];
-  const abs = nextAttachmentsDir(node);
-  if (fs.existsSync(abs)) {
-    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      files.push(`${nextAttRel}/${entry.name}`);
-      if (opts.includeCopiedAttachments && entry.name !== ".gitkeep") {
-        files.push(`${attRel}/${entry.name}`);
-      }
-    }
-  }
-  return files;
-}
-
 const STATUS_TIER: Record<string, number> = {
   Foundation: 0,
   Interaction: 1,
@@ -89,7 +78,32 @@ const STATUS_TIER: Record<string, number> = {
   Bug: 3,
 };
 
-type StatusRevision = { node_id: string; new_status: string };
+type StatusRevision = { node_id: string; new_status: string; change?: string };
+
+/** Moves that retire a node: they act on live and delete every open revision. */
+const RETIRE_STATES = new Set(["deprecated", "cancelled"]);
+
+/**
+ * Which open revision a transition of `node` moves: the revision of `change`, or the node's only
+ * one; undefined for live (a pre-ship node, a Bug, a shipped node with none, or a retirement).
+ * Blocked when several are open and no change is given (naming them), when `change` names no
+ * open revision, and when a `<id>.next.mdx` from an older release is still on disk.
+ */
+function revisionChangeFor(node: MindPlanNode, newStatus: string, change?: string): string | undefined {
+  if (!isPipelineNodeType(node.type)) {
+    if (change) throw blocked(`"${node.id}" is a ${node.type}; it has no revisions, so it takes no change.`);
+    return undefined;
+  }
+  assertNoLegacyNext(node, "update_node_status");
+  if (!node.shipped_at) {
+    if (change && node.change !== change) {
+      throw blocked(`"${node.id}" is not shipped and belongs to ${node.change ? `change "${node.change}"` : "no change"}, not "${change}".`);
+    }
+    return undefined;
+  }
+  if (RETIRE_STATES.has(newStatus) && !change) return undefined;
+  return resolveRevisionChange(node, change) ?? undefined;
+}
 
 /** Which nodes a scoped status call walks. */
 export const STATUS_SCOPES = ["all_open_updates", "node_and_dependents", "change"] as const;
@@ -104,7 +118,10 @@ type StatusArgs = {
   new_status?: string;
   revisions?: StatusRevision[];
   scope?: StatusScope;
-  /** Change id walked by `scope: "change"`. */
+  /**
+   * Change id walked by `scope: "change"`; for a single node, which of its open revisions the
+   * transition moves (optional when it has at most one).
+   */
   change?: string;
   /** Let a scoped walk to `ship` move nodes that have not reached in-review. Reported in the result. */
   skip_review?: boolean;
@@ -150,8 +167,8 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
     }
     return { mode: "scope", items: [] };
   }
-  if (args.change !== undefined) {
-    throw blocked('change is only used with scope "change".');
+  if (args.change !== undefined && hasList) {
+    throw blocked('change picks the revision of a single node (node_id + new_status) or the change of scope "change"; not a revisions list.');
   }
   if (args.skip_review === true) {
     throw blocked("skip_review only applies to a scoped walk to ship.");
@@ -170,10 +187,16 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
       if (!item?.node_id || !item?.new_status) {
         throw blocked("each revision needs node_id and new_status.");
       }
-      if (ids.has(item.node_id)) {
-        throw blocked(`duplicate node_id "${item.node_id}" in revisions.`);
+      // A node may move several of its open revisions, once per change.
+      const key = `${item.node_id}@${item.change ?? ""}`;
+      if (ids.has(key)) {
+        throw blocked(
+          item.change
+            ? `duplicate node_id "${item.node_id}" with change "${item.change}" in revisions.`
+            : `duplicate node_id "${item.node_id}" in revisions.`
+        );
       }
-      ids.add(item.node_id);
+      ids.add(key);
     }
     return { mode: "batch", items: list! };
   }
@@ -184,7 +207,7 @@ function normalizeStatusArgs(args: StatusArgs): { mode: StatusMode; items: Statu
   }
   return {
     mode: "single",
-    items: [{ node_id: args.node_id, new_status: args.new_status }],
+    items: [{ node_id: args.node_id, new_status: args.new_status, ...(args.change ? { change: args.change } : {}) }],
   };
 }
 
@@ -204,8 +227,9 @@ function orderStatusRevisions(items: StatusRevision[]): StatusRevision[] {
     .map((row) => row.item);
 }
 
-/** Active-slot state of a pipeline node: next while evolving, else live. */
-function activeState(node: MindPlanNode): string {
+/** State a walk moves: the revision of `change` when given, else next while evolving, else live. */
+function activeState(node: MindPlanNode, change?: string): string {
+  if (change) return revisionFor(node, change)?.state ?? node.state;
   return node.next ? node.next.state : node.state;
 }
 
@@ -217,24 +241,39 @@ function activeState(node: MindPlanNode): string {
  */
 function isOpenUpdate(node: MindPlanNode, includePlanned = false): boolean {
   if (!isPipelineNodeType(node.type)) return false;
-  if (node.next) return true;
+  if (node.next || openChanges(node).length > 0) return true;
   if (node.shipped_at) return false;
   if (node.state === "in-progress" || node.state === "in-review") return true;
   return includePlanned && (node.state === "draft" || node.state === "ready");
 }
 
-/** Nodes a scoped call walks, in the order they must move (Foundations, Interactions, Interfaces). */
-function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode[] {
+/** A node a scoped walk moves, and which of its open revisions (undefined: live or pre-ship). */
+type ScopedNode = { node: MindPlanNode; change?: string };
+
+/**
+ * Nodes a scoped call walks with the revision each row moves, in the order they must move
+ * (Foundations, Interactions, Interfaces). `scope: "change"` moves each member's revision of that
+ * change; the other scopes move each node's only open revision (Blocked when a node has several).
+ */
+function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): ScopedNode[] {
   let selected: MindPlanNode[];
   if (args.scope === "all_open_updates") {
     selected = graph.nodes.filter((n) => isOpenUpdate(n));
   } else if (args.scope === "change") {
-    selected = changeMembers(graph, args.change!);
+    const change = args.change!;
+    const ids = new Set(changeMembers(graph, change).map((n) => n.id));
+    for (const n of graph.nodes) if (revisionFor(n, change)) ids.add(n.id);
+    selected = graph.nodes.filter((n) => ids.has(n.id));
+    for (const n of selected) if (!revisionFor(n, change)) assertNoLegacyNext(n, "update_node_status");
     if (selected.length === 0) {
       throw blocked(
         `change "${args.change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
       );
     }
+    return orderForWalk(graph, selected).map((node) => ({
+      node,
+      ...(revisionFor(node, change) ? { change } : {}),
+    }));
   } else {
     const seed = findNode(graph, args.node_id!);
     const ids = new Set<string>([seed.id]);
@@ -250,13 +289,11 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode
           queue.push(edge.source);
         }
       }
-      // Edges proposed on an open next slot count too: that node ships with the new edge.
+      // Edges proposed on an open revision count too: that node ships with the new edge.
       for (const other of graph.nodes) {
-        if (ids.has(other.id) || !other.next) continue;
-        if (
-          (other.next.depends_on ?? []).includes(current) ||
-          (other.next.exposes ?? []).includes(current)
-        ) {
+        if (ids.has(other.id)) continue;
+        const views = [other.next, ...openChanges(other).map((c) => withRevision(other, c).next)];
+        if (views.some((v) => v && ((v.depends_on ?? []).includes(current) || (v.exposes ?? []).includes(current)))) {
           ids.add(other.id);
           queue.push(other.id);
         }
@@ -264,7 +301,10 @@ function selectScopedNodes(graph: MindPlanGraph, args: StatusArgs): MindPlanNode
     }
     selected = graph.nodes.filter((n) => ids.has(n.id) && isOpenUpdate(n, true));
   }
-  return orderForWalk(graph, selected);
+  return orderForWalk(graph, selected).map((node) => {
+    const change = revisionChangeFor(node, args.new_status!);
+    return { node, ...(change ? { change } : {}) };
+  });
 }
 
 /** Tier order (Foundation, Interaction, Interface), then dependency order within a tier. */
@@ -292,14 +332,25 @@ function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode
   return out;
 }
 
-type WalkPlan = { node_id: string; steps: string[] };
+/** One node's walk: the revision it moves (`change`; undefined for live) and its steps. */
+type WalkPlan = { node_id: string; change?: string; steps: string[] };
 
 /** Steps from a node's active state forward to the target; empty when already there or past. */
-function stepsToTarget(node: MindPlanNode, target: string): string[] {
-  const from = (WALK_PIPELINE as readonly string[]).indexOf(activeState(node));
+function stepsToTarget(node: MindPlanNode, target: string, change?: string): string[] {
+  const from = (WALK_PIPELINE as readonly string[]).indexOf(activeState(node, change));
   const to = (WALK_PIPELINE as readonly string[]).indexOf(target);
   if (from < 0 || to < 0 || from >= to) return [];
   return WALK_PIPELINE.slice(from + 1, to + 1);
+}
+
+/**
+ * The graph a live status move is judged on: live plus legacy next files, or for a pre-ship member
+ * of change C, live plus C's revisions (`revisionGraph`), so an edge C adds to a shipped co-member
+ * is in place for it.
+ */
+function liveMoveGraph(graph: MindPlanGraph, node: MindPlanNode): MindPlanGraph {
+  const own = preShipChange(node);
+  return own === null ? liveGraph(graph) : revisionGraph(graph, own);
 }
 
 /** Replace a node's outgoing edges in the in-memory graph with its current edge fields. */
@@ -311,23 +362,26 @@ function rebuildOutgoingEdges(graph: MindPlanGraph, node: MindPlanNode): void {
 }
 
 /**
- * The in-memory effect of promoting next over live, field for field as promoteNextSlot writes it
- * (contract scalars, edges, claims, role, decisions; the change id is dropped), so a validated walk
- * sees at every later step what the real walk will see.
+ * The in-memory effect of shipping the revision of `change`, field for field as shipRevision
+ * writes it: live becomes the `withRevision` view (contract scalars, edges, claims, tests, role,
+ * decisions), the revision is dropped, and sibling revisions stay (their deltas apply to the new
+ * live). A validated walk sees at every later step what the real walk will see.
  */
 function promoteInMemory(
   graph: MindPlanGraph,
   node: MindPlanNode,
+  change: string,
   state: MindPlanNode["state"],
   shippedAt: string
 ): void {
-  const next = node.next;
+  const view = withRevision(node, change);
+  const next = view.next;
   if (!next) return;
   node.title = next.title;
   node.description = next.description;
   node.state = state;
-  // The revision count, rate, and split, as promoteNextSlot writes them.
-  const parts = splitParts(graph, node);
+  // The revision count, rate, and split, as shipRevision writes them.
+  const parts = splitParts(graph, view);
   node.revisions = (node.revisions ?? 1) + 1;
   node.churn = parts.length
     ? 0
@@ -338,22 +392,23 @@ function promoteInMemory(
   }
   node.shipped_at = shippedAt;
   node.updated_at = shippedAt;
-  const assign = <K extends "belongs_to" | "depends_on" | "exposes" | "leads_to" | "mounts" | "implements">(
-    key: K
-  ) => {
+  for (const key of ["belongs_to", "depends_on", "exposes", "leads_to", "mounts", "implements"] as const) {
     const value = next[key];
     if (value && value.length > 0) node[key] = [...value];
     else delete node[key];
-  };
-  for (const key of ["belongs_to", "depends_on", "exposes", "leads_to", "mounts", "implements"] as const) {
-    assign(key);
   }
+  if (view.tests?.length) node.tests = [...view.tests];
+  else delete node.tests;
   if (next.decisions?.length) node.decisions = [...next.decisions];
   else delete node.decisions;
   if (next.role) node.role = next.role;
-  delete node.change;
-  delete node.change_ref;
-  delete node.next;
+  else if (revisionFor(node, change)?.role_removed) delete node.role;
+  const rest = (node.open_revisions ?? []).filter((r) => r.change !== change);
+  if (rest.length) node.open_revisions = rest;
+  else delete node.open_revisions;
+  // The loader's view: the only remaining revision fills `next`, none or several leave it unset.
+  if (rest.length === 1) node.next = withRevision(node, rest[0].change).next;
+  else delete node.next;
   rebuildOutgoingEdges(graph, node);
 }
 
@@ -378,7 +433,10 @@ function simulateWalk(
   return { blocked: null, warnings: [...warnings] };
 }
 
-/** One node's steps applied to `graph` in memory; the first Blocked step and its reason, or null. */
+/**
+ * One node's steps applied to `graph` in memory; the first Blocked step and its reason, or null.
+ * A revision row is judged on `revisionGraph(graph, change)` (live plus that change's revisions).
+ */
 function simulateRow(
   graph: MindPlanGraph,
   root: string,
@@ -390,22 +448,31 @@ function simulateRow(
   const node = findNode(graph, row.node_id);
   for (const step of row.steps) {
     try {
-      const resolved = resolveStatusChange(graph, node, step);
+      if (row.change) {
+        const resolved = resolveRevisionStatusChange(graph, node, row.change, step);
+        if (step === "in-review" || step === "ship") {
+          assertCheckCleanForRevision(graph, root, node, row.change, step);
+          if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx, row.change);
+          for (const w of staleTextWarnings(graph, root, node, undefined, undefined, row.change).warnings) warnings.add(w);
+        }
+        if (resolved.promote_next) {
+          promoteInMemory(graph, node, row.change, resolved.state, now);
+        } else {
+          const rev = revisionFor(node, row.change)!;
+          rev.state = resolved.state as typeof rev.state;
+          if (node.next?.change === row.change) node.next.state = rev.state;
+        }
+        continue;
+      }
+      const live = liveMoveGraph(graph, node);
+      const resolved = resolveStatusChange(live, findNode(live, row.node_id), step);
       if (step === "in-review" || step === "ship") {
         assertCheckCleanForNode(graph, root, node, step);
         if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx);
         for (const w of staleTextWarnings(graph, root, node).warnings) warnings.add(w);
       }
-      if (resolved.promote_next) {
-        promoteInMemory(graph, node, resolved.state, now);
-      } else if (resolved.ship) {
-        node.state = resolved.state;
-        node.shipped_at = now;
-      } else if (node.next && isNextPipelineState(resolved.state)) {
-        node.next.state = resolved.state;
-      } else {
-        node.state = resolved.state;
-      }
+      node.state = resolved.state;
+      if (resolved.ship) node.shipped_at = now;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { step, reason: message.replace(/^Blocked:\s*/, "") };
@@ -461,7 +528,7 @@ function simulateSkippingBlocked(
 function describePlan(plan: WalkPlan[], graph: MindPlanGraph): string[] {
   const lines: string[] = [];
   for (const row of plan) {
-    let from = activeState(findNode(graph, row.node_id));
+    let from = activeState(findNode(graph, row.node_id), row.change);
     for (const step of row.steps) {
       lines.push(`${row.node_id}: ${from} -> ${step}`);
       from = step;
@@ -476,7 +543,7 @@ function nodesSkippingReview(plan: WalkPlan[], graph: MindPlanGraph): string[] {
     .filter(
       (row) =>
         row.steps[row.steps.length - 1] === "ship" &&
-        activeState(findNode(graph, row.node_id)) !== "in-review"
+        activeState(findNode(graph, row.node_id), row.change) !== "in-review"
     )
     .map((row) => row.node_id);
 }
@@ -497,9 +564,9 @@ function capWarnings(warnings: Iterable<string>): string[] {
   return [...list.slice(0, WARNING_CAP), `... ${list.length - WARNING_CAP} more warning(s); run run_check for all.`];
 }
 
-/** One line per node: `id: from -> to`, `to` being the next slot state while evolving. */
+/** One line per node: `id: from -> to`, `to` being the revision's state while it is open. */
 function statusLine(row: Record<string, unknown>): string {
-  const to = (row.next_state as string | null) ?? String(row.new_state);
+  const to = (row.revision_state as string | undefined) ?? (row.next_state as string | null) ?? String(row.new_state);
   return `${String(row.node_id)}: ${String(row.previous_state)} -> ${to}`;
 }
 
@@ -521,12 +588,14 @@ function applyWalk(
   const changed = new Set<string>();
   const warnings = new Set<string>(simWarnings);
   let last: Record<string, unknown> = {};
+  const rebased: Record<string, unknown>[] = [];
   for (const row of plan) {
     let first: Record<string, unknown> | null = null;
     for (const step of row.steps) {
-      last = applyOneStatus({ node_id: row.node_id, new_status: step, decisionCtx });
+      last = applyOneStatus({ node_id: row.node_id, new_status: step, change: row.change, decisionCtx });
       first = first ?? last;
       for (const f of (last.changed_files as string[] | undefined) ?? []) changed.add(f);
+      for (const r of (last.rebased as Record<string, unknown>[] | undefined) ?? []) rebased.push({ node_id: row.node_id, ...r });
     }
     lines.push(statusLine({ ...last, previous_state: first!.previous_state }));
   }
@@ -536,6 +605,7 @@ function applyWalk(
     ...(args.scope === "change" ? { change: args.change } : {}),
     lines,
     changed_files: [...changed],
+    ...(rebased.length ? { rebased } : {}),
     ...(warnings.size ? { warnings: capWarnings(warnings) } : {}),
     ...(args.verbose === true
       ? {
@@ -595,7 +665,11 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     const graph = loadGraph();
     const nodes = selectScopedNodes(graph, args);
     const plan: WalkPlan[] = nodes
-      .map((n) => ({ node_id: n.id, steps: stepsToTarget(n, args.new_status!) }))
+      .map(({ node: n, change }) => ({
+        node_id: n.id,
+        ...(change ? { change } : {}),
+        steps: stepsToTarget(n, args.new_status!, change),
+      }))
       .filter((row) => row.steps.length > 0);
     const skipping = nodesSkippingReview(plan, graph);
     // One decision context (config + git probe) serves the validation and every step.
@@ -636,7 +710,10 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     const graph = loadGraph();
     const items =
       normalized.mode === "batch" ? orderStatusRevisions(normalized.items) : normalized.items;
-    const plan: WalkPlan[] = items.map((i) => ({ node_id: i.node_id, steps: [i.new_status] }));
+    const plan: WalkPlan[] = items.map((i) => {
+      const change = revisionChangeFor(findNode(graph, i.node_id), i.new_status, i.change);
+      return { node_id: i.node_id, ...(change ? { change } : {}), steps: [i.new_status] };
+    });
     const sim = simulateWalk(plan);
     return {
       dry_run: true,
@@ -700,30 +777,25 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
   };
 }
 
-/**
- * The parts a revision split out of its node: the ids its next slot marks in `split_into`
- * (patch_node_territory) beyond the live list, kept only where the edge that keeps imports legal is
- * in place by now (`splitPartLinked`: a Foundation depends_on them, an Interaction shares a Capability,
- * an Interface exposes them). A split is declared, not guessed.
- */
-function splitParts(graph: MindPlanGraph, node: MindPlanNode): string[] {
-  if (!node.next) return [];
-  const live = new Set(node.split_into ?? []);
-  return (node.next.split_into ?? []).filter((id) => !live.has(id) && splitPartLinked(graph, node, id)).sort();
-}
-
 function applyOneStatus(args: {
   verbose?: boolean;
   node_id: string;
   new_status: string;
+  /** Which open revision moves (optional when the node has at most one). */
+  change?: string;
   /** Shared by the steps of one call so config and the git probe are read once. */
   decisionCtx?: DecisionContext;
 }): Record<string, unknown> {
   const { node_id, new_status } = args;
   const graph = loadGraph();
   const node = findNode(graph, node_id);
+  const change = revisionChangeFor(node, new_status, args.change);
+  if (change) return applyRevisionStatus({ ...args, change }, graph, node);
 
-  const resolved = resolveStatusChange(graph, node, new_status);
+  // A live move (pre-ship, a Bug, or a retirement) is judged with no change's revision visible,
+  // except that a pre-ship member of a change sees that change's revisions (`liveMoveGraph`).
+  const live = liveMoveGraph(graph, node);
+  const resolved = resolveStatusChange(live, findNode(live, node_id), new_status);
   // Moves to in-review and ship run the check's import and ownership rules on this node's files.
   let warnings: string[] = [];
   if (new_status === "in-review" || new_status === "ship") {
@@ -735,18 +807,11 @@ function applyOneStatus(args: {
     warnings = staleTextWarnings(graph, projectRoot(), node).warnings;
   }
 
-  const previous = node.next ? node.next.state : node.state;
+  const previous = node.state;
   const now = new Date().toISOString();
-  let promoted = false;
-  let promoteSlotFiles: string[] = [];
-  let removedNext: string[] = [];
+  let removed: string[] = [];
 
-  if (resolved.promote_next) {
-    promoteSlotFiles = nextSlotFsChangedFiles(node, { includeCopiedAttachments: true });
-    promoteNextSlot(node, resolved.state, now, { splitInto: splitParts(graph, node) });
-    promoted = true;
-    rebuildOutgoingEdges(graph, node);
-  } else if (resolved.ship) {
+  if (resolved.ship) {
     // A shipped node is no longer an open revision: its change membership ends here.
     writeChangeFrontmatter(node, {
       change: node.change ? "" : undefined,
@@ -767,26 +832,15 @@ function applyOneStatus(args: {
     stripLiveAtomicOps(node);
     // Once shipped, an attributed file is simply part of its owner's folder.
     if (node.attributed?.length) clearAttributed(node);
-  } else if (node.next && isNextPipelineState(resolved.state)) {
-    node.next.state = resolved.state;
-    node.next.updated_at = now;
-    patchFrontmatter(
-      {
-        id: node.id,
-        type: node.type,
-        state: resolved.state,
-        updated_at: now,
-      },
-      "next"
-    );
   } else {
-    const retiring =
-      resolved.state === "deprecated" || resolved.state === "cancelled";
+    const retiring = RETIRE_STATES.has(resolved.state);
     node.state = resolved.state;
     node.updated_at = now;
     patchFrontmatter(node);
     if (retiring && isPipelineNodeType(node.type)) {
-      removedNext = deleteNextSlotFiles(node);
+      // A retired node keeps no open revision: every revision folder goes with it.
+      for (const c of openChanges(node)) removed.push(...discardRevision(node, c).changed_files);
+      removed = [...removed, ...deleteNextSlotFiles(node)];
     }
   }
 
@@ -795,31 +849,83 @@ function applyOneStatus(args: {
   const synced = syncNodes([...changedStability, ...changedCapabilities]);
   refreshPersistedMap();
 
-  const primaryPaths: string[] = [];
-  if (promoted) {
-    primaryPaths.push(territoryPath(node, "current"));
-    primaryPaths.push(...promoteSlotFiles);
-  } else if (resolved.ship) {
-    primaryPaths.push(territoryPath(node, "current"));
-  } else if (node.next && isNextPipelineState(resolved.state)) {
-    primaryPaths.push(territoryPath(node, "next"));
-  } else {
-    primaryPaths.push(territoryPath(node, "current"));
-    primaryPaths.push(...removedNext);
-  }
-  const files = [...primaryPaths, ...synced];
+  const files = [territoryPath(node, "current"), ...removed, ...synced];
 
   return {
     node_id,
     previous_state: previous,
     new_state: node.state,
-    next_state: node.next?.state ?? null,
+    next_state: null,
     shipped_at: node.shipped_at,
-    promoted_next: promoted,
+    promoted_next: false,
     ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
-    changed_files: changedFiles(files, true),
+    changed_files: changedFiles(files),
+    ...mutationTail(loadGraph(), node_id, args.verbose),
+  };
+}
+
+/**
+ * A build-pipeline move of the revision of `change`: judged on `revisionGraph(graph, change)` (live
+ * plus that change's revisions), written with writeRevisionState, or shipped with shipRevision
+ * (siblings rebased; `rebased` lists each with the conflicts it holds).
+ */
+function applyRevisionStatus(
+  args: { verbose?: boolean; node_id: string; new_status: string; change: string; decisionCtx?: DecisionContext },
+  graph: MindPlanGraph,
+  node: MindPlanNode
+): Record<string, unknown> {
+  const { node_id, new_status, change } = args;
+  const root = projectRoot();
+  const resolved = resolveRevisionStatusChange(graph, node, change, new_status);
+  let warnings: string[] = [];
+  if (new_status === "in-review" || new_status === "ship") {
+    assertCheckCleanForRevision(graph, root, node, change, new_status);
+    if (new_status === "in-review") assertDecisionForReview(graph, root, node, args.decisionCtx, change);
+    warnings = staleTextWarnings(graph, root, node, undefined, undefined, change).warnings;
+  }
+
+  const previous = revisionFor(node, change)!.state;
+  const now = new Date().toISOString();
+  let files: string[];
+  let rebased: { change: string; conflicts: string[]; readiness_reset?: { from: string; to: string } }[] = [];
+  let promoted = false;
+  if (resolved.promote_next) {
+    const shipped = shipRevision(graph, node, change, { now, newState: resolved.state as ProductionState });
+    files = shipped.changed_files;
+    rebased = shipped.rebased.map((r) => ({
+      change: r.change,
+      conflicts: r.conflicts.map(conflictLabel),
+      ...(r.readiness_reset ? { readiness_reset: r.readiness_reset } : {}),
+    }));
+    promoted = true;
+    rebuildOutgoingEdges(graph, node);
+  } else if (isNextPipelineState(resolved.state)) {
+    files = writeRevisionState(node, change, resolved.state).changed_files;
+  } else {
+    throw blocked(`"${resolved.state}" is not a revision state; a revision moves draft -> ready -> in-progress -> in-review -> ship.`);
+  }
+
+  const changedStability = recomputeStability(graph);
+  const changedCapabilities = recomputeCapabilityStates(graph);
+  const synced = syncNodes([...changedStability, ...changedCapabilities]);
+  refreshPersistedMap();
+
+  const revisionState = revisionFor(node, change)?.state;
+  return {
+    node_id,
+    change,
+    previous_state: previous,
+    new_state: node.state,
+    ...(revisionState ? { revision_state: revisionState } : {}),
+    shipped_at: node.shipped_at,
+    promoted_next: promoted,
+    ...(rebased.length ? { rebased } : {}),
+    ...(warnings.length ? { warnings: capWarnings(warnings) } : {}),
+    stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
+    capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
+    changed_files: changedFiles([...files, ...synced]),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }
@@ -834,6 +940,12 @@ export function forceUnship(args: {
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   gateWrite(graph, [node_id], "force_unship");
+  const open = openChanges(node);
+  if (open.length > 0) {
+    throw blocked(
+      `"${node_id}" has open revisions (${open.map((c) => `"${c}"`).join(", ")}); ship or discard_next each before force_unship.`
+    );
+  }
   const target = new_status ?? "ready";
   const previous = node.state;
 
@@ -887,7 +999,7 @@ export function forceUnship(args: {
     force_unship: true,
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
-    changed_files: changedFiles(files, true),
+    changed_files: changedFiles(files),
     ...mutationTail(loadGraph(), node_id, args.verbose),
   };
 }

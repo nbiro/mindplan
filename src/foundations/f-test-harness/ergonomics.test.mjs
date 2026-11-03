@@ -121,16 +121,16 @@ write(
     "export const registry = [entry_if_a, entry_if_b];\n"
 );
 
-await call("set_implementation_files", { node_id: "f-core", files: ["src/foundations/f-core/"] });
-await call("set_implementation_files", { node_id: "i-feature", files: ["src/interactions/i-feature/"] });
-await call("set_implementation_files", { node_id: "if-a", files: ["src/interfaces/if-a/"] });
-await call("set_implementation_files", { node_id: "if-b", files: ["src/interfaces/if-b/"] });
+await call("set_implementation_files", { node_id: "f-core", add: ["src/foundations/f-core/"] });
+await call("set_implementation_files", { node_id: "i-feature", add: ["src/interactions/i-feature/"] });
+await call("set_implementation_files", { node_id: "if-a", add: ["src/interfaces/if-a/"] });
+await call("set_implementation_files", { node_id: "if-b", add: ["src/interfaces/if-b/"] });
 
 // --- item 2 + 4: claiming a registry that imports Interfaces returns the mounts fix ---
 {
   const claim = await call("set_implementation_files", {
     node_id: "f-reg",
-    files: ["src/foundations/f-reg/"],
+    add: ["src/foundations/f-reg/"],
   });
   const violations = claim.import_violations ?? [];
   const mounted = violations.map((v) => v.fix?.args?.target_id).sort();
@@ -289,7 +289,7 @@ for (const [kind, id] of [
 // A parked plan: a draft node that already claims files is still a plan, not an update.
 await call("create_node", { id: "f-parked", type: "Foundation", title: "Parked", description: "Infra — later work", role: "infra" });
 write("src/foundations/f-parked/index.ts", "export const parked = 1;\n");
-await call("set_implementation_files", { node_id: "f-parked", files: ["src/foundations/f-parked/"] });
+await call("set_implementation_files", { node_id: "f-parked", add: ["src/foundations/f-parked/"] });
 for (const status of ["ready", "in-progress"]) {
   await call("update_node_status", {
     revisions: ["f-core", "f-reg", "i-feature", "if-a", "if-b"].map((node_id) => ({ node_id, new_status: status })),
@@ -332,8 +332,8 @@ for (const status of ["ready", "in-progress"]) {
     "src/interactions/i-bad/bad.ts",
     'import { extra } from "../../foundations/f-extra/index.js";\nexport const bad = extra;\n'
   );
-  await call("set_implementation_files", { node_id: "f-extra", files: ["src/foundations/f-extra/"] });
-  const claim = await call("set_implementation_files", { node_id: "i-bad", files: ["src/interactions/i-bad/"] });
+  await call("set_implementation_files", { node_id: "f-extra", add: ["src/foundations/f-extra/"] });
+  const claim = await call("set_implementation_files", { node_id: "i-bad", add: ["src/interactions/i-bad/"] });
   const fix = claim.import_violations?.[0]?.fix;
   check(
     "claiming a file that imports an unlinked node returns the link_nodes call",
@@ -421,8 +421,8 @@ for (const status of ["ready", "in-progress"]) {
     (idle.drift?.unowned ?? []).some((p) => p.endsWith("orphan/x.ts")),
     JSON.stringify(idle.drift)
   );
-  await call("open_next", { node_id: "f-core" });
-  await call("set_implementation_files", { node_id: "f-core", files: ["src/foundations/f-core/"] });
+  await call("open_next", { change: "rev-f-core", node_id: "f-core" });
+  await call("set_implementation_files", { node_id: "f-core", add: ["src/foundations/f-core/"] });
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
   await call("update_node_status", { node_id: "f-core", new_status: "in-progress" });
   const expected = await call("orient_for_work", { node_id: "f-core" });
@@ -431,6 +431,42 @@ for (const status of ["ready", "in-progress"]) {
     !(expected.drift?.paths ?? []).some((p) => p.path.endsWith("f-core/index.ts")),
     JSON.stringify(expected.drift)
   );
+  // A second open revision: f-core has no single `next` view now, and each revision is read on
+  // its own (live with its delta applied).
+  write("src/f-core-extra/y.ts", "export const y = 1;\n");
+  await call("open_next", { change: "rev-two", node_id: "f-core" });
+  await call("set_implementation_files", { node_id: "f-core", change: "rev-two", add: ["src/f-core-extra/y.ts"] });
+  const two = await call("orient_for_work", { node_id: "f-core" });
+  const twoPaths = two.drift?.paths ?? [];
+  check(
+    "with two open revisions, a file the in-progress revision claims is still expected",
+    !twoPaths.some((p) => p.path.endsWith("f-core/index.ts")) && (two.drift?.expected ?? 0) >= 1,
+    JSON.stringify(two.drift)
+  );
+  const extra = twoPaths.find((p) => p.path === "src/f-core-extra/y.ts");
+  check(
+    "a file only a draft revision claims is owner_idle and names every open revision",
+    extra?.class === "owner_idle" &&
+      extra.owner_id === "f-core" &&
+      JSON.stringify(extra.revisions) ===
+        JSON.stringify([
+          { change: "rev-f-core", state: "in-progress" },
+          { change: "rev-two", state: "draft" },
+        ]),
+    JSON.stringify(two.drift)
+  );
+  const dirtyCheck = runCli(["check", "--base", "HEAD"]);
+  const dirtyOut = dirtyCheck.stdout + dirtyCheck.stderr;
+  check(
+    "dirty-src allows the in-progress revision's file and describes the owner by its revisions",
+    !dirtyOut.includes('dirty file "src/foundations/f-core/index.ts"') &&
+      dirtyOut.includes(
+        'dirty file "src/f-core-extra/y.ts" while "f-core" is "stable" (revisions: "rev-f-core" in-progress, "rev-two" draft)'
+      ),
+    dirtyOut
+  );
+  await call("discard_next", { node_id: "f-core", change: "rev-two" });
+  fs.rmSync(path.join(root, "src", "f-core-extra"), { recursive: true, force: true });
   fs.rmSync(path.join(root, "src", "foundations", "f-core", "index.ts"));
   const missing = await call("orient_for_work", { node_id: "f-core" });
   check(

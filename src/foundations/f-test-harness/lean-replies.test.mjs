@@ -57,11 +57,14 @@ function snapshot() {
   return files;
 }
 
-/** Paths created, changed, or deleted between two snapshots. */
+/** Derived after every write and never listed in changed_files. */
+const MAP = "mindplan/map.md";
+
+/** Paths created, changed, or deleted between two snapshots (the derived map excluded). */
 function touched(before, after) {
   const out = [];
-  for (const [rel, text] of after) if (before.get(rel) !== text) out.push(rel);
-  for (const rel of before.keys()) if (!after.has(rel)) out.push(rel);
+  for (const [rel, text] of after) if (rel !== MAP && before.get(rel) !== text) out.push(rel);
+  for (const rel of before.keys()) if (rel !== MAP && !after.has(rel)) out.push(rel);
   return out;
 }
 
@@ -101,14 +104,20 @@ async function blocked(tool, args) {
 
 const liveOf = (id) => `mindplan/foundations/${id}/${id}.mdx`;
 const nextOf = (id) => `mindplan/foundations/${id}/${id}.next.mdx`;
+const revDirOf = (id, change) => `mindplan/foundations/${id}/revisions/${change}`;
+const revOf = (id, change) => `${revDirOf(id, change)}/${id}.mdx`;
 const readRel = (rel) => fs.readFileSync(path.join(root, ...rel.split("/")), "utf-8");
 const count = (text, re) => (text.match(re) ?? []).length;
 const UNTICKED = /^\s*[-*+]\s+\[ \]/gm;
 const TICKED = /^\s*[-*+]\s+\[[xX]\]/gm;
 
-/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+/** True when a shipped node with no open revision has no `<id>.next.mdx` and no `revisions/` beside its live file. */
 function noNextFile(id) {
-  return fs.existsSync(path.join(root, ...liveOf(id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(id).split("/")));
+  return (
+    fs.existsSync(path.join(root, ...liveOf(id).split("/"))) &&
+    !fs.existsSync(path.join(root, ...nextOf(id).split("/"))) &&
+    !fs.existsSync(path.join(root, "mindplan", "foundations", id, "revisions"))
+  );
 }
 
 function write(rel, content) {
@@ -121,7 +130,7 @@ function write(rel, content) {
 async function foundation(id) {
   await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
   write(`src/${id}/index.ts`, `export const ${id.replace(/-/g, "_")} = 1;\n`);
-  await call("set_implementation_files", { node_id: id, files: [`src/${id}/`] });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
   const file = path.join(root, ...liveOf(id).split("/"));
   let text = fs.readFileSync(file, "utf-8");
   text = text.replace(/^_.*?_$/gm, (line) => (line.includes("attachments/") ? line : "Lean-replies filled territory."));
@@ -134,6 +143,11 @@ async function walk(id, steps) {
 
 const tickAll = (id) =>
   call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+
+/** Ticks every box of an open revision in its file (the edit tools have their own suites). */
+function tickRevision(id, change) {
+  write(revOf(id, change), readRel(revOf(id, change)).replaceAll("- [ ]", "- [x]"));
+}
 
 fs.mkdirSync(path.join(root, "mindplan"), { recursive: true });
 fs.writeFileSync(
@@ -232,21 +246,30 @@ await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
 // --- open_next starts a fresh ledger; the revision cannot ship on old ticks ---
 await call("open_next", { node_id: "f-core", change: "lean" });
 {
-  const next = readRel(nextOf("f-core"));
+  const next = readRel(revOf("f-core", "lean"));
   check(
-    "open_next gives the revision one unticked default list before Rules",
+    "open_next gives the revision one unticked default list and no Rules (rules stay on live)",
     count(next, /^## Atomic Ops$/gm) === 1 &&
       count(next, UNTICKED) === 3 &&
       count(next, TICKED) === 0 &&
-      next.indexOf("## Atomic Ops") < next.indexOf("## Rules"),
+      !next.includes("## Rules"),
     next
   );
-  await call("record_decision", {
-    node_id: "f-core",
-    decision: "Core stays one module.",
-    alternatives: ["Split it (no second caller yet)"],
-    why: "One caller.",
-  });
+  // The revision's decision is a file in its decisions/ folder (record_decision has its own suite).
+  write(
+    `${revDirOf("f-core", "lean")}/decisions/d-core-one-module.md`,
+    [
+      "### d-core-one-module",
+      "",
+      "- Decision: Core stays one module.",
+      "- Alternatives:",
+      "  - Split it (no second caller yet)",
+      "- Why: One caller.",
+      "- Change: lean",
+      `- Date: ${new Date().toISOString().slice(0, 10)}`,
+      "",
+    ].join("\n")
+  );
   await walk("f-core", ["ready", "in-progress", "in-review"]);
   const gate = await blocked("update_node_status", { node_id: "f-core", new_status: "ship" });
   check("shipping the revision without ticking its own ops is Blocked", gate?.includes("Completion Check"), gate ?? "accepted");
@@ -298,18 +321,29 @@ await call("open_next", { node_id: "f-core", change: "lean" });
 }
 
 // --- ship the revision: promote drops its ledger too ---
-await tickAll("f-core");
+tickRevision("f-core", "lean");
 await walk("f-core", ["ship"]);
 {
   const live = readRel(liveOf("f-core"));
   check(
-    "promote leaves no Atomic Ops on live and keeps Decisions and Rules",
-    !live.includes("## Atomic Ops") && live.includes("Core stays one module.") && live.includes("- Keep it small."),
+    "promote leaves no Atomic Ops on live, keeps Rules, and moves the revision's decision beside live",
+    !live.includes("## Atomic Ops") &&
+      live.includes("- Keep it small.") &&
+      readRel("mindplan/foundations/f-core/decisions/d-core-one-module.md").includes("Core stays one module."),
     live
   );
-  check("promote deletes the next file", noNextFile("f-core"));
+  check("promote deletes the revision folder", noNextFile("f-core"));
   const noNext = await blocked("get_node_context", { node_id: "f-core", slot: "next" });
   check("slot next without an open revision is Blocked", noNext?.includes("Blocked:") && noNext.includes("no open revision"), noNext ?? "accepted");
+  const noNextPatch = await blocked("patch_node_territory", { node_id: "f-core", slot: "next", description: "Infra — patched." });
+  check(
+    "patch_node_territory slot next without an open revision is Blocked naming open_next, not a next file",
+    noNextPatch?.includes("Blocked:") &&
+      noNextPatch.includes("no open revision") &&
+      noNextPatch.includes('open_next({ node_id: "f-core", change })') &&
+      !noNextPatch.includes(".next.mdx"),
+    noNextPatch ?? "accepted"
+  );
 }
 
 // --- a Foundation's Checklist heading is dropped at ship too ---
@@ -338,6 +372,10 @@ await foundation("f-chk");
   await walk("f-chk", ["ready", "in-progress", "in-review", "ship"]);
   check("the unshipped node ships again", !readRel(liveOf("f-chk")).includes("## Atomic Ops") && noNextFile("f-chk"));
 }
+
+// An open revision for the upgrade below: it keeps its own list while the upgrade strips live.
+await call("open_next", { node_id: "f-chk", change: "chk" });
+write(revOf("f-chk", "chk"), readRel(revOf("f-chk", "chk")).replace(/^- \[ \] .*$/m, "- [ ] Revision work"));
 
 const final = await call("run_check", {});
 check("the sandbox passes the check before the upgrade", final.ok, JSON.stringify(final.failures));
@@ -372,16 +410,12 @@ await client.close();
 
   // An open revision keeps its own list while the upgrade strips the live file.
   addLedger(liveOf("f-chk"), "Old chk work");
-  fs.writeFileSync(
-    path.join(root, ...nextOf("f-chk").split("/")),
-    readRel(liveOf("f-chk")).replace(/^state:.*$/m, "state: draft").replace("- [x] Old chk work", "- [ ] Revision work")
-  );
   const second = runUpgrade(root);
   check(
     "upgrade_project strips a live ledger and leaves the open revision's list alone",
     second.status === 0 &&
       !readRel(liveOf("f-chk")).includes("## Atomic Ops") &&
-      readRel(nextOf("f-chk")).includes("- [ ] Revision work"),
+      readRel(revOf("f-chk", "chk")).includes("- [ ] Revision work"),
     second.stderr
   );
   const again = runUpgrade(root);

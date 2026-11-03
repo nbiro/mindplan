@@ -4,18 +4,19 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, additivity), change members (revisions, planned sources), checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-10-31T23:05:24.860Z
-revisions: 26
-churn: 14.708
+shipped_at: 2026-11-03T08:20:35.735Z
+revisions: 27
+churn: 14.919
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-01T10:53:07.670Z
+updated_at: 2026-11-03T08:20:35.735Z
 split_at: 8
 split_into:
   - f-source-index
 depends_on:
   - f-domain-model
-  - f-territory-store
+  - f-revision-model
   - f-source-index
+  - f-territory-store
 implements:
   - src/foundations/f-compiler-rules/
 tests:
@@ -105,6 +106,8 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 - **Description warnings.** `descriptionWarnings(node)` (`integrity.ts`) returns `description: …` warnings for a non-retired node's active-slot description: empty; equal to the title (letters and digits compared, case ignored); longer than `DESCRIPTION_MAX_CHARS` (300); an Interaction's that contains none of a loose list of actor words; or, except on a Bug (whose description describes a regression), revision wording (`now`, `no longer`, `was changed to`, `used to be`, `previously`, `anymore`). Heuristics, so warnings only
 
+- **Open revisions (0.18.0).** Every gate (Infrastructure First, Behavior First, Coverage, imports, ownership, shape, the decision gate, the Completion Check) judges a revision against `graphUnder(graph, change)`: live plus that change only. `changeMembers` and `changesWithRevisions` read `open_revisions`. A move to `in-review` is Blocked while the revision has `conflicts`, naming `resolve_conflict`. `revisionHasDecision` reads decision files and accepts a decision whose `nodes` lists the node. One import and ownership implementation serves the full check and the per-transition gates
+
 ## Acceptance Criteria
 
 - A mirror twin does not block `open_next`
@@ -158,184 +161,6 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 - `splitPartProblem` accepts an Interaction for an Interaction or Interface and refuses a Foundation; `splitPartLinked` counts an Interaction's part that shares its Capability and an Interface's part it exposes, and not one elsewhere
 
 - A ship that adds `depends_on` on a newly shipped Foundation while keeping all its own claims is no split; one whose earlier claim moves to the new Foundation is
-
-## Decisions
-
-### d-first-build-edges-ungated
-
-- Decision: Only a shipped node's revision is gated on adding or removing depends_on edges; a first build's initial edges never count.
-- Alternatives:
-  - Gate every added edge (every new Interaction must add edges, so nearly every revision would be gated)
-- Why: The brief keeps small single-area changes ungated; initial edges are part of creating a node, not changing a contract.
-- Change: decision-records
-- Date: 2026-10-20
-
-### d-gate-blocks-only-in-review
-
-- Decision: Only the move to in-review Blocks a missing decision; run_check always warns, with or without change.
-- Alternatives:
-  - Make run_check({ change }) fail too (a draft change would fail the check the brief says should only warn)
-- Why: The decision should be captured before review, but an agent mid-design needs the signal without a failing check.
-- Change: decision-records
-- Date: 2026-10-20
-
-### d-brownfield-schema-not-new
-
-- Decision: A first build's claimed schema file counts as new only when the branch adds it, or when there is no git repository.
-- Alternatives:
-  - Every schema file a first build claims is new (every brownfield node modeling existing migrations would need a decision)
-- Why: Adopting MindPlan on an existing codebase means creating nodes for files that are not new; the gate is for schema changes, not for modeling.
-- Change: decision-records
-- Date: 2026-10-20
-
-### d-tests-presence-blocks-coverage-warns
-
-- Decision: A `tests` entry that matches nothing on disk is Blocked once the node (live or its next) is in-review or shipped, like implements presence; a pipeline revision reaching in-review with no tests only warns.
-- Alternatives:
-  - Block in-review without at least one linked test (every consumer's existing nodes and every docs-only node would need a test before their next revision)
-  - Only check that entries exist, with no signal for an untested revision
-- Why: A broken link is a lie the graph tells, so it fails like a missing claim; an untested node may be legitimate (docs, workflow files), so the check nudges and never stops work.
-- Consequences: Draft plans may list tests that do not exist yet; the presence rule only bites at in-review and after ship.
-- Change: node-tests
-- Date: 2026-10-25
-
-### d-description-check-warn-only
-
-- Decision: Description quality is checked with loose heuristics (empty or title-repeating, over 300 characters, an Interaction with no actor word, revision wording) that only warn.
-- Alternatives:
-  - Block in-review on a bad description (an actor word list cannot judge every phrasing, and a false Block stops work)
-- Why: Descriptions are what search ranks and orientation shows, so bad ones cost every agent later; but the checks are guesses and must never stop work.
-- Consequences: Existing graphs with long descriptions see warnings until they are shortened.
-- Change: aliases
-- Date: 2026-10-25
-
-### d-missing-path-stale-signal-ignores
-
-- Decision: The missing-path stale signal ignores ticked checklist lines; open lines and prose still count.
-- Alternatives:
-  - Add a superseded marker to toggle_checkboxes so agents can strike a ticked line (new tool contract for a case the skip already clears)
-  - Keep scanning ticked lines (a moved path leaves a warning the playbook forbids clearing by rewording)
-- Why: A ticked line records what was done at the time; a later move of that path does not make the record wrong, and the playbook forbids rewording a closed item, so the warning could never be cleared.
-- Consequences: A ticked line can name a path that no longer exists without any signal; prose and open items remain the current claims.
-- Change: stale-closed-checklist
-- Date: 2026-10-26
-
-### d-shape-one-constant-docs-embed
-
-- Decision: The required sections per type live in one constant (TERRITORY_SHAPE) that the gate, shapeReport, shapeWarning, and shapeTableMarkdown read; the skill, playbook, and SPEC embed the generated table between markers, and a test fails when an embedded copy differs.
-- Alternatives:
-  - Substitute the table into the skill and playbook at install and serve time (the template files in the repo and the npm tarball would not show the table, and SPEC.md readers outside MCP would not see it)
-  - Keep the sections inline in the gate and document them by hand (the drift that made agents learn the shape one Blocked at a time)
-- Why: Agents read the skill, the playbook, and get_spec; only a generated table checked by the test suite keeps all three equal to what the gate enforces.
-- Consequences: Changing a required section means regenerating the embedded tables (the test prints the expected table) in the same PR.
-- Change: agent-guidance
-- Date: 2026-10-30
-
-### d-planned-paths-are-info
-
-- Decision: A node whose active slot is draft or ready and none of whose claimed files exist yet reports missing named paths as one planned: info line per node, not stale: warnings; a path on an "at build time" line is planned on every node.
-- Alternatives:
-  - Drop missing-path signals for plan-only nodes entirely (a typo in a planned path would never surface)
-  - Keep stale: warnings (a 60-node plan buried the real warnings under one line per planned path)
-- Why: A plan names files it has not built; that is information, not drift, and one line per node keeps it visible without drowning real warnings.
-- Consequences: run_check gains an info list and Info: output lines; the moment a node's first claimed file exists its missing paths are stale: again.
-- Change: agent-guidance
-- Date: 2026-10-30
-
-### d-shape-table-skill-and-spec
-
-- Decision: The required sections per type live in one constant (TERRITORY_SHAPE) that the gate, shapeReport, shapeWarning, and shapeTableMarkdown read; the define-entities skill and SPEC embed the generated table between markers, a test fails when an embedded copy differs, and the playbook carries a one-line pointer to shape, the skill, and get_spec.
-- Alternatives:
-  - Embed the table in the playbook too (the playbook loads every session and is held to one screen with no checklist procedure text; the table broke both)
-  - Substitute the table at install and serve time (the template files and SPEC.md readers outside MCP would not show it)
-  - Keep the sections inline in the gate and document them by hand (the drift that made agents learn the shape one Blocked at a time)
-- Why: Agents read the skill and get_spec when they create nodes; generated copies checked by the suite stay equal to the gate, and the per-call shape field reaches agents that read neither.
-- Consequences: Changing a required section means regenerating the embedded tables (the test prints the expected table) in the same PR.
-- Supersedes: d-shape-one-constant-docs-embed
-- Change: agent-guidance
-- Date: 2026-10-30
-
-### d-churn-from-decision-changes
-
-- Decision: A node's churn is the number of distinct change ids on its decisions (live and open next, superseded included) plus its open revision's change; the node stores no revision log.
-- Alternatives:
-  - Store a revision log on each node (change id, date, sections, files): the owner's rule is that a node holds its current state and git holds history
-  - Count commits that changed shipped_at in git log of <id>.mdx (needs git and history depth in every caller, and a shallow CI clone would read churn 0)
-- Why: Decisions already persist with their change id after ship and are written at exactly the revisions that mattered (the gate asks for one on every shipped Foundation revision and wide-radius change), so they count churn and name the reasons with no new state.
-- Consequences: A revision that recorded no decision does not count; churn is a lower bound. Hotspot groups are per change and list decision sentences, not files or sections.
-- Change: open-closed
-- Date: 2026-10-31
-
-### d-open-closed-signals-warn-only
-
-- Decision: Fan-in counts direct incoming depends_on, exposes, and mounts edges from active nodes, and every open–closed signal (hotspot, open_next fan-in, additivity) is a warning or an informational field that never Blocks.
-- Alternatives:
-  - Use the transitive blast radius as fan-in (the decision gate already uses it; a node deep in the graph would look widely depended on through one dependent)
-  - Block open_next on a high fan-in node until a decision is recorded (the in-review decision gate already asks for one; a Block at open_next would stop legitimate revisions before the design exists)
-  - Defer slot contention and extension points with this change (no graph concept for a planned change yet; deferred until a second project needs it)
-- Why: Direct dependents are the nodes whose code a contract change touches first and what a split would rewire; the signals are heuristics over graph facts, and existing graphs must keep passing.
-- Consequences: This repo's own check may print hotspot warnings for its core Foundations; config hotspots thresholds tune them.
-- Change: open-closed
-- Date: 2026-10-31
-
-### d-churn-from-revision-count
-
-- Decision: Hotspot churn is the node's server-written `revisions` count since its last split (`split_at`), with decision change ids only as the fallback for a node init has not backfilled; decisions still supply the reasons the warning groups.
-- Alternatives:
-  - Keep counting distinct decision change ids (a revision that recorded no decision is invisible, so churn is only a lower bound)
-  - Store a per-revision log on the node (change, date, files): the owner's rule is current state on the node, history in git
-  - Count recent revisions in a time window (old churn fades even when nothing was split, and a split node stays flagged until it ages out)
-  - Let the agent mark a split with a flag on record_decision (easy to forget or misuse; the depends_on gained on new parts is a graph fact the server can see)
-- Why: A counter is a fact about the node now, like shipped_at, and is exact; the split record lets a root that already split its parts out stop being flagged for revisions it had before the split, which is the fix the warning asks for.
-- Consequences: Three server-owned frontmatter fields (revisions, split_at, split_into); one more changed line per ship; init backfills them from git, and nodes outside git start at 1.
-- Supersedes: d-churn-from-decision-changes
-- Change: open-closed
-- Date: 2026-10-31
-
-### d-hotspot-recent-rate-outlier
-
-- Decision: A hotspot is a shipped node whose recent ship rate (a stored, exponentially decayed ship count) is an outlier against the graph's own median rate; fan-in only ranks hotspots, and an active keep_whole decision exempts a node. The revision count and split record stay as facts; a split resets the rate.
-- Alternatives:
-  - Fixed thresholds on revisions since the split and on direct fan-in (on a long project most nodes ship more than a handful of times, and a widely used node such as auth is depended on by everything without being a problem)
-  - Count revisions in a time window (needs per-ship dates on the node, which is history; the decayed count gives recency with one number)
-  - A hotspots.ignore list in config.json (the reason for keeping a node whole would live nowhere; a decision records it on the node and can be superseded)
-  - Detect slot contention now (needs a graph concept for planned changes; deferred)
-- Why: The owner's point: change frequency is only a smell relative to the project's own pace, and a node depended on by everything is normal. An outlier against the median adapts to project age and speed, decay lets old busy periods fade, and the opt-out keeps a deliberate design from being nagged.
-- Consequences: A fourth server-owned field (churn) written at every ship; hotspot output depends on the date the check runs; record_decision gains keep_whole.
-- Supersedes: d-churn-from-revision-count
-- Change: open-closed
-- Date: 2026-10-31
-
-### d-median-of-established-nodes
-
-- Decision: The hotspot baseline is the median rate of established nodes only: those shipped at least twice since their last split.
-- Alternatives:
-  - Every shipped node (the hotspot-splits refactor added 13 nodes shipped once and reset two roots, which dropped the median from 4.8 to 1 and flagged nine ordinary nodes)
-  - Nodes older than one half-life (a young node that ships often is a real pace sample, and age needs a creation date the rate does not carry)
-  - A fixed floor instead of the median (back to static thresholds the owner rejected)
-- Why: A node shipped once, or a root whose rate a split just reset, says nothing yet about how often things change here; counting them lets structure changes, not change frequency, move the baseline.
-- Change: hotspot-baseline
-- Date: 2026-10-31
-
-### d-backfill-split-needs-moved-claims
-
-- Decision: init infers a past split only when a claim of the new Foundation was covered by the node's claims before that ship and is not after it (files moved), not merely when the node gained depends_on on a Foundation first shipped in the window.
-- Alternatives:
-  - Keep the depends_on-gain rule (on skyloom it inferred 10 splits, of which only f-payload's was real, e.g. f-site-domains -> f-languages)
-  - Stop inferring splits from git altogether (the real f-payload split, the case the feature exists for, would be lost)
-- Why: SPEC already says a revision that only starts using a new building block marks nothing; moved claims are the git-visible fact that separates an extraction from a new dependency.
-- Consequences: An extraction that wrote the part into a fresh folder without the root ever claiming it (this repo's own past splits) is no longer inferred; the agent declares future splits with split_into, and a wrong record can be cleared with split_into: [].
-- Change: split-by-claims
-- Date: 2026-10-31
-
-### d-compiler-rules-revise-for-label-removal
-
-- Decision: This revision reopens f-compiler-rules to delete changeNeighbors and the neighbor half of change membership and additivity.
-- Alternatives:
-  - A new node that depends_on f-compiler-rules (membership is defined here; a dependent cannot remove a kind from it)
-- Why: The revision only removes code; the hotspot's split advice targets added responsibilities, and this shrinks one.
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
 
 ## Attachments
 

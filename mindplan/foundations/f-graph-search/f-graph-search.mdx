@@ -4,25 +4,25 @@ type: Foundation
 title: "Graph search"
 description: "Infra — ranks nodes for a query by fusing keyword and semantic results from the search index (reciprocal rank fusion plus a small graph boost, an exact id always first), falls back to token scoring when the index or model is unavailable, expands graph neighborhoods, resolves which nodes' rules and decisions apply to a node (and which nodes a node's rules reach), computes whether a decision is superseded, and lists decisions by node, change, or graph."
 state: stable
-shipped_at: 2026-10-26T00:04:46.247Z
-revisions: 9
-churn: 0
-split_at: 9
+shipped_at: 2026-11-03T08:20:34.716Z
+revisions: 10
+churn: 1
 created_at: 2026-07-19T18:33:36.731Z
-updated_at: 2026-11-01T10:53:08.431Z
+updated_at: 2026-11-03T08:20:34.716Z
+split_at: 9
+split_into:
+  - f-search-index
 depends_on:
   - f-domain-model
   - f-search-index
 implements:
   - src/foundations/f-graph-search/
-role: infra
 tests:
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/search-eval.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/search.test.mjs
-split_into:
-  - f-search-index
+role: infra
 ---
 
 # Graph search
@@ -69,6 +69,8 @@ Package: `src/foundations/f-graph-search/`
 
 Depends on: `f-domain-model`, `f-search-index`.
 
+- **Open revisions (0.18.0).** Search docs index every open revision's title, description, and headings tagged with its change; decision listing reads decision files (node folder and revision folders) and supersession works across them
+
 ## Acceptance Criteria
 
 - Query ranking returns a focus plus 1-hop neighborhood summaries
@@ -90,28 +92,6 @@ Depends on: `f-domain-model`, `f-search-index`.
 - On the search test set (`search-eval.json`), keyword-only and hybrid ranking stay at or above the committed floor (`search-eval.metrics.json`) and hybrid beats the token baseline on top-1, top-5, and MRR; "contact form quote request" ranks `i-send-enquiry` first in the site-builder fixture
 - A node with an open next is found by its next wording
 - Verified via `npm test` (`search.test.mjs`, `search-index.test.mjs`, `search-eval.test.mjs`)
-
-## Decisions
-
-### d-supersede-reach-follows-inheritance
-
-- Decision: A decision may supersede one held by the node itself or by any node it inherits decisions from, Journeys included.
-- Alternatives:
-  - Only the node and its Foundations, as the brief words it (a Journey decision that orient_for_work shows could not be replaced from the work that outgrew it)
-- Why: Whatever reaches the agent through orient_for_work should be replaceable by that agent.
-- Change: decision-records
-- Date: 2026-10-20
-
-### d-hybrid-rrf-ranking
-
-- Decision: Ranking is hybrid: keyword (FTS5 bm25, or token scoring as the fallback) and semantic (cosine) top lists merged with reciprocal rank fusion, score = sum of 1/(60 + rank), then a small bonus for nodes one link from the top 3; an exact id is always first.
-- Alternatives:
-  - Semantic only (exact ids and rare words rank worse than with keywords)
-  - A weighted sum of raw bm25 and cosine scores (the two scales differ per query and need retuning per graph)
-- Why: Rank fusion needs no score calibration between the two halves and keeps each half's strengths; the graph boost lifts the Interaction behind a matched Journey or Foundation without reordering a clear winner.
-- Consequences: score in RankedMatch is the fused score, comparable only within one reply.
-- Change: semantic-search
-- Date: 2026-10-25
 
 ## Attachments
 
