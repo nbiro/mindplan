@@ -26,12 +26,9 @@ import { TOOLS as SETUP_TOOLS } from "../../interactions/i-setup-project/tools.j
 import { TOOLS as UPGRADE_TOOLS } from "../../interactions/i-upgrade-graph/tools.js";
 import { TOOLS as DOCTOR_TOOLS } from "../../interactions/i-doctor/tools.js";
 import { versionGate } from "../../foundations/f-graph-migrations/status.js";
-import { withRoot } from "../../foundations/f-source-index/root-scope.js";
-import { ROOT_INPUT, resolveCallRoot, withCallRoot } from "./call-root.js";
-import {
-  drainRemovedLegacyFiles,
-  restoreRemovedLegacyFiles,
-} from "../../foundations/f-territory-store/store.js";
+import { foreignRoot, withRoot } from "../../foundations/f-source-index/root-scope.js";
+import { ROOT_INPUT, markRoot, markRootText, resolveCallRoot } from "./call-root.js";
+import { drainRemovedLegacyFiles } from "../../foundations/f-territory-store/store.js";
 
 type ToolResult = {
   content: { type: "text"; text: string }[];
@@ -94,12 +91,12 @@ function mount(server: McpServer, def: ToolDef): void {
         };
   const callback = guarded(gated, { write: kind !== "read", drift });
   // Every tool takes `root`: the checkout (or git worktree) whose mindplan/ this one call reads and
-  // writes. The gate, the handler, and the envelope all run inside that root's scope.
+  // writes. The gate, the handler, and the envelope all run inside that call's scope.
   const rooted = (args: Record<string, unknown> | undefined): ToolResult | Promise<ToolResult> => {
     const { root, ...toolArgs } = args ?? {};
     const call = resolveCallRoot(def.name, root as string | undefined);
     if ("blocked" in call) return { content: [{ type: "text", text: call.blocked }], isError: true };
-    return withRoot(call.root, () => withCallRoot(call, callback(toolArgs)));
+    return withRoot(call.root, () => callback(toolArgs));
   };
   const inputSchema = { ...rest.inputSchema, root: ROOT_INPUT };
   server.registerTool(def.name, { ...rest, inputSchema, annotations: ANNOTATIONS[kind] }, rooted as unknown as ToolCallback<typeof inputSchema>);
@@ -109,7 +106,9 @@ function mount(server: McpServer, def: ToolDef): void {
  * Wrap a handler with the §5.1 error contract. Successful results carry `drift`
  * (scoped to the touched node) unless `drift: false` — get_project and get_rules run before
  * every action, so drift rides on orient_for_work and the read tools instead. A `write` tool
- * carries it only with `verbose: true`, so a default write stays small.
+ * carries it only with `verbose: true`, so a default write stays small. A result of a call on
+ * another root than the server's names that root (`markRoot`). Runs inside the call's scope, so
+ * the legacy files listed are the ones this call's loads removed.
  */
 function guarded<A>(
   handler: (args: A) => unknown,
@@ -122,31 +121,20 @@ function guarded<A>(
       removed.length === 0
         ? ""
         : `\n${removed.map((entry) => `Removed ${entry.from} (kept ${entry.to})`).join("\n")}`;
-    return { content: [{ type: "text", text: `${message}${note}` }], isError: true };
+    return { content: [{ type: "text", text: markRootText(`${message}${note}`, foreignRoot()) }], isError: true };
   };
   return (args: A) => {
     const verbose = (args as { verbose?: boolean } | undefined)?.verbose === true;
     const attachDrift = options.drift !== false && (!options.write || verbose);
     const succeed = (result: unknown): ToolResult => {
       const payload = withRemovedLegacyFiles(result);
-      return ok(attachDrift ? withDrift(payload) : payload);
+      return ok(markRoot(attachDrift ? withDrift(payload) : payload, foreignRoot()));
     };
     try {
       const result = handler(args);
       // Search handlers are async (the query embedding); every other handler returns its payload.
-      // They load the graph before their first await, so the legacy files that load removed are
-      // taken now: another call that runs while this one waits keeps its own.
-      if (result instanceof Promise) {
-        const removedBefore = drainRemovedLegacyFiles();
-        const withEarlier = (value: unknown): ToolResult => {
-          restoreRemovedLegacyFiles(removedBefore);
-          return succeed(value);
-        };
-        return result.then(withEarlier).catch((err: unknown) => {
-          restoreRemovedLegacyFiles(removedBefore);
-          return fail(err);
-        });
-      }
+      // The call's scope follows the await, so another call that runs meanwhile keeps its own list.
+      if (result instanceof Promise) return result.then(succeed, fail);
       return succeed(result);
     } catch (err) {
       return fail(err);

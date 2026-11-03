@@ -53,7 +53,12 @@ import {
 import { claimListKeeps, namesPath, normalizeClaimList } from "../f-source-index/claims.js";
 import { hotspotSettings, loadProjectConfig } from "../f-source-index/config.js";
 import { graphCacheFor, type FolderRef } from "../f-graph-cache/cache.js";
-import { resolveProjectRoot, rootKey } from "../f-source-index/root-scope.js";
+import {
+  resolveProjectRoot,
+  rootKey,
+  scopedRemovedLegacyFiles,
+  type RemovedLegacyFile,
+} from "../f-source-index/root-scope.js";
 import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
@@ -201,12 +206,17 @@ function legacySlotFilename(slot: TerritorySlot): string {
   return slot === "next" ? LEGACY_NEXT_FILENAME : LEGACY_LIVE_FILENAME;
 }
 
-export type RemovedLegacyFile = { from: string; to: string };
+export type { RemovedLegacyFile };
 
-/** Per project root, so a call on one checkout never drains another checkout's removals. */
+/**
+ * Outside a call scope (the CLI, a test harness): per project root, so a load of one checkout
+ * never drains another checkout's removals. A tool call keeps its own list in its scope.
+ */
 const removedLegacyFilesByRoot = new Map<string, RemovedLegacyFile[]>();
 
 function removedLegacyFiles(): RemovedLegacyFile[] {
+  const scoped = scopedRemovedLegacyFiles();
+  if (scoped) return scoped;
   const key = rootKey(projectRoot());
   let list = removedLegacyFilesByRoot.get(key);
   if (!list) {
@@ -216,15 +226,10 @@ function removedLegacyFiles(): RemovedLegacyFile[] {
   return list;
 }
 
-/** Paths deleted because the id-named file was kept (under the current root). Clears the list. */
+/** Paths deleted because the id-named file was kept (in this call, else under the current root). Clears the list. */
 export function drainRemovedLegacyFiles(): RemovedLegacyFile[] {
   const list = removedLegacyFiles();
   return list.splice(0, list.length);
-}
-
-/** Put drained entries back so the next drain reports them (an async tool result, once it settles). */
-export function restoreRemovedLegacyFiles(entries: RemovedLegacyFile[]): void {
-  removedLegacyFiles().unshift(...entries);
 }
 
 function isRegularFile(filePath: string): boolean {

@@ -186,31 +186,20 @@ try {
 
   // --- the root mark never appends text to a JSON payload ---
   {
-    const { withCallRoot } = await import(new URL("../../../dist/interfaces/if-mcp-tools/call-root.js", import.meta.url).href);
-    const foreign = { root: path.resolve(B), foreign: true };
+    const { markRoot, markRootText } = await import(new URL("../../../dist/interfaces/if-mcp-tools/call-root.js", import.meta.url).href);
+    const foreign = path.resolve(B);
     const list = [{ id: "a" }, { id: "b" }];
-    const arrayResult = withCallRoot(foreign, { content: [{ type: "text", text: JSON.stringify(list) }] });
-    check(
-      "an array payload from another root is left untouched",
-      arrayResult.content[0].text === JSON.stringify(list) && arrayResult.structuredContent === undefined,
-      arrayResult.content[0].text
-    );
+    check("an array payload from another root is left untouched", markRoot(list, foreign) === list);
     const own = { root: "C:/elsewhere", n: 1 };
-    const ownRoot = withCallRoot(foreign, { content: [{ type: "text", text: JSON.stringify(own) }], structuredContent: own });
-    check(
-      "a payload that already has root keeps its own",
-      ownRoot.structuredContent.root === "C:/elsewhere" && JSON.parse(ownRoot.content[0].text).root === "C:/elsewhere",
-      ownRoot.content[0].text
-    );
+    check("a payload that already has root keeps its own", markRoot(own, foreign).root === "C:/elsewhere");
     const obj = { n: 1 };
-    const objResult = withCallRoot(foreign, { content: [{ type: "text", text: JSON.stringify(obj) }], structuredContent: obj });
-    check(
-      "an object payload gains root in content and structuredContent",
-      objResult.structuredContent.root === path.resolve(B) && JSON.parse(objResult.content[0].text).root === path.resolve(B),
-      objResult.content[0].text
-    );
-    const plain = withCallRoot(foreign, { content: [{ type: "text", text: "Done." }] });
-    check("a plain string payload is suffixed with its root", plain.content[0].text === `Done. (root: ${path.resolve(B)})`, plain.content[0].text);
+    const marked = markRoot(obj, foreign);
+    check("an object payload gains root", marked.root === foreign && marked.n === 1 && obj.root === undefined, JSON.stringify(marked));
+    check("a plain string payload is suffixed with its root", markRoot("Done.", foreign) === `Done. (root: ${foreign})`, markRoot("Done.", foreign));
+    check("a payload from the server's own root is untouched", markRoot(obj, undefined) === obj && markRoot("Done.", undefined) === "Done.");
+    check("a Blocked text is suffixed once", markRootText(markRootText("Blocked: x", foreign), foreign) === `Blocked: x (root: ${foreign})`);
+    const blockedB = await s.raw("get_node_context", { node_id: "no-such-node", root: B });
+    check("a Blocked result from another root names it", blockedB.error && blockedB.text.endsWith(`(root: ${foreign})`), blockedB.text);
     const doctorB = await s.call("doctor", { root: B });
     check("doctor's own root field stays valid JSON for another root", typeof doctorB.root === "string", JSON.stringify(doctorB.root));
   }
