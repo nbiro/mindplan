@@ -454,7 +454,10 @@ function writeRevisionClaims(
   }
   const readiness = contract ? revisionReadinessResult(node, change) : { reset: null, files: [] };
   if (paths.length > 0) refreshPersistedMap();
-  const claimedGraph = revisionGraph(loadGraph(), change);
+  // One load after the write serves both the revision's view and the reply tail (revisionGraph
+  // never mutates its input).
+  const written = loadGraph();
+  const claimedGraph = revisionGraph(written, change);
   const claimedNode = findNode(claimedGraph, node.id);
   const importViolations = findImportViolationsForClaim(claimedGraph, projectRoot(), claimedNode, normalized).map((v) => ({
     file: v.file,
@@ -473,7 +476,7 @@ function writeRevisionClaims(
     ...(importViolations.length ? { import_violations: importViolations } : {}),
     ...(readiness.reset ? { readiness_reset: readiness.reset } : {}),
     changed_files: changedFiles([...paths, ...readiness.files], paths.length > 0),
-    ...mutationTail(loadGraph(), node.id, args.verbose),
+    ...mutationTail(written, node.id, args.verbose),
   };
 }
 
