@@ -350,19 +350,24 @@ function selectScopedNodes(
     .filter((n) => openChanges(n).length > 1)
     .map((n) => ({ node_id: n.id, changes: openChanges(n) }));
   const several = new Set(needsChangeWalk.map((n) => n.node_id));
-  const rows = orderForWalk(
-    graph,
-    selected.filter((n) => !several.has(n.id))
-  ).map((node) => {
-    const change = revisionChangeFor(node, args.new_status!);
-    return { node, ...(change ? { change } : {}) };
-  });
+  const moving = selected
+    .filter((n) => !several.has(n.id))
+    .map((node) => {
+      const change = revisionChangeFor(node, args.new_status!);
+      return { node, ...(change ? { change } : {}) };
+    });
+  // Ordered on each row's revision view: a depends_on a node's open revision adds counts.
+  let view = graph;
+  for (const change of new Set(moving.flatMap((r) => (r.change ? [r.change] : [])))) view = graphUnder(view, change);
+  const byId = new Map(moving.map((r) => [r.node.id, r]));
+  const rows = orderForWalk(view, moving.map((r) => r.node)).map((node) => byId.get(node.id)!);
   return { rows, needsChangeWalk };
 }
 
 /**
  * Tier order (Foundation, Interaction, Interface), then dependency order within a tier, by the
- * depends_on edges of `graph` (a change walk passes the change's view, `graphUnder`).
+ * depends_on edges of `graph` (a change walk passes the change's view, `graphUnder`; the other
+ * scopes the view of each row's own revision).
  */
 function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode[] {
   const inSet = new Set(nodes.map((n) => n.id));
