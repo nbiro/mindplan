@@ -160,6 +160,61 @@ try {
   );
   check("nothing was created under the bare root", fs.readdirSync(bare).length === 0);
 
+  // --- root must be an absolute path to an existing directory, for every tool ---
+  const missingDir = path.join(bare, "no-such-dir");
+  const aFile = path.join(A, "mindplan", "config.json");
+  for (const tool of ["get_node_context", "setup_project", "doctor"]) {
+    const args = tool === "get_node_context" ? { node_id: "f-shared" } : {};
+    const relative = await s.raw(tool, { ...args, root: "relative/checkout" });
+    check(
+      `${tool}: a relative root is Blocked`,
+      relative.error && relative.text === 'Blocked: root "relative/checkout" must be an absolute path to a checkout or git worktree',
+      relative.text
+    );
+    const absent = await s.raw(tool, { ...args, root: missingDir });
+    check(
+      `${tool}: a root that does not exist is Blocked`,
+      absent.error && absent.text === `Blocked: root "${missingDir}" is not an existing directory`,
+      absent.text
+    );
+    const file = await s.raw(tool, { ...args, root: aFile });
+    check(`${tool}: a root that is a file is Blocked`, file.error && file.text.includes("is not an existing directory"), file.text);
+  }
+  check("setup_project with a missing root created nothing", !fs.existsSync(missingDir));
+  const doctorBare = await s.raw("doctor", { root: bare });
+  check("doctor still diagnoses an existing root without mindplan/", !doctorBare.error, doctorBare.text.slice(0, 200));
+
+  // --- the root mark never appends text to a JSON payload ---
+  {
+    const { withCallRoot } = await import(new URL("../../../dist/interfaces/if-mcp-tools/call-root.js", import.meta.url).href);
+    const foreign = { root: path.resolve(B), foreign: true };
+    const list = [{ id: "a" }, { id: "b" }];
+    const arrayResult = withCallRoot(foreign, { content: [{ type: "text", text: JSON.stringify(list) }] });
+    check(
+      "an array payload from another root is left untouched",
+      arrayResult.content[0].text === JSON.stringify(list) && arrayResult.structuredContent === undefined,
+      arrayResult.content[0].text
+    );
+    const own = { root: "C:/elsewhere", n: 1 };
+    const ownRoot = withCallRoot(foreign, { content: [{ type: "text", text: JSON.stringify(own) }], structuredContent: own });
+    check(
+      "a payload that already has root keeps its own",
+      ownRoot.structuredContent.root === "C:/elsewhere" && JSON.parse(ownRoot.content[0].text).root === "C:/elsewhere",
+      ownRoot.content[0].text
+    );
+    const obj = { n: 1 };
+    const objResult = withCallRoot(foreign, { content: [{ type: "text", text: JSON.stringify(obj) }], structuredContent: obj });
+    check(
+      "an object payload gains root in content and structuredContent",
+      objResult.structuredContent.root === path.resolve(B) && JSON.parse(objResult.content[0].text).root === path.resolve(B),
+      objResult.content[0].text
+    );
+    const plain = withCallRoot(foreign, { content: [{ type: "text", text: "Done." }] });
+    check("a plain string payload is suffixed with its root", plain.content[0].text === `Done. (root: ${path.resolve(B)})`, plain.content[0].text);
+    const doctorB = await s.call("doctor", { root: B });
+    check("doctor's own root field stays valid JSON for another root", typeof doctorB.root === "string", JSON.stringify(doctorB.root));
+  }
+
   // --- interleaved async calls never cross roots ---
   const ids = Array.from({ length: 6 }, (_, i) => `f-burst-${i}`);
   const results = await Promise.all([
