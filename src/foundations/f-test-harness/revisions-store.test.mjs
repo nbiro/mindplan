@@ -17,7 +17,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-revisions-store-"))
 process.env.MINDPLAN_ROOT = root;
 delete process.env.MINDPLAN_GRAPH_CACHE;
 
-const { loadGraph } = await import("../../../dist/foundations/f-territory-store/store.js");
+const { loadGraph, patchNodeTerritory } = await import("../../../dist/foundations/f-territory-store/store.js");
 const {
   discardRevision,
   formatRevisionFile,
@@ -405,6 +405,31 @@ foundation("f-core");
   assert.match(body, /## Notes\n\nA\.\n\n## Notes\n\nNew B\./);
   assert.deepEqual(node("f-paren").open_revisions[0].conflicts, []);
   ok("resolveConflict take text: a real heading ending in (N) stays; a duplicate key's (N) is stripped");
+}
+
+// --- patchNodeTerritory: a Blocked body check leaves the in-memory node untouched -----------------
+
+{
+  foundation("f-leak", { extra: ["role: infra"] });
+  const n = node("f-leak");
+  const file = path.join(root, "mindplan", "foundations", "f-leak", "f-leak.mdx");
+  const before = fs.readFileSync(file, "utf-8");
+  blocked(() =>
+    patchNodeTerritory(n, {
+      role: "adapter",
+      change: "leak",
+      change_ref: "PR-1",
+      body: "## Spec\n\nOther.\n",
+      checkBody: () => {
+        throw new Error("Blocked: refused by the body check.");
+      },
+    })
+  );
+  assert.equal(n.role, "infra");
+  assert.equal(n.change, undefined);
+  assert.equal(n.change_ref, undefined);
+  assert.equal(fs.readFileSync(file, "utf-8"), before);
+  ok("patchNodeTerritory: a Blocked body check writes nothing and leaves role and change unset on the node");
 }
 
 // --- resolve_conflict is a contract write: readiness reset and the body check ---------------------

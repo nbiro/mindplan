@@ -2213,8 +2213,6 @@ export function patchNodeTerritory(
   if (input.role !== undefined) {
     frontmatter = patchTerritoryScalars(frontmatter, { role: input.role }, now);
     patched_fields.push("role");
-    if (slot === "next" && node.next) node.next.role = input.role;
-    else node.role = input.role;
   }
   if (input.body !== undefined) {
     if (hasNodeRulesHeading(input.body)) {
@@ -2293,7 +2291,6 @@ export function patchNodeTerritory(
     frontmatter = applyChangeScalars(frontmatter, input);
     if (input.change !== undefined) patched_fields.push("change");
     if (input.change_ref !== undefined) patched_fields.push("change_ref");
-    assignChange(slot === "next" && node.next ? node.next : node, input);
   }
 
   if (patched_fields.length === 0) {
@@ -2303,6 +2300,11 @@ export function patchNodeTerritory(
   }
 
   input.checkBody?.(bodyWithoutOwned, body);
+
+  // The in-memory node takes the new values only once nothing above can Block.
+  const target = slot === "next" && node.next ? node.next : node;
+  if (input.role !== undefined) target.role = input.role;
+  if (input.change !== undefined || input.change_ref !== undefined) assignChange(target, input);
 
   // An in-place claim marker clears once the live body names its path verbatim.
   if (slot === "current" && node.added_claims?.length) {
