@@ -494,6 +494,16 @@ try {
   // clears them, and the revision file keeps no copy of live's record.
   const reopened = await call("open_next", { node_id: "f-core", change: "c-5" });
   const revFile = path.join(root, "mindplan", "foundations", "f-core", "revisions", reopened.change ?? "c-5", "f-core.mdx");
+  // The unlinked-part warning names each declared part once, and never one live already records
+  // (the ship does not record it again, so its link does not matter).
+  await call("unlink_nodes", { source_id: "f-core", target_id: "f-part", edge_type: "depends_on", change: reopened.change ?? "c-5" });
+  const dupWarn = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-b", "f-b", "f-part"] });
+  check(
+    "the split_into warning names each unlinked part once and skips parts live already records",
+    dupWarn.warnings?.length === 1 && dupWarn.warnings[0].includes('for "f-b";') && !dupWarn.warnings[0].includes("f-part"),
+    JSON.stringify(dupWarn.warnings)
+  );
+  await call("link_nodes", { source_id: "f-core", target_id: "f-part", edge_type: "depends_on", change: reopened.change ?? "c-5" });
   const declared = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-b"] });
   const declaredText = fs.readFileSync(revFile, "utf-8");
   const unmarked = await call("patch_node_territory", { node_id: "f-core", split_into: [] });
