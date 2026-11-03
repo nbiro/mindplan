@@ -16,6 +16,7 @@ import {
   territoryBodyReader,
 } from "../f-territory-store/store.js";
 import { warmSearchIndex } from "../f-graph-search/search.js";
+import { withRoot } from "../f-source-index/root-scope.js";
 import { enableOrientationGate } from "../f-orientation-ledger/ledger.js";
 import { packageVersion } from "../f-territory-store/version.js";
 import { registerMindPlanTools } from "../../interfaces/if-mcp-tools/register.js";
@@ -80,7 +81,9 @@ async function runMcpServer(): Promise<void> {
     }
     return graph;
   };
-  void warmSearchIndex(projectRoot(), loadForSearch, territoryBodyReader());
+  // The warm-up is pinned to the server's root: its later graph load never follows a call's `root`.
+  const root = projectRoot();
+  void withRoot(root, () => warmSearchIndex(root, loadForSearch, territoryBodyReader()));
 }
 
 if (process.argv[2]) {

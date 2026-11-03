@@ -3,6 +3,7 @@
  * semantic ranking is on, and one open `SearchIndex` per project root.
  */
 
+import * as path from "path";
 import { loadProjectConfig } from "../f-source-index/config.js";
 import { SearchIndex, sqliteUnavailableReason, type SearchDoc } from "./index-db.js";
 import {
@@ -43,7 +44,8 @@ const loggedSqlite = { done: false };
  * The open cache of `root` for `model`, or null without node:sqlite. One handle per root: a
  * different model closes the old handle first, so two handles never rebuild one file under each other.
  */
-export function searchIndexFor(root: string, model: string): SearchIndex | null {
+export function searchIndexFor(rootPath: string, model: string): SearchIndex | null {
+  const root = path.resolve(rootPath);
   const open = indexes.get(root);
   if (open && open.model === model) return open.index;
   open?.index?.close();
