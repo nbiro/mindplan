@@ -1030,7 +1030,14 @@ export function resolveConflict(
     } else if (take === "text") {
       const t = text!.replace(/\r\n/g, "\n");
       const firstLine = t.replace(/^\n+/, "").split("\n")[0].trim();
-      const headingText = target.replace(/ \(\d+\)$/, "");
+      // The target is a section key: a repeated heading is keyed `<heading> (N)`, while a heading
+      // that is itself written `## X (N)` keys as is. Take the heading line the section actually
+      // has (revision, else live); strip the suffix only when neither body holds the section.
+      const actualHeading = [body, live]
+        .map((b) => splitSections(b).find((s) => s.heading === target)?.text.split("\n")[0])
+        .map((line) => (line === undefined ? undefined : levelTwoHeadings([line])[0]))
+        .find((h) => h !== undefined);
+      const headingText = actualHeading ? `## ${actualHeading.name}` : target.replace(/ \(\d+\)$/, "");
       const withHeading = target === PREAMBLE_SECTION || firstLine === headingText ? t : `${headingText}\n\n${t}`;
       // The text stays one section: a level-2 heading in it (outside fenced code) would start
       // another section, or turn the preamble into one.

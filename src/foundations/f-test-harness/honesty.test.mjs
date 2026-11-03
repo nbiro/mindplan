@@ -1075,6 +1075,31 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   );
   const addReview = await raw("patch_node_territory", { node_id: "f-mid", add_checklist_items: [{ text: "QA sign-off", id: "qa", kind: "review" }] });
   check("adding a review item to a relied-on dependency in review stays allowed", !addReview.error, addReview.text);
+  // Build items are counted, not matched by label: a reworded ticked item passes, and an added
+  // unticked item whose label equals a ticked one is still Blocked.
+  const implLine = fs.readFileSync(territory("foundations", "f-mid"), "utf-8").match(/^- \[x\] Implementation complete.*$/m)[0];
+  const addTicked = await raw("patch_node_territory", {
+    node_id: "f-mid",
+    replace: { find: implLine, with: `${implLine}\n- [x] Wire it up` },
+  });
+  check("adding a ticked build item to a relied-on dependency in review stays allowed", !addTicked.error, addTicked.text);
+  const reword = await raw("patch_node_territory", {
+    node_id: "f-mid",
+    replace: { find: "- [x] Wire it up", with: "- [x] Wire it all up" },
+  });
+  check(
+    "rewording a ticked untagged build item that stays ticked, on a relied-on dependency in review, is allowed",
+    !reword.error && /- \[x\] Wire it all up/.test(fs.readFileSync(territory("foundations", "f-mid"), "utf-8")),
+    reword.text
+  );
+  const midReworded = fs.readFileSync(territory("foundations", "f-mid"), "utf-8");
+  const addTwin = await blocked("patch_node_territory", { node_id: "f-mid", add_checklist_items: [{ text: "Wire it all up" }] });
+  check(
+    "adding an unticked build item whose text equals a ticked one, on a relied-on dependency in review, is Blocked, naming it",
+    !!addTwin && addTwin.includes('"i-top"') && addTwin.includes('"Wire it all up"') &&
+      fs.readFileSync(territory("foundations", "f-mid"), "utf-8") === midReworded,
+    String(addTwin)
+  );
 
   // A dependency with no checklist item at all proves nothing.
   // (The shape gate needs a box to reach in-review, so the boxes go after the walk.)

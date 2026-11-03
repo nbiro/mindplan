@@ -23,10 +23,8 @@ import {
   loadGraph,
   patchNodeTerritory as patchNodeTerritoryStore,
   writeNextSplitInto,
-  readMarkdown,
   normalizeAliases,
   writeAliasesFrontmatter,
-  splitContext,
   validateChangeInput,
   type CheckboxToggle,
   writeNodeRules,
@@ -488,18 +486,6 @@ function writeNodeTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs): Rec
       throw blocked(
         `"${node_id}" is shipped; a change id belongs to an open revision. Call open_next (it takes change) or patch the next slot.`
       );
-    }
-  }
-  if (
-    body !== undefined ||
-    args.section !== undefined ||
-    args.replace !== undefined ||
-    (toggle_checkboxes?.length ?? 0) > 0 ||
-    (args.add_checklist_items?.length ?? 0) > 0
-  ) {
-    const raw = readMarkdown(node, resolvedSlot);
-    if (!splitContext(raw)) {
-      throw blocked(`${resolvedSlot} file for "${node_id}" has no YAML frontmatter.`);
     }
   }
   const slotState = resolvedSlot === "next" ? node.next?.state : node.state;

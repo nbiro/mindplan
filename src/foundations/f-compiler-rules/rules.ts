@@ -1081,7 +1081,10 @@ export function assertNoRetreatUnderShippedDependents(
  * Undoing a build item of `node`'s active slot while it is in review is Blocked while
  * stable/unstable nodes rely on it: they shipped on every build item being ticked. `before` and
  * `after` are the slot text before and after every edit of one call (toggles, added items, body,
- * section, and replace edits, conflict resolution), so no edit path can take a tick back.
+ * section, and replace edits, conflict resolution), so no edit path can take a tick back. Items
+ * are counted, not matched by label: a call may not raise the number of build items not done (an
+ * untick, or an added unticked item) nor lower the number done (done work removed). A ticked item
+ * reworded in place passes, and so does ticking an open one.
  */
 export function assertNoUntickUnderShippedDependents(
   graph: MindPlanGraph,
@@ -1092,27 +1095,41 @@ export function assertNoUntickUnderShippedDependents(
 ): void {
   if (slotState !== "in-review" || before === after) return;
   const undone = undoneBuildItems(before, after);
-  if (undone.length === 0) return;
+  if (!undone) return;
   assertNoShippedDependentsRelying(
     graph,
     node,
-    `untick, remove, or add unticked build item(s) ${undone.map((t) => `"${t}"`).join(", ")} of "${node.id}" in review`
+    `untick, remove, or add unticked build items of "${node.id}" in review (${undone})`
   );
 }
 
 /**
- * Build items (matched by id, else by text) done in `before` and not done or gone in `after`, plus
- * those `after` adds without being done: each leaves the slot with a build item not done.
+ * What one call undoes among the build items, by count: `null` when the number not done did not
+ * rise and the number done did not fall; otherwise a phrase naming the offending items.
  */
-function undoneBuildItems(before: string, after: string): string[] {
-  const label = (i: ChecklistItem): string => i.id ?? i.text;
-  const beforeItems = parseChecklistItems(before).filter((i) => i.kind === "build");
-  const afterItems = parseChecklistItems(after).filter((i) => i.kind === "build");
-  const known = new Set(beforeItems.map(label));
-  const doneAfter = new Set(afterItems.filter((i) => i.done).map(label));
-  const out = beforeItems.filter((i) => i.done && !doneAfter.has(label(i))).map(label);
-  out.push(...afterItems.filter((i) => !i.done && !known.has(label(i))).map(label));
-  return [...new Set(out)];
+function undoneBuildItems(before: string, after: string): string | null {
+  const label = (i: ChecklistItem): string => `"${i.id ?? i.text}"`;
+  const build = (body: string): ChecklistItem[] => parseChecklistItems(body).filter((i) => i.kind === "build");
+  const beforeItems = build(before);
+  const afterItems = build(after);
+  const openBefore = beforeItems.filter((i) => !i.done);
+  const openAfter = afterItems.filter((i) => !i.done);
+  const doneBefore = beforeItems.filter((i) => i.done);
+  const doneAfter = afterItems.filter((i) => i.done);
+  const parts: string[] = [];
+  if (openAfter.length > openBefore.length) {
+    const wasOpen = new Set(openBefore.map(label));
+    const fresh = openAfter.filter((i) => !wasOpen.has(label(i)));
+    const named = [...new Set((fresh.length > 0 ? fresh : openAfter).map(label))].join(", ");
+    parts.push(`build items not done would rise from ${openBefore.length} to ${openAfter.length}: ${named}`);
+  }
+  if (doneAfter.length < doneBefore.length) {
+    const stillDone = new Set(doneAfter.map(label));
+    const lost = doneBefore.filter((i) => !stillDone.has(label(i)));
+    const named = [...new Set((lost.length > 0 ? lost : doneBefore).map(label))].join(", ");
+    parts.push(`done build items would fall from ${doneBefore.length} to ${doneAfter.length}: ${named}`);
+  }
+  return parts.length > 0 ? parts.join("; ") : null;
 }
 
 /**

@@ -28,6 +28,7 @@ import {
   expandClaims,
   isGlobClaim,
   normalizeClaimList,
+  validateClaimPath,
 } from "../../foundations/f-source-index/claims.js";
 import { decisionGateSettings } from "../../foundations/f-source-index/config.js";
 import { buildOwnershipIndex, exclusiveOwner } from "../../foundations/f-source-index/ownership.js";
@@ -162,9 +163,9 @@ function removeKey(entry: string): string {
 }
 
 /**
- * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry is matched, not
- * validated: it matches a stored entry verbatim, else one that differs from it only by a trailing
- * `/`; one that matches none is Blocked, naming the stored entries. So a stored entry the
+ * `base` with the edit applied, validated, deduped, and sorted. A `remove` entry is normalized
+ * like an add when it validates (taken raw when it does not), then matched: it matches a stored
+ * entry verbatim, else one that differs from it only by a trailing `/`; one that matches none is Blocked, naming the stored entries. So a stored entry the
  * validator now rejects can always be removed; one the edit keeps is Blocked with that fix (every
  * list the store writes is validated whole).
  */
@@ -172,7 +173,14 @@ function applyListEdit(base: string[], edit: ListEdit, field: "implements" | "te
   if ("replace" in edit) return normalizeClaimList(edit.replace, field);
   const removed = new Set<string>();
   for (const raw of edit.remove) {
-    const key = removeKey(raw);
+    // Normalized like an add when it validates; a raw key otherwise, so a stored entry the
+    // validator now rejects can still be removed as stored.
+    let key: string;
+    try {
+      key = validateClaimPath(raw, field);
+    } catch {
+      key = removeKey(raw);
+    }
     const exact = base.filter((e) => removeKey(e) === key);
     const hits = exact.length ? exact : base.filter((e) => removeKey(e).replace(/\/$/, "") === key.replace(/\/$/, ""));
     if (hits.length === 0) {
