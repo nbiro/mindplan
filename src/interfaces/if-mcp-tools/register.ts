@@ -24,6 +24,7 @@ import { TOOLS as CHECK_TOOLS } from "../../interactions/i-check-integrity/tools
 import { TOOLS as EXPORT_TOOLS } from "../../interactions/i-export-map/tools.js";
 import { TOOLS as SETUP_TOOLS } from "../../interactions/i-setup-project/tools.js";
 import { TOOLS as UPGRADE_TOOLS } from "../../interactions/i-upgrade-graph/tools.js";
+import { TOOLS as DOCTOR_TOOLS } from "../../interactions/i-doctor/tools.js";
 import { versionGate } from "../../foundations/f-graph-migrations/status.js";
 import { withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { ROOT_INPUT, resolveCallRoot, withCallRoot } from "./call-root.js";
@@ -164,6 +165,7 @@ const TOOL_ORDER = [
   "get_node_context",
   "orient_for_work",
   "get_project",
+  "doctor",
   "get_spec",
   "get_skill",
   "get_rules",
@@ -210,6 +212,7 @@ export function registerMindPlanTools(server: McpServer): void {
     ...EXPORT_TOOLS,
     ...SETUP_TOOLS,
     ...UPGRADE_TOOLS,
+    ...DOCTOR_TOOLS,
   ];
   const byName = new Map(defs.map((d) => [d.name, d]));
   if (byName.size !== defs.length || byName.size !== TOOL_ORDER.length) {
