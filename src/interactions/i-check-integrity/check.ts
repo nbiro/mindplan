@@ -32,6 +32,7 @@ import {
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import { shapeWarning } from "../../foundations/f-compiler-rules/shape.js";
+import { changeCycleFailures } from "../../foundations/f-compiler-rules/change-cycles.js";
 import {
   changeMembership,
   plannedEdgeProblems,
@@ -223,6 +224,7 @@ function checkChange(
   for (const problem of plannedEdgeProblems(graph, change)) {
     failures.push(`Blocked: change "${change}": ${problem}`);
   }
+  for (const f of changeCycleFailures(fullGraph, change)) failures.push(f.replace(/^Blocked: /, `Blocked: change "${change}": `));
   const bySource = new Map<string, string[]>();
   for (const row of plannedEdges(graph, change)) {
     bySource.set(row.source, [...(bySource.get(row.source) ?? []), `${row.type} ${row.target}`]);
@@ -1235,6 +1237,7 @@ export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
+    for (const f of changeCycleFailures(graph)) fail(failures, f);
     const probe = dirtyProbe(root);
     const collected = collectWarnings(graph, root, changedAgainstBase(root, probe, options.base));
     warnings.push(...collected.warnings);
