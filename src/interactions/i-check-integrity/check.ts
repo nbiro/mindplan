@@ -370,11 +370,12 @@ export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths 
 }
 
 /**
- * Exclusivity per view (`findAllOwnershipConflicts`): a file two nodes claim live fails, and under
- * each change a file a revision of that change claims while another node claims it too fails,
- * naming the change. A file only revisions of different changes claim (on different nodes) never
- * meets in one view: it warns (`crossChangeClaimWarnings`), since the second to ship rebases into
- * a claim conflict.
+ * Exclusivity per view (`findAllOwnershipConflicts`): a file two nodes of no change claim live
+ * fails, and under each change a file a revision or pre-ship member of that change claims while
+ * another node of that change or of none claims it too fails, naming the change. A file claimed
+ * from different changes (revisions or pre-ship members, on different nodes) never meets in one
+ * view: it warns (`crossChangeClaimWarnings`), since the second to ship rebases into a claim
+ * conflict.
  */
 function checkExclusivity(
   graph: MindPlanGraph,

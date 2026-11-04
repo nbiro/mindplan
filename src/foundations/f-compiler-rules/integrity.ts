@@ -621,12 +621,20 @@ export function findImportViolationsForNode(
 export type OwnershipConflict = { file: string; a: string; b: string; change: string | null };
 
 /**
+ * The change a node's claim belongs to in a view: the view's change when the node claims through
+ * its revision of it, else its own change when it is a pre-ship member (`preShipChange`), else none.
+ */
+function claimChange(n: MindPlanNode, view: string | null): string | null {
+  return view !== null && revisionFor(n, view) ? view : preShipChange(n);
+}
+
+/**
  * The ownership rule under one view: every file two non-retired pipeline nodes claim in their
- * active slot there (next or revision view, else live). Under a change, only pairs where a node
- * claims the file through its revision of that change or is a pre-ship member of it (pairs live
- * alone already has are the live view's). A pre-ship member is judged under its change's view
- * only, never live (`livePassFor`). Two revisions of the same change claiming one file conflict; revisions of different
- * changes never meet in one view (see `crossChangeClaimWarnings`).
+ * active slot there (next or revision view, else live). A pair is judged in the view of the
+ * change its claims belong to (`claimChange`): live when neither belongs to one; change A's view
+ * when one or both belong to A and the other to none (a pre-ship member or revision of A against
+ * a live or no-change claim, or two of A's). Claims of different changes never conflict (see
+ * `crossChangeClaimWarnings`).
  */
 function ownershipConflictsUnder(
   pass: { change: string | null; graph: MindPlanGraph },
@@ -639,16 +647,15 @@ function ownershipConflictsUnder(
     for (const f of new Set(filesOf(n))) claims.set(f, [...(claims.get(f) ?? []), n.id]);
   }
   const byId = new Map(pass.graph.nodes.map((n) => [n.id, n]));
-  // A pre-ship member of a change is judged under that change's view, never live (`livePassFor`).
-  const member = (id: string) =>
-    pass.change === null
-      ? preShipChange(byId.get(id)!) !== null
-      : Boolean(revisionFor(byId.get(id)!, pass.change)) || preShipChange(byId.get(id)!) === pass.change;
+  const side = (id: string) => claimChange(byId.get(id)!, pass.change);
   const out: OwnershipConflict[] = [];
   for (const [file, ids] of claims) {
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
-        if (pass.change === null ? member(ids[i]) || member(ids[j]) : !member(ids[i]) && !member(ids[j])) continue;
+        const [x, y] = [side(ids[i]), side(ids[j])];
+        // Another change's claim, or (under a change) a pair live already judges: not this view's.
+        if ((x !== null && x !== pass.change) || (y !== null && y !== pass.change)) continue;
+        if (pass.change !== null && x === null && y === null) continue;
         out.push({ file, a: ids[i], b: ids[j], change: pass.change });
       }
     }
@@ -658,7 +665,7 @@ function ownershipConflictsUnder(
 
 /**
  * Every ownership conflict: the live view's, then each open change's (live plus that change's
- * revisions). The check and the per-transition gate (`findOwnershipConflicts`) share it. Live
+ * revisions; pairs with a claim of that change, `ownershipConflictsUnder`). The check and the per-transition gate (`findOwnershipConflicts`) share it. Live
  * claims are expanded once; a change's view re-expands only the nodes it revises.
  */
 export function findAllOwnershipConflicts(graph: MindPlanGraph, root: string): OwnershipConflict[] {
@@ -769,21 +776,33 @@ export function changeMemberViolations(
 }
 
 /**
- * Warnings (never Blocks) for a file claimed through open revisions of different changes on
- * different nodes, where neither node claims it live: allowed while the changes stay separate,
- * but whichever ships second must drop or take over the claim.
+ * Warnings (never Blocks) for a file claimed by different nodes in different changes, each through
+ * an open revision (a file its node does not claim live) or as a pre-ship member of its change:
+ * allowed while the changes stay separate, but whichever ships second must drop or take over the
+ * claim.
  */
 export function crossChangeClaimWarnings(graph: MindPlanGraph, root: string): string[] {
-  const buckets = buildOwnershipIndex(liveGraph(graph), root);
+  const live = liveGraph(graph);
+  const buckets = buildOwnershipIndex(live, root);
+  type Claim = { id: string; change: string; label: string };
+  const byFile = new Map<string, Claim[]>();
+  const add = (file: string, c: Claim) => byFile.set(file, [...(byFile.get(file) ?? []), c]);
+  for (const [file, claims] of buckets.revisions) {
+    for (const c of claims) if (buckets.liveClaims.get(file) !== c.id) add(file, { ...c, label: `revision "${c.change}"` });
+  }
+  for (const n of live.nodes) {
+    const own = preShipChange(n);
+    if (own === null || n.state === "cancelled" || n.state === "deprecated") continue;
+    for (const f of new Set(expandClaims(activeClaims(n), root))) add(f, { id: n.id, change: own, label: `change "${own}"` });
+  }
   const out: string[] = [];
-  for (const [file, claims] of [...buckets.revisions].sort(([a], [b]) => a.localeCompare(b))) {
-    const fresh = claims.filter((c) => buckets.liveClaims.get(file) !== c.id);
+  for (const [file, fresh] of [...byFile].sort(([a], [b]) => a.localeCompare(b))) {
     for (let i = 0; i < fresh.length; i++) {
       for (let j = i + 1; j < fresh.length; j++) {
         const [x, y] = [fresh[i], fresh[j]];
         if (x.id === y.id || x.change === y.change) continue;
         out.push(
-          `ownership: "${file}" is claimed by "${x.id}" (revision "${x.change}") and "${y.id}" (revision "${y.change}"). ` +
+          `ownership: "${file}" is claimed by "${x.id}" (${x.label}) and "${y.id}" (${y.label}). ` +
             `Allowed while the changes are separate; whichever ships second must drop the claim or take it over.`
         );
       }
