@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:41:55.485Z
 revisions: 26
 churn: 4.887
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-11-03T12:53:34.948Z
+updated_at: 2026-11-04T08:16:14.790Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -84,6 +84,8 @@ Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-r
 ## Reply sections
 
 `orient_for_work` takes `sections: [...]` (any of `rules`, `decisions`, `record`, `body`, `files`, `shape`, `revisions`, `open_items`, `blast_radius`, `stability`, `neighborhood`) and returns only those parts of a full reply; omitted, the reply is unchanged. Orientation is recorded whenever `rules` is among the returned sections (always, when `sections` is omitted).
+
+`orient_for_work({ node_id, change })` on a pre-ship member of that change (its own `change` names it; it has no stored revision) reads its live slot, which is the change's, and carries `unlocks: "<change>"`, instead of Blocking for a missing revision; another change still Blocks.
 
 ## Acceptance Criteria
 
