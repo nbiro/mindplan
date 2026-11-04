@@ -44,7 +44,7 @@ import {
   hotspotContext,
 } from "../../foundations/f-compiler-rules/open-closed.js";
 import { buildOwnershipIndex, exclusiveOwner, nodeOwnedFiles } from "../../foundations/f-source-index/ownership.js";
-import { blocked, findNode, interfacesExposing, liveGraph, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
+import { blocked, findNode, interfacesExposing, isRevisionOf, liveGraph, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import {
   DEFAULT_FIND_LIMIT,
   expandNeighborhood,
@@ -551,9 +551,11 @@ export async function orientForWork(args: {
   }
 
   const node = findNode(graph, focus);
-  // A named change picks that revision; Blocked when the node has none of it.
+  // A named change picks that revision; Blocked when the node has none of it, unless the node is a
+  // pre-ship member of that change: its live slot is the change's (it has no stored revision).
   const change = args.change;
-  const { view } = pickRevision(node, change, { strict: change !== undefined });
+  const preShipMember = change !== undefined && !node.shipped_at && isRevisionOf(node, change);
+  const { view } = preShipMember ? { view: node } : pickRevision(node, change, { strict: change !== undefined });
   // The body comes from the active slot unless the caller names one; depth "rules" returns no body,
   // so it reads the live slot only (its next record comes back without the next body).
   // The decisions block is the reply's one copy of the focus's decisions.

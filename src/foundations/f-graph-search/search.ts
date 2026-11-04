@@ -11,7 +11,7 @@ import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "../f-d
 import type { SearchDoc } from "../f-search-index/index-db.js";
 import type { Embedder } from "../f-search-index/embedder.js";
 import { keywordRankDocs } from "../f-search-index/keyword-js.js";
-import { prepareSearch, refreshSearch, warmSearch } from "../f-search-index/service.js";
+import { prepareSearch, refreshSearch, warmSearch, type SearchBackend } from "../f-search-index/service.js";
 
 export const DEFAULT_FIND_LIMIT = 5;
 export const MAX_FIND_LIMIT = 20;
@@ -517,6 +517,22 @@ export async function searchNodes(
     docs,
     opts.embedder !== undefined ? { embedder: opts.embedder, waitForVectors: true } : {}
   );
+  try {
+    return await rankWith(graph, q, opts, limit, docs, backend);
+  } finally {
+    backend.release();
+  }
+}
+
+/** `searchNodes` over a prepared backend: keyword, semantic, and path rankings fused. */
+async function rankWith(
+  graph: MindPlanGraph,
+  q: string,
+  opts: SearchOptions,
+  limit: number,
+  docs: SearchDoc[],
+  backend: SearchBackend
+): Promise<RankedMatch[]> {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const docById = new Map(docs.map((d) => [d.id, d]));
   const inArea = opts.area ? areaMembers(graph, opts.area) : null;

@@ -623,8 +623,9 @@ export type OwnershipConflict = { file: string; a: string; b: string; change: st
 /**
  * The ownership rule under one view: every file two non-retired pipeline nodes claim in their
  * active slot there (next or revision view, else live). Under a change, only pairs where a node
- * claims the file through its revision of that change (pairs live alone already has are the live
- * view's). Two revisions of the same change claiming one file conflict; revisions of different
+ * claims the file through its revision of that change or is a pre-ship member of it (pairs live
+ * alone already has are the live view's). A pre-ship member is judged under its change's view
+ * only, never live (`livePassFor`). Two revisions of the same change claiming one file conflict; revisions of different
  * changes never meet in one view (see `crossChangeClaimWarnings`).
  */
 function ownershipConflictsUnder(
@@ -638,12 +639,16 @@ function ownershipConflictsUnder(
     for (const f of new Set(filesOf(n))) claims.set(f, [...(claims.get(f) ?? []), n.id]);
   }
   const byId = new Map(pass.graph.nodes.map((n) => [n.id, n]));
-  const revised = (id: string) => pass.change !== null && Boolean(revisionFor(byId.get(id)!, pass.change));
+  // A pre-ship member of a change is judged under that change's view, never live (`livePassFor`).
+  const member = (id: string) =>
+    pass.change === null
+      ? preShipChange(byId.get(id)!) !== null
+      : Boolean(revisionFor(byId.get(id)!, pass.change)) || preShipChange(byId.get(id)!) === pass.change;
   const out: OwnershipConflict[] = [];
   for (const [file, ids] of claims) {
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
-        if (pass.change !== null && !revised(ids[i]) && !revised(ids[j])) continue;
+        if (pass.change === null ? member(ids[i]) || member(ids[j]) : !member(ids[i]) && !member(ids[j])) continue;
         out.push({ file, a: ids[i], b: ids[j], change: pass.change });
       }
     }
@@ -659,6 +664,10 @@ function ownershipConflictsUnder(
 export function findAllOwnershipConflicts(graph: MindPlanGraph, root: string): OwnershipConflict[] {
   const changes = new Set<string>();
   for (const n of graph.nodes) for (const c of openChanges(n)) changes.add(c);
+  for (const n of graph.nodes) {
+    const own = preShipChange(n);
+    if (own !== null) changes.add(own);
+  }
   const live = liveGraph(graph);
   const liveFiles = new Map(live.nodes.map((n) => [n.id, expandClaims(activeClaims(n), root)]));
   const all = [
@@ -669,19 +678,29 @@ export function findAllOwnershipConflicts(graph: MindPlanGraph, root: string): O
       )
     ),
   ];
-  // A pair live already has (a revision kept the claim) is reported once, as live's.
+  // A pair live already has (a revision kept the claim) is reported once, as live's; otherwise
+  // once per change it conflicts under.
+  const pairKey = (p: OwnershipConflict) => `${p.file}\n${[p.a, p.b].sort().join("\n")}`;
+  const inLive = new Set(all.filter((p) => p.change === null).map(pairKey));
   const seen = new Set<string>();
   return all.filter((p) => {
-    const key = `${p.file}\n${[p.a, p.b].sort().join("\n")}`;
+    if (p.change !== null && inLive.has(pairKey(p))) return false;
+    const key = `${pairKey(p)}\n${p.change ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
+/** The view a node's ownership is judged under: `gateChange`, else a pre-ship member's own change. */
+function ownershipView(node: MindPlanNode, change?: string): string | null {
+  return gateChange(node, change) ?? preShipChange(node);
+}
+
 /**
- * Active-slot files also claimed by another node, in the node's view (`gateChange`): its revision
- * of that change against live plus that change, else live. A filter of the check's rule.
+ * Active-slot files also claimed by another node, in the node's view (`ownershipView`): its
+ * revision of that change against live plus that change, a pre-ship member's own change, else
+ * live. A filter of the check's rule.
  */
 export function findOwnershipConflicts(
   graph: MindPlanGraph,
@@ -689,7 +708,7 @@ export function findOwnershipConflicts(
   node: MindPlanNode,
   change?: string
 ): string[] {
-  const c = gateChange(node, change);
+  const c = ownershipView(node, change);
   return ownershipConflictsUnder({ change: c, graph: judgeGraph(graph, c) }, root)
     .filter((p) => p.a === node.id || p.b === node.id)
     .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
@@ -722,8 +741,9 @@ export function changeMemberViolations(
       const files = expandClaims(activeClaims(owner), root);
       imports = scanUnder(pass, root, owner, files, new Set(files));
     }
-    let pairs = conflicts.get(c);
-    if (!pairs) conflicts.set(c, (pairs = ownershipConflictsUnder({ change: c, graph: judgeGraph(graph, c) }, root)));
+    const view = c ?? preShipChange(node);
+    let pairs = conflicts.get(view);
+    if (!pairs) conflicts.set(view, (pairs = ownershipConflictsUnder({ change: view, graph: judgeGraph(graph, view) }, root)));
     const ownership = pairs
       .filter((p) => p.a === node.id || p.b === node.id)
       .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
