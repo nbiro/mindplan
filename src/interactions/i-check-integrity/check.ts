@@ -215,7 +215,8 @@ function checkChange(
       `Blocked: change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
     );
   }
-  // A shipped member is judged through its revision of this change; a pre-ship member is live.
+  // A shipped member is judged through its revision of this change; a pre-ship member under this
+  // change's view (live plus its revisions), its claims conflicting with this change's and no-change ones.
   const violations = changeMemberViolations(fullGraph, root, revisions, change);
   for (const node of revisions) {
     const c = revisionFor(node, change) ? change : undefined;
