@@ -61,6 +61,7 @@ export const GRAPH_NODE_FIELDS = [
   "attributed",
   "role",
   "next",
+  "open_revisions",
   "rules",
   "change",
   "change_ref",
@@ -98,9 +99,36 @@ export type GraphPage = Omit<MindPlanGraph, "nodes" | "edges"> & {
   next_offset?: number;
 };
 
-/** The node's change as the change tools read it: an open revision's (`activeChange`). */
-function nodeChange(node: MindPlanNode): string | undefined {
-  return activeChange(node);
+/**
+ * Whether the node belongs to `change` as the change tools read it: it holds an open revision of
+ * it, or its active change (`activeChange`: a legacy next's, else a pre-ship node's) is it.
+ */
+function inChange(node: MindPlanNode, change: string): boolean {
+  return activeChange(node) === change || (node.open_revisions ?? []).some((r) => r.change === change);
+}
+
+/** The node as a page returns it: `open_revisions` lean (`{ change, state }`, no deltas or bodies). */
+function pageNode(node: MindPlanNode): MindPlanNode {
+  if (!node.open_revisions) return node;
+  const lean = node.open_revisions.map((r) => ({ change: r.change, state: r.state }));
+  return { ...node, open_revisions: lean as unknown as MindPlanNode["open_revisions"] };
+}
+
+/** Projected fields whose value an open revision changes: the live value alone would hide it. */
+const REVISED_FIELDS = new Set(["title", "description", "next"]);
+
+/**
+ * One node projected to `keep`. A node with several open revisions has no `next` view, so a
+ * projection naming `title`, `description`, or `next` also carries its lean `open_revisions`:
+ * the live values plus which revisions are open, never silently nothing.
+ */
+function projectNode(node: MindPlanNode, keep: Set<string>): Partial<MindPlanNode> {
+  const page = pageNode(node);
+  const withRevisions =
+    (node.open_revisions?.length ?? 0) > 1 && [...keep].some((f) => REVISED_FIELDS.has(f));
+  return Object.fromEntries(
+    Object.entries(page).filter(([key]) => keep.has(key) || (withRevisions && key === "open_revisions"))
+  ) as Partial<MindPlanNode>;
 }
 
 /** Unknown names fail before any node is read, listing the valid ones. */
@@ -156,16 +184,12 @@ export function getMindPlanGraph(args: GraphQuery = {}): GraphPage {
     (n) =>
       (!states || states.includes(n.state)) &&
       (!types || types.includes(n.type)) &&
-      (args.change === undefined || nodeChange(n) === args.change)
+      (args.change === undefined || inChange(n, args.change))
   );
   const unfiltered = filtered.length === graph.nodes.length;
   const sorted = filtered.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const slice = sorted.slice(offset, offset + limit);
-  const nodes = keep
-    ? slice.map(
-        (n) => Object.fromEntries(Object.entries(n).filter(([key]) => keep.has(key))) as Partial<MindPlanNode>
-      )
-    : slice;
+  const nodes = keep ? slice.map((n) => projectNode(n, keep)) : slice.map(pageNode);
   let edges: GraphPage["edges"];
   let totalEdges: number | undefined;
   if (!omitEdges) {

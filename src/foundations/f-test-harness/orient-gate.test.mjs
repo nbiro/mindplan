@@ -127,8 +127,8 @@ async function session() {
 {
   const { client, raw, call } = await session();
   const writes = [
-    ["set_implementation_files", { node_id: "f-cards", files: ["src/pay/"] }],
-    ["set_test_files", { node_id: "f-cards", files: ["src/pay/pay.test.mjs"] }],
+    ["set_implementation_files", { replace: true, node_id: "f-cards", files: ["src/pay/"] }],
+    ["set_test_files", { replace: true, node_id: "f-cards", files: ["src/pay/pay.test.mjs"] }],
     ["patch_node_territory", { node_id: "f-cards", section: "## Purpose", text: "Card processor adapter." }],
     ["patch_node_territory", { node_id: "f-cards", toggle_checkboxes: [{ contains: "Spec written", checked: true }] }],
     ["patch_node_rules", { node_id: "f-cards", rules: "- Never log card numbers." }],
@@ -142,7 +142,7 @@ async function session() {
     statusBlocked.error && statusBlocked.text.includes('orient_for_work({ node_id: "i-refund-0" })'),
     statusBlocked.text.slice(0, 160)
   );
-  const openBlocked = await raw("open_next", { node_id: "f-ledger" });
+  const openBlocked = await raw("open_next", { change: "rev-f-ledger", node_id: "f-ledger" });
   check("open_next on an unoriented node is Blocked: Orientation", openBlocked.error && openBlocked.text.startsWith("Blocked: Orientation:"), openBlocked.text.slice(0, 120));
   for (const [tool, args] of writes) {
     const r = await raw(tool, args);
@@ -167,7 +167,7 @@ async function session() {
   await call("orient_for_work", { node_id: "i-refund-0", depth: "rules" });
   check("update_node_status succeeds after orienting", !(await raw("update_node_status", { node_id: "i-refund-0", new_status: "cancelled" })).error);
   await call("orient_for_work", { node_id: "f-ledger", depth: "rules" });
-  const openAfter = await raw("open_next", { node_id: "f-ledger" });
+  const openAfter = await raw("open_next", { change: "rev-f-ledger", node_id: "f-ledger" });
   check(
     "after orienting, open_next reaches its own lifecycle check",
     openAfter.error && !openAfter.text.startsWith("Blocked: Orientation"),
@@ -212,6 +212,58 @@ async function session() {
   check("limit 1 alone never makes a clear winner", one.focus === null && one.matches.length === 1, JSON.stringify({ focus: one.focus }));
   const attach = await raw("put_attachment", { node_id: "i-refund-1", filename: "a.txt", content_base64: "aGk=" });
   check("put_attachment is gated", attach.error && attach.text.startsWith("Blocked: Orientation:"), attach.text.slice(0, 100));
+  await client.close();
+}
+
+// --- session 6: sections cut the reply; orientation needs the rules section ---
+{
+  const { client, raw, call } = await session();
+  const bodyOnly = await call("orient_for_work", { node_id: "i-pay", sections: ["body"] });
+  check(
+    "sections returns only those parts plus focus and query",
+    bodyOnly.focus === "i-pay" &&
+      "query" in bodyOnly &&
+      typeof bodyOnly.context?.body === "string" &&
+      !("record" in bodyOnly.context) &&
+      !("rules" in bodyOnly) &&
+      !("decisions" in bodyOnly) &&
+      !("matches" in bodyOnly) &&
+      !("blast_radius" in bodyOnly) &&
+      !("files" in bodyOnly) &&
+      !("nodes" in bodyOnly),
+    JSON.stringify(bodyOnly).slice(0, 300)
+  );
+  const write = ["patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card today." }];
+  const gated = await raw(...write);
+  check(
+    "a reply without the rules section does not orient",
+    gated.error && gated.text.startsWith("Blocked: Orientation:"),
+    gated.text.slice(0, 120)
+  );
+  const picked = await call("orient_for_work", {
+    node_id: "i-pay",
+    sections: ["rules", "stability", "neighborhood", "blast_radius", "record", "files", "decisions"],
+  });
+  check(
+    "each named section comes back",
+    picked.rules?.node_id === "i-pay" &&
+      picked.stability &&
+      Array.isArray(picked.nodes) &&
+      Array.isArray(picked.edges) &&
+      picked.blast_radius?.node_id === "i-pay" &&
+      picked.context?.record?.id === "i-pay" &&
+      !("body" in picked.context) &&
+      picked.decisions?.node_id === "i-pay" &&
+      Array.isArray(picked.files?.files),
+    JSON.stringify(Object.keys(picked))
+  );
+  check("a reply with the rules section orients", !(await raw(...write)).error);
+  const unknown = await raw("orient_for_work", { node_id: "i-pay", sections: ["rules", "everything"] });
+  check(
+    "an unknown section is Blocked, listing the valid ones",
+    unknown.error && unknown.text.startsWith("Blocked:") && unknown.text.includes("everything") && unknown.text.includes("blast_radius") && unknown.text.includes("open_items"),
+    unknown.text.slice(0, 200)
+  );
   await client.close();
 }
 

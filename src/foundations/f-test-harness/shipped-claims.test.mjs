@@ -54,11 +54,14 @@ function snapshot() {
   return files;
 }
 
-/** Paths created, changed, or deleted between two snapshots. */
+/** The derived Mermaid snapshot: rewritten after every write, never listed in changed_files. */
+const MAP = "mindplan/map.md";
+
+/** Paths created, changed, or deleted between two snapshots (map.md excepted). */
 function touched(before, after) {
   const out = [];
-  for (const [rel, text] of after) if (before.get(rel) !== text) out.push(rel);
-  for (const rel of before.keys()) if (!after.has(rel)) out.push(rel);
+  for (const [rel, text] of after) if (rel !== MAP && before.get(rel) !== text) out.push(rel);
+  for (const rel of before.keys()) if (rel !== MAP && !after.has(rel)) out.push(rel);
   return out;
 }
 
@@ -67,7 +70,7 @@ let diffMisses = 0;
 /** Call a write tool and check that its changed_files covers every file it touched on disk. */
 async function call(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (res.isError) throw new Error(`${tool}: ${text}`);
   const result = JSON.parse(text || "{}");
@@ -88,7 +91,7 @@ async function call(tool, args) {
 /** The Blocked text of a call expected to fail (null when it succeeded), with nothing written. */
 async function blocked(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (!res.isError) return null;
   const wrote = touched(before, snapshot());
@@ -100,14 +103,25 @@ const liveOf = (kind, id) => `mindplan/${kind}/${id}/${id}.mdx`;
 const nextOf = (kind, id) => `mindplan/${kind}/${id}/${id}.next.mdx`;
 const readRel = (rel) => fs.readFileSync(path.join(root, ...rel.split("/")), "utf-8");
 
-/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+const revisionsOf = (kind, id) => `mindplan/${kind}/${id}/revisions`;
+
+/**
+ * True when a shipped node with no open revision has neither a legacy `<id>.next.mdx` nor a
+ * `revisions/` folder beside its live file.
+ */
 function noNextFile(kind, id) {
-  return fs.existsSync(path.join(root, ...liveOf(kind, id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(kind, id).split("/")));
+  const exists = (rel) => fs.existsSync(path.join(root, ...rel.split("/")));
+  return exists(liveOf(kind, id)) && !exists(nextOf(kind, id)) && !exists(revisionsOf(kind, id));
 }
 
-/** True when a live write's changed_files lists the live file and no next file. */
+/** True when a live write's changed_files lists the live file and no next or revision file. */
 function liveOnly(changed, kind, id) {
-  return Array.isArray(changed) && changed.includes(liveOf(kind, id)) && !changed.includes(nextOf(kind, id));
+  return (
+    Array.isArray(changed) &&
+    changed.includes(liveOf(kind, id)) &&
+    !changed.includes(nextOf(kind, id)) &&
+    !changed.some((f) => f.startsWith(`${revisionsOf(kind, id)}/`))
+  );
 }
 
 /** The `added_claims` list in a live file's frontmatter. */
@@ -157,8 +171,8 @@ write("src/core/a.ts", "export const a = 1;\n");
 write("src/mixed/c.ts", "export const c = 1;\n");
 write("src/mixed/d.ts", "export const d = 1;\n");
 write("src/shared/x.ts", "export const x = 1;\n");
-await call("set_implementation_files", { node_id: "f-core", files: ["src/core/a.ts", "src/mixed/c.ts"] });
-await call("set_implementation_files", { node_id: "f-other", files: ["src/mixed/d.ts", "src/shared/x.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/core/a.ts", "src/mixed/c.ts"] });
+await call("set_implementation_files", { replace: true, node_id: "f-other", files: ["src/mixed/d.ts", "src/shared/x.ts"] });
 fillAndTick("foundations", "f-core");
 fillAndTick("foundations", "f-other");
 await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
@@ -173,6 +187,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 // --- additive sibling file on a shipped node with no open next ---
 {
   const added = await call("set_implementation_files", {
+    replace: true,
     node_id: "f-core",
     files: ["src/core/a.ts", "src/core/new.ts", "src/mixed/c.ts"],
   });
@@ -214,26 +229,25 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 
 // --- what still needs a revision ---
 {
-  const base = ["src/core/a.ts", "src/core/new.ts", "src/mixed/c.ts"];
-  const mixed = await blocked("set_implementation_files", { node_id: "f-core", files: [...base, "src/mixed/e.ts"] });
+  const mixed = await blocked("set_implementation_files", { node_id: "f-core", add: ["src/mixed/e.ts"] });
   check(
     "a folder holding another node's file is not dominated: Blocked → open_next",
     mixed?.startsWith("Blocked:") && mixed.includes("src/mixed/e.ts") && mixed.includes("open_next"),
     mixed ?? "accepted"
   );
-  const dropped = await blocked("set_implementation_files", { node_id: "f-core", files: ["src/core/new.ts", "src/mixed/c.ts"] });
+  const dropped = await blocked("set_implementation_files", { node_id: "f-core", remove: ["src/core/a.ts"] });
   check(
     "removing an entry in place is Blocked and names it",
     dropped?.startsWith("Blocked:") && dropped.includes("src/core/a.ts") && dropped.includes("open_next"),
     dropped ?? "accepted"
   );
-  const glob = await blocked("set_implementation_files", { node_id: "f-core", files: [...base, "src/core/*.ts"] });
+  const glob = await blocked("set_implementation_files", { node_id: "f-core", add: ["src/core/*.ts"] });
   check(
     "adding a glob in place is Blocked",
     glob?.startsWith("Blocked:") && glob.includes("src/core/*.ts") && glob.includes("open_next"),
     glob ?? "accepted"
   );
-  const outside = await blocked("set_implementation_files", { node_id: "f-core", files: [...base, "src/elsewhere/z.ts"] });
+  const outside = await blocked("set_implementation_files", { node_id: "f-core", add: ["src/elsewhere/z.ts"] });
   check(
     "adding a file outside any dominated folder is Blocked",
     outside?.startsWith("Blocked:") && outside.includes("src/elsewhere/z.ts") && outside.includes("open_next"),
@@ -245,6 +259,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 {
   write("src/core/third.ts", "export const t = 1;\n");
   const third = await call("set_implementation_files", {
+    replace: true,
     node_id: "f-core",
     slot: "current",
     files: ["src/core/a.ts", "src/core/new.ts", "src/core/third.ts", "src/mixed/c.ts"],
@@ -263,7 +278,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 
 // --- a directory entry replaces the per-file entries of a dominated folder ---
 {
-  const dir = await call("set_implementation_files", { node_id: "f-core", files: ["src/core/", "src/mixed/c.ts"] });
+  const dir = await call("set_implementation_files", { replace: true, node_id: "f-core", files: ["src/core/", "src/mixed/c.ts"] });
   check(
     "F/ for a dominated folder replaces its per-file entries in place",
     dir.slot === "current" &&
@@ -319,8 +334,9 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 // --- a shipped node with an open next still writes next ---
 {
   write("src/shared/y.ts", "export const y = 1;\n");
-  await call("open_next", { node_id: "f-other" });
+  await call("open_next", { change: "rev-f-other", node_id: "f-other" });
   const next = await call("set_implementation_files", {
+    replace: true,
     node_id: "f-other",
     files: ["src/mixed/d.ts", "src/shared/x.ts", "src/shared/y.ts"],
   });
@@ -332,7 +348,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   const explicit = await blocked("set_implementation_files", {
     node_id: "f-other",
     slot: "current",
-    files: ["src/mixed/d.ts", "src/shared/x.ts", "src/shared/y.ts"],
+    add: ["src/shared/y.ts"],
   });
   check('slot: "current" with an open next stays Blocked', explicit?.startsWith("Blocked:"), explicit ?? "accepted");
 }
@@ -343,21 +359,21 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   await call("create_node", { id: "f-lib", type: "Foundation", title: "Lib", description: "Infra — lib", role: "infra" });
   write("src/lib/other/x.gen.ts", "export const g = 1;\n");
   write("src/lib/own/a.ts", "export const a = 1;\n");
-  await call("set_implementation_files", { node_id: "f-gen", files: ["src/lib/**/*.gen.ts"] });
-  await call("set_implementation_files", { node_id: "f-lib", files: ["src/lib/own/a.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-gen", files: ["src/lib/**/*.gen.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-lib", files: ["src/lib/own/a.ts"] });
   fillAndTick("foundations", "f-lib");
   await walk("f-lib", ["ready", "in-progress", "in-review", "ship"]);
   write("src/lib/own/b.ts", "export const b = 1;\n");
   const globbed = await blocked("set_implementation_files", {
     node_id: "f-lib",
-    files: ["src/lib/own/a.ts", "src/lib/own/b.ts"],
+    add: ["src/lib/own/b.ts"],
   });
   check(
     "another node's glob whose static prefix is an ancestor of the folder makes it undominated",
     globbed?.startsWith("Blocked:") && globbed.includes("src/lib/own/b.ts") && globbed.includes("open_next"),
     globbed ?? "accepted"
   );
-  const dirClaim = await blocked("set_implementation_files", { node_id: "f-lib", files: ["src/lib/own/a.ts", "src/lib/own/"] });
+  const dirClaim = await blocked("set_implementation_files", { node_id: "f-lib", add: ["src/lib/own/"] });
   check("so is a directory claim of that folder", dirClaim?.startsWith("Blocked:"), dirClaim ?? "accepted");
 }
 
@@ -367,12 +383,13 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   await call("create_node", { id: "f-app", type: "Foundation", title: "App", description: "Infra — app", role: "infra" });
   write("src/conf/base.json", "{}\n");
   write("src/conf/app/main.ts", "export const m = 1;\n");
-  await call("set_implementation_files", { node_id: "f-cfg", files: ["src/conf/*.json"] });
-  await call("set_implementation_files", { node_id: "f-app", files: ["src/conf/app/main.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-cfg", files: ["src/conf/*.json"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-app", files: ["src/conf/app/main.ts"] });
   fillAndTick("foundations", "f-app");
   await walk("f-app", ["ready", "in-progress", "in-review", "ship"]);
   write("src/conf/app/extra.ts", "export const e = 1;\n");
   const added = await call("set_implementation_files", {
+    replace: true,
     node_id: "f-app",
     files: ["src/conf/app/extra.ts", "src/conf/app/main.ts"],
   });
@@ -387,11 +404,11 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 {
   await call("create_node", { id: "f-solo", type: "Foundation", title: "Solo", description: "Infra — solo", role: "infra" });
   write("src/solo/a.ts", "export const a = 1;\n");
-  await call("set_implementation_files", { node_id: "f-solo", files: ["src/solo/a.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-solo", files: ["src/solo/a.ts"] });
   fillAndTick("foundations", "f-solo");
   await walk("f-solo", ["ready", "in-progress", "in-review", "ship"]);
   write("src/solo/b.ts", "export const b = 1;\n");
-  await call("set_implementation_files", { node_id: "f-solo", files: ["src/solo/a.ts", "src/solo/b.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-solo", files: ["src/solo/a.ts", "src/solo/b.ts"] });
   check(
     "the shipped node carries an in-place marker and no change id",
     !/^change:/m.test(readRel(liveOf("foundations", "f-solo"))) &&
@@ -420,7 +437,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   await call("create_node", { id: "f-db", type: "Foundation", title: "Db", description: "Infra — database", role: "infra" });
   write("src/db/client.ts", "export const db = 1;\n");
   write("src/db/migrations/001.sql", "create table t (id int);\n");
-  await call("set_implementation_files", { node_id: "f-db", files: ["src/db/client.ts", "src/db/migrations/001.sql"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-db", files: ["src/db/client.ts", "src/db/migrations/001.sql"] });
   fillAndTick("foundations", "f-db");
   // Outside git a first build's schema file is decision-worthy: record one before in-review.
   await call("record_decision", {
@@ -433,7 +450,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   const base = ["src/db/client.ts", "src/db/migrations/001.sql"];
 
   write("src/db/migrations/002.sql", "alter table t add column n int;\n");
-  const exact = await blocked("set_implementation_files", { node_id: "f-db", files: [...base, "src/db/migrations/002.sql"] });
+  const exact = await blocked("set_implementation_files", { node_id: "f-db", add: ["src/db/migrations/002.sql"] });
   check(
     "a new migration file in a dominated folder is not claimed in place: Blocked → open_next",
     exact?.startsWith("Blocked:") &&
@@ -442,13 +459,13 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
       /schema|decision/i.test(exact),
     exact ?? "accepted"
   );
-  const folder = await blocked("set_implementation_files", { node_id: "f-db", files: [...base, "src/db/migrations/"] });
+  const folder = await blocked("set_implementation_files", { node_id: "f-db", add: ["src/db/migrations/"] });
   check(
     "a migrations folder entry is not claimed in place",
     folder?.startsWith("Blocked:") && folder.includes("src/db/migrations/") && folder.includes("open_next"),
     folder ?? "accepted"
   );
-  const parent = await blocked("set_implementation_files", { node_id: "f-db", files: ["src/db/", ...base] });
+  const parent = await blocked("set_implementation_files", { node_id: "f-db", add: ["src/db/"] });
   check(
     "a folder entry that holds a migration file is not claimed in place",
     parent?.startsWith("Blocked:") && parent.includes("src/db/") && parent.includes("open_next"),
@@ -463,7 +480,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     "the Coverage fix for an unclaimed migration in a dominated folder opens the evolution first",
     !!schemaCov &&
       schemaCov.includes('Probable owner by path: "f-db"') &&
-      schemaCov.includes('open_next({"node_id":"f-db"}) then set_implementation_files'),
+      schemaCov.includes('open_next({"node_id":"f-db","change":"<change-id>"}) then set_implementation_files({"node_id":"f-db","change":"<change-id>","add":'),
     String(schemaCov)
   );
   check(
@@ -475,7 +492,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
   fs.rmSync(path.join(root, "src", "db", "extra.ts"));
 
   write("src/db/pool.ts", "export const pool = 1;\n");
-  const sibling = await call("set_implementation_files", { node_id: "f-db", files: [...base, "src/db/pool.ts"] });
+  const sibling = await call("set_implementation_files", { replace: true, node_id: "f-db", files: [...base, "src/db/pool.ts"] });
   check(
     "a non-schema sibling in a dominated folder is still claimed in place",
     sibling.slot === "current" && JSON.stringify(sibling.added_in_place) === JSON.stringify(["src/db/pool.ts"]),
@@ -518,11 +535,11 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 {
   await call("create_node", { id: "f-keep", type: "Foundation", title: "Keep", description: "Infra — keep", role: "infra" });
   write("src/keep/a.ts", "export const a = 1;\n");
-  await call("set_implementation_files", { node_id: "f-keep", files: ["src/keep/a.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-keep", files: ["src/keep/a.ts"] });
   fillAndTick("foundations", "f-keep");
   await walk("f-keep", ["ready", "in-progress", "in-review", "ship"]);
   write("src/keep/b.ts", "export const b = 1;\n");
-  await call("set_implementation_files", { node_id: "f-keep", files: ["src/keep/a.ts", "src/keep/b.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-keep", files: ["src/keep/a.ts", "src/keep/b.ts"] });
   const kept = () =>
     JSON.stringify(addedClaims("foundations", "f-keep")) === JSON.stringify(["src/keep/b.ts"]) &&
     noNextFile("foundations", "f-keep");

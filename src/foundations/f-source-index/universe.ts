@@ -6,14 +6,7 @@ import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { loadProjectConfig, type MindPlanProjectConfig } from "./config.js";
-
-function resolveProjectRoot(root?: string): string {
-  return root ?? process.env.MINDPLAN_ROOT ?? process.cwd();
-}
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
-}
+import { CACHE_DIRNAME, resolveProjectRoot, toPosix } from "./root-scope.js";
 
 /** Minimal glob match for `*`, `**`, and `?` (POSIX path segments). */
 export function matchGlob(pattern: string, filePath: string): boolean {
@@ -97,7 +90,7 @@ function walkFiles(absDir: string, relBase = ""): string[] {
   if (!fs.existsSync(absDir)) return out;
   for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
     // .git and the derived search cache are never source files.
-    if (entry.name === ".git" || (!relBase && entry.name === ".mindplan-cache")) continue;
+    if (entry.name === ".git" || (!relBase && entry.name === CACHE_DIRNAME)) continue;
     const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
     const abs = path.join(absDir, entry.name);
     if (entry.isDirectory()) {

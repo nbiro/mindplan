@@ -1,6 +1,6 @@
 /**
  * Set up the project — owned by i-setup-project: setup_project creates the graph a repo does not
- * have yet (tree, default config, empty brief, stamp), writes the merge-gate workflow on request,
+ * have yet (tree, default config, empty brief, a .gitignore for the derived map.md, stamp), writes the merge-gate workflow on request,
  * and returns the pointer text and the setup guide for the agent's judgment work. It writes
  * nothing else outside mindplan/ (decision d-setup-upgrade-mcp-tools).
  */
@@ -10,6 +10,7 @@ import * as path from "path";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
 import { writeFileRetry } from "../../foundations/f-source-index/io.js";
 import { migrateImplementationPackages } from "../../foundations/f-graph-migrations/migrations.js";
+import { ignoreMapLine } from "../../foundations/f-graph-migrations/level4.js";
 import { graphStatus, stampGraph } from "../../foundations/f-graph-migrations/status.js";
 import { changedSince, snapshotTree } from "../../foundations/f-graph-migrations/tree.js";
 import { PROJECT_FILENAME } from "../../foundations/f-territory-store/project.js";
@@ -40,6 +41,8 @@ export function setupProject(args: { ci?: SetupCi } = {}): Record<string, unknow
   if (!fs.existsSync(brief)) {
     writeFileRetry(brief, readTemplate("agent", "project.md"));
   }
+  // map.md is derived (rewritten after every write): a new graph starts with git ignoring it.
+  ignoreMapLine();
   if (created) stampGraph();
   const changed_files = changedSince(before);
   const ci = args.ci === "github" ? installMergeGateWorkflow(packageRoot(), packageVersion()) : undefined;

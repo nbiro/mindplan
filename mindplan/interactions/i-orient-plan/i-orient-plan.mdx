@@ -4,11 +4,11 @@ type: Interaction
 title: "Orient on the plan"
 description: "Agent orients before work: ranked rows or a full node (versioned rules, own decisions, body by slot and section, files, blast radius, stability, shape), a whole change in one call, node context and implementation, and related-node search."
 state: stable
-shipped_at: 2026-10-31T23:05:25.579Z
-revisions: 23
-churn: 1.998
+shipped_at: 2026-11-03T09:41:55.485Z
+revisions: 26
+churn: 4.887
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-11-01T10:53:13.005Z
+updated_at: 2026-11-04T08:52:37.746Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -17,14 +17,15 @@ split_into:
 belongs_to:
   - j-territory-sdlc
 depends_on:
-  - f-graph-search
-  - f-territory-store
   - f-compiler-rules
-  - f-source-index
+  - f-fan-out
+  - f-graph-search
   - f-orientation-ledger
   - f-plan-views
+  - f-revision-model
+  - f-source-index
+  - f-territory-store
   - f-tool-kit
-  - f-fan-out
 leads_to:
   - i-edit-territory
 implements:
@@ -78,6 +79,14 @@ This action covers `orient_for_work`, `get_node_context`, `get_node_implementati
 
 Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`, `f-orientation-ledger`, `f-tool-kit`, `f-fan-out`.
 
+- **Open revisions (0.18.0).** `orient_for_work({ node_id })` and `get_node_context` list `revisions: [{ change, state, conflicts }]` for every open revision, take `change` to return that revision's view (live ⊕ it) and body, and say which revision a given change id unlocks (`unlocks`); `orient_for_work({ change })` lists each member's revision of the change
+
+## Reply sections
+
+`orient_for_work` takes `sections: [...]` (any of `rules`, `decisions`, `record`, `body`, `files`, `shape`, `revisions`, `open_items`, `blast_radius`, `stability`, `neighborhood`) and returns only those parts of a full reply; omitted, the reply is unchanged. Orientation is recorded whenever `rules` is among the returned sections (always, when `sections` is omitted).
+
+`orient_for_work({ node_id, change })` on a pre-ship member of that change (its own `change` names it; it has no stored revision) reads its live slot, which is the change's, and carries `unlocks: "<change>"`, instead of Blocking for a missing revision; another change still Blocks. `slot: "next"` on such a member is Blocked with the reason (a pre-ship node has no open revision; omit slot), so its live body is never presented as a revision's.
+
 ## Acceptance Criteria
 
 - A query-only `orient_for_work` returns rows only, under 2 KB for 10 rows; an exact id query auto-focuses; `orient_for_work({ node_id })` returns record, body, rules, own decisions, owned files, blast radius, and stability
@@ -98,144 +107,16 @@ Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-r
 - A full reply on a pipeline node carries `stability` with `fan_in`, `rate`, and `median_rate`, plus `hotspot` when the node is one; on a pre-ship Foundation, Interaction, or Interface it also carries `fan_out: { count, changes }` (count 0 when none), and a shipped node's has no `fan_out`
 - Verified via `npm test`
 
-## Decisions
-
-### d-node-context-hides-superseded
-
-- Decision: get_node_context leaves superseded decisions out of decisions and next.decisions unless include_superseded, the same default and flag as list_decisions and orient_for_work.
-- Alternatives:
-  - Keep returning every entry because the full read is meant for history (a node with a long trail buries its current decisions, and the two readers disagree on the same default)
-  - Return every entry with status and let the caller filter (every caller reimplements the same filter that list_decisions already applies)
-- Why: Every decision reader should answer the same question by default: what currently applies. The trail stays one flag away.
-- Consequences: A client that relied on superseded entries in get_node_context must pass include_superseded.
-- Change: node-context-superseded
-- Date: 2026-10-20
-
-### d-graph-paged-by-offset-limit
-
-- Decision: get_mindplan_graph pages nodes by offset and limit (default 200, max 500), returns edges whose source is in the page, and reports totals and next_offset.
-- Alternatives:
-  - Truncate at a character budget and flag it (a cut JSON array is unparseable, and the agent cannot ask for the rest)
-  - Return summaries only and point to get_node_context (changes the result shape for every small project that fits in one page)
-  - Cursor-based paging (a cursor adds state for a sorted, static list that an offset already addresses)
-- Why: Claude Code truncates a result over 25,000 tokens silently; a page the agent can walk keeps every node and edge reachable, and a graph that fits in one page keeps the old shape plus totals.
-- Consequences: Edges are partitioned by source, so a client must walk every page to see every edge; the CLI and the map projection do not use the page.
-- Change: mcp-audit-fixes
-- Date: 2026-10-20
-
-### d-own-decisions-by-default
-
-- Decision: orient_for_work, get_node_context, and get_blast_radius return only the focus node's own decisions by default (a Bug: those of the nodes it affects directly), plus inherited_decisions: { count, nodes }; include_inherited_decisions: true adds the inherited entries, whole at distance 1 and as one line { id, node_id, distance, decision } beyond.
-- Alternatives:
-  - Keep returning every inherited decision in full (on a 54-node graph one orient reply carried 13 decisions and about 60% of 22 KB, mostly from nodes three links away)
-  - Drop inherited decisions entirely (the agent would not know they exist, and could simplify a Foundation's design back into the problem it avoided)
-- Why: Orientation runs before every action; the decisions that shape the focus itself are what an edit there must respect, and a count with the holding nodes is enough to ask for the rest when a change reaches them.
-- Consequences: A client that read inherited decisions from decisions.entries must pass include_inherited_decisions; list_decisions still returns any node's full records.
-- Change: own-decisions
-- Date: 2026-10-25
-
-### d-blast-radius-own-decisions
-
-- Decision: get_blast_radius returns the focus's own decisions by default plus dependent_decisions: { count, nodes }; include_dependent_decisions: true adds the dependents' one-line entries as before.
-- Alternatives:
-  - Reuse include_inherited_decisions for dependents (dependents' decisions are downstream, not inherited, and the flag would mean two things)
-  - Always list dependents' decisions (they made up most of an orient_for_work full reply through its embedded blast radius)
-- Why: The radius answers who a change reaches; the count and node ids say whose reasoning to read, and the list stays one flag away.
-- Consequences: orient_for_work at depth full embeds the default radius, so its reply no longer carries dependents' decisions.
-- Change: own-decisions
-- Date: 2026-10-25
-
-### d-summary-first-orient
-
-- Decision: orient_for_work with only a query returns ranked rows (id, type, state, title, a 70-character description, area, score; default 8) and the full node only for a clear winner (its exact id, the only match, or twice the next score: auto_focus); orient_for_work({ node_id }) returns the full node.
-- Alternatives:
-  - Keep the full payload for the top match (about 22 KB on a 54-node graph, mostly for a node the agent may not work on)
-  - Rows only, never auto-focus (an exact id or an obvious winner would always cost a second call)
-- Why: A summary list costs about 2 KB for 10 rows and lets the agent pick; with hybrid ranking the top row is usually right, and the second call happens only when the choice is unclear.
-- Consequences: A client that read context, rules, or blast_radius from a query-only reply must pass node_id or read auto_focus; row descriptions are cut, so a node's full description comes with its full reply.
-- Change: summary-orient
-- Date: 2026-10-25
-
-### d-orientation-write-gate
-
-- Decision: Writes that act on a node are Blocked: Orientation until the node had a full reply in this MCP session (orient_for_work with node_id or auto_focus, get_node_context, its create_node, or a link result that returned its new rules), and again once the rules that reach it changed; create_node is never blocked; the CLI is never gated.
-- Alternatives:
-  - No gate (summary-first orientation would let an agent write without ever seeing a node's rules, making node rules optional)
-  - Gate create_node too (the owner ruled it out: a new node has no rules yet beyond the ones its result returns)
-- Why: Node rules are mandatory and used to arrive with every orient; once orient returns rows first, only a gate keeps them from being skipped.
-- Consequences: A fresh session must orient on each node before writing it, and a rules change on a Journey or Foundation sends its dependents back to orient; the author of a rules change stays oriented.
-- Change: summary-orient
-- Date: 2026-10-25
-
-### d-list-areas-table
-
-- Decision: list_areas returns one compact table, { columns, rows }, a row per Journey: [id, title, description cut to 60 characters, interactions, interfaces, foundations, open_bugs], not an object per Journey.
-- Alternatives:
-  - An object per Journey with a counts object (the keys alone take about 95 bytes per area, so 30 areas cannot stay under the 4 KB budget)
-  - Drop descriptions (a title alone often does not say what an area covers)
-- Why: The tool exists to be cheap enough to call before orienting; a table keeps 30 areas under 4 KB with the description that makes the pick possible.
-- Consequences: Clients read a row by its column index; the full description comes from orient_for_work on the Journey.
-- Change: list-areas
-- Date: 2026-10-25
-
-### d-area-scope-members
-
-- Decision: An area (a Journey id) scopes search to the Journey itself, the Interactions that belong to it, the Interfaces that expose them, and the Foundations they depend on transitively (live and proposed edges); Bugs are outside it.
-- Alternatives:
-  - Only the Interactions (the Interface and Foundation an agent changes for that area would never rank)
-  - Everything one link away (pulls in unrelated Journeys' Interactions through shared Interfaces)
-- Why: That set is where work for the area lands; a Bug is found by what it affects, or by searching without an area.
-- Consequences: A shared Foundation appears in every area that uses it; a cross-cutting question searches without area.
-- Change: list-areas
-- Date: 2026-10-25
-
-### d-orient-active-slot-default
-
-- Decision: orient_for_work returns only the active slot's body by default (next while a revision is open) and its decisions only in the top-level block; get_node_context keeps both slots by default and both take slot and section.
-- Alternatives:
-  - Add slot and section but keep both bodies by default in orient_for_work (every orient on an evolving node still pays for two near-identical bodies)
-  - Default get_node_context to the active slot too (it is the full read; comparing live with next is what it is for)
-  - Page a body by character offset (a cut can split a section or a checkbox line; headings are the unit agents edit by)
-- Why: Orientation runs before every action and nearly every edit targets the active slot; a reply that repeats the body and the decisions doubled its size and could exceed the host's result limit on a large node.
-- Consequences: A client that read the live body from orient_for_work while a revision is open must pass slot: "current"; a client that read context.decisions must read the decisions block.
-- Change: lean-node-replies
-- Date: 2026-10-29
-
-### d-spec-topics-by-heading-text
-
-- Decision: get_spec serves the running package's SPEC.md through a fixed map of stable topic ids to SPEC headings, matched by heading text without section numbers; without a topic it lists the ids.
-- Alternatives:
-  - A spec field on get_project (every session start would pay for it, or get_project would grow a parameter it does not need)
-  - Address sections by number (renumbering SPEC would silently change what a topic returns)
-  - Serve the whole SPEC (about 1,700 lines, past what an agent should load for one answer)
-- Why: Agents need one answer at a time from the version that is enforcing the rules; stable ids survive SPEC edits, and the npx cache can no longer hand them a stale copy.
-- Consequences: A SPEC heading rename must update SPEC_TOPICS; a test resolves every topic so a rename fails the suite.
-- Change: agent-guidance
-- Date: 2026-10-30
-
-### d-orient-change-decision-holders
-
-- Decision: orient_for_work({ change }) also lists and records the active nodes holding an active decision under the change, as kind "decision", without making them change members anywhere else (check, blast radius, graph filter, scoped walks).
-- Alternatives:
-  - Add decision holders to changeMembership (run_check and get_blast_radius would treat a node a decision only describes as edited, undoing d-decision-sets-no-label)
-  - Leave them out (after a reconnect a second record_decision or rules read on that node needs its own orient call, and the change's reasoning trail is invisible in the change-wide reply)
-- Why: A decision is part of the change's reasoning, so orienting on the change should surface it and its rules, but only an in-place edit makes a node a member that the check and walks act on.
-- Consequences: A closed change whose decisions remain still orients (on its decision holders) instead of being Blocked; a holder that is also a revision or neighbor keeps that kind.
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
-### d-orient-change-holders-no-labels
-
-- Decision: orient_for_work({ change }) lists and records its revisions, planned sources, and the other active nodes holding an active decision under the change (kind "decision"); decision holders are members of the change-wide orientation only, not of the check, blast radius, graph filter, or scoped walks.
-- Alternatives:
-  - Add decision holders to changeMembership (run_check and get_blast_radius would treat a node a decision only describes as edited)
-  - Leave them out (after a reconnect a second record_decision or rules read on that node needs its own orient call, and the change's reasoning trail is invisible in the change-wide reply)
-- Why: A decision is part of the change's reasoning, so orienting on the change should surface it and its rules; with neighbor labels gone, it is also the only way a shipped node a change touched in place shows up in that reply.
-- Consequences: A closed change whose decisions remain still orients (on its decision holders) instead of being Blocked; a holder that is also a revision keeps that kind.
-- Supersedes: d-orient-change-decision-holders
-- Change: graph-edges-stale-labels
-- Date: 2026-10-31
-
 ## Attachments
 
 _None._
+
+## Cleanup (0.18)
+
+`pickRevision` resolves which revision a reply shows, and `loadRevision` reads only that revision.
+
+## Open human items
+
+The items are read for the focus node and its revisions only (`openHumanItemsOfNode`), never by scanning the whole graph.
+
+`orient_for_work({ node_id })` returns `open_items: [{ id?, kind, text, change? }]` for the node's unticked `review` and `deploy` items, and `orient_for_work({ change })` one list for the whole change.

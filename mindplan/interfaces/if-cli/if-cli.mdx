@@ -4,11 +4,11 @@ type: Interface
 title: "CLI"
 description: "CLI for check (--base, --merge, --merge=strict) and view: parses argv, prints the shared check output and warnings, prints legacy removals, and sets the exit code; setup and upgrade are MCP tools, not commands."
 state: stable
-shipped_at: 2026-10-31T20:33:29.232Z
-revisions: 10
-churn: 6.592
+shipped_at: 2026-11-03T09:48:47.292Z
+revisions: 11
+churn: 7.215
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-10-31T20:33:29.232Z
+updated_at: 2026-11-03T14:35:15.625Z
 depends_on:
   - f-mcp-runtime
 exposes:
@@ -47,6 +47,10 @@ Intended files: `src/interfaces/if-cli/`
 - `check --merge` runs the merge gate (`merge: true`); `--merge=strict` the strict level (`merge: "strict"`), with `--base <ref>` as its base (an explicit `--base` also runs dirty-src, as without `--merge`). Any other `--merge=` value is `Blocked: unknown merge level`, and `--merge` with `--merge=strict` is `Blocked:` (pass one level). Help documents both
 - `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
 - Help lists the commands and says how to set up or upgrade a project (register the MCP server, then `setup_project` / `upgrade_project`)
+
+## After a merge
+
+`mindplan-mcp check --after-merge` runs the after-merge check; `--root <path>` checks another checkout or worktree. Its `--help` text lists what it Blocks (conflict markers, a node id in two folders, a decision id in two files, a tracked `map.md`, a missing or behind `version.json`, a revision file that does not parse) and says a revision based on an older live is only a warning naming `rebase_revision`, in both the command help and the options help.
 
 ## Acceptance Criteria
 

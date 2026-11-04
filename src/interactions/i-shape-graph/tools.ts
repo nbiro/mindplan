@@ -69,7 +69,8 @@ export const TOOLS: ToolDef[] = [
         "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
         "Interface -exposes-> Interaction, Foundation -mounts-> Interface (a composition root that imports Interfaces), Interaction -leads_to-> Interaction, " +
         "Bug -affects-> Interaction|Interface|Foundation. " +
-        "While a node has <id>.next.mdx, belongs_to/depends_on/exposes/leads_to writes go to the next slot (proposed edges applied on ship). " +
+        "While a shipped node has an open revision, belongs_to/depends_on/exposes/leads_to/mounts writes go to it as an add delta against live (applied on ship); " +
+        "change picks the revision when several are open (omitted with several: Blocked, naming them). " +
         "Pass change on a shipped node with no open revision of that change to plan the edge instead: it is checked like a link (shape, cycles), recorded under the change on the live file without open_next, " +
         "listed by run_check and get_blast_radius for the change, applied to the next slot when open_next opens the node with that change, and dropped if the change closes first. The live graph does not change. " +
         READINESS_HINT,
@@ -81,7 +82,7 @@ export const TOOLS: ToolDef[] = [
           .enum(EDGE_TYPES)
           .describe("belongs_to | depends_on | exposes | leads_to | affects | mounts"),
         change: CHANGE_ID.optional().describe(
-          "Plan the edge under this change id when the source is shipped and has no open revision of it."
+          "The source's open revision to write the edge to; when the source is shipped and has no open revision of it, plan the edge under this change id."
         ),
       },
     },
@@ -97,13 +98,16 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call when an existing edge should go away. " +
         "Removes edge(s) between two nodes from the source node's frontmatter. " +
-        "With change, removes only the edges planned under that change from source to target. " +
+        "While the source has an open revision, the removal goes to it as a remove delta against live (applied on ship); change picks the revision when several are open. " +
+        "With change and no open revision of it, removes only the edges planned under that change from source to target. " +
         READINESS_HINT,
       inputSchema: {
         verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),
         target_id: NODE_ID.describe("The id of the edge target node."),
-        change: CHANGE_ID.optional().describe("Remove the edges planned under this change instead of real edges."),
+        change: CHANGE_ID.optional().describe(
+          "The source's open revision to remove the edge from; with no open revision of it, remove the edges planned under this change instead."
+        ),
       },
     },
 

@@ -9,11 +9,12 @@ import { createHash } from "crypto";
 import * as fs from "fs";
 import { createRequire } from "module";
 import * as path from "path";
+import { ensureCacheDir } from "../f-source-index/root-scope.js";
 
 /** Bump when the tables or the indexed text change; a mismatch drops and rebuilds the cache. */
 export const INDEX_SCHEMA_VERSION = "3";
 
-export const CACHE_DIRNAME = ".mindplan-cache";
+/** The search index's file in the root's cache folder (CACHE_DIRNAME). */
 export const INDEX_FILENAME = "index.db";
 
 /** One node as search sees it: the fields that are indexed and embedded. */
@@ -134,21 +135,6 @@ function loadSqlite(): DatabaseCtor | null {
 export function sqliteUnavailableReason(): string | null {
   loadSqlite();
   return sqliteNote;
-}
-
-/** The cache directory of a project, with a `.gitignore` inside so git never lists it. */
-export function cacheDir(root: string): string {
-  return path.join(root, CACHE_DIRNAME);
-}
-
-function ensureCacheDir(root: string): string {
-  const dir = cacheDir(root);
-  fs.mkdirSync(dir, { recursive: true });
-  const ignore = path.join(dir, ".gitignore");
-  if (!fs.existsSync(ignore)) {
-    fs.writeFileSync(ignore, "# Derived MindPlan search cache; safe to delete.\n*\n", "utf-8");
-  }
-  return dir;
 }
 
 export interface IndexIdentity {

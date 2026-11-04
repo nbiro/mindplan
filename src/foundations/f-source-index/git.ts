@@ -5,18 +5,23 @@
 
 import { execFileSync } from "child_process";
 import { matchGlob } from "./universe.js";
+import { resolveProjectRoot } from "./root-scope.js";
 
-function resolveProjectRoot(root?: string): string {
-  return root ?? process.env.MINDPLAN_ROOT ?? process.cwd();
+/**
+ * Project-relative path of the auto-persisted Mermaid snapshot. It is rewritten after every write,
+ * so it is derived: git never tracks it and `changed_files` never lists it.
+ */
+export const MAP_REL = "mindplan/map.md";
+
+/** Runs git in `cwd` and returns its stdout; throws when git fails or is missing. */
+export function runGit(args: string[], cwd: string): string {
+  return execFileSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-function git(args: string[], cwd: string): string | null {
+/** Runs git in `cwd`: its stdout, or null when git fails or is missing. */
+export function git(args: string[], cwd: string): string | null {
   try {
-    return execFileSync("git", args, {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    return runGit(args, cwd);
   } catch {
     return null;
   }
@@ -59,15 +64,16 @@ export function newFilesSinceBase(root?: string): Set<string> | null {
   const cwd = resolveProjectRoot(root);
   if (git(["rev-parse", "--is-inside-work-tree"], cwd)?.trim() !== "true") return null;
   const files = new Set<string>();
+  // --no-renames: a file moved to a new path (git mv) is added there, not a rename to skip.
   // ls-files and --relative both report paths relative to cwd, so a project root below the
   // repository top still gets project-relative paths.
   for (const f of paths(git(["ls-files", "-z", "--others", "--exclude-standard"], cwd))) files.add(f);
-  for (const f of paths(git(["diff", "-z", "--cached", "--name-only", "--diff-filter=A", "--relative"], cwd))) {
+  for (const f of paths(git(["diff", "-z", "--cached", "--name-only", "--no-renames", "--diff-filter=A", "--relative"], cwd))) {
     files.add(f);
   }
   const base = defaultBaseRef(cwd);
   if (base) {
-    for (const f of paths(git(["diff", "-z", "--name-only", "--diff-filter=A", "--relative", `${base}...HEAD`], cwd))) {
+    for (const f of paths(git(["diff", "-z", "--name-only", "--no-renames", "--diff-filter=A", "--relative", `${base}...HEAD`], cwd))) {
       files.add(f);
     }
   }

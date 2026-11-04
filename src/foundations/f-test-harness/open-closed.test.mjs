@@ -201,7 +201,22 @@ function check(label, condition, detail = "") {
   const split = {
     ...graph,
     nodes: graph.nodes.map((n) => {
-      if (n.id === "f-core") return { ...n, next: { state: "draft", change: "c-split" } };
+      if (n.id === "f-core") {
+        const revision = {
+          change: "c-split",
+          state: "draft",
+          title: n.title,
+          description: n.description,
+          opened_at: n.updated_at,
+          updated_at: n.updated_at,
+          edges: {},
+          implements: { add: [], remove: [] },
+          tests: { add: [], remove: [] },
+          base: { scalars: {}, sections: {} },
+          conflicts: [],
+        };
+        return { ...n, open_revisions: [revision] };
+      }
       return n;
     }),
   };
@@ -282,7 +297,7 @@ const client = new Client({ name: "open-closed-test", version: "0.1.0" });
 await client.connect(transport);
 
 async function raw(tool, args) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   return { error: Boolean(res.isError), text: res.content?.[0]?.text ?? "" };
 }
 async function call(tool, args) {
@@ -301,7 +316,7 @@ function write(rel, content) {
 async function foundation(id) {
   await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
   write(`src/${id}/index.ts`, `export const ${id.replace(/-/g, "_")} = 1;\n`);
-  await call("set_implementation_files", { node_id: id, files: [`src/${id}/`] });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
   const file = path.join(root, "mindplan", "foundations", id, `${id}.mdx`);
   let text = fs.readFileSync(file, "utf-8");
   text = text.replace(/^_.*?_$/gm, (line) => (line.includes("attachments/") ? line : "Open-closed filled territory."));
@@ -410,7 +425,7 @@ try {
   );
 
   // The in-review gate on a shipped Foundation's revision names the additive alternative.
-  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-core", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   for (const new_status of ["ready", "in-progress"]) await call("update_node_status", { node_id: "f-core", new_status });
   const gate = await raw("update_node_status", { node_id: "f-core", new_status: "in-review" });
   check(
@@ -458,7 +473,7 @@ try {
   const marked = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-part"] });
   check(
     "split_into marks the revision and keeps it in progress",
-    marked.split_into?.join(",") === "f-part" && marked.next_state === "in-progress" && marked.changed_files.includes("mindplan/foundations/f-core/f-core.next.mdx"),
+    marked.split_into?.join(",") === "f-part" && marked.next_state === "in-progress" && marked.changed_files.includes(`mindplan/foundations/f-core/revisions/${marked.change}/f-core.mdx`),
     JSON.stringify(marked)
   );
   for (const new_status of ["in-review", "ship"]) await call("update_node_status", { node_id: "f-core", new_status });
@@ -475,6 +490,31 @@ try {
   );
   const afterSplit = await call("run_check", {});
   check("after the split run_check no longer reports the root as a hotspot", !afterSplit.warnings.some((w) => w.startsWith('hotspot: "f-core"')), JSON.stringify(afterSplit.warnings));
+  // A revision of a node with a live split record holds only the parts it declares: split_into: []
+  // clears them, and the revision file keeps no copy of live's record.
+  const reopened = await call("open_next", { node_id: "f-core", change: "c-5" });
+  const revFile = path.join(root, "mindplan", "foundations", "f-core", "revisions", reopened.change ?? "c-5", "f-core.mdx");
+  // The unlinked-part warning names each declared part once, and never one live already records
+  // (the ship does not record it again, so its link does not matter).
+  await call("unlink_nodes", { source_id: "f-core", target_id: "f-part", edge_type: "depends_on", change: reopened.change ?? "c-5" });
+  const dupWarn = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-b", "f-b", "f-part"] });
+  check(
+    "the split_into warning names each unlinked part once and skips parts live already records",
+    dupWarn.warnings?.length === 1 && dupWarn.warnings[0].includes('for "f-b";') && !dupWarn.warnings[0].includes("f-part"),
+    JSON.stringify(dupWarn.warnings)
+  );
+  await call("link_nodes", { source_id: "f-core", target_id: "f-part", edge_type: "depends_on", change: reopened.change ?? "c-5" });
+  const declared = await call("patch_node_territory", { node_id: "f-core", split_into: ["f-b"] });
+  const declaredText = fs.readFileSync(revFile, "utf-8");
+  const unmarked = await call("patch_node_territory", { node_id: "f-core", split_into: [] });
+  const unmarkedText = fs.readFileSync(revFile, "utf-8");
+  check(
+    "split_into on a revision records only the parts it declares, and split_into: [] clears them",
+    declared.split_into?.join(",") === "f-b" && /^split_into:\n {2}- f-b$/m.test(declaredText) && !declaredText.includes("- f-part") &&
+      Array.isArray(unmarked.split_into) && unmarked.split_into.length === 0 && !/^split_into:/m.test(unmarkedText),
+    JSON.stringify({ declared: declared.split_into, unmarked: unmarked.split_into, unmarkedText })
+  );
+  await call("discard_next", { node_id: "f-core", change: "c-5" });
   // Clearing the split record in place: the count stays, the split goes.
   const cleared = await call("patch_node_territory", { node_id: "f-core", split_into: [] });
   const afterClear = (await call("orient_for_work", { node_id: "f-core", depth: "rules" })).context.record;
@@ -493,7 +533,7 @@ try {
   await foundation("f-lib");
   await ship("f-lib");
   await call("link_nodes", { source_id: "f-a", target_id: "f-lib", edge_type: "depends_on" });
-  await call("patch_node_territory", { node_id: "f-a", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-a", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   await call("record_decision", { node_id: "f-a", decision: "Use the new lib.", alternatives: ["Inline it"], why: "Shared.", change: "c-4" });
   for (const new_status of ["ready", "in-progress", "in-review", "ship"]) await call("update_node_status", { node_id: "f-a", new_status });
   const user = (await call("orient_for_work", { node_id: "f-a", depth: "rules" })).context.record;
@@ -507,7 +547,7 @@ try {
   await call("force_unship", { node_id: "f-b", confirm: "unship:f-b", new_status: "ready" });
   const unshipped = (await call("orient_for_work", { node_id: "f-b", depth: "rules" })).context.record;
   check("force_unship keeps the rate with the time it is as of", unshipped.churn > 0.9 && typeof unshipped.churn_at === "string", JSON.stringify(unshipped));
-  await call("patch_node_territory", { node_id: "f-b", toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  await call("patch_node_territory", { node_id: "f-b", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
   for (const new_status of ["ready", "in-progress", "in-review", "ship"]) await call("update_node_status", { node_id: "f-b", new_status });
   const reshipped = (await call("orient_for_work", { node_id: "f-b", depth: "rules" })).context.record;
   check(

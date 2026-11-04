@@ -21,6 +21,8 @@ process.env.MINDPLAN_SEARCH ??= "keyword";
 const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const serverEntry = path.join(toolRoot, "dist/index.js");
 const store = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-territory-store/store.js")).href);
+const checklist = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-territory-store/checklist.js")).href);
+const gates = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-compiler-rules/checklist-gates.js")).href);
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-lean-replies-"));
 console.log("Lean-replies sandbox:", root);
@@ -57,11 +59,14 @@ function snapshot() {
   return files;
 }
 
-/** Paths created, changed, or deleted between two snapshots. */
+/** Derived after every write and never listed in changed_files. */
+const MAP = "mindplan/map.md";
+
+/** Paths created, changed, or deleted between two snapshots (the derived map excluded). */
 function touched(before, after) {
   const out = [];
-  for (const [rel, text] of after) if (before.get(rel) !== text) out.push(rel);
-  for (const rel of before.keys()) if (!after.has(rel)) out.push(rel);
+  for (const [rel, text] of after) if (rel !== MAP && before.get(rel) !== text) out.push(rel);
+  for (const rel of before.keys()) if (rel !== MAP && !after.has(rel)) out.push(rel);
   return out;
 }
 
@@ -70,7 +75,7 @@ let diffMisses = 0;
 /** Call a tool and check that its changed_files covers every file it touched on disk. */
 async function call(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (res.isError) throw new Error(`${tool}: ${text}`);
   const result = JSON.parse(text || "{}");
@@ -91,7 +96,7 @@ async function call(tool, args) {
 /** The Blocked text of a call expected to fail (null when it succeeded), with nothing written. */
 async function blocked(tool, args) {
   const before = snapshot();
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (!res.isError) return null;
   const wrote = touched(before, snapshot());
@@ -101,14 +106,20 @@ async function blocked(tool, args) {
 
 const liveOf = (id) => `mindplan/foundations/${id}/${id}.mdx`;
 const nextOf = (id) => `mindplan/foundations/${id}/${id}.next.mdx`;
+const revDirOf = (id, change) => `mindplan/foundations/${id}/revisions/${change}`;
+const revOf = (id, change) => `${revDirOf(id, change)}/${id}.mdx`;
 const readRel = (rel) => fs.readFileSync(path.join(root, ...rel.split("/")), "utf-8");
 const count = (text, re) => (text.match(re) ?? []).length;
 const UNTICKED = /^\s*[-*+]\s+\[ \]/gm;
 const TICKED = /^\s*[-*+]\s+\[[xX]\]/gm;
 
-/** True when a shipped node with no open revision has no `<id>.next.mdx` beside its live file. */
+/** True when a shipped node with no open revision has no `<id>.next.mdx` and no `revisions/` beside its live file. */
 function noNextFile(id) {
-  return fs.existsSync(path.join(root, ...liveOf(id).split("/"))) && !fs.existsSync(path.join(root, ...nextOf(id).split("/")));
+  return (
+    fs.existsSync(path.join(root, ...liveOf(id).split("/"))) &&
+    !fs.existsSync(path.join(root, ...nextOf(id).split("/"))) &&
+    !fs.existsSync(path.join(root, "mindplan", "foundations", id, "revisions"))
+  );
 }
 
 function write(rel, content) {
@@ -121,7 +132,7 @@ function write(rel, content) {
 async function foundation(id) {
   await call("create_node", { id, type: "Foundation", title: id, description: `Infra — ${id}`, role: "infra" });
   write(`src/${id}/index.ts`, `export const ${id.replace(/-/g, "_")} = 1;\n`);
-  await call("set_implementation_files", { node_id: id, files: [`src/${id}/`] });
+  await call("set_implementation_files", { replace: true, node_id: id, files: [`src/${id}/`] });
   const file = path.join(root, ...liveOf(id).split("/"));
   let text = fs.readFileSync(file, "utf-8");
   text = text.replace(/^_.*?_$/gm, (line) => (line.includes("attachments/") ? line : "Lean-replies filled territory."));
@@ -133,7 +144,12 @@ async function walk(id, steps) {
 }
 
 const tickAll = (id) =>
-  call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ contains: "- [ ]", checked: true, all: true }] });
+  call("patch_node_territory", { node_id: id, toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
+
+/** Ticks every box of an open revision in its file (the edit tools have their own suites). */
+function tickRevision(id, change) {
+  write(revOf(id, change), readRel(revOf(id, change)).replaceAll("- [ ]", "- [x]"));
+}
 
 fs.mkdirSync(path.join(root, "mindplan"), { recursive: true });
 fs.writeFileSync(
@@ -215,6 +231,178 @@ fs.writeFileSync(
   );
 }
 
+// --- checklist items: ids, kinds, and the sections they live in ---
+{
+  const body = [
+    "## Purpose",
+    "",
+    "- [ ] Purpose box {#purpose}",
+    "",
+    "## Atomic Ops",
+    "",
+    "- [x] Spec written {#spec}",
+    "- [ ] Security review {#sec review} — note: booked",
+    "- [x] Ship it {#ship deploy} — n/a:",
+    "- [ ] Plain item",
+    "- [x] Odd tag {#Bad}",
+    "",
+    "## Rules",
+    "",
+    "- [ ] Not an item either",
+  ].join("\r\n");
+  const items = checklist.parseChecklistItems(body);
+  check(
+    "parseChecklistItems reads ids, kinds, text, state, and section of every counted box (Rules left out)",
+    JSON.stringify(items.map(({ id, kind, text, checked, done, section }) => ({ id, kind, text, checked, done, section }))) ===
+      JSON.stringify([
+        { id: "purpose", kind: "build", text: "Purpose box", checked: false, done: false, section: "Purpose" },
+        { id: "spec", kind: "build", text: "Spec written", checked: true, done: true, section: "Atomic Ops" },
+        { id: "sec", kind: "review", text: "Security review", checked: false, done: false, section: "Atomic Ops" },
+        { id: "ship", kind: "deploy", text: "Ship it", checked: true, done: false, section: "Atomic Ops" },
+        { kind: "build", text: "Plain item", checked: false, done: false, section: "Atomic Ops" },
+        { kind: "build", text: "Odd tag {#Bad}", checked: true, done: true, section: "Atomic Ops" },
+      ]) && items[1].line === 6 && store.countCheckboxesInText(body).unchecked + store.countCheckboxesInText(body).checked === items.length,
+    JSON.stringify(items)
+  );
+  check(
+    "buildItemsTicked needs at least one item, and an untagged Acceptance Criteria box is a build item",
+    !gates.buildItemsTicked("## Purpose\n\nNo boxes here.\n") &&
+      !gates.buildItemsTicked("## Acceptance Criteria\n\n- [ ] Handles empty input\n\n## Atomic Ops\n\n- [x] Done\n") &&
+      gates.buildItemsTicked("## Acceptance Criteria\n\n- [x] Handles empty input\n- [ ] Sign-off {#sign review}\n")
+  );
+  check(
+    "formatChecklistTag writes {#id} for build and {#id kind} otherwise",
+    checklist.formatChecklistTag("spec") === "{#spec}" &&
+      checklist.formatChecklistTag("sec", "review") === "{#sec review}" &&
+      checklist.formatChecklistTag(undefined) === ""
+  );
+  check(
+    "defaultAtomicOps gives every pipeline type the ids spec, impl, verify",
+    ["Foundation", "Interaction", "Interface"].every((type) =>
+      JSON.stringify(checklist.parseChecklistItems(["## Atomic Ops", "", ...store.defaultAtomicOps(type)].join("\n")).map((i) => i.id)) ===
+        JSON.stringify(["spec", "impl", "verify"])
+    )
+  );
+  const appended = checklist.appendChecklistItems("## Atomic Ops\n\n- [ ] A {#a}\n\n## Rules\n", [{ text: "B", kind: "deploy" }]).body;
+  check(
+    "appendChecklistItems adds after the last item and slugs an id for a non-build kind",
+    appended === "## Atomic Ops\n\n- [ ] A {#a}\n- [ ] B {#b deploy}\n\n## Rules\n",
+    JSON.stringify(appended)
+  );
+  const empty = checklist.appendChecklistItems("## Atomic Ops\n\n## Rules\n", [{ text: "C", id: "c" }]).body;
+  check("appendChecklistItems fills an empty section", empty === "## Atomic Ops\n\n- [ ] C {#c}\n\n## Rules\n", JSON.stringify(empty));
+  // A multi-line last item keeps its continuation lines (indented, lazy, and an indented paragraph
+  // after a blank line); the new item goes after them, not between.
+  const multi = checklist.appendChecklistItems(
+    "## Atomic Ops\n\n- [ ] A {#a}\n  detail of A\n  - nested note\nlazy line\n\n  more about A\n\nAfter the list.\n\n## Rules\n",
+    [{ text: "B", id: "b" }]
+  ).body;
+  check(
+    "appendChecklistItems adds after a multi-line last item's continuation lines",
+    multi === "## Atomic Ops\n\n- [ ] A {#a}\n  detail of A\n  - nested note\nlazy line\n\n  more about A\n- [ ] B {#b}\n\nAfter the list.\n\n## Rules\n",
+    JSON.stringify(multi)
+  );
+  // After a blank line, a line continues the item only when indented to its content column (marker
+  // width plus the spaces after it, CommonMark), not merely past the marker.
+  for (const [what, item, tail] of [
+    ["a one-space paragraph under a \"- \" item", "- [ ] A {#a}", "\n after A.\n"],
+    ["a three-space paragraph under a \"-   \" item", "-   [ ] A {#a}", "\n   after A.\n"],
+    ["a one-space fence under a \"- \" item", "- [ ] A {#a}", "\n ```\n code\n ```\n"],
+  ]) {
+    const shallow = checklist.appendChecklistItems(`## Atomic Ops\n\n${item}\n${tail}`, [{ text: "B", id: "b" }]).body;
+    check(
+      `appendChecklistItems does not take ${what} as a continuation`,
+      shallow === `## Atomic Ops\n\n${item}\n- [ ] B {#b}\n${tail}`,
+      JSON.stringify(shallow)
+    );
+  }
+  const deep = checklist.appendChecklistItems("## Atomic Ops\n\n-   [ ] A {#a}\n\n    more about A\n", [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems takes a paragraph indented to the content column as a continuation",
+    deep === "## Atomic Ops\n\n-   [ ] A {#a}\n\n    more about A\n- [ ] B {#b}\n",
+    JSON.stringify(deep)
+  );
+  // Tabs expand to 4-column tab stops (CommonMark) when indentation is measured: a tab-indented
+  // paragraph reaches a "- " item's content column, and a tab after the marker puts the content
+  // column at 4, so a three-space paragraph does not continue that item.
+  const tabbed = checklist.appendChecklistItems("## Atomic Ops\n\n- [ ] A {#a}\n\n\tmore about A\n", [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems takes a tab-indented paragraph as a continuation",
+    tabbed === "## Atomic Ops\n\n- [ ] A {#a}\n\n\tmore about A\n- [ ] B {#b}\n",
+    JSON.stringify(tabbed)
+  );
+  const tabMarker = checklist.appendChecklistItems("## Atomic Ops\n\n-\t[ ] A {#a}\n\n   after A.\n", [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems measures a tab after the marker to the next tab stop",
+    tabMarker === "## Atomic Ops\n\n-\t[ ] A {#a}\n- [ ] B {#b}\n\n   after A.\n",
+    JSON.stringify(tabMarker)
+  );
+  // An indented fence that continues the item is consumed to its close, even across a blank line
+  // followed by a column-0 line or a `# comment` inside it: the new item never lands in the fence.
+  const fenceBody = "## Atomic Ops\n\n- [ ] A {#a}\n  ```sh\n  run\n\nexit 0\n# comment\n  ```\n\nAfter.\n";
+  const fenceAppended = checklist.appendChecklistItems(fenceBody, [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems consumes an item's fenced continuation to its close (blank line, column-0 line, # comment inside)",
+    fenceAppended === "## Atomic Ops\n\n- [ ] A {#a}\n  ```sh\n  run\n\nexit 0\n# comment\n  ```\n- [ ] B {#b}\n\nAfter.\n",
+    JSON.stringify(fenceAppended)
+  );
+  // A column-0 thematic break or opening fence straight after the item ends the list (CommonMark):
+  // it is not a lazy continuation, so the new item goes before it.
+  for (const [what, tail] of [
+    ["thematic break ---", "---\nbelow\n"],
+    ["thematic break ***", "***\nbelow\n"],
+    ["thematic break ___", "___\nbelow\n"],
+    ["opening fence", "```\ncode\n```\n"],
+  ]) {
+    const breakAppended = checklist.appendChecklistItems(`## Atomic Ops\n\n- [ ] A {#a}\n${tail}`, [{ text: "B", id: "b" }]).body;
+    check(
+      `appendChecklistItems stops before a column-0 ${what} straight after the item`,
+      breakAppended === `## Atomic Ops\n\n- [ ] A {#a}\n- [ ] B {#b}\n${tail}`,
+      JSON.stringify(breakAppended)
+    );
+  }
+  // A lone CR before the Atomic Ops: parse and edit split lines the same way, and each break stays as written.
+  const loneCr = "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [ ] B {#b}\r\n";
+  const ticked = checklist.toggleChecklistItems(loneCr, [{ id: "b", checked: true }]).body;
+  check(
+    "toggleChecklistItems after a lone CR ticks the item named and keeps every line break",
+    ticked === "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [x] B {#b}\r\n",
+    JSON.stringify(ticked)
+  );
+  const crAppended = checklist.appendChecklistItems(loneCr, [{ text: "C", id: "c" }]).body;
+  check(
+    "appendChecklistItems after a lone CR keeps the CR and adds a CRLF line",
+    crAppended === "Intro\rmore\r\n## Atomic Ops\r\n\r\n- [ ] A {#a}\r\n- [ ] B {#b}\r\n- [ ] C {#c}\r\n",
+    JSON.stringify(crAppended)
+  );
+  // A task line inside a fenced code block is example text: no item, no count, no toggle.
+  const fencedBody = "## Purpose\n\n```md\n- [ ] step\n```\n\n## Atomic Ops\n\n- [x] Real {#real}\n";
+  const fencedItems = checklist.parseChecklistItems(fencedBody);
+  const fencedCount = store.countCheckboxesInText(fencedBody);
+  let fencedToggle = "";
+  try {
+    checklist.toggleChecklistItems(fencedBody, [{ text: "step", checked: true }]);
+  } catch (err) {
+    fencedToggle = err.message;
+  }
+  check(
+    "a fenced `- [ ] step` is not an item, is not counted, and a toggle by its text is Blocked",
+    JSON.stringify(fencedItems.map((i) => i.text)) === JSON.stringify(["Real"]) &&
+      fencedCount.unchecked === 0 && fencedCount.checked === 1 &&
+      fencedToggle.startsWith("Blocked:"),
+    JSON.stringify({ fencedItems, fencedCount, fencedToggle })
+  );
+  // A task line inside a fence after the last item is code: new items go after the last real item.
+  const fencedAfter = "## Atomic Ops\n\n- [ ] A {#a}\n\n```md\n- [ ] example\n```\n";
+  const fencedAppended = checklist.appendChecklistItems(fencedAfter, [{ text: "B", id: "b" }]).body;
+  check(
+    "appendChecklistItems never inserts inside fenced code",
+    fencedAppended === "## Atomic Ops\n\n- [ ] A {#a}\n- [ ] B {#b}\n\n```md\n- [ ] example\n```\n" &&
+      checklist.parseChecklistItems(fencedAppended).some((i) => i.id === "b"),
+    JSON.stringify(fencedAppended)
+  );
+}
+
 // --- first ship drops the ledger from live and writes no next file ---
 await foundation("f-core");
 await call("patch_node_rules", { node_id: "f-core", rules: "- Keep it small." });
@@ -232,21 +420,30 @@ await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
 // --- open_next starts a fresh ledger; the revision cannot ship on old ticks ---
 await call("open_next", { node_id: "f-core", change: "lean" });
 {
-  const next = readRel(nextOf("f-core"));
+  const next = readRel(revOf("f-core", "lean"));
   check(
-    "open_next gives the revision one unticked default list before Rules",
+    "open_next gives the revision one unticked default list and no Rules (rules stay on live)",
     count(next, /^## Atomic Ops$/gm) === 1 &&
       count(next, UNTICKED) === 3 &&
       count(next, TICKED) === 0 &&
-      next.indexOf("## Atomic Ops") < next.indexOf("## Rules"),
+      !next.includes("## Rules"),
     next
   );
-  await call("record_decision", {
-    node_id: "f-core",
-    decision: "Core stays one module.",
-    alternatives: ["Split it (no second caller yet)"],
-    why: "One caller.",
-  });
+  // The revision's decision is a file in its decisions/ folder (record_decision has its own suite).
+  write(
+    `${revDirOf("f-core", "lean")}/decisions/d-core-one-module.md`,
+    [
+      "### d-core-one-module",
+      "",
+      "- Decision: Core stays one module.",
+      "- Alternatives:",
+      "  - Split it (no second caller yet)",
+      "- Why: One caller.",
+      "- Change: lean",
+      `- Date: ${new Date().toISOString().slice(0, 10)}`,
+      "",
+    ].join("\n")
+  );
   await walk("f-core", ["ready", "in-progress", "in-review"]);
   const gate = await blocked("update_node_status", { node_id: "f-core", new_status: "ship" });
   check("shipping the revision without ticking its own ops is Blocked", gate?.includes("Completion Check"), gate ?? "accepted");
@@ -298,18 +495,29 @@ await call("open_next", { node_id: "f-core", change: "lean" });
 }
 
 // --- ship the revision: promote drops its ledger too ---
-await tickAll("f-core");
+tickRevision("f-core", "lean");
 await walk("f-core", ["ship"]);
 {
   const live = readRel(liveOf("f-core"));
   check(
-    "promote leaves no Atomic Ops on live and keeps Decisions and Rules",
-    !live.includes("## Atomic Ops") && live.includes("Core stays one module.") && live.includes("- Keep it small."),
+    "promote leaves no Atomic Ops on live, keeps Rules, and moves the revision's decision beside live",
+    !live.includes("## Atomic Ops") &&
+      live.includes("- Keep it small.") &&
+      readRel("mindplan/foundations/f-core/decisions/d-core-one-module.md").includes("Core stays one module."),
     live
   );
-  check("promote deletes the next file", noNextFile("f-core"));
+  check("promote deletes the revision folder", noNextFile("f-core"));
   const noNext = await blocked("get_node_context", { node_id: "f-core", slot: "next" });
   check("slot next without an open revision is Blocked", noNext?.includes("Blocked:") && noNext.includes("no open revision"), noNext ?? "accepted");
+  const noNextPatch = await blocked("patch_node_territory", { node_id: "f-core", slot: "next", description: "Infra — patched." });
+  check(
+    "patch_node_territory slot next without an open revision is Blocked naming open_next, not a next file",
+    noNextPatch?.includes("Blocked:") &&
+      noNextPatch.includes("no open revision") &&
+      noNextPatch.includes('open_next({ node_id: "f-core", change })') &&
+      !noNextPatch.includes(".next.mdx"),
+    noNextPatch ?? "accepted"
+  );
 }
 
 // --- a Foundation's Checklist heading is dropped at ship too ---
@@ -339,9 +547,69 @@ await foundation("f-chk");
   check("the unshipped node ships again", !readRel(liveOf("f-chk")).includes("## Atomic Ops") && noNextFile("f-chk"));
 }
 
+// An open revision for the upgrade below: it keeps its own list while the upgrade strips live.
+await call("open_next", { node_id: "f-chk", change: "chk" });
+write(revOf("f-chk", "chk"), readRel(revOf("f-chk", "chk")).replace(/^- \[ \] .*$/m, "- [ ] Revision work"));
+
 const final = await call("run_check", {});
 check("the sandbox passes the check before the upgrade", final.ok, JSON.stringify(final.failures));
 check("every write listed every mindplan/ file it touched", diffMisses === 0, `${diffMisses} write(s) missed files`);
+// --- an open revision's ledger: default ids, added items, and the items that wait on people ---
+{
+  await foundation("f-items");
+  await walk("f-items", ["ready", "in-progress", "in-review", "ship"]);
+  await call("open_next", { node_id: "f-items", change: "items" });
+  check(
+    "a revision's fresh ledger carries the default ids",
+    /- \[ \] Spec written \{#spec\}\r?\n- \[ \] Implementation complete \{#impl\}\r?\n- \[ \] Verified in target environment \{#verify\}/.test(
+      readRel(revOf("f-items", "items"))
+    ),
+    readRel(revOf("f-items", "items"))
+  );
+  const added = await call("patch_node_territory", { node_id: "f-items", add_checklist_items: [{ text: "QA sign-off", id: "qa", kind: "review" }] });
+  check(
+    "add_checklist_items writes to the open revision",
+    added.patched_fields?.includes("add_checklist_items") && readRel(revOf("f-items", "items")).includes("- [ ] QA sign-off {#qa review}"),
+    JSON.stringify(added)
+  );
+  const dup = await blocked("patch_node_territory", { node_id: "f-items", add_checklist_items: [{ text: "Again", id: "impl" }] });
+  check("a revision's ids are unique: a duplicate is Blocked", !!dup && dup.includes('"impl"'), String(dup));
+  const r = await call("run_check", {});
+  check(
+    "run_check names the revision whose item waits on people",
+    r.info?.includes("waiting on people: f-items (revision items): qa (review)"),
+    JSON.stringify(r.info)
+  );
+  const o = await call("orient_for_work", { change: "items" });
+  check(
+    "orient_for_work on the change lists its revisions' open items",
+    JSON.stringify(o.open_items) === JSON.stringify([{ node_id: "f-items", change: "items", id: "qa", kind: "review", text: "QA sign-off" }]),
+    JSON.stringify(o.open_items)
+  );
+  // A new node of the change is a member with no stored revision: its live slot is the change's.
+  await call("create_node", { id: "f-items-new", type: "Foundation", title: "f-items-new", description: "Infra — f-items-new", role: "infra", change: "items" });
+  const members = await call("orient_for_work", { change: "items" });
+  check("orient_for_work on the change lists its new member", JSON.stringify(members).includes('"f-items-new"'), JSON.stringify(members));
+  const memberBlock = await blocked("orient_for_work", { node_id: "f-items-new", change: "items" });
+  check("orient_for_work on a new member with its change reads its live slot", memberBlock === null, String(memberBlock));
+  const member = await call("orient_for_work", { node_id: "f-items-new", change: "items" });
+  check(
+    "a new member's orient reply focuses it under the change",
+    member.focus === "f-items-new" && member.unlocks === "items" && member.rules?.node_id === "f-items-new",
+    JSON.stringify(member).slice(0, 400)
+  );
+  const nextSlot = await blocked("orient_for_work", { node_id: "f-items-new", change: "items", slot: "next" });
+  check(
+    'orient_for_work slot "next" on a new member Blocks: it has no open revision, its live slot is the change\'s',
+    !!nextSlot && nextSlot.includes("a pre-ship node has no open revision") && /omit slot/i.test(nextSlot) && nextSlot.includes('"items"'),
+    String(nextSlot)
+  );
+  const outsider = await blocked("orient_for_work", { node_id: "f-items-new", change: "other" });
+  check("orient_for_work on a new node with another change still Blocks", !!outsider, String(outsider));
+  const ticked = await call("patch_node_territory", { node_id: "f-items", toggle_checkboxes: [{ id: "qa", checked: true }] });
+  check("a revision item ticks by id", ticked.toggled?.[0] === "- [x] QA sign-off {#qa review}", JSON.stringify(ticked));
+}
+
 await client.close();
 
 // --- upgrade_project drops the ledgers an older release left on shipped nodes ---
@@ -372,16 +640,12 @@ await client.close();
 
   // An open revision keeps its own list while the upgrade strips the live file.
   addLedger(liveOf("f-chk"), "Old chk work");
-  fs.writeFileSync(
-    path.join(root, ...nextOf("f-chk").split("/")),
-    readRel(liveOf("f-chk")).replace(/^state:.*$/m, "state: draft").replace("- [x] Old chk work", "- [ ] Revision work")
-  );
   const second = runUpgrade(root);
   check(
     "upgrade_project strips a live ledger and leaves the open revision's list alone",
     second.status === 0 &&
       !readRel(liveOf("f-chk")).includes("## Atomic Ops") &&
-      readRel(nextOf("f-chk")).includes("- [ ] Revision work"),
+      readRel(revOf("f-chk", "chk")).includes("- [ ] Revision work"),
     second.stderr
   );
   const again = runUpgrade(root);

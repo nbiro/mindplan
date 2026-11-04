@@ -74,6 +74,33 @@ function check(label, condition, detail = "") {
   };
   const reopened = { ...graph, nodes: [...graph.nodes, superseding] };
   check("superseding the keep_whole decision brings it back", fo.fanOutFor(reopened, kept, defaults) !== null);
+  // A shipped node with several open revisions has no `next` view: each revision's records count.
+  const rev = (change, decisions) => ({
+    change,
+    state: "draft",
+    opened_at: shipped.shipped_at,
+    updated_at: shipped.shipped_at,
+    title: "Other",
+    description: "Other.",
+    edges: {},
+    implements: { add: [], remove: [] },
+    tests: { add: [], remove: [] },
+    base: { scalars: {}, sections: {} },
+    conflicts: [],
+    ...(decisions ? { decisions } : {}),
+  });
+  const multiRevision = {
+    ...node("f-revised", shipped),
+    open_revisions: [
+      rev("alpha"),
+      rev("beta", [{ id: "d-unkeep-rev", decision: "Invert it.", alternatives: ["Keep"], why: "Grew.", supersedes: "d-keep" }]),
+    ],
+  };
+  const reopenedByRevision = { ...graph, nodes: [...graph.nodes, multiRevision] };
+  check(
+    "a superseding decision on one of several open revisions brings it back",
+    fo.fanOutFor(reopenedByRevision, kept, defaults) !== null
+  );
   check("warn_at: 2 makes 2 changes warn", fo.fanOutFor(graph, two, { warn_at: 2 }) !== null);
   const all = fo.fanOuts(graph, defaults).map((f) => f.node_id);
   check("fanOuts lists the highest count first, then by id", all.join(",") === "i-delete-site,i-three", all.join(","));
@@ -126,7 +153,7 @@ const client = new Client({ name: "fan-out-test", version: "0.1.0" });
 await client.connect(transport);
 
 async function call(tool, args) {
-  const res = await client.callTool({ name: tool, arguments: args });
+  const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
   const text = res.content?.[0]?.text ?? "";
   if (res.isError) throw new Error(`${tool}: ${text}`);
   return JSON.parse(text || "{}");

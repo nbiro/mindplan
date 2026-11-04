@@ -4,16 +4,17 @@ type: Interaction
 title: "Edit a node's territory"
 description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, a revision's change id, aliases, declared splits, node rules, and attachments."
 state: stable
-shipped_at: 2026-10-31T23:05:25.460Z
-revisions: 4
-churn: 3.979
+shipped_at: 2026-11-03T09:41:45.907Z
+revisions: 6
+churn: 5.76
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-01T10:53:12.172Z
+updated_at: 2026-11-03T16:13:41.978Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-edit-territory/
@@ -52,6 +53,18 @@ Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`)
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-source-index`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
 
+- **Open revisions (0.18.0).** `patch_node_territory`, `put_attachment`, and `remove_attachment` take `change` to pick the revision (optional with at most one open); `slot: "next"` means that revision. Editing a section of a revision that has a conflict on it leaves the conflict until `resolve_conflict`
+
+## Cleanup (0.18)
+
+One graph load per call serves the orientation gate and every pre-write check; a patch on a revision reads only that revision (`loadRevision`) and writes it once (`writeRevision`), body, scalars, and readiness together.
+
+## Checklist ids and kinds
+
+While a stable or unstable node relies on a node in review under the relaxed dependency rule (`f-compiler-rules`), any patch that undoes its build items is Blocked, naming the dependents: the guard judges the body the whole call leaves (toggles, `add_checklist_items`, body, section, and replace together), on a revision's computed body or through the store's `checkBody(before, after)` hook on live, before anything is written. `add_checklist_items` never inserts inside fenced code or between an item and its continuation lines. `split_into` on a revision writes only the parts that revision declares, replacing earlier ones; `[]` clears them. The unlinked-part warning (`unlinkedSplitParts`) judges the deduped list the call wrote and skips parts live already records. The handler leaves the frontmatter and open-revision checks to the store, so a missing slot is Blocked once, by the store.
+
+`toggle_checkboxes` items take `id` (a stable item id such as `spec`, `impl`, `verify`, `review-copy`) or `contains`, which must now equal the item's full text (tag and annotations excluded); a substring that is not the whole text is Blocked naming the matching items and their ids. `add_checklist_items: [{ text, id?, kind? }]` appends items to the Atomic Ops section of the picked slot.
+
 ## Acceptance Criteria
 
 - `section` rewrites one section and leaves the rest; `replace` is Blocked unless the text matches exactly once (or `all`)
@@ -63,19 +76,6 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-s
 - Verified via `npm test`
 
 - `split_into: []` on a shipped node with a split record and no open revision clears `split_at` and `split_into`, keeps `revisions`, and recounts `churn` without the reset; on a node with no split record it is Blocked
-
-## Decisions
-
-### d-split-declared-by-type
-
-- Decision: A split is declared on the node's open revision with patch_node_territory split_into and recorded when it ships, for every node type: a Foundation's parts are Foundations it depends_on, an Interaction's are Interactions sharing one of its Journeys, an Interface's are Interactions it exposes. Live ships never infer one; only init infers past Foundation splits from git.
-- Alternatives:
-  - Foundations only, as in 0.10.0 (an Interaction or Interface whose behavior moved into new actions kept its hotspot rate even though the split was the fix)
-  - Deprecate the old action instead (works when every behavior leaves, as with i-steer-plan; not when the root keeps a core, as with i-orient-plan)
-  - Infer a split from new edges (a new dependency and an extracted part look the same; a false split silences a real hotspot)
-- Why: Only the agent knows a part was extracted; the edge each type needs keeps the import rules intact (a root imports its Foundation parts, sibling actions share an area, an entry point mounts the actions it exposes). Supersedes the Foundation-only rule carried in d-split-declared-on-revision on the deprecated i-steer-plan.
-- Change: hotspot-splits
-- Date: 2026-10-31
 
 ## Attachments
 

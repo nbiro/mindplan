@@ -72,7 +72,11 @@ export type NextPipelineState = (typeof NEXT_PIPELINE_STATES)[number];
 export const MIRROR_STATE = "mirror" as const;
 export type MirrorState = typeof MIRROR_STATE;
 
-/** In-flight evolution of a shipped Foundation/Interaction/Interface (from `<id>.next.mdx`). */
+/**
+ * In-flight evolution of a shipped Foundation/Interaction/Interface (from `<id>.next.mdx`). Also
+ * the shape of the `next` view field `withRevision` (f-revision-model) fills from live plus one
+ * open revision, so gate code that reads `node.next` judges live plus that revision only.
+ */
 export interface NextSlot {
   state: NextPipelineState;
   title: string;
@@ -118,6 +122,58 @@ export interface PlannedEdge {
   change: string;
   type: PlannedEdgeType;
   target: string;
+}
+
+/** Add/remove change to a live id or path list; applied to live, never a snapshot. */
+export type EdgeDelta = { add: string[]; remove: string[] };
+
+/**
+ * What a rebase after a sibling revision shipped could not carry: a section or scalar both live
+ * and the revision edited differently (the revision's text is kept), or a claim the revision adds
+ * that another node now owns live. Resolved with resolve_conflict before in-review.
+ */
+export type RevisionConflict =
+  | { kind: "section"; section: string }
+  | { kind: "scalar"; field: "title" | "description" | "role" }
+  | { kind: "claim"; path: string; owner: string };
+
+/**
+ * One open revision of a shipped Foundation, Interaction, or Interface, keyed by its change id
+ * (`<node folder>/revisions/<change>/<id>.mdx`, with `attachments/` and `decisions/` beside it).
+ * Scalars are the revision's own values; edges, claims, and test links are deltas against live;
+ * `base` holds the hashes of each live scalar and level-2 body section the revision last rebased
+ * on, so shipping a sibling can tell untouched text from edited text.
+ */
+export interface Revision {
+  change: string;
+  /** Branch or PR reference for the change. */
+  change_ref?: string;
+  state: NextPipelineState;
+  /** When the revision was opened. */
+  opened_at: string;
+  updated_at: string;
+  title: string;
+  description: string;
+  /** Proposed Foundation role; absent keeps the live role (unless `role_removed`). */
+  role?: FoundationRole;
+  /** True when the revision removes the live role (no `role`): its ship clears live's. */
+  role_removed?: boolean;
+  /** Outgoing edge deltas by edge type; a missing type carries live unchanged. */
+  edges: Partial<Record<PlannedEdgeType, EdgeDelta>>;
+  /** Owned-file claim delta. */
+  implements: EdgeDelta;
+  /** Linked-test delta. */
+  tests: EdgeDelta;
+  /** Files this revision adds in another node's claimed folder (see `MindPlanNode.attributed`). */
+  attributed?: string[];
+  /** The parts this revision splits out (patch_node_territory); live's record is not copied in. */
+  split_into?: string[];
+  /** Decisions recorded under this revision (its `decisions/` folder), in recorded order. */
+  decisions?: DecisionRecord[];
+  /** Hashes of the live scalars (`scalarHashes`) and level-2 sections (`sectionHashes`). */
+  base: { scalars: Record<string, string>; sections: Record<string, string> };
+  /** Unresolved rebase conflicts; empty when none. */
+  conflicts: RevisionConflict[];
 }
 
 export interface MindPlanNode {
@@ -197,8 +253,16 @@ export interface MindPlanNode {
   attributed?: string[];
   /** MCP-only. Foundation role for import-matrix rules. */
   role?: FoundationRole;
-  /** Present when `<id>.next.mdx` is an open evolution (not a leftover `mirror` file). */
+  /**
+   * Present when `<id>.next.mdx` is an open evolution (not a leftover `mirror` file). Also a view
+   * field: `withRevision(node, change)` fills it from live plus that open revision.
+   */
   next?: NextSlot;
+  /**
+   * MCP-only, shipped node. Its open revisions, one per change id, from
+   * `<node folder>/revisions/<change>/`. Pre-ship nodes have none (they keep their live `change`).
+   */
+  open_revisions?: Revision[];
   /**
    * Own node rules — the trimmed `## Rules` section of the live `<id>.mdx` body.
    * Omitted when empty. Slot-independent: `next` carries no separate rules.
@@ -243,6 +307,8 @@ export interface DecisionRecord {
   date?: string;
   /** The owner decided the node stays one node: hotspot detection skips it while this is active. */
   keep_whole?: boolean;
+  /** Ids of the nodes the decision shapes, when stored as its own file (`decisions/<id>.md`). */
+  nodes?: string[];
 }
 
 /** `value` decayed from `fromIso` to `toIso`, halving every `halfLifeDays` (never grows backwards). */
@@ -276,15 +342,6 @@ export interface DecisionEntry extends DecisionRecord {
   superseded_by?: string;
   via?: RuleVia;
   distance?: number;
-}
-
-/**
- * A node's decisions: the open next slot's while a shipped node evolves (that file starts as a
- * copy of live), else the live file's.
- */
-export function activeDecisions(node: MindPlanNode): DecisionRecord[] {
-  if (node.next) return node.next.decisions ?? [];
-  return node.decisions ?? [];
 }
 
 /**

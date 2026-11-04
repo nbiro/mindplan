@@ -46,7 +46,7 @@ async function session() {
   const client = new Client({ name: "agent-guidance-test", version: "0.1.0" });
   await client.connect(transport);
   const raw = async (tool, args) => {
-    const res = await client.callTool({ name: tool, arguments: args });
+    const res = await client.callTool({ name: tool, arguments: tool === "run_check" ? { compact: false, ...args } : args });
     return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
   };
   const call = async (tool, args) => {
@@ -171,7 +171,7 @@ const FOUNDATION_SECTIONS = {
     section: "## Shared Substrate Spec",
     text: "- `src/pay/cards.ts` charges a card\n- `src/pay/cards-retry.ts` retries a decline",
   });
-  await call("set_implementation_files", { node_id: "f-cards", files: ["src/pay/cards.ts"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-cards", files: ["src/pay/cards.ts"] });
   const plan = await call("run_check", { change: "cards" });
   check(
     "a plan-only change reports one planned: info line per node and no stale: line for its paths",
@@ -225,7 +225,12 @@ const FOUNDATION_SECTIONS = {
     walk.text
   );
   const both = await raw("orient_for_work", { change: "cards", node_id: "f-cards" });
-  check("change with node_id is Blocked", both.error, both.text);
+  // A pre-ship member of the change reads its live slot, which is the change's (orient_for_work SPEC).
+  check(
+    "change with node_id on a pre-ship member reads it and unlocks the change",
+    !both.error && both.text.includes('"focus":"f-cards"') && both.text.includes('"unlocks":"cards"'),
+    both.text
+  );
   const missing = await raw("orient_for_work", { change: "no-such-change" });
   check("a change with no members is Blocked", missing.error && missing.text.includes("has no members"), missing.text);
   const oriented = await call("orient_for_work", { change: "cards" });

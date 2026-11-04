@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { ORIENT_SECTIONS } from "./sections.js";
 import {
   NODE_TYPES,
 } from "../../foundations/f-domain-model/types.js";
@@ -16,6 +17,7 @@ import {
   type ToolDef,
   NODE_ID,
   CHANGE_ID,
+  CHANGE_ARG,
   AREA,
   INCLUDE_INHERITED_DECISIONS,
   SECTION_READ,
@@ -111,6 +113,8 @@ export const TOOLS: ToolDef[] = [
         "its own decisions (active ones; an empty list may still have superseded history, and a live decision replaced on the open next slot is hidden too: pass include_superseded to see the trail, as in list_decisions), " +
         "inherited_decisions ({ count, nodes }, plus entries with include_inherited_decisions), resolved_rules (every node rule that reaches it: it counts as orienting on the node), attachment paths, and filenames. " +
         "Includes next slot when an evolution is in progress (`next.record` + `next.body` + `next.decisions`). " +
+        "A node with open revisions lists them in revisions ([{ change, state, title?, conflicts }], no bodies); change reads that revision as the next slot and the reply says unlocks: <change>. " +
+        "With several revisions and no change, only live comes back and next says to pass change. " +
         "Both slots come back unless slot names one; section returns one section of each body.",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
@@ -121,10 +125,11 @@ export const TOOLS: ToolDef[] = [
         include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
         slot: SLOT_READ,
         section: SECTION_READ,
+        change: CHANGE_ARG,
       },
     },
-    ({ node_id, include_superseded, include_inherited_decisions, slot, section }) =>
-      getNodeContext({ node_id, include_superseded, include_inherited_decisions, slot, section })
+    ({ node_id, include_superseded, include_inherited_decisions, slot, section, change }) =>
+      getNodeContext({ node_id, include_superseded, include_inherited_decisions, slot, section, change })
   ),
   defineTool(
     "orient_for_work",
@@ -137,6 +142,7 @@ export const TOOLS: ToolDef[] = [
         "pick one and call again with node_id, or pass change alone to orient on every member of a change in one reply (open revisions, planned sources, and the nodes holding a decision recorded under it as kind \"decision\"; each member's rules_from, each rule source's text once, the members holding decisions), which clears the write gate for all of them. When the top row is a clear winner (its exact id, the only match, or twice the next score) the full node comes back with the rows and auto_focus: true. " +
         "With node_id it returns the full node at depth: record and body (get_node_context), owned files, " +
         "the body being the active slot's (the open next while a revision is open; slot picks one, section cuts it to one section), " +
+        "and revisions ([{ change, state, title?, conflicts }]) when the node has open revisions: with several, pass change with node_id to read that revision (the reply says unlocks: <change>); without it the body is live and next says to pass change. " +
         "and at full the 1-hop neighborhood and get_blast_radius for a Foundation, Interaction, or Interface, plus stability ({ fan_in, rate, median_rate, revisions?, split_at?, split_into?, hotspot?, fan_out? }): how many nodes depend on it directly and how often it shipped lately against the project's median; check it before choosing open_next. A pre-ship node's fan_out ({ count, changes }) names the other unshipped changes it depends on; several mean it may need to know every feature of a kind. " +
         "A full reply carries shape while the node has a transition ahead: the required sections of its active slot, each present, missing, or stub, and the gates that check them. " +
         "Writes that act on a node (set_implementation_files, set_test_files, update_node_status, patch_node_territory, patch_node_rules, open_next, record_decision, attachments, force_unship, link_nodes / unlink_nodes on the source) " +
@@ -154,7 +160,7 @@ export const TOOLS: ToolDef[] = [
           .describe("Free-text query to rank nodes. Required if node_id and change are omitted."),
         node_id: NODE_ID.optional().describe("Force focus to this node when present."),
         change: CHANGE_ID.optional().describe(
-          "Orient on every member of this change (open revisions, planned sources, and nodes holding a decision under it) in one reply; pass it without query or node_id."
+          "Alone: orient on every member of this change (each node's revision of it, planned sources, and nodes holding a decision under it) in one reply. With node_id: read that node's open revision of this change."
         ),
         type: z.enum(NODE_TYPES).optional().describe("Optional type filter before ranking."),
         limit: z
@@ -182,9 +188,15 @@ export const TOOLS: ToolDef[] = [
         area: AREA,
         slot: SLOT_READ,
         section: SECTION_READ,
+        sections: z
+          .array(z.string())
+          .optional()
+          .describe(
+            `Return only these parts (plus focus and query): ${ORIENT_SECTIONS.join(", ")}. A reply without "rules" does not clear the write gate. Default: every part depth returns.`
+          ),
       },
     },
-    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section }) =>
+    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section, sections }) =>
       orientForWork({
         query,
         node_id,
@@ -198,6 +210,7 @@ export const TOOLS: ToolDef[] = [
         area,
         slot,
         section,
+        sections,
       })
   ),
 ];

@@ -378,27 +378,46 @@ get_blast_radius({ node_id: "i-checkout-split" })
 
 open_next({
   node_id: "i-checkout-split",
+  change: "split-calc",
   description: "Revised split calculation"
 })
 → live node stays stable, still serving under <id>.mdx
-→ <id>.next.mdx created: { state: "draft", title, description, belongs_to, depends_on, leads_to } inherited from current
+→ revisions/split-calc/<id>.mdx created in draft: title and description its own, edges/claims/tests as empty deltas against live
+→ revisions: [{ change: "split-calc", state: "draft" }]   // plus any other change's open revision of this node
 
-update_node_status({ node_id: "i-checkout-split", new_status: "ready" })
-update_node_status({ node_id: "i-checkout-split", new_status: "in-progress" })
-# Prefer file tools on next_path to toggle checkboxes / edit body; optional:
-# patch_node_territory({ node_id: "i-checkout-split", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
-→ status transitions apply to <id>.next.mdx automatically while it exists (record.next.state advances; live record.state is unchanged)
+set_implementation_files({ node_id: "i-checkout-split", change: "split-calc", add: ["src/interactions/i-checkout-split/rounding.ts"] })
+→ stored on the revision as implements_add; live claims unchanged until ship
 
-update_node_status({ node_id: "i-checkout-split", new_status: "in-review" })
+update_node_status({ node_id: "i-checkout-split", change: "split-calc", new_status: "ready" })
+update_node_status({ node_id: "i-checkout-split", change: "split-calc", new_status: "in-progress" })
+patch_node_territory({ node_id: "i-checkout-split", change: "split-calc", toggle_checkboxes: [{ contains: "Split calculation implemented", checked: true }] })
+→ status moves apply to that revision (revision_state advances; live state is unchanged)
+# change may be omitted while this is the node's only open revision; with several it is required
+
+update_node_status({ node_id: "i-checkout-split", change: "split-calc", new_status: "in-review" })
 
 // After external review approves:
-update_node_status({ node_id: "i-checkout-split", new_status: "ship" })
-→ ship is only legal from next in-review; re-checks Infrastructure First against next's depends_on
-→ promotes <id>.next.mdx over <id>.mdx (title/description/body/edges); <id>.next.mdx is deleted
-→ response: { promoted_next: true, new_state: "stable" | "unstable", next_state: null }
+update_node_status({ node_id: "i-checkout-split", change: "split-calc", new_status: "ship" })
+→ ship is only legal from the revision's in-review; gates judge live plus this change only
+→ writes live ⊕ revision onto <id>.mdx (title/description/body, deltas applied); revisions/split-calc/ is deleted
+→ response: { promoted_next: true, new_state: "stable" | "unstable", rebased?: [{ change: "tips", conflicts: ["section:## PRD"] }] }
+
+// A sibling revision left with a conflict:
+resolve_conflict({ node_id: "i-checkout-split", change: "tips", section: "## PRD", take: "text", text: "<both changes merged>" })
+→ conflicts: []   // tips may now move to in-review
 ```
 
-`discard_next({ node_id: "i-checkout-split" })` abandons the evolution at any point — deletes `<id>.next.mdx` and `next-attachments/`; `<id>.mdx` is untouched.
+`discard_next({ node_id: "i-checkout-split", change: "split-calc" })` abandons that revision at any point — deletes `revisions/split-calc/` (its file, attachments, and decisions); `<id>.mdx` and other revisions are untouched.
+
+One decision that shapes several nodes is recorded once:
+
+```
+record_decision({ node_id: "i-checkout-split", nodes: ["i-checkout-split", "if-checkout-page"], change: "split-calc",
+  decision: "Round each share down and give the remainder to the payer.",
+  alternatives: ["Round half-even per share (shares no longer sum to the bill)"],
+  why: "Shares must always sum to the bill total." })
+→ decisions/d-round-each-share-down.md in revisions/split-calc/; clears the decision gate of both nodes' revisions of split-calc
+```
 
 ## Example — multi-template platform with a composition root
 
@@ -407,7 +426,7 @@ A platform serves two site templates. Each template is its own Interface over th
 ```
 create_node({ id: "f-template-registry", type: "Foundation", role: "infra",
   title: "Template registry", description: "Infra — imports every template Interface for the route dispatcher and redirect list" })
-set_implementation_files({ node_id: "f-template-registry", files: ["src/foundations/f-template-registry/"] })
+set_implementation_files({ node_id: "f-template-registry", add: ["src/foundations/f-template-registry/"] })
 → import_violations: [
     { file: ".../registry.ts", imports: "src/interfaces/if-template-a/index.ts",
       fix: { tool: "link_nodes", args: { source_id: "f-template-registry", target_id: "if-template-a", edge_type: "mounts" } } },

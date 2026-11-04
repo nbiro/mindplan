@@ -23,7 +23,8 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call when get_project's version, a Blocked: Version, or the check names upgrade_project: the graph is behind this server, and every other graph tool is Blocked until it is upgraded. " +
         "Runs every migration (each is idempotent), stamps mindplan/version.json with this server's migration level, and returns " +
-        "{ from_level, to_level, changed_files, migrations, leftovers, pointer_outdated, pointer, guide }: leftovers are agent files older releases installed outside mindplan/ (delete them), " +
+        "{ from_level, to_level, changed_files, migrations, leftovers, pointer_outdated, pointer, guide }: migrations reports each pass " +
+        "(level 4: revisionsMoved — legacy next files moved to revisions/<change>/; decisionsSplit — ## Decisions sections split into decisions/<id>.md; mapIgnored — map.md added to mindplan/.gitignore and untracked); leftovers are agent files older releases installed outside mindplan/ (delete them), " +
         "pointer_outdated says MINDPLAN.md or the agent files need the pointer text, and guide lists the steps. Commit the upgrade on its own. " +
         "Blocked without a graph (call setup_project) or when the graph is newer than this server.",
       inputSchema: {},

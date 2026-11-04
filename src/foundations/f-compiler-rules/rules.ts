@@ -16,7 +16,6 @@ import type {
   ProductionState,
 } from "../f-domain-model/types.js";
 import {
-  activeChange,
   BUG_STATES,
   BUG_TRANSITIONS,
   EXECUTION_STATES,
@@ -33,12 +32,26 @@ import {
 } from "../f-domain-model/types.js";
 import {
   claimEntryExists,
+  expandClaims,
 } from "../f-source-index/claims.js";
+import { listResolvedImports } from "../f-source-index/imports.js";
+import { parseChecklistItems, type ChecklistItem } from "../f-territory-store/checklist.js";
+import { countCheckboxesInText } from "../f-territory-store/store.js";
 import {
-  countUncheckedBoxes,
-  territorySlotFilename,
-} from "../f-territory-store/store.js";
-import { assertMinimumTerritoryShape } from "./shape.js";
+  graphUnder,
+  openChanges,
+  resolveRevisionChange,
+  revisionFor,
+  withRevision,
+} from "../f-revision-model/index.js";
+import { assertMinimumTerritoryShape, slotSource } from "./shape.js";
+import { buildItemsTickedIn, dependencyGate } from "./checklist-gates.js";
+
+export { openHumanItems, type OpenHumanItem } from "./checklist-gates.js";
+
+/** How a dependency stops holding up its dependents' ship. */
+const DEPENDENCY_READY =
+  "A dependency counts once stable, or in-review with at least one checklist item, every build item ticked, and its own dependencies counting the same way.";
 
 export function blocked(message: string): Error {
   return new Error(`Blocked: ${message}`);
@@ -61,29 +74,81 @@ function runMinimumTerritoryShape(
   }
 }
 
-/**
- * Open revisions in a change: Foundations, Interactions, and Interfaces whose active change is
- * `change` — a shipped node with an open next, or a pre-ship node that is not retired. Draft and
- * ready revisions belong too: the change names them.
- */
-export function changeMembers(graph: MindPlanGraph, change: string): MindPlanNode[] {
-  return graph.nodes.filter((n) => isOpenChangeRevision(n) && activeChange(n) === change);
+/** True when the node's `next` is the view of one of its open revisions. */
+function nextIsRevisionView(n: MindPlanNode): boolean {
+  return Boolean(n.next?.change && revisionFor(n, n.next.change));
 }
 
-/** A node that is an open revision of some change (see `changeMembers`). */
-function isOpenChangeRevision(n: MindPlanNode): boolean {
-  if (!isPipelineNodeType(n.type) || !activeChange(n)) return false;
-  if (n.next) return true;
-  return !n.shipped_at && n.state !== "cancelled" && n.state !== "deprecated";
+/**
+ * The graph with every `next` view the loader filled from a single open revision removed: live
+ * only, so no change's revision is visible.
+ */
+export function liveGraph(graph: MindPlanGraph): MindPlanGraph {
+  if (!graph.nodes.some(nextIsRevisionView)) return graph;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((n) => {
+      if (!nextIsRevisionView(n)) return n;
+      const copy = { ...n };
+      delete copy.next;
+      return copy;
+    }),
+  };
+}
+
+/**
+ * The graph a revision of `change` is judged against: live with only that change's revisions applied (`graphUnder` over `liveGraph`). A next view the loader filled from a
+ * revision of another change is invisible here.
+ */
+export function revisionGraph(graph: MindPlanGraph, change: string): MindPlanGraph {
+  return graphUnder(liveGraph(graph), change);
+}
+
+/**
+ * The node as change `change` sees it: live plus its revision of `change` (`withRevision`), or the
+ * node as is when it has none.
+ */
+export function nodeUnder(node: MindPlanNode, change: string): MindPlanNode {
+  return revisionFor(node, change) ? withRevision(node, change) : node;
+}
+
+/** True when `n` is a member of change `change` (see `changeMembers`). */
+export function isRevisionOf(n: MindPlanNode, change: string): boolean {
+  if (!isPipelineNodeType(n.type)) return false;
+  if (n.shipped_at) return Boolean(revisionFor(n, change));
+  return n.change === change && n.state !== "cancelled" && n.state !== "deprecated";
+}
+
+/**
+ * Open revisions in a change: Foundations, Interactions, and Interfaces that belong to `change` —
+ * a shipped node with an open revision of it, or a pre-ship node
+ * whose live `change` it is and that is not retired. Draft and ready revisions belong too. A
+ * shipped member is returned as `nodeUnder(node, change)`: a view whose `next` is that change's
+ * revision, so slot-reading code judges this change only. Views are copies: write through the
+ * graph's own node (find it by id).
+ */
+export function changeMembers(graph: MindPlanGraph, change: string): MindPlanNode[] {
+  return graph.nodes.filter((n) => isRevisionOf(n, change)).map((n) => nodeUnder(n, change));
+}
+
+/** Every change a node is an open revision of: its open revisions, or its pre-ship change. */
+export function nodeChanges(n: MindPlanNode): string[] {
+  if (!isPipelineNodeType(n.type)) return [];
+  if (n.shipped_at) return [...new Set(openChanges(n))].sort();
+  if (!n.change || n.state === "cancelled" || n.state === "deprecated") return [];
+  return [n.change];
 }
 
 /** Every change id that has at least one open revision. */
 export function changesWithRevisions(graph: MindPlanGraph): Set<string> {
   const out = new Set<string>();
-  for (const n of graph.nodes) {
-    if (isOpenChangeRevision(n)) out.add(activeChange(n)!);
-  }
+  for (const n of graph.nodes) for (const c of nodeChanges(n)) out.add(c);
   return out;
+}
+
+/** Every open revision of a node as a view each (`nodeUnder`). Empty when none is open. */
+export function revisionViews(n: MindPlanNode): MindPlanNode[] {
+  return openChanges(n).map((c) => nodeUnder(n, c));
 }
 
 export function findNode(graph: MindPlanGraph, id: string): MindPlanNode {
@@ -106,11 +171,6 @@ export function interactionsOfCapability(graph: MindPlanGraph, capabilityId: str
     .filter((e) => e.type === "belongs_to" && e.target === capabilityId)
     .map((e) => findNode(graph, e.source))
     .filter((n) => n.type === "Interaction");
-}
-
-/** @deprecated Use interactionsOfCapability */
-export function workflowsOfCapability(graph: MindPlanGraph, capabilityId: string): MindPlanNode[] {
-  return interactionsOfCapability(graph, capabilityId);
 }
 
 function isShipped(node: MindPlanNode): boolean {
@@ -145,8 +205,12 @@ function runCompletionCheck(
   targetLabel: string,
   slot: "current" | "next" = "current"
 ): void {
-  const unchecked = countUncheckedBoxes(node, slot);
-  const file = territorySlotFilename(node, slot);
+  const source = slotSource(node, slot);
+  if (source.text === null) {
+    throw blocked(`${slot} file not found for node "${node.id}" (expected at ${source.relPath}).`);
+  }
+  const unchecked = countCheckboxesInText(source.text).unchecked;
+  const file = source.file;
   if (unchecked > 0) {
     throw blocked(
       `Completion Check. ${unchecked} unchecked checkbox(es) remain in ${node.id}/${file}. All [ ] items must be [x] before moving to "${targetLabel}".`
@@ -169,7 +233,9 @@ export function assertPipelineTerritoryScalarsEditable(
   }
   if (slot === "next") {
     if (!node.next) {
-      throw blocked(`cannot edit ${field} on next: "${node.id}" has no ${node.id}.next.mdx.`);
+      throw blocked(
+        `cannot edit ${field} on next: "${node.id}" has no open revision. Open one with open_next({ node_id: "${node.id}", change }).`
+      );
     }
     return;
   }
@@ -564,21 +630,38 @@ export function assertEffectiveDependsOnAcyclic(graph: MindPlanGraph): void {
   }
 }
 
-/** Validates open_next preconditions (Rule 9). */
-export function validateOpenNext(node: MindPlanNode): void {
+/**
+ * Validates open_next preconditions (Rule 9). With `change`, a shipped node may hold several open
+ * revisions: only a second revision of the same change is
+ * Blocked. Without `change` (legacy callers), any open evolution Blocks.
+ */
+export function validateOpenNext(node: MindPlanNode, change?: string): void {
   if (!isPipelineNodeType(node.type)) {
-    throw blocked(
-      `only Foundations, Interactions, and Interfaces can open a next evolution. Got ${node.type} "${node.id}".`
-    );
+    throw blocked(`only Foundations, Interactions, and Interfaces open revisions. Got ${node.type} "${node.id}".`);
   }
   if (node.state !== "stable" && node.state !== "unstable") {
     throw blocked(
-      `only shipped Foundations/Interactions/Interfaces (stable or unstable) can open next. "${node.id}" is currently "${node.state}".`
+      `only shipped Foundations/Interactions/Interfaces (stable or unstable) open revisions. "${node.id}" is currently "${node.state}".`
     );
+  }
+  if (change !== undefined) {
+    const open = revisionFor(node, change);
+    if (open) {
+      throw blocked(
+        `"${node.id}" already has an open revision of change "${change}" in state "${open.state}". ` +
+          `Edit it (pass change: "${change}"), ship it, or discard_next({ node_id: "${node.id}", change: "${change}" }).`
+      );
+    }
+    return;
   }
   if (node.next) {
     throw blocked(
-      `"${node.id}" already has an open evolution in state "${node.next.state}". Ship or discard_next before opening another.`
+      `"${node.id}" already has an open revision in state "${node.next.state}". Ship or discard_next before opening another.`
+    );
+  }
+  if (node.open_revisions?.length) {
+    throw blocked(
+      `"${node.id}" already has open revisions ${openChanges(node).map((c) => `"${c}"`).join(", ")}; pass change to open another.`
     );
   }
   // A shipped node has no next file until open_next writes one.
@@ -741,11 +824,12 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
   if (!isPipelineNodeType(node.type)) {
     throw blocked(`only Foundations, Interactions, and Interfaces can ship to production.`);
   }
+  const dependencySatisfied = dependencyGate(graph);
 
   if (node.next) {
     if (node.next.state !== "in-review") {
       throw blocked(
-        `ship is only allowed from next in-review. "${node.id}" next is currently "${node.next.state}".`
+        `ship is only allowed from a revision in-review. "${node.id}" revision is currently "${node.next.state}".`
       );
     }
     runCompletionCheck(node, SHIP_TRANSITION, "next");
@@ -757,11 +841,11 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
       const depIds = node.next.depends_on ?? [];
       const deps = depIds.map((id) => findNode(graph, id));
       const foundations = deps.filter((n) => n.type === "Foundation");
-      const notStable = foundations.filter((n) => n.state !== "stable");
+      const notStable = foundations.filter((n) => !dependencySatisfied(n));
       if (notStable.length > 0) {
         const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Infrastructure First. Interaction "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
+          `Infrastructure First. Interaction "${node.id}" next cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
     }
@@ -769,22 +853,22 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     if (node.type === "Interface") {
       const exposedIds = node.next.exposes ?? [];
       const exposed = exposedIds.map((id) => findNode(graph, id));
-      const notStable = exposed.filter((n) => n.state !== "stable");
+      const notStable = exposed.filter((n) => !dependencySatisfied(n));
       if (notStable.length > 0) {
         const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Behavior First. Interface "${node.id}" next cannot ship while exposed Interactions are not stable: ${list}.`
+          `Behavior First. Interface "${node.id}" next cannot ship while exposed Interactions are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
       const depIds = node.next.depends_on ?? [];
       const foundations = depIds
         .map((id) => findNode(graph, id))
         .filter((n) => n.type === "Foundation");
-      const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+      const foundationsNotStable = foundations.filter((n) => !dependencySatisfied(n));
       if (foundationsNotStable.length > 0) {
         const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
         throw blocked(
-          `Infrastructure First. Interface "${node.id}" next cannot ship while linked Foundations are not stable: ${list}.`
+          `Infrastructure First. Interface "${node.id}" next cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
         );
       }
     }
@@ -805,32 +889,32 @@ function validateShipTransition(graph: MindPlanGraph, node: MindPlanNode): Produ
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const notStable = foundations.filter((n) => n.state !== "stable");
+    const notStable = foundations.filter((n) => !dependencySatisfied(n));
     if (notStable.length > 0) {
       const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Interaction "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+        `Infrastructure First. Interaction "${node.id}" cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
   }
 
   if (node.type === "Interface") {
     const exposed = edgesFrom(graph, node.id, "exposes");
-    const notStable = exposed.filter((n) => n.state !== "stable");
+    const notStable = exposed.filter((n) => !dependencySatisfied(n));
     if (notStable.length > 0) {
       const list = notStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Behavior First. Interface "${node.id}" cannot ship while exposed Interactions are not stable: ${list}.`
+        `Behavior First. Interface "${node.id}" cannot ship while exposed Interactions are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
     const foundations = edgesFrom(graph, node.id, "depends_on").filter(
       (n) => n.type === "Foundation"
     );
-    const foundationsNotStable = foundations.filter((n) => n.state !== "stable");
+    const foundationsNotStable = foundations.filter((n) => !dependencySatisfied(n));
     if (foundationsNotStable.length > 0) {
       const list = foundationsNotStable.map((n) => `"${n.id}" (${n.state})`).join(", ");
       throw blocked(
-        `Infrastructure First. Interface "${node.id}" cannot ship while linked Foundations are not stable: ${list}.`
+        `Infrastructure First. Interface "${node.id}" cannot ship while linked Foundations are not stable: ${list}. ${DEPENDENCY_READY}`
       );
     }
   }
@@ -945,6 +1029,145 @@ const RETIRED_OR_CLOSED = new Set([
 ]);
 
 /**
+ * The stable/unstable nodes that may have shipped on the relaxed dependency rule, relying on `node`
+ * while it was only in review: those with a live depends_on edge to it (or, for an Interaction, a
+ * live exposes edge from an Interface), while `node` is not stable. Sorted by id; none once stable.
+ */
+export function shippedDependentsRelying(graph: MindPlanGraph, node: MindPlanNode): MindPlanNode[] {
+  if (node.state === "stable") return [];
+  const byId = new Map<string, MindPlanNode>();
+  for (const e of graph.edges) {
+    if (e.target !== node.id || (e.type !== "depends_on" && e.type !== "exposes")) continue;
+    const source = graph.nodes.find((n) => n.id === e.source);
+    if (source && source.id !== node.id && isProductionState(source.state)) byId.set(source.id, source);
+  }
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+const RELYING_FIX =
+  'or move those dependents back with force_unship (ask the user; confirm: "unship:<id>").';
+
+/**
+ * A shipped node may have shipped on the relaxed dependency rule, relying on a dependency that was
+ * only in review. Cancelling that dependency (pre-ship), or taking back what made it count, would
+ * leave the dependent relying on something that never ships, so it is Blocked while `node` is not
+ * stable and a stable/unstable node depends on it (`shippedDependentsRelying`). `what` names the
+ * act, e.g. `cancel "f-x"`.
+ */
+export function assertNoShippedDependentsRelying(graph: MindPlanGraph, node: MindPlanNode, what: string): void {
+  const ids = shippedDependentsRelying(graph, node).map((n) => n.id);
+  if (ids.length === 0) return;
+  throw blocked(
+    `cannot ${what}: shipped nodes rely on "${node.id}" (${ids.map((id) => `"${id}"`).join(", ")}), and it is not stable yet. ` +
+      `Ship "${node.id}" first, ${RELYING_FIX}`
+  );
+}
+
+/**
+ * The relied-on slot may not lose what made it count: a move of `node`'s active slot back from
+ * in-review (to in-progress, the only step back) is Blocked while stable/unstable nodes rely on it.
+ */
+export function assertNoRetreatUnderShippedDependents(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  from: string,
+  to: string
+): void {
+  if (from !== "in-review" || to === SHIP_TRANSITION || to === "cancelled" || to === "in-review") return;
+  assertNoShippedDependentsRelying(graph, node, `move "${node.id}" back from in-review to "${to}"`);
+}
+
+/**
+ * Taking back a build item of `node`'s active slot while it is in review is Blocked while
+ * stable/unstable nodes rely on it. Dependents can only have shipped relying on the slot when
+ * every build item was done (the relaxed dependency rule, `buildItemsTicked`), so the guard holds
+ * only when the body before the call met that rule: then the body after may hold no build item
+ * not done and no fewer done build items. A body that already had an open build item was not
+ * relied on, and its build items are not guarded. `before` and `after` are the slot text before
+ * and after every edit of one call (toggles, added items, body, section, and replace edits,
+ * conflict resolution), so no edit path can take a tick back. Rewording a done item that stays
+ * done passes, as does adding a done one.
+ */
+export function assertNoUntickUnderShippedDependents(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  slotState: string | undefined,
+  before: string,
+  after: string
+): void {
+  if (slotState !== "in-review" || before === after) return;
+  const beforeItems = parseChecklistItems(before);
+  if (!buildItemsTickedIn(beforeItems)) return;
+  const undone = undoneBuildItems(beforeItems, after);
+  if (!undone) return;
+  assertNoShippedDependentsRelying(
+    graph,
+    node,
+    `untick, remove, or add unticked build items of "${node.id}" in review (${undone})`
+  );
+}
+
+/**
+ * What one call takes back from a slot whose build items were all done (`beforeItems`, parsed from
+ * the body before): `null` when the body after has no build item not done and no fewer done build
+ * items; otherwise a phrase naming the build items not done after the call, each marked
+ * "(was done)" when a done item of the same id (or, untagged, the same text) went with it, and
+ * stating the done count before and after.
+ */
+function undoneBuildItems(beforeItems: ChecklistItem[], after: string): string | null {
+  const doneBefore = beforeItems.filter((i) => i.kind === "build" && i.done);
+  const afterItems = parseChecklistItems(after).filter((i) => i.kind === "build");
+  const open = afterItems.filter((i) => !i.done);
+  const doneAfter = afterItems.length - open.length;
+  if (open.length === 0 && doneAfter >= doneBefore.length) return null;
+  // Done items of the body before that the body after no longer holds done, by id or text.
+  const key = (i: ChecklistItem): string => (i.id ? `#${i.id}` : `=${i.text}`);
+  const lost = new Map<string, number>();
+  for (const i of doneBefore) lost.set(key(i), (lost.get(key(i)) ?? 0) + 1);
+  for (const i of afterItems) if (i.done && lost.get(key(i))) lost.set(key(i), lost.get(key(i))! - 1);
+  const named = open.map((i) => {
+    const wasDone = (lost.get(key(i)) ?? 0) > 0;
+    if (wasDone) lost.set(key(i), lost.get(key(i))! - 1);
+    return `"${i.id ?? i.text}"${wasDone ? " (was done)" : ""}`;
+  });
+  const parts: string[] = [];
+  if (open.length > 0) parts.push(`not done after this call: ${named.join(", ")}`);
+  parts.push(`done build items ${doneBefore.length} before, ${doneAfter} after`);
+  return parts.join("; ");
+}
+
+/**
+ * Discarding revision `change` of a shipped node is Blocked when a stable/unstable dependent relied
+ * on that revision's view: one of its owned files imports a file that only the revision claims
+ * (live does not). A dependent that rests on live alone does not hold the discard.
+ */
+export function assertNoShippedDependentsOnRevision(graph: MindPlanGraph, node: MindPlanNode, change: string): void {
+  if (!node.shipped_at) return;
+  const dependents = shippedDependentsRelying(graph, node);
+  if (dependents.length === 0) return;
+  const liveFiles = new Set(expandClaims(node.implements));
+  const onlyRevision = new Set(
+    expandClaims(withRevision(node, change).next?.implements).filter((f) => !liveFiles.has(f))
+  );
+  if (onlyRevision.size === 0) return;
+  const relying: string[] = [];
+  for (const dep of dependents) {
+    for (const file of expandClaims(dep.implements)) {
+      const hit = listResolvedImports(file).find((imp) => onlyRevision.has(imp.to));
+      if (hit) {
+        relying.push(`"${dep.id}" (${hit.from} imports ${hit.to})`);
+        break;
+      }
+    }
+  }
+  if (relying.length === 0) return;
+  throw blocked(
+    `cannot discard revision "${change}" of "${node.id}": shipped nodes rely on files only that revision claims: ` +
+      `${relying.join(", ")}. Ship the revision first, ${RELYING_FIX}`
+  );
+}
+
+/**
  * Pre-ship abandon: cancel is blocked while `<id>.next.mdx` is open or any active
  * (non-retired) node still depends_on this node — including proposed
  * depends_on on another node's open `<id>.next.mdx`.
@@ -957,18 +1180,24 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
   }
   if (node.next) {
     throw blocked(
-      `cannot cancel "${node.id}" while an open evolution exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot cancel "${node.id}" while an open revision exists (state "${node.next.state}"). Call discard_next first.`
     );
   }
+  assertNoShippedDependentsRelying(graph, node, `cancel "${node.id}"`);
   const byId = new Map<string, MindPlanNode>();
   for (const dep of dependentsOf(graph, node.id)) {
     if (!RETIRED_OR_CLOSED.has(dep.state)) byId.set(dep.id, dep);
   }
+  const viaRevision = new Map<string, string>();
   for (const other of graph.nodes) {
     if (other.id === node.id) continue;
     if (RETIRED_OR_CLOSED.has(other.state)) continue;
-    if (other.next?.depends_on?.includes(node.id)) {
-      byId.set(other.id, other);
+    for (const view of other.next ? [other, ...revisionViews(other)] : revisionViews(other)) {
+      if (view.next?.depends_on?.includes(node.id)) {
+        byId.set(other.id, other);
+        viaRevision.set(other.id, view.next.state);
+        break;
+      }
     }
   }
   if (node.type === "Interface") {
@@ -983,8 +1212,8 @@ function validateCancelTransition(graph: MindPlanGraph, node: MindPlanNode): voi
   if (activeDependents.length > 0) {
     const list = activeDependents
       .map((n) =>
-        n.next?.depends_on?.includes(node.id)
-          ? `"${n.id}" (next depends_on, next: ${n.next.state})`
+        viaRevision.has(n.id)
+          ? `"${n.id}" (next depends_on, next: ${viaRevision.get(n.id)})`
           : `"${n.id}" (${n.state})`
       )
       .join(", ");
@@ -1001,9 +1230,10 @@ function resolveNextStatusChange(
   newStatus: string
 ): StatusChangeResult {
   const next = node.next!;
+  if (newStatus === "in-review" || newStatus === SHIP_TRANSITION) assertNoRevisionConflicts(node, next.change);
   if (newStatus === "deprecated" || newStatus === "cancelled") {
     throw blocked(
-      `cannot set "${newStatus}" on "${node.id}" while an open evolution exists. Call discard_next first, or ship the evolution.`
+      `cannot set "${newStatus}" on "${node.id}" while an open revision exists. Call discard_next first, or ship the revision.`
     );
   }
 
@@ -1020,7 +1250,7 @@ function resolveNextStatusChange(
 
   const current = next.state;
   if (newStatus === current) {
-    throw blocked(`next slot of "${node.id}" is already in state "${current}".`);
+    throw blocked(`the revision of "${node.id}" is already in state "${current}".`);
   }
   if (!EXECUTION_TRANSITIONS[current]?.includes(newStatus)) {
     throw blocked(
@@ -1028,6 +1258,7 @@ function resolveNextStatusChange(
         `Allowed from "${current}": ${EXECUTION_TRANSITIONS[current]?.join(", ") || "(none)"}.`
     );
   }
+  assertNoRetreatUnderShippedDependents(graph, node, current, newStatus);
 
   if (node.type === "Interaction") {
     validateInteractionRulesForEdges(
@@ -1052,7 +1283,54 @@ function resolveNextStatusChange(
 }
 
 /**
- * Resolves and validates a status mutation. Throws "Blocked: ..." on violation.
+ * Blocked while the node's open revision of `change` holds unresolved rebase conflicts: it may not
+ * move to in-review or ship until each is resolved.
+ */
+export function assertNoRevisionConflicts(node: MindPlanNode, change: string | undefined): void {
+  if (!change) return;
+  const conflicts = revisionFor(node, change)?.conflicts ?? [];
+  if (conflicts.length === 0) return;
+  const list = conflicts
+    .map((c) =>
+      c.kind === "section"
+        ? `section "${c.section}"`
+        : c.kind === "scalar"
+          ? `${c.field}`
+          : `claim "${c.path}" (owned by "${c.owner}")`
+    )
+    .join(", ");
+  const target = (c: (typeof conflicts)[number]): string =>
+    c.kind === "section" ? `section: "${c.section}"` : c.kind === "scalar" ? `field: "${c.field}"` : `claim: "${c.path}"`;
+  throw blocked(
+    `"${node.id}" revision "${change}" has ${conflicts.length} unresolved rebase conflict(s): ${list}. ` +
+      `Resolve each with resolve_conflict({ node_id, change, ... }). Fix: ` +
+      conflicts
+        .map((c) => `resolve_conflict({ node_id: "${node.id}", change: "${change}", ${target(c)}, take: "revision" | "live" | "text" })`)
+        .join(", ") +
+      `.`
+  );
+}
+
+/**
+ * Resolves and validates a status mutation of one open revision: the node's revision of `change`,
+ * judged against `revisionGraph(graph, change)` (live plus that change only). Blocked when the node
+ * has no revision of `change`, and at in-review / ship while the revision has rebase conflicts.
+ */
+export function resolveRevisionStatusChange(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  change: string,
+  newStatus: string
+): StatusChangeResult {
+  if (!revisionFor(node, change)) resolveRevisionChange(node, change);
+  const under = revisionGraph(graph, change);
+  return resolveNextStatusChange(under, findNode(under, node.id), newStatus);
+}
+
+/**
+ * Resolves and validates a status mutation. Throws "Blocked: ..." on violation. A shipped node
+ * with several open revisions and no next view needs `resolveRevisionStatusChange` (Blocked here,
+ * naming them).
  */
 export function resolveStatusChange(
   graph: MindPlanGraph,
@@ -1067,6 +1345,17 @@ export function resolveStatusChange(
 
   if (node.next) {
     return resolveNextStatusChange(graph, node, newStatus);
+  }
+
+  // `deprecated` retires the node with every open revision (the handler deletes each folder, as
+  // with one); the transition below judges it on live, so it needs no revision picked.
+  if ((node.open_revisions?.length ?? 0) > 1 && newStatus !== "deprecated") {
+    if (newStatus === "cancelled") {
+      throw blocked(
+        `cannot set "${newStatus}" on "${node.id}" while open revisions exist (${openChanges(node).map((c) => `"${c}"`).join(", ")}). Call discard_next for each first, or ship them.`
+      );
+    }
+    resolveRevisionChange(node);
   }
 
   if (isProductionState(node.state)) {
@@ -1135,6 +1424,7 @@ export function resolveStatusChange(
   if (newStatus === "cancelled") {
     validateCancelTransition(graph, node);
   }
+  assertNoRetreatUnderShippedDependents(graph, node, current, newStatus);
 
   if (node.type === "Interaction") {
     validateInteractionRules(graph, node, newStatus);
@@ -1184,7 +1474,12 @@ export function resolveForceUnship(
 
   if (node.next) {
     throw blocked(
-      `cannot force_unship "${node.id}" while an open evolution exists (state "${node.next.state}"). Call discard_next first.`
+      `cannot force_unship "${node.id}" while an open revision exists (state "${node.next.state}"). Call discard_next first.`
+    );
+  }
+  if (node.open_revisions?.length) {
+    throw blocked(
+      `cannot force_unship "${node.id}" while open revisions exist (${openChanges(node).map((c) => `"${c}"`).join(", ")}). Call discard_next for each first.`
     );
   }
 
@@ -1229,10 +1524,10 @@ export function computeCapabilityState(graph: MindPlanGraph, capabilityId: strin
   const shipped = interactions.filter(
     (w) => w.shipped_at && (w.state === "stable" || w.state === "unstable")
   ).length;
+  const building = (state: string | undefined) => state === "in-progress" || state === "in-review";
   const inProgress = interactions.filter((w) => {
-    if (w.next && (w.next.state === "in-progress" || w.next.state === "in-review")) {
-      return true;
-    }
+    if (w.next && building(w.next.state)) return true;
+    if ((w.open_revisions ?? []).some((r) => building(r.state))) return true;
     return !w.shipped_at && (w.state === "in-progress" || w.state === "in-review");
   }).length;
 

@@ -4,16 +4,11 @@ type: Interaction
 title: "Upgrade the graph"
 description: "Agent calls upgrade_project when the graph is behind the server: it runs the pending migrations, stamps the new level, and returns what changed plus the agent-file leftovers to remove."
 state: stable
-shipped_at: 2026-10-31T20:33:29.158Z
-revisions: 1
-churn: 1
+shipped_at: 2026-11-03T08:20:39.135Z
+revisions: 2
+churn: 1.944
 created_at: 2026-10-31T19:40:48.514Z
-updated_at: 2026-10-31T22:51:50.980Z
-aliases:
-  - "migrate"
-  - "upgrade"
-  - "update graph"
-  - "version mismatch"
+updated_at: 2026-11-03T08:20:39.135Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
@@ -27,6 +22,11 @@ tests:
   - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/version.test.mjs
+aliases:
+  - "migrate"
+  - "upgrade"
+  - "update graph"
+  - "version mismatch"
 ---
 
 # Upgrade the graph
@@ -53,6 +53,8 @@ Intended files: `src/interactions/i-upgrade-graph/` (`handlers.ts`, `tools.ts`)
 - `tools.ts` defines `upgrade_project` with `gate: false`
 
 Depends on: `f-graph-migrations`, `f-tool-kit`.
+
+- **Migration level 4 (0.18.0).** `upgrade_project` reports `revisionsMoved`, `decisionsSplit`, and `mapIgnored` from the level-4 migration
 
 ## Acceptance Criteria
 

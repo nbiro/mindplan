@@ -4,16 +4,17 @@ type: Interaction
 title: "Shape the graph"
 description: "Agent creates nodes and links or unlinks edges, including mounts and planned edges on shipped nodes, and gets back the rules a new edge brings."
 state: stable
-shipped_at: 2026-10-31T12:20:49.515Z
-revisions: 1
-churn: 1
+shipped_at: 2026-11-03T09:41:59.917Z
+revisions: 3
+churn: 2.934
 created_at: 2026-10-31T11:58:03.472Z
-updated_at: 2026-11-01T10:53:14.251Z
+updated_at: 2026-11-03T12:53:35.576Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-shape-graph/
@@ -45,6 +46,16 @@ Intended files: `src/interactions/i-shape-graph/` (`handlers.ts`, `tools.ts`).
 - Orientation gate on the source (`gateWrite`, `f-plan-writes`); `create_node` is never gated
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-orientation-ledger`, `f-domain-model`, `f-tool-kit`.
+
+- **Open revisions (0.18.0).** `link_nodes` and `unlink_nodes` on a node with open revisions write an add or remove delta to the revision `change` picks (optional with one open); a planned edge on a shipped node with no revision of that change stays planned
+
+## Cleanup (0.18)
+
+A revision's readiness reset comes from `revisionReadinessResult` (`f-plan-writes`); no legacy-next path remains.
+
+## Cycles across changes
+
+`link_nodes` with `depends_on` (live, revision, or planned) is Blocked when the edge closes a dependency cycle across changes (`assertNoChangeCycle`), naming the changes and the path, and `run_check` reports existing ones (see `i-check-integrity`).
 
 ## Acceptance Criteria
 

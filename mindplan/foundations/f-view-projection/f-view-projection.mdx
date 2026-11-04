@@ -4,20 +4,20 @@ type: Foundation
 title: "View projection"
 description: "Infra — Mermaid/DOT projection (including the mounts edge and optional per-node decision counts) and the auto-generated mindplan/map.md snapshot."
 state: stable
-shipped_at: 2026-10-20T13:04:10.795Z
-revisions: 8
-churn: 4.427
+shipped_at: 2026-11-03T08:20:36.678Z
+revisions: 9
+churn: 4.218
 created_at: 2026-07-19T18:33:36.744Z
-updated_at: 2026-11-01T10:53:09.880Z
+updated_at: 2026-11-03T08:20:36.678Z
 depends_on:
   - f-domain-model
   - f-graph-search
   - f-territory-store
 implements:
   - src/foundations/f-view-projection/
-role: infra
 tests:
   - src/foundations/f-test-harness/view.test.mjs
+role: infra
 ---
 
 # View projection
@@ -38,6 +38,8 @@ Package: `src/foundations/f-view-projection/`
 - **Decision counts.** `ViewOptions.decisions?: boolean`: when true, Mermaid and DOT labels add ` · N decision(s)` to every node with at least one active decision (its active slot's decisions minus superseded ones, from `f-graph-search`); nodes with none are unchanged. Default false; `persistMindPlanMap` never sets it
 
 Depends on: `f-domain-model`, `f-graph-search`, `f-territory-store`.
+
+- **Derived map (0.18.0).** `mindplan/map.md` is still written after a mutation but is git-ignored and never reported in `changed_files`
 
 ## Acceptance Criteria
 

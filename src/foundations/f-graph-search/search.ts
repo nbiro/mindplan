@@ -6,11 +6,12 @@
  * `rankNodes` is the token scoring alone: the fallback, and pure.
  */
 
+import * as path from "path";
 import type { MindPlanEdge, MindPlanGraph, MindPlanNode, NodeType } from "../f-domain-model/types.js";
 import type { SearchDoc } from "../f-search-index/index-db.js";
 import type { Embedder } from "../f-search-index/embedder.js";
 import { keywordRankDocs } from "../f-search-index/keyword-js.js";
-import { prepareSearch, refreshSearch, warmSearch } from "../f-search-index/service.js";
+import { prepareSearch, refreshSearch, warmSearch, type SearchBackend } from "../f-search-index/service.js";
 
 export const DEFAULT_FIND_LIMIT = 5;
 export const MAX_FIND_LIMIT = 20;
@@ -242,34 +243,55 @@ export function sectionHeadings(body: string): string[] {
 }
 
 /**
- * Reads a node's body for its headings: the open next slot's while a revision is open. `stamp`
- * (the file's modification time) makes an edit made outside MCP that leaves the frontmatter alone
- * re-read the headings too.
+ * Reads a node's body for its headings (the live slot).
+ * `stamp` (the file's modification time) makes an edit made outside MCP that leaves the
+ * frontmatter alone re-read the headings too. `revision`, when given, reads the body of the
+ * node's open revision of a change, so each revision's headings are indexed as well.
  */
 export type BodyReader = ((node: MindPlanNode, slot: "current" | "next") => string) & {
   stamp?: (node: MindPlanNode, slot: "current" | "next") => string;
+  revision?: (node: MindPlanNode, change: string) => string;
 };
 
 const headingMemo = new Map<string, string[]>();
 
-function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined): string[] {
+/**
+ * `root` as the heading memo keys it: resolved, and lowercased on Windows, so one checkout spelled
+ * two ways (casing, separators, a trailing `/`) is one entry. The same rule as f-source-index's
+ * `rootKey`, kept local: f-graph-search does not import f-source-index. An empty root (a caller
+ * with one graph) stays empty.
+ */
+function memoRootKey(root: string): string {
+  if (!root) return "";
+  const abs = path.resolve(root);
+  return process.platform === "win32" ? abs.toLowerCase() : abs;
+}
+
+/** `rootKey` is `memoRootKey(root)`, computed once per `searchDocs` call. */
+function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined, rootKey: string): string[] {
   if (!readBody) return [];
-  const slot = node.next ? "next" : "current";
+  const slot = "current";
   let stamp = "";
   try {
     stamp = readBody.stamp?.(node, slot) ?? "";
   } catch {
     // No stamp: the memo keys on updated_at alone.
   }
-  const key = `${node.id}\u0000${slot}\u0000${node.next?.updated_at ?? node.updated_at}\u0000${stamp}`;
+  const revisions = readBody.revision ? (node.open_revisions ?? []) : [];
+  const revisionKey = revisions.map((r) => `${r.change}@${r.updated_at}`).join(",");
+  const key = `${rootKey}\u0000${node.id}\u0000${slot}\u0000${node.updated_at}\u0000${stamp}\u0000${revisionKey}`;
   const hit = headingMemo.get(key);
   if (hit) return hit;
-  let headings: string[] = [];
-  try {
-    headings = sectionHeadings(readBody(node, slot));
-  } catch {
-    // A node whose file cannot be read is still searchable by its record.
-  }
+  const headings: string[] = [];
+  const add = (read: () => string) => {
+    try {
+      for (const h of sectionHeadings(read())) if (!headings.includes(h)) headings.push(h);
+    } catch {
+      // A node whose file cannot be read is still searchable by its record.
+    }
+  };
+  add(() => readBody(node, slot));
+  for (const r of revisions) add(() => readBody.revision!(node, r.change));
   if (headingMemo.size > 20000) headingMemo.clear();
   headingMemo.set(key, headings);
   return headings;
@@ -278,21 +300,37 @@ function headingsOf(node: MindPlanNode, readBody: BodyReader | undefined): strin
 const SEARCH_EDGE_FIELDS = ["belongs_to", "depends_on", "exposes", "leads_to", "mounts", "affects"] as const;
 type SearchEdgeField = (typeof SEARCH_EDGE_FIELDS)[number];
 
-/** Live and proposed targets of one edge field. */
+/** Live and proposed targets of one edge field: live, and every open revision's adds. */
 function edgeTargets(n: MindPlanNode, field: SearchEdgeField): string[] {
   const live = n[field] ?? [];
-  const next = field === "affects" ? [] : (n.next?.[field] ?? []);
-  return [...new Set([...live, ...next])];
+  if (field === "affects") return [...new Set(live)];
+  const added = (n.open_revisions ?? []).flatMap((r) => r.edges[field]?.add ?? []);
+  return [...new Set([...live, ...added])];
 }
 
 /**
- * One `SearchDoc` per node: the open next slot's title and description while a revision is open
- * (so a node being reshaped is found by its new wording), its area (Capability titles reached through
+ * The searchable wording of a node: live title and description; each open revision whose title or description differs adds it, tagged with its change, as
+ * an alias (title) and a description clause, so a query finds a revision by its new wording.
+ */
+function searchWording(n: MindPlanNode): { title: string; description: string; aliases: string[] } {
+  const aliases = [...(n.aliases ?? [])];
+  let description = n.description;
+  for (const r of n.open_revisions ?? []) {
+    if (r.title !== n.title) aliases.push(`${r.title} (revision ${r.change})`);
+    if (r.description !== n.description) description += ` (revision ${r.change}: ${r.description})`;
+  }
+  return { title: n.title, description, aliases };
+}
+
+/**
+ * One `SearchDoc` per node: its wording (`searchWording`: live plus each open revision's, so a
+ * node being reshaped is found by its new wording), its area (Capability titles reached through
  * belongs_to, through the Interactions an Interface exposes, or through the Interactions a Bug
  * affects), its entry points (the Interfaces that expose it), its aliases, its section headings
- * (minus those most nodes share), and its claimed paths.
+ * (minus those most nodes share), and its claimed paths. `root` (the project root the graph was
+ * read from) keys the heading memo, since one server serves several roots.
  */
-export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchDoc[] {
+export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader, root = ""): SearchDoc[] {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const capabilitiesOf = (n: MindPlanNode): string[] =>
     edgeTargets(n, "belongs_to")
@@ -310,7 +348,8 @@ export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchD
     return [...titles];
   };
   // A heading most nodes share (a scaffold section) says nothing about any one of them.
-  const headings = new Map(graph.nodes.map((n) => [n.id, headingsOf(n, readBody)]));
+  const rootKey = memoRootKey(root);
+  const headings = new Map(graph.nodes.map((n) => [n.id, headingsOf(n, readBody, rootKey)]));
   const seen = new Map<string, number>();
   for (const list of headings.values()) {
     for (const h of new Set(list.map((x) => x.toLowerCase()))) seen.set(h, (seen.get(h) ?? 0) + 1);
@@ -319,24 +358,30 @@ export function searchDocs(graph: MindPlanGraph, readBody?: BodyReader): SearchD
   const entries = new Map<string, string[]>();
   for (const n of graph.nodes) {
     if (n.type !== "Interface" || isRetired(n)) continue;
-    for (const id of edgeTargets(n, "exposes")) entries.set(id, [...(entries.get(id) ?? []), n.next?.title ?? n.title]);
+    for (const id of edgeTargets(n, "exposes")) entries.set(id, [...(entries.get(id) ?? []), searchWording(n).title]);
   }
   return graph.nodes.map((n) => {
     const edges: { target: string; type: string }[] = [];
     for (const field of SEARCH_EDGE_FIELDS) {
       for (const target of edgeTargets(n, field)) edges.push({ target, type: field });
     }
+    const wording = searchWording(n);
     return {
       id: n.id,
       type: n.type,
       state: n.state,
-      title: n.next?.title ?? n.title,
-      description: n.next?.description ?? n.description,
+      title: wording.title,
+      description: wording.description,
       area: areaOf(n),
       entry: entries.get(n.id) ?? [],
-      aliases: [...(n.aliases ?? [])],
+      aliases: wording.aliases,
       headings: (headings.get(n.id) ?? []).filter((h) => (seen.get(h.toLowerCase()) ?? 0) <= common),
-      paths: [...new Set([...(n.implements ?? []), ...(n.next?.implements ?? [])])],
+      paths: [
+        ...new Set([
+          ...(n.implements ?? []),
+          ...(n.open_revisions ?? []).flatMap((r) => r.implements.add),
+        ]),
+      ],
       retired: isRetired(n),
       edges,
     };
@@ -466,12 +511,28 @@ export async function searchNodes(
   const q = query.trim();
   if (!q) return [];
   const limit = Math.min(Math.max(opts.limit ?? DEFAULT_FIND_LIMIT, 1), MAX_FIND_LIMIT);
-  const docs = searchDocs(graph, opts.readBody);
+  const docs = searchDocs(graph, opts.readBody, opts.root);
   const backend = await prepareSearch(
     opts.root,
     docs,
     opts.embedder !== undefined ? { embedder: opts.embedder, waitForVectors: true } : {}
   );
+  try {
+    return await rankWith(graph, q, opts, limit, docs, backend);
+  } finally {
+    backend.release();
+  }
+}
+
+/** `searchNodes` over a prepared backend: keyword, semantic, and path rankings fused. */
+async function rankWith(
+  graph: MindPlanGraph,
+  q: string,
+  opts: SearchOptions,
+  limit: number,
+  docs: SearchDoc[],
+  backend: SearchBackend
+): Promise<RankedMatch[]> {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const docById = new Map(docs.map((d) => [d.id, d]));
   const inArea = opts.area ? areaMembers(graph, opts.area) : null;
@@ -560,7 +621,7 @@ export function areaMembers(graph: MindPlanGraph, capabilityId: string): Set<str
 /** After a graph write: sync the search cache now and embed what changed in the background. */
 export function refreshSearchIndex(graph: MindPlanGraph, root: string, readBody?: BodyReader): void {
   try {
-    refreshSearch(root, searchDocs(graph, readBody));
+    refreshSearch(root, searchDocs(graph, readBody, root));
   } catch (err) {
     console.error(`MindPlan search: refresh failed (${err instanceof Error ? err.message : String(err)}).`);
   }
@@ -575,5 +636,5 @@ export function warmSearchIndex(
   loadGraph: () => MindPlanGraph,
   readBody?: BodyReader
 ): Promise<void> {
-  return warmSearch(root, () => searchDocs(loadGraph(), readBody));
+  return warmSearch(root, () => searchDocs(loadGraph(), readBody, root));
 }

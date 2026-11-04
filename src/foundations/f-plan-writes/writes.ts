@@ -4,7 +4,11 @@
  * refresh, and dropping a change's planned edges when a write closes it. Owned by f-plan-writes.
  */
 
+import { revisionSummaries as readSummaries } from "../../foundations/f-plan-views/views.js";
 import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
+import { openChanges, revisionFor } from "../../foundations/f-revision-model/index.js";
+import { writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
+import { MAP_REL } from "../../foundations/f-source-index/git.js";
 import {
   loadGraph,
   markdownRelativePath,
@@ -29,7 +33,6 @@ import {
   recordOriented,
   rulesFingerprint,
 } from "../../foundations/f-orientation-ledger/ledger.js";
-import * as path from "path";
 
 /**
  * Blocked: Orientation unless every node was oriented on in this session with the rules that apply
@@ -68,9 +71,6 @@ export function syncNodes(nodes: MindPlanNode[]): string[] {
   return paths;
 }
 
-/** Project-relative path of the auto-persisted Mermaid snapshot. */
-export const MAP_REL = "mindplan/map.md";
-
 /** Repo-relative path of a node's live or evolution territory MDX. */
 export function territoryPath(
   node: Pick<MindPlanNode, "id" | "type">,
@@ -79,11 +79,13 @@ export function territoryPath(
   return markdownRelativePath(node, slot);
 }
 
-/** Deduplicate changed paths (null: nothing written), optionally appending the map snapshot. */
-export function changedFiles(paths: (string | null)[], includeMap = false): string[] {
-  const out = [...new Set(paths.filter((p): p is string => Boolean(p)))];
-  if (includeMap && !out.includes(MAP_REL)) out.push(MAP_REL);
-  return out;
+/**
+ * Deduplicate changed paths (null: nothing written). The map snapshot is derived: it is never
+ * listed, even when a caller still passes `includeMap` (kept so older call sites compile).
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function changedFiles(paths: (string | null)[], _includeMap = false): string[] {
+  return [...new Set(paths.filter((p): p is string => Boolean(p) && p !== MAP_REL))];
 }
 
 /**
@@ -140,8 +142,10 @@ export function buildMutationAnchor(
 }
 
 /**
- * Default write tail: the touched node's state and next_state. Neighborhood and
- * record come only with `verbose: true` (`buildMutationAnchor`).
+ * Default write tail: the touched node's state and next_state (the single open revision's or a
+ * legacy next file's state; null with none or several), plus `revisions: [{ change, state,
+ * conflicts? }]` when the node has open revisions. Neighborhood and record come only with
+ * `verbose: true` (`buildMutationAnchor`).
  */
 export function mutationTail(
   graph: MindPlanGraph,
@@ -153,12 +157,38 @@ export function mutationTail(
     state: node.state,
     next_state: node.next?.state ?? null,
   };
+  const open = revisionSummaries(node);
+  if (open.length > 0) tail.revisions = open;
   return verbose ? { ...tail, ...buildMutationAnchor(graph, nodeId) } : tail;
 }
 
-/** What a readiness reset reports: the slot that left `ready`. */
+/**
+ * One line per open revision of `node` in a write result: the read surfaces' summary
+ * (`revisionSummaries` of f-plan-views: change, state, conflict count) without the title.
+ */
+export function revisionSummaries(node: MindPlanNode): { change: string; state: string; conflicts: number }[] {
+  return readSummaries(node).map(({ change, state, conflicts }) => ({ change, state, conflicts }));
+}
+
+/**
+ * Every change id with an open revision anywhere: a pre-ship node's live change, a legacy next
+ * file's change, and each open revision of a shipped node.
+ */
+export function openChangeIds(graph: MindPlanGraph): Set<string> {
+  const out = new Set(changesWithRevisions(graph));
+  for (const n of graph.nodes) for (const c of openChanges(n)) out.add(c);
+  return out;
+}
+
+/** Whether `change` still has an open revision on any node. */
+function changeIsOpen(graph: MindPlanGraph, change: string): boolean {
+  return changeMembers(graph, change).length > 0 || graph.nodes.some((n) => openChanges(n).includes(change));
+}
+
+/** What a readiness reset reports: the slot (and, for a revision, its change) that left `ready`. */
 export type ReadinessReset = {
   slot: TerritorySlot;
+  change?: string;
   from: "ready";
   to: "draft";
   note: string;
@@ -184,6 +214,21 @@ export function readinessResult(
   };
 }
 
+/** The reset a contract write reports when it sends the revision of `change` from ready back to draft. */
+export function revisionReadinessReset(change: string): ReadinessReset {
+  return { slot: "next", change, from: "ready", to: "draft", note: READINESS_NOTE };
+}
+
+/** A contract write to a ready revision sends it back to draft; returns the reset and files. */
+export function revisionReadinessResult(
+  node: MindPlanNode,
+  change: string
+): { reset: ReadinessReset | null; files: string[] } {
+  if (revisionFor(node, change)?.state !== "ready") return { reset: null, files: [] };
+  const written = writeRevisionState(node, change, "draft");
+  return { reset: revisionReadinessReset(change), files: written.changed_files };
+}
+
 export function readinessFields(reset: ReadinessReset | null): Record<string, unknown> {
   return reset ? { readiness_reset: reset } : {};
 }
@@ -194,7 +239,7 @@ export function readinessFields(reset: ReadinessReset | null): Record<string, un
  */
 export function shippedChangeBlocked(node: Pick<MindPlanNode, "id">): Error {
   return new Error(
-    `Blocked: "${node.id}" is shipped with no open next: edit its files in place; it needs no change id (open_next if its contract changes).`
+    `Blocked: "${node.id}" is shipped with no open revision: edit its files in place; it needs no change id (open_next if its contract changes).`
   );
 }
 
@@ -209,7 +254,7 @@ export function clearClosedChanges(
   const planned: string[] = [];
   const files: string[] = [];
   for (const change of new Set(changes)) {
-    if (changeMembers(graph, change).length > 0) continue;
+    if (changeIsOpen(graph, change)) continue;
     // Wiring planned under a closed change was never opened: it goes with the change.
     for (const node of graph.nodes) {
       const dropped = (node.planned ?? []).filter((e) => e.change === change);
@@ -230,14 +275,14 @@ export function clearClosedChanges(
  * result then carries nothing, as before.
  */
 export function withChangeCleanup(write: () => Record<string, unknown>): Record<string, unknown> {
-  const before = changesWithRevisions(loadGraph());
+  const before = openChangeIds(loadGraph());
   let result: Record<string, unknown> | undefined;
   try {
     result = write();
   } finally {
     if (before.size > 0) {
       const graph = loadGraph();
-      const after = changesWithRevisions(graph);
+      const after = openChangeIds(graph);
       const closed = [...before].filter((c) => !after.has(c));
       const dropped = closed.length ? clearClosedChanges(graph, closed) : { planned: [], files: [] };
       if (result && dropped.planned.length > 0) {

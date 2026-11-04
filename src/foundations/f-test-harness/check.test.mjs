@@ -8,7 +8,7 @@ import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 // Spawned servers rank by keyword only: no model download or load during tests.
@@ -104,10 +104,12 @@ fs.writeFileSync(
   'import { core } from "../../foundations/f-core/index.js";\nexport const x = core;\n'
 );
 await call("set_implementation_files", {
+  replace: true,
   node_id: "f-core",
   files: ["src/foundations/f-core/"],
 });
 await call("set_implementation_files", {
+  replace: true,
   node_id: "i-feature",
   files: ["src/interactions/i-feature/"],
 });
@@ -145,6 +147,7 @@ await call("link_nodes", { source_id: "i-other", target_id: "j-app", edge_type: 
 await call("link_nodes", { source_id: "i-other", target_id: "f-core", edge_type: "depends_on" });
 try {
   await call("set_implementation_files", {
+    replace: true,
     node_id: "i-other",
     files: ["src/interactions/i-feature/feature.ts"],
   });
@@ -165,6 +168,7 @@ fs.writeFileSync(
   'import { x } from "../i-feature/feature.js";\nexport const y = x;\n'
 );
 await call("set_implementation_files", {
+  replace: true,
   node_id: "i-other",
   files: ["src/interactions/i-other/"],
 });
@@ -176,7 +180,7 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("imports")) {
 fs.rmSync(path.join(root, "src", "interactions", "i-other"), { recursive: true, force: true });
 // Clear implements by shrinking to empty via rewriting frontmatter after cancel path —
 // just leave i-other without files by setting empty and deleting claims
-await call("set_implementation_files", { node_id: "i-other", files: [] });
+await call("set_implementation_files", { replace: true, node_id: "i-other", files: [] });
 
 git("init");
 git("config", "user.email", "test@example.com");
@@ -299,7 +303,7 @@ if (r.status !== 0) {
 } else console.log("ok   uncommitted edit to stable owner without next passes");
 
 // With an open next that is not in-progress, the next slot governs and the edit fails.
-await call("open_next", { node_id: "i-feature" });
+await call("open_next", { change: "rev-i-feature", node_id: "i-feature" });
 r = runCheck(["--base", baseSha]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("i-feature")) {
   failures++;
@@ -323,6 +327,7 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
   await call("link_nodes", { source_id: "i-exact", target_id: "f-core", edge_type: "depends_on" });
   fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-exact", "i-exact.mdx"));
   await call("set_implementation_files", {
+    replace: true,
     node_id: "i-exact",
     files: ["src/lonely/gone.ts"],
   });
@@ -343,12 +348,13 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
   fs.writeFileSync(wideMdx, wideBody);
   fs.mkdirSync(path.join(root, "src", "wide"), { recursive: true });
   fs.writeFileSync(path.join(root, "src", "wide", "keep.ts"), "export const keep = 1;\n");
-  await call("set_implementation_files", { node_id: "f-wide", files: ["src/wide/"] });
+  await call("set_implementation_files", { replace: true, node_id: "f-wide", files: ["src/wide/"] });
   for (const status of ["ready", "in-progress", "in-review", "ship"]) {
     await call("update_node_status", { node_id: "f-wide", new_status: status });
   }
-  await call("open_next", { node_id: "f-wide" });
+  await call("open_next", { change: "rev-f-wide", node_id: "f-wide" });
   await call("set_implementation_files", {
+    replace: true,
     node_id: "f-wide",
     files: ["src/wide/", "src/lonely/"],
   });
@@ -384,6 +390,7 @@ fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-dead", 
 fs.mkdirSync(path.join(root, "src", "interactions", "i-dead"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "interactions", "i-dead", "dead.ts"), "export {};\n");
 await call("set_implementation_files", {
+  replace: true,
   node_id: "i-dead",
   files: ["src/interactions/i-dead/"],
 });
@@ -397,7 +404,7 @@ if (r.status === 0 || !(r.stderr || r.stdout).includes("leftovers")) {
   console.log(`FAIL retired leftovers should fail: ${r.stderr || r.stdout}`);
 } else console.log("ok   retired leftovers fail until deleted");
 fs.rmSync(path.join(root, "src", "interactions", "i-dead"), { recursive: true, force: true });
-await call("set_implementation_files", { node_id: "i-dead", files: [] });
+await call("set_implementation_files", { replace: true, node_id: "i-dead", files: [] });
 r = runCheck([]);
 if (r.status !== 0) {
   failures++;
@@ -498,10 +505,11 @@ if (!scaffoldBody.includes("set_implementation_files")) {
 // --- Released live presence (open next relocates files) ---
 
 // Stable + open next relocates implements: deleted released live entry must not fail presence
-await call("open_next", { node_id: "f-core" });
+await call("open_next", { change: "rev-f-core", node_id: "f-core" });
 fs.mkdirSync(path.join(root, "src", "platform", "db"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "platform", "db", "index.ts"), "export const db = 1;\n");
 await call("set_implementation_files", {
+  replace: true,
   node_id: "f-core",
   files: ["src/platform/db/"],
 });
@@ -531,7 +539,7 @@ if (r.status !== 0) {
 } else console.log("ok   restored live implements passes presence");
 
 // Kept live entry (still listed by next) missing on disk → presence fails
-await call("open_next", { node_id: "i-feature" });
+await call("open_next", { change: "rev-i-feature", node_id: "i-feature" });
 fs.rmSync(path.join(root, "src", "interactions", "i-feature"), { recursive: true, force: true });
 git("add", "-u", "src/interactions/i-feature");
 r = runCheck([]);
@@ -551,13 +559,13 @@ fs.writeFileSync(
 git("add", "-A", "src/interactions/i-feature");
 
 // Next in-review with missing next entry → next presence fails
-fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"));
+fillMinimumTerritoryShape(path.join(root, "mindplan", "interactions", "i-feature", "revisions", "rev-i-feature", "i-feature.mdx"));
 let nextBody = fs.readFileSync(
-  path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"),
+  path.join(root, "mindplan", "interactions", "i-feature", "revisions", "rev-i-feature", "i-feature.mdx"),
   "utf-8"
 );
 nextBody = nextBody.replace(/- \[ \]/g, "- [x]");
-fs.writeFileSync(path.join(root, "mindplan", "interactions", "i-feature", "i-feature.next.mdx"), nextBody);
+fs.writeFileSync(path.join(root, "mindplan", "interactions", "i-feature", "revisions", "rev-i-feature", "i-feature.mdx"), nextBody);
 await call("update_node_status", { node_id: "i-feature", new_status: "ready" });
 await call("update_node_status", { node_id: "i-feature", new_status: "in-progress" });
 await call("update_node_status", { node_id: "i-feature", new_status: "in-review" });
@@ -579,6 +587,115 @@ fs.writeFileSync(
 );
 git("add", "-A", "src/interactions/i-feature");
 await call("discard_next", { node_id: "i-feature" });
+
+// --- test-file import scope: a node's test may import its own direct dependents ---
+{
+  const root2 = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-testscope-"));
+  const put = (rel, text) => {
+    fs.mkdirSync(path.dirname(path.join(root2, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root2, rel), text);
+  };
+  put("mindplan/config.json", JSON.stringify({ sources: ["src/**"], exclude: [] }) + "\n");
+  put("src/if-tpl/tpl.ts", "export const tpl = 1;\n");
+  put("src/if-tpl/tpl.test.ts", "export const t = 1;\n");
+  put("src/f-reg/reg.ts", 'import { tpl } from "../if-tpl/tpl.js";\nexport const reg = [tpl];\n');
+  put("src/f-other/other.ts", "export const other = 1;\n");
+  const t2 = new StdioClientTransport({
+    command: process.execPath,
+    args: [serverEntry],
+    env: { ...process.env, MINDPLAN_ROOT: root2, MINDPLAN_ORIENT_GATE: "off" },
+  });
+  const c2 = new Client({ name: "check-test-scope", version: "0.1.0" });
+  await c2.connect(t2);
+  const raw2 = async (tool, args) => {
+    const res = await c2.callTool({ name: tool, arguments: args });
+    return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
+  };
+  const call2 = async (tool, args) => {
+    const r2 = await raw2(tool, args);
+    if (r2.error) throw new Error(`${tool}: ${r2.text}`);
+    return JSON.parse(r2.text);
+  };
+  const ok = (label, cond, detail = "") => {
+    if (cond) console.log(`ok   ${label}`);
+    else {
+      failures++;
+      console.log(`FAIL ${label}${detail ? `: ${detail}` : ""}`);
+    }
+  };
+  await call2("create_node", { id: "j-tpl", type: "Capability", title: "Templates", description: "Users pick templates." });
+  await call2("create_node", { id: "i-pick", type: "Interaction", title: "Pick a template", description: "User picks a template.", change: "tpl" });
+  await call2("link_nodes", { source_id: "i-pick", target_id: "j-tpl", edge_type: "belongs_to" });
+  await call2("create_node", { id: "if-tpl", type: "Interface", title: "Template", description: "Template entry point.", change: "tpl" });
+  await call2("create_node", { id: "f-reg", type: "Foundation", title: "Registry", description: "Assembler — template registry", role: "assembler", change: "tpl" });
+  await call2("create_node", { id: "f-other", type: "Foundation", title: "Other", description: "Infra — unrelated", role: "infra", change: "tpl" });
+  await call2("link_nodes", { source_id: "if-tpl", target_id: "i-pick", edge_type: "exposes" });
+  await call2("link_nodes", { source_id: "f-reg", target_id: "if-tpl", edge_type: "mounts" });
+  await call2("set_implementation_files", { replace: true, node_id: "if-tpl", files: ["src/if-tpl/"] });
+  await call2("set_implementation_files", { replace: true, node_id: "f-reg", files: ["src/f-reg/"] });
+  await call2("set_implementation_files", { replace: true, node_id: "f-other", files: ["src/f-other/"] });
+  await call2("set_test_files", { replace: true, node_id: "if-tpl", files: ["src/if-tpl/tpl.test.ts"] });
+  put(
+    "src/if-tpl/tpl.test.ts",
+    'import { reg } from "../f-reg/reg.js";\nimport { other } from "../f-other/other.js";\nexport const t = [reg, other];\n'
+  );
+  const both = await call2("run_check", {});
+  ok(
+    "a node's test may import a direct dependent (the registry that mounts it)",
+    !both.failures.some((f) => f.includes("tpl.test.ts") && f.includes("src/f-reg/reg.ts")),
+    JSON.stringify(both.failures)
+  );
+  ok(
+    "a node's test importing an unrelated node is still Blocked",
+    both.failures.some((f) => f.includes("tpl.test.ts") && f.includes("src/f-other/other.ts")),
+    JSON.stringify(both.failures)
+  );
+  for (const h of ["Purpose", "Kind", "Spec", "Acceptance Criteria"]) {
+    await call2("patch_node_territory", { node_id: "if-tpl", section: `## ${h}`, text: `Real ${h.toLowerCase()} for the template.` });
+  }
+  await call2("patch_node_territory", { node_id: "if-tpl", toggle_checkboxes: ["spec", "impl", "verify"].map((id) => ({ id, checked: true })) });
+  await call2("update_node_status", { node_id: "if-tpl", new_status: "ready" });
+  await call2("update_node_status", { node_id: "if-tpl", new_status: "in-progress" });
+  const gated = await raw2("update_node_status", { node_id: "if-tpl", new_status: "in-review" });
+  ok(
+    "the in-review gate agrees: Blocked on the unrelated import only",
+    gated.error && gated.text.includes("src/f-other/other.ts") && !gated.text.includes("src/f-reg/reg.ts"),
+    gated.text
+  );
+  put("src/if-tpl/tpl.test.ts", 'import { reg } from "../f-reg/reg.js";\nexport const t = [reg];\n');
+  const passed = await raw2("update_node_status", { node_id: "if-tpl", new_status: "in-review" });
+  ok("the in-review gate passes a test importing the registry that mounts it", !passed.error, passed.text);
+  // A folder in `tests` covers production files too; only files that look like tests gain the scope.
+  put("src/if-tpl/helper.ts", 'import { reg } from "../f-reg/reg.js";\nexport const h = reg;\n');
+  await call2("set_test_files", { replace: true, node_id: "if-tpl", files: ["src/if-tpl/"] });
+  const folder = await call2("run_check", { compact: false });
+  ok(
+    "a production file in a folder listed in tests gains no allowance",
+    folder.failures.some((f) => f.includes("src/if-tpl/helper.ts") && f.includes("src/f-reg/reg.ts")) &&
+      !folder.failures.some((f) => f.includes("tpl.test.ts")),
+    JSON.stringify(folder.failures)
+  );
+  await c2.close();
+  fs.rmSync(root2, { recursive: true, force: true });
+
+  // The dependent-edge lookup is built once per graph and follows a replaced or grown edge list.
+  const { testImportAllowed } = await import(
+    pathToFileURL(path.join(toolRoot, "dist/foundations/f-compiler-rules/test-imports.js")).href
+  );
+  const buckets = { testOwners: new Map([["src/a/a.test.ts", ["a"]]]) };
+  const reg = { id: "reg" };
+  const g = { nodes: [], edges: [{ source: "reg", target: "a", type: "belongs_to" }] };
+  const before = testImportAllowed(g, buckets, "src/a/a.test.ts", reg);
+  g.edges.push({ source: "reg", target: "a", type: "mounts" });
+  const grown = testImportAllowed(g, buckets, "src/a/a.test.ts", reg);
+  g.edges = [{ source: "reg", target: "b", type: "depends_on" }];
+  const replaced = testImportAllowed(g, buckets, "src/a/a.test.ts", reg);
+  ok(
+    "test import scope: only a dependent edge counts, and the lookup follows edges pushed or replaced",
+    before === false && grown === true && replaced === false,
+    JSON.stringify({ before, grown, replaced })
+  );
+}
 
 await client.close();
 

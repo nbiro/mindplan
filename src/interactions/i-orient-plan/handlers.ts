@@ -13,7 +13,6 @@ import {
 } from "../../foundations/f-domain-model/types.js";
 import {
   ATTACHMENTS_DIR,
-  NEXT_ATTACHMENTS_DIR,
   entityRelativePath,
   markdownRelativePath,
   listAttachments,
@@ -28,6 +27,13 @@ import {
   territoryBodyReader,
   withoutOwnedSections,
 } from "../../foundations/f-territory-store/store.js";
+import {
+  REVISIONS_DIR,
+  loadRevision,
+  revisionFilePath,
+  revisionRelativeFilePath,
+} from "../../foundations/f-territory-store/revisions.js";
+import { openChanges, pickRevision, withRevision } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOut } from "../../foundations/f-fan-out/index.js";
 import {
@@ -38,7 +44,7 @@ import {
   hotspotContext,
 } from "../../foundations/f-compiler-rules/open-closed.js";
 import { buildOwnershipIndex, exclusiveOwner, nodeOwnedFiles } from "../../foundations/f-source-index/ownership.js";
-import { blocked, findNode, interfacesExposing } from "../../foundations/f-compiler-rules/rules.js";
+import { blocked, findNode, interfacesExposing, isRevisionOf, liveGraph, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
 import {
   DEFAULT_FIND_LIMIT,
   expandNeighborhood,
@@ -46,8 +52,10 @@ import {
   searchNodes,
 } from "../../foundations/f-graph-search/search.js";
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
+import { openHumanItemsOfChange, openHumanItemsOfNode } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import { changeMembership } from "../../foundations/f-compiler-rules/planned.js";
 import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
+import { cutReply, orients, parseSections, type OrientSection } from "./sections.js";
 import { resolveNodeRules } from "../../foundations/f-graph-search/rules.js";
 import {
   listDecisions,
@@ -61,6 +69,8 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   buildBlastRadiusPayload,
+  namedRevisionChange,
+  revisionSummaries,
   rulesVersion,
 } from "../../foundations/f-plan-views/views.js";
 
@@ -148,6 +158,11 @@ export type ContextSlot = (typeof CONTEXT_SLOTS)[number];
  * `slot` returns one slot's body and decisions (the other slot's record stays, so the caller knows
  * a revision is open); `section` cuts each returned body to one level-2 section, so a large node
  * can be read a section at a time.
+ *
+ * Open revisions: `revisions` lists each one lean (`revisionSummaries`). `change` (already
+ * resolved by the caller) makes that revision the next slot (`withRevision`); without it a node
+ * with one open revision reads that one, and a node with several reads live only, with
+ * `next: "pass change to read a revision"`.
  */
 export function buildNodeContextPayload(
   graph: MindPlanGraph,
@@ -159,9 +174,23 @@ export function buildNodeContextPayload(
     section?: string;
     /** Leave the slots' decisions out (orient_for_work carries them in its own decisions block). */
     omitDecisions?: boolean;
+    /** The open revision to read as the next slot (a change id the node has a revision of). */
+    change?: string;
   } = {}
 ): Record<string, unknown> {
-  if (opts.slot === "next" && !node.next) {
+  const open = openChanges(node);
+  // A pre-ship member of the change has no stored revision: its live slot is the change's.
+  if (opts.slot === "next" && opts.change !== undefined && !node.shipped_at && isRevisionOf(node, opts.change)) {
+    throw blocked(
+      `"${node.id}" is a pre-ship member of change "${opts.change}": a pre-ship node has no open revision; ` +
+        `its live slot is the change's. Omit slot (or pass slot "current") to read it.`
+    );
+  }
+  // Several revisions and slot "next" without change: Blocked, naming them.
+  const pickedRevision = pickRevision(node, opts.change, { strict: opts.slot === "next" });
+  const change = pickedRevision.change ?? undefined;
+  const view = pickedRevision.view;
+  if (opts.slot === "next" && !view.next) {
     throw blocked(`"${node.id}" has no open revision; read slot "current", or open_next first.`);
   }
   const withCurrent = opts.slot !== "next";
@@ -195,40 +224,56 @@ export function buildNodeContextPayload(
   payload.rules = node.rules ?? "";
   if (withCurrent && index) payload.decisions = slotDecisions(graph, node, "current", opts, index);
   payload.next = null;
+  const revisions = revisionSummaries(node);
+  if (revisions.length > 0) payload.revisions = revisions;
   // get_node_context names the inherited decisions; orient_for_work carries them in its decisions block.
   if (opts.inherited) {
     payload.inherited_decisions = splitNodeDecisions(graph, node, { ...opts, selfOnly: true }).inherited_decisions;
   }
-  if (node.next) {
-    payload.next_path = markdownRelativePath(node, "next");
-    payload.next_attachments_path = `${rel}/${NEXT_ATTACHMENTS_DIR}`;
+  const stored = change !== undefined ? revisionFile(node, change) : undefined;
+  if (view.next && stored) {
+    const next = view.next;
+    payload.next_path = revisionRelativeFilePath(node, change!);
+    payload.next_attachments_path = `${rel}/${REVISIONS_DIR}/${change}/${ATTACHMENTS_DIR}`;
     const record = {
-      state: node.next.state,
-      title: node.next.title,
-      description: node.next.description,
-      updated_at: node.next.updated_at,
-      ...(node.next.opened_at ? { opened_at: node.next.opened_at } : {}),
-      ...(node.next.belongs_to?.length ? { belongs_to: node.next.belongs_to } : {}),
-      ...(node.next.depends_on?.length ? { depends_on: node.next.depends_on } : {}),
-      ...(node.next.exposes?.length ? { exposes: node.next.exposes } : {}),
-      ...(node.next.leads_to?.length ? { leads_to: node.next.leads_to } : {}),
-      ...(node.next.implements?.length ? { implements: node.next.implements } : {}),
-      ...(node.next.role ? { role: node.next.role } : {}),
-      ...(node.next.change ? { change: node.next.change } : {}),
-      ...(node.next.change_ref ? { change_ref: node.next.change_ref } : {}),
+      state: next.state,
+      title: next.title,
+      description: next.description,
+      updated_at: next.updated_at,
+      ...(next.opened_at ? { opened_at: next.opened_at } : {}),
+      ...(next.belongs_to?.length ? { belongs_to: next.belongs_to } : {}),
+      ...(next.depends_on?.length ? { depends_on: next.depends_on } : {}),
+      ...(next.exposes?.length ? { exposes: next.exposes } : {}),
+      ...(next.leads_to?.length ? { leads_to: next.leads_to } : {}),
+      ...(next.implements?.length ? { implements: next.implements } : {}),
+      ...(next.role ? { role: next.role } : {}),
+      ...(next.change ? { change: next.change } : {}),
+      ...(next.change_ref ? { change_ref: next.change_ref } : {}),
+      ...(stored.revision.conflicts.length ? { conflicts: stored.revision.conflicts } : {}),
     };
     if (withNextBody) {
-      const nextSplit = splitContext(readMarkdown(node, "next"));
       payload.next = {
         record,
-        body: cut(withoutOwnedSections(nextSplit?.body ?? ""), "next"),
-        ...(index ? { decisions: slotDecisions(graph, node, "next", opts, index) } : {}),
+        body: cut(withoutOwnedSections(stored.body), "next"),
+        ...(index ? { decisions: slotDecisions(graph, view, "next", opts, index) } : {}),
       };
     } else {
       payload.next = { record };
     }
+  } else if (open.length > 1) {
+    payload.next = PASS_CHANGE;
   }
   return payload;
+}
+
+/** What `next` says on a node with several open revisions read without `change`. */
+export const PASS_CHANGE = "pass change to read a revision";
+
+/** The revision of `change` as stored under `revisions/`, or undefined when the node has none of it. */
+function revisionFile(node: MindPlanNode, change: string): ReturnType<typeof loadRevision> | undefined {
+  if (!node.open_revisions?.some((r) => r.change === change)) return undefined;
+  if (!fs.existsSync(revisionFilePath(node, change))) return undefined;
+  return loadRevision(node, change);
 }
 
 /** The Capability an `area` names; Blocked when it is not a Capability. */
@@ -252,6 +297,7 @@ async function rankedMatches(
     area: args.area,
     limit: args.limit ?? DEFAULT_FIND_LIMIT,
     root: projectRoot(),
+    // Each open revision's headings are searchable too (the reader's `revision`).
     readBody: territoryBodyReader(),
   });
 }
@@ -287,40 +333,47 @@ export function getNodeContext(args: {
   include_inherited_decisions?: boolean;
   slot?: ContextSlot;
   section?: string;
+  change?: string;
 }): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
+  const change = args.change !== undefined ? namedRevisionChange(node, args.change) : undefined;
   const payload = buildNodeContextPayload(graph, node, {
     include_superseded: args.include_superseded,
     inherited: true,
     include_inherited_decisions: args.include_inherited_decisions,
     slot: args.slot,
     section: args.section,
+    change,
   });
+  if (change !== undefined) payload.unlocks = change;
   // It counts as orienting on the node, so it carries every rule that reaches it, not only its own.
   payload.resolved_rules = { node_id: node.id, entries: reachingRules(graph, node.id) };
-  const shape = shapeReport(node);
+  const shape = shapeReport(change !== undefined ? withRevision(node, change) : node);
   if (shape) payload.shape = shape;
   recordOriented(graph, [node.id]);
   return payload;
 }
 
 /**
- * orient_for_work({ change }): every member of a change (its open revisions, its planned sources,
- * and the other nodes holding a decision recorded under it) with the nodes whose
- * rules reach it, each source's rules once, and the members that hold decisions. Every member is
- * recorded as oriented, so one call clears the gate for a walk over the change. A decision gives
- * its node no change id, so decision holders are members here only, not in changeMembership.
+ * orient_for_work({ change }): every member of a change (each node's revision of it, its planned
+ * sources, and the other nodes holding a decision recorded under it) with the nodes whose
+ * rules reach it, each source's rules once, and the members that hold decisions. Membership and
+ * rules are judged on `revisionGraph(graph, change)`. Every member is recorded as oriented, so one
+ * call clears the gate for a walk over the change. A decision gives its node no change id, so
+ * decision holders are members here only, not in changeMembership.
  */
 function orientForChange(
   graph: MindPlanGraph,
   change: string,
-  known: Record<string, string> | undefined
+  known: Record<string, string> | undefined,
+  sections?: Set<OrientSection>
 ): Record<string, unknown> {
-  const { revisions, planned } = changeMembership(graph, change);
+  const under = revisionGraph(graph, change);
+  const { revisions, planned } = changeMembership(under, change);
   const listed = new Set([...revisions, ...planned].map((n) => n.id));
   const holderIds = new Set(listDecisions(graph, { change }).map((d) => d.node_id));
-  const deciders = graph.nodes.filter((n) => holderIds.has(n.id) && !listed.has(n.id));
+  const deciders = under.nodes.filter((n) => holderIds.has(n.id) && !listed.has(n.id));
   if (listed.size === 0 && deciders.length === 0) {
     throw blocked(
       `change "${change}" has no members. Set it with open_next, create_node, or patch_node_territory (change).`
@@ -334,9 +387,9 @@ function orientForChange(
     ...planned.map((n) => [n, "planned"] as const),
     ...deciders.map((n) => [n, "decision"] as const),
   ].map(([n, kind]) => {
-    const entries = reachingRules(graph, n.id);
+    const entries = reachingRules(under, n.id);
     for (const e of entries) if (!sources.has(e.node_id)) sources.set(e.node_id, e);
-    const own = nodeDecisions(graph, n).length;
+    const own = nodeDecisions(under, n).length;
     if (own > 0) {
       holders.push(n.id);
       decisionCount += own;
@@ -347,6 +400,7 @@ function orientForChange(
       state: n.state,
       ...(n.next ? { next_state: n.next.state } : {}),
       kind,
+      ...(kind === "revision" ? { change } : {}),
       rules_from: entries.map((e) => e.node_id),
     };
   });
@@ -356,14 +410,19 @@ function orientForChange(
       ? { node_id: e.node_id, node_type: e.node_type, version, unchanged: true }
       : { node_id: e.node_id, node_type: e.node_type, version, rules: e.rules };
   });
-  recordOriented(graph, members.map((m) => m.id));
-  return {
-    change,
-    members,
-    rules,
-    decisions: { count: decisionCount, nodes: holders },
-    next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
-  };
+  if (orients(sections)) recordOriented(graph, members.map((m) => m.id));
+  const openItems = openHumanItemsOfChange(graph, change);
+  return cutReply(
+    {
+      change,
+      members,
+      rules,
+      decisions: { count: decisionCount, nodes: holders },
+      ...(openItems.length ? { open_items: openItems } : {}),
+      next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
+    },
+    sections
+  );
 }
 
 /**
@@ -456,17 +515,21 @@ export async function orientForWork(args: {
   slot?: ContextSlot;
   section?: string;
   change?: string;
+  sections?: string[];
 }): Promise<Record<string, unknown>> {
   const depth: OrientDepth = args.depth ?? "full";
+  const sections = parseSections(args.sections);
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
     throw blocked(`orient_for_work depth must be one of: ${ORIENT_DEPTHS.join(", ")}.`);
   }
   const q = (args.query ?? "").trim();
-  if (args.change !== undefined) {
-    if (q || args.node_id) {
-      throw blocked('orient_for_work takes "change" alone: drop "query" and "node_id", or orient on one node without "change".');
+  if (args.change !== undefined && !args.node_id) {
+    if (q) {
+      throw blocked(
+        'orient_for_work takes "change" alone (every member of the change) or with "node_id" (that node\'s revision of it): drop "query".'
+      );
     }
-    return orientForChange(loadGraph(), args.change, args.known_rules_versions);
+    return orientForChange(loadGraph(), args.change, args.known_rules_versions, sections);
   }
   if (!q && !args.node_id) {
     throw blocked('orient_for_work requires a non-empty "query", "node_id", or "change".');
@@ -495,6 +558,11 @@ export async function orientForWork(args: {
   }
 
   const node = findNode(graph, focus);
+  // A named change picks that revision; Blocked when the node has none of it, unless the node is a
+  // pre-ship member of that change: its live slot is the change's (it has no stored revision).
+  const change = args.change;
+  const preShipMember = change !== undefined && !node.shipped_at && isRevisionOf(node, change);
+  const { view } = preShipMember ? { view: node } : pickRevision(node, change, { strict: change !== undefined });
   // The body comes from the active slot unless the caller names one; depth "rules" returns no body,
   // so it reads the live slot only (its next record comes back without the next body).
   // The decisions block is the reply's one copy of the focus's decisions.
@@ -502,45 +570,62 @@ export async function orientForWork(args: {
     graph,
     node,
     depth === "rules"
-      ? { slot: "current", omitDecisions: true }
-      : { slot: args.slot ?? (node.next ? "next" : "current"), section: args.section, omitDecisions: true }
+      ? { slot: "current", omitDecisions: true, change }
+      : { slot: args.slot ?? (view.next ? "next" : "current"), section: args.section, omitDecisions: true, change }
   );
+  const revisions = context.revisions;
+  delete context.revisions;
   const rules = {
     node_id: node.id,
     entries: versionedRuleEntries(reachingRules(graph, node.id), args.known_rules_versions),
   };
   const split = splitNodeDecisions(graph, node, args, depth);
   const decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
-  recordOriented(graph, [node.id]);
+  // A reply cut to sections without the rules does not orient.
+  if (orients(sections)) recordOriented(graph, [node.id]);
 
   const reply: Record<string, unknown> = {
     query: q,
     matches: rows,
     focus: node.id,
     ...(autoFocus ? { auto_focus: true } : {}),
+    ...(revisions ? { revisions } : {}),
+    ...(change !== undefined ? { unlocks: change } : {}),
+    // Several revisions and none named: the body is live; say how to read one.
+    ...(context.next === PASS_CHANGE ? { next: PASS_CHANGE } : {}),
     rules,
     decisions,
   };
-  const shape = shapeReport(node);
+  const shape = shapeReport(view);
   if (shape) reply.shape = shape;
+  // Review and deploy items wait on people: listed so the agent says so instead of ticking them.
+  const openItems = openHumanItemsOfNode(node);
+  if (openItems.length) reply.open_items = openItems;
   if (depth === "rules") {
-    const next = context.next as { record?: unknown } | null;
-    reply.context = { record: context.record, next: next ? { record: next.record } : null };
-    return reply;
+    const next = context.next as { record?: unknown } | string | null;
+    reply.context = {
+      record: context.record,
+      next: typeof next === "string" ? next : next ? { record: next.record } : null,
+    };
+    return cutReply(reply, sections);
   }
   reply.context = context;
   if (isPipelineNodeType(node.type)) {
-    const owned = nodeOwnedFiles(node, projectRoot());
+    const owned = nodeOwnedFiles(view, projectRoot());
     reply.files = { files: owned.files, ...(owned.next_files ? { next_files: owned.next_files } : {}) };
   }
   if (depth === "full") {
     const { nodes, edges } = expandNeighborhood(graph, node.id);
     reply.nodes = nodes;
     reply.edges = edges;
-    reply.blast_radius = isPipelineNodeType(node.type) ? buildBlastRadiusPayload(graph, node) : null;
+    // A named revision is judged on the graph it would ship into.
+    const judged = change !== undefined ? revisionGraph(graph, change) : liveGraph(graph);
+    reply.blast_radius = isPipelineNodeType(node.type)
+      ? buildBlastRadiusPayload(judged, findNode(judged, node.id))
+      : null;
     if (isPipelineNodeType(node.type)) reply.stability = stabilityPayload(graph, node);
   }
-  return reply;
+  return cutReply(reply, sections);
 }
 
 /**

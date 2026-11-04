@@ -25,6 +25,7 @@ import {
   schemaClaimEntries,
   type OtherClaims,
 } from "../f-source-index/dominance.js";
+import { openChanges, revisionFor } from "../f-revision-model/index.js";
 import { listResolvedImports } from "../f-source-index/imports.js";
 import {
   buildOwnershipIndex,
@@ -35,17 +36,22 @@ import {
 import { listUniverseFiles } from "../f-source-index/universe.js";
 import {
   countCheckboxesInText,
-  markdownRelativePath,
-  readMarkdown,
   splitContext,
   withoutOwnedSections,
 } from "../f-territory-store/store.js";
 import {
   assertAcyclicDependsOn,
+  assertNoRevisionConflicts,
   blocked,
   effectiveRole,
   importAllowed,
+  liveGraph,
+  nodeUnder,
+  revisionGraph,
+  revisionViews,
 } from "./rules.js";
+import { slotSource } from "./shape.js";
+import { testImportAllowed } from "./test-imports.js";
 
 const SOURCE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
 
@@ -70,7 +76,35 @@ export type ImportViolation = {
    * The check reports it as a warning for one release before it Blocks.
    */
   advisory: boolean;
+  /** The change whose open revision claims the file, when the owner claims it only through revisions. */
+  change?: string;
 };
+
+/**
+ * The change a per-node gate judges `node` under: `change` when given, else the change of the
+ * revision its `next` views (a `nodeUnder` / `graphUnder` node, or the loader's single-revision
+ * view), else none (live).
+ */
+export function gateChange(node: MindPlanNode, change?: string): string | null {
+  if (change !== undefined) return change;
+  const viewed = node.next?.change;
+  return viewed && revisionFor(node, viewed) ? viewed : null;
+}
+
+/** The graph a gate judges under: live plus that change's revisions, or live. */
+function judgeGraph(graph: MindPlanGraph, change: string | null): MindPlanGraph {
+  return change === null ? liveGraph(graph) : revisionGraph(graph, change);
+}
+
+/** The node as it stands in `g` (a view), or the input when `g` does not hold it. */
+function inGraph(g: MindPlanGraph, node: MindPlanNode): MindPlanNode {
+  return g.nodes.find((n) => n.id === node.id) ?? node;
+}
+
+/** The claim entries of a node's active slot in its graph view: its revision's next view, or live. */
+function activeClaims(node: MindPlanNode): string[] {
+  return (node.next ? node.next.implements : node.implements) ?? [];
+}
 
 function formatFix(fix: ImportFix): string {
   return `Fix: ${fix.tool}(${JSON.stringify(fix.args)}).`;
@@ -172,7 +206,7 @@ function scanFiles(
       if (!toOwnerId) continue;
       const to = byId.get(toOwnerId);
       if (!to) continue;
-      if (importAllowed(owner, to, graph)) continue;
+      if (importAllowed(owner, to, graph) || testImportAllowed(graph, buckets, file, to)) continue;
       const remedy = resolveImportRemedy(owner, to, graph);
       const base =
         `imports: "${file}" (owner "${owner.id}") may not import "${edge.to}" (${describeTarget(to)}).`;
@@ -195,32 +229,126 @@ function scanFiles(
 }
 
 /**
+ * One view of the graph the import and ownership rules run under: live when `change` is null, else live plus that change's open revisions only.
+ */
+type RulePass = { change: string | null; graph: MindPlanGraph; buckets: OwnershipBuckets };
+
+function rulePass(graph: MindPlanGraph, root: string, change: string | null): RulePass {
+  const g = judgeGraph(graph, change);
+  return { change, graph: g, buckets: buildOwnershipIndex(g, root) };
+}
+
+/**
+ * The change a pre-ship member is judged under: a pre-ship, active Foundation, Interaction, or
+ * Interface sees its own change's revisions on shipped co-members (an edge the change adds to a
+ * shipped node is in place for it). Null for any other node.
+ */
+export function preShipChange(node: MindPlanNode): string | null {
+  if (!isPipelineNodeType(node.type) || node.shipped_at || isInactiveNode(node)) return null;
+  return node.change || null;
+}
+
+/**
+ * The live pass for `node`: live, except that a pre-ship member of a change
+ * sees that change's revisions (`revisionGraph`). Its `change` stays null: the node's own claims
+ * are live ones, so violations are not tagged as a revision's.
+ */
+function livePassFor(graph: MindPlanGraph, root: string, node: MindPlanNode): RulePass {
+  const own = preShipChange(node);
+  if (own === null) return rulePass(graph, root, null);
+  const g = revisionGraph(graph, own);
+  return { change: null, graph: g, buckets: buildOwnershipIndex(g, root) };
+}
+
+/** One owner's view of one file: the pass it is judged under and whether that claim alone is advisory. */
+type OwnerView = { pass: RulePass; owner: MindPlanNode; advisory: boolean };
+
+/**
+ * The import rule on one owner's files under one pass: the single scan both the check and the
+ * per-transition gate run (`scanFiles` over the pass's graph and ownership).
+ */
+function scanUnder(pass: RulePass, root: string, owner: MindPlanNode, files: string[], self?: Set<string>, releasedTargets = false): ImportViolation[] {
+  const found = scanFiles(pass.graph, pass.buckets, root, owner, files, self, { releasedTargets });
+  return pass.change === null ? found : found.map((v) => ({ ...v, change: pass.change! }));
+}
+
+/**
  * Every illegal import across the ownership universe (the check's import rule). Each file is
- * scanned as every node that claims it (live, next slot, released), and import targets resolve
- * through released claims too. A violation the exclusive-owner scan alone would not find is
- * `advisory`.
+ * scanned as every node that claims it, in every view it claims it in: live (live and released
+ * claims, under the live graph) and each open revision (under `revisionGraph` of
+ * its change, its file owners resolved for that change). An import is reported for an owner only
+ * when every view in which that owner claims the file finds it illegal, so a revision that adds
+ * the edge an import needs clears it. Import targets resolve through released claims too. A
+ * violation the exclusive-owner scan alone would not find is `advisory`. `buckets` is accepted for
+ * callers that built one; each view builds its own.
  */
 export function findAllImportViolations(
   graph: MindPlanGraph,
-  buckets: OwnershipBuckets,
+  _buckets: OwnershipBuckets,
   root: string,
   universe: string[] = listUniverseFiles(root)
 ): ImportViolation[] {
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const live = rulePass(graph, root, null);
+  const passes = new Map<string, RulePass>();
+  const passFor = (change: string): RulePass => {
+    let p = passes.get(change);
+    if (!p) passes.set(change, (p = rulePass(graph, root, change)));
+    return p;
+  };
+  // A pre-ship member of a change is judged seeing that change's revisions (`livePassFor`).
+  const memberPasses = new Map<string, RulePass>();
+  const livePass = (owner: MindPlanNode): RulePass => {
+    const own = preShipChange(owner);
+    if (own === null) return live;
+    let p = memberPasses.get(own);
+    if (!p) memberPasses.set(own, (p = livePassFor(graph, root, owner)));
+    return p;
+  };
   const out: ImportViolation[] = [];
   for (const file of universe) {
-    const exclusive = exclusiveOwner(buckets, file);
-    const ownerIds = new Set(claimantsOf(buckets, file).map((c) => c.id));
-    for (const ownerId of ownerIds) {
-      const owner = byId.get(ownerId);
-      if (!owner) continue;
-      const found = scanFiles(graph, buckets, root, owner, [file], undefined, {
-        releasedTargets: true,
-      });
-      for (const v of found) {
-        out.push({ ...v, advisory: v.advisory || ownerId !== exclusive });
-      }
+    const views = new Map<string, OwnerView[]>();
+    const add = (id: string, view: OwnerView) => views.set(id, [...(views.get(id) ?? []), view]);
+    const exclusive = exclusiveOwner(live.buckets, file);
+    for (const c of claimantsOf(live.buckets, file)) {
+      if (c.via === "revision") continue;
+      const liveOwner = live.graph.nodes.find((n) => n.id === c.id);
+      if (!liveOwner) continue;
+      const pass = livePass(liveOwner);
+      if (views.get(c.id)?.some((v) => v.pass === pass)) continue;
+      const owner = inGraph(pass.graph, liveOwner);
+      // A live claim every open revision of its owner drops is released: its scan only warns.
+      const open = openChanges(owner);
+      const released = open.length > 0 && open.every((ch) => live.buckets.releasedByChange.get(ch)?.get(file) === owner.id);
+      add(c.id, { pass, owner, advisory: c.id !== exclusive || released });
     }
+    for (const r of live.buckets.revisions.get(file) ?? []) {
+      const pass = passFor(r.change);
+      const owner = pass.graph.nodes.find((n) => n.id === r.id);
+      if (owner) add(r.id, { pass, owner, advisory: false });
+    }
+    for (const ownerViews of views.values()) {
+      const found = ownerViews.map((v) =>
+        scanUnder(v.pass, root, v.owner, [file], undefined, true).map((x) => ({ ...x, advisory: x.advisory || v.advisory }))
+      );
+      for (const v of pickEveryView(found)) out.push(v);
+    }
+  }
+  return out;
+}
+
+/**
+ * The violations every view found (keyed by imported file), one per import: the first view's,
+ * not advisory when any view's is not.
+ */
+function pickEveryView(found: ImportViolation[][]): ImportViolation[] {
+  if (found.length === 0) return [];
+  if (found.length === 1) return found[0];
+  const out: ImportViolation[] = [];
+  for (const v of found[0]) {
+    const same = found.map((list) => list.find((x) => x.imports === v.imports));
+    if (same.some((x) => !x)) continue;
+    const strict = same.find((x) => !x!.advisory);
+    out.push(strict ?? v);
   }
   return out;
 }
@@ -259,7 +387,8 @@ export function probableOwner(graph: MindPlanGraph, file: string): MindPlanNode 
     )
     .sort((a, b) => a.id.localeCompare(b.id));
   for (const node of nodes) {
-    for (const raw of [...(node.implements ?? []), ...(node.next?.implements ?? [])]) {
+    const revisionAdds = (node.open_revisions ?? []).flatMap((r) => r.implements.add);
+    for (const raw of [...(node.implements ?? []), ...(node.next?.implements ?? []), ...revisionAdds]) {
       let claim: string;
       try {
         claim = validateClaimPath(raw);
@@ -294,9 +423,10 @@ export function createCoverageFixContext(root: string): CoverageFixContext {
 }
 
 /**
- * The calls that add `file` to the owner's active claim list. A shipped owner with no open next
- * opens an evolution first, unless the file's folder is one it dominates and the file is not a
- * migration or schema file (then the claim is additive in place).
+ * The calls that add `file` to the owner's active claim list: its open revision (named by change
+ * when it has several), else live. A shipped owner with no open revision opens one first, unless
+ * the file's folder is one it dominates and the file is not a migration or schema file (then the
+ * claim is additive in place).
  */
 export function coverageFix(
   graph: MindPlanGraph,
@@ -314,14 +444,23 @@ export function coverageFix(
     }
     return isDominatedFolder(graph, owner.id, path.posix.dirname(file), root, [file], others);
   };
-  const shippedIdle = Boolean(owner.shipped_at) && !owner.next && !inPlace();
-  const current = (owner.next ? owner.next.implements : owner.implements) ?? [];
-  const files = [...new Set([...current, file])].sort((a, b) => a.localeCompare(b));
-  const claim: CoverageFixCall = {
-    tool: "set_implementation_files",
-    args: { node_id: owner.id, files },
-  };
-  return shippedIdle ? [{ tool: "open_next", args: { node_id: owner.id } }, claim] : [claim];
+  // The claim goes into the owner's open revision; with several, the first, named by change.
+  const open = openChanges(owner);
+  if (open.length > 0) {
+    return [
+      {
+        tool: "set_implementation_files",
+        args: open.length > 1 ? { node_id: owner.id, change: open[0], add: [file] } : { node_id: owner.id, add: [file] },
+      },
+    ];
+  }
+  if (owner.shipped_at && !inPlace()) {
+    return [
+      { tool: "open_next", args: { node_id: owner.id, change: "<change-id>" } },
+      { tool: "set_implementation_files", args: { node_id: owner.id, change: "<change-id>", add: [file] } },
+    ];
+  }
+  return [{ tool: "set_implementation_files", args: { node_id: owner.id, add: [file] } }];
 }
 
 /** `Fix: a({...}) then b({...}).` */
@@ -443,73 +582,353 @@ export function routeFamilySplits(
 
 /**
  * Illegal imports of the files `claimed` by `node` (claim entries; directories end in `/`).
- * Used when files are claimed, so a missing edge is reported with its link_nodes call.
+ * Used when files are claimed, so a missing edge is reported with its link_nodes call. With
+ * `change`, the claim is judged under `revisionGraph(graph, change)` (the node's revision of it).
  */
 export function findImportViolationsForClaim(
   graph: MindPlanGraph,
   root: string,
   node: MindPlanNode,
-  claimed: string[]
+  claimed: string[],
+  change?: string
 ): ImportViolation[] {
   if (!isPipelineNodeType(node.type)) return [];
+  const pass = change === undefined ? { change: null, graph, buckets: buildOwnershipIndex(graph, root) } : rulePass(graph, root, change);
   const files = expandClaims(claimed, root);
-  const buckets = buildOwnershipIndex(graph, root);
-  return scanFiles(graph, buckets, root, node, files, new Set(files));
-}
-
-/** Illegal imports of the node's active-slot files (next while evolving, else current). */
-export function findImportViolationsForNode(
-  graph: MindPlanGraph,
-  root: string,
-  node: MindPlanNode
-): ImportViolation[] {
-  const claimed = node.next ? node.next.implements : node.implements;
-  return findImportViolationsForClaim(graph, root, node, claimed ?? []);
-}
-
-/** Active-slot files also claimed by another node. */
-export function findOwnershipConflicts(
-  graph: MindPlanGraph,
-  root: string,
-  node: MindPlanNode
-): string[] {
-  const claimed = node.next ? node.next.implements : node.implements;
-  const mine = new Set(expandClaims(claimed ?? [], root));
-  const conflicts: string[] = [];
-  for (const other of graph.nodes) {
-    if (other.id === node.id || !isPipelineNodeType(other.type)) continue;
-    if (other.state === "cancelled" || other.state === "deprecated") continue;
-    const theirs = expandClaims(other.next ? other.next.implements : other.implements, root);
-    for (const f of theirs) {
-      if (mine.has(f)) {
-        conflicts.push(`ownership: "${f}" claimed by "${node.id}" and "${other.id}".`);
-      }
-    }
-  }
-  return conflicts;
+  return scanUnder(pass, root, inGraph(pass.graph, node), files, new Set(files));
 }
 
 /**
- * Ship-gate: the check's import and ownership rules on one node's files.
+ * Illegal imports of the node's active-slot files: its revision of `gateChange(node, change)`
+ * under that change's graph, else its live files under the live graph. The same
+ * scan the check runs, restricted to this owner and view.
+ */
+export function findImportViolationsForNode(
+  graph: MindPlanGraph,
+  root: string,
+  node: MindPlanNode,
+  change?: string
+): ImportViolation[] {
+  if (!isPipelineNodeType(node.type)) return [];
+  const c = gateChange(node, change);
+  const pass = c === null ? livePassFor(graph, root, node) : rulePass(graph, root, c);
+  const owner = inGraph(pass.graph, node);
+  const files = expandClaims(activeClaims(owner), root);
+  return scanUnder(pass, root, owner, files, new Set(files));
+}
+
+/** Two nodes claiming one file in one view; `change` is the view's (null for live). */
+export type OwnershipConflict = { file: string; a: string; b: string; change: string | null };
+
+/**
+ * The change a node's claim belongs to in a view: the view's change when the node claims through
+ * its revision of it, else its own change when it is a pre-ship member (`preShipChange`), else none.
+ */
+function claimChange(n: MindPlanNode, view: string | null): string | null {
+  return view !== null && revisionFor(n, view) ? view : preShipChange(n);
+}
+
+/**
+ * The ownership rule under one view: every file two non-retired pipeline nodes claim in their
+ * active slot there (next or revision view, else live). A pair is judged in the view of the
+ * change its claims belong to (`claimChange`): live when neither belongs to one; change A's view
+ * when one or both belong to A and the other to none (a pre-ship member or revision of A against
+ * a live or no-change claim, or two of A's). Claims of different changes never conflict (see
+ * `crossChangeClaimWarnings`).
+ */
+function ownershipConflictsUnder(
+  pass: { change: string | null; graph: MindPlanGraph },
+  root: string,
+  filesOf: (n: MindPlanNode) => string[] = (n) => expandClaims(activeClaims(n), root)
+): OwnershipConflict[] {
+  const claims = new Map<string, string[]>();
+  for (const n of pass.graph.nodes) {
+    if (!isPipelineNodeType(n.type) || n.state === "cancelled" || n.state === "deprecated") continue;
+    for (const f of new Set(filesOf(n))) claims.set(f, [...(claims.get(f) ?? []), n.id]);
+  }
+  const byId = new Map(pass.graph.nodes.map((n) => [n.id, n]));
+  const side = (id: string) => claimChange(byId.get(id)!, pass.change);
+  const out: OwnershipConflict[] = [];
+  for (const [file, ids] of claims) {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const [x, y] = [side(ids[i]), side(ids[j])];
+        // Another change's claim, or (under a change) a pair live already judges: not this view's.
+        if ((x !== null && x !== pass.change) || (y !== null && y !== pass.change)) continue;
+        if (pass.change !== null && x === null && y === null) continue;
+        out.push({ file, a: ids[i], b: ids[j], change: pass.change });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Every ownership conflict: the live view's, then each open change's (live plus that change's
+ * revisions; pairs with a claim of that change, `ownershipConflictsUnder`). The check and the per-transition gate (`findOwnershipConflicts`) share it. Live
+ * claims are expanded once; a change's view re-expands only the nodes it revises.
+ */
+export function findAllOwnershipConflicts(graph: MindPlanGraph, root: string): OwnershipConflict[] {
+  const changes = new Set<string>();
+  for (const n of graph.nodes) for (const c of openChanges(n)) changes.add(c);
+  for (const n of graph.nodes) {
+    const own = preShipChange(n);
+    if (own !== null) changes.add(own);
+  }
+  const live = liveGraph(graph);
+  const liveFiles = new Map(live.nodes.map((n) => [n.id, expandClaims(activeClaims(n), root)]));
+  const all = [
+    ...ownershipConflictsUnder({ change: null, graph: live }, root, (n) => liveFiles.get(n.id)!),
+    ...[...changes].sort().flatMap((c) =>
+      ownershipConflictsUnder({ change: c, graph: revisionGraph(graph, c) }, root, (n) =>
+        revisionFor(n, c) ? expandClaims(activeClaims(n), root) : liveFiles.get(n.id) ?? expandClaims(activeClaims(n), root)
+      )
+    ),
+  ];
+  // A pair live already has (a revision kept the claim) is reported once, as live's; otherwise
+  // once per change it conflicts under.
+  const pairKey = (p: OwnershipConflict) => `${p.file}\n${[p.a, p.b].sort().join("\n")}`;
+  const inLive = new Set(all.filter((p) => p.change === null).map(pairKey));
+  const seen = new Set<string>();
+  return all.filter((p) => {
+    if (p.change !== null && inLive.has(pairKey(p))) return false;
+    const key = `${pairKey(p)}\n${p.change ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** The view a node's ownership is judged under: `gateChange`, else a pre-ship member's own change. */
+function ownershipView(node: MindPlanNode, change?: string): string | null {
+  return gateChange(node, change) ?? preShipChange(node);
+}
+
+/**
+ * The pairs of one view (`ownershipConflictsUnder`): that change's, or live's. Another change's
+ * pending claim is not in a node's view: it is that change's to clear (the check reports it under
+ * that change, and `crossChangeClaimWarnings` warns across changes).
+ */
+function viewConflicts(graph: MindPlanGraph, root: string, view: string | null): OwnershipConflict[] {
+  return ownershipConflictsUnder({ change: view, graph: judgeGraph(graph, view) }, root);
+}
+
+/** The node's own pairs among `viewConflicts(view)`, as gate messages. */
+function nodeConflictMessages(pairs: OwnershipConflict[], node: MindPlanNode): string[] {
+  return pairs
+    .filter((p) => p.a === node.id || p.b === node.id)
+    .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
+}
+
+/**
+ * Active-slot files also claimed by another node, in the node's own view (`ownershipView`): its
+ * revision of that change, or a pre-ship member's claims, judged under that change; a node of no
+ * change, judged live. Other changes' pending claims never count here. A filter of the check's
+ * rule.
+ */
+export function findOwnershipConflicts(
+  graph: MindPlanGraph,
+  root: string,
+  node: MindPlanNode,
+  change?: string
+): string[] {
+  const c = ownershipView(node, change);
+  return nodeConflictMessages(viewConflicts(graph, root, c), node);
+}
+
+/** A pair `shipOwnershipConflicts` finds: `other` claims `file` live (or after the walk). */
+type LiveClaimConflict = { file: string; other: string; message: string };
+
+/**
+ * The claims each node a scoped walk ships will hold once the whole walk is written (node id →
+ * claim entries: its revision of the walked change applied, or a pre-ship node's own claims). A
+ * walk is validated whole and writes nothing when any step Blocks, so only its end state counts.
+ */
+export type WalkClaims = ReadonlyMap<string, readonly string[]>;
+
+/**
+ * The ship gate's ownership rule: the node's claims as they stand after the ship (its revision of
+ * `change`, else its live claims) against the live claims of every other shipped, non-retired
+ * pipeline node (plain live, no change's revisions). A node may not ship onto a file another node
+ * claims live: whichever ships second meets the first one's live claim. Inside a scoped walk
+ * (`walk`), every other node that walk ships counts with its claims after the walk instead of its
+ * live ones, so a file the walk moves between its nodes passes in any order, and a file two of
+ * them still claim at the end Blocks. When the other node has an open revision of the shipping
+ * node's change that drops the file, the message says to ship the whole change in one walk (which
+ * passes in any order), or that revision first.
+ */
+function shipOwnershipConflicts(
+  graph: MindPlanGraph,
+  root: string,
+  node: MindPlanNode,
+  change: string | null,
+  walk?: WalkClaims
+): LiveClaimConflict[] {
+  const live = liveGraph(graph);
+  const after = change !== null && revisionFor(node, change) ? nodeUnder(node, change) : inGraph(live, node);
+  const mine = new Set(expandClaims(activeClaims(after), root));
+  if (mine.size === 0) return [];
+  const own = change ?? preShipChange(node);
+  const out: LiveClaimConflict[] = [];
+  for (const n of live.nodes) {
+    if (n.id === node.id || !isPipelineNodeType(n.type)) continue;
+    const final = walk?.get(n.id);
+    if (final === undefined && (!n.shipped_at || n.state === "cancelled" || n.state === "deprecated")) continue;
+    const shared = [...new Set(expandClaims(final ? [...final] : activeClaims(n), root))].filter((f) => mine.has(f));
+    if (shared.length === 0) continue;
+    if (final) {
+      for (const file of shared) {
+        out.push({
+          file,
+          other: n.id,
+          message:
+            `ownership: "${file}" claimed by "${node.id}" and "${n.id}" once this walk is written; ` +
+            `two nodes may not both claim a file live: drop one of the claims.`,
+        });
+      }
+      continue;
+    }
+    const kept = own !== null && revisionFor(n, own) ? new Set(expandClaims(activeClaims(nodeUnder(n, own)), root)) : null;
+    for (const file of shared) {
+      const head = `ownership: "${file}" claimed by "${node.id}" and "${n.id}", which claims it live; `;
+      const tail =
+        kept && !kept.has(file)
+          ? `"${n.id}" revision "${own}" drops it: ship change "${own}" in one walk ` +
+            `(update_node_status({ scope: "change", change: "${own}", new_status: "ship" })), which judges its members ` +
+            `by their claims after the walk, or ship that revision first.`
+          : `a node may not ship onto a file another node claims live: drop the claim, or first ship a revision of "${n.id}" that drops it.`;
+      out.push({ file, other: n.id, message: head + tail });
+    }
+  }
+  return out;
+}
+
+/**
+ * The import and ownership rules on every member of `change` (`findImportViolationsForNode` and
+ * `findOwnershipConflicts`, each member judged through its revision of the change, else in its own
+ * view: a pre-ship member's change, else live),
+ * in one pass: each view's ownership index and conflicts are computed once and filtered per member.
+ * Keyed by member id.
+ */
+export function changeMemberViolations(
+  graph: MindPlanGraph,
+  root: string,
+  members: MindPlanNode[],
+  change: string
+): Map<string, { imports: ImportViolation[]; ownership: string[] }> {
+  const passes = new Map<string, RulePass>();
+  const conflicts = new Map<string | null, OwnershipConflict[]>();
+  const out = new Map<string, { imports: ImportViolation[]; ownership: string[] }>();
+  for (const node of members) {
+    const c = gateChange(node, revisionFor(node, change) ? change : undefined);
+    let imports: ImportViolation[] = [];
+    if (isPipelineNodeType(node.type)) {
+      // A live pass depends only on the change a pre-ship member sees (`livePassFor`).
+      const key = c === null ? `live\0${preShipChange(node) ?? ""}` : `change\0${c}`;
+      let pass = passes.get(key);
+      if (!pass) passes.set(key, (pass = c === null ? livePassFor(graph, root, node) : rulePass(graph, root, c)));
+      const owner = inGraph(pass.graph, node);
+      const files = expandClaims(activeClaims(owner), root);
+      imports = scanUnder(pass, root, owner, files, new Set(files));
+    }
+    const view = c ?? preShipChange(node);
+    let pairs = conflicts.get(view);
+    if (!pairs) conflicts.set(view, (pairs = viewConflicts(graph, root, view)));
+    out.set(node.id, { imports, ownership: nodeConflictMessages(pairs, node) });
+  }
+  return out;
+}
+
+/**
+ * Warnings (never Blocks) for a file claimed by different nodes in different changes, each through
+ * an open revision (a file its node does not claim live) or as a pre-ship member of its change:
+ * allowed while the changes stay separate, but whichever ships second must drop or take over the
+ * claim.
+ */
+export function crossChangeClaimWarnings(graph: MindPlanGraph, root: string): string[] {
+  const live = liveGraph(graph);
+  const buckets = buildOwnershipIndex(live, root);
+  type Claim = { id: string; change: string; label: string };
+  const byFile = new Map<string, Claim[]>();
+  const add = (file: string, c: Claim) => byFile.set(file, [...(byFile.get(file) ?? []), c]);
+  for (const [file, claims] of buckets.revisions) {
+    for (const c of claims) if (buckets.liveClaims.get(file) !== c.id) add(file, { ...c, label: `revision "${c.change}"` });
+  }
+  for (const n of live.nodes) {
+    const own = preShipChange(n);
+    if (own === null || n.state === "cancelled" || n.state === "deprecated") continue;
+    for (const f of new Set(expandClaims(activeClaims(n), root))) add(f, { id: n.id, change: own, label: `change "${own}"` });
+  }
+  const out: string[] = [];
+  for (const [file, fresh] of [...byFile].sort(([a], [b]) => a.localeCompare(b))) {
+    for (let i = 0; i < fresh.length; i++) {
+      for (let j = i + 1; j < fresh.length; j++) {
+        const [x, y] = [fresh[i], fresh[j]];
+        if (x.id === y.id || x.change === y.change) continue;
+        out.push(
+          `ownership: "${file}" is claimed by "${x.id}" (${x.label}) and "${y.id}" (${y.label}). ` +
+            `Allowed while the changes are separate; whichever ships second must drop the claim or take it over.`
+        );
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Ship-gate: the check's import and ownership rules on one node's files, in its view
+ * (`gateChange(node, change)`; ownership in `ownershipView`). At "ship" the node's claims after
+ * the ship are also judged against other shipped nodes' live claims (`shipOwnershipConflicts`;
+ * inside a scoped walk, `walk` gives the nodes that walk ships by their claims after it).
  * Throws `Blocked:` with every violation and its fix.
  */
 export function assertCheckCleanForNode(
   graph: MindPlanGraph,
   root: string,
   node: MindPlanNode,
-  targetLabel: string
+  targetLabel: string,
+  change?: string,
+  walk?: WalkClaims
 ): void {
   if (!isPipelineNodeType(node.type)) return;
+  const c = gateChange(node, change);
+  const view = c === null ? node : nodeUnder(node, c);
+  const ownership = findOwnershipConflicts(graph, root, node, c ?? undefined);
+  if (targetLabel === "ship") {
+    // A pair the node's own view already reports is not repeated.
+    const said = new Set(ownership);
+    for (const p of shipOwnershipConflicts(graph, root, node, c, walk)) {
+      if (!said.has(`ownership: "${p.file}" claimed by "${node.id}" and "${p.other}".`)) ownership.push(p.message);
+    }
+  }
   const problems = [
-    ...findImportViolationsForNode(graph, root, node).map((v) => v.message),
-    ...findOwnershipConflicts(graph, root, node),
-    ...missingTestMessages(node, root),
+    ...findImportViolationsForNode(graph, root, node, c ?? undefined).map((v) => v.message),
+    ...ownership,
+    ...missingTestMessages(view, root),
   ];
   if (problems.length === 0) return;
+  const label = c !== null && revisionFor(node, c) && (node.open_revisions?.length ?? 0) > 1 ? `"${node.id}" revision "${c}"` : `"${node.id}"`;
   throw blocked(
-    `Check failed for "${node.id}" before "${targetLabel}" (${problems.length} violation(s)):\n` +
+    `Check failed for ${label} before "${targetLabel}" (${problems.length} violation(s)):\n` +
       problems.map((p) => `- ${p}`).join("\n")
   );
+}
+
+/**
+ * Ship-gate for one open revision: unresolved rebase conflicts Block first (in-review / ship),
+ * then the check's import, ownership, and linked-test rules on the revision's files under
+ * live plus `change` (`walk`: as in `assertCheckCleanForNode`).
+ */
+export function assertCheckCleanForRevision(
+  graph: MindPlanGraph,
+  root: string,
+  node: MindPlanNode,
+  change: string,
+  targetLabel: string,
+  walk?: WalkClaims
+): void {
+  if (targetLabel === "in-review" || targetLabel === "ship") assertNoRevisionConflicts(node, change);
+  assertCheckCleanForNode(graph, root, node, targetLabel, change, walk);
 }
 
 // ---------------------------------------------------------------------------
@@ -531,14 +950,32 @@ export function testPresenceFailures(node: MindPlanNode, root: string): string[]
   if (!isPipelineNodeType(node.type) || isInactiveNode(node)) return [];
   const due =
     node.state === "in-review" || isProductionState(node.state) || node.next?.state === "in-review";
-  return due ? missingTestMessages(node, root) : [];
+  const out = due ? missingTestMessages(node, root) : [];
+  // An in-review revision's linked tests (live with its test delta) are due too.
+  for (const view of revisionViews(node)) {
+    if (view.next?.state !== "in-review") continue;
+    for (const m of missingTestMessages(view, root)) if (!out.includes(m)) out.push(m);
+  }
+  return out;
 }
 
 /** A nudge, never a Block: a Foundation, Interaction, or Interface in review with no linked tests. */
 export function untestedWarning(node: MindPlanNode): string | null {
   if (!isPipelineNodeType(node.type) || isInactiveNode(node)) return null;
-  const active = node.next ? node.next.state : node.state;
-  if (active !== "in-review" || (node.tests?.length ?? 0) > 0) return null;
+  const views = node.next || !node.open_revisions?.length ? [node] : revisionViews(node);
+  const untested = views.find((v) => {
+    const active = v.next ? v.next.state : v.state;
+    return active === "in-review" && (v.tests?.length ?? 0) === 0;
+  });
+  if (!untested) return null;
+  // A revision's links go to that revision: set_test_files without change writes live.
+  const change = untested.next?.change;
+  if (change && revisionFor(node, change)) {
+    return (
+      `tests: "${node.id}" is in review with no linked tests (revision "${change}"); link the files that verify it with ` +
+      `set_test_files({ node_id: "${node.id}", change: "${change}", add: [...] }).`
+    );
+  }
   return `tests: "${node.id}" is in review with no linked tests; link the files that verify it with set_test_files.`;
 }
 
@@ -619,21 +1056,28 @@ function isPlanOnlySlot(node: MindPlanNode, slot: "current" | "next", root: stri
  * a body names a path that does not exist, a claim added in place (`added_claims`) is not
  * named by the body, a claimed file changed after the body was last written, or checkboxes
  * are still open. Missing paths of a plan-only slot, and paths on an "at build time" line, are
- * not stale: they come back as one `planned:` line per node in `info`.
+ * not stale: they come back as one `planned:` line per node in `info`. With `change`, the node's
+ * open revision of that change is judged (its file, its claims), whatever `slot` says.
  */
 export function staleTextWarnings(
   graph: MindPlanGraph,
   root: string,
-  node: MindPlanNode,
-  slot: "current" | "next" = node.next ? "next" : "current",
-  scope: StaleTextScope = STALE_ALL
+  input: MindPlanNode,
+  slotArg?: "current" | "next",
+  scope: StaleTextScope = STALE_ALL,
+  change?: string
 ): StaleTextSignals {
   const warnings: string[] = [];
   const info: string[] = [];
+  const revised = change !== undefined && Boolean(revisionFor(input, change));
+  const node = revised ? nodeUnder(input, change!) : input;
+  const slot: "current" | "next" = revised ? "next" : (slotArg ?? (node.next ? "next" : "current"));
   if (!isPipelineNodeType(node.type)) return { warnings, info };
+  const source = slotSource(node, slot);
   let body = "";
   try {
-    const split = splitContext(readMarkdown(node, slot));
+    if (source.text === null) throw new Error("missing");
+    const split = splitContext(source.text);
     // Recorded decisions may name paths a later revision removed; they are history, not stale text.
     body = withoutOwnedSections(split?.body ?? "");
   } catch {
@@ -668,7 +1112,7 @@ export function staleTextWarnings(
   }
 
   // Claims a shipped node added in place stay flagged until the live body names them.
-  if (scope.paths && !node.next) {
+  if (scope.paths && !node.next && !revised) {
     for (const entry of node.added_claims ?? []) {
       if (namesPath(body, entry)) continue;
       warnings.push(
@@ -681,7 +1125,7 @@ export function staleTextWarnings(
   // writes code and territory together, so only an edit made after the body counts.
   let updated = NaN;
   try {
-    updated = fs.statSync(path.join(root, ...markdownRelativePath(node, slot).split("/"))).mtimeMs;
+    updated = fs.statSync(path.join(root, ...source.relPath.split("/"))).mtimeMs;
   } catch {
     /* no territory file: nothing to compare against */
   }
@@ -741,13 +1185,21 @@ const comparable = (text: string) =>
 /**
  * Description quality warnings (never failures) for one node's active slot: empty or a repeat of
  * the title, longer than `DESCRIPTION_MAX_CHARS`, an Interaction that names no actor, or revision
- * wording ("now", "no longer", "was changed to", …) that belongs in the revision's body.
+ * wording ("now", "no longer", "was changed to", …) that belongs in the revision's body. With
+ * `change`, the node's open revision of that change is judged (named when it has several).
  */
-export function descriptionWarnings(node: MindPlanNode): string[] {
-  if (isInactiveNode(node)) return [];
+export function descriptionWarnings(input: MindPlanNode, change?: string): string[] {
+  if (isInactiveNode(input)) return [];
+  const node = change !== undefined ? nodeUnder(input, change) : input;
   const title = node.next?.title ?? node.title;
   const description = (node.next?.description ?? node.description ?? "").trim();
-  const where = node.next ? `"${node.id}" (next)` : `"${node.id}"`;
+  // Each open revision is judged on its own; with several, the line names which one.
+  const viewed = node.next?.change;
+  const where = !node.next
+    ? `"${node.id}"`
+    : viewed && (node.open_revisions?.length ?? 0) > 1
+      ? `"${node.id}" (revision "${viewed}")`
+      : `"${node.id}" (next)`;
   const out: string[] = [];
   if (!description) {
     out.push(`description: ${where} has no description; say what the node does in one sentence (search ranks it).`);

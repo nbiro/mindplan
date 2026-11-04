@@ -6,6 +6,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { resolveProjectRoot } from "../f-source-index/root-scope.js";
 import { readFileRetry, writeFileRetry } from "../f-source-index/io.js";
 
 const MINDPLAN_DIR = "mindplan";
@@ -37,7 +38,7 @@ export type ProjectBrief = {
 };
 
 function mindplanRoot(): string {
-  return path.join(process.env.MINDPLAN_ROOT ?? process.cwd(), MINDPLAN_DIR);
+  return path.join(resolveProjectRoot(), MINDPLAN_DIR);
 }
 
 /** Reads templates/agent/project.md by walking up from this module to the package root. */

@@ -143,7 +143,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 | Interface | `if-` | `if-waiter-pos`, `if-mcp-tools`, `if-cli` |
 | Bug | `bug-` | `bug-double-charge` |
 
-**Naming rule:** the **title** is the stable name of the thing — a verb phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Capabilities, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the `<id>.next.mdx` body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Keep the description to one or two sentences (under 300 characters): it is the row search ranks and orientation shows; detail goes in the body. For an Interaction, say who does what ("Visitor sends …"). **Aliases:** add `aliases` for the words users will say that the title and description do not contain (`quote` for an enquiry form, the product's other-language terms such as `ofertă`), with `create_node({ …, aliases })` or later `patch_node_territory({ node_id, aliases })`; aliases never need `open_next`. Both title and description are written to `<id>.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Interaction, Interface, or Foundation, call `open_next` first — then patch the `next` slot.
+**Naming rule:** the **title** is the stable name of the thing — a verb phrase for Interactions (e.g. "Split the check"), a noun or short noun phrase for Capabilities, Interfaces, Foundations, and Bugs. The **description** says what the node is or does **now**. Revision notes, changelog fragments, and parenthetical "what changed this PR" asides belong in the revision body (or Atomic Ops), never in title or description. For Foundations, agents SHOULD lead the description with the role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`) — one role only, no hybrids. Keep the description to one or two sentences (under 300 characters): it is the row search ranks and orientation shows; detail goes in the body. For an Interaction, say who does what ("Visitor sends …"). **Aliases:** add `aliases` for the words users will say that the title and description do not contain (`quote` for an enquiry form, the product's other-language terms such as `ofertă`), with `create_node({ …, aliases })` or later `patch_node_territory({ node_id, aliases })`; aliases never need `open_next`. Both title and description are written to `<id>.mdx` frontmatter at creation. Change them afterward with `patch_node_territory({ node_id, title?, description? })`. For a shipped Interaction, Interface, or Foundation, call `open_next({ node_id, change })` first — then patch that revision (pass `change` when the node has several).
 
 ## Step 4 — Create via MCP
 
@@ -153,7 +153,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 create_node({ id, type, title, description })
 ```
 
-Server scaffolds `mindplan/<folder>/<id>/<id>.mdx` (`<folder>` is `capabilities`, `foundations`, `interactions`, `interfaces`, or `bugs`) with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps; Foundations also `role`). Does **not** scaffold application code — declare owned paths later with `set_implementation_files` (exact files or directories ending in `/`). Capabilities and Bugs have no code ownership. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place via `open_next`/`<id>.next.mdx` (see "Evolving a shipped node" below).
+Server scaffolds `mindplan/<folder>/<id>/<id>.mdx` (`<folder>` is `capabilities`, `foundations`, `interactions`, `interfaces`, or `bugs`) with the node record in frontmatter (`id`, `type`, `title`, `description`, `state`, timestamps; Foundations also `role`). Does **not** scaffold application code — declare owned paths later with `set_implementation_files` (exact files or directories ending in `/`). Capabilities and Bugs have no code ownership. Edge arrays are added by `link_nodes`. This id is permanent — Foundations, Interactions, and Interfaces never get a new id later; they evolve in place through revisions, one per change (`open_next`, `revisions/<change>/`; see "Evolving a shipped node" below).
 
 After create, call `set_implementation_files` for pipeline nodes. Implement **only** in claimed paths; query expanded files with `get_node_implementation({ node_id })` (or path → owner lookup). Reuse across behaviors via Foundation claims, not Interaction→Interaction `depends_on`. There is no prescribed `src/<type>/<id>/` tree.
 
@@ -211,7 +211,7 @@ patch_node_territory({ node_id, title?, description? })         // fallback — 
 patch_node_territory({ node_id, toggle_checkboxes: [...] })     // fallback — check off Atomic Ops
 ```
 
-`toggle_checkboxes` matches item text by substring and is `Blocked:` when the substring matches several items (pass `all: true` to tick them all). Close an item that was done differently with `{ contains, checked: true, note: "…" }`, or one that does not apply with `{ contains, not_applicable: "<reason>" }` — never reword the item to make it tickable. Editing a `ready` node's text, claims, or links sends it back to `draft` (`readiness_reset` in the result).
+`toggle_checkboxes` names an item by `id` (its `{#id}` tag; the default items are `spec`, `impl`, `verify`) or by its exact text without tag or annotation; a substring is `Blocked:` and lists the items, and text several items share needs `all: true`. Close an item that was done differently with `{ id, note: "…" }`, or one that does not apply with `{ id, not_applicable: "<reason>" }` — never reword the item to make it tickable. Every checkbox is a `build` item (the agent closes it) unless tagged `{#id review}` or `{#id deploy}`: a person closes those. Add them with `add_checklist_items: [{ text, id?, kind? }]`. Open review and deploy items show in `orient_for_work` as `open_items` and in `run_check` as `Info: waiting on people:`; say they wait instead of ticking them. A dependency in review with every build item ticked (and its own dependencies ready the same way) no longer holds up its dependents' ship; it still ships only with every item ticked. Editing a `ready` node's text, claims, or links sends it back to `draft` (`readiness_reset` in the result).
 
 Replace scaffold placeholders with real content. The gate checks these sections on every listed move, and `create_node` returns `shape` with each one's status (`present`, `missing`, or `stub`):
 
@@ -278,7 +278,7 @@ Section guidance:
 - **Expected / Actual** — behaviour contrast
 - **Fix Checklist** — root cause, fix, regression test
 
-Use `- [ ]` syntax for gates — unchecked boxes block `ship` and Bug `resolved` (Completion Check). Treat Atomic Ops as the record you confirm before ship, not as progress narration. A shipped node keeps none: ship removes the section (git keeps it), and `open_next` starts the revision with fresh unticked defaults that you rewrite into this revision's ops. Attachments still use normal file tools under `attachments/` (or `next-attachments/` while evolving).
+Use `- [ ]` syntax for gates — unchecked boxes block `ship` and Bug `resolved` (Completion Check). Treat Atomic Ops as the record you confirm before ship, not as progress narration. A shipped node keeps none: ship removes the section (git keeps it), and `open_next` starts the revision with fresh unticked defaults that you rewrite into this revision's ops. Attachments go through `put_attachment` / `remove_attachment`, under `attachments/` (or the revision's `attachments/` while one is open; pass `change` when several are).
 
 ## Step 7 — Verify graph
 
@@ -303,7 +303,7 @@ Behavior-first: draft Interactions so Foundations and Interfaces are derived fro
 7. link_nodes Interface → Interaction (exposes)
 8. link_nodes Interface → Foundation (depends_on)     ← optional
 9. link_nodes Interaction → Interaction (leads_to)    ← navigation only, as needed
-10. Edit each node body (and title/description if needed) via file tools at `current_path` / `next_path`
+10. Edit each node body (and title/description if needed) with patch_node_territory
 11. Stop with links + territory complete; mindplan-mcp check; self-ready in one ordered call
     (Foundations, then Interactions, then Interfaces)
 ```
@@ -325,12 +325,13 @@ Foundations, Interactions, and Interfaces keep one id forever — there is no `-
 get_blast_radius({ node_id: "i-checkout-split" })   // dependents + reachability first
 open_next({
   node_id: "i-checkout-split",
+  change: "split-rules",                         // required: the change id this revision belongs to
   title: "Split & pay checkout v2",              // optional
   description: "Revised checkout with new split rules"  // optional
 })
 ```
 
-A shipped node is one file, `<id>.mdx`. `open_next` writes `<id>.next.mdx` from it in state `draft` (optional title/description) with fresh unticked Atomic Ops to rewrite. The live node keeps serving under `<id>.mdx`. Classify the revision first (blast radius): a **source** edits `next` into a full successor contract; a **neighbor** (files change, behavior doesn't) is edited in place and gets no open evolution and no change id (`change` on it is `Blocked:`) — claim a new file beside its own (in a folder no other node claims into) in place with `set_implementation_files`; unaffected blast-radius nodes get no evolution either. Then default `mindplan-mcp check`, then self-`ready`. An execution session runs `in-progress` → `in-review`; the implementer `ship`s in one ordered `revisions` call after green check, which promotes next over live, deletes `<id>.next.mdx`, and recomputes `stable`/`unstable` — same id throughout. `discard_next` deletes the next file without touching `<id>.mdx`. Only one open evolution (`<id>.next.mdx` may be open at a time.
+A shipped node is one file, `<id>.mdx`, plus one folder per open revision. `open_next` writes `revisions/<change>/<id>.mdx` from it in state `draft` (optional title/description) with fresh unticked Atomic Ops to rewrite. The live node keeps serving under `<id>.mdx`. A node may hold one open revision per change at the same time; each is judged against live plus its own change only, and on a node with more than one you pass `change` to every call that reads or writes it. Classify the revision first (blast radius): a **source** edits its revision into a full successor contract; a **neighbor** (files change, behavior doesn't) is edited in place and gets no revision and no change id (`change` on it is `Blocked:`) — claim a new file beside its own (in a folder no other node claims into) in place with `set_implementation_files({ node_id, add: [file] })`; unaffected blast-radius nodes get no revision either. On a revision, edges, claims (`add` / `remove`), and tests are deltas against live. Then default `mindplan-mcp check`, then self-`ready`. An execution session runs `in-progress` → `in-review`; the implementer `ship`s after green check (`scope: "change"`, or `{ node_id, change, new_status: "ship" }`), which writes live ⊕ the revision to `<id>.mdx`, deletes its folder, rebases the node's other revisions (`rebased`), and recomputes `stable`/`unstable` — same id throughout. A rebased revision holding a conflict (a section or field both revisions changed) is `Blocked:` at `in-review` until `resolve_conflict({ node_id, change, section | field | claim, take })`. `discard_next({ node_id, change })` deletes one revision folder without touching `<id>.mdx` or the other revisions.
 
 ## Common mistakes
 
@@ -344,7 +345,7 @@ A shipped node is one file, `<id>.mdx`. `open_next` writes `<id>.next.mdx` from 
 | Modeling a Page as an Interaction | Wrong taxonomy — Interface exposes Interaction(s); Interaction still owns the screen body |
 | One Interface per screen/tab/page | Wrong — one Interface per actor + channel; each route mounts the matching Interaction surface |
 | Duplicate Interaction per Interface (e.g. MCP steer + console steer) | Wrong — reuse the Interaction; add `exposes` from the new Interface |
-| Changelog titles / descriptions (e.g. "Orient (slim context…)") | Wrong — title is the stable name; revision notes go in `<id>.next.mdx` body |
+| Changelog titles / descriptions (e.g. "Orient (slim context…)") | Wrong — title is the stable name; revision notes go in the revision body |
 | Hybrid or forced role tags (`"Assembler/docs"`) | Wrong — Assembler only for runtimes; misfits → Infra |
 | Fat screens owned by an Interface | Inverted ownership — move domain + view to the Interaction; Interface only mounts |
 | Foundation described as user behavior | Scope creep — split into Foundation (substrate) + Interaction (behavior) |
@@ -353,8 +354,11 @@ A shipped node is one file, `<id>.mdx`. `open_next` writes `<id>.next.mdx` from 
 | Implementing Interaction code outside its `implements` claims | Wrong architecture — declare files with `set_implementation_files` and query via `get_node_implementation` |
 | Manual Capability / `stable` / `unstable` status | Rejected — computed only |
 | Editing edge arrays or server-owned frontmatter by hand | Out of contract — use MCP tools |
-| `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` can open a next evolution |
-| `open_next` while a `<id>.next.mdx` is already open | `Blocked` — `discard_next` or ship it first |
+| `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` open revisions |
+| `open_next` without `change`, or for a change already open on the node | `Blocked` — pass a change id; edit, ship, or `discard_next` the open revision of that change |
+| A call on a node with several open revisions and no `change` | `Blocked` — the error lists them; pass `change` |
+| `set_implementation_files` / `set_test_files` with `files` and no `replace: true` | `Blocked` — use `add` / `remove`; `files` + `replace: true` only to replace the whole list |
+| One decision recorded once per node it shapes | Noise — record it once with `nodes: [...]` |
 | A `depends_on` per feature on a node that must know every feature (erase, export, index, permission) | `fan-out:` warning in `run_check` — invert onto a Foundation contract (schema convention or lifecycle record) with a node rule and a linked test |
 | Expecting `link_dependent` / Dependency Closure | Removed — Interactions do not depend on each other |
 

@@ -2,18 +2,19 @@
 id: i-change-status
 type: Interaction
 title: "Change a node's status"
-description: "Agent moves a node along the build or bug pipeline: one node, an ordered batch, or a scoped walk with dry run; ship and promotion count revisions and record declared splits; force_unship undoes a ship."
+description: "Agent moves a node along the build or bug pipeline: one node, an ordered batch, or a scoped walk with dry run that can walk past blocked members; ship and promotion count revisions and record declared splits; force_unship undoes a ship."
 state: stable
-shipped_at: 2026-10-31T23:05:25.147Z
-revisions: 2
-churn: 1.99
+shipped_at: 2026-11-03T11:22:44.366Z
+revisions: 6
+churn: 5.847
 created_at: 2026-10-31T11:58:03.397Z
-updated_at: 2026-10-31T23:05:25.147Z
+updated_at: 2026-11-04T09:18:30.402Z
 belongs_to:
-  - j-territory-sdlc
   - j-plan-console
+  - j-territory-sdlc
 depends_on:
   - f-plan-writes
+  - f-revision-model
   - f-tool-kit
 implements:
   - src/interactions/i-change-status/
@@ -46,6 +47,7 @@ Intended files: `src/interactions/i-change-status/` (`handlers.ts`, `tools.ts`).
 - **Status gate.** A move to `in-review` or `ship` runs `assertCheckCleanForNode` after the transition's own rules and before any write; `staleTextWarnings` ride along as `warnings` and never block
 - **Decision gate.** A move to `in-review` (single, batch, scoped walk, and their dry runs) runs `assertDecisionForReview`; one `DecisionContext` serves a call's validation and every step
 - **Scoped status.** `scope` (`all_open_updates` | `node_and_dependents` with `node_id` | `change` with `change`) and `new_status` as the target: selects the open updates, orders Foundations, Interactions, Interfaces, walks each through `draft → ready → in-progress → in-review → ship`, and validates the whole walk in memory first (`promoteInMemory` mirrors `promoteNextSlot` field for field, revision count, rate, and split included), writing nothing when a step would be Blocked. `dry_run` returns `{ dry_run, plan, blocked, warnings? }`
+- **Walk past blocked members.** `skip_blocked: true` (scoped walks only) validates each node's whole walk in memory on its own, in walk order, on top of the nodes already validated: a node whose walk would be Blocked at any step stays where it is (no partial steps), and so does every later node that cannot move without it (the gates Block them in turn). The rest walk to the target. The result (and its `dry_run`) adds `blocked: [{ node_id, step, reason }]`; when no node can move it is Blocked and writes nothing. Without it a scoped walk stays all-or-nothing
 - **Review is not skipped silently.** A scoped walk to `ship` past nodes not yet `in-review` is Blocked unless `skip_review: true`, which walks each through the in-review gate and lists `skipped_review`
 - **Ship.** First ship clears the live change id, writes `shipped_at`, `revisions`, and `churn`, and strips the Atomic Ops (`stripLiveAtomicOps`); promotion (`promoteNextSlot`) copies next over live, adds one to `revisions`, decays and bumps `churn`, and records a declared split (`splitParts`: the marked `split_into` parts, as `f-domain-model` defines them per type), resetting `churn` to 0. A ship, cancel, or promotion that closes a change drops its planned edges (`withChangeCleanup`, `f-plan-writes`); retiring a shipped node touches no change id
 - **force_unship** validates Rule 11, gives the live file fresh Atomic Ops, keeps `revisions`, stores `churn` decayed to now with `churn_at`, clears `added_claims`, deletes any next file, and restores the live file and the in-memory record when any step fails
@@ -54,11 +56,29 @@ Intended files: `src/interactions/i-change-status/` (`handlers.ts`, `tools.ts`).
 
 Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-index`, `f-domain-model`, `f-tool-kit`.
 
+- **Open revisions (0.18.0).** `update_node_status` takes `change` to pick a node's revision (optional when it has at most one); the scoped `change` walk moves each member's revision of that change, ordered on `graphUnder(graph, change)` so a depends_on a member's revision adds is walked dependency first; the `all_open_updates` and `node_and_dependents` walks order rows on each row's own revision and leave a node with several open revisions in place, listing it in `needs_change_walk: [{ node_id, changes }]` only when a revision has a step left toward the target (with a `note` naming the change walks when nothing else moved) while the rest walk; validation runs on `graphUnder(graph, change)` and `promoteInMemory` uses `withRevision`. Ship calls `shipRevision`, which rebases the node's other revisions and lists `rebased: [{ change, conflicts }]` in the result. A walk (and its dry run) foresees that rebase: before a revision ships, `simulateRow` runs `assertRevisionShipsOntoLive` (`f-territory-store`), so a revision rebased onto a newer live is Blocked in memory rather than failing halfway through the writes. A batch's duplicate check keys each item on the revision it resolves to (`revisionChangeFor`), so one revision listed once with its change omitted and once with it named is Blocked as a duplicate; an item whose change does not resolve takes no key and Blocks on its own reason. A scoped walk passes the ship gate the claims every shipping row will hold once the walk is written (`walkClaims`), in validation (`simulateWalk`) and in the write (`applyWalk`), so a file the walk moves or swaps between its nodes ships in any order, while a file two of them still claim at the end Blocks; with `skip_blocked`, nodes left behind are dropped from that map and validation reruns until it is stable. Walk order stays tier then depends_on (`orderForWalk`). A single move and a `revisions` batch are judged against live
+
+## Cleanup (0.18)
+
+`recomputeAndSync` runs the stability and Capability recompute once per move; skip_blocked walks and batch dry runs share `trialRow` on one cloned graph; `pickRevision` resolves which revision a move means, and the change hint names no change when the named one is not open.
+
+## Partial walks and batches
+
+A batch that moved some items and Blocked others adds `partial: true` and `blocked_count`, so a caller never reads a partial batch as complete; a batch dry run simulates every item on one working copy of the graph, and the change hints reuse the loaded graph.
+
+A move of a node's active slot back from `in-review` (to `in-progress`, `ready`, or `draft`) is Blocked while a stable or unstable node has a live `depends_on` / `exposes` edge to it and it is not stable, naming the dependents (ship it, or `force_unship` them).
+
+- A `scope: "change"` walk takes `nodes: [...]`: only those members of the change walk (each must be a member; others stay put). A listed node whose `depends_on` target is an unshipped member of the same change that is not listed (or not walking to the same target) is still refused by the gates.
+- A `revisions` batch no longer stops at the first Blocked: every item is tried in tier order on the graph as the earlier items left it, and the result lists `results: [{ node_id, change?, ok, line?, blocked? }]`; the call is Blocked only when no item moved.
+- Every Blocked a single-node move returns for a node that is a member of a change names the scoped walk that moves the whole change: `update_node_status({ scope: "change", change, new_status, skip_review?, skip_blocked? })`.
+
 ## Acceptance Criteria
 
 - Moving a node whose file has an import violation to `in-review` or `ship` is Blocked, and the Blocked text names the fix
 - `all_open_updates` never walks a draft or ready plan; a scoped walk ships every open update in one call in dependency order, `dry_run` writes nothing, and a Blocked step writes nothing
 - A scoped walk to `ship` from `ready` is Blocked without `skip_review`; with it the result lists `skipped_review` and every node passed the in-review gate; `dry_run` lists one line per transition
+- A `scope: "change"` walk to `ship` with `skip_blocked: true` over a change whose one member has an illegal import ships the other members, leaves the blocked member's state unchanged, and lists it in `blocked` with its step and reason; without `skip_blocked` the same walk writes nothing
+- `skip_blocked` on a single or batch move is Blocked; a `skip_blocked` walk where every node is blocked writes nothing
 - `scope: "change"` walks exactly the change's open revisions; a change with none is Blocked (`has no members`)
 - A decision-worthy revision is Blocked at `in-review` with the `record_decision` call; after recording, the same move passes; a revision that is not decision-worthy moves with no decision
 - Shipping or cancelling a change's last revision drops other nodes' unopened planned entries (`cleared_planned`); no status result carries `cleared_neighbors` or `cleared_change`

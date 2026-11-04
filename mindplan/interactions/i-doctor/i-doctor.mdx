@@ -1,0 +1,58 @@
+---
+id: i-doctor
+type: Interaction
+title: "Check the server's health"
+description: "Agent or human calls doctor to see the server's version, the graph root it serves, the graph's migration level, and how long the graph took to load, so a slow or missing attach is diagnosable without raw stdio."
+state: stable
+shipped_at: 2026-11-03T11:14:59.278Z
+revisions: 2
+churn: 1.999
+created_at: 2026-11-03T08:22:07.430Z
+updated_at: 2026-11-03T13:30:52.953Z
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-graph-migrations
+  - f-mcp-runtime
+  - f-search-index
+  - f-territory-store
+  - f-tool-kit
+implements:
+  - src/interactions/i-doctor/
+tests:
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
+aliases:
+  - "health"
+  - "doctor"
+  - "diagnose"
+  - "server status"
+  - "attach"
+  - "startup"
+---
+
+# Check the server's health
+
+## Purpose
+
+Lets an agent or a human see, in one call, whether the MindPlan server attached and what it serves: the package version, the graph root, the graph's migration level against the server's, and how long the last graph load took. A session where the server did not attach was hard to diagnose without talking raw stdio; a cheap health call that answers before any heavy work makes it obvious.
+
+## Actor & Trigger
+
+- **Actor:** agent or human
+- **Trigger:** the `doctor` MCP tool (read; not behind the version gate, so it answers on a graph that needs setup or an upgrade)
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-doctor/` (`handlers.ts`, `tools.ts`).
+
+- `doctor({ root? })` returns `{ version, node, root, graph: { status, level, server_level }, load_ms_cached, cache_hit, load_error?, cache: { graph, search }, started_at, uptime_s }`: `version` from the package, `root` the graph root this call resolved, `status` from `graphStatus()` (`current`, `setup`, `upgrade`, or `newer`), `load_ms_cached` the duration of a `loadGraph()` through the graph cache for that root with `cache_hit` (true only when the load read at least one node folder and the cache served every node; the cache has no bypass), only when the status is `current` and loading would remove no legacy file (otherwise `load_error` names why), the server's start time from `f-mcp-runtime`, and whether the graph and search caches are present
+- It never writes; a load error is reported, not thrown
+- Mounted by `if-mcp-tools` with `gate: false`
+- The cache path comes from `cacheDir` (`f-source-index`); cache names come from their owners: the cache folder from `f-source-index`, `graph.db` from `f-graph-cache`, `index.db` from `f-search-index`
+
+## Acceptance Criteria
+
+- `doctor` answers on a sandbox with no graph (`status: "setup"`), on a level-3 graph (`status: "upgrade"`), and on a current graph with a numeric `load_ms_cached`
+- `doctor` answers before any other tool has loaded the graph
+- Verified via `npm test`

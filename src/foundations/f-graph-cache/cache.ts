@@ -8,7 +8,8 @@
  * - Inside git (and above `GIT_MODE_MIN_FOLDERS`), a record is reused untouched when it was parsed
  *   while its folder was clean at tree T, git status lists nothing under the folder now, and the
  *   folder did not change between T and the current tree.
- * - Otherwise the folder's `.mdx` files are compared by stamp (name, size, mtime). A stamp taken
+ * - Otherwise the folder's `.mdx` files and every file under its `revisions/` and `decisions/`
+ *   are compared by stamp (name, size, mtime). A stamp taken
  *   within `RACY_MS` of a file's mtime is not trusted: such a folder is hashed when parsed, and
  *   re-read and compared by hash until its stamps settle. Anything else re-parses the folder.
  *
@@ -23,6 +24,7 @@ import * as path from "path";
 import type { MindPlanNode } from "../f-domain-model/types.js";
 import { dirGitState, treeChanges } from "../f-source-index/git.js";
 import { readBytesRetry } from "../f-source-index/io.js";
+import { ensureCacheDir, rootKey } from "../f-source-index/root-scope.js";
 
 /** Bump when the table or the stored entry shape changes; a mismatch drops every row. */
 export const GRAPH_CACHE_SCHEMA = "2";
@@ -31,8 +33,8 @@ export const GIT_MODE_MIN_FOLDERS = 1000;
 /** A stamp taken this close to a file's mtime may miss an edit in the same clock tick. */
 export const RACY_MS = 2000;
 
-const CACHE_DIRNAME = ".mindplan-cache";
-const DB_FILENAME = "graph.db";
+/** The graph cache's file in the root's cache folder (CACHE_DIRNAME). */
+export const DB_FILENAME = "graph.db";
 
 /** One file of a node folder as last seen. */
 export type FileStamp = { name: string; size: number; mtimeMs: number };
@@ -42,7 +44,7 @@ export type CacheEntry = {
   record: MindPlanNode | null;
   files: FileStamp[];
   /**
-   * SHA-1 over the folder's `.mdx` names and bytes, taken only when a stamp was too recent to
+   * SHA-1 over the stamped files' names and bytes, taken only when a stamp was too recent to
    * trust (hashing every folder would double the reads of a cold load); null otherwise.
    */
   hash: string | null;
@@ -71,7 +73,12 @@ function openDatabase(file: string): Database | null {
   }
 }
 
-/** Stamps of a folder's `.mdx` files (any case: Windows and macOS open `a.MDX` as `a.mdx`), sorted by name. */
+/**
+ * Stamps of the files that shape a node folder's record, named by POSIX path from the folder and
+ * sorted by name: its `.mdx` files (any case: Windows and macOS open `a.MDX` as `a.mdx`), every
+ * file under `decisions/`, and in each `revisions/<change>/` its `.mdx` files and every file under
+ * its `decisions/`. Attachments never shape a record, so they are not stamped.
+ */
 export function folderStamps(abs: string): FileStamp[] {
   const out: FileStamp[] = [];
   let names: string[];
@@ -80,13 +87,40 @@ export function folderStamps(abs: string): FileStamp[] {
   } catch {
     return out;
   }
-  for (const name of names) {
-    if (!name.toLowerCase().endsWith(".mdx")) continue;
+  const stamp = (name: string): void => {
     try {
       const st = fs.statSync(path.join(abs, name));
       if (st.isFile()) out.push({ name, size: st.size, mtimeMs: st.mtimeMs });
     } catch {
       // Gone between the listing and the stat: treated as absent.
+    }
+  };
+  const entriesOf = (rel: string): fs.Dirent[] => {
+    try {
+      return fs.readdirSync(path.join(abs, rel), { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  };
+  const walk = (rel: string): void => {
+    for (const entry of entriesOf(rel)) {
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(child);
+      else stamp(child);
+    }
+  };
+  for (const name of names) {
+    if (name.toLowerCase().endsWith(".mdx")) stamp(name);
+    else if (name === "decisions") walk(name);
+    else if (name === "revisions") {
+      for (const change of entriesOf(name).filter((e) => e.isDirectory())) {
+        for (const entry of entriesOf(`${name}/${change.name}`)) {
+          const child = `${name}/${change.name}/${entry.name}`;
+          if (entry.isDirectory()) {
+            if (entry.name === "decisions") walk(child);
+          } else if (entry.name.toLowerCase().endsWith(".mdx")) stamp(child);
+        }
+      }
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -163,11 +197,9 @@ export class GraphCache {
   }
 
   private static openStore(root: string, version: string): Database | null {
-    const dir = path.join(root, CACHE_DIRNAME);
+    let dir: string;
     try {
-      fs.mkdirSync(dir, { recursive: true });
-      const ignore = path.join(dir, ".gitignore");
-      if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "# Derived MindPlan caches; safe to delete.\n*\n", "utf-8");
+      dir = ensureCacheDir(root);
     } catch {
       return null;
     }
@@ -367,21 +399,28 @@ export class GraphCache {
   }
 }
 
+/** Open caches, least recently used first; at most `MAX_OPEN_CACHES` stay open. */
 const caches = new Map<string, GraphCache>();
+const MAX_OPEN_CACHES = 4;
 
 /**
- * The cache of a project root (one per process). `MINDPLAN_GRAPH_CACHE`: `off` disables it (null),
- * `git` or `stamps` forces that mode whatever the plan's size; unset chooses by size.
+ * The cache of a project root (one per process; the least recently used beyond the last four roots
+ * is closed). `MINDPLAN_GRAPH_CACHE`: `off` disables it (null), `git` or `stamps` forces that mode
+ * whatever the plan's size; unset chooses by size.
  */
 export function graphCacheFor(root: string, packageVersion: string): GraphCache | null {
   const setting = process.env.MINDPLAN_GRAPH_CACHE;
   if (setting === "off") return null;
   const abs = path.resolve(root);
-  const key = `${abs}\u0000${packageVersion}`;
+  const key = `${rootKey(abs)}\u0000${packageVersion}`;
   let cache = caches.get(key);
-  if (!cache) {
-    cache = new GraphCache(abs, packageVersion);
-    caches.set(key, cache);
+  if (cache) caches.delete(key);
+  else cache = new GraphCache(abs, packageVersion);
+  caches.set(key, cache);
+  for (const [oldest, evicted] of caches) {
+    if (caches.size <= MAX_OPEN_CACHES) break;
+    evicted.close();
+    caches.delete(oldest);
   }
   cache.gitModeMinFolders = setting === "git" ? 0 : setting === "stamps" ? Infinity : GIT_MODE_MIN_FOLDERS;
   return cache;

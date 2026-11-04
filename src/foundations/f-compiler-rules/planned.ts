@@ -10,7 +10,8 @@ import type {
   PlannedEdge,
   PlannedEdgeType,
 } from "../f-domain-model/types.js";
-import { activeChange, isInactiveNode, isPipelineNodeType } from "../f-domain-model/types.js";
+import { isInactiveNode, isPipelineNodeType } from "../f-domain-model/types.js";
+import { revisionFor } from "../f-revision-model/index.js";
 import { assertAcyclicDependsOn, blocked, changeMembers, validateLink } from "./rules.js";
 
 /** One pending planned edge, with its source. */
@@ -18,18 +19,16 @@ export type PlannedEdgeRow = { source: string; change: string; type: PlannedEdge
 
 /**
  * Pending planned edges (of one change, or all): every live entry of a shipped, active node,
- * except the entries a revision of their change has already applied — those are in its next slot
- * now. An entry of that change the next slot lacks (the revision took the change id after it
- * opened) stays pending, so it is still listed and checked.
+ * except the entries an open revision of their change has already applied. A node with an open
+ * revision of change C applies none of C's entries (they became add deltas when it opened).
  */
 export function plannedEdges(graph: MindPlanGraph, change?: string): PlannedEdgeRow[] {
   const rows: PlannedEdgeRow[] = [];
   for (const n of graph.nodes) {
     if (!n.planned?.length || !n.shipped_at || isInactiveNode(n)) continue;
-    const open = n.next ? activeChange(n) : undefined;
     for (const e of n.planned) {
       if (change !== undefined && e.change !== change) continue;
-      if (open !== undefined && e.change === open && (n.next?.[e.type] ?? []).includes(e.target)) continue;
+      if (revisionFor(n, e.change)) continue;
       rows.push({ source: n.id, change: e.change, type: e.type, target: e.target });
     }
   }
@@ -38,15 +37,19 @@ export function plannedEdges(graph: MindPlanGraph, change?: string): PlannedEdge
   );
 }
 
-/** Shipped nodes with pending planned edges under `change`: its members of kind `planned`. */
+/**
+ * Shipped nodes with pending planned edges under `change` and no open revision of it: its members
+ * of kind `planned`.
+ */
 export function changePlannedSources(graph: MindPlanGraph, change: string): MindPlanNode[] {
   const ids = new Set(plannedEdges(graph, change).map((r) => r.source));
   return graph.nodes.filter((n) => ids.has(n.id));
 }
 
 /**
- * Every member of a change, each once: its open revisions and the shipped nodes with pending
- * planned edges under it (a node already listed as a revision keeps that kind). The check, the
+ * Every member of a change, each once: its open revisions (shipped members as views of that
+ * change's revision, see `changeMembers`) and the shipped nodes with pending planned edges under
+ * it and no revision of it (a node already listed as a revision keeps that kind). The check, the
  * change blast radius, and change-wide orientation share it.
  */
 export function changeMembership(
@@ -116,13 +119,16 @@ function plannedEdgeProblem(graph: MindPlanGraph, withPlanned: MindPlanGraph, ro
   return null;
 }
 
-/** One line per illegal pending planned edge of `change`: `<source> -<type>-> <target>: <why>`. */
-export function plannedEdgeProblems(graph: MindPlanGraph, change: string): string[] {
+/** One illegal pending planned edge: the row and why it is illegal. */
+export type PlannedEdgeIssue = PlannedEdgeRow & { problem: string };
+
+/** Every illegal pending planned edge of `change`, in `plannedEdges` order. */
+export function plannedEdgeProblems(graph: MindPlanGraph, change: string): PlannedEdgeIssue[] {
   const withPlanned = withPlannedDependsOn(graph, change);
-  const out: string[] = [];
+  const out: PlannedEdgeIssue[] = [];
   for (const row of plannedEdges(graph, change)) {
     const problem = plannedEdgeProblem(graph, withPlanned, row);
-    if (problem) out.push(`planned edge ${row.source} -${row.type}-> ${row.target}: ${problem}`);
+    if (problem) out.push({ ...row, problem });
   }
   return out;
 }

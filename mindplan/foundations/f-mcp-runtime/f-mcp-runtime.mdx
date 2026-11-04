@@ -4,19 +4,19 @@ type: Foundation
 title: "MCP runtime"
 description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, get_rules and orient_for_work before each action, the plan-project skill via get_skill); scopes drift to the node a result is about."
 state: stable
-shipped_at: 2026-10-31T20:33:28.832Z
-revisions: 22
-churn: 1
+shipped_at: 2026-11-03T09:48:46.879Z
+revisions: 24
+churn: 2.943
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-10-31T20:33:28.832Z
+updated_at: 2026-11-03T09:48:46.879Z
 split_at: 21
 split_into:
   - f-orientation-ledger
 depends_on:
-  - f-territory-store
   - f-framework-docs
   - f-graph-search
   - f-orientation-ledger
+  - f-territory-store
 implements:
   - src/foundations/f-mcp-runtime/
   - src/index.ts
@@ -53,6 +53,10 @@ Package: `src/foundations/f-mcp-runtime/`
 
 Depends on: `f-territory-store`, `f-framework-docs`, `f-graph-search`, `f-orientation-ledger`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
 
+## Graph root per call
+
+Drift and the search warm-up use the root of the call they serve; the server warms only its own root at boot and builds another root's caches on first use.
+
 ## Acceptance Criteria
 
 - MCP `initialize` instructions equal the short pointer constant
@@ -66,19 +70,10 @@ Depends on: `f-territory-store`, `f-framework-docs`, `f-graph-search`, `f-orient
 - In MCP mode a console.log from any module reaches stderr, not the stdio channel
 - The server answers tool calls while the search model is still loading (keyword-only until it is ready)
 
-## Decisions
-
-### d-version-from-package-json
-
-- Decision: The server version on initialize is read from package.json at boot, never typed into source.
-- Alternatives:
-  - Keep a literal in server.ts and bump both on release (already 0.1.0 in two places; the first bump that forgets one makes initialize name a release that does not exist)
-  - Inject it at build time with a generated module (a build step for one string, and tsc has none)
-- Why: There is one source of truth for the version and it is the file npm publishes.
-- Consequences: The read is relative to the compiled module so it works from dist/ inside node_modules; an unreadable file falls back to 0.0.0 with a stderr note rather than failing boot.
-- Change: mcp-audit-fixes
-- Date: 2026-10-20
-
 ## Attachments
 
 _None._
+
+## Startup and health
+
+`initialize` is answered before any graph load, migration check, or model load. The process installs `uncaughtException` and `unhandledRejection` handlers that write the reason to stderr (`mindplan-mcp: fatal: …`) before exiting, and logs the exit code and reason on any early exit. It records its start time and the duration of each graph load for `doctor`.
