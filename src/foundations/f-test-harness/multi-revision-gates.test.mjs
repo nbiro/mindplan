@@ -356,14 +356,77 @@ write("src/shared/s.ts", "export const s = 1;\n");
     [["src/shared/s.ts", "f-p", "f-x", "a"]],
     "the check reports the pair under the member's change"
   );
-  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[0]), ['ownership: "src/shared/s.ts" claimed by "f-p" and "f-x".']);
+  // f-p's own view is live, where f-x's claim is pending under "a": f-p's gates pass, and the
+  // pair is f-x's to clear under its change.
+  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[0]), []);
   assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[1]), ['ownership: "src/shared/s.ts" claimed by "f-x" and "f-p".']);
-  blocked(() => integrity.assertCheckCleanForNode(g, root, g.nodes[0], "in-review"), /claimed by "f-p" and "f-x"/);
+  integrity.assertCheckCleanForNode(g, root, g.nodes[0], "in-review");
+  integrity.assertCheckCleanForNode(g, root, g.nodes[0], "ship");
   blocked(() => integrity.assertCheckCleanForNode(g, root, g.nodes[1], "in-review"), /claimed by "f-x" and "f-p"/);
   assert.deepEqual(integrity.changeMemberViolations(g, root, [g.nodes[1]], "a").get("f-x").ownership, [
     'ownership: "src/shared/s.ts" claimed by "f-x" and "f-p".',
   ]);
-  ok("a pre-ship node of no change and a pre-ship member of a change on one file conflict in both gates");
+  // f-p shipped first: f-x's ship meets f-p's live claim, reported once (its own view has the pair).
+  const pFirst = graphOf([node("f-p", "Foundation", { implements: ["src/shared/s.ts"] }), g.nodes[1]]);
+  blocked(
+    () => integrity.assertCheckCleanForNode(pFirst, root, pFirst.nodes[1], "ship"),
+    /\(1 violation\(s\)\):\n- ownership: "src\/shared\/s\.ts" claimed by "f-x" and "f-p"\.$/
+  );
+  // f-x shipped first (its change left with the ship): f-p's in-review gate meets f-x's live claim.
+  const xFirst = graphOf([g.nodes[0], node("f-x", "Foundation", { implements: ["src/shared/s.ts"] })]);
+  blocked(() => integrity.assertCheckCleanForNode(xFirst, root, xFirst.nodes[0], "in-review"), /claimed by "f-p" and "f-x"/);
+  ok("a pre-ship node of no change and a member of a change on one file: the member's gate Blocks; the second to ship meets the first's live claim");
+}
+
+// --- A no-change node is judged live: another change's draft claim on its file does not Block it ---
+{
+  const g = graphOf([
+    { ...node("f-n", "Foundation", { implements: ["src/shared/s.ts"] }), state: "in-progress", shipped_at: undefined },
+    node("f-m", "Foundation", {
+      implements: ["src/own1/"],
+      open_revisions: [revision("x", { implements: { add: ["src/shared/s.ts"], remove: [] } })],
+    }),
+  ]);
+  assert.deepEqual(
+    integrity.findAllOwnershipConflicts(g, root).map((c) => [c.file, c.a, c.b, c.change]),
+    [["src/shared/s.ts", "f-n", "f-m", "x"]],
+    "the check still reports the pending pair under x"
+  );
+  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[0]), []);
+  integrity.assertCheckCleanForNode(g, root, g.nodes[0], "in-review");
+  integrity.assertCheckCleanForNode(g, root, g.nodes[0], "ship");
+  blocked(() => integrity.assertCheckCleanForRevision(g, root, g.nodes[1], "x", "in-review"), /claimed by "f-m" and "f-n"/);
+  ok("a no-change node's gate reads live only; the revision adding its file is Blocked in its own view");
+}
+
+// --- A takeover ships only after the revision that drops the file: the ship gate reads live claims ---
+{
+  const dropping = node("f-n", "Foundation", {
+    implements: ["src/own1/", "src/shared/s.ts"],
+    open_revisions: [revision("x", { implements: { add: [], remove: ["src/shared/s.ts"] } })],
+  });
+  const member = { ...node("f-p", "Foundation", { implements: ["src/shared/s.ts"], change: "x" }), state: "in-review", shipped_at: undefined };
+  const g = graphOf([dropping, member]);
+  integrity.assertCheckCleanForNode(g, root, g.nodes[1], "in-review");
+  blocked(
+    () => integrity.assertCheckCleanForNode(g, root, g.nodes[1], "ship"),
+    /"src\/shared\/s\.ts" claimed by "f-p" and "f-n", which claims it live; "f-n" revision "x" drops it: ship that revision first/
+  );
+  // N's revision shipped: live no longer claims the file, so P ships.
+  const after = graphOf([node("f-n", "Foundation", { implements: ["src/own1/"] }), member]);
+  integrity.assertCheckCleanForNode(after, root, after.nodes[1], "ship");
+  // A revision taking the file over meets the same gate.
+  const taker = node("f-t", "Foundation", {
+    implements: ["src/own2/"],
+    open_revisions: [revision("x", { implements: { add: ["src/shared/s.ts"], remove: [] } })],
+  });
+  const revs = graphOf([dropping, taker]);
+  integrity.assertCheckCleanForRevision(revs, root, revs.nodes[1], "x", "in-review");
+  blocked(() => integrity.assertCheckCleanForRevision(revs, root, revs.nodes[1], "x", "ship"), /"f-n" revision "x" drops it/);
+  // Another node's live claim with no such revision: the plain message.
+  const other = graphOf([node("f-n", "Foundation", { implements: ["src/shared/s.ts"] }), member]);
+  blocked(() => integrity.assertCheckCleanForNode(other, root, other.nodes[1], "ship"), /claimed by "f-p" and "f-n"/);
+  ok("a node may not ship onto a file another node claims live; the message names the revision that drops it");
 }
 
 // --- A revision of B and a pre-ship member of A on one file: a cross-change warning, not a Block ---

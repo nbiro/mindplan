@@ -729,6 +729,57 @@ async function shippedFoundation(id) {
   );
 }
 
+// --- a takeover ships after the revision that drops the file: alone Blocked, in one change walk ordered ---
+{
+  // "f-ho-a" (the new member taking the file over) sorts before "f-ho-n" (whose revision drops it).
+  await shippedFoundation("f-ho-n");
+  const file = "src/f-ho-n/index.ts";
+  write("src/f-ho-n/keep.ts", "export const k = 1;\n");
+  await call("set_implementation_files", { node_id: "f-ho-n", add: ["src/f-ho-n/keep.ts"] });
+  await call("open_next", { node_id: "f-ho-n", change: "handover" });
+  await call("set_implementation_files", { node_id: "f-ho-n", change: "handover", remove: [file] });
+  await readyByTools("f-ho-n", "handover");
+  await call("create_node", { id: "f-ho-a", type: "Foundation", title: "f-ho-a", description: "Infra — f-ho-a", role: "infra", change: "handover" });
+  await call("set_implementation_files", { node_id: "f-ho-a", add: [file] });
+  fillAndTick(abs("mindplan/foundations/f-ho-a/f-ho-a.mdx"));
+  for (const new_status of ["ready", "in-progress", "in-review"]) await call("update_node_status", { node_id: "f-ho-a", new_status });
+  const alone = await blocked("update_node_status", { node_id: "f-ho-a", new_status: "ship" });
+  check(
+    "a new member taking over a file ships alone only after the revision that drops it: Blocked naming that revision",
+    !!alone && alone.includes('"f-ho-n", which claims it live') && alone.includes('"f-ho-n" revision "handover" drops it'),
+    String(alone)
+  );
+  const walked = await raw("update_node_status", { scope: "change", change: "handover", new_status: "ship", skip_review: true });
+  const order = walked.error ? [] : (JSON.parse(walked.text).lines ?? []).map((l) => l.split(":")[0]);
+  check(
+    "a change walk ships the revision that drops a file before the member taking it over",
+    !walked.error && order.indexOf("f-ho-n") >= 0 && order.indexOf("f-ho-n") < order.indexOf("f-ho-a"),
+    walked.text
+  );
+}
+
+// --- a file moving between two shipped nodes in one change: the walk ships the source's revision first ---
+{
+  // "f-hm-dst" sorts before "f-hm-src".
+  await shippedFoundation("f-hm-src");
+  await shippedFoundation("f-hm-dst");
+  const file = "src/f-hm-src/index.ts";
+  write("src/f-hm-src/keep.ts", "export const k = 1;\n");
+  await call("set_implementation_files", { node_id: "f-hm-src", add: ["src/f-hm-src/keep.ts"] });
+  await call("open_next", { node_id: "f-hm-src", change: "hm" });
+  await call("set_implementation_files", { node_id: "f-hm-src", change: "hm", remove: [file] });
+  await call("open_next", { node_id: "f-hm-dst", change: "hm" });
+  await call("set_implementation_files", { node_id: "f-hm-dst", change: "hm", add: [file] });
+  for (const id of ["f-hm-src", "f-hm-dst"]) await readyByTools(id, "hm");
+  const walked = await raw("update_node_status", { scope: "change", change: "hm", new_status: "ship", skip_review: true });
+  const order = walked.error ? [] : (JSON.parse(walked.text).lines ?? []).map((l) => l.split(":")[0]);
+  check(
+    "a change walk moving a file ships the source's revision before the destination's",
+    !walked.error && order.indexOf("f-hm-src") >= 0 && order.indexOf("f-hm-src") < order.indexOf("f-hm-dst"),
+    walked.text
+  );
+}
+
 // --- node_and_dependents orders by each row's revision: a revision-added depends_on counts ---
 {
   // "f-nd-a" sorts first by id; its revision's new depends_on f-nd-b must put f-nd-b first.

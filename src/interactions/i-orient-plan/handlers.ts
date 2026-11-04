@@ -179,6 +179,13 @@ export function buildNodeContextPayload(
   } = {}
 ): Record<string, unknown> {
   const open = openChanges(node);
+  // A pre-ship member of the change has no stored revision: its live slot is the change's.
+  if (opts.slot === "next" && opts.change !== undefined && !node.shipped_at && isRevisionOf(node, opts.change)) {
+    throw blocked(
+      `"${node.id}" is a pre-ship member of change "${opts.change}": a pre-ship node has no open revision; ` +
+        `its live slot is the change's. Omit slot (or pass slot "current") to read it.`
+    );
+  }
   // Several revisions and slot "next" without change: Blocked, naming them.
   const pickedRevision = pickRevision(node, opts.change, { strict: opts.slot === "next" });
   const change = pickedRevision.change ?? undefined;
