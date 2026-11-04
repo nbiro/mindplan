@@ -586,6 +586,20 @@ check("every write listed every mindplan/ file it touched", diffMisses === 0, `$
     JSON.stringify(o.open_items) === JSON.stringify([{ node_id: "f-items", change: "items", id: "qa", kind: "review", text: "QA sign-off" }]),
     JSON.stringify(o.open_items)
   );
+  // A new node of the change is a member with no stored revision: its live slot is the change's.
+  await call("create_node", { id: "f-items-new", type: "Foundation", title: "f-items-new", description: "Infra — f-items-new", role: "infra", change: "items" });
+  const members = await call("orient_for_work", { change: "items" });
+  check("orient_for_work on the change lists its new member", JSON.stringify(members).includes('"f-items-new"'), JSON.stringify(members));
+  const memberBlock = await blocked("orient_for_work", { node_id: "f-items-new", change: "items" });
+  check("orient_for_work on a new member with its change reads its live slot", memberBlock === null, String(memberBlock));
+  const member = await call("orient_for_work", { node_id: "f-items-new", change: "items" });
+  check(
+    "a new member's orient reply focuses it under the change",
+    member.focus === "f-items-new" && member.unlocks === "items" && member.rules?.node_id === "f-items-new",
+    JSON.stringify(member).slice(0, 400)
+  );
+  const outsider = await blocked("orient_for_work", { node_id: "f-items-new", change: "other" });
+  check("orient_for_work on a new node with another change still Blocks", !!outsider, String(outsider));
   const ticked = await call("patch_node_territory", { node_id: "f-items", toggle_checkboxes: [{ id: "qa", checked: true }] });
   check("a revision item ticks by id", ticked.toggled?.[0] === "- [x] QA sign-off {#qa review}", JSON.stringify(ticked));
 }
