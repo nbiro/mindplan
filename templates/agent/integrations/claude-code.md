@@ -16,4 +16,4 @@ Or commit it to `.mcp.json` so everyone who opens the repo gets it, cloud contai
 }
 ```
 
-Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), run `claude mcp add mindplan -- npx -y mindplan-mcp@0.18`, or use `"args": ["-y", "mindplan-mcp@0.18"]` in `.mcp.json`. Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).
+Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), run `claude mcp add mindplan -- npx -y mindplan-mcp@0.19`, or use `"args": ["-y", "mindplan-mcp@0.19"]` in `.mcp.json`. Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).

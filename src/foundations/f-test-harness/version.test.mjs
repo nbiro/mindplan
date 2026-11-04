@@ -3,7 +3,8 @@
  * setup_project, which creates the graph and returns the pointer and guide; a graph whose stamp is
  * missing or below the migration level is Blocked naming upgrade_project, which migrates it, lists
  * what it changed and the retired host copies, and lets the tools through; a stamp above the level
- * is Blocked naming the package; the check fails in the same states; get_skill serves the skills;
+ * is Blocked naming the package; the check fails in the same states; get_project says restart,
+ * gating nothing, once the package is replaced under a running server; get_skill serves the skills;
  * mindplan-mcp init is gone.
  */
 import { spawn, spawnSync } from "child_process";
@@ -568,6 +569,55 @@ function runCheck(root) {
   check("a refused upgrade leaves the newer stamp", stamp.package === "99.0.0");
   await client.close();
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+// --- a package replaced under the running server: get_project says restart ---
+{
+  // A copy of the package (its own package.json, dist, templates) whose version the test can change
+  // while a server runs from it; node_modules is linked so its imports resolve.
+  const pkg = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-pkg-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-restart-"));
+  let client;
+  try {
+    fs.copyFileSync(path.join(toolRoot, "package.json"), path.join(pkg, "package.json"));
+    fs.cpSync(path.join(toolRoot, "dist"), path.join(pkg, "dist"), { recursive: true });
+    fs.cpSync(path.join(toolRoot, "templates"), path.join(pkg, "templates"), { recursive: true });
+    fs.symlinkSync(path.join(toolRoot, "node_modules"), path.join(pkg, "node_modules"), "junction");
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(pkg, "dist/index.js")],
+      env: { ...process.env, MINDPLAN_ROOT: root },
+      stderr: "ignore",
+    });
+    client = new Client({ name: "version-test", version: "0.1.0" });
+    await client.connect(transport);
+    const project = async () => JSON.parse((await client.callTool({ name: "get_project", arguments: {} })).content[0].text);
+    const before = await project();
+    check("get_project has no restart while the booted package is installed", before.restart === undefined, JSON.stringify(before.restart));
+    const manifest = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf-8"));
+    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ ...manifest, version: "99.0.0" }, null, 2) + "\n");
+    const noGraph = await project();
+    check(
+      "get_project names the installed and running versions after the package is replaced",
+      typeof noGraph.restart === "string" &&
+        noGraph.restart.includes("99.0.0") &&
+        noGraph.restart.includes(pkgVersion) &&
+        noGraph.restart.includes("get_project"),
+      JSON.stringify(noGraph.restart)
+    );
+    check("restart leaves version as the running server's own warning", (noGraph.version ?? "").includes("setup_project"), noGraph.version);
+    const setup = await client.callTool({ name: "setup_project", arguments: {} });
+    check("setup_project runs on a replaced package", !setup.isError, setup.content?.[0]?.text);
+    const current = await project();
+    check("a current graph still gets restart, and no version", typeof current.restart === "string" && current.version === undefined, JSON.stringify(current));
+    const gated = await client.callTool({ name: "list_areas", arguments: {} });
+    check("restart gates no tool", !gated.isError, gated.content?.[0]?.text);
+  } finally {
+    await client?.close();
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.unlinkSync(path.join(pkg, "node_modules"));
+    fs.rmSync(pkg, { recursive: true, force: true });
+  }
 }
 
 // --- gated and ungated tools ---

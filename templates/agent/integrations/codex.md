@@ -21,4 +21,4 @@ MINDPLAN_ROOT = "/absolute/path/to/your/project"
 
 `codex mcp list` (or `/mcp` inside Codex) should show `mindplan` connected.
 
-Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), run `codex mcp add` with `-- npx -y mindplan-mcp@0.18`, or use `args = ["-y", "mindplan-mcp@0.18"]` in the TOML. Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).
+Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), run `codex mcp add` with `-- npx -y mindplan-mcp@0.19`, or use `args = ["-y", "mindplan-mcp@0.19"]` in the TOML. Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).

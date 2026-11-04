@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.19.0 — get_project notices a package replaced under the running server
+
+- **`restart` in `get_project`.** A running server keeps the code it started with, so after an `npm install` it still answered as the old package and its `version` field could miss an upgrade the installed one needs. `get_project` now reads the package's own `package.json` on every call and, when its version differs from the one the server booted with, returns `restart`: both versions, and a request to have the MCP server restarted and call `get_project` again before acting on `version`. It is advice only and gates no tool. The playbook and README say so. [§8.1]
+- **Docs pin `mindplan-mcp@0.19`** for projects without a dev dependency.
+
 ## 0.18.1 — leaner docs
 
 - **Each rule is stated once.** SPEC, README, the playbook, and the served skills now give each rule one home section and point to it from everywhere else, and describe only what the server does today; release history stays in this changelog. SPEC section numbers and every `get_spec` topic are unchanged. No behavior changes.

@@ -16,6 +16,6 @@ MindPlan works with any coding agent that speaks MCP over stdio. Setup is two st
 | [Continue](continue.md) | `.continue/config.yaml` | `AGENTS.md`, else a Continue rule |
 | [Any MCP client](generic.md) | stdio command `npx mindplan-mcp` | `AGENTS.md`, `CLAUDE.md`, or the host's rules file |
 
-`npx mindplan-mcp` runs the copy your `package.json` pins (`npm install -D mindplan-mcp`); without one, use `npx -y mindplan-mcp@0.18`. The package ships the JSON snippet as `templates/agent/mcp.json.example`. Set `MINDPLAN_ROOT` when the host does not start the server in the project root.
+`npx mindplan-mcp` runs the copy your `package.json` pins (`npm install -D mindplan-mcp`); without one, use `npx -y mindplan-mcp@0.19`. The package ships the JSON snippet as `templates/agent/mcp.json.example`. Set `MINDPLAN_ROOT` when the host does not start the server in the project root.
 
 The skills (`plan-project`, `define-entities`) are served through `get_skill`; nothing is copied into your repository. Graph writes come back in each tool result's `changed_files`; some hosts leave them out of their edit list, so review them in source control.

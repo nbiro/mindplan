@@ -1430,11 +1430,12 @@ Live read of the systems dialect and the project brief (§1.1.1). Call before th
   "rules_version": "3f9c1a0b2d4e",  // tag of rules; pass to get_rules as known_version
   "playbook": "# MindPlan — think in systems\n…",  // always the bundled systems dialect
   "check": "Run the check with the run_check tool (CLI: mindplan-mcp check) before …",  // names the integrity check
-  "version": "This graph needs an upgrade: … Call upgrade_project, then commit the upgrade on its own."  // only when the graph is not current (§1.1.2)
+  "version": "This graph needs an upgrade: … Call upgrade_project, then commit the upgrade on its own.",  // only when the graph is not current (§1.1.2)
+  "restart": "mindplan-mcp 0.19.0 is installed, but this server is still running 0.18.1, …"  // only when the package was replaced under the running server
 }
 ```
 
-`playbook` is always the package's `templates/agent/playbook.md`. `check` is a fixed sentence naming the `run_check` tool and the CLI `mindplan-mcp check`. `version` is present only when the graph status is not `current`, and is its warning sentence (naming `setup_project`, `upgrade_project`, or a `mindplan-mcp` upgrade). `rules_version` is the first 12 hex characters of the SHA-256 of `rules` (an empty string has one too), the same tag `get_rules` returns, so the session's first `get_rules` can already be the short form. When the brief is missing or unreadable, `description` and `rules` are empty strings and `path` stays the local relative path while territory is file-backed.
+`playbook` is always the package's `templates/agent/playbook.md`. `check` is a fixed sentence naming the `run_check` tool and the CLI `mindplan-mcp check`. `version` is present only when the graph status is not `current`, and is its warning sentence (naming `setup_project`, `upgrade_project`, or a `mindplan-mcp` upgrade). `restart` is present only when the `version` in the package's own `package.json`, read on every call, differs from the version the server read at boot: an `npm install` replaced the package under the running server, so the running code, and with it `version`, is the old package's. It names both versions and tells the agent to have the server restarted and call `get_project` again; it is advice only, gates no tool, and is absent when `package.json` cannot be read. `rules_version` is the first 12 hex characters of the SHA-256 of `rules` (an empty string has one too), the same tag `get_rules` returns, so the session's first `get_rules` can already be the short form. When the brief is missing or unreadable, `description` and `rules` are empty strings and `path` stays the local relative path while territory is file-backed.
 
 - **Errors:** a missing or unreadable bundled playbook is `Blocked:` (agents MUST NOT invent the dialect). Brief I/O failures surface as empty `description` / `rules` (`loadProjectBrief` MUST NOT throw).
 
