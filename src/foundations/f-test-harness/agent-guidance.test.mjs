@@ -225,7 +225,12 @@ const FOUNDATION_SECTIONS = {
     walk.text
   );
   const both = await raw("orient_for_work", { change: "cards", node_id: "f-cards" });
-  check("change with node_id is Blocked", both.error, both.text);
+  // A pre-ship member of the change reads its live slot, which is the change's (orient_for_work SPEC).
+  check(
+    "change with node_id on a pre-ship member reads it and unlocks the change",
+    !both.error && both.text.includes('"focus":"f-cards"') && both.text.includes('"unlocks":"cards"'),
+    both.text
+  );
   const missing = await raw("orient_for_work", { change: "no-such-change" });
   check("a change with no members is Blocked", missing.error && missing.text.includes("has no members"), missing.text);
   const oriented = await call("orient_for_work", { change: "cards" });
