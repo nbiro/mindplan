@@ -754,8 +754,8 @@ export type WalkClaims = ReadonlyMap<string, readonly string[]>;
  * (`walk`), every other node that walk ships counts with its claims after the walk instead of its
  * live ones, so a file the walk moves between its nodes passes in any order, and a file two of
  * them still claim at the end Blocks. When the other node has an open revision of the shipping
- * node's change that drops the file, the message says to ship that revision first, or the whole
- * change in one walk.
+ * node's change that drops the file, the message says to ship the whole change in one walk (which
+ * passes in any order), or that revision first.
  */
 function shipOwnershipConflicts(
   graph: MindPlanGraph,
@@ -793,8 +793,9 @@ function shipOwnershipConflicts(
       const head = `ownership: "${file}" claimed by "${node.id}" and "${n.id}", which claims it live; `;
       const tail =
         kept && !kept.has(file)
-          ? `"${n.id}" revision "${own}" drops it: ship that revision first, or ship change "${own}" in one walk ` +
-            `(update_node_status({ scope: "change", change: "${own}", new_status: "ship" })).`
+          ? `"${n.id}" revision "${own}" drops it: ship change "${own}" in one walk ` +
+            `(update_node_status({ scope: "change", change: "${own}", new_status: "ship" })), which judges its members ` +
+            `by their claims after the walk, or ship that revision first.`
           : `a node may not ship onto a file another node claims live: drop the claim, or first ship a revision of "${n.id}" that drops it.`;
       out.push({ file, other: n.id, message: head + tail });
     }

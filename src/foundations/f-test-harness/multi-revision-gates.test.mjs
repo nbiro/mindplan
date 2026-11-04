@@ -410,7 +410,7 @@ write("src/shared/s.ts", "export const s = 1;\n");
   integrity.assertCheckCleanForNode(g, root, g.nodes[1], "in-review");
   blocked(
     () => integrity.assertCheckCleanForNode(g, root, g.nodes[1], "ship"),
-    /"src\/shared\/s\.ts" claimed by "f-p" and "f-n", which claims it live; "f-n" revision "x" drops it: ship that revision first/
+    /"src\/shared\/s\.ts" claimed by "f-p" and "f-n", which claims it live; "f-n" revision "x" drops it: ship change "x" in one walk .*, or ship that revision first\.$/
   );
   // N's revision shipped: live no longer claims the file, so P ships.
   const after = graphOf([node("f-n", "Foundation", { implements: ["src/own1/"] }), member]);
@@ -445,10 +445,10 @@ write("src/shared/s.ts", "export const s = 1;\n");
     open_revisions: [revision("x", { state: "in-review", implements: { add: [F], remove: [] } })],
   });
   const g = graphOf([from, to]);
-  // Shipped alone, f-t meets f-i's live claim.
+  // Shipped alone, f-t meets f-i's live claim, and the Block points at the change walk first.
   blocked(
     () => integrity.assertCheckCleanForRevision(g, root, g.nodes[1], "x", "ship"),
-    /claimed by "f-t" and "f-i", which claims it live; "f-i" revision "x" drops it/
+    /claimed by "f-t" and "f-i", which claims it live; "f-i" revision "x" drops it: ship change "x" in one walk/
   );
   // In a walk that also ships f-i's revision, f-i is judged by its claims after the walk.
   const walk = new Map([["f-i", ["src/own1/"]], ["f-t", ["src/own2/", F]]]);

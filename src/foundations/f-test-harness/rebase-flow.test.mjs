@@ -800,7 +800,7 @@ async function shippedFoundation(id) {
   const alone = await blocked("update_node_status", { node_id: "f-mv-a", change: "mv", new_status: "ship" });
   check(
     "the taker shipped alone before its source is Blocked on the source's live claim, pointing at the change walk",
-    !!alone && alone.includes('"f-mv-b", which claims it live') && alone.includes('ship change "mv" in one walk'),
+    !!alone && alone.includes('"f-mv-b", which claims it live') && alone.includes('drops it: ship change "mv" in one walk'),
     String(alone)
   );
   const walked = await raw("update_node_status", { scope: "change", change: "mv", new_status: "ship" });
