@@ -9,7 +9,7 @@ Everything works great until it doesn’t. MindPlan draws the boundaries your ag
 - `SPEC.md` is normative for this package.
 - `GRAPH_VERSION` stays `1`. There is no consumer compatibility layer for the former Workflow-centric schema.
 - Implementation language is TypeScript under `src/`.
-- While developing, run only the suites that verify what you changed: `npm run test:files -- <paths>` with the linked tests `get_blast_radius({ change })` lists for the change. Before handing work off (`in-review`, `ship`, Bug `resolved`, or telling the user the work is done), run the full `npm test`; CI runs it on every PR.
+- After a change, run only the tests of the nodes it affects: `npm run test:files -- <paths>` with the linked tests of the changed nodes (`get_blast_radius({ change })` lists them for a change). Do not run the full `npm test` for each fix or review round. Run the full `npm test` only before shipping (`ship`, a release, or a merge to `main`); CI runs it on every PR.
 - A new feature always starts on a new git branch from latest `main`. Fetch/update `main` first. Do not work on `main` or branch from a stale or feature branch.
 - Before handing work off (`ready`, `in-review`, `ship`, Bug `resolved`, or telling the user the work is done), review the diff and fix every finding at medium severity or higher, then review again, until a pass has none. If a bugfix needs an architectural decision (new boundary, public contract, schema or graph-model change, or a choice between viable designs), stop and ask.
 - After an MCP tool writes under `mindplan/`, list every `mindplan/` path in that call's `changed_files`.
