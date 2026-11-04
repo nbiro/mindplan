@@ -318,6 +318,32 @@ write("src/shared/s.ts", "export const s = 1;\n");
   ok("the blast radius counts a file one of several revisions adds as the focus's own");
 }
 
+// --- A pre-ship member takes over a file its change's revision drops from a shipped node ---
+{
+  const split = (claimsKept) =>
+    graphOf([
+      node("f-a", "Foundation", {
+        implements: ["src/own1/", "src/shared/s.ts"],
+        open_revisions: [revision("y", { implements: { add: [], remove: claimsKept ? [] : ["src/shared/s.ts"] } })],
+      }),
+      { ...node("f-b", "Foundation", { implements: ["src/shared/s.ts"], change: "y" }), state: "in-progress", shipped_at: undefined },
+    ]);
+  const g = split(false);
+  assert.deepEqual(integrity.findAllOwnershipConflicts(g, root), [], "the check judges the member under its change");
+  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[1]), [], "the member's gate too");
+  assert.deepEqual(integrity.changeMemberViolations(g, root, [g.nodes[1]], "y").get("f-b").ownership, []);
+  const kept = split(true);
+  assert.deepEqual(
+    integrity.findAllOwnershipConflicts(kept, root).map((c) => [c.file, c.a, c.b, c.change]),
+    [["src/shared/s.ts", "f-a", "f-b", "y"]],
+    "a file the shipped node still keeps is a double claim"
+  );
+  assert.deepEqual(integrity.findOwnershipConflicts(kept, root, kept.nodes[1]), [
+    'ownership: "src/shared/s.ts" claimed by "f-b" and "f-a".',
+  ]);
+  ok("a new member of a change may claim a file that change's revision drops from a shipped node");
+}
+
 // --- A pre-ship member of C is judged seeing C's revisions on shipped co-members ---
 {
   write("src/newi/n.ts", `import { x } from "../dep-a/x";\nexport const n = x;\n`);
