@@ -1347,8 +1347,10 @@ export function resolveStatusChange(
     return resolveNextStatusChange(graph, node, newStatus);
   }
 
-  if ((node.open_revisions?.length ?? 0) > 1) {
-    if (newStatus === "deprecated" || newStatus === "cancelled") {
+  // `deprecated` retires the node with every open revision (the handler deletes each folder, as
+  // with one); the transition below judges it on live, so it needs no revision picked.
+  if ((node.open_revisions?.length ?? 0) > 1 && newStatus !== "deprecated") {
+    if (newStatus === "cancelled") {
       throw blocked(
         `cannot set "${newStatus}" on "${node.id}" while open revisions exist (${openChanges(node).map((c) => `"${c}"`).join(", ")}). Call discard_next for each first, or ship them.`
       );

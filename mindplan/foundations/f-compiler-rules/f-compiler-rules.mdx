@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:22:44.234Z
 revisions: 31
 churn: 18.871
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-03T18:27:49.468Z
+updated_at: 2026-11-04T07:59:38.707Z
 split_at: 8
 split_into:
   - f-source-index
@@ -181,6 +181,7 @@ While a stable or unstable node relies on a non-stable node under the relaxed ru
 - The Completion Check at ship still needs every item ticked, `review` and `deploy` included.
 - At `in-review`, only `build` items must be ticked.
 - Infrastructure First and Behavior First treat a dependency as satisfied for a dependent when it is stable, or when its active slot is `in-review` with checklist items that are all ticked except `review` / `deploy` ones (every counted checkbox without such a kind is a build item) and its own dependencies are satisfied the same way (transitive, memoized; a cycle never satisfies). A slot with no checklist items must be stable. The dependency still cannot ship until its own items are ticked.
+- `deprecated` on a shipped node passes the gate with any number of open revisions (judged on live; the status handler deletes every revision folder); `cancelled` with several open still Blocks naming `discard_next`.
 - `cancelled` and `discard_next` are Blocked while the node is not stable and a stable or unstable node has a live `depends_on` / `exposes` edge to it, naming those dependents.
 - `openHumanItems(graph)` lists every unticked `review` and `deploy` item: `{ node_id, change?, id?, kind, text }`.
 

@@ -402,3 +402,16 @@ write("src/shared/s.ts", "export const s = 1;\n");
 
 fs.rmSync(root, { recursive: true, force: true });
 console.log("multi-revision-gates.test.mjs: all ok");
+
+// --- deprecated retires a shipped node with every open revision, one or several ---
+{
+  for (const changes of [["solo"], ["first", "second"]]) {
+    const n = node("f-retire", "Foundation", { open_revisions: changes.map((c) => revision(c)) });
+    const g = graphOf([n]);
+    const out = rules.resolveStatusChange(g, rules.liveGraph(g).nodes.find((x) => x.id === "f-retire") ?? n, "deprecated");
+    assert.equal(out.state, "deprecated", `${changes.length} revision(s)`);
+  }
+  const two = node("f-retire", "Foundation", { open_revisions: [revision("first"), revision("second")] });
+  blocked(() => rules.resolveStatusChange(graphOf([two]), two, "cancelled"), /cancelled/);
+  ok("deprecated passes the gate with one or several open revisions; cancelled on a shipped node still Blocks");
+}
