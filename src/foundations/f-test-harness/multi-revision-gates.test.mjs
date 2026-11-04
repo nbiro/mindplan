@@ -344,6 +344,20 @@ write("src/shared/s.ts", "export const s = 1;\n");
   ok("a new member of a change may claim a file that change's revision drops from a shipped node");
 }
 
+// --- One pair conflicting on one file under two changes is reported under each ---
+{
+  const claim = (change) => revision(change, { implements: { add: ["src/shared/s.ts"], remove: [] } });
+  const g = graphOf([
+    node("f-own1", "Foundation", { implements: ["src/own1/"], open_revisions: [claim("alpha"), claim("beta")] }),
+    node("f-own2", "Foundation", { implements: ["src/own2/"], open_revisions: [claim("alpha"), claim("beta")] }),
+  ]);
+  assert.deepEqual(
+    integrity.findAllOwnershipConflicts(g, root).map((c) => [c.file, c.change]),
+    [["src/shared/s.ts", "alpha"], ["src/shared/s.ts", "beta"]]
+  );
+  ok("the same pair on one file under two changes is reported once per change");
+}
+
 // --- A pre-ship member of C is judged seeing C's revisions on shipped co-members ---
 {
   write("src/newi/n.ts", `import { x } from "../dep-a/x";\nexport const n = x;\n`);

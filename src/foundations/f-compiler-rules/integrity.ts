@@ -678,10 +678,14 @@ export function findAllOwnershipConflicts(graph: MindPlanGraph, root: string): O
       )
     ),
   ];
-  // A pair live already has (a revision kept the claim) is reported once, as live's.
+  // A pair live already has (a revision kept the claim) is reported once, as live's; otherwise
+  // once per change it conflicts under.
+  const pairKey = (p: OwnershipConflict) => `${p.file}\n${[p.a, p.b].sort().join("\n")}`;
+  const inLive = new Set(all.filter((p) => p.change === null).map(pairKey));
   const seen = new Set<string>();
   return all.filter((p) => {
-    const key = `${p.file}\n${[p.a, p.b].sort().join("\n")}`;
+    if (p.change !== null && inLive.has(pairKey(p))) return false;
+    const key = `${pairKey(p)}\n${p.change ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
