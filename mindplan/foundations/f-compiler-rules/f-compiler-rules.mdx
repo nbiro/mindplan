@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:22:44.234Z
 revisions: 31
 churn: 18.871
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-04T08:15:58.367Z
+updated_at: 2026-11-04T08:31:56.542Z
 split_at: 8
 split_into:
   - f-source-index
@@ -106,7 +106,7 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 
 - **Description warnings.** `descriptionWarnings(node)` (`integrity.ts`) returns `description: …` warnings for a non-retired node's active-slot description: empty; equal to the title (letters and digits compared, case ignored); longer than `DESCRIPTION_MAX_CHARS` (300); an Interaction's that contains none of a loose list of actor words; or, except on a Bug (whose description describes a regression), revision wording (`now`, `no longer`, `was changed to`, `used to be`, `previously`, `anymore`). Heuristics, so warnings only
 
-- **Open revisions (0.18.0).** Every gate (Infrastructure First, Behavior First, Coverage, imports, ownership, shape, the decision gate, the Completion Check) judges a revision against `graphUnder(graph, change)`: live plus that change only. `changeMembers` and `changesWithRevisions` read `open_revisions`. A move to `in-review` is Blocked while the revision has `conflicts`, naming `resolve_conflict`. `revisionHasDecision` reads decision files and accepts a decision whose `nodes` lists the node. One import and ownership implementation serves the full check and the per-transition gates. A pre-ship member of a change is judged under that change (`ownershipView`: `gateChange ?? preShipChange`, as `livePassFor` does for imports), never on plain live, so a new node may take over a file its change's revision drops from a shipped node; `findAllOwnershipConflicts` reports a conflict once per pair, file, and change
+- **Open revisions (0.18.0).** Every gate (Infrastructure First, Behavior First, Coverage, imports, ownership, shape, the decision gate, the Completion Check) judges a revision against `graphUnder(graph, change)`: live plus that change only. `changeMembers` and `changesWithRevisions` read `open_revisions`. A move to `in-review` is Blocked while the revision has `conflicts`, naming `resolve_conflict`. `revisionHasDecision` reads decision files and accepts a decision whose `nodes` lists the node. One import and ownership implementation serves the full check and the per-transition gates. Ownership judges each pair of claims in the view of the change its claims belong to (`claimChange`: the view's change through a revision of it, else a pre-ship member's own change, else none): on live when neither side belongs to a change; under change A when the sides belong to A and to A or to none; never when they belong to different changes, which `crossChangeClaimWarnings` only warns about (revisions and pre-ship members alike). So a new node may take over a file its change's revision drops from a shipped node, and a node of no change claiming a member's file conflicts at both nodes' gates (`viewConflicts`, `nodeConflictMessages`); `findAllOwnershipConflicts` reports a conflict once per pair, file, and change
 
 ## Test import scope
 

@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T12:59:23.768Z
 revisions: 32
 churn: 23.229
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-03T17:17:37.313Z
+updated_at: 2026-11-04T08:32:03.633Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -90,6 +90,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 
 - **Open revisions (0.18.0).** The check reads every open revision: imports and ownership per change on `graphUnder`, presence and stale text per revision, the merge gate per revision (`slot: "revision"`, its change), and a `conflicts:` warning per revision with unresolved conflicts
 - **After merge.** `afterMergeFindings` judges the version stamp of the root it checks (`graphStatus` under `withRoot(root)`), not the process root: a missing stamp, or any state that needs `upgrade_project` (a behind or unreadable stamp, or legacy files the merge brought in), is a failure carrying the version gate's own warning, and a stamp newer than this server (`server-behind`) is one naming the package to install
+- **Exclusivity per change.** `checkExclusivity` Blocks a file two nodes claim in one view (live, or one change with its pre-ship members and revisions) and warns about a file claimed from different changes, by revisions or pre-ship members (`ownership: "<file>" is claimed by "<a>" (revision|change "<c>") and "<b>" (…)`)
 - **Compact results.** `compactCheckResult` (`compact.ts`) lists the warnings not acknowledged and not seen earlier in this session; `unchanged` counts only the seen warnings it leaves out, so a `nodes`-scoped check, which lists every in-scope warning, reports `unchanged: 0`
 
 ## Shared helpers
