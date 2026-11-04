@@ -10,9 +10,9 @@ description: >-
 
 # Plan a MindPlan Project (no code)
 
-Use this skill whenever you create or patch MindPlan territory. That includes plan-only sessions and the graph work that must finish **before** any new-feature code change. Application code (files claimed via `implements` / `set_implementation_files`) is out of scope until a later execution session under `get_project.playbook`.
+Use this skill whenever you create or patch MindPlan territory: in plan-only sessions, and for the graph work that must finish **before** any new-feature code change. Application code (files claimed with `set_implementation_files`) waits for an execution session under `get_project.playbook`.
 
-Prerequisite: MindPlan MCP is registered. The server serves this skill (`get_skill({ name: "plan-project" })`). Normative reference: `SPEC.md`. Entity create/link details: the `define-entities` skill (`get_skill({ name: "define-entities" })`). Always-on execution process (build pipeline, bugs, shipping): `get_project.playbook`. Before each action in this skill, call `get_rules`, then `orient_for_work`.
+The server serves this skill (`get_skill({ name: "plan-project" })`). Create and link details: the `define-entities` skill (`get_skill({ name: "define-entities" })`). Normative reference: `SPEC.md`. Before each action in this skill, call `get_rules`, then `orient_for_work`.
 
 ## When to use
 
@@ -28,12 +28,11 @@ Prerequisite: MindPlan MCP is registered. The server serves this skill (`get_ski
 
 ## Hard rules (plan-only)
 
-- **No application code** — do not create, edit, or delete implementation files claimed by nodes. Plan-only means graph/territory only (including `set_implementation_files` only when declaring intended boundaries — prefer leaving that to the build session unless the user asks).
-- **No implementation pipeline** — do not move Foundations/Interactions/Interfaces to `in-progress`, `in-review`, or `ship`. Do not move Bugs to `fixing` / `in-review` / `resolved`.
-- **Allowed states** — write contracts at `draft`. When the contracts are real, self-`ready` the revision in one ordered `revisions` call. See **Shipping a plan** below.
-- **Never check off Atomic Ops** as done — checkboxes stay open until real implementation completes in an execution session.
-- Mutate graph state only through MindPlan MCP. Treat every `Blocked: <reason>` as a hard failure — fix the plan, do not retry blindly.
-- **Interaction Independence** — never model Interaction → Interaction `depends_on`; use Foundations for shared state and `leads_to` for navigation.
+- **No application code** — do not create, edit, or delete files claimed by nodes. Use `set_implementation_files` only to declare intended boundaries, and prefer leaving that to the build session unless the user asks.
+- **No implementation pipeline** — do not move Foundations, Interactions, or Interfaces to `in-progress`, `in-review`, or `ship`, or Bugs to `fixing`, `in-review`, or `resolved`.
+- **Allowed states** — write contracts at `draft`; when they are real, self-`ready` them in one ordered call (§6).
+- **Never tick Atomic Ops** — they stay open until an execution session implements them.
+- Write only through MindPlan MCP. Every `Blocked: <reason>` is a hard failure: fix the plan, do not retry blindly.
 
 ## Session loop
 
@@ -44,66 +43,36 @@ orient_for_work({ query: "<user ask>" })   // ranked rows; pick the node you wil
 orient_for_work({ node_id: "<row id>" })   // its rules, decisions, body, files, blast radius
 ```
 
-A query alone returns summary rows (and the full node only for a clear winner, `auto_focus: true`). A write on an existing node is `Blocked: Orientation` until you oriented on that node with `node_id` in this session, and again after the rules that reach it changed; `create_node` is never blocked.
-
-For empty or unknown graphs, also call `get_mindplan_graph` once. Prefer `export_mindplan_view` when the user wants a diagram.
+A write on an existing node needs that `node_id` orientation first (playbook rule 1). For an empty or unknown graph, also call `get_mindplan_graph` once; use `export_mindplan_view` when the user wants a diagram.
 
 ### 2. Classify scope
 
-Run the **breakdown recipe** from `define-entities` Step 0 before inventing nodes:
+Run the breakdown recipe in `define-entities` Step 0 before inventing nodes: one sentence per ask, reuse before create, brief and rules edits instead of nodes, Capability first, and the inversion of nodes that must know every feature. Then:
 
-1. Rewrite the ask as: *"<who> can <verb> <object> in <Capability>, from <Interface>, using <Foundations>."*
-2. Each distinct verb + object → one Interaction candidate (size: one behavior).
-3. **Reuse before create** — `find_related_nodes` / graph inspect for each Capability, Interaction, Interface, and Foundation. Same Interaction from a new Interface → new `exposes`, not a new Interaction. One Interface per actor + channel (not per page/tab).
-4. State which nodes you will add, **by type name**. Example: "I'll add *split the check* as a new Interaction in the Billing Capability and expose it from the back-office Interface."
-5. Missing Capability → polite refuse: "This needs a Capability first; is it part of Billing or something new?" Do not silently mint a Capability.
-6. A **product summary** is a `patch_project_description` call. A **standing rule** is a `patch_project_rules` call when it applies everywhere, or a `patch_node_rules` call on the node when it is about one node's work (it reaches that node, its dependents, and its Capability's Interactions; check `rules_impact`). Neither is a new Capability. Call `get_project` again to re-read the brief.
+- **Decisions.** A choice between viable designs (a data shape, an ordering guarantee, which system owns a fact) is a `record_decision` call on the node it shapes: the decision, the alternative you rejected, and why. One choice that shapes several nodes is one record that lists them in `nodes` (`record_decision({ node_id, nodes: [...], … })`); it clears the decision gate of each listed node's revision. Each record is its own file, never rewritten; changing an earlier decision is a new record with `supersedes`. A shipped Foundation's revision, a new migration or schema file, a wide blast radius, or a `depends_on` change is `Blocked:` at `in-review` without one, and `run_check` warns from `draft` on.
+- **Prefer additive over reopening.** Before `open_next` on a shipped node, read its `stability` in the full `orient_for_work` reply (`rate` against `median_rate`: how often it shipped lately compared with the rest of the project; `fan_in`: nodes that depend on it directly) and any `hotspot:` warning from `run_check`. On a hotspot, add a new node that `depends_on` it instead, or split the part this feature changes out of it (the node keeps importing the part; a part never imports the node to register itself). Mark the split on the node's open revision with `patch_node_territory({ node_id, split_into: [parts] })` (a Foundation's parts are Foundations it `depends_on`; an Interaction's are Interactions in one of its Capabilities; an Interface's are the Interactions it exposes), ship the parts first, then the revision: that ship records the split (`split_at`, `split_into`) and restarts its rate from zero. A node that should stay whole gets a decision with `keep_whole: true`, which silences the hotspot. `open_next` on a hotspot returns a `Warning:` and a `decision_prompt`: record why revising it is right, naming the additive alternative you rejected. `get_blast_radius({ change })` returns `additivity`: aim for "purely additive", or a few revised nodes with low fan-in.
 
-7. A **choice between viable designs** (a data shape, an ordering guarantee, which system owns a fact) is a `record_decision` call on the node it shapes: the decision, the alternative you rejected, and why. One choice that shapes several nodes is one record: list them in `nodes` (`record_decision({ node_id, nodes: [...], … })`), and it clears the decision gate of each listed node's revision. Each record is its own file, never rewritten. Changing an earlier decision is a new record with `supersedes`, never an edit. A shipped Foundation's revision, a new migration or schema file, a wide blast radius, or a `depends_on` change is Blocked at `in-review` without one, and `run_check` warns from draft on.
-
-8. **Prefer additive over reopening.** Before choosing `open_next` on a shipped node, read its `stability` in the full `orient_for_work` reply (`rate` against `median_rate`: how often it shipped lately compared with the rest of the project; `fan_in`: nodes that depend on it directly) and any `hotspot:` warning from `run_check`. When it is a hotspot, add a new node that `depends_on` it instead, or split the part this feature changes out of it (the node keeps importing the part; a part never imports the node to register itself). Mark the split on the node's open revision with `patch_node_territory({ node_id, split_into: [parts] })` (a Foundation's parts are Foundations it depends_on; an Interaction's are Interactions in one of its Capabilities; an Interface's are the Interactions it exposes), ship the parts first, then the revision: that ship records the split (`split_at`, `split_into`), and its rate starts again from zero. A node that should stay whole on purpose gets a decision with `keep_whole: true`, which silences the hotspot. `open_next` on such a node returns a `Warning:` and a `decision_prompt`: record why revising it is right, naming the additive alternative you rejected. `get_blast_radius({ change })` returns `additivity`: aim for "purely additive", or a few revised nodes with low fan-in.
-
-9. **Invert nodes that must know every feature.** When one Interaction has to handle every feature of a kind (erase a site, export an account, index for search, check a permission), do not add a `depends_on` per feature. Define the contract once on the Foundation those features already use: a schema convention (every per-site table cascades from the site) or a record they react to (a deleted/restored state). State it as a node rule there with `patch_node_rules`, so every dependent sees it in `orient_for_work`, and link the test that enforces it with `set_test_files`. The Interaction then depends only on that Foundation. `run_check` warns `fan-out:` on a pre-ship node whose `depends_on` reaches `fan_out.warn_at` (default 3) other unshipped changes; the full `orient_for_work` reply shows the count in `stability.fan_out`. A node that keeps those edges on purpose gets a decision with `keep_whole: true`, which silences the warning.
-
-Then decide what the plan session must produce: new Capabilities, Foundations (with roles), Interactions, Interfaces, Bugs, edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory enrichment, project-brief edits via `patch_project_description` and `patch_project_rules`, node rules via `patch_node_rules`, or `open_next` drafts for shipped nodes (territory/spec only — still no code).
+Then decide what the session must produce: new nodes (Foundations with roles), edge rewires (`belongs_to` / `depends_on` / `exposes` / `leads_to` / `affects`), territory, brief edits (`patch_project_description`, `patch_project_rules`), node rules (`patch_node_rules`), or `open_next` drafts for shipped nodes (territory only — still no code).
 
 ### 3. Define and link entities
 
-Follow the `define-entities` skill:
+Follow `define-entities`: Capability first, then its definition order (Capabilities → Interactions at `draft` → Interfaces → Foundations derived from those drafts → links → territory → self-ready), under its Gate facts. Bugs filed into a plan get `affects` and stay at `open` or `triaged`.
 
-1. Capabilities first (refuse Interactions with no matching Capability; ask for the Capability first)
-2. Interactions at `draft` (behavior / PRD thinking; links not required yet)
-3. Interfaces that will `exposes` those Interactions
-4. Foundations derived from those drafts (role tags in `description`)
-5. Link: Interaction `belongs_to` + Foundation `depends_on`; Interface `exposes` (+ optional Foundation deps); `leads_to` for navigation
-6. Bugs with `affects` only when filing defects into the plan (stay at `open` or `triaged` — do not `fixing`)
+### 4. Enrich territory and evolve shipped nodes
 
-Greenfield order:
+Write every contract with `patch_node_territory` (`define-entities` Step 6): real sections in place of scaffold stubs, following its section guidance and the ownership split (an Interaction owns its mountable view or handler; an Interface only mounts it), with **unchecked** PR-sized Atomic Ops.
 
-```
-Capabilities → Interaction(s) at draft → Interface(s) → Foundation(s) derived from those drafts → link_nodes → enrich territory → self-ready → stop if plan-only
-```
+**Source, neighbor, unaffected.** Territory Completeness applies to sources: a body describes the full intended contract, not a changelog. For a shipped node, call `get_blast_radius` and classify each node:
 
-Gate facts: Capability before any Interaction create; draft Interactions may lack links until leaving `draft`; Interfaces need `exposes` before leaving `draft`; Foundation `ready` before Interaction `ready` is preference — Infrastructure First at Interaction `ship` still requires each Foundation `stable`, or `in-review` with every build checklist item ticked and its own dependencies ready the same way; Behavior First at Interface `ship` requires the same of exposed Interactions.
+- A **source** (its contract changes) gets `open_next({ node_id, change })`.
+- A **neighbor** (files change, behavior doesn't) is edited in place later, with no revision and no change id (`change` on a shipped node with no open revision is `Blocked:`). The check gives it every stale-text signal once its files change against the base, so update its body when its files no longer match it. A neighbor that needs a new file beside its own, in a folder no other node claims into, claims it in place with `set_implementation_files({ node_id, add: [file] })` (no `open_next`) and names it in its body, or `run_check` warns `stale:`.
+- An **unaffected** node gets nothing.
 
-### 4. Enrich territory (full contracts)
+The parent self-readies when the contracts are written.
 
-Use `patch_node_territory` for body / title / description (MCP is the only writer of `mindplan/`). Replace scaffold stubs with real Purpose, Actor & Trigger / Kind / PRD / Shared Substrate Spec, Acceptance Criteria, and **unchecked** PR-sized Atomic Ops.
+**Several revisions on one node.** A shipped node may already hold another change's open revision; open your own anyway (`open_next({ node_id, change })` is `Blocked:` only when that same change is already open). Each revision is judged against live plus its own change, so other changes' revisions never block yours. On a node with more than one, pass `change` to every call that reads or writes it (`patch_node_territory`, `set_implementation_files`, `link_nodes`, `record_decision`, `update_node_status`, `orient_for_work`, …); without it the call is `Blocked:` and lists them, except `set_test_files`, which then writes live (pass `change` to link a revision's tests). On a revision, edges, claims, and tests are deltas against live: edit claims and tests with `add` / `remove` (`files` with `replace: true` replaces the whole list). When a sibling ships first, your revision is rebased onto the new live (`rebased` in their ship result): text only you changed is kept, text only they changed comes in, and a section or field both changed becomes a conflict (`revisions[].conflicts`). Resolve each with `resolve_conflict({ node_id, change, section | field | claim, take: "revision" | "live" | "text", text? })` before `in-review`.
 
-Interaction Purpose is one sentence: what the Interaction does, and the constraint a later session would otherwise simplify away. If there is no such constraint, the outcome sentence is enough.
-
-Apply **package ownership** (SPEC §1.2.2) while enriching:
-
-- Interaction PRDs: when a Page/UI Interface will `exposes` this behavior, include a mount/view surface. When Kind is CLI/MCP/Webhook/Cron, name the exportable handler/module — not a `*-view.tsx`.
-- Interface Spec: “App Router (or CLI/MCP) mounts Interaction packages; Interface does not own core domain logic or screen bodies.” Do not write territory that implies screen bodies live under `interfaces/…/ui/` or `screens/`.
-- One Interface per actor surface, not one Interface per screen/tab.
-- Keep Interaction/Interface Atomic Ops templates from `define-entities`.
-
-Territory Completeness still applies to **sources**: bodies describe the full intended contract, not a changelog. For shipped nodes, call `get_blast_radius`, classify source / neighbor / unaffected, and `open_next({ node_id, change })` only for sources. Neighbors (files change, behavior doesn't) are edited in place later; do not open revisions for them. A neighbor takes no change id (`change` on a shipped node with no open revision is `Blocked:`); the check gives it every stale-text signal once its files change against the base, so update its body when its files no longer match it. A neighbor that needs a new file beside its own, in a folder no other node claims into, claims it in place with `set_implementation_files({ node_id, add: [file] })` (no `open_next`); name the file in its body, or `run_check` warns `stale:`. The parent self-readies when the contracts are written.
-
-**Several revisions on one node.** A shipped node may already hold an open revision of another change; open your own anyway (`open_next({ node_id, change })` is `Blocked:` only when that same change is already open). Each revision is judged against live plus its own change, so other changes' revisions never block yours. On a node with more than one, pass `change` to every call that reads or writes it (`patch_node_territory`, `set_implementation_files`, `set_test_files`, `link_nodes`, `record_decision`, `update_node_status`, `orient_for_work`, …); without it the call is `Blocked:` and lists them (`set_test_files` instead writes live, so pass `change` to link a revision's tests). Edit claims and tests with `add` / `remove`: on a revision they are deltas against live, and `files` with `replace: true` replaces the whole list. When a sibling ships first, your revision is rebased onto the new live: text only you changed is kept, text only they changed comes in, and a section or field both changed becomes a conflict (`revisions[].conflicts`, `rebased` in their ship result). Resolve each with `resolve_conflict({ node_id, change, section | field | claim, take: "revision" | "live" | "text", text? })` before `in-review`.
-
-When the plan only needs **wiring** on a shipped node (a new Interaction its shipped Interface will expose, a new `depends_on` on a shipped Foundation), plan the edge instead of opening a revision: `link_nodes({ source_id, target_id, edge_type, change })`. It is checked like a link, `run_check({ change })` validates it, and `open_next({ node_id, change })` applies it when the build session opens the node; the live graph does not change until then. When a revision adds a file in another node's folder (a migration in the composition root's migrations folder), name it with `set_implementation_files({ node_id, attributed: [...] })` so the decision gate counts it for that revision.
+**Planned wiring.** When the plan only needs **wiring** on a shipped node (a new Interaction its shipped Interface will expose, a new `depends_on` on a shipped Foundation), plan the edge instead of opening a revision: `link_nodes({ source_id, target_id, edge_type, change })`. It is checked like a link, `run_check({ change })` validates it, and `open_next({ node_id, change })` applies it when the build session opens the node; the live graph does not change until then. When a revision adds a file in another node's folder (a migration in the composition root's migrations folder), name it with `set_implementation_files({ node_id, attributed: [...] })` so the decision gate counts it for that revision.
 
 ### 4b. Parallel work in git worktrees
 
@@ -118,7 +87,7 @@ Two changes must not each add half of a `depends_on` cycle: `link_nodes` and `op
 
 ### 5. On `Blocked:`
 
-On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. The server already writes `mindplan/map.md`. Do not require `export_mindplan_view` after every write.
+On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. The server already writes `mindplan/map.md`; do not call `export_mindplan_view` after every write.
 
 ### 6. Self-ready, then stop
 
@@ -131,32 +100,22 @@ When the graph matches the user’s product model and territory is a full contra
 
 ## Shipping a plan (self-ready)
 
-When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready — that means self-`ready` and stop. It is not the build-pipeline `ship` transition.
-
-Requirements before self-ready:
+When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready, that means self-`ready` and stop — not the build-pipeline `ship` transition. Before self-ready:
 
 - `run_check` returns ok (same as `mindplan-mcp check` exiting `0`)
-- Links complete (Interactions: at least one `belongs_to` + one Foundation `depends_on`; Interfaces: at least one `exposes`; Bugs past `open`: `affects`)
+- Links are complete (Interactions: at least one `belongs_to` + one Foundation `depends_on`; Interfaces: at least one `exposes`; Bugs past `open`: `affects`)
 - Territory is a full contract with **unchecked** Atomic Ops; an item a person closes (a review sign-off, a deploy) is added with `patch_node_territory({ node_id, add_checklist_items: [{ text, id, kind: "review" | "deploy" }] })`
-- Call `update_node_status` → `ready` yourself, one `revisions` call for the set
-- **No** application code under `src/`
-- **No** `in-progress` / `in-review` / `ship` / `stable`
-- **No** checking off checklist boxes
-- **No** Interaction→Interaction `depends_on`
+- No application code under `src/`, no state past `ready`, no ticked boxes
 
-Then self-ready. Do not interpret “ship” here as `update_node_status` → `ship`. The build-pipeline `ship` happens in the execution session, before the PR merges: `run_check({ merge: true })` (CLI `mindplan-mcp check --merge`) is the merge gate and fails while any node is still `in-review`; plan-only PRs (`draft` / `ready`) pass it.
+The build-pipeline `ship` happens in the execution session, before the PR merges: `run_check({ merge: true })` (CLI `mindplan-mcp check --merge`) is the merge gate and fails while any node is still `in-review`; plan-only PRs (`draft` / `ready`) pass it.
 
 ## Never do (this skill)
 
-- Write or “just scaffold” real application implementation (claimed `implements` paths) in a plan-only session
+- Write or “just scaffold” application code (claimed paths) in a plan-only session
 - Advance to `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`, in a plan-only session
-- Treat “ship the plan” as build-pipeline `ship` / `stable`, or as permission to check Atomic Ops
-- Check off Atomic Ops without implementation
-- Create an Interaction with no matching Capability
-- Link Interaction → Interaction with `depends_on`
-- Write Interface territory as if it owns feature screen bodies, or mint one Interface per screen/tab
-- Omit mount/view (Page/UI) or handler/module (CLI/MCP/Webhook/Cron) from Interaction PRDs that an Interface will expose
-- Hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)
-- Set Capability, `stable`, or `unstable` manually
+- Treat “ship the plan” as build-pipeline `ship` / `stable`, or as permission to tick Atomic Ops
+- Edit `mindplan/**` with host file tools, or hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)
+- Set Capability state, `stable`, or `unstable` manually
 - Treat `mindplan/map.md` as graph authority
-- Self-`ready` or claim done while default `mindplan-mcp check` fails
+- Self-`ready` or claim done while `mindplan-mcp check` fails
+- Anything in the `define-entities` Common mistakes table
