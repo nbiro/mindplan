@@ -344,6 +344,48 @@ write("src/shared/s.ts", "export const s = 1;\n");
   ok("a new member of a change may claim a file that change's revision drops from a shipped node");
 }
 
+// --- A pre-ship node of no change and a pre-ship member of A on one file conflict under A ---
+{
+  const preShip = (id, extra) => ({ ...node(id, "Foundation", extra), state: "in-progress", shipped_at: undefined });
+  const g = graphOf([
+    preShip("f-p", { implements: ["src/shared/s.ts"] }),
+    preShip("f-x", { implements: ["src/shared/s.ts"], change: "a" }),
+  ]);
+  assert.deepEqual(
+    integrity.findAllOwnershipConflicts(g, root).map((c) => [c.file, c.a, c.b, c.change]),
+    [["src/shared/s.ts", "f-p", "f-x", "a"]],
+    "the check reports the pair under the member's change"
+  );
+  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[0]), ['ownership: "src/shared/s.ts" claimed by "f-p" and "f-x".']);
+  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[1]), ['ownership: "src/shared/s.ts" claimed by "f-x" and "f-p".']);
+  blocked(() => integrity.assertCheckCleanForNode(g, root, g.nodes[0], "in-review"), /claimed by "f-p" and "f-x"/);
+  blocked(() => integrity.assertCheckCleanForNode(g, root, g.nodes[1], "in-review"), /claimed by "f-x" and "f-p"/);
+  assert.deepEqual(integrity.changeMemberViolations(g, root, [g.nodes[1]], "a").get("f-x").ownership, [
+    'ownership: "src/shared/s.ts" claimed by "f-x" and "f-p".',
+  ]);
+  ok("a pre-ship node of no change and a pre-ship member of a change on one file conflict in both gates");
+}
+
+// --- A revision of B and a pre-ship member of A on one file: a cross-change warning, not a Block ---
+{
+  const g = graphOf([
+    node("f-s", "Foundation", {
+      implements: ["src/own1/"],
+      open_revisions: [revision("b", { implements: { add: ["src/shared/s.ts"], remove: [] } })],
+    }),
+    { ...node("f-x", "Foundation", { implements: ["src/shared/s.ts"], change: "a" }), state: "in-progress", shipped_at: undefined },
+  ]);
+  assert.deepEqual(integrity.findAllOwnershipConflicts(g, root), []);
+  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[0], "b"), []);
+  assert.deepEqual(integrity.findOwnershipConflicts(g, root, g.nodes[1]), []);
+  assert.deepEqual(integrity.changeMemberViolations(g, root, [g.nodes[0]], "b").get("f-s").ownership, []);
+  assert.deepEqual(integrity.crossChangeClaimWarnings(g, root), [
+    'ownership: "src/shared/s.ts" is claimed by "f-s" (revision "b") and "f-x" (change "a"). ' +
+      "Allowed while the changes are separate; whichever ships second must drop the claim or take it over.",
+  ]);
+  ok("a revision of one change and a pre-ship member of another on one file only warn");
+}
+
 // --- One pair conflicting on one file under two changes is reported under each ---
 {
   const claim = (change) => revision(change, { implements: { add: ["src/shared/s.ts"], remove: [] } });
