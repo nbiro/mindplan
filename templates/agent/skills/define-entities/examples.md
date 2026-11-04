@@ -67,7 +67,7 @@ Interaction may sit at `draft` with no links yet while you sketch the behavior.
 
 ### 2. Enrich Interaction territory (derive substrate and surfaces)
 
-Edit `mindplan/interactions/i-checkout-split/i-checkout-split.mdx` via file tools:
+Write the body with `patch_node_territory` (the whole `body`, or one `section` at a time):
 
 ```
 ## Purpose
@@ -106,9 +106,9 @@ From that PRD, shared needs are: order/payment tables, UI primitives, an app she
 
 ```
 create_node({ id: "if-checkout-page", type: "Interface", title: "Checkout page", description: "Page — exposes split & pay in the ordering console" })
-create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables for orders and payments" })
-create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
-create_node({ id: "f-nextjs", type: "Foundation", title: "Next.js app shell", description: "Assembler — Next.js App Router composing capabilities, interactions, and interfaces" })
+create_node({ id: "f-db-core", type: "Foundation", role: "infra", title: "Database schema", description: "Infra — core tables for orders and payments" })
+create_node({ id: "f-design-system", type: "Foundation", role: "design-system", title: "Design system", description: "Design system — shared UI primitives including primary button" })
+create_node({ id: "f-nextjs", type: "Foundation", role: "assembler", title: "Next.js app shell", description: "Assembler — Next.js App Router composing capabilities, interactions, and interfaces" })
 ```
 
 ### 4. Link Interaction, Interface, Foundations
@@ -126,9 +126,9 @@ Do **not** add Interaction → Interaction `depends_on`. Navigation to a follow-
 
 ### 5. Enrich Foundation and Interface territory
 
-Use `patch_node_territory` for body / title / description (MCP is the only writer of `mindplan/`). Example bodies:
+Write each body with `patch_node_territory`, as in step 2. Example bodies:
 
-**`mindplan/foundations/f-db-core/f-db-core.mdx` body:**
+**`f-db-core` body:**
 
 ```
 ## Shared Substrate Spec
@@ -143,7 +143,7 @@ Use `patch_node_territory` for body / title / description (MCP is the only write
 - [ ] Verified in staging
 ```
 
-**`mindplan/interfaces/if-checkout-page/if-checkout-page.mdx` body:**
+**`if-checkout-page` body:**
 
 ```
 ## Kind
@@ -188,7 +188,7 @@ export default function CheckoutScreen({ orderId }: { orderId: string }) {
 }
 ```
 
-**`mindplan/foundations/f-nextjs/f-nextjs.mdx` body:**
+**`f-nextjs` body:**
 
 ```
 ## Shared Substrate Spec
@@ -230,12 +230,12 @@ update_node_status({ node_id: "i-checkout-split", new_status: "in-progress" })
 **Goal:** Stop inventing a new primary button per Interface — one Foundation, many dependents.
 
 ```
-create_node({ id: "f-design-system", type: "Foundation", title: "Design system", description: "Design system — shared UI primitives including primary button" })
+create_node({ id: "f-design-system", type: "Foundation", role: "design-system", title: "Design system", description: "Design system — shared UI primitives including primary button" })
 link_nodes({ source_id: "if-checkout-page", target_id: "f-design-system", edge_type: "depends_on" })
 link_nodes({ source_id: "if-ordering-console", target_id: "f-design-system", edge_type: "depends_on" })
 ```
 
-Ship `f-design-system` to `stable` before dependent Interactions/Interfaces can ship (Infrastructure First).
+Its dependents ship only once `f-design-system` is ready for dependents (Infrastructure First; Gate facts in SKILL.md).
 
 ---
 
@@ -270,12 +270,12 @@ If the picker also serves Admin, add a second `belongs_to` to `c-admin` (members
 **Goal:** Auth service depends on a lower-level config Foundation.
 
 ```
-create_node({ id: "f-config", type: "Foundation", title: "App config", description: "Infra — environment and secrets loading" })
-create_node({ id: "f-auth", type: "Foundation", title: "Authentication", description: "Infra — JWT issuance and validation" })
+create_node({ id: "f-config", type: "Foundation", role: "infra", title: "App config", description: "Infra — environment and secrets loading" })
+create_node({ id: "f-auth", type: "Foundation", role: "infra", title: "Authentication", description: "Infra — JWT issuance and validation" })
 link_nodes({ source_id: "f-auth", target_id: "f-config", edge_type: "depends_on" })
 ```
 
-Ship `f-config` before `f-auth`. Interactions depending on `f-auth` cannot ship until `f-auth` is `stable`.
+Ship `f-config` before `f-auth`. `f-auth` counts as ready for its dependents only once `f-config` does (Gate facts in SKILL.md).
 
 ---
 
@@ -286,7 +286,7 @@ Ship `f-config` before `f-auth`. Interactions depending on `f-auth` cannot ship 
 ```
 create_node({ id: "c-ordering", type: "Capability", title: "Ordering", description: "Diner orders food" })
 create_node({ id: "c-loyalty", type: "Capability", title: "Loyalty", description: "Points and rewards" })
-create_node({ id: "f-db-core", type: "Foundation", title: "Database schema", description: "Infra — core tables" })
+create_node({ id: "f-db-core", type: "Foundation", role: "infra", title: "Database schema", description: "Infra — core tables" })
 create_node({ id: "i-user-profile", type: "Interaction", title: "User profile", description: "Shared profile across domain capabilities" })
 link_nodes({ source_id: "i-user-profile", target_id: "c-ordering", edge_type: "belongs_to" })
 link_nodes({ source_id: "i-user-profile", target_id: "c-loyalty", edge_type: "belongs_to" })
@@ -299,7 +299,7 @@ One Interaction, two `belongs_to` edges — membership reuse across Capabilities
 
 ## MCP Interface exposing multiple Interactions
 
-**Goal:** One MCP toolset Interface exposes orient, steer, and export Behaviors.
+**Goal:** One MCP toolset Interface exposes the orient, steer, and export Interactions.
 
 ```
 create_node({ id: "if-mcp-tools", type: "Interface", title: "MCP tools", description: "MCP — exposes plan orient/steer/export interactions" })
@@ -310,7 +310,7 @@ link_nodes({ source_id: "i-orient-plan", target_id: "i-steer-plan", edge_type: "
 link_nodes({ source_id: "i-steer-plan", target_id: "i-export-map", edge_type: "leads_to" })
 ```
 
-Behavior First: `if-mcp-tools` cannot `ship` until `i-orient-plan`, `i-steer-plan`, and `i-export-map` are each `stable`.
+Behavior First: `if-mcp-tools` ships only once `i-orient-plan`, `i-steer-plan`, and `i-export-map` are each ready for dependents (Gate facts in SKILL.md).
 
 ---
 
@@ -322,7 +322,7 @@ Behavior First: `if-mcp-tools` cannot `ship` until `i-orient-plan`, `i-steer-pla
 create_node({ id: "bug-double-charge", type: "Bug", title: "Double charge on retry", description: "Payment retried after timeout causes duplicate charge" })
 link_nodes({ source_id: "bug-double-charge", target_id: "i-checkout-split", edge_type: "affects" })
 
-# Prefer file tools on bug current_path for Summary / Repro / Expected; optional fallback:
+# Write Summary / Repro Steps / Expected / Fix Checklist with patch_node_territory:
 patch_node_territory({
   node_id: "bug-double-charge",
   body: `## Summary
@@ -362,7 +362,7 @@ update_node_status({ node_id: "bug-double-charge", new_status: "triaged" })
 
 ## Evolving a shipped Interaction
 
-**Goal:** Revise shipped checkout's split calculation while v1 keeps serving until cutover. The Interaction keeps its id (`i-checkout-split`) throughout — there is no `-v2` node.
+**Goal:** Revise shipped checkout's split calculation while the live version keeps serving until the revision ships. The Interaction keeps its id (`i-checkout-split`) throughout — there is no `-v2` node.
 
 ```
 get_blast_radius({ node_id: "i-checkout-split" })
