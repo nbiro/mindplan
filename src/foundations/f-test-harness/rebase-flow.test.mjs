@@ -729,9 +729,9 @@ async function shippedFoundation(id) {
   );
 }
 
-// --- a takeover ships after the revision that drops the file: alone Blocked, in one change walk ordered ---
+// --- a takeover: shipped alone before the revision that drops the file Blocked, in one change walk it ships ---
 {
-  // "f-ho-a" (the new member taking the file over) sorts before "f-ho-n" (whose revision drops it).
+  // "f-ho-a" (the new member taking the file over) walks before "f-ho-n" (whose revision drops it).
   await shippedFoundation("f-ho-n");
   const file = "src/f-ho-n/index.ts";
   write("src/f-ho-n/keep.ts", "export const k = 1;\n");
@@ -749,18 +749,19 @@ async function shippedFoundation(id) {
     !!alone && alone.includes('"f-ho-n", which claims it live') && alone.includes('"f-ho-n" revision "handover" drops it'),
     String(alone)
   );
+  // The walk takes its own order (f-ho-a first by id): the ship gate judges f-ho-n by its claims after the walk.
   const walked = await raw("update_node_status", { scope: "change", change: "handover", new_status: "ship", skip_review: true });
-  const order = walked.error ? [] : (JSON.parse(walked.text).lines ?? []).map((l) => l.split(":")[0]);
+  const owner = walked.error ? null : (await call("get_node_implementation", { path: file })).owner?.node_id;
   check(
-    "a change walk ships the revision that drops a file before the member taking it over",
-    !walked.error && order.indexOf("f-ho-n") >= 0 && order.indexOf("f-ho-n") < order.indexOf("f-ho-a"),
+    "a change walk ships a new member taking over a file with the revision that drops it",
+    !walked.error && owner === "f-ho-a",
     walked.text
   );
 }
 
-// --- a file moving between two shipped nodes in one change: the walk ships the source's revision first ---
+// --- a file moving between two shipped nodes in one change: one change walk ships both ---
 {
-  // "f-hm-dst" sorts before "f-hm-src".
+  // "f-hm-dst" (taking the file) walks before "f-hm-src" (dropping it).
   await shippedFoundation("f-hm-src");
   await shippedFoundation("f-hm-dst");
   const file = "src/f-hm-src/index.ts";
@@ -771,11 +772,83 @@ async function shippedFoundation(id) {
   await call("open_next", { node_id: "f-hm-dst", change: "hm" });
   await call("set_implementation_files", { node_id: "f-hm-dst", change: "hm", add: [file] });
   for (const id of ["f-hm-src", "f-hm-dst"]) await readyByTools(id, "hm");
+  // "f-hm-dst" walks first by id; its ship gate judges f-hm-src by its claims after the walk.
   const walked = await raw("update_node_status", { scope: "change", change: "hm", new_status: "ship", skip_review: true });
-  const order = walked.error ? [] : (JSON.parse(walked.text).lines ?? []).map((l) => l.split(":")[0]);
+  const owner = walked.error ? null : (await call("get_node_implementation", { path: file })).owner?.node_id;
   check(
-    "a change walk moving a file ships the source's revision before the destination's",
-    !walked.error && order.indexOf("f-hm-src") >= 0 && order.indexOf("f-hm-src") < order.indexOf("f-hm-dst"),
+    "a change walk moving a file between two shipped nodes ships both, the destination owning it after",
+    !walked.error && owner === "f-hm-dst",
+    walked.text
+  );
+}
+
+// --- a file moving onto the Foundation its source depends_on: one change walk ships it ---
+{
+  // f-mv-b depends_on f-mv-a, so f-mv-a (taking the file over) walks first.
+  await shippedFoundation("f-mv-a");
+  await shippedFoundation("f-mv-b");
+  await call("link_nodes", { source_id: "f-mv-b", target_id: "f-mv-a", edge_type: "depends_on" });
+  const file = "src/f-mv-b/index.ts";
+  write("src/f-mv-b/keep.ts", "export const k = 1;\n");
+  await call("set_implementation_files", { node_id: "f-mv-b", add: ["src/f-mv-b/keep.ts"] });
+  await call("open_next", { node_id: "f-mv-b", change: "mv" });
+  await call("set_implementation_files", { node_id: "f-mv-b", change: "mv", remove: [file] });
+  await call("open_next", { node_id: "f-mv-a", change: "mv" });
+  await call("set_implementation_files", { node_id: "f-mv-a", change: "mv", add: [file] });
+  for (const id of ["f-mv-a", "f-mv-b"]) await readyByTools(id, "mv");
+  await call("update_node_status", { scope: "change", change: "mv", new_status: "in-review" });
+  const alone = await blocked("update_node_status", { node_id: "f-mv-a", change: "mv", new_status: "ship" });
+  check(
+    "the taker shipped alone before its source is Blocked on the source's live claim, pointing at the change walk",
+    !!alone && alone.includes('"f-mv-b", which claims it live') && alone.includes('ship change "mv" in one walk'),
+    String(alone)
+  );
+  const walked = await raw("update_node_status", { scope: "change", change: "mv", new_status: "ship" });
+  const owner = walked.error ? null : (await call("get_node_implementation", { path: file })).owner?.node_id;
+  check(
+    "a change walk moves a file onto the Foundation its source depends_on, and only the taker claims it after",
+    !walked.error && owner === "f-mv-a" && !read("mindplan/foundations/f-mv-b/f-mv-b.mdx").includes(file),
+    walked.text
+  );
+}
+
+// --- two revisions of one change swapping files: one change walk ships both ---
+{
+  await shippedFoundation("f-sw-a");
+  await shippedFoundation("f-sw-b");
+  const fa = "src/f-sw-a/index.ts";
+  const fb = "src/f-sw-b/index.ts";
+  await call("open_next", { node_id: "f-sw-a", change: "sw" });
+  await call("open_next", { node_id: "f-sw-b", change: "sw" });
+  await call("set_implementation_files", { node_id: "f-sw-a", change: "sw", remove: [fa] });
+  await call("set_implementation_files", { node_id: "f-sw-b", change: "sw", remove: [fb] });
+  await call("set_implementation_files", { node_id: "f-sw-a", change: "sw", add: [fb] });
+  await call("set_implementation_files", { node_id: "f-sw-b", change: "sw", add: [fa] });
+  for (const id of ["f-sw-a", "f-sw-b"]) await readyByTools(id, "sw");
+  // skip_blocked counts only the nodes that walk: f-sw-b, left behind for review, keeps its live claim.
+  for (const new_status of ["ready", "in-progress", "in-review"]) await call("update_node_status", { node_id: "f-sw-a", change: "sw", new_status });
+  const partial = await raw("update_node_status", { scope: "change", change: "sw", new_status: "ship", skip_blocked: true, dry_run: true });
+  const partialRes = partial.error ? {} : JSON.parse(partial.text);
+  check(
+    "a skip_blocked walk judges a member left behind by its live claims: the swap partner is blocked too",
+    !partial.error && (partialRes.plan ?? []).length === 0 &&
+      (partialRes.blocked ?? []).some((b) => b.node_id === "f-sw-a" && b.reason.includes('"f-sw-b", which claims it live')),
+    partial.text
+  );
+  const both = await raw("update_node_status", { scope: "change", change: "sw", new_status: "ship", skip_blocked: true, skip_review: true, dry_run: true });
+  const bothRes = both.error ? {} : JSON.parse(both.text);
+  check(
+    "a skip_blocked walk ships both revisions of a swap",
+    !both.error && (bothRes.blocked ?? []).length === 0 && (bothRes.plan ?? []).some((l) => l.startsWith("f-sw-b:")),
+    both.text
+  );
+  const walked = await raw("update_node_status", { scope: "change", change: "sw", new_status: "ship", skip_review: true });
+  const owners = walked.error
+    ? []
+    : [(await call("get_node_implementation", { path: fa })).owner?.node_id, (await call("get_node_implementation", { path: fb })).owner?.node_id];
+  check(
+    "a change walk ships two revisions that swap files",
+    !walked.error && owners[0] === "f-sw-b" && owners[1] === "f-sw-a",
     walked.text
   );
 }

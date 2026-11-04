@@ -429,6 +429,56 @@ write("src/shared/s.ts", "export const s = 1;\n");
   ok("a node may not ship onto a file another node claims live; the message names the revision that drops it");
 }
 
+// --- Inside a walk, the ship gate judges the nodes the walk ships by their claims after the walk ---
+{
+  write("src/shared/t.ts", "export const t = 1;\n");
+  const F = "src/shared/s.ts";
+  const G = "src/shared/t.ts";
+  // A file moving from f-i to f-t in change x (f-i depends_on f-t, so f-t walks first).
+  const from = node("f-i", "Foundation", {
+    implements: ["src/own1/", F],
+    depends_on: ["f-t"],
+    open_revisions: [revision("x", { state: "in-review", implements: { add: [], remove: [F] } })],
+  });
+  const to = node("f-t", "Foundation", {
+    implements: ["src/own2/"],
+    open_revisions: [revision("x", { state: "in-review", implements: { add: [F], remove: [] } })],
+  });
+  const g = graphOf([from, to]);
+  // Shipped alone, f-t meets f-i's live claim.
+  blocked(
+    () => integrity.assertCheckCleanForRevision(g, root, g.nodes[1], "x", "ship"),
+    /claimed by "f-t" and "f-i", which claims it live; "f-i" revision "x" drops it/
+  );
+  // In a walk that also ships f-i's revision, f-i is judged by its claims after the walk.
+  const walk = new Map([["f-i", ["src/own1/"]], ["f-t", ["src/own2/", F]]]);
+  integrity.assertCheckCleanForRevision(g, root, g.nodes[1], "x", "ship", walk);
+  // A walk that leaves f-i claiming the file is a real double claim at its end: Blocked naming f-i.
+  const keeps = new Map([["f-i", ["src/own1/", F]], ["f-t", ["src/own2/", F]]]);
+  blocked(() => integrity.assertCheckCleanForRevision(g, root, g.nodes[1], "x", "ship", keeps), /claimed by "f-t" and "f-i"/);
+  // A node the walk does not ship keeps its live claim.
+  blocked(
+    () => integrity.assertCheckCleanForRevision(g, root, g.nodes[1], "x", "ship", new Map([["f-t", ["src/own2/", F]]])),
+    /claimed by "f-t" and "f-i", which claims it live/
+  );
+  // Two revisions of one change swapping files: each ships in the walk, in either order.
+  const a = node("f-a", "Foundation", {
+    implements: [F],
+    open_revisions: [revision("sw", { state: "in-review", implements: { add: [G], remove: [F] } })],
+  });
+  const b = node("f-b", "Foundation", {
+    implements: [G],
+    open_revisions: [revision("sw", { state: "in-review", implements: { add: [F], remove: [G] } })],
+  });
+  const sw = graphOf([a, b]);
+  blocked(() => integrity.assertCheckCleanForRevision(sw, root, sw.nodes[0], "sw", "ship"), /claimed by "f-a" and "f-b"/);
+  blocked(() => integrity.assertCheckCleanForRevision(sw, root, sw.nodes[1], "sw", "ship"), /claimed by "f-b" and "f-a"/);
+  const swap = new Map([["f-a", [G]], ["f-b", [F]]]);
+  integrity.assertCheckCleanForRevision(sw, root, sw.nodes[0], "sw", "ship", swap);
+  integrity.assertCheckCleanForRevision(sw, root, sw.nodes[1], "sw", "ship", swap);
+  ok("in a walk the ship gate reads the claims every shipping node holds after the walk; a real double claim still Blocks");
+}
+
 // --- A revision of B and a pre-ship member of A on one file: a cross-change warning, not a Block ---
 {
   const g = graphOf([

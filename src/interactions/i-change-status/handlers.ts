@@ -46,7 +46,6 @@ import {
   revisionFor,
   withRevision,
 } from "../../foundations/f-revision-model/index.js";
-import { expandClaims } from "../../foundations/f-source-index/claims.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import {
   blocked,
@@ -65,6 +64,7 @@ import {
   assertCheckCleanForRevision,
   preShipChange,
   staleTextWarnings,
+  type WalkClaims,
 } from "../../foundations/f-compiler-rules/integrity.js";
 import { assertDecisionForReview, createDecisionContext, type DecisionContext } from "../../foundations/f-compiler-rules/decisions.js";
 import {
@@ -315,11 +315,11 @@ function selectScopedNodes(
       const listed = new Set(args.nodes);
       selected = selected.filter((n) => listed.has(n.id));
     }
-    // Ordered on the change's view: a depends_on a member's revision adds counts, and a revision
-    // dropping a file walks before the member taking it over.
-    const members = selected.map((node) => ({ node, ...(revisionFor(node, change) ? { change } : {}) }));
-    const byNode = new Map(members.map((r) => [r.node.id, r]));
-    const rows = orderForWalk(graphUnder(graph, change), selected, handoverOrder(members)).map((node) => byNode.get(node.id)!);
+    // Ordered on the change's view: a depends_on a member's revision adds counts.
+    const rows = orderForWalk(graphUnder(graph, change), selected).map((node) => ({
+      node,
+      ...(revisionFor(node, change) ? { change } : {}),
+    }));
     return { rows, needsChangeWalk: [] };
   } else {
     const seed = findNode(graph, args.node_id!);
@@ -364,7 +364,7 @@ function selectScopedNodes(
   let view = graph;
   for (const change of new Set(moving.flatMap((r) => (r.change ? [r.change] : [])))) view = graphUnder(view, change);
   const byId = new Map(moving.map((r) => [r.node.id, r]));
-  const rows = orderForWalk(view, moving.map((r) => r.node), handoverOrder(moving)).map((node) => byId.get(node.id)!);
+  const rows = orderForWalk(view, moving.map((r) => r.node)).map((node) => byId.get(node.id)!);
   return { rows, needsChangeWalk };
 }
 
@@ -381,11 +381,10 @@ function noNodeMovedNote(needsChangeWalk: NeedsChangeWalk[], target: string): st
 /**
  * Tier order (Foundation, Interaction, Interface), then dependency order within a tier, by the
  * depends_on edges of `graph` (a change walk passes the change's view, `graphUnder`; the other
- * scopes the view of each row's own revision). `after` adds orderings no edge carries (node id →
- * ids that walk before it, `handoverOrder`); they take precedence over the tier order. When no
- * node is free (a cycle), the first pending one walks and the gates judge it.
+ * scopes the view of each row's own revision). Claims do not order a walk: its ship gate judges
+ * every node the walk ships by its claims after the walk (`walkClaims`).
  */
-function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[], after = new Map<string, Set<string>>()): MindPlanNode[] {
+function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode[] {
   const inSet = new Set(nodes.map((n) => n.id));
   const done = new Set<string>();
   const out: MindPlanNode[] = [];
@@ -394,14 +393,13 @@ function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[], after = new M
       (STATUS_TIER[a.type] ?? 99) - (STATUS_TIER[b.type] ?? 99) || a.id.localeCompare(b.id)
   );
   while (pending.length > 0) {
-    const index = pending.findIndex(
-      (n) =>
-        graph.edges.every(
-          (e) =>
-            !(e.source === n.id && e.type === "depends_on") ||
-            !inSet.has(e.target) ||
-            done.has(e.target)
-        ) && [...(after.get(n.id) ?? [])].every((id) => !inSet.has(id) || done.has(id))
+    const index = pending.findIndex((n) =>
+      graph.edges.every(
+        (e) =>
+          !(e.source === n.id && e.type === "depends_on") ||
+          !inSet.has(e.target) ||
+          done.has(e.target)
+      )
     );
     const [next] = pending.splice(index < 0 ? 0 : index, 1);
     done.add(next.id);
@@ -410,35 +408,24 @@ function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[], after = new M
   return out;
 }
 
-/**
- * Claim handovers among a walk's rows: a row whose claims after its move include a file that
- * another row's revision drops from that node's live claims walks after that row (node id → ids
- * before it). The drop ships first, so the taker's ship gate meets no live claim on the file.
- */
-function handoverOrder(rows: { node: MindPlanNode; change?: string }[]): Map<string, Set<string>> {
-  const order = new Map<string, Set<string>>();
-  const root = projectRoot();
-  const claimsAfter = (r: { node: MindPlanNode; change?: string }) =>
-    expandClaims(r.change ? withRevision(r.node, r.change).next?.implements : r.node.implements, root);
-  const drops = rows.flatMap((r) => {
-    if (!r.change) return [];
-    const kept = new Set(claimsAfter(r));
-    const dropped = new Set(expandClaims(r.node.implements, root).filter((f) => !kept.has(f)));
-    return dropped.size ? [{ id: r.node.id, dropped }] : [];
-  });
-  if (drops.length === 0) return order;
-  for (const r of rows) {
-    const claims = claimsAfter(r);
-    for (const d of drops) {
-      if (d.id === r.node.id || !claims.some((f) => d.dropped.has(f))) continue;
-      order.set(r.node.id, new Set([...(order.get(r.node.id) ?? []), d.id]));
-    }
-  }
-  return order;
-}
-
 /** One node's walk: the revision it moves (`change`; undefined for live) and its steps. */
 type WalkPlan = { node_id: string; change?: string; steps: string[] };
+
+/**
+ * The claims each node a plan ships holds once the plan is written (node id → claim entries): its
+ * revision of the row's change applied, or a pre-ship node's own claims. The ship gate reads them
+ * for the other nodes of the walk (`WalkClaims`), so a walk is judged by its end state: a scoped
+ * walk is validated whole and writes nothing when a step Blocks.
+ */
+function walkClaims(graph: MindPlanGraph, plan: WalkPlan[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const row of plan) {
+    if (!row.steps.includes("ship")) continue;
+    const node = findNode(graph, row.node_id);
+    out.set(row.node_id, [...((row.change ? withRevision(node, row.change).next?.implements : node.implements) ?? [])]);
+  }
+  return out;
+}
 
 /** Steps from a node's active state forward to the target; empty when already there or past. */
 function stepsToTarget(node: MindPlanNode, target: string, change?: string): string[] {
@@ -518,18 +505,21 @@ function promoteInMemory(
 
 /**
  * Validates every step of a plan in memory against a loaded graph, writing nothing.
- * Returns the first Blocked reason (naming the node and step), or null.
+ * Returns the first Blocked reason (naming the node and step), or null. `walk` (a scoped walk's
+ * `walkClaims`) gives the ship gate the claims the walk's nodes hold after it; a single move
+ * passes none and is judged against live.
  */
 function simulateWalk(
   plan: WalkPlan[],
-  decisionCtx: DecisionContext = createDecisionContext(projectRoot())
+  decisionCtx: DecisionContext = createDecisionContext(projectRoot()),
+  walk?: WalkClaims
 ): { blocked: string | null; warnings: string[] } {
   const graph = loadGraph();
   const root = projectRoot();
   const now = new Date().toISOString();
   const warnings = new Set<string>();
   for (const row of plan) {
-    const stop = simulateRow(graph, root, row, now, decisionCtx, warnings);
+    const stop = simulateRow(graph, root, row, now, decisionCtx, warnings, walk);
     if (stop) {
       return { blocked: `Blocked: ${stop.reason} (at "${row.node_id}" -> ${stop.step})`, warnings: [...warnings] };
     }
@@ -539,7 +529,8 @@ function simulateWalk(
 
 /**
  * One node's steps applied to `graph` in memory; the first Blocked step and its reason, or null.
- * A revision row is judged on `revisionGraph(graph, change)` (live plus that change's revisions).
+ * A revision row is judged on `revisionGraph(graph, change)` (live plus that change's revisions);
+ * `walk` as in `simulateWalk`.
  */
 function simulateRow(
   graph: MindPlanGraph,
@@ -547,7 +538,8 @@ function simulateRow(
   row: WalkPlan,
   now: string,
   decisionCtx: DecisionContext,
-  warnings: Set<string>
+  warnings: Set<string>,
+  walk?: WalkClaims
 ): { step: string; reason: string } | null {
   const node = findNode(graph, row.node_id);
   for (const step of row.steps) {
@@ -555,7 +547,7 @@ function simulateRow(
       if (row.change) {
         const resolved = resolveRevisionStatusChange(graph, node, row.change, step);
         if (step === "in-review" || step === "ship") {
-          assertCheckCleanForRevision(graph, root, node, row.change, step);
+          assertCheckCleanForRevision(graph, root, node, row.change, step, walk);
           if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx, row.change);
           for (const w of staleTextWarnings(graph, root, node, undefined, undefined, row.change).warnings) warnings.add(w);
         }
@@ -573,7 +565,7 @@ function simulateRow(
       const live = liveMoveGraph(graph, node);
       const resolved = resolveStatusChange(live, findNode(live, row.node_id), step);
       if (step === "in-review" || step === "ship") {
-        assertCheckCleanForNode(graph, root, node, step);
+        assertCheckCleanForNode(graph, root, node, step, undefined, walk);
         if (step === "in-review") assertDecisionForReview(graph, root, node, decisionCtx);
         for (const w of staleTextWarnings(graph, root, node).warnings) warnings.add(w);
       }
@@ -599,12 +591,13 @@ function trialRow(
   row: WalkPlan,
   now: string,
   decisionCtx: DecisionContext,
-  warnings: Set<string>
+  warnings: Set<string>,
+  walk?: WalkClaims
 ): { step: string; reason: string } | null {
   const at = graph.nodes.findIndex((n) => n.id === row.node_id);
   const savedNode = at >= 0 ? structuredClone(graph.nodes[at]) : null;
   const savedEdges = graph.edges;
-  const stop = simulateRow(graph, root, row, now, decisionCtx, warnings);
+  const stop = simulateRow(graph, root, row, now, decisionCtx, warnings, walk);
   if (stop && savedNode) {
     graph.nodes[at] = savedNode;
     graph.edges = savedEdges;
@@ -615,13 +608,34 @@ function trialRow(
 /**
  * `skip_blocked`: each node's whole walk is validated on a copy of the graph that already holds
  * the nodes validated before it. A node blocked at any step keeps its state (no partial steps), so
- * a later node that cannot move without it is blocked by the gates in turn.
+ * a later node that cannot move without it is blocked by the gates in turn. The ship gate reads
+ * the claims the walked nodes hold after the walk (`walkClaims`). It may count only nodes that do
+ * ship: a pass that leaves one of them behind runs again without it, until every node it counts
+ * walks (the set only shrinks, so this ends).
  */
 function simulateSkippingBlocked(
   start: MindPlanGraph,
   plan: WalkPlan[],
   reviewSkippers: Set<string>,
   decisionCtx: DecisionContext
+): { walkable: WalkPlan[]; blocked: BlockedMember[]; warnings: string[]; walk: WalkClaims } {
+  const walk = walkClaims(start, plan.filter((row) => !reviewSkippers.has(row.node_id)));
+  for (;;) {
+    const pass = skippingPass(start, plan, reviewSkippers, decisionCtx, walk);
+    const walked = new Set(pass.walkable.map((row) => row.node_id));
+    const left = [...walk.keys()].filter((id) => !walked.has(id));
+    if (left.length === 0) return { ...pass, walk };
+    for (const id of left) walk.delete(id);
+  }
+}
+
+/** One `simulateSkippingBlocked` pass, the ship gate reading `walk`. */
+function skippingPass(
+  start: MindPlanGraph,
+  plan: WalkPlan[],
+  reviewSkippers: Set<string>,
+  decisionCtx: DecisionContext,
+  walk: WalkClaims
 ): { walkable: WalkPlan[]; blocked: BlockedMember[]; warnings: string[] } {
   // One working copy: a blocked row is put back (`trialRow`), so `start` stays as loaded.
   const graph = structuredClone(start);
@@ -641,7 +655,7 @@ function simulateSkippingBlocked(
       continue;
     }
     const rowWarnings = new Set<string>();
-    const stop = trialRow(graph, root, row, now, decisionCtx, rowWarnings);
+    const stop = trialRow(graph, root, row, now, decisionCtx, rowWarnings, walk);
     if (stop) {
       blockedRows.push({ node_id: row.node_id, ...stop });
       continue;
@@ -701,13 +715,17 @@ function statusLine(row: Record<string, unknown>): string {
   return `${String(row.node_id)}: ${String(row.previous_state)} -> ${to}`;
 }
 
-/** Writes a validated scoped walk, one step at a time, and returns its lines and changed files. */
+/**
+ * Writes a validated scoped walk, one step at a time, and returns its lines and changed files.
+ * Each ship gate reads `walk`, the claims the validation judged the walk's nodes by.
+ */
 function applyWalk(
   args: StatusArgs,
   graph: MindPlanGraph,
   plan: WalkPlan[],
   simWarnings: string[],
-  decisionCtx: DecisionContext
+  decisionCtx: DecisionContext,
+  walk: WalkClaims
 ): Record<string, unknown> {
   gateWrite(
     graph,
@@ -724,7 +742,7 @@ function applyWalk(
     let first: Record<string, unknown> | null = null;
     for (const step of row.steps) {
       try {
-        last = applyOneStatus({ node_id: row.node_id, new_status: step, change: row.change, decisionCtx });
+        last = applyOneStatus({ node_id: row.node_id, new_status: step, change: row.change, decisionCtx, walk });
       } catch (err) {
         // A step the validation could not foresee (a ship that hit conflicts): name what was written.
         throw withWroteLine(err, changed);
@@ -806,7 +824,7 @@ function walkSkippingBlocked(
     throw blocked(`no node of this walk can move; nothing was written.\n${reasons}`);
   }
   return {
-    ...applyWalk(args, graph, sim.walkable, sim.warnings, decisionCtx),
+    ...applyWalk(args, graph, sim.walkable, sim.warnings, decisionCtx, sim.walk),
     ...(sim.blocked.length ? { blocked: sim.blocked } : {}),
     ...skipped,
   };
@@ -845,7 +863,9 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
     }
     const reviewBlock =
       skipping.length > 0 && args.skip_review !== true ? skipReviewBlocked(skipping) : null;
-    const sim = simulateWalk(plan, decisionCtx);
+    // The ship gate judges the nodes this walk ships by their claims after it: only the end state is written.
+    const walk = walkClaims(graph, plan);
+    const sim = simulateWalk(plan, decisionCtx, walk);
     const skipped = args.skip_review === true && skipping.length > 0 ? { skipped_review: skipping } : {};
     if (args.dry_run) {
       return {
@@ -868,7 +888,7 @@ function applyStatusUpdate(args: StatusArgs): Record<string, unknown> {
       );
     }
     return {
-      ...applyWalk(args, graph, plan, sim.warnings, decisionCtx),
+      ...applyWalk(args, graph, plan, sim.warnings, decisionCtx, walk),
       ...skipped,
       ...leftInPlace,
     };
@@ -1128,6 +1148,8 @@ function applyOneStatus(args: {
   change?: string;
   /** Shared by the steps of one call so config and the git probe are read once. */
   decisionCtx?: DecisionContext;
+  /** A scoped walk's claims after it (`walkClaims`) for the ship gate; a single move has none. */
+  walk?: WalkClaims;
 }): Record<string, unknown> {
   const { node_id, new_status } = args;
   const graph = loadGraph();
@@ -1142,7 +1164,7 @@ function applyOneStatus(args: {
   // Moves to in-review and ship run the check's import and ownership rules on this node's files.
   let warnings: string[] = [];
   if (new_status === "in-review" || new_status === "ship") {
-    assertCheckCleanForNode(graph, projectRoot(), node, new_status);
+    assertCheckCleanForNode(graph, projectRoot(), node, new_status, undefined, args.walk);
     // A decision-worthy revision needs its decision recorded before review.
     if (new_status === "in-review") {
       assertDecisionForReview(graph, projectRoot(), node, args.decisionCtx);
@@ -1212,7 +1234,7 @@ function applyOneStatus(args: {
  * (siblings rebased; `rebased` lists each with the conflicts it holds).
  */
 function applyRevisionStatus(
-  args: { verbose?: boolean; node_id: string; new_status: string; change: string; decisionCtx?: DecisionContext },
+  args: { verbose?: boolean; node_id: string; new_status: string; change: string; decisionCtx?: DecisionContext; walk?: WalkClaims },
   graph: MindPlanGraph,
   node: MindPlanNode
 ): Record<string, unknown> {
@@ -1221,7 +1243,7 @@ function applyRevisionStatus(
   const resolved = resolveRevisionStatusChange(graph, node, change, new_status);
   let warnings: string[] = [];
   if (new_status === "in-review" || new_status === "ship") {
-    assertCheckCleanForRevision(graph, root, node, change, new_status);
+    assertCheckCleanForRevision(graph, root, node, change, new_status, args.walk);
     if (new_status === "in-review") assertDecisionForReview(graph, root, node, args.decisionCtx, change);
     warnings = staleTextWarnings(graph, root, node, undefined, undefined, change).warnings;
   }

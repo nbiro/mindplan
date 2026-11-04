@@ -736,22 +736,33 @@ export function findOwnershipConflicts(
   return nodeConflictMessages(viewConflicts(graph, root, c), node);
 }
 
-/** A pair `shipOwnershipConflicts` finds: `other` claims `file` live. */
+/** A pair `shipOwnershipConflicts` finds: `other` claims `file` live (or after the walk). */
 type LiveClaimConflict = { file: string; other: string; message: string };
+
+/**
+ * The claims each node a scoped walk ships will hold once the whole walk is written (node id →
+ * claim entries: its revision of the walked change applied, or a pre-ship node's own claims). A
+ * walk is validated whole and writes nothing when any step Blocks, so only its end state counts.
+ */
+export type WalkClaims = ReadonlyMap<string, readonly string[]>;
 
 /**
  * The ship gate's ownership rule: the node's claims as they stand after the ship (its revision of
  * `change`, else its live claims) against the live claims of every other shipped, non-retired
  * pipeline node (plain live, no change's revisions). A node may not ship onto a file another node
- * claims live: whichever ships second meets the first one's live claim. When that node has an open
- * revision of the shipping node's change that drops the file, the message says to ship that
- * revision first, or the whole change in one walk (which orders it first).
+ * claims live: whichever ships second meets the first one's live claim. Inside a scoped walk
+ * (`walk`), every other node that walk ships counts with its claims after the walk instead of its
+ * live ones, so a file the walk moves between its nodes passes in any order, and a file two of
+ * them still claim at the end Blocks. When the other node has an open revision of the shipping
+ * node's change that drops the file, the message says to ship that revision first, or the whole
+ * change in one walk.
  */
 function shipOwnershipConflicts(
   graph: MindPlanGraph,
   root: string,
   node: MindPlanNode,
-  change: string | null
+  change: string | null,
+  walk?: WalkClaims
 ): LiveClaimConflict[] {
   const live = liveGraph(graph);
   const after = change !== null && revisionFor(node, change) ? nodeUnder(node, change) : inGraph(live, node);
@@ -760,10 +771,23 @@ function shipOwnershipConflicts(
   const own = change ?? preShipChange(node);
   const out: LiveClaimConflict[] = [];
   for (const n of live.nodes) {
-    if (n.id === node.id || !isPipelineNodeType(n.type) || !n.shipped_at) continue;
-    if (n.state === "cancelled" || n.state === "deprecated") continue;
-    const shared = [...new Set(expandClaims(activeClaims(n), root))].filter((f) => mine.has(f));
+    if (n.id === node.id || !isPipelineNodeType(n.type)) continue;
+    const final = walk?.get(n.id);
+    if (final === undefined && (!n.shipped_at || n.state === "cancelled" || n.state === "deprecated")) continue;
+    const shared = [...new Set(expandClaims(final ? [...final] : activeClaims(n), root))].filter((f) => mine.has(f));
     if (shared.length === 0) continue;
+    if (final) {
+      for (const file of shared) {
+        out.push({
+          file,
+          other: n.id,
+          message:
+            `ownership: "${file}" claimed by "${node.id}" and "${n.id}" once this walk is written; ` +
+            `two nodes may not both claim a file live: drop one of the claims.`,
+        });
+      }
+      continue;
+    }
     const kept = own !== null && revisionFor(n, own) ? new Set(expandClaims(activeClaims(nodeUnder(n, own)), root)) : null;
     for (const file of shared) {
       const head = `ownership: "${file}" claimed by "${node.id}" and "${n.id}", which claims it live; `;
@@ -853,7 +877,8 @@ export function crossChangeClaimWarnings(graph: MindPlanGraph, root: string): st
 /**
  * Ship-gate: the check's import and ownership rules on one node's files, in its view
  * (`gateChange(node, change)`; ownership in `ownershipView`). At "ship" the node's claims after
- * the ship are also judged against other shipped nodes' live claims (`shipOwnershipConflicts`).
+ * the ship are also judged against other shipped nodes' live claims (`shipOwnershipConflicts`;
+ * inside a scoped walk, `walk` gives the nodes that walk ships by their claims after it).
  * Throws `Blocked:` with every violation and its fix.
  */
 export function assertCheckCleanForNode(
@@ -861,7 +886,8 @@ export function assertCheckCleanForNode(
   root: string,
   node: MindPlanNode,
   targetLabel: string,
-  change?: string
+  change?: string,
+  walk?: WalkClaims
 ): void {
   if (!isPipelineNodeType(node.type)) return;
   const c = gateChange(node, change);
@@ -870,7 +896,7 @@ export function assertCheckCleanForNode(
   if (targetLabel === "ship") {
     // A pair the node's own view already reports is not repeated.
     const said = new Set(ownership);
-    for (const p of shipOwnershipConflicts(graph, root, node, c)) {
+    for (const p of shipOwnershipConflicts(graph, root, node, c, walk)) {
       if (!said.has(`ownership: "${p.file}" claimed by "${node.id}" and "${p.other}".`)) ownership.push(p.message);
     }
   }
@@ -890,17 +916,18 @@ export function assertCheckCleanForNode(
 /**
  * Ship-gate for one open revision: unresolved rebase conflicts Block first (in-review / ship),
  * then the check's import, ownership, and linked-test rules on the revision's files under
- * live plus `change`.
+ * live plus `change` (`walk`: as in `assertCheckCleanForNode`).
  */
 export function assertCheckCleanForRevision(
   graph: MindPlanGraph,
   root: string,
   node: MindPlanNode,
   change: string,
-  targetLabel: string
+  targetLabel: string,
+  walk?: WalkClaims
 ): void {
   if (targetLabel === "in-review" || targetLabel === "ship") assertNoRevisionConflicts(node, change);
-  assertCheckCleanForNode(graph, root, node, targetLabel, change);
+  assertCheckCleanForNode(graph, root, node, targetLabel, change, walk);
 }
 
 // ---------------------------------------------------------------------------
