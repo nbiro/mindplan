@@ -43,18 +43,40 @@ const indexes = new Map<string, { model: string; index: SearchIndex | null }>();
 const MAX_OPEN_INDEXES = 4;
 const loggedSqlite = { done: false };
 
-/** Closes an index once no background embedding still writes to it. */
-function closeWhenIdle(index: SearchIndex | null): void {
-  if (!index) return;
-  const running = background.get(index);
-  if (running) void running.finally(() => index.close());
-  else index.close();
+/** Async users of each handle (a search between prepare and query, a background embed). */
+const holds = new Map<SearchIndex, number>();
+/** Handles dropped from `indexes` while held: closed on their last release, or reused by their root first. */
+const retired = new Map<SearchIndex, { key: string; model: string }>();
+
+/** Marks `index` in use until the returned release is called (once). */
+function hold(index: SearchIndex): () => void {
+  holds.set(index, (holds.get(index) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const left = (holds.get(index) ?? 1) - 1;
+    if (left > 0) {
+      holds.set(index, left);
+      return;
+    }
+    holds.delete(index);
+    if (retired.delete(index)) index.close();
+  };
+}
+
+/** Closes a handle dropped from `indexes` now, or on its last release while an async user holds it. */
+function closeWhenIdle(key: string, entry: { model: string; index: SearchIndex | null }): void {
+  if (!entry.index) return;
+  if (holds.has(entry.index)) retired.set(entry.index, { key, model: entry.model });
+  else entry.index.close();
 }
 
 /**
  * The open cache of `root` for `model`, or null without node:sqlite. One handle per root: a
  * different model closes the old handle first, so two handles never rebuild one file under each other.
- * Beyond the last four roots used, the least recently used handle is closed.
+ * Beyond the last four roots used, the least recently used handle is closed, once no async user
+ * holds it; a root asked for again while its dropped handle is still open gets that handle back.
  */
 export function searchIndexFor(rootPath: string, model: string): SearchIndex | null {
   const root = path.resolve(rootPath);
@@ -65,12 +87,21 @@ export function searchIndexFor(rootPath: string, model: string): SearchIndex | n
     indexes.set(key, open);
     return open.index;
   }
-  open?.index?.close();
+  if (open) closeWhenIdle(key, open);
   let index: SearchIndex | null = null;
-  try {
-    index = SearchIndex.open(root, { model });
-  } catch (err) {
-    console.error(`MindPlan search: the cache could not open (${err instanceof Error ? err.message : String(err)}); token scoring only.`);
+  for (const [kept, r] of retired) {
+    if (r.key === key && r.model === model) {
+      retired.delete(kept);
+      index = kept;
+      break;
+    }
+  }
+  if (!index) {
+    try {
+      index = SearchIndex.open(root, { model });
+    } catch (err) {
+      console.error(`MindPlan search: the cache could not open (${err instanceof Error ? err.message : String(err)}); token scoring only.`);
+    }
   }
   if (!index && !loggedSqlite.done) {
     const reason = sqliteUnavailableReason();
@@ -80,8 +111,8 @@ export function searchIndexFor(rootPath: string, model: string): SearchIndex | n
   indexes.set(key, { model, index });
   for (const [oldest, evicted] of indexes) {
     if (indexes.size <= MAX_OPEN_INDEXES) break;
-    closeWhenIdle(evicted.index);
     indexes.delete(oldest);
+    closeWhenIdle(oldest, evicted);
   }
   return index;
 }
@@ -89,14 +120,23 @@ export function searchIndexFor(rootPath: string, model: string): SearchIndex | n
 /** Close every open cache (tests, and a server that switches roots). */
 export function closeSearchIndexes(): void {
   for (const { index } of indexes.values()) index?.close();
+  for (const index of retired.keys()) index.close();
   indexes.clear();
+  retired.clear();
+  holds.clear();
 }
 
-/** What one search runs on: the synced cache (or null) and the ready model (or null). */
+/**
+ * What one search runs on: the synced cache (or null) and the ready model (or null). The cache is
+ * held for the caller until `release` (eviction leaves it open meanwhile); call it once done.
+ */
 export interface SearchBackend {
   index: SearchIndex | null;
   embedder: Embedder | null;
+  release: () => void;
 }
+
+const noRelease = () => {};
 
 /**
  * At most this many changed nodes are embedded inside a search call; more (a cold cache, a branch
@@ -111,6 +151,7 @@ const background = new Map<SearchIndex, Promise<void>>();
 export function embedStale(index: SearchIndex, embedder: Embedder): Promise<void> {
   const running = background.get(index);
   if (running) return running;
+  const release = hold(index);
   const run = (async () => {
     for (;;) {
       const stale = index.staleVectors();
@@ -126,7 +167,10 @@ export function embedStale(index: SearchIndex, embedder: Embedder): Promise<void
     .catch((err: unknown) => {
       console.error(`MindPlan search: embedding failed (${err instanceof Error ? err.message : String(err)}).`);
     })
-    .finally(() => background.delete(index));
+    .finally(() => {
+      background.delete(index);
+      release();
+    });
   background.set(index, run);
   return run;
 }
@@ -152,22 +196,24 @@ export async function prepareSearch(
     if (!embedder) void warmModel(settings.model);
   }
   const index = searchIndexFor(root, embedder?.model ?? settings.model);
-  if (!index) return { index: null, embedder };
+  if (!index) return { index: null, embedder, release: noRelease };
+  const release = hold(index);
   try {
     index.sync(docs);
   } catch (err) {
     console.error(`MindPlan search: the cache could not sync (${err instanceof Error ? err.message : String(err)}); token scoring only.`);
-    return { index: null, embedder };
+    release();
+    return { index: null, embedder, release: noRelease };
   }
-  if (!embedder) return { index, embedder: null };
+  if (!embedder) return { index, embedder: null, release };
   const stale = index.staleVectors();
-  if (stale.length === 0) return { index, embedder };
+  if (stale.length === 0) return { index, embedder, release };
   if (stale.length > INLINE_EMBED_LIMIT && !opts.waitForVectors) {
     void embedStale(index, embedder);
-    return { index, embedder: null };
+    return { index, embedder: null, release };
   }
   await embedStale(index, embedder);
-  return { index, embedder: index.staleVectors().length === 0 ? embedder : null };
+  return { index, embedder: index.staleVectors().length === 0 ? embedder : null, release };
 }
 
 /**

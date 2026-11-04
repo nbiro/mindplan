@@ -16,7 +16,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SearchIndex, embedText, ftsQuery } from "../../../dist/foundations/f-search-index/index-db.js";
 import { keywordRankDocs, keywordTerms } from "../../../dist/foundations/f-search-index/keyword-js.js";
-import { closeSearchIndexes } from "../../../dist/foundations/f-search-index/service.js";
+import { closeSearchIndexes, embedStale, prepareSearch, searchIndexFor } from "../../../dist/foundations/f-search-index/service.js";
 import { fuseRankings, searchDocs, searchNodes, sectionHeadings } from "../../../dist/foundations/f-graph-search/search.js";
 // Spawned servers rank by keyword only: no model download or load during tests.
 process.env.MINDPLAN_SEARCH ??= "keyword";
@@ -335,6 +335,39 @@ ok("cache: type filter before the row limit, rowid reuse across connections, no 
   fs.rmSync(root, { recursive: true, force: true });
 }
 ok("searchNodes: exact id, path, type filter, retired nodes, keyword-only mode");
+
+// --- LRU eviction never closes a cache an async caller still holds ---
+{
+  const roots = Array.from({ length: 6 }, (_, i) => tmp(`lru-${i}`));
+  const { embedder } = fakeEmbedder();
+  const settings = { semantic: false, model: embedder.model };
+  const fill = (from) => roots.slice(from).forEach((r) => searchIndexFor(r, embedder.model));
+
+  // A search between prepareSearch and its query.
+  const held = await prepareSearch(roots[0], docs, { embedder: null, settings });
+  fill(1);
+  assert.doesNotThrow(() => held.index.sync(docs), "an evicted, held cache stays open");
+  assert.equal(searchIndexFor(roots[0], embedder.model), held.index, "asking for the root again reuses the held handle");
+  fill(1);
+  held.release();
+  assert.throws(() => held.index.sync(docs), "the evicted cache closes on its last release");
+
+  // A background embed.
+  let resume;
+  const gate = new Promise((r) => (resume = r));
+  const slow = { ...embedder, async embed(texts, kind) { await gate; return embedder.embed(texts, kind); } };
+  const index = searchIndexFor(roots[0], embedder.model);
+  index.sync(docs);
+  const run = embedStale(index, slow);
+  fill(1);
+  assert.equal(searchIndexFor(roots[0], embedder.model), index, "a root evicted mid-embed reuses its open handle");
+  resume();
+  await run;
+  assert.equal(index.staleVectors().length, 0, "the embed finished writing to the evicted cache");
+  closeSearchIndexes();
+  for (const r of roots) fs.rmSync(r, { recursive: true, force: true });
+}
+ok("search caches: eviction defers closing a held handle and reuses it for its root");
 
 // --- timing on 1,000 nodes ---
 {
