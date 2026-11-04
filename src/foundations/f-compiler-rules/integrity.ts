@@ -705,29 +705,26 @@ function ownershipView(node: MindPlanNode, change?: string): string | null {
 }
 
 /**
- * The pairs a node's view (`ownershipView`) answers for: that change's, or with no change every
- * pair (`findAllOwnershipConflicts`), since a no-change claim is judged under the other side's
- * change when that side belongs to one.
+ * The pairs of one view (`ownershipConflictsUnder`): that change's, or live's. Another change's
+ * pending claim is not in a node's view: it is that change's to clear (the check reports it under
+ * that change, and `crossChangeClaimWarnings` warns across changes).
  */
 function viewConflicts(graph: MindPlanGraph, root: string, view: string | null): OwnershipConflict[] {
-  return view === null
-    ? findAllOwnershipConflicts(graph, root)
-    : ownershipConflictsUnder({ change: view, graph: judgeGraph(graph, view) }, root);
+  return ownershipConflictsUnder({ change: view, graph: judgeGraph(graph, view) }, root);
 }
 
-/** The node's own pairs among `viewConflicts(view)` (with no view, not its revisions'), as gate messages. */
-function nodeConflictMessages(pairs: OwnershipConflict[], node: MindPlanNode, view: string | null): string[] {
+/** The node's own pairs among `viewConflicts(view)`, as gate messages. */
+function nodeConflictMessages(pairs: OwnershipConflict[], node: MindPlanNode): string[] {
   return pairs
     .filter((p) => p.a === node.id || p.b === node.id)
-    .filter((p) => view !== null || p.change === null || !revisionFor(node, p.change))
     .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
 }
 
 /**
- * Active-slot files also claimed by another node, in the node's view (`ownershipView`): its
+ * Active-slot files also claimed by another node, in the node's own view (`ownershipView`): its
  * revision of that change, or a pre-ship member's claims, judged under that change; a node of no
- * change, every pair its claims are in, judged live or under the other side's change. A filter of
- * the check's rule.
+ * change, judged live. Other changes' pending claims never count here. A filter of the check's
+ * rule.
  */
 export function findOwnershipConflicts(
   graph: MindPlanGraph,
@@ -736,7 +733,49 @@ export function findOwnershipConflicts(
   change?: string
 ): string[] {
   const c = ownershipView(node, change);
-  return nodeConflictMessages(viewConflicts(graph, root, c), node, c);
+  return nodeConflictMessages(viewConflicts(graph, root, c), node);
+}
+
+/** A pair `shipOwnershipConflicts` finds: `other` claims `file` live. */
+type LiveClaimConflict = { file: string; other: string; message: string };
+
+/**
+ * The ship gate's ownership rule: the node's claims as they stand after the ship (its revision of
+ * `change`, else its live claims) against the live claims of every other shipped, non-retired
+ * pipeline node (plain live, no change's revisions). A node may not ship onto a file another node
+ * claims live: whichever ships second meets the first one's live claim. When that node has an open
+ * revision of the shipping node's change that drops the file, the message says to ship that
+ * revision first, or the whole change in one walk (which orders it first).
+ */
+function shipOwnershipConflicts(
+  graph: MindPlanGraph,
+  root: string,
+  node: MindPlanNode,
+  change: string | null
+): LiveClaimConflict[] {
+  const live = liveGraph(graph);
+  const after = change !== null && revisionFor(node, change) ? nodeUnder(node, change) : inGraph(live, node);
+  const mine = new Set(expandClaims(activeClaims(after), root));
+  if (mine.size === 0) return [];
+  const own = change ?? preShipChange(node);
+  const out: LiveClaimConflict[] = [];
+  for (const n of live.nodes) {
+    if (n.id === node.id || !isPipelineNodeType(n.type) || !n.shipped_at) continue;
+    if (n.state === "cancelled" || n.state === "deprecated") continue;
+    const shared = [...new Set(expandClaims(activeClaims(n), root))].filter((f) => mine.has(f));
+    if (shared.length === 0) continue;
+    const kept = own !== null && revisionFor(n, own) ? new Set(expandClaims(activeClaims(nodeUnder(n, own)), root)) : null;
+    for (const file of shared) {
+      const head = `ownership: "${file}" claimed by "${node.id}" and "${n.id}", which claims it live; `;
+      const tail =
+        kept && !kept.has(file)
+          ? `"${n.id}" revision "${own}" drops it: ship that revision first, or ship change "${own}" in one walk ` +
+            `(update_node_status({ scope: "change", change: "${own}", new_status: "ship" })).`
+          : `a node may not ship onto a file another node claims live: drop the claim, or first ship a revision of "${n.id}" that drops it.`;
+      out.push({ file, other: n.id, message: head + tail });
+    }
+  }
+  return out;
 }
 
 /**
@@ -770,7 +809,7 @@ export function changeMemberViolations(
     const view = c ?? preShipChange(node);
     let pairs = conflicts.get(view);
     if (!pairs) conflicts.set(view, (pairs = viewConflicts(graph, root, view)));
-    out.set(node.id, { imports, ownership: nodeConflictMessages(pairs, node, view) });
+    out.set(node.id, { imports, ownership: nodeConflictMessages(pairs, node) });
   }
   return out;
 }
@@ -813,7 +852,9 @@ export function crossChangeClaimWarnings(graph: MindPlanGraph, root: string): st
 
 /**
  * Ship-gate: the check's import and ownership rules on one node's files, in its view
- * (`gateChange(node, change)`). Throws `Blocked:` with every violation and its fix.
+ * (`gateChange(node, change)`; ownership in `ownershipView`). At "ship" the node's claims after
+ * the ship are also judged against other shipped nodes' live claims (`shipOwnershipConflicts`).
+ * Throws `Blocked:` with every violation and its fix.
  */
 export function assertCheckCleanForNode(
   graph: MindPlanGraph,
@@ -825,9 +866,17 @@ export function assertCheckCleanForNode(
   if (!isPipelineNodeType(node.type)) return;
   const c = gateChange(node, change);
   const view = c === null ? node : nodeUnder(node, c);
+  const ownership = findOwnershipConflicts(graph, root, node, c ?? undefined);
+  if (targetLabel === "ship") {
+    // A pair the node's own view already reports is not repeated.
+    const said = new Set(ownership);
+    for (const p of shipOwnershipConflicts(graph, root, node, c)) {
+      if (!said.has(`ownership: "${p.file}" claimed by "${node.id}" and "${p.other}".`)) ownership.push(p.message);
+    }
+  }
   const problems = [
     ...findImportViolationsForNode(graph, root, node, c ?? undefined).map((v) => v.message),
-    ...findOwnershipConflicts(graph, root, node, c ?? undefined),
+    ...ownership,
     ...missingTestMessages(view, root),
   ];
   if (problems.length === 0) return;
