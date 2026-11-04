@@ -46,6 +46,7 @@ import {
   revisionFor,
   withRevision,
 } from "../../foundations/f-revision-model/index.js";
+import { expandClaims } from "../../foundations/f-source-index/claims.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import {
   blocked,
@@ -314,11 +315,11 @@ function selectScopedNodes(
       const listed = new Set(args.nodes);
       selected = selected.filter((n) => listed.has(n.id));
     }
-    // Ordered on the change's view: a depends_on a member's revision adds counts.
-    const rows = orderForWalk(graphUnder(graph, change), selected).map((node) => ({
-      node,
-      ...(revisionFor(node, change) ? { change } : {}),
-    }));
+    // Ordered on the change's view: a depends_on a member's revision adds counts, and a revision
+    // dropping a file walks before the member taking it over.
+    const members = selected.map((node) => ({ node, ...(revisionFor(node, change) ? { change } : {}) }));
+    const byNode = new Map(members.map((r) => [r.node.id, r]));
+    const rows = orderForWalk(graphUnder(graph, change), selected, handoverOrder(members)).map((node) => byNode.get(node.id)!);
     return { rows, needsChangeWalk: [] };
   } else {
     const seed = findNode(graph, args.node_id!);
@@ -363,7 +364,7 @@ function selectScopedNodes(
   let view = graph;
   for (const change of new Set(moving.flatMap((r) => (r.change ? [r.change] : [])))) view = graphUnder(view, change);
   const byId = new Map(moving.map((r) => [r.node.id, r]));
-  const rows = orderForWalk(view, moving.map((r) => r.node)).map((node) => byId.get(node.id)!);
+  const rows = orderForWalk(view, moving.map((r) => r.node), handoverOrder(moving)).map((node) => byId.get(node.id)!);
   return { rows, needsChangeWalk };
 }
 
@@ -380,9 +381,11 @@ function noNodeMovedNote(needsChangeWalk: NeedsChangeWalk[], target: string): st
 /**
  * Tier order (Foundation, Interaction, Interface), then dependency order within a tier, by the
  * depends_on edges of `graph` (a change walk passes the change's view, `graphUnder`; the other
- * scopes the view of each row's own revision).
+ * scopes the view of each row's own revision). `after` adds orderings no edge carries (node id →
+ * ids that walk before it, `handoverOrder`); they take precedence over the tier order. When no
+ * node is free (a cycle), the first pending one walks and the gates judge it.
  */
-function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode[] {
+function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[], after = new Map<string, Set<string>>()): MindPlanNode[] {
   const inSet = new Set(nodes.map((n) => n.id));
   const done = new Set<string>();
   const out: MindPlanNode[] = [];
@@ -391,19 +394,47 @@ function orderForWalk(graph: MindPlanGraph, nodes: MindPlanNode[]): MindPlanNode
       (STATUS_TIER[a.type] ?? 99) - (STATUS_TIER[b.type] ?? 99) || a.id.localeCompare(b.id)
   );
   while (pending.length > 0) {
-    const index = pending.findIndex((n) =>
-      graph.edges.every(
-        (e) =>
-          !(e.source === n.id && e.type === "depends_on") ||
-          !inSet.has(e.target) ||
-          done.has(e.target)
-      )
+    const index = pending.findIndex(
+      (n) =>
+        graph.edges.every(
+          (e) =>
+            !(e.source === n.id && e.type === "depends_on") ||
+            !inSet.has(e.target) ||
+            done.has(e.target)
+        ) && [...(after.get(n.id) ?? [])].every((id) => !inSet.has(id) || done.has(id))
     );
     const [next] = pending.splice(index < 0 ? 0 : index, 1);
     done.add(next.id);
     out.push(next);
   }
   return out;
+}
+
+/**
+ * Claim handovers among a walk's rows: a row whose claims after its move include a file that
+ * another row's revision drops from that node's live claims walks after that row (node id → ids
+ * before it). The drop ships first, so the taker's ship gate meets no live claim on the file.
+ */
+function handoverOrder(rows: { node: MindPlanNode; change?: string }[]): Map<string, Set<string>> {
+  const order = new Map<string, Set<string>>();
+  const root = projectRoot();
+  const claimsAfter = (r: { node: MindPlanNode; change?: string }) =>
+    expandClaims(r.change ? withRevision(r.node, r.change).next?.implements : r.node.implements, root);
+  const drops = rows.flatMap((r) => {
+    if (!r.change) return [];
+    const kept = new Set(claimsAfter(r));
+    const dropped = new Set(expandClaims(r.node.implements, root).filter((f) => !kept.has(f)));
+    return dropped.size ? [{ id: r.node.id, dropped }] : [];
+  });
+  if (drops.length === 0) return order;
+  for (const r of rows) {
+    const claims = claimsAfter(r);
+    for (const d of drops) {
+      if (d.id === r.node.id || !claims.some((f) => d.dropped.has(f))) continue;
+      order.set(r.node.id, new Set([...(order.get(r.node.id) ?? []), d.id]));
+    }
+  }
+  return order;
 }
 
 /** One node's walk: the revision it moves (`change`; undefined for live) and its steps. */
