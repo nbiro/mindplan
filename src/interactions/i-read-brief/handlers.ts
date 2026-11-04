@@ -7,11 +7,39 @@ import { loadProjectBrief } from "../../foundations/f-territory-store/project.js
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
 import { findPackageFile } from "./spec.js";
+import { packageRoot, packageVersion } from "../../foundations/f-territory-store/version.js";
 import * as fs from "fs";
 import * as path from "path";
 import {
   rulesVersion,
 } from "../../foundations/f-plan-views/views.js";
+
+/** The version in this package's package.json on disk now, read fresh; null when it cannot be read. */
+function installedPackageVersion(): string | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(packageRoot(), "package.json"), "utf-8")) as {
+      version?: unknown;
+    };
+    return typeof parsed.version === "string" && parsed.version ? parsed.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Names a package replaced under the running server (an npm install after boot): the running code
+ * is still the version packageVersion() cached at boot. Undefined when they match or the file
+ * cannot be read. Advice only (decision d-stale-server-advisory): nothing is gated on it.
+ */
+function restartNotice(): string | undefined {
+  const installed = installedPackageVersion();
+  const running = packageVersion();
+  if (installed === null || installed === running) return undefined;
+  return (
+    `mindplan-mcp ${installed} is installed, but this server is still running ${running}, so its answers, version included, come from ${running}. ` +
+    "Ask the user to restart the MindPlan MCP server (reload or reconnect it in the host), then call get_project again."
+  );
+}
 
 /**
  * Resolve the bundled systems dialect at templates/agent/playbook.md.
@@ -43,11 +71,13 @@ export const CHECK_HINT =
  * Project brief (description + rules) plus the bundled systems dialect (playbook).
  * `rules_version` tags the rules, so the first `get_rules` of a session can already pass it.
  * `version` is the graph status warning (setup, upgrade, or an older server), absent when current.
+ * `restart` says the package was replaced under this running server, absent otherwise.
  * Call before the first answer or code change; call again after description/rules change.
  */
 export function getProject(): Record<string, unknown> {
   const brief = loadProjectBrief();
   const version = graphStatus();
+  const restart = restartNotice();
   return {
     path: brief.path,
     description: brief.description,
@@ -56,6 +86,7 @@ export function getProject(): Record<string, unknown> {
     playbook: loadBundledPlaybook(),
     check: CHECK_HINT,
     ...(version.warning ? { version: version.warning } : {}),
+    ...(restart ? { restart } : {}),
   };
 }
 

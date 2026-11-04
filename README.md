@@ -124,7 +124,7 @@ Node.js 22.13 or later (`engines` in `package.json`; the search cache uses `node
    npm install -D mindplan-mcp
    ```
 
-   Any other project (Python, Go, …) installs nothing and uses `npx -y mindplan-mcp@0.18` in the config below.
+   Any other project (Python, Go, …) installs nothing and uses `npx -y mindplan-mcp@0.19` in the config below.
 
 2. **Register the MCP server.** It runs over stdio from the project root. In Claude Code, run `claude mcp add mindplan -- npx mindplan-mcp`, or commit a `.mcp.json` so everyone who opens the repo gets it (Cursor reads the same shape from `.cursor/mcp.json`; the package ships it as `templates/agent/mcp.json.example`):
 
@@ -136,13 +136,13 @@ Node.js 22.13 or later (`engines` in `package.json`; the search cache uses `node
    }
    ```
 
-   With a dev dependency, `npx mindplan-mcp` runs the locked copy (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.18"]`. Other hosts: [templates/agent/integrations/](templates/agent/integrations/README.md). Reload MCP servers after a config change.
+   With a dev dependency, `npx mindplan-mcp` runs the locked copy (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.19"]`. Other hosts: [templates/agent/integrations/](templates/agent/integrations/README.md). Reload MCP servers after a config change.
 
 3. **Ask your agent to set up MindPlan.** It calls `setup_project`, which creates `mindplan/` (a default `config.json`, an empty `project.md`, and the `version.json` stamp) and returns `pointer`, the short text every session must see first, plus a guide. Following the guide, the agent writes `MINDPLAN.md` and wires it into the files your agent reads, adds the ignores, proposes moving your standing rules into the project brief, asks for a product description, and offers the [merge gate](#the-check-and-the-merge-gate). The server never writes those files itself; the agent shows you each change. The skills (`plan-project`, `define-entities`) are served through `get_skill`, so nothing is copied into `.claude/` or `.cursor/`.
 
 ### Upgrading
 
-Bump the package (`npm update mindplan-mcp`, Dependabot, or a new `npx` range) and reload the MCP server. A release that adds a graph migration raises the server's migration level. Until `mindplan/version.json` reaches it, every graph tool answers `Blocked: Version`, `get_project` returns a `version` field naming the fix, and `mindplan-mcp check` fails. Ask your agent to upgrade MindPlan: it calls `upgrade_project`, which runs every migration (each is idempotent), stamps the new level, and returns a guide. The agent then deletes the host copies it reports as `leftovers`, refreshes `MINDPLAN.md` when `pointer_outdated`, and commits the upgrade on its own. A stamp newer than your server (a teammate upgraded first) blocks too, until you upgrade `mindplan-mcp`. While on 0.x, read [CHANGELOG.md](CHANGELOG.md) before crossing a minor version. Details: SPEC §1.1.2.
+Bump the package (`npm update mindplan-mcp`, Dependabot, or a new `npx` range) and reload the MCP server: a running server keeps the code it started with, and until it restarts `get_project` returns a `restart` field naming both versions. A release that adds a graph migration raises the server's migration level. Until `mindplan/version.json` reaches it, every graph tool answers `Blocked: Version`, `get_project` returns a `version` field naming the fix, and `mindplan-mcp check` fails. Ask your agent to upgrade MindPlan: it calls `upgrade_project`, which runs every migration (each is idempotent), stamps the new level, and returns a guide. The agent then deletes the host copies it reports as `leftovers`, refreshes `MINDPLAN.md` when `pointer_outdated`, and commits the upgrade on its own. A stamp newer than your server (a teammate upgraded first) blocks too, until you upgrade `mindplan-mcp`. While on 0.x, read [CHANGELOG.md](CHANGELOG.md) before crossing a minor version. Details: SPEC §1.1.2.
 
 ### From source (contributors)
 

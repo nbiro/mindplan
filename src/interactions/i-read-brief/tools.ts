@@ -31,9 +31,10 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
         "Returns the systems dialect and this product's description and standing rules " +
-        "({ path, description, rules, rules_version, playbook, check, version? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
+        "({ path, description, rules, rules_version, playbook, check, version?, restart? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
         "rules_version tags the rules: pass it to get_rules as known_version. " +
-        "version appears only when the graph needs setup or an upgrade, or the server is older than the graph, and names the fix (setup_project, upgrade_project, or the package to install); until then every other graph tool is Blocked.",
+        "version appears only when the graph needs setup or an upgrade, or the server is older than the graph, and names the fix (setup_project, upgrade_project, or the package to install); until then every other graph tool is Blocked. " +
+        "restart appears only when a different mindplan-mcp was installed under this running server (an npm install after it started): have the user restart the server, then call get_project again before acting on version.",
       inputSchema: {},
     },
     () => getProject()

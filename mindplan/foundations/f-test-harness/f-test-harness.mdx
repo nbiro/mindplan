@@ -8,7 +8,7 @@ shipped_at: 2026-10-25T21:13:07.604Z
 revisions: 23
 churn: 11.268
 created_at: 2026-07-15T18:51:38.385Z
-updated_at: 2026-11-04T09:30:38.541Z
+updated_at: 2026-11-04T11:31:09.914Z
 depends_on:
   - f-mcp-runtime
 implements:
@@ -68,7 +68,7 @@ Depends on: `f-mcp-runtime`.
 
 - **Cleanup (0.18).** `version.test.mjs` covers a leftover next file tripping the version gate and `upgrade_project` moving it (a mirror twin does not); `twins`, `search-index`, and `open-closed` build revisions with `open_revisions`; `worktree-root.test.mjs` covers root shaping in the call scope.
 - **Review fixes (0.18).** `lean-replies.test.mjs` covers checklist lines with a lone CR; `honesty.test.mjs` partial batches and the relaxed-rule guards; `worktree-root.test.mjs` root validation and JSON payloads on another root; `planned-wiring.test.mjs` the decoy-path cycle case.
-- **Rest of 0.18.** `worktree-root.test.mjs` (the `root` argument: writes land in the named worktree only, orientation per root, root casing, interleaved async calls never cross roots, a root without `mindplan/` Blocked) and `after-merge.test.mjs` (a git merge of two branches that both changed one node: stale base warning, `rebase_revision`, conflict markers, duplicate ids, tracked map.md, the CLI `--after-merge --root`); `honesty.test.mjs` adds change walks with `nodes`, batches that continue with per-node `results`, the change hint, checklist ids and kinds and the relaxed transitive dependency rule; `ergonomics.test.mjs` the compact `run_check`, session-scoped unchanged warnings, `acknowledge_warning`, and `nodes`; `orient-gate.test.mjs` `sections`; `planned-wiring.test.mjs` cycles across changes; `check.test.mjs` the test-file import scope; `version.test.mjs` `doctor`, startup before the graph loads, and fatal/exit logging; suites tick checklists by id
+- **Rest of 0.18.** `worktree-root.test.mjs` (the `root` argument: writes land in the named worktree only, orientation per root, root casing, interleaved async calls never cross roots, a root without `mindplan/` Blocked) and `after-merge.test.mjs` (a git merge of two branches that both changed one node: stale base warning, `rebase_revision`, conflict markers, duplicate ids, tracked map.md, the CLI `--after-merge --root`); `honesty.test.mjs` adds change walks with `nodes`, batches that continue with per-node `results`, the change hint, checklist ids and kinds and the relaxed transitive dependency rule; `ergonomics.test.mjs` the compact `run_check`, session-scoped unchanged warnings, `acknowledge_warning`, and `nodes`; `orient-gate.test.mjs` `sections`; `planned-wiring.test.mjs` cycles across changes; `check.test.mjs` the test-file import scope; `version.test.mjs` `doctor`, startup before the graph loads, fatal/exit logging, and `get_project`'s advisory `restart` once a copy of the package has its `package.json` version changed under a running server; suites tick checklists by id
 
 ## Acceptance Criteria
 
