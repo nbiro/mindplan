@@ -598,6 +598,12 @@ check("every write listed every mindplan/ file it touched", diffMisses === 0, `$
     member.focus === "f-items-new" && member.unlocks === "items" && member.rules?.node_id === "f-items-new",
     JSON.stringify(member).slice(0, 400)
   );
+  const nextSlot = await blocked("orient_for_work", { node_id: "f-items-new", change: "items", slot: "next" });
+  check(
+    'orient_for_work slot "next" on a new member Blocks: it has no open revision, its live slot is the change\'s',
+    !!nextSlot && nextSlot.includes("a pre-ship node has no open revision") && /omit slot/i.test(nextSlot) && nextSlot.includes('"items"'),
+    String(nextSlot)
+  );
   const outsider = await blocked("orient_for_work", { node_id: "f-items-new", change: "other" });
   check("orient_for_work on a new node with another change still Blocks", !!outsider, String(outsider));
   const ticked = await call("patch_node_territory", { node_id: "f-items", toggle_checkboxes: [{ id: "qa", checked: true }] });
