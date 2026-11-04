@@ -698,9 +698,29 @@ function ownershipView(node: MindPlanNode, change?: string): string | null {
 }
 
 /**
+ * The pairs a node's view (`ownershipView`) answers for: that change's, or with no change every
+ * pair (`findAllOwnershipConflicts`), since a no-change claim is judged under the other side's
+ * change when that side belongs to one.
+ */
+function viewConflicts(graph: MindPlanGraph, root: string, view: string | null): OwnershipConflict[] {
+  return view === null
+    ? findAllOwnershipConflicts(graph, root)
+    : ownershipConflictsUnder({ change: view, graph: judgeGraph(graph, view) }, root);
+}
+
+/** The node's own pairs among `viewConflicts(view)` (with no view, not its revisions'), as gate messages. */
+function nodeConflictMessages(pairs: OwnershipConflict[], node: MindPlanNode, view: string | null): string[] {
+  return pairs
+    .filter((p) => p.a === node.id || p.b === node.id)
+    .filter((p) => view !== null || p.change === null || !revisionFor(node, p.change))
+    .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
+}
+
+/**
  * Active-slot files also claimed by another node, in the node's view (`ownershipView`): its
- * revision of that change against live plus that change, a pre-ship member's own change, else
- * live. A filter of the check's rule.
+ * revision of that change, or a pre-ship member's claims, judged under that change; a node of no
+ * change, every pair its claims are in, judged live or under the other side's change. A filter of
+ * the check's rule.
  */
 export function findOwnershipConflicts(
   graph: MindPlanGraph,
@@ -709,14 +729,13 @@ export function findOwnershipConflicts(
   change?: string
 ): string[] {
   const c = ownershipView(node, change);
-  return ownershipConflictsUnder({ change: c, graph: judgeGraph(graph, c) }, root)
-    .filter((p) => p.a === node.id || p.b === node.id)
-    .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
+  return nodeConflictMessages(viewConflicts(graph, root, c), node, c);
 }
 
 /**
  * The import and ownership rules on every member of `change` (`findImportViolationsForNode` and
- * `findOwnershipConflicts`, each member judged through its revision of the change, else live),
+ * `findOwnershipConflicts`, each member judged through its revision of the change, else in its own
+ * view: a pre-ship member's change, else live),
  * in one pass: each view's ownership index and conflicts are computed once and filtered per member.
  * Keyed by member id.
  */
@@ -743,11 +762,8 @@ export function changeMemberViolations(
     }
     const view = c ?? preShipChange(node);
     let pairs = conflicts.get(view);
-    if (!pairs) conflicts.set(view, (pairs = ownershipConflictsUnder({ change: view, graph: judgeGraph(graph, view) }, root)));
-    const ownership = pairs
-      .filter((p) => p.a === node.id || p.b === node.id)
-      .map((p) => `ownership: "${p.file}" claimed by "${node.id}" and "${p.a === node.id ? p.b : p.a}".`);
-    out.set(node.id, { imports, ownership });
+    if (!pairs) conflicts.set(view, (pairs = viewConflicts(graph, root, view)));
+    out.set(node.id, { imports, ownership: nodeConflictMessages(pairs, node, view) });
   }
   return out;
 }
