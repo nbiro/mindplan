@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.0 — patch_project_rules changes single rules
 
 - **`patch_project_rules` takes `add` and `remove`.** Changing one standing rule no longer means resending the whole text: `add` appends rules (duplicates skipped) and `remove` drops rules by text. `rules` still replaces the whole section and cannot be combined with them. [§8.2]
 
