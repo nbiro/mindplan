@@ -4,11 +4,11 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, an outdated graph, and at merge in-review work and shipped nodes whose code changed but whose territory did not; warns about stale text, shape, and more."
 state: stable
-shipped_at: 2026-11-07T20:32:46.279Z
-revisions: 33
-churn: 22.025
+shipped_at: 2026-11-07T22:43:26.073Z
+revisions: 34
+churn: 22.979
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-07T20:32:46.279Z
+updated_at: 2026-11-07T22:43:26.073Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -83,7 +83,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - **Attributed presence.** `checkPresence` reports each `attributed` entry missing on disk as `Blocked: presence: "<id>" attributed file missing on disk: "<path>".` once the slot that holds it is in review
 - **Planned paths.** `runIntegrityCheck` and `run_check` return `info: string[]` next to `warnings`; `renderCheckOutput` prints them as `Info:` lines after the warnings. With `change`, a member's `planned:` lines from `staleTextWarnings` go to `info`, not `warnings`, so a plan-only change shows one `planned:` line per node and no `stale:` lines for paths it has not built yet. `info` never changes `ok`
 
-**Open–closed signals.** The default check warns `hotspot:` for each shipped node whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, naming its recent change groups as candidate cuts; a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
+**Open–closed signals.** The default check warns `hotspot:` for each shipped node with an open revision whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, with the refactor its recorded reasons point to (invert, split, or unknown) and its recent change groups; a hotspot nobody is changing is not listed (open_next warns when a change reopens it); a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
 
 **Fan-out.** The default check warns `fan-out:` for each pre-ship Foundation, Interaction, or Interface whose `depends_on` targets sit in at least `fan_out.warn_at` other unshipped changes (`fanOuts` with `fanOutSettings`, `f-fan-out` and `f-source-index`), one `Warning: fan-out: …` line per node in `fanOuts` order, so a planned node that would have to know every feature of a kind is flagged before it is built; a node kept whole by a `keep_whole` decision is skipped. The settings are loaded once per run. With `change`, a member's `fan-out:` line is also part of the change's warnings. It never changes `ok` or the exit code, and is never Blocked.
 
@@ -139,7 +139,7 @@ The after-merge and compact code read the cache folder name from `f-source-index
 - A scaffolded draft prints one `shape:` warning naming its stub sections and `ok` stays true; once the sections are written it prints none
 - `run_check({ change })` on a plan-only change prints one `Info: planned:` line per node naming paths and no `stale:` line for them
 - `run_check({ change })` lists a planned source as a `planned` member with an `Info: planned edges:` line, and fails on a planned edge whose target was cancelled
-- A shipped node shipping well above the graph's median prints one `hotspot:` warning listing its recent change groups, and `ok` stays true; an active `keep_whole` decision removes it and superseding that decision brings it back; nodes at one pace print none
+- A shipped node with an open revision shipping well above the graph's median prints one `hotspot:` warning with its diagnosis and recent change groups, and `ok` stays true; an active `keep_whole` decision removes it and superseding that decision brings it back; nodes at one pace print none
 - `run_check({ change })` prints one `Info: additivity:` line with the change's summary and carries `change.additivity`
 - A pre-ship node depending on nodes in 3 other unshipped changes prints one `Warning: fan-out:` line naming them and `ok` stays true; 2 changes print none; `keep_whole: true` on the node removes it; `fan_out.warn_at: 2` in `mindplan/config.json` makes 2 changes warn
 

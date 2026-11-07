@@ -40,6 +40,7 @@ import {
   fanIn,
   hotspotFor,
   hotspotWarning,
+  diagnoseHotspot,
   recentRate,
   hotspotContext,
 } from "../../foundations/f-compiler-rules/open-closed.js";
@@ -62,7 +63,6 @@ import {
 } from "../../foundations/f-orientation-ledger/ledger.js";
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { cutReply, orients, parseSections, type OrientSection } from "./sections.js";
-import { resolveNodeRules } from "../../foundations/f-graph-search/rules.js";
 import {
   listDecisions,
   nodeDecisions,
@@ -77,6 +77,7 @@ import {
   buildBlastRadiusPayload,
   namedRevisionChange,
   revisionSummaries,
+  rulesBlock,
   rulesVersion,
 } from "../../foundations/f-plan-views/views.js";
 
@@ -347,6 +348,7 @@ export function getNodeContext(args: {
   node_id: string;
   include_superseded?: boolean;
   include_inherited_decisions?: boolean;
+  include_inherited_rules?: boolean;
   slot?: ContextSlot;
   section?: string;
   change?: string;
@@ -363,8 +365,9 @@ export function getNodeContext(args: {
     change,
   });
   if (change !== undefined) payload.unlocks = change;
-  // It counts as orienting on the node, so it carries every rule that reaches it, not only its own.
-  payload.resolved_rules = { node_id: node.id, entries: reachingRules(graph, node.id) };
+  // It counts as orienting on the node, so it carries every rule that reaches it, not only its own
+  // (sources past distance 1 as one line unless include_inherited_rules).
+  payload.resolved_rules = rulesBlock(node.id, reachingRules(graph, node.id), { all: args.include_inherited_rules });
   const shape = shapeReport(change !== undefined ? withRevision(node, change) : node);
   if (shape) payload.shape = shape;
   recordOriented(graph, [node.id]);
@@ -383,7 +386,8 @@ function orientForChange(
   graph: MindPlanGraph,
   change: string,
   known: Record<string, string> | undefined,
-  sections?: Set<OrientSection>
+  sections?: Set<OrientSection>,
+  all?: boolean
 ): Record<string, unknown> {
   const under = revisionGraph(graph, change);
   const { revisions, planned } = changeMembership(under, change);
@@ -404,7 +408,11 @@ function orientForChange(
     ...deciders.map((n) => [n, "decision"] as const),
   ].map(([n, kind]) => {
     const entries = reachingRules(under, n.id);
-    for (const e of entries) if (!sources.has(e.node_id)) sources.set(e.node_id, e);
+    // Each source once, at its nearest distance to any member.
+    for (const e of entries) {
+      const prior = sources.get(e.node_id);
+      if (!prior || e.distance < prior.distance) sources.set(e.node_id, e);
+    }
     const own = nodeDecisions(under, n).length;
     if (own > 0) {
       holders.push(n.id);
@@ -420,12 +428,8 @@ function orientForChange(
       rules_from: entries.map((e) => e.node_id),
     };
   });
-  const rules = [...sources.values()].map((e) => {
-    const version = rulesVersion(e.rules);
-    return known?.[e.node_id] === version
-      ? { node_id: e.node_id, node_type: e.node_type, version, unchanged: true }
-      : { node_id: e.node_id, node_type: e.node_type, version, rules: e.rules };
-  });
+  const block = rulesBlock(change, [...sources.values()], { all, known });
+  const rules = (block.entries as Record<string, unknown>[]).map(({ via: _via, distance: _distance, ...rest }) => rest);
   if (orients(sections)) recordOriented(graph, members.map((m) => m.id));
   const openItems = openHumanItemsOfChange(graph, change);
   return cutReply(
@@ -433,6 +437,7 @@ function orientForChange(
       change,
       members,
       rules,
+      ...(block.more ? { rules_more: block.more } : {}),
       ...(orients(sections) ? orientRulesPush() : {}),
       decisions: { count: decisionCount, nodes: holders },
       ...(openItems.length ? { open_items: openItems } : {}),
@@ -464,6 +469,12 @@ function orientDecisionEntries(entries: DecisionEntry[], depth: OrientDepth): un
 
 /** How much orient_for_work returns: rules + record, plus the body, or everything. */
 export const ORIENT_DEPTHS = ["rules", "body", "full"] as const;
+
+/** The default: what an edit needs; the neighborhood, blast radius, and stability are asked for. */
+export const DEFAULT_ORIENT_DEPTH = "body";
+
+/** Sections only depth "full" computes. */
+const FULL_DEPTH_SECTIONS = new Set<string>(["blast_radius", "stability", "neighborhood"]);
 
 export type OrientDepth = (typeof ORIENT_DEPTHS)[number];
 
@@ -527,6 +538,7 @@ export async function orientForWork(args: {
   depth?: OrientDepth;
   include_superseded?: boolean;
   include_inherited_decisions?: boolean;
+  include_inherited_rules?: boolean;
   known_rules_versions?: Record<string, string>;
   area?: string;
   slot?: ContextSlot;
@@ -534,8 +546,10 @@ export async function orientForWork(args: {
   change?: string;
   sections?: string[];
 }): Promise<Record<string, unknown>> {
-  const depth: OrientDepth = args.depth ?? "full";
   const sections = parseSections(args.sections);
+  // Naming a part only depth "full" computes asks for it: no depth needed alongside.
+  const asksFull = [...(sections ?? [])].some((s) => FULL_DEPTH_SECTIONS.has(s));
+  const depth: OrientDepth = args.depth ?? (asksFull ? "full" : DEFAULT_ORIENT_DEPTH);
   if (!(ORIENT_DEPTHS as readonly string[]).includes(depth)) {
     throw blocked(`orient_for_work depth must be one of: ${ORIENT_DEPTHS.join(", ")}.`);
   }
@@ -546,7 +560,7 @@ export async function orientForWork(args: {
         'orient_for_work takes "change" alone (every member of the change) or with "node_id" (that node\'s revision of it): drop "query".'
       );
     }
-    return orientForChange(loadGraph(), args.change, args.known_rules_versions, sections);
+    return orientForChange(loadGraph(), args.change, args.known_rules_versions, sections, args.include_inherited_rules);
   }
   if (!q && !args.node_id) {
     throw blocked('orient_for_work requires a non-empty "query", "node_id", or "change".');
@@ -592,10 +606,10 @@ export async function orientForWork(args: {
   );
   const revisions = context.revisions;
   delete context.revisions;
-  const rules = {
-    node_id: node.id,
-    entries: versionedRuleEntries(reachingRules(graph, node.id), args.known_rules_versions),
-  };
+  const rules = rulesBlock(node.id, reachingRules(graph, node.id), {
+    all: args.include_inherited_rules,
+    known: args.known_rules_versions,
+  });
   const split = splitNodeDecisions(graph, node, args, depth);
   const decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
   // A reply cut to sections without the rules does not orient.
@@ -664,9 +678,15 @@ function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<stri
     fan_in: fanIn(graph, node, ctx.index).count,
     rate: round(recentRate(node, settings, ctx.now)),
     median_rate: round(ctx.median),
+    // The rate by the reasons its revisions recorded (unrecorded: ships from before reasons existed).
+    ...(node.shipped_at
+      ? (({ wiring, behavior, unrecorded }) => ({ rate_by_reason: { wiring, behavior, unrecorded } }))(
+          diagnoseHotspot(node, settings, ctx.now)
+        )
+      : {}),
     ...(node.revisions !== undefined ? { revisions: node.revisions } : {}),
     ...(node.split_into?.length ? { split_at: node.split_at, split_into: [...node.split_into] } : {}),
-    ...(hotspot ? { hotspot: hotspotWarning(hotspot) } : {}),
+    ...(hotspot ? { hotspot: hotspotWarning(hotspot), diagnosis: hotspot.diagnosis.kind } : {}),
     ...(fan ? { fan_out: fan } : {}),
   };
 }
@@ -761,22 +781,4 @@ export function getNodeImplementationHandler(args: {
     result.next_files = filesPayload(owned.next_files, root);
   }
   return result;
-}
-
-/**
- * Node rule entries with their `version`; an entry whose version the caller already knows
- * (`known[node_id]`) leaves its text out and says `unchanged: true`.
- */
-function versionedRuleEntries(
-  entries: ReturnType<typeof resolveNodeRules>,
-  known: Record<string, string> | undefined
-): Record<string, unknown>[] {
-  return entries.map((entry) => {
-    const version = rulesVersion(entry.rules);
-    if (known?.[entry.node_id] === version) {
-      const { rules: _text, ...rest } = entry;
-      return { ...rest, version, unchanged: true };
-    }
-    return { ...entry, version };
-  });
 }

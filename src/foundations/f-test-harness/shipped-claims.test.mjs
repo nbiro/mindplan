@@ -336,7 +336,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
 // --- a shipped node with an open next still writes next ---
 {
   write("src/shared/y.ts", "export const y = 1;\n");
-  await call("open_next", { change: "rev-f-other", node_id: "f-other" });
+  await call("open_next", { reason: "behavior", change: "rev-f-other", node_id: "f-other" });
   const next = await call("set_implementation_files", {
     replace: true,
     node_id: "f-other",
@@ -482,7 +482,7 @@ write("src/elsewhere/z.ts", "export const z = 1;\n");
     "the Coverage fix for an unclaimed migration in a dominated folder opens the evolution first",
     !!schemaCov &&
       schemaCov.includes('Probable owner by path: "f-db"') &&
-      schemaCov.includes('open_next({"node_id":"f-db","change":"<change-id>"}) then set_implementation_files({"node_id":"f-db","change":"<change-id>","add":'),
+      schemaCov.includes('open_next({"node_id":"f-db","change":"<change-id>","reason":"<reason>"}) then set_implementation_files({"node_id":"f-db","change":"<change-id>","add":'),
     String(schemaCov)
   );
   check(

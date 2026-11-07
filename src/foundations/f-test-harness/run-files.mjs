@@ -55,5 +55,5 @@ for (const suite of run) {
   if (res.status !== 0) failed.push(suite);
 }
 console.log(`\n${run.length - failed.length}/${run.length} suite(s) passed${failed.length ? `; failed: ${failed.join(", ")}` : ""}.`);
-console.log("Run the full npm test before handoff.");
+console.log("CI runs the full npm test on every PR.");
 process.exit(failed.length ? 1 : 0);

@@ -119,13 +119,13 @@ for (const new_status of SHIP) {
 
 // --- open_next: change required, one revision folder per change ---
 {
-  const noChange = await blocked("open_next", { node_id: "f-sub" });
+  const noChange = await blocked("open_next", { reason: "behavior", node_id: "f-sub" });
   check("open_next without change is Blocked and names change", !!noChange && noChange.includes("change"), String(noChange));
 
   const planned = await call("link_nodes", { source_id: "f-sub", target_id: "f-base", edge_type: "depends_on", change: "a" });
   check("link_nodes with change plans the edge on the shipped node", planned.planned?.change === "a", JSON.stringify(planned));
 
-  const openedA = await call("open_next", { node_id: "f-sub", change: "a" });
+  const openedA = await call("open_next", { reason: "behavior", node_id: "f-sub", change: "a" });
   check(
     "open_next writes revisions/a/f-sub.mdx, applies the planned edge, and lists the revision",
     exists(revFile("a")) &&
@@ -139,13 +139,13 @@ for (const new_status of SHIP) {
   );
   check("open_next writes no <id>.next.mdx", !exists("mindplan/foundations/f-sub/f-sub.next.mdx"));
 
-  const openedB = await call("open_next", { node_id: "f-sub", change: "b" });
+  const openedB = await call("open_next", { reason: "behavior", node_id: "f-sub", change: "b" });
   check(
     "a second change opens a second revision beside the first",
     exists(revFile("b")) && openedB.revisions?.map((r) => r.change).join(",") === "a,b",
     JSON.stringify(openedB)
   );
-  const again = await blocked("open_next", { node_id: "f-sub", change: "a" });
+  const again = await blocked("open_next", { reason: "behavior", node_id: "f-sub", change: "a" });
   check("opening the same change twice is Blocked", !!again && again.includes('"a"'), String(again));
 
   const ambiguous = await blocked("update_node_status", { node_id: "f-sub", new_status: "ready" });
@@ -201,7 +201,7 @@ for (const new_status of SHIP) {
 
 // --- C edits the same section as B; shipping B leaves C with a section conflict ---
 {
-  await call("open_next", { node_id: "f-sub", change: "c" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "c" });
   setSection(revFile("c"), "Purpose", "Purpose from C.");
   readyRevision("c");
 
@@ -240,8 +240,8 @@ for (const new_status of SHIP) {
 
 // --- discard works per change ---
 {
-  await call("open_next", { node_id: "f-sub", change: "d" });
-  await call("open_next", { node_id: "f-sub", change: "e" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "d" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "e" });
   const discarded = await call("discard_next", { node_id: "f-sub", change: "d" });
   check(
     "discard_next with change deletes only that revision folder",
@@ -266,7 +266,7 @@ for (const new_status of SHIP) {
     }
     return raw("update_node_status", { node_id: "f-sub", change, new_status: "ship" });
   };
-  await call("open_next", { node_id: "f-sub", change: "x" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "x" });
   setSection(revFile("x"), "Purpose", "Purpose from X.");
   await call("patch_node_territory", { node_id: "f-sub", slot: "current", section: "## Shared Substrate Spec", text: "Spec patched in place." });
   const shipX = await walkToShip("x");
@@ -277,7 +277,7 @@ for (const new_status of SHIP) {
     shipX.text + "\n" + liveX
   );
 
-  await call("open_next", { node_id: "f-sub", change: "w" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "w" });
   setSection(revFile("w"), "Purpose", "Purpose from W.");
   await call("patch_node_territory", { node_id: "f-sub", slot: "current", section: "## Purpose", text: "Purpose patched in place." });
   const shipW = await walkToShip("w");
@@ -301,7 +301,7 @@ for (const new_status of SHIP) {
   write("src/f-batchmate/index.ts", "export const v = 1;\n");
   await call("set_implementation_files", { node_id: "f-batchmate", add: ["src/f-batchmate/index.ts"] });
   fillAndTick(abs("mindplan/foundations/f-batchmate/f-batchmate.mdx"));
-  await call("open_next", { node_id: "f-sub", change: "v" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "v" });
   setSection(revFile("v"), "Purpose", "Purpose from V.");
   await call("patch_node_territory", { node_id: "f-sub", slot: "current", section: "## Purpose", text: "Purpose patched in place again." });
   readyRevision("v");
@@ -328,7 +328,7 @@ for (const new_status of SHIP) {
 
 // --- a preamble conflict (text above the first heading) resolves by "_preamble" and stays on top ---
 {
-  await call("open_next", { node_id: "f-sub", change: "pre" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "pre" });
   // The revision drops the preamble; live edits it in place: a conflict on _preamble.
   const stripPreamble = (text) => text.replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)[\s\S]*?(?=^## )/m, "$1\n");
   const setPreamble = (text, intro) => text.replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)[\s\S]*?(?=^## )/m, `$1\n${intro}\n\n`);
@@ -357,7 +357,7 @@ for (const new_status of SHIP) {
 
 // --- a batch naming one revision twice (change omitted once, given once) is a duplicate ---
 {
-  await call("open_next", { node_id: "f-sub", change: "dup" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "dup" });
   readyRevision("dup");
   const before = read(revFile("dup"));
   const dup = await blocked("update_node_status", {
@@ -373,7 +373,7 @@ for (const new_status of SHIP) {
   );
   // With two revisions open, an item omitting change cannot resolve: each such item Blocks on its
   // own with the real reason, not as a duplicate of the other.
-  await call("open_next", { node_id: "f-sub", change: "dup2" });
+  await call("open_next", { reason: "behavior", node_id: "f-sub", change: "dup2" });
   const unresolved = await blocked("update_node_status", {
     revisions: [
       { node_id: "f-sub", new_status: "ready" },
@@ -414,7 +414,7 @@ for (const new_status of SHIP) {
     { change: "add-y", target: "f-y", section: "## Shared Substrate Spec", text: "The build reads Y." },
     { change: "add-z", target: "f-z", section: "## Acceptance Criteria", text: "A build with Z passes." },
   ];
-  for (const p of plan) await call("open_next", { node_id: "f-static-build", change: p.change });
+  for (const p of plan) await call("open_next", { reason: "behavior", node_id: "f-static-build", change: p.change });
   for (const p of plan) {
     await call("link_nodes", { source_id: "f-static-build", target_id: p.target, edge_type: "depends_on", change: p.change });
     await call("patch_node_territory", { node_id: "f-static-build", change: p.change, section: p.section, text: p.text });
@@ -485,7 +485,7 @@ for (const new_status of SHIP) {
   check("the check passes after the three ships", final.ok, final.output);
 
   // Stale text is read from the revision's own body.
-  await call("open_next", { node_id: "f-y", change: "stale-y" });
+  await call("open_next", { reason: "behavior", node_id: "f-y", change: "stale-y" });
   await call("patch_node_territory", {
     node_id: "f-y",
     change: "stale-y",
@@ -501,8 +501,8 @@ for (const new_status of SHIP) {
   await call("discard_next", { node_id: "f-y", change: "stale-y" });
 
   // Description warnings judge each open revision on its own, naming it.
-  await call("open_next", { node_id: "f-z", change: "d1", description: "f-z" });
-  await call("open_next", { node_id: "f-z", change: "d2", description: "Infra — z with a cache" });
+  await call("open_next", { reason: "behavior", node_id: "f-z", change: "d1", description: "f-z" });
+  await call("open_next", { reason: "behavior", node_id: "f-z", change: "d2", description: "Infra — z with a cache" });
   const described = await call("run_check", {});
   const about = described.warnings.filter((w) => w.startsWith('description: "f-z"'));
   check(
@@ -525,7 +525,7 @@ for (const new_status of SHIP) {
     await call("set_implementation_files", { node_id: id, add: [`src/${id}/index.ts`] });
     fillAndTick(abs(memberLive(id)));
     for (const new_status of SHIP) await call("update_node_status", { node_id: id, new_status });
-    await call("open_next", { node_id: id, change: "trio" });
+    await call("open_next", { reason: "behavior", node_id: id, change: "trio" });
     await call("patch_node_territory", { node_id: id, change: "trio", section: "## Purpose", text: `Purpose of ${id} from trio.` });
     await call("patch_node_territory", {
       node_id: id,
@@ -581,7 +581,7 @@ for (const new_status of SHIP) {
   for (const new_status of SHIP) await call("update_node_status", { node_id: id, new_status });
   const walks = { ir1: ["ready", "in-progress", "in-review"], ir2: ["ready", "in-progress", "in-review"], ir3: ["ready"] };
   for (const [change, steps] of Object.entries(walks)) {
-    await call("open_next", { node_id: id, change });
+    await call("open_next", { reason: "behavior", node_id: id, change });
     await call("patch_node_territory", { node_id: id, change, section: "## Purpose", text: `Purpose from ${change}.` });
     await call("patch_node_territory", {
       node_id: id,
@@ -653,7 +653,7 @@ async function shippedFoundation(id) {
   write("src/f-wo-b/index.ts", "export const v = 1;\n");
   await call("set_implementation_files", { node_id: "f-wo-b", add: ["src/f-wo-b/index.ts"] });
   fillAndTick(abs("mindplan/foundations/f-wo-b/f-wo-b.mdx"));
-  await call("open_next", { node_id: "f-wo-a", change: "walk-order" });
+  await call("open_next", { reason: "behavior", node_id: "f-wo-a", change: "walk-order" });
   await call("link_nodes", { source_id: "f-wo-a", target_id: "f-wo-b", edge_type: "depends_on", change: "walk-order" });
   await readyByTools("f-wo-a", "walk-order");
   const walked = await raw("update_node_status", { scope: "change", change: "walk-order", new_status: "ship", skip_review: true });
@@ -670,11 +670,11 @@ async function shippedFoundation(id) {
   await shippedFoundation("f-mv-src");
   await shippedFoundation("f-mv-dst");
   const moved = "src/f-mv-src/index.ts";
-  await call("open_next", { node_id: "f-mv-src", change: "move" });
+  await call("open_next", { reason: "behavior", node_id: "f-mv-src", change: "move" });
   await call("set_implementation_files", { node_id: "f-mv-src", change: "move", remove: [moved] });
-  await call("open_next", { node_id: "f-mv-dst", change: "move" });
+  await call("open_next", { reason: "behavior", node_id: "f-mv-dst", change: "move" });
   await call("set_implementation_files", { node_id: "f-mv-dst", change: "move", add: [moved] });
-  await call("open_next", { node_id: "f-mv-dst", change: "other" });
+  await call("open_next", { reason: "behavior", node_id: "f-mv-dst", change: "other" });
   await call("patch_node_territory", { node_id: "f-mv-dst", change: "other", section: "## Purpose", text: "Purpose from other." });
   await readyByTools("f-mv-dst", "other");
   for (const new_status of ["ready", "in-progress", "in-review"]) {
@@ -704,25 +704,25 @@ async function shippedFoundation(id) {
   await shippedFoundation("f-ex-dst");
   await shippedFoundation("f-ex-third");
   const file = "src/f-ex-src/index.ts";
-  await call("open_next", { node_id: "f-ex-src", change: "ex-mv" });
+  await call("open_next", { reason: "behavior", node_id: "f-ex-src", change: "ex-mv" });
   await call("set_implementation_files", { node_id: "f-ex-src", change: "ex-mv", remove: [file] });
   // A second revision that keeps the file: the union of the source's revisions still claims it.
-  await call("open_next", { node_id: "f-ex-src", change: "ex-keep" });
-  await call("open_next", { node_id: "f-ex-dst", change: "ex-mv" });
+  await call("open_next", { reason: "behavior", node_id: "f-ex-src", change: "ex-keep" });
+  await call("open_next", { reason: "behavior", node_id: "f-ex-dst", change: "ex-mv" });
   const took = await raw("set_implementation_files", { node_id: "f-ex-dst", change: "ex-mv", add: [file] });
   check(
     "a revision may claim a file the owner's revision of the same change releases, though another of its revisions keeps it",
     !took.error && JSON.parse(took.text).implements?.includes(file),
     took.text
   );
-  await call("open_next", { node_id: "f-ex-third", change: "ex-mv" });
+  await call("open_next", { reason: "behavior", node_id: "f-ex-third", change: "ex-mv" });
   const twice = await blocked("set_implementation_files", { node_id: "f-ex-third", change: "ex-mv", add: [file] });
   check(
     "two revisions of the same change claiming one file stay Blocked",
     !!twice && twice.includes("f-ex-dst") && twice.includes('"ex-mv"'),
     String(twice)
   );
-  await call("open_next", { node_id: "f-ex-dst", change: "ex-other" });
+  await call("open_next", { reason: "behavior", node_id: "f-ex-dst", change: "ex-other" });
   const live = await blocked("set_implementation_files", { node_id: "f-ex-dst", change: "ex-other", add: [file] });
   check(
     "under a change whose revisions keep the owner's live claim, the claim is Blocked naming the owner",
@@ -738,7 +738,7 @@ async function shippedFoundation(id) {
   const file = "src/f-ho-n/index.ts";
   write("src/f-ho-n/keep.ts", "export const k = 1;\n");
   await call("set_implementation_files", { node_id: "f-ho-n", add: ["src/f-ho-n/keep.ts"] });
-  await call("open_next", { node_id: "f-ho-n", change: "handover" });
+  await call("open_next", { reason: "behavior", node_id: "f-ho-n", change: "handover" });
   await call("set_implementation_files", { node_id: "f-ho-n", change: "handover", remove: [file] });
   await readyByTools("f-ho-n", "handover");
   await call("create_node", { id: "f-ho-a", type: "Foundation", title: "f-ho-a", description: "Infra — f-ho-a", role: "infra", change: "handover" });
@@ -769,9 +769,9 @@ async function shippedFoundation(id) {
   const file = "src/f-hm-src/index.ts";
   write("src/f-hm-src/keep.ts", "export const k = 1;\n");
   await call("set_implementation_files", { node_id: "f-hm-src", add: ["src/f-hm-src/keep.ts"] });
-  await call("open_next", { node_id: "f-hm-src", change: "hm" });
+  await call("open_next", { reason: "behavior", node_id: "f-hm-src", change: "hm" });
   await call("set_implementation_files", { node_id: "f-hm-src", change: "hm", remove: [file] });
-  await call("open_next", { node_id: "f-hm-dst", change: "hm" });
+  await call("open_next", { reason: "behavior", node_id: "f-hm-dst", change: "hm" });
   await call("set_implementation_files", { node_id: "f-hm-dst", change: "hm", add: [file] });
   for (const id of ["f-hm-src", "f-hm-dst"]) await readyByTools(id, "hm");
   // "f-hm-dst" walks first by id; its ship gate judges f-hm-src by its claims after the walk.
@@ -793,9 +793,9 @@ async function shippedFoundation(id) {
   const file = "src/f-mv-b/index.ts";
   write("src/f-mv-b/keep.ts", "export const k = 1;\n");
   await call("set_implementation_files", { node_id: "f-mv-b", add: ["src/f-mv-b/keep.ts"] });
-  await call("open_next", { node_id: "f-mv-b", change: "mv" });
+  await call("open_next", { reason: "behavior", node_id: "f-mv-b", change: "mv" });
   await call("set_implementation_files", { node_id: "f-mv-b", change: "mv", remove: [file] });
-  await call("open_next", { node_id: "f-mv-a", change: "mv" });
+  await call("open_next", { reason: "behavior", node_id: "f-mv-a", change: "mv" });
   await call("set_implementation_files", { node_id: "f-mv-a", change: "mv", add: [file] });
   for (const id of ["f-mv-a", "f-mv-b"]) await readyByTools(id, "mv");
   await call("update_node_status", { scope: "change", change: "mv", new_status: "in-review" });
@@ -820,8 +820,8 @@ async function shippedFoundation(id) {
   await shippedFoundation("f-sw-b");
   const fa = "src/f-sw-a/index.ts";
   const fb = "src/f-sw-b/index.ts";
-  await call("open_next", { node_id: "f-sw-a", change: "sw" });
-  await call("open_next", { node_id: "f-sw-b", change: "sw" });
+  await call("open_next", { reason: "behavior", node_id: "f-sw-a", change: "sw" });
+  await call("open_next", { reason: "behavior", node_id: "f-sw-b", change: "sw" });
   await call("set_implementation_files", { node_id: "f-sw-a", change: "sw", remove: [fa] });
   await call("set_implementation_files", { node_id: "f-sw-b", change: "sw", remove: [fb] });
   await call("set_implementation_files", { node_id: "f-sw-a", change: "sw", add: [fb] });
@@ -860,8 +860,8 @@ async function shippedFoundation(id) {
   // "f-nd-a" sorts first by id; its revision's new depends_on f-nd-b must put f-nd-b first.
   await shippedFoundation("f-nd-a");
   await shippedFoundation("f-nd-b");
-  await call("open_next", { node_id: "f-nd-b", change: "nd-b" });
-  await call("open_next", { node_id: "f-nd-a", change: "nd-a" });
+  await call("open_next", { reason: "behavior", node_id: "f-nd-b", change: "nd-b" });
+  await call("open_next", { reason: "behavior", node_id: "f-nd-a", change: "nd-a" });
   await call("link_nodes", { source_id: "f-nd-a", target_id: "f-nd-b", edge_type: "depends_on", change: "nd-a" });
   await readyByTools("f-nd-a", "nd-a");
   await readyByTools("f-nd-b", "nd-b");
@@ -878,7 +878,7 @@ async function shippedFoundation(id) {
 {
   await shippedFoundation("f-nm-two");
   for (const change of ["nm-a", "nm-b"]) {
-    await call("open_next", { node_id: "f-nm-two", change });
+    await call("open_next", { reason: "behavior", node_id: "f-nm-two", change });
     await readyByTools("f-nm-two", change);
     await call("update_node_status", { node_id: "f-nm-two", change, new_status: "ready" });
   }
@@ -906,9 +906,9 @@ async function shippedFoundation(id) {
   await shippedFoundation("f-nw-two");
   await shippedFoundation("f-nw-one");
   await call("link_nodes", { source_id: "f-nw-one", target_id: "f-nw-two", edge_type: "depends_on" });
-  await call("open_next", { node_id: "f-nw-two", change: "nw-a" });
-  await call("open_next", { node_id: "f-nw-two", change: "nw-b" });
-  await call("open_next", { node_id: "f-nw-one", change: "nw-c" });
+  await call("open_next", { reason: "behavior", node_id: "f-nw-two", change: "nw-a" });
+  await call("open_next", { reason: "behavior", node_id: "f-nw-two", change: "nw-b" });
+  await call("open_next", { reason: "behavior", node_id: "f-nw-one", change: "nw-c" });
   const listed = (res) => (res.needs_change_walk ?? []).find((n) => n.node_id === "f-nw-two");
   const all = await raw("update_node_status", { scope: "all_open_updates", new_status: "ready", dry_run: true });
   const allRes = all.error ? {} : JSON.parse(all.text);

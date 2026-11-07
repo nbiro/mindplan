@@ -335,7 +335,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- the gate on a shipped Foundation's revision; supersession; discard ---
 {
-  await call("open_next", { node_id: "f-bookings", change: "cap" });
+  await call("open_next", { reason: "behavior", node_id: "f-bookings", change: "cap" });
   const warned = await call("run_check", {});
   check(
     "a Foundation revision with no decision warns and the check stays ok",
@@ -462,7 +462,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- a decision recorded on a ready revision ships with it ---
 {
-  await call("open_next", { node_id: "f-bookings", change: "cap" });
+  await call("open_next", { reason: "behavior", node_id: "f-bookings", change: "cap" });
   await walk("f-bookings", ["ready"]);
   const onReady = await call("record_decision", {
     node_id: "f-bookings",
@@ -494,9 +494,9 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- one decision under a change clears every member; the depends_on trigger ---
 {
-  await call("open_next", { node_id: "i-cancel", change: "db" });
+  await call("open_next", { reason: "behavior", node_id: "i-cancel", change: "db" });
   await call("link_nodes", { source_id: "i-cancel", target_id: "f-db", edge_type: "depends_on" });
-  await call("open_next", { node_id: "f-db", change: "db" });
+  await call("open_next", { reason: "behavior", node_id: "f-db", change: "db" });
   const before = await call("run_check", { change: "db" });
   check(
     "a shipped node's next that adds depends_on warns, and so does the Foundation",
@@ -531,7 +531,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- a body-only Interaction revision is never gated ---
 {
-  await call("open_next", { change: "rev-i-reschedule", node_id: "i-reschedule" });
+  await call("open_next", { reason: "behavior", change: "rev-i-reschedule", node_id: "i-reschedule" });
   await call("patch_node_territory", { node_id: "i-reschedule", section: "## Purpose", text: "Move a booking to another evening." });
   const result = await call("run_check", {});
   check("a body-only revision prints no decision warning", decisionWarnings(result, "i-reschedule").length === 0);
@@ -555,7 +555,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     capabilityFile,
     read(capabilityFile).replace(/(### d-legacy-choice[\s\S]*?- Date: )\d{4}-\d{2}-\d{2}/, (_, head) => `${head}2020-01-01`)
   );
-  await call("open_next", { node_id: "f-db", change: "legacy" });
+  await call("open_next", { reason: "behavior", node_id: "f-db", change: "legacy" });
   const opened = (await call("get_node_context", { node_id: "f-db" })).next.record.opened_at;
   const reused = await call("run_check", {});
   check(
@@ -575,7 +575,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- an id still named by a supersedes stays reserved ---
 {
-  await call("open_next", { node_id: "f-bookings", change: "tmp" });
+  await call("open_next", { reason: "behavior", node_id: "f-bookings", change: "tmp" });
   await call("record_decision", {
     node_id: "f-bookings",
     id: "d-temp",
@@ -714,7 +714,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   );
   git("mv", "src/f-store/migrations/002_store.sql", "src/f-store/migrations/001_store.sql");
   git("commit", "-m", "restore the migration name");
-  await call("open_next", { change: "rev-i-odometer", node_id: "i-odometer" });
+  await call("open_next", { reason: "behavior", change: "rev-i-odometer", node_id: "i-odometer" });
   write("src/i-odometer/migrations/001_init.sql", "create table readings (odometer numeric(10,1));\n");
   git("commit", "-am", "edit an existing migration");
   check(
@@ -863,7 +863,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   for (let n = 1; n <= 3; n++) await decide("f-build", n);
   for (let n = 1; n <= 3; n++) await decide("f-blob", n);
 
-  const full = await call("orient_for_work", { node_id: "i-contact" });
+  const full = await call("orient_for_work", { node_id: "i-contact", depth: "full" });
   check(
     "default orient carries one decision, the node's own, plus inherited_decisions.count",
     full.decisions.entries.length === 1 &&

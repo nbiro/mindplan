@@ -125,7 +125,7 @@ Pattern: `^[a-z0-9][a-z0-9-_]*$` (globally unique across all types).
 - **Title** is the stable name of the thing: a verb phrase for an Interaction ("Split the check"), a noun phrase for the other types.
 - **Description** says what the node is or does **now**, in one or two sentences under 300 characters: it is the row search ranks and orientation shows; detail goes in the body. For an Interaction, say who does what ("Visitor sends …"). For a Foundation, lead with its one role tag (`"Assembler — …"`, `"Infra — …"`, `"Design system — …"`, `"Adapter — …"`). `run_check` warns on an empty, title-repeating, over-300-character, actor-less (Interaction), or revision-worded description. Revision notes and "what changed" asides go in the revision body (or Atomic Ops), never in title or description.
 - **Aliases:** add `aliases` for the words users will say that title and description lack (`quote` for an enquiry form, the product's other-language terms such as `ofertă`), at `create_node` or later with `patch_node_territory({ node_id, aliases })`; aliases never need `open_next`.
-- Change title or description later with `patch_node_territory({ node_id, title?, description? })`. On a shipped Interaction, Interface, or Foundation, call `open_next({ node_id, change })` first and patch that revision.
+- Change title or description later with `patch_node_territory({ node_id, title?, description? })`. On a shipped Interaction, Interface, or Foundation, call `open_next({ node_id, change, reason })` first and patch that revision.
 
 ## Step 4 — Create via MCP
 
@@ -294,6 +294,7 @@ get_blast_radius({ node_id: "i-checkout-split" })   // dependents + reachability
 open_next({
   node_id: "i-checkout-split",
   change: "split-rules",                         // required: the change id this revision belongs to
+  reason: "behavior",                            // required: behavior | wiring | fix | platform | text | refactor
   title: "Split & pay checkout v2",              // optional
   description: "Revised checkout with new split rules"  // optional
 })
@@ -325,7 +326,7 @@ open_next({
 | Setting Capability state, `stable`, or `unstable` | Rejected — computed only |
 | Editing `mindplan/**` with host file tools, or server-owned frontmatter by hand | Out of contract — use `patch_node_territory` and the other MCP tools |
 | `open_next` on an unshipped node | `Blocked` — only `stable`/`unstable` nodes open revisions |
-| `open_next` without `change`, or for a change already open on the node | `Blocked` — pass a change id; edit, ship, or `discard_next` the open revision of that change |
+| `open_next` without `change` or `reason`, or for a change already open on the node | `Blocked` — pass a change id; edit, ship, or `discard_next` the open revision of that change |
 | A call on a node with several open revisions and no `change` | `Blocked` — the error lists them; pass `change` |
 | `set_implementation_files` / `set_test_files` with `files` and no `replace: true` | `Blocked` — use `add` / `remove`; `files` + `replace: true` only to replace the whole list |
 | One decision recorded once per node it shapes | Noise — record it once with `nodes: [...]` |

@@ -4,11 +4,11 @@ type: Foundation
 title: "Domain model"
 description: "Infra — node types and edges (with `mounts`), planned edges, implements claims, attributed files, `added_claims`, `tests`, Foundation roles, rules and decision types, change ids that group open revisions, and the revision count with the last split."
 state: stable
-shipped_at: 2026-11-03T08:20:34.500Z
-revisions: 20
-churn: 12.543
+shipped_at: 2026-11-07T22:43:24.447Z
+revisions: 21
+churn: 12.279
 created_at: 2026-07-15T18:51:11.938Z
-updated_at: 2026-11-03T15:50:21.663Z
+updated_at: 2026-11-07T22:43:24.447Z
 implements:
   - src/foundations/f-domain-model/
 tests:
@@ -60,7 +60,7 @@ Depends on: none.
 - **Planned edges.** `PlannedEdge = { change, type, target }`, and `MindPlanNode.planned?: PlannedEdge[]`, read from the live file only: wiring a shipped Foundation, Interaction, or Interface will gain when the named change opens it (`belongs_to`, `depends_on`, `exposes`, `leads_to`, or `mounts`). Planned edges are not graph edges: `graph.edges` never contains them, so no rule, search, or projection treats them as real until the change opens the node
 - **Attributed files.** `MindPlanNode.attributed?: string[]` and `NextSlot.attributed?: string[]`: exact files in another node's claimed folder that this slot's revision adds (a migration in a composition root's single migrations folder). Ownership stays with the folder's claimant; attribution only says which revision a file belongs to
 
-- **Revision count and split record.** `MindPlanNode.revisions?: number` — how many times the node shipped (first ship and each promotion), on the live file of a shipped Foundation, Interaction, or Interface; absent on a node that never shipped or predates the field until init backfills it. `split_at?: number` — the revision at which the node last split parts out of itself; `split_into?: string[]` — the ids of the parts it split into, across every split. `churn?: number` — a decayed ship count as of `shipped_at`: each ship sets it to `previous × ½^(days since the previous ship / half-life) + 1`, and a split sets it to 0. All four are server-owned frontmatter, written only by ship and init; current state, not a log (git keeps the history). Not edges: `split_into` changes no import rule and no blast radius.
+- **Revision count and split record.** `MindPlanNode.revisions?: number` — how many times the node shipped (first ship and each promotion), on the live file of a shipped Foundation, Interaction, or Interface; absent on a node that never shipped or predates the field until init backfills it. `split_at?: number` — the revision at which the node last split parts out of itself; `split_into?: string[]` — the ids of the parts it split into, across every split. `churn?: number` — a decayed ship count as of `shipped_at`: each ship sets it to `previous × ½^(days since the previous ship / half-life) + 1`, and a split sets it to 0. Ships record why: `Revision.reason` is one of `REVISION_REASONS` (`behavior`, `wiring`, `fix`, `platform`, `text`, `refactor`; `isRevisionReason`), and only `RATE_REASONS` (`behavior`, `wiring`) or no reason (`countsTowardRate`) add 1 to `churn`; `churn_behavior?` / `churn_wiring?` are the parts of `churn` from those reasons, decayed on the same clock; `churnFieldsAfterShip(previous, previousAt, shippedAt, halfLife, reason)` computes all three for a ship. All are server-owned frontmatter, written only by ship, force_unship, and init; current state, not a log (git keeps the history). Not edges: `split_into` changes no import rule and no blast radius.
 - **`keep_whole` decisions.** `DecisionRecord.keep_whole?: boolean` — the owner decided the node stays one node (for example auth, where every change is a security change). While such a decision is active, hotspot detection skips the node; superseding it turns detection back on.
 
 - **Cleanup (0.18).** `node.next` is only the loader's view of a node's single open revision (no next file is read); unused helpers such as `activeDecisions` are gone.

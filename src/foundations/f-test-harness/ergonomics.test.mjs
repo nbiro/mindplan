@@ -276,8 +276,13 @@ await call("set_implementation_files", { node_id: "if-b", add: ["src/interfaces/
     "orient depth=body adds the body but not the blast radius",
     typeof withBody.context?.body === "string" && withBody.blast_radius === undefined
   );
-  const full = await call("orient_for_work", { node_id: "i-feature" });
-  check("orient defaults to full depth", !!full.blast_radius && Array.isArray(full.nodes));
+  const byDefault = await call("orient_for_work", { node_id: "i-feature" });
+  check(
+    "orient defaults to body depth",
+    typeof byDefault.context?.body === "string" && byDefault.blast_radius === undefined && byDefault.nodes === undefined
+  );
+  const full = await call("orient_for_work", { node_id: "i-feature", depth: "full" });
+  check("orient depth=full adds the neighborhood and blast radius", !!full.blast_radius && Array.isArray(full.nodes));
 }
 
 // --- item 7 + 1: walk everything to ship in one call, with dry_run ---
@@ -425,7 +430,7 @@ for (const status of ["ready", "in-progress"]) {
     (idle.drift?.unowned ?? []).some((p) => p.endsWith("orphan/x.ts")),
     JSON.stringify(idle.drift)
   );
-  await call("open_next", { change: "rev-f-core", node_id: "f-core" });
+  await call("open_next", { reason: "behavior", change: "rev-f-core", node_id: "f-core" });
   await call("set_implementation_files", { node_id: "f-core", add: ["src/foundations/f-core/"] });
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
   await call("update_node_status", { node_id: "f-core", new_status: "in-progress" });
@@ -438,7 +443,7 @@ for (const status of ["ready", "in-progress"]) {
   // A second open revision: f-core has no single `next` view now, and each revision is read on
   // its own (live with its delta applied).
   write("src/f-core-extra/y.ts", "export const y = 1;\n");
-  await call("open_next", { change: "rev-two", node_id: "f-core" });
+  await call("open_next", { reason: "behavior", change: "rev-two", node_id: "f-core" });
   await call("set_implementation_files", { node_id: "f-core", change: "rev-two", add: ["src/f-core-extra/y.ts"] });
   const two = await call("orient_for_work", { node_id: "f-core" });
   const twoPaths = two.drift?.paths ?? [];

@@ -305,7 +305,7 @@ if (r.status !== 0) {
 } else console.log("ok   uncommitted edit to stable owner without next passes");
 
 // With an open next that is not in-progress, the next slot governs and the edit fails.
-await call("open_next", { change: "rev-i-feature", node_id: "i-feature" });
+await call("open_next", { reason: "behavior", change: "rev-i-feature", node_id: "i-feature" });
 r = runCheck(["--base", baseSha]);
 if (r.status === 0 || !(r.stderr || r.stdout).includes("i-feature")) {
   failures++;
@@ -354,7 +354,7 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
   for (const status of ["ready", "in-progress", "in-review", "ship"]) {
     await call("update_node_status", { node_id: "f-wide", new_status: status });
   }
-  await call("open_next", { change: "rev-f-wide", node_id: "f-wide" });
+  await call("open_next", { reason: "behavior", change: "rev-f-wide", node_id: "f-wide" });
   await call("set_implementation_files", {
     replace: true,
     node_id: "f-wide",
@@ -507,7 +507,7 @@ if (!scaffoldBody.includes("set_implementation_files")) {
 // --- Released live presence (open next relocates files) ---
 
 // Stable + open next relocates implements: deleted released live entry must not fail presence
-await call("open_next", { change: "rev-f-core", node_id: "f-core" });
+await call("open_next", { reason: "behavior", change: "rev-f-core", node_id: "f-core" });
 fs.mkdirSync(path.join(root, "src", "platform", "db"), { recursive: true });
 fs.writeFileSync(path.join(root, "src", "platform", "db", "index.ts"), "export const db = 1;\n");
 await call("set_implementation_files", {
@@ -541,7 +541,7 @@ if (r.status !== 0) {
 } else console.log("ok   restored live implements passes presence");
 
 // Kept live entry (still listed by next) missing on disk → presence fails
-await call("open_next", { change: "rev-i-feature", node_id: "i-feature" });
+await call("open_next", { reason: "behavior", change: "rev-i-feature", node_id: "i-feature" });
 fs.rmSync(path.join(root, "src", "interactions", "i-feature"), { recursive: true, force: true });
 git("add", "-u", "src/interactions/i-feature");
 r = runCheck([]);

@@ -78,16 +78,31 @@ check("empty rules still carry a version", empty.rules === "" && /^[0-9a-f]{12}$
 // add / remove change single rules without resending the text.
 await call("patch_project_rules", { rules: "- Verify changes with `npm test`.\n- Keep the brief short." });
 const added = await call("patch_project_rules", { add: ["Ship at merge.", "Keep the brief short."] });
+const afterAdd = await call("get_rules", {});
 check(
   "add appends a bullet and skips a rule already present",
-  added.rules === "- Verify changes with `npm test`.\n- Keep the brief short.\n- Ship at merge.",
-  added.rules
+  afterAdd.rules === "- Verify changes with `npm test`.\n- Keep the brief short.\n- Ship at merge.",
+  afterAdd.rules
+);
+check(
+  "an add result confirms the change instead of echoing the brief",
+  !("rules" in added) &&
+    !("description" in added) &&
+    JSON.stringify(added.added) === JSON.stringify(["Ship at merge."]) &&
+    JSON.stringify(added.skipped) === JSON.stringify(["Keep the brief short."]) &&
+    added.removed.length === 0 &&
+    added.count === 3 &&
+    added.rules_version === afterAdd.rules_version,
+  JSON.stringify(added)
 );
 const removed = await call("patch_project_rules", { remove: ["Keep the brief"], add: ["Branch per change."] });
+const afterRemove = await call("get_rules", {});
 check(
   "remove matches a unique fragment and runs before add",
-  removed.rules === "- Verify changes with `npm test`.\n- Ship at merge.\n- Branch per change.",
-  removed.rules
+  afterRemove.rules === "- Verify changes with `npm test`.\n- Ship at merge.\n- Branch per change." &&
+    JSON.stringify(removed.removed) === JSON.stringify(["Keep the brief short."]) &&
+    JSON.stringify(removed.added) === JSON.stringify(["Branch per change."]),
+  afterRemove.rules
 );
 for (const [label, args] of [
   ["a remove that matches nothing", { remove: ["No such rule"] }],
@@ -103,7 +118,7 @@ for (const [label, args] of [
   check(`${label} is Blocked`, blocked);
 }
 const stillThere = await call("get_rules", {});
-check("a Blocked call leaves the rules unchanged", stillThere.rules === removed.rules, stillThere.rules);
+check("a Blocked call leaves the rules unchanged", stillThere.rules === afterRemove.rules, stillThere.rules);
 await call("patch_project_rules", { rules: "" });
 
 // Node rules in orient carry a version; known versions leave the text out.
@@ -136,6 +151,67 @@ check(
   "changed node rules come back with text and a new version",
   capabilityAfter.rules.includes("currency") && capabilityAfter.version !== versions["j-shop"] && !capabilityAfter.unchanged
 );
+
+// Light rules: sources past distance 1 are one line unless asked; a link returns only what it changed.
+{
+  await call("create_node", { id: "f-api", type: "Foundation", role: "infra", title: "API", description: "Infra — the API." });
+  await call("create_node", { id: "f-store", type: "Foundation", role: "infra", title: "Store", description: "Infra — storage." });
+  await call("patch_node_rules", { node_id: "f-store", rules: "- Erase rows within 30 days of a request.\n- Log every erase." });
+  await call("link_nodes", { source_id: "f-api", target_id: "f-store", edge_type: "depends_on" });
+  const linked = await call("link_nodes", { source_id: "i-pay", target_id: "f-api", edge_type: "depends_on" });
+  const delta = linked.rules?.entries ?? [];
+  check(
+    "a link result returns only the rule entries the link added, light past distance 1",
+    delta.length === 1 &&
+      delta[0].node_id === "f-store" &&
+      delta[0].distance === 2 &&
+      !("rules" in delta[0]) &&
+      delta[0].first === "Erase rows within 30 days of a request." &&
+      delta[0].count === 2,
+    JSON.stringify(linked.rules)
+  );
+  const light = await call("orient_for_work", { node_id: "i-pay" });
+  const byId = Object.fromEntries(light.rules.entries.map((e) => [e.node_id, e]));
+  check(
+    "orient returns own and distance-1 rules in full and further sources as one line",
+    byId["i-pay"].rules.includes("card numbers") &&
+      byId["j-shop"].rules.includes("VAT") &&
+      !("rules" in byId["f-store"]) &&
+      byId["f-store"].first.startsWith("Erase rows") &&
+      /^[0-9a-f]{12}$/.test(byId["f-store"].version) &&
+      /include_inherited_rules/.test(light.rules.more ?? ""),
+    JSON.stringify(light.rules)
+  );
+  check("orient defaults to body depth: no neighborhood or blast radius", !("blast_radius" in light) && !("nodes" in light));
+  const all = await call("orient_for_work", { node_id: "i-pay", depth: "rules", include_inherited_rules: true });
+  const store = all.rules.entries.find((e) => e.node_id === "f-store");
+  check(
+    "include_inherited_rules returns every source's text",
+    store.rules.includes("Log every erase") && !("first" in store) && !("more" in all.rules),
+    JSON.stringify(all.rules)
+  );
+  const context = await call("get_node_context", { node_id: "i-pay" });
+  const ctxStore = context.resolved_rules.entries.find((e) => e.node_id === "f-store");
+  check("get_node_context resolved_rules is light too", ctxStore && !("rules" in ctxStore) && ctxStore.count === 2);
+  const unlinked = await call("unlink_nodes", { source_id: "i-pay", target_id: "f-api", edge_type: "depends_on" });
+  check(
+    "an unlink result names the sources that stopped reaching the node and repeats none",
+    unlinked.rules?.entries.length === 0 && JSON.stringify(unlinked.rules.removed) === JSON.stringify(["f-store"]),
+    JSON.stringify(unlinked.rules)
+  );
+  await call("link_nodes", { source_id: "i-pay", target_id: "f-api", edge_type: "depends_on" });
+  const closer = await call("link_nodes", { source_id: "i-pay", target_id: "f-store", edge_type: "depends_on" });
+  const promoted = closer.rules?.entries ?? [];
+  check(
+    "a link that brings a source within distance 1 returns its full text though the text did not change",
+    promoted.length === 1 && promoted[0].node_id === "f-store" && promoted[0].distance === 1 && promoted[0].rules.includes("Log every erase"),
+    JSON.stringify(closer.rules)
+  );
+  await call("create_node", { id: "f-cache", type: "Foundation", role: "infra", title: "Cache", description: "Infra — caching." });
+  await call("create_node", { id: "f-log", type: "Foundation", role: "infra", title: "Log", description: "Infra — logging." });
+  const plain = await call("link_nodes", { source_id: "f-cache", target_id: "f-log", edge_type: "depends_on" });
+  check("a link that changes no rule returns no rules block", !("rules" in plain), JSON.stringify(plain.rules));
+}
 
 // --- Project rules gate and push: writes wait until the rules reached the session ---
 {

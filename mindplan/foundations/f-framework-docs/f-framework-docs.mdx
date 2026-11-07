@@ -8,7 +8,7 @@ shipped_at: 2026-11-07T20:32:45.885Z
 revisions: 55
 churn: 27.162
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-07T21:04:19.533Z
+updated_at: 2026-11-07T22:33:38.350Z
 depends_on:
   - f-domain-model
 implements:
@@ -55,6 +55,7 @@ Claims: `SPEC.md`, `README.md`, `CHANGELOG.md`, `templates/`
 - No release history outside `CHANGELOG.md`: SPEC, README, the playbook, and the skills describe what the server does now. Legacy handling the server still performs is described as current behavior (SPEC §1.1.2 lists what `upgrade_project` converts).
 - SPEC section numbers and the headings `get_spec` topics name stay stable; the Minimum Territory Shape table in SPEC §6.5 and in the define-entities skill is generated from `TERRITORY_SHAPE` between the shape-table markers.
 - Features that are specified but not built (SPEC §6.4 MDX components, §10 external UI sync) are labelled as not implemented.
+- Docs describe `orient_for_work` at its default depth (`body`): the blast radius, neighborhood, and stability are named with `depth: "full"`. Every `open_next` example and fix text passes `reason`; the hotspot advice names the diagnosed refactor (invert through a registry the node depends on, or split), never a generic split.
 - The playbook stays one screen (≤ 60 lines) and tells the agent what is enforced, not what to call before each action: a sentence of the form "before each action, call …" or "always call …" either names a gate the server runs or goes.
 - A duty the docs still state as prose is one no gate can hold (the planning duty; run the check before handoff); everywhere else the docs name the gate and its fix. The planning duty is worded identically in the stub, the server instructions, and the playbook.
 

@@ -41,7 +41,7 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call when a standing rule for all work changes; a rule about one node's work belongs in patch_node_rules instead. " +
         "Writes the ## Rules section of mindplan/project.md (## Description unchanged; do not hand-edit it): add / remove change single rules, rules replaces the whole text. " +
-        "Rules reach a session once, through get_project, get_rules, or the project_rules push in orient replies; write tools are Blocked: Rules until they have. " +
+        "Rules reach a session once, through get_project, get_rules, or the project_rules push in orient replies; write tools are Blocked: Rules until they have. Returns a confirmation ({ rules_version, count, added, removed, skipped? }), not the rules; get_rules returns the text. " +
         "Details: get_spec({ topic: \"patch_project_rules\" }).",
       inputSchema: {
         rules: z

@@ -184,7 +184,7 @@ check("the change check passes once the bad planned edge is gone", (await call("
 await call("create_node", { id: "i-gone2", type: "Interaction", title: "Older flow", description: "Visitor uses an older flow.", change: "gone2" });
 await call("link_nodes", { source_id: "if-dash", target_id: "i-gone2", edge_type: "exposes", change: "feat" });
 await call("update_node_status", { node_id: "i-gone2", new_status: "cancelled" });
-const stale = await raw("open_next", { node_id: "if-dash", change: "feat" });
+const stale = await raw("open_next", { reason: "behavior", node_id: "if-dash", change: "feat" });
 check(
   "open_next is Blocked while a planned edge it would apply is no longer legal",
   stale.error && stale.text.includes("i-gone2") && stale.text.includes("unlink_nodes"),
@@ -192,7 +192,7 @@ check(
 );
 await call("unlink_nodes", { source_id: "if-dash", target_id: "i-gone2", change: "feat" });
 
-const opened = await call("open_next", { node_id: "if-dash", change: "feat" });
+const opened = await call("open_next", { reason: "behavior", node_id: "if-dash", change: "feat" });
 check(
   "open_next with the change applies its planned edges to the next slot",
   opened.applied_planned?.includes("if-dash -exposes-> i-new"),
@@ -211,7 +211,7 @@ check(
 );
 await call("discard_next", { node_id: "if-dash" });
 check("a discard leaves the edge planned", /- feat exposes i-new/.test(live("mindplan/interfaces/if-dash/if-dash.mdx")));
-await call("open_next", { node_id: "if-dash", change: "feat" });
+await call("open_next", { reason: "behavior", node_id: "if-dash", change: "feat" });
 await call("patch_node_territory", { node_id: "if-dash", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
 await complete("i-new", "Interaction");
 const shipped = await call("update_node_status", { scope: "change", change: "feat", new_status: "ship", skip_review: true });
@@ -243,7 +243,7 @@ fs.writeFileSync(path.join(root, dashRel), withBogus.replace(/\r?\n/g, "\r\n"));
 await call("unlink_nodes", { source_id: "if-dash", target_id: "i-third", change: "c3" });
 check("an unreadable planned item survives a planned write", live(dashRel).includes("c9 bogus_type i-third"), live(dashRel).split("---")[1]);
 await call("link_nodes", { source_id: "if-dash", target_id: "i-third", edge_type: "exposes", change: "c3" });
-await call("open_next", { change: "rev-if-dash", node_id: "if-dash" });
+await call("open_next", { reason: "behavior", change: "rev-if-dash", node_id: "if-dash" });
 // The revision file's frontmatter is server-written (LF); its body is the live body, CRLF kept.
 const crlfNext = live("mindplan/interfaces/if-dash/revisions/rev-if-dash/if-dash.mdx").split(/\r?\n---\r?\n/).slice(1).join("---");
 check("open_next keeps a CRLF live file's line endings in the revision body", !/[^\r]\n/.test(crlfNext), JSON.stringify(crlfNext.slice(0, 120)));
@@ -257,7 +257,7 @@ await call("discard_next", { node_id: "if-dash" });
 
 // --- attribution: a schema node's revision adds a migration in the root's folder ---
 write("src/root/migrations/0002.ts", "export const m2 = 1;\n");
-await call("open_next", { node_id: "f-db", change: "schema" });
+await call("open_next", { reason: "behavior", node_id: "f-db", change: "schema" });
 const before = await call("run_check", {});
 check(
   "without attribution the migration does not count for the schema node",
@@ -315,9 +315,9 @@ for (const id of ["f-sa", "f-sb", "f-sc"]) {
 }
 const skyBase = await raw("update_node_status", { scope: "change", change: "sky-base", new_status: "ship", skip_review: true });
 check("the sky base ships", !skyBase.error, skyBase.text);
-await call("open_next", { node_id: "f-sa", change: "ai-builder" });
+await call("open_next", { reason: "behavior", node_id: "f-sa", change: "ai-builder" });
 await call("link_nodes", { source_id: "f-sa", target_id: "f-sb", edge_type: "depends_on", change: "ai-builder" });
-await call("open_next", { node_id: "f-sb", change: "ai-builder" });
+await call("open_next", { reason: "behavior", node_id: "f-sb", change: "ai-builder" });
 const sameChange = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "ai-builder" });
 check(
   "a cycle within one change is still caught by the acyclic check",
@@ -333,8 +333,8 @@ check(
     plannedBack.text.includes("Foundation both depend on"),
   plannedBack.text
 );
-await call("open_next", { node_id: "f-sb", change: "platform-settings" });
-await call("open_next", { node_id: "f-sb", change: "other-sky" });
+await call("open_next", { reason: "behavior", node_id: "f-sb", change: "platform-settings" });
+await call("open_next", { reason: "behavior", node_id: "f-sb", change: "other-sky" });
 const revisionBack = await raw("link_nodes", { source_id: "f-sb", target_id: "f-sa", edge_type: "depends_on", change: "platform-settings" });
 check(
   "a revision depends_on back into another change's edge is Blocked as a cross-change cycle",
@@ -359,7 +359,7 @@ check(
   !memberCheck.ok && memberCheck.failures.some((f) => f.includes("change cycle:") && f.includes("platform-settings")),
   JSON.stringify(memberCheck.failures)
 );
-const openBack = await raw("open_next", { node_id: "f-sb", change: "platform-settings" });
+const openBack = await raw("open_next", { reason: "behavior", node_id: "f-sb", change: "platform-settings" });
 check("open_next is Blocked on a planned edge that closes a cross-change cycle", openBack.error && openBack.text.includes("across changes"), openBack.text);
 
 // --- cycle search on in-memory graphs: label choice, and size ---

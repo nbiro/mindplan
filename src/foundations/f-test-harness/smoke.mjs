@@ -333,9 +333,12 @@ function nextTerritoryPath(...parts) {
       description: "A product.",
     })
   );
+  const afterDescription = JSON.parse(await expectOk("get_project after description", "get_project", {}));
   if (
-    described.description !== "A product." ||
-    described.rules !== "" ||
+    afterDescription.description !== "A product." ||
+    afterDescription.rules !== "" ||
+    "description" in described ||
+    "rules" in described ||
     !described.changed_files?.includes("mindplan/project.md")
   ) {
     failures++;
@@ -345,7 +348,15 @@ function nextTerritoryPath(...parts) {
   const ruled = JSON.parse(
     await expectOk("patch_project_rules", "patch_project_rules", { rules })
   );
-  if (ruled.description !== "A product." || ruled.rules !== rules) {
+  const afterRules = JSON.parse(await expectOk("get_project after rules", "get_project", {}));
+  if (
+    afterRules.description !== "A product." ||
+    afterRules.rules !== rules ||
+    "rules" in ruled ||
+    "description" in ruled ||
+    ruled.count !== 2 ||
+    ruled.rules_version !== afterRules.rules_version
+  ) {
     failures++;
     console.log(`FAIL patch_project_rules must keep description: ${JSON.stringify(ruled)}`);
   } else console.log("ok   patch_project_rules leaves description unchanged");
@@ -868,7 +879,7 @@ if (
 // --- orient_for_work + reachability ---
 await expectBlocked("orient_for_work requires query or node_id", "orient_for_work", {});
 const oriented = JSON.parse(
-  await expectOk("orient_for_work checkout", "orient_for_work", { query: "checkout", node_id: "i-checkout" })
+  await expectOk("orient_for_work checkout", "orient_for_work", { query: "checkout", node_id: "i-checkout", depth: "full" })
 );
 if (oriented.focus !== "i-checkout" || !oriented.context?.record?.id || oriented.context.record.id !== "i-checkout") {
   failures++; console.log(`FAIL orient_for_work context: ${JSON.stringify({ focus: oriented.focus, record: oriented.context?.record })}`);
@@ -1039,7 +1050,7 @@ await expectBlocked("depends_on cycle foundations", "link_nodes", {
 });
 
 // --- stable-id evolution (open_next / promote) ---
-await expectBlocked("open_next on draft", "open_next", {
+await expectBlocked("open_next on draft", "open_next", { reason: "behavior",
   change: "rev-i-tips",
   node_id: "i-tips", title: "Tips v2", description: "v2",
 });
@@ -1053,7 +1064,7 @@ await expectBlocked("open_next on draft", "open_next", {
   } else console.log("ok   first ship writes no next file");
 }
 
-const openNextRes = JSON.parse(await expectOk("open_next i-checkout", "open_next", {
+const openNextRes = JSON.parse(await expectOk("open_next i-checkout", "open_next", { reason: "behavior",
   change: "rev-i-checkout",
   node_id: "i-checkout", title: "Checkout v2", description: "Revised checkout",
 }));
@@ -1114,7 +1125,7 @@ await expectOk("set implements i-checkout next", "set_implementation_files", {
 });
 fs.writeFileSync(path.join(root, "src", "interactions", "i-checkout", "extra.ts"), "export {};\n");
 
-await expectBlocked("open_next twice", "open_next", {
+await expectBlocked("open_next twice", "open_next", { reason: "behavior",
   change: "rev-i-checkout",
   node_id: "i-checkout", title: "Checkout v3", description: "v3",
 });
@@ -1273,7 +1284,7 @@ if (tipsLeadsAfterPromote.length !== 1) {
 } else console.log("ok   leads_to unchanged after promote (stable id)");
 
 // discard_next path
-const openForDiscard = JSON.parse(await expectOk("open_next again for discard", "open_next", { change: "rev-i-checkout", node_id: "i-checkout" }));
+const openForDiscard = JSON.parse(await expectOk("open_next again for discard", "open_next", { reason: "behavior", change: "rev-i-checkout", node_id: "i-checkout" }));
 const discardRes = JSON.parse(await expectOk("discard_next", "discard_next", { node_id: "i-checkout" }));
 if (fs.existsSync(nextPath) || fs.existsSync(revisionsDir)) {
   failures++; console.log("FAIL discard_next should delete the revision folder");
@@ -1433,7 +1444,7 @@ void openForDiscard;
   // open_next replaces a leftover mirror file with a real draft revision.
   writeLeftoverMirror();
   const openOverLeftover = JSON.parse(
-    await expectOk("open_next over leftover mirror", "open_next", { change: "rev-i-checkout", node_id: "i-checkout" })
+    await expectOk("open_next over leftover mirror", "open_next", { reason: "behavior", change: "rev-i-checkout", node_id: "i-checkout" })
   );
   if (
     openOverLeftover.revision?.state !== "draft" ||
@@ -1461,7 +1472,7 @@ await expectBlocked("force_unship mismatched token", "force_unship", {
   confirm: "unship:i-checkout",
 });
 
-await expectOk("open_next before force_unship gate", "open_next", { change: "rev-i-tips", node_id: "i-tips" });
+await expectOk("open_next before force_unship gate", "open_next", { reason: "behavior", change: "rev-i-tips", node_id: "i-tips" });
 await expectBlocked("force_unship while next open", "force_unship", {
   node_id: "i-tips",
   confirm: "unship:i-tips",
@@ -1648,7 +1659,7 @@ await expectOk("f-needed -> ready", "update_node_status", {
   node_id: "f-needed",
   new_status: "ready",
 });
-await expectOk("open_next i-checkout for next depends_on", "open_next", {
+await expectOk("open_next i-checkout for next depends_on", "open_next", { reason: "behavior",
   change: "rev-i-checkout",
   node_id: "i-checkout",
 });
@@ -1703,8 +1714,8 @@ async function shipFoundation(id, title) {
 await shipFoundation("f-cyc-a", "Cycle A");
 await shipFoundation("f-cyc-b", "Cycle B");
 // Both revisions belong to one change, so the cycle is judged in one view.
-await expectOk("open_next f-cyc-a", "open_next", { change: "cyc", node_id: "f-cyc-a" });
-await expectOk("open_next f-cyc-b", "open_next", { change: "cyc", node_id: "f-cyc-b" });
+await expectOk("open_next f-cyc-a", "open_next", { reason: "behavior", change: "cyc", node_id: "f-cyc-a" });
+await expectOk("open_next f-cyc-b", "open_next", { reason: "behavior", change: "cyc", node_id: "f-cyc-b" });
 await expectOk("link f-cyc-a next depends_on f-cyc-b", "link_nodes", {
   source_id: "f-cyc-a",
   target_id: "f-cyc-b",
@@ -2266,7 +2277,7 @@ if (ifOrd?.state !== "in-review") {
   console.log(`FAIL if-ord should stay in-review, got ${ifOrd?.state}`);
 } else console.log("ok   later interface stayed put (its gate refused it)");
 
-await expectOk("open_next f-ord", "open_next", { change: "rev-f-ord", node_id: "f-ord" });
+await expectOk("open_next f-ord", "open_next", { reason: "behavior", change: "rev-f-ord", node_id: "f-ord" });
 const fOrdNext = nextTerritoryPath("foundations", "f-ord");
 // An item's text excludes its {#id} tag.
 const inheritedLabels = [...fs.readFileSync(fOrdNext, "utf-8").matchAll(/^- \[[ xX]\] (.+)$/gm)].map(
@@ -2343,7 +2354,7 @@ await expectOk("lone CR with real impact can ready", "update_node_status", {
     console.log("FAIL shipped f-db should have no next file before open_next");
   }
   const liveRaw = fs.readFileSync(fDbCurrent, "utf-8");
-  await expectOk("open_next f-db (CRLF body)", "open_next", { change: "rev-f-db", node_id: "f-db" });
+  await expectOk("open_next f-db (CRLF body)", "open_next", { reason: "behavior", change: "rev-f-db", node_id: "f-db" });
   const nextRaw = fs.readFileSync(fDbNext, "utf-8");
   const checkedAfter = (nextRaw.match(/^\s*[-*+]\s+\[[xX]\]/gm) ?? []).length;
   const uncheckedAfter = (nextRaw.match(/^\s*[-*+]\s+\[ \]/gm) ?? []).length;
@@ -2445,7 +2456,7 @@ Legacy substrate.
         failures++;
         console.log("FAIL patch wrote a new id-named file instead of current.mdx");
       } else {
-        await expectOk("open_next on legacy foundation", "open_next", { change: "rev-f-legacy", node_id: "f-legacy" });
+        await expectOk("open_next on legacy foundation", "open_next", { reason: "behavior", change: "rev-f-legacy", node_id: "f-legacy" });
         // A revision of a node still on current.mdx lives under revisions/<change>/ like any other.
         const nextPath = path.join(legacyFoundation, "revisions", "rev-f-legacy", "f-legacy.mdx");
         if (
@@ -2490,7 +2501,7 @@ Legacy substrate.
             failures++;
             console.log("FAIL ship should write current.mdx and delete the revision folder");
           } else console.log("ok   ship writes legacy current.mdx and deletes the revision folder");
-          await expectOk("open_next again on legacy foundation", "open_next", { change: "rev-f-legacy", node_id: "f-legacy" });
+          await expectOk("open_next again on legacy foundation", "open_next", { reason: "behavior", change: "rev-f-legacy", node_id: "f-legacy" });
           if (!fs.existsSync(nextPath)) {
             failures++;
             console.log("FAIL open_next again on current.mdx should open a revision again");
@@ -2739,7 +2750,7 @@ role: infra
   await expectBlocked("patch_node_rules unknown node", "patch_node_rules", { node_id: "j-nope", rules: "x" });
 
   // Open revision: rules stay on live only; the revision file never carries them, and no next file appears.
-  await expectOk("open_next f-rules-base", "open_next", { change: "rev-f-rules-base", node_id: "f-rules-base" });
+  await expectOk("open_next f-rules-base", "open_next", { reason: "behavior", change: "rev-f-rules-base", node_id: "f-rules-base" });
   const evolving = await json("patch_node_rules", { node_id: "f-rules-base", rules: "- Evolving rule." });
   const revisionRaw = fs.readFileSync(nextTerritoryPath("foundations", "f-rules-base"), "utf-8");
   if (
@@ -2769,7 +2780,7 @@ role: infra
   const readRules = (...parts) => fs.readFileSync(path.join(root, "mindplan", ...parts), "utf-8");
 
   // Ship an evolution that carries rules; promote must keep exactly one Rules section.
-  await expectOk("open_next f-rules-base again", "open_next", { change: "rev-f-rules-base", node_id: "f-rules-base" });
+  await expectOk("open_next f-rules-base again", "open_next", { reason: "behavior", change: "rev-f-rules-base", node_id: "f-rules-base" });
   await expectOk("patch_node_rules during evolution", "patch_node_rules", {
     node_id: "f-rules-base", rules: "- Shipped rule.",
   });

@@ -25,6 +25,9 @@ import {
   isInactiveNode,
   isNextPipelineState,
   isPipelineNodeType,
+  isRevisionReason,
+  REVISION_REASONS,
+  type RevisionReason,
   type EdgeDelta,
   type FoundationRole,
   type MindPlanGraph,
@@ -182,6 +185,7 @@ export function formatRevisionFile(
     `state: ${revision.state}`,
     `opened_at: ${revision.opened_at}`,
     `updated_at: ${revision.updated_at}`,
+    ...(revision.reason ? [`reason: ${revision.reason}`] : []),
     `title: ${JSON.stringify(revision.title)}`,
     `description: ${JSON.stringify(revision.description)}`
   );
@@ -266,6 +270,14 @@ export function parseRevisionFile(text: string, nodeId: string): { revision: Rev
     conflicts: (lists.conflicts ?? []).map(parseConflict),
   };
   if (scalars.change_ref) revision.change_ref = scalars.change_ref;
+  if (scalars.reason !== undefined) {
+    if (!isRevisionReason(scalars.reason)) {
+      throw blocked(
+        `revision "${change}" of "${nodeId}" has invalid reason "${scalars.reason}". Allowed: ${REVISION_REASONS.join(", ")}.`
+      );
+    }
+    revision.reason = scalars.reason;
+  }
   if (scalars.role) {
     if (!isFoundationRole(scalars.role)) {
       throw blocked(`revision "${change}" of "${nodeId}" has invalid Foundation role "${scalars.role}".`);
@@ -456,7 +468,7 @@ function liveSide(node: MindPlanNode, body: string): RebaseLive {
 export function openRevision(
   node: MindPlanNode,
   change: string,
-  opts: { change_ref?: string; title?: string; description?: string; plannedAdds?: PlannedEdge[] }
+  opts: { change_ref?: string; title?: string; description?: string; plannedAdds?: PlannedEdge[]; reason?: RevisionReason }
 ): { revision: Revision; changed_files: string[] } {
   if (!CHANGE_ID_PATTERN.test(change)) {
     throw blocked(`change id "${change}" must be a slug (lowercase letters, digits, "-" or "_").`);
@@ -494,6 +506,7 @@ export function openRevision(
     conflicts: [],
   };
   if (opts.change_ref) revision.change_ref = opts.change_ref;
+  if (opts.reason) revision.reason = opts.reason;
   // The revision starts its own Atomic Ops; rules and decisions are not copied (rules are
   // slot-independent, decisions live in files).
   const body = withFreshAtomicOps(withoutOwnedSections(live.body), node.type);
@@ -807,6 +820,7 @@ export function shipRevision(
       tests: testsNew,
       aliases: [...(node.aliases ?? [])],
       change,
+      reason: revision.reason,
       splitInto: newParts.length > 0 ? newParts : undefined,
       body: promotedBody,
       eol,

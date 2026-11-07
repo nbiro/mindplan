@@ -456,7 +456,7 @@ export function coverageFix(
   }
   if (owner.shipped_at && !inPlace()) {
     return [
-      { tool: "open_next", args: { node_id: owner.id, change: "<change-id>" } },
+      { tool: "open_next", args: { node_id: owner.id, change: "<change-id>", reason: "<reason>" } },
       { tool: "set_implementation_files", args: { node_id: owner.id, change: "<change-id>", add: [file] } },
     ];
   }

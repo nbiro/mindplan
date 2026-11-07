@@ -690,10 +690,15 @@ function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): st
 
 /**
  * Hotspot warnings, highest rank first: each shipped node that ships far more often than the
- * graph's median lately (config `hotspots`), with its recent change groups as candidate cuts.
+ * graph's median lately (config `hotspots`) and has an open revision, with the refactor its
+ * recorded reasons point to. A hotspot nobody is changing waits: open_next warns when a change
+ * reopens it, and orient_for_work at depth full shows it.
  */
 function collectHotspotWarnings(graph: MindPlanGraph, root: string): string[] {
-  return hotspots(graph, hotspotSettings(loadProjectConfig(root))).map(hotspotWarning);
+  const underWork = new Set(graph.nodes.filter((n) => n.next || n.open_revisions?.length).map((n) => n.id));
+  return hotspots(graph, hotspotSettings(loadProjectConfig(root)))
+    .filter((h) => underWork.has(h.node_id))
+    .map(hotspotWarning);
 }
 
 /**
@@ -934,7 +939,7 @@ function mergeLine(node: MergeNode, change: string | null, base: string | undefi
     return (
       `Blocked: Merge: "${node.id}" (${node.type}, ${node.state}): claimed files changed against ${base ?? "the base"} ` +
       `but its territory did not: ${shown}${more}. Update the node so it matches the code: ` +
-      `open_next({ node_id: "${node.id}", change: "<change-id>" }) and ship it when its contract changed, ` +
+      `open_next({ node_id: "${node.id}", change: "<change-id>", reason }) and ship it when its contract changed, ` +
       `or patch_node_territory({ node_id: "${node.id}", ... }) in place; when its text still holds, any patch that confirms it counts. ` +
       `A bug fix is exempt once its Bug (affects "${node.id}") is updated on the branch.`
     );

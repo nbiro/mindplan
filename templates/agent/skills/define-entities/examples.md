@@ -379,6 +379,7 @@ get_blast_radius({ node_id: "i-checkout-split" })
 open_next({
   node_id: "i-checkout-split",
   change: "split-calc",
+  reason: "behavior",
   description: "Revised split calculation"
 })
 → live node stays stable, still serving under <id>.mdx

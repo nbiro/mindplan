@@ -40,6 +40,14 @@ const SLOT_READ = z
   );
 
 
+/** Return every reaching rule's text, not only the node's own and those at distance 1. */
+const INCLUDE_INHERITED_RULES = z
+  .boolean()
+  .optional()
+  .describe(
+    "Also return the text of rules from sources past distance 1 (a Foundation's Foundations, a Capability's further links). Default false: those come back as one line { node_id, distance, version, first, count }."
+  );
+
 /** The MCP tools i-orient-plan owns; if-mcp-tools mounts them. */
 export const TOOLS: ToolDef[] = [
   defineTool(
@@ -102,7 +110,7 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Get node context",
       description:
-        "Call when you are about to read or edit one node's territory. Returns its record, body (without ## Rules / ## Decisions), own rules, active decisions, resolved_rules, and attachments, plus the next slot while a revision is open; it counts as orienting on the node. With several open revisions pass change to read one (otherwise only live comes back). slot and section narrow the reply; include_superseded and include_inherited_decisions widen the decisions. Details: get_spec({ topic: \"get_node_context\" }).",
+        "Call when you are about to read or edit one node's territory. Returns its record, body (without ## Rules / ## Decisions), own rules, active decisions, resolved_rules (sources past distance 1 as one line unless include_inherited_rules), and attachments, plus the next slot while a revision is open; it counts as orienting on the node. With several open revisions pass change to read one (otherwise only live comes back). slot and section narrow the reply; include_superseded and include_inherited_decisions widen the decisions. Details: get_spec({ topic: \"get_node_context\" }).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
         include_superseded: z
@@ -110,13 +118,14 @@ export const TOOLS: ToolDef[] = [
           .optional()
           .describe("Also return superseded decisions (each names superseded_by). Default false."),
         include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
+        include_inherited_rules: INCLUDE_INHERITED_RULES,
         slot: SLOT_READ,
         section: SECTION_READ,
         change: CHANGE_ARG,
       },
     },
-    ({ node_id, include_superseded, include_inherited_decisions, slot, section, change }) =>
-      getNodeContext({ node_id, include_superseded, include_inherited_decisions, slot, section, change })
+    ({ node_id, include_superseded, include_inherited_decisions, include_inherited_rules, slot, section, change }) =>
+      getNodeContext({ node_id, include_superseded, include_inherited_decisions, include_inherited_rules, slot, section, change })
   ),
   defineTool(
     "orient_for_work",
@@ -124,7 +133,7 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Orient for work",
       description:
-        "Call before working on a node: a write on a node is Blocked: Orientation until that node had a full reply in this session, and again after the rules reaching it changed (create_node never is). With query alone it returns ranked rows (a clear winner comes back in full with auto_focus: true); with node_id, the full node: record, active-slot body, owned files, its mandatory node rules, decisions, and at depth full the neighborhood, blast radius, stability, and shape. change alone orients on every member of a change and clears the gate for all of them; with node_id it reads that node's revision. known_rules_versions leaves out rule text you still hold; a reply without the rules section does not clear the gate. Replies that orient carry project_rules when the project rules have not reached the session or changed. Details: get_spec({ topic: \"orient_for_work\" }).",
+        "Call before working on a node: a write on a node is Blocked: Orientation until that node had a full reply in this session, and again after the rules reaching it changed (create_node never is). With query alone it returns ranked rows (a clear winner comes back in full with auto_focus: true); with node_id, the node: record, active-slot body, owned files, shape, its mandatory node rules (its own and those at distance 1 in full, further sources as one line), and its decisions; depth full adds the neighborhood, blast radius, and stability. change alone orients on every member of a change and clears the gate for all of them; with node_id it reads that node's revision. known_rules_versions leaves out rule text you still hold; a reply without the rules section does not clear the gate. Replies that orient carry project_rules when the project rules have not reached the session or changed. Details: get_spec({ topic: \"orient_for_work\" }).",
       inputSchema: {
         query: z
           .string()
@@ -146,13 +155,14 @@ export const TOOLS: ToolDef[] = [
           .enum(ORIENT_DEPTHS)
           .optional()
           .describe(
-            "rules: the node's rules and record only. body: also its body. full (default): also the neighborhood and blast radius."
+            "rules: the node's rules and record only. body (default): also its body and files. full: also the neighborhood, blast radius, and stability."
           ),
         include_superseded: z
           .boolean()
           .optional()
           .describe("Also return superseded decisions in the decisions block (each names superseded_by). Default false."),
         include_inherited_decisions: INCLUDE_INHERITED_DECISIONS,
+        include_inherited_rules: INCLUDE_INHERITED_RULES,
         known_rules_versions: z
           .record(z.string(), z.string())
           .optional()
@@ -168,7 +178,7 @@ export const TOOLS: ToolDef[] = [
           ),
       },
     },
-    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, known_rules_versions, area, slot, section, sections }) =>
+    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, include_inherited_rules, known_rules_versions, area, slot, section, sections }) =>
       orientForWork({
         query,
         node_id,
@@ -178,6 +188,7 @@ export const TOOLS: ToolDef[] = [
         depth,
         include_superseded,
         include_inherited_decisions,
+        include_inherited_rules,
         known_rules_versions,
         area,
         slot,
