@@ -73,6 +73,37 @@ await call("patch_project_rules", { rules: "" });
 const empty = await call("get_rules", {});
 check("empty rules still carry a version", empty.rules === "" && /^[0-9a-f]{12}$/.test(empty.rules_version));
 
+// add / remove change single rules without resending the text.
+await call("patch_project_rules", { rules: "- Verify changes with `npm test`.\n- Keep the brief short." });
+const added = await call("patch_project_rules", { add: ["Ship at merge.", "Keep the brief short."] });
+check(
+  "add appends a bullet and skips a rule already present",
+  added.rules === "- Verify changes with `npm test`.\n- Keep the brief short.\n- Ship at merge.",
+  added.rules
+);
+const removed = await call("patch_project_rules", { remove: ["Keep the brief"], add: ["Branch per change."] });
+check(
+  "remove matches a unique fragment and runs before add",
+  removed.rules === "- Verify changes with `npm test`.\n- Ship at merge.\n- Branch per change.",
+  removed.rules
+);
+for (const [label, args] of [
+  ["a remove that matches nothing", { remove: ["No such rule"] }],
+  ["a remove that matches several rules", { remove: ["e"] }],
+  ["rules combined with add", { rules: "x", add: ["y"] }],
+]) {
+  let blocked = false;
+  try {
+    await raw("patch_project_rules", args);
+  } catch {
+    blocked = true;
+  }
+  check(`${label} is Blocked`, blocked);
+}
+const stillThere = await call("get_rules", {});
+check("a Blocked call leaves the rules unchanged", stillThere.rules === removed.rules, stillThere.rules);
+await call("patch_project_rules", { rules: "" });
+
 // Node rules in orient carry a version; known versions leave the text out.
 await call("create_node", { id: "j-shop", type: "Capability", title: "Shop", description: "Buying things." });
 await call("create_node", { id: "i-pay", type: "Interaction", title: "Pay", description: "Shopper pays." });

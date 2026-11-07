@@ -1650,10 +1650,10 @@ Marks check warnings as known and accepted, so compact `run_check` results stop 
 
 #### `patch_project_rules`
 
-- **Input:** `rules` (string, required; `""` clears the section).
+- **Input** (at least one): `rules?` (string; replaces the whole section, `""` clears it), `add?` (rules to append, one bullet each; one already present is skipped), `remove?` (rules to drop, by full text or a fragment matching exactly one rule; applied before `add`). `rules` is not combined with `add` / `remove`.
 - **Effect:** writes the `## Rules` section of `mindplan/project.md` through the store, creating the file when missing. `## Description` is unchanged.
 - **Output:** `{ path, description, rules, changed_files }`.
-- **Errors:** missing `rules`.
+- **Errors:** none of `rules`, `add`, `remove`; `rules` with `add` or `remove`; an empty entry; a `remove` entry matching no rule or more than one.
 
 #### `patch_config`
 
