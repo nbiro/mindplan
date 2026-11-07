@@ -8,7 +8,7 @@ shipped_at: 2026-11-07T20:32:45.885Z
 revisions: 55
 churn: 27.162
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-07T20:32:45.885Z
+updated_at: 2026-11-07T21:04:19.533Z
 depends_on:
   - f-domain-model
 implements:
@@ -39,7 +39,7 @@ Claims: `SPEC.md`, `README.md`, `CHANGELOG.md`, `templates/`
 |---|---|
 | `SPEC.md` | The normative contract: layout, taxonomy and edges, state machines, compiler rules, file format, every tool's parameters and results (§8), the check (§9.6), the error catalog (Appendix A). Each rule has one home section; other sections point to it. |
 | `CHANGELOG.md` | Every behavior change per release, in a section titled with the version that ships it. The only place for release history and migration stories. |
-| `README.md` | The pitch, requirements, quick start (register the server, ask the agent to set up MindPlan), the five types with their established terms, what the server enforces, the tools grouped one line each (details: SPEC §8), the check and merge gate, config keys and environment variables, and links to SPEC, CHANGELOG, and CONTRIBUTING. |
+| `README.md` | The pitch, requirements, quick start (register the server, ask the agent to set up MindPlan), the five types with their established terms, what the server enforces, the tools grouped one line each (details: SPEC §8), the check and merge gate, config keys and environment variables, where search keeps its model and its copy of the native runtime, and links to SPEC, CHANGELOG, and CONTRIBUTING. |
 | `templates/agent/playbook.md` | The systems dialect `get_project` returns every session, one screen: what the server enforces (each gate, when it fires, the call that clears it), the taxonomy table, how to place work on the graph and evolve a shipped node in a few lines, and where to look things up (`get_spec`, `get_skill`). It states the planning duty (a new behavior is a new node, created before its files are claimed; update the nodes a change touches) and otherwise prescribes no per-action ritual and no session mode; the gates and the merge check guarantee that the graph matches the code before a merge. Option mechanics stay in SPEC and the skills. |
 | `templates/agent/agents-stub.md` | The pointer `setup_project` returns for `MINDPLAN.md`, four points: `get_project` first; the planning duty, worded as in the server instructions and the playbook; `mindplan/` only through the MCP server; `run_check` before handoff, with the merge gate in CI. This repo's `MINDPLAN.md` is identical to it. |
 | `templates/agent/skills/` | Reference the agent loads when it needs it (`get_skill`): `plan-project` — modeling a product and evolving a shipped graph (breakdown, scope, blast radius, revisions and conflicts, planned wiring, parallel worktrees); `define-entities` (+ `examples.md`) — creating and linking nodes, required sections. Neither prescribes a plan-only session mode or a stop-and-confirm step. |

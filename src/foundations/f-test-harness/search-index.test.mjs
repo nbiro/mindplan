@@ -11,11 +11,12 @@ import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SearchIndex, embedText, ftsQuery } from "../../../dist/foundations/f-search-index/index-db.js";
 import { keywordRankDocs, keywordTerms } from "../../../dist/foundations/f-search-index/keyword-js.js";
+import { mirrorPackage } from "../../../dist/foundations/f-search-index/runtime-mirror.js";
 import { closeSearchIndexes, embedStale, prepareSearch, searchIndexFor } from "../../../dist/foundations/f-search-index/service.js";
 import { fuseRankings, searchDocs, searchNodes, sectionHeadings } from "../../../dist/foundations/f-graph-search/search.js";
 // Spawned servers rank by keyword only: no model download or load during tests.
@@ -503,5 +504,64 @@ ok("MCP: outside edits reach search on the next call; async Blocked envelope; se
   fs.rmSync(root, { recursive: true, force: true });
 }
 ok("MCP with semantic on: calls answer while the model loads or fails, over a clean stdout");
+
+// Runtime mirror: the embedder's package and its dependency closure are copied out of node_modules
+// in the install's layout, with only this platform's prebuilt binaries, and loaded from the copy.
+{
+  const root = tmp("mirror-src");
+  const cacheDir = tmp("mirror-cache");
+  const pkg = (rel, manifest, files = {}) => {
+    const dir = path.join(root, rel);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ version: "1.0.0", ...manifest }));
+    for (const [file, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), text);
+    }
+  };
+  pkg("node_modules/@scope/top", {
+    name: "@scope/top",
+    type: "module",
+    exports: { import: "./dist/index.mjs" },
+    dependencies: { native: "1", "onnxruntime-web": "1", shared: "1" },
+    optionalDependencies: { "not-installed": "1" },
+  }, { "dist/index.mjs": 'import n from "native"; import s from "shared"; export default `top:${n}:${s}`;' });
+  const bins = {};
+  for (const platform of ["win32", "linux", "darwin"]) {
+    for (const arch of ["x64", "arm64"]) bins[`bin/napi-v6/${platform}/${arch}/binding.txt`] = "bin";
+  }
+  pkg("node_modules/native", { name: "native", type: "module", main: "index.js", dependencies: { shared: "2" } }, {
+    "index.js": 'import s from "shared"; export default `native(${s})`;',
+    ...bins,
+  });
+  pkg("node_modules/native/node_modules/shared", { name: "shared", version: "2.0.0", type: "module", main: "index.js" }, {
+    "index.js": "export default 'shared2';",
+  });
+  pkg("node_modules/shared", { name: "shared", type: "module", main: "index.js" }, { "index.js": "export default 'shared1';" });
+  pkg("node_modules/onnxruntime-web", { name: "onnxruntime-web" }, { "big.bin": "x" });
+
+  const entry = path.join(root, "node_modules/@scope/top/dist/index.mjs");
+  let copies = 0;
+  const [first, second] = await Promise.all([
+    mirrorPackage(entry, "@scope/top", cacheDir, () => copies++),
+    mirrorPackage(entry, "@scope/top", cacheDir, () => copies++),
+  ]);
+  assert.equal(first, second, "two servers mirroring at once agree on one copy");
+  assert.ok(fs.realpathSync(first).startsWith(fs.realpathSync(cacheDir)), "the entry is served from the cache");
+  const mod = await import(pathToFileURL(first).href);
+  assert.equal(mod.default, "top:native(shared2):shared1", "resolution inside the mirror matches the install, nested versions included");
+  const mirrorRoot = path.dirname(path.dirname(path.dirname(path.dirname(path.dirname(first)))));
+  const napi = path.join(mirrorRoot, "node_modules/native/bin/napi-v6");
+  assert.deepEqual(fs.readdirSync(napi), [process.platform], "other platforms' binaries are left out");
+  assert.deepEqual(fs.readdirSync(path.join(napi, process.platform)), [process.arch], "other architectures' binaries are left out");
+  assert.ok(!fs.existsSync(path.join(mirrorRoot, "node_modules/onnxruntime-web")), "onnxruntime-web is left out");
+  assert.deepEqual(fs.readdirSync(cacheDir), [path.basename(mirrorRoot)], "no temporary copy is left behind");
+  copies = 0;
+  assert.equal(await mirrorPackage(entry, "@scope/top", cacheDir, () => copies++), first);
+  assert.equal(copies, 0, "an existing mirror is reused, not copied again");
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(cacheDir, { recursive: true, force: true });
+}
+ok("runtime mirror: copies the dependency closure in install layout, this platform only, once");
 
 console.log("SEARCH INDEX TESTS PASSED");

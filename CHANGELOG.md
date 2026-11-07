@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.21.1 — npm ci works while the server runs
+
+- **Search loads its native modules from the user cache.** On Windows a loaded DLL cannot be overwritten, so a server running from a project's `node_modules` made `npm ci` and `npm install` fail with EPERM on onnxruntime and sharp, and agents then killed every node process, MindPlan servers included. transformers.js and its dependency closure now load from a copy in `~/.cache/mindplan/runtime/` (only this platform's binaries, about 100 MB, made once per version set); when the copy cannot be made, they load in place as before. [§8.1.1]
+
 ## 0.21.0 — lean dialect: gates instead of rituals
 
 - **Project rules gate and push.** Agents no longer call `get_rules` before each action. Every write tool is `Blocked: Rules` until the project rules reached the session (`get_project`, `get_rules`, or a push), and again after another session changed them. Replies that orient carry `project_rules` when the rules have not reached the session or changed since. The session that patches the rules is not blocked by its own change. The gate is per graph root and off in the CLI and with `MINDPLAN_ORIENT_GATE=off`. [§8.1.2]
