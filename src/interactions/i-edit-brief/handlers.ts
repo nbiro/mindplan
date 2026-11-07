@@ -4,7 +4,7 @@
  */
 
 import { loadProjectConfig, writeProjectConfig } from "../../foundations/f-territory-store/store.js";
-import { PROJECT_RELATIVE_PATH, writeProjectBrief } from "../../foundations/f-territory-store/project.js";
+import { PROJECT_RELATIVE_PATH, loadProjectBrief, writeProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
 import * as path from "path";
 import {
@@ -26,11 +26,69 @@ export function patchProjectDescription(args: {
   };
 }
 
-export function patchProjectRules(args: { rules: string }): Record<string, unknown> {
-  if (args.rules === undefined) {
-    throw blocked("patch_project_rules requires rules.");
+/** One rule: a top-level bullet with its continuation lines, or the loose text before the first bullet. */
+function splitRules(text: string): string[][] {
+  const entries: string[][] = [];
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    if (/^[-*] /.test(line) || entries.length === 0) entries.push([line]);
+    else entries[entries.length - 1].push(line);
   }
-  const result = writeProjectBrief({ rules: args.rules });
+  return entries.filter((e) => e.some((l) => l.trim() !== ""));
+}
+
+/** The text a rule is matched by: its lines joined, bullet marker dropped. */
+function ruleKey(entry: string[]): string {
+  return entry
+    .map((l) => l.trim())
+    .join(" ")
+    .replace(/^[-*] /, "")
+    .trim();
+}
+
+function ruleBullet(text: string): string[] {
+  const [first, ...rest] = text.trim().replace(/^[-*] /, "").split("\n");
+  return [`- ${first}`, ...rest.map((l) => (l.trim() === "" ? "" : `  ${l.trim()}`))];
+}
+
+export function patchProjectRules(args: {
+  rules?: string;
+  add?: string[];
+  remove?: string[];
+}): Record<string, unknown> {
+  const { rules, add, remove } = args;
+  if (rules === undefined && add === undefined && remove === undefined) {
+    throw blocked("patch_project_rules requires rules (replaces the whole text), or add / remove (change single rules).");
+  }
+  if (rules !== undefined && (add !== undefined || remove !== undefined)) {
+    throw blocked("patch_project_rules rules replaces the whole text; do not combine it with add or remove.");
+  }
+  let next = rules;
+  if (next === undefined) {
+    let entries = splitRules(loadProjectBrief().rules);
+    for (const raw of remove ?? []) {
+      const want = ruleKey([raw]);
+      if (want === "") throw blocked("patch_project_rules remove entries must not be empty.");
+      const exact = entries.filter((e) => ruleKey(e) === want);
+      const hits = exact.length > 0 ? exact : entries.filter((e) => ruleKey(e).includes(want));
+      if (hits.length === 0) {
+        throw blocked(`patch_project_rules remove: no rule matches "${want}". Current rules: call get_rules.`);
+      }
+      if (hits.length > 1) {
+        throw blocked(`patch_project_rules remove: "${want}" matches ${hits.length} rules; pass the full rule text.`);
+      }
+      entries = entries.filter((e) => e !== hits[0]);
+    }
+    const have = new Set(entries.map(ruleKey));
+    for (const raw of add ?? []) {
+      const key = ruleKey([raw]);
+      if (key === "") throw blocked("patch_project_rules add entries must not be empty.");
+      if (have.has(key)) continue;
+      have.add(key);
+      entries.push(ruleBullet(raw));
+    }
+    next = entries.map((e) => e.join("\n").replace(/\s+$/, "")).join("\n");
+  }
+  const result = writeProjectBrief({ rules: next });
   return {
     path: result.path,
     description: result.description,

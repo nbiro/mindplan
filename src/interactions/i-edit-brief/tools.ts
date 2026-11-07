@@ -40,15 +40,25 @@ export const TOOLS: ToolDef[] = [
       title: "Patch project rules",
       description:
         "Call when standing rules change. The next action calls get_rules again. " +
+        "Pass add / remove to change single rules without resending the text; rules replaces the whole text. " +
         "Writes the ## Rules section of mindplan/project.md via the territory store. " +
         "Leaves ## Description unchanged. Do not hand-edit project.md.",
       inputSchema: {
         rules: z
           .string()
-          .describe("Replace the ## Rules section body. Empty string clears it."),
+          .optional()
+          .describe("Replace the whole ## Rules section body. Empty string clears it. Not combined with add / remove."),
+        add: z
+          .array(z.string())
+          .optional()
+          .describe("Rules to append, each as one bullet. A rule already present is skipped."),
+        remove: z
+          .array(z.string())
+          .optional()
+          .describe("Rules to drop, by their text (the full rule, or a fragment that matches exactly one). No match or several is Blocked. Applied before add."),
       },
     },
-    ({ rules }) => patchProjectRules({ rules })
+    ({ rules, add, remove }) => patchProjectRules({ rules, add, remove })
   ),
   defineTool(
     "patch_config",
