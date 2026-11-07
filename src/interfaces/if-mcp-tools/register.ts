@@ -26,6 +26,7 @@ import { TOOLS as SETUP_TOOLS } from "../../interactions/i-setup-project/tools.j
 import { TOOLS as UPGRADE_TOOLS } from "../../interactions/i-upgrade-graph/tools.js";
 import { TOOLS as DOCTOR_TOOLS } from "../../interactions/i-doctor/tools.js";
 import { versionGate } from "../../foundations/f-graph-migrations/status.js";
+import { projectRulesGate } from "../../foundations/f-plan-writes/writes.js";
 import { foreignRoot, withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { ROOT_INPUT, markRoot, markRootText, resolveCallRoot } from "./call-root.js";
 import { drainRemovedLegacyFiles } from "../../foundations/f-territory-store/store.js";
@@ -75,7 +76,8 @@ const ANNOTATIONS: Record<ToolKind, ToolAnnotations> = {
 /**
  * Mounts one tool: annotations from its kind, handler wrapped in the guarded envelope. Unless the
  * tool says `gate: false`, the version gate runs first, so a graph that needs setup or an upgrade
- * is never read or written by code that expects the current format.
+ * is never read or written by code that expects the current format. A gated write or destructive
+ * tool then waits until the project rules reached this session (`projectRulesGate`, Blocked: Rules).
  */
 function mount(server: McpServer, def: ToolDef): void {
   const { kind, drift, gate, ...rest } = def.config;
@@ -87,6 +89,8 @@ function mount(server: McpServer, def: ToolDef): void {
       ? handler
       : (args: unknown) => {
           versionGate();
+          // A write waits until the project rules reached this session (Blocked: Rules).
+          if (kind !== "read") projectRulesGate(def.name);
           return handler(args);
         };
   const callback = guarded(gated, { write: kind !== "read", drift });

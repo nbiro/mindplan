@@ -34,9 +34,9 @@ export const TOOLS: ToolDef[] = [
       title: "Create node",
       description:
         "Call when reuse found no node, before any new-feature code. " +
-        "Creates a Capability, Interaction, Interface, Foundation, or Bug: scaffolds territory folder + <id>.mdx frontmatter. " +
-        "Foundations require role. Declare owned files later with set_implementation_files (no package scaffold). " +
-        "Returns shape for a Foundation, Interaction, Interface, or Bug: the sections its first transition checks, each present, missing, or stub (the scaffold), so you write them before moving it.",
+        "Creates a Capability, Interaction, Interface, Foundation (role required), or Bug with its <id>.mdx scaffold; claim files later with set_implementation_files. " +
+        "Returns shape: the sections its first transition checks, each present, missing, or stub. " +
+        'Details: get_spec({ topic: "create_node" }).',
       inputSchema: {
         verbose: VERBOSE,
         id: NODE_ID.describe("Unique slug id for the node, e.g. bug-checkout-race."),
@@ -65,15 +65,12 @@ export const TOOLS: ToolDef[] = [
       title: "Link nodes",
       description:
         "Call when two existing nodes should be connected. " +
-        "Adds an edge to the DAG. Legal shapes: Interaction -belongs_to-> Capability, " +
-        "Interaction|Interface -depends_on-> Foundation, Foundation -depends_on-> Foundation, " +
-        "Interface -exposes-> Interaction, Foundation -mounts-> Interface (a composition root that imports Interfaces), Interaction -leads_to-> Interaction, " +
-        "Bug -affects-> Interaction|Interface|Foundation. " +
-        "While a shipped node has an open revision, belongs_to/depends_on/exposes/leads_to/mounts writes go to it as an add delta against live (applied on ship); " +
-        "change picks the revision when several are open (omitted with several: Blocked, naming them). " +
-        "Pass change on a shipped node with no open revision of that change to plan the edge instead: it is checked like a link (shape, cycles), recorded under the change on the live file without open_next, " +
-        "listed by run_check and get_blast_radius for the change, applied to the next slot when open_next opens the node with that change, and dropped if the change closes first. The live graph does not change. " +
-        READINESS_HINT,
+        "Adds a DAG edge. Legal: Interaction -belongs_to-> Capability; Interaction|Interface -depends_on-> Foundation; Foundation -depends_on-> Foundation; " +
+        "Interface -exposes-> Interaction; Foundation -mounts-> Interface; Interaction -leads_to-> Interaction; Bug -affects-> Interaction|Interface|Foundation. " +
+        "On a shipped node with an open revision the edge goes to it as a delta (change picks the revision when several are open); " +
+        "with change and no open revision of it, the edge is planned under that change (live graph unchanged; applied when open_next opens the node with that change). " +
+        READINESS_HINT +
+        ' Details: get_spec({ topic: "link_nodes" }).',
       inputSchema: {
         verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),
@@ -97,10 +94,9 @@ export const TOOLS: ToolDef[] = [
       title: "Unlink nodes",
       description:
         "Call when an existing edge should go away. " +
-        "Removes edge(s) between two nodes from the source node's frontmatter. " +
-        "While the source has an open revision, the removal goes to it as a remove delta against live (applied on ship); change picks the revision when several are open. " +
-        "With change and no open revision of it, removes only the edges planned under that change from source to target. " +
-        READINESS_HINT,
+        "Removes the edge(s) from source to target; with an open revision it is a delta (change picks the revision), with change and no revision of it only that change's planned edges go. " +
+        READINESS_HINT +
+        ' Details: get_spec({ topic: "unlink_nodes" }).',
       inputSchema: {
         verbose: VERBOSE,
         source_id: NODE_ID.describe("The id of the edge source node."),

@@ -32,17 +32,9 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Patch node territory",
       description:
-        "Call when a node's title, description, or body should match the work, before the feature code. " +
-        "Required writer for territory prose: body (whole body), section + text (rewrite one ## section), " +
-        "replace { find, with } (one exact edit), toggle_checkboxes, optional title/description/role " +
-        "(pre-ship or open evolution). Prefer section/replace for small fixes: they do not resend the body. " +
-        "Do not edit mindplan/ MDX with host file tools. " +
-        "When a shipped node has an open revision, patches default to it (slot next); with several open, change picks one (omitted: Blocked, naming them). Optional slot: current|next. " +
+        "Call when a node's title, description, or body should match the work, before the feature code. The writer for territory prose (never edit mindplan/ with host file tools): body (whole), section + text (one ## section), replace { find, with }, toggle_checkboxes, add_checklist_items, title / description / role. On a shipped node it writes the open revision (change picks one when several are open; with none it is Blocked: edit the code in place). Otherwise change sets the node's change id. aliases replaces search aliases on any node, live. " +
         READINESS_HINT +
-        " On a shipped node with open revisions, change only picks the revision: a revision's change is its folder name and cannot be patched. " +
-        "Otherwise change / change_ref set the node's change id (grouping only: never resets readiness); moving the last revision off a change drops its planned edges (cleared_planned). " +
-        "On a shipped node with no open revision both are Blocked: edit its files in place, it needs no change id. " +
-        "aliases and rules are live only: aliases replaces the node's search aliases on any node, shipped included, without open_next or a readiness reset.",
+        " Details: get_spec({ topic: \"patch_node_territory\" }).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node whose territory to patch."),
@@ -194,10 +186,7 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Patch node rules",
       description:
-        "Call when a rule applies to one node and the work that inherits from it, not everywhere " +
-        "(use patch_project_rules for rules that apply everywhere). " +
-        "Replaces the ## Rules section of that node; an empty string clears it. Works on any non-retired node, " +
-        "including shipped ones, without open_next. Returns rules_impact: the nodes whose work the rules reach.",
+        "Call when a rule applies to one node and the work that inherits from it, not everywhere (patch_project_rules covers that). Replaces the node's ## Rules section (empty string clears it), shipped nodes included, without open_next. Returns rules_impact: the nodes the rules reach. Details: get_spec({ topic: \"patch_node_rules\" }).",
       inputSchema: {
         node_id: NODE_ID.describe("Node whose rules to replace."),
         rules: z
@@ -215,9 +204,7 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Put node attachment",
       description:
-        "Call when a supporting file should sit beside a node. " +
-        "Writes a file under attachments/ (or the open revision's attachments/ while evolving) as base64. " +
-        "Slot defaults to next when a revision is open; change picks the revision when several are.",
+        "Call when a supporting file should sit beside a node. Writes content_base64 under its attachments/ (the open revision's while one is open; change picks among several). Details: get_spec({ topic: \"put_attachment\" }).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node that owns the attachment."),
@@ -237,9 +224,7 @@ export const TOOLS: ToolDef[] = [
       kind: "destructive",
       title: "Remove node attachment",
       description:
-        "Call when a supporting file should leave a node. " +
-        "Deletes a file under attachments/ (or the open revision's attachments/ while evolving). " +
-        "Slot defaults to next when a revision is open; change picks the revision when several are.",
+        "Call when a supporting file should leave a node. Deletes it from its attachments/ (the open revision's while one is open; change picks among several). Details: get_spec({ topic: \"remove_attachment\" }).",
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node that owns the attachment."),

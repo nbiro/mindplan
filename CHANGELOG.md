@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.0 — lean dialect: gates instead of rituals
+
+- **Project rules gate and push.** Agents no longer call `get_rules` before each action. Every write tool is `Blocked: Rules` until the project rules reached the session (`get_project`, `get_rules`, or a push), and again after another session changed them. Replies that orient carry `project_rules` when the rules have not reached the session or changed since. The session that patches the rules is not blocked by its own change. The gate is per graph root and off in the CLI and with `MINDPLAN_ORIENT_GATE=off`. [§8.1.2]
+- **The merge gate checks that the graph describes the code.** `check --merge` (and `run_check({ merge })`) Blocks a shipped node with no open revision whose claimed files changed against the base while its territory file did not; the fix is `open_next` and ship, or `patch_node_territory` in place (when the text still holds, any patch that confirms it counts). A node that a Bug changed on the branch affects is exempt, and migration and schema files do not count. A revision opened over the changed code but still `draft` or `ready` is Blocked too, so `open_next` alone does not clear it. The merge report always names `base` and lists such nodes with `stale: true`. Without a git base the default level skips the rule with an `Info: merge:` line. [§9.6]
+- **Coverage nudges toward a new node.** An unclaimed file in a folder no node has a file in gets a Coverage line that leads with `create_node` and offers the nearest owner's claim second; a node with a file in that folder is named as the owner. [§1.2.1]
+- **A shorter dialect.** The playbook lists the agent's three duties (a new behavior is a new node; `mindplan/` through the tools; a green check before handoff) and a table of what the server enforces; the planning duty reads the same in the playbook, the `MINDPLAN.md` stub, and the server instructions. The `plan-project` skill is reference for modeling and evolving a graph, without the plan-only session mode. Tool descriptions are about half as long and point to `get_spec` for the details. [§1.1.1]
+
 ## 0.20.0 — patch_project_rules changes single rules
 
 - **`patch_project_rules` takes `add` and `remove`.** Changing one standing rule no longer means resending the whole text: `add` appends rules (duplicates skipped) and `remove` drops rules by text. `rules` still replaces the whole section and cannot be combined with them. [§8.2]

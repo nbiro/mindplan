@@ -51,6 +51,8 @@ async function session(root) {
   });
   const client = new Client({ name: "version-test", version: "0.1.0" });
   await client.connect(transport);
+  // A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+  await client.callTool({ name: "get_project", arguments: {} });
   const call = async (name, args = {}) => {
     const res = await client.callTool({ name, arguments: args });
     const text = res.content?.[0]?.text ?? "";
@@ -118,7 +120,8 @@ function runCheck(root) {
   );
   check(
     "setup returns the MINDPLAN.md pointer and the guide",
-    setup.json.pointer.includes("get_project") && setup.json.pointer.includes("get_skill") && setup.json.guide.includes("MINDPLAN.md"),
+    setup.json.pointer.includes("get_project") && setup.json.pointer.includes("A new behavior is a new node.") &&
+      setup.json.guide.includes("MINDPLAN.md") && setup.json.guide.includes("First call `get_project`"),
     setup.text.slice(0, 300)
   );
   check(
@@ -591,6 +594,8 @@ function runCheck(root) {
     });
     client = new Client({ name: "version-test", version: "0.1.0" });
     await client.connect(transport);
+    // A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+    await client.callTool({ name: "get_project", arguments: {} });
     const project = async () => JSON.parse((await client.callTool({ name: "get_project", arguments: {} })).content[0].text);
     const before = await project();
     check("get_project has no restart while the booted package is installed", before.restart === undefined, JSON.stringify(before.restart));
@@ -666,6 +671,8 @@ function runCheck(root) {
     );
     check("doctor on a missing graph creates no mindplan/", !fs.existsSync(path.join(root, "mindplan")));
     await call("setup_project");
+    // As the setup guide says: read the seeded brief before the first write.
+    await call("get_project");
     const current = await call("doctor");
     check(
       "doctor on a current graph reports a numeric load_ms_cached, cache_hit, and no load_error",

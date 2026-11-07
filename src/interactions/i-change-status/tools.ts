@@ -26,26 +26,15 @@ export const TOOLS: ToolDef[] = [
       title: "Update node status",
       description:
         "Call when a node should move along the build or bug pipeline, including ship or resolved at handoff. " +
-        "Transitions a Foundation, Interaction, Interface, or Bug. Build pipeline: draft -> ready -> in-progress -> in-review -> ship (sets stable/unstable). " +
-        "Bug pipeline: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
-        "On a shipped node, build-pipeline transitions move one open revision (pass change when it has several; with several and no change it is Blocked naming them); " +
-        "ship writes that revision over live, deletes its folder, and rebases the node's other revisions onto the new live (rebased: [{ change, conflicts }]); " +
-        "a revision holding conflicts is Blocked at in-review and ship until resolve_conflict clears them. " +
-        "Every ship drops the node's Atomic Ops (the shipped node shows its current state, git keeps the ledger). deprecated deletes every open revision. " +
-        "Pass revisions to advance a set in one call: Foundations, then Interactions, then Interfaces, then Bugs; every item is tried on the graph as the earlier ones left it, " +
-        "and the result lists results: [{ node_id, change?, ok, line?, blocked? }] plus lines for the moved ones; the call is Blocked only when no item moved (listing every reason); when some items moved and others were Blocked, the result says so at the top with partial: true and blocked_count: n — check it, the call did not do everything asked. " +
-        "Pass scope + new_status to walk every open update (or a node and its dependents, or one change's revisions) to a target in one call, validated before the first write; dry_run lists every transition. " +
-        'A scoped change walk is the one-call way to ship a change: update_node_status({ scope: "change", change, new_status: "ship" }); add nodes: [...] to walk only those members (the others stay put, and the gates still refuse a listed node that needs an unlisted one). ' +
-        "A Blocked single or batch move of a node in a change ends with the scoped change call that moves the whole change. " +
-        "A scoped walk to ship that would skip a node's in-review stop is Blocked unless skip_review: true, which walks it through in-review (gate included) and reports skipped_review. " +
-        "A scoped walk is all-or-nothing unless skip_blocked: true, which walks every node that passes its gates, leaves each blocked node (and any node that cannot move without it) where it is, and lists them in blocked with the step and reason. " +
-        "Moves to in-review and ship run the check's import and ownership rules on the node's files and return Blocked: on a violation; stale-text warnings ride along. " +
-        "A move to in-review of a decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, or a depends_on change) with no decision recorded is Blocked: Decision with the record_decision call. " +
-        "A Blocked: Orientation names every unoriented node of the call at once (a scope change walk names orient_for_work({ change })). " +
-        "A batch returns one line per node. " +
-        "When a ship or cancel leaves a change with no open revisions, its planned edges are dropped (cleared_planned); " +
-        "scope change walks the change's open revisions; the other scopes move each node's only open revision, and leave a node with several in place, listed in needs_change_walk ({ node_id, changes }) to walk with scope change. " +
-        "Capability and production stable/unstable are computed automatically.",
+        "Build: draft -> ready -> in-progress -> in-review -> ship (stable/unstable computed). Bug: open -> triaged -> fixing -> in-review -> resolved | wontfix. " +
+        "Three forms: node_id + new_status (one node; on a shipped node it moves one open revision, pass change when it has several); " +
+        "revisions: [...] (a batch, each item tried in order; when only some moved the result has partial: true and blocked_count, so check it); " +
+        "scope + new_status (all_open_updates, node_and_dependents, or change; validated before the first write; dry_run previews). " +
+        'To ship a change in one call: update_node_status({ scope: "change", change, new_status: "ship" }); nodes: [...] limits it to those members. ' +
+        "A scoped walk is all-or-nothing unless skip_blocked: true; walking to ship past a node's in-review stop needs skip_review: true. Other scopes leave a node with several open revisions in needs_change_walk. " +
+        "Ship writes the revision over live and rebases its siblings; a revision with conflicts is Blocked at in-review and ship until resolve_conflict clears them. " +
+        "Moves to in-review and ship run the check's import and ownership rules; a decision-worthy revision with no decision recorded is Blocked: Decision (record_decision). " +
+        'Details: get_spec({ topic: "update_node_status" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.optional().describe(
@@ -124,8 +113,9 @@ export const TOOLS: ToolDef[] = [
       title: "Force unship (mistaken ship recovery)",
       description:
         "Call only after the user confirms a mistaken ship; recovery only. " +
-        "Reverses a mistaken Foundation/Interaction/Interface ship: clears shipped_at and sets a pre-ship state (default ready). " +
-        'Requires confirm exactly equal to "unship:<node_id>"; do not invent the confirm token. Blocked while the node has an open revision or shipped dependents exist. Clears added_claims.',
+        "Returns a shipped Foundation/Interaction/Interface to a pre-ship state (default ready). " +
+        'Requires confirm exactly "unship:<node_id>"; do not invent it. Blocked while the node has an open revision or shipped dependents. ' +
+        'Details: get_spec({ topic: "force_unship" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(

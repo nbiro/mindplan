@@ -2,6 +2,8 @@
 
 `setup_project` created the graph (`mindplan/`: config, an empty brief, the version stamp). The rest touches files the user owns: work through these steps in order and tell the user what you do. Write `mindplan/` only through MindPlan tools.
 
+First call `get_project`: setup seeded the brief's rules, and MindPlan writes wait (`Blocked: Rules`) until the rules reached you.
+
 ## 1. Wire the agent files
 
 The `pointer` field of the result is the text every agent session must see first.

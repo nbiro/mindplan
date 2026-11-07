@@ -39,10 +39,10 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Patch project rules",
       description:
-        "Call when standing rules change. The next action calls get_rules again. " +
-        "Pass add / remove to change single rules without resending the text; rules replaces the whole text. " +
-        "Writes the ## Rules section of mindplan/project.md via the territory store. " +
-        "Leaves ## Description unchanged. Do not hand-edit project.md.",
+        "Call when a standing rule for all work changes; a rule about one node's work belongs in patch_node_rules instead. " +
+        "Writes the ## Rules section of mindplan/project.md (## Description unchanged; do not hand-edit it): add / remove change single rules, rules replaces the whole text. " +
+        "Rules reach a session once, through get_project, get_rules, or the project_rules push in orient replies; write tools are Blocked: Rules until they have. " +
+        "Details: get_spec({ topic: \"patch_project_rules\" }).",
       inputSchema: {
         rules: z
           .string()

@@ -27,16 +27,15 @@ import { runCli } from "../../interfaces/if-cli/cli.js";
 import { markServerStarted } from "./started.js";
 
 /**
- * Short pointer only — dialect and project brief load via get_project / get_rules.
+ * Short pointer only — dialect and project brief load via get_project. It carries the planning duty in the
+ * same words as the MINDPLAN.md stub and the playbook, since no gate can tell a new behavior from a helper file.
  * Always present; never embeds playbook or mindplan/project.md bodies.
  */
 export const SERVER_INSTRUCTIONS =
-  "Before answering any questions or writing any code for this project, call get_project and read the response. " +
-  "Follow the playbook (systems dialect) and the project description and rules it returns. " +
-  "Project rules are mandatory: before each action, call get_rules then orient_for_work. " +
-  "Before any new-feature code change, update or create the matching nodes using the plan-project skill (load it with get_skill): " +
-  "it covers every graph write (create_node, open_next, discard_next, link_nodes, unlink_nodes, patch_node_territory, " +
-  "patch_node_rules, patch_project_description, patch_project_rules, patch_config, and attachments).";
+  "Before answering any questions or writing any code for this project, call get_project and follow the playbook, description, and rules it returns. " +
+  "A new behavior is a new node. Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; " +
+  "when a change alters what existing nodes describe, update those nodes. " +
+  "Read and write mindplan/ only through these tools. Before handing work off, run_check must pass.";
 
 /**
  * The package version reported on `initialize`, read from this package's own package.json

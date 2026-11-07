@@ -2,13 +2,13 @@
 id: f-orientation-ledger
 type: Foundation
 title: "Orientation ledger"
-description: "Infra — the in-memory record of which nodes had their full context and rules fetched in this MCP session, with a fingerprint of the rules that reached them, and the gate that blocks writes on a node until it was fetched with its current rules."
+description: "Infra — in-memory session record of which nodes were fetched with their rules (fingerprinted) and which project rules version reached the agent, plus the gates that block writes until both happened with the current rules."
 state: stable
-shipped_at: 2026-11-03T09:48:46.529Z
-revisions: 4
-churn: 3.736
+shipped_at: 2026-11-07T20:32:45.982Z
+revisions: 5
+churn: 4.371
 created_at: 2026-10-25T23:20:45.972Z
-updated_at: 2026-11-03T09:48:46.529Z
+updated_at: 2026-11-07T20:32:45.982Z
 depends_on:
   - f-domain-model
   - f-graph-search
@@ -17,6 +17,7 @@ implements:
 tests:
   - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
+  - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/worktree-root.test.mjs
 role: infra
 ---
@@ -31,18 +32,22 @@ Infra — the record of which nodes had their full context, rules included, reac
 
 Package: `src/foundations/f-orientation-ledger/`
 
-- `ledger.ts` — in-memory, per process:
-  - `enableOrientationGate()` — called by the MCP runtime at start; turns the gate on unless `MINDPLAN_ORIENT_GATE=off`. Off by default, so the CLI (no session) is never gated; `orientationGateEnabled()` reports it
-  - `withProposedEdges(graph)` — the graph with each open revision's proposed `belongs_to` / `depends_on` added to its live edges; `reachingRules(graph, id)` — `resolveNodeRules` over it: what orientation shows and what is fingerprinted, so a link into an open next slot brings its rules before the revision ships
+- `ledger.ts` — in-memory, per process, keyed by the resolved graph root:
+  - `enableOrientationGate()` — called by the MCP runtime at start; turns both gates on unless `MINDPLAN_ORIENT_GATE=off`. Off by default, so the CLI (no session) is never gated; `orientationGateEnabled()` reports it
+  - `withProposedEdges(graph)` — the graph with each open revision's proposed `belongs_to` / `depends_on` added to its live edges; `reachingRules(graph, id)` — `resolveNodeRules` over it: what orientation shows and what is fingerprinted, so a link into an open revision brings its rules before the revision ships, and orienting once covers writes to any of the node's revisions
   - `rulesFingerprint(graph, nodeId)` — SHA-1 of the node's `reachingRules` entries (`f-graph-search`) as `[node_id, rules]` pairs: it changes when the node's own rules or any inherited rules change, or when an edge brings or drops a source
   - `recordOriented(graph, ids)` — stores each existing id with its current fingerprint
   - `orientationGap(graph, id)` — `unfetched`, `rules_changed`, or null (null while the gate is off)
   - `assertOriented(graph, ids, tool, opts?)` — one `Blocked: Orientation: <tool> acts on …` for every gap at once: a single gap keeps the one-node wording naming `orient_for_work({ node_id: "<id>" })`; several list each id with its reason (not oriented, rules changed) in one message, and name `orient_for_work({ change: "<change>" })` when `opts.change` is set (a walk over one change), else one `orient_for_work({ node_id })` per id; an id not in the graph is skipped so the handler reports that it does not exist
-  - `resetOrientationLedger()` — forget every fetch (tests)
+  - `recordProjectRulesServed(version)` — stores the `rules_version` of the project rules (`mindplan/project.md`) that reached the agent in this session: through `get_project`, `get_rules`, `patch_project_rules`, or a reply that carried `project_rules`
+  - `projectRulesGap(version)` — `unserved` (nothing served yet), `changed` (the current version differs from the served one), or null (served and current, or the gate is off)
+  - `pushProjectRules(brief)` — takes `{ path, rules, rules_version }`; returns `{ project_rules: brief }` when there is a gap and records the version as served, else `{}`. Replies that orient spread it once they are complete (an orient that fails records nothing), so the rules reach an agent the moment they are missing or changed
+  - `assertProjectRulesServed(version, tool)` — `Blocked: Rules: <tool> acts before the project rules reached you in this session. Call get_project (or get_rules), with the same root when you passed one, read the rules, then retry.`, or after a change `Blocked: Rules: the project rules changed since they reached you. Call get_rules, read them, then retry.`; a no-op while the gate is off
+  - `resetOrientationLedger()` — forget every fetch and every served rules version (tests)
+
+The ledger stores fingerprints and version tags only; callers load the brief and compute its version (`rulesVersion`, `f-plan-views`) and pass them in.
 
 Depends on: `f-graph-search`, `f-domain-model`.
-
-- **Open revisions (0.18.0).** The rules that reach a node are computed over live plus the edges every open revision adds, so orienting once covers writes to any of its revisions
 
 ## Graph root per call
 
@@ -51,9 +56,11 @@ The ledger is keyed by the resolved graph root and the node id, so orienting on 
 ## Acceptance Criteria
 
 - A node fetched with its current rules passes; an unfetched node and a node whose reaching rules changed are Blocked with the fixing call
-- The gate is off in the CLI and with `MINDPLAN_ORIENT_GATE=off`
+- A write in a fresh session before `get_project` or `get_rules` is `Blocked: Rules` naming `get_project`; after either call it passes; after `patch_project_rules` from another session the next write is `Blocked: Rules` naming `get_rules`, unless a reply carried `project_rules` first
+- `pushProjectRules` returns the brief once per gap and `{}` while the served version is current
+- The gates are off in the CLI and with `MINDPLAN_ORIENT_GATE=off`
 - A write over three unoriented nodes is Blocked once, naming all three; over one change it names `orient_for_work({ change })`
-- Verified via `npm test` (`orient-gate.test.mjs`)
+- Verified via `npm test` (`orient-gate.test.mjs`, `rules-version.test.mjs`)
 
 ## Attachments
 

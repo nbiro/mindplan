@@ -49,7 +49,7 @@ function frontmatter(fields) {
  * revision (`revisions/<change>/<id>.mdx`), or "mirror" for a leftover twin file from an older
  * release (not a revision). Pipeline nodes claim `src/<id>/`.
  */
-function writeNode(root, { id, type, state, next, change }) {
+function writeNode(root, { id, type, state, next, change, affects }) {
   const dir = path.join(root, "mindplan", FOLDERS[type], id);
   fs.mkdirSync(dir, { recursive: true });
   const shipped = state === "stable" || state === "unstable";
@@ -65,6 +65,7 @@ function writeNode(root, { id, type, state, next, change }) {
     created_at: STAMP,
     updated_at: STAMP,
     implements: pipeline ? [`src/${id}/`] : undefined,
+    affects,
     // A shipped node's live change is a neighbor label; the revision's change lives on next.
     change: !shipped && change ? `"${change}"` : undefined,
   };
@@ -156,6 +157,7 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   assert.equal(result.output, gated.out.trim(), "run_check output equals the CLI output");
   assert.deepEqual(result.merge, {
     level: "default",
+    base: "the default branch",
     changes: [
       { change: "add-thing", nodes: [{ id: "f-shared", type: "Foundation", state: "in-review", slot: "revision" }] },
     ],
@@ -315,6 +317,8 @@ const mergeLines = (failures) => failures.filter((f) => f.startsWith("Blocked: M
   });
   const client = new Client({ name: "merge-gate-test", version: "0.1.0" });
   await client.connect(transport);
+  // A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+  await client.callTool({ name: "get_project", arguments: {} });
   try {
     const res = await client.callTool({ name: "run_check", arguments: { merge: true, compact: false } });
     assert.ok(!res.isError, res.content?.[0]?.text);
@@ -529,6 +533,93 @@ function subfolderProject(label, nodes) {
   assert.equal(fs.existsSync(workflow(subRoot)), false, "no workflow below the repository top");
   assert.match(fs.readFileSync(workflow(repo), "utf-8"), /working-directory: sub\r?\n/);
   ok("setup_project with ci github below the repository top writes the workflow at the top, running in the project");
+}
+
+// --- Stale territory: a shipped node edited in place must have its territory updated ---------
+{
+  const root = sandbox("stale", [
+    { id: "i-edited", type: "Interaction", state: "stable" },
+    { id: "i-documented", type: "Interaction", state: "stable" },
+    { id: "i-quiet", type: "Interaction", state: "stable" },
+    { id: "i-bugged", type: "Interaction", state: "stable" },
+    { id: "bug-x", type: "Bug", state: "fixing", affects: ["i-bugged"] },
+    { id: "f-db", type: "Foundation", state: "stable" },
+    { id: "i-planned", type: "Interaction", state: "stable", next: "draft", change: "later" },
+  ]);
+  const git = (...args) => {
+    const r = spawnSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", ...args], {
+      cwd: root,
+      encoding: "utf-8",
+    });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+  };
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  git("switch", "-q", "-c", "feature");
+  fs.writeFileSync(path.join(root, "src", "i-edited", "index.ts"), 'export const v = "changed";\n');
+  fs.writeFileSync(path.join(root, "src", "i-documented", "index.ts"), 'export const v = "changed";\n');
+  const mdx = path.join(root, "mindplan", "interactions", "i-documented", "i-documented.mdx");
+  fs.appendFileSync(mdx, "\nNow returns the changed value.\n");
+  // A bug fix: the Bug that affects i-bugged is updated on the branch, so i-bugged is not stale.
+  fs.writeFileSync(path.join(root, "src", "i-bugged", "index.ts"), 'export const v = "fixed";\n');
+  fs.appendFileSync(path.join(root, "mindplan", "bugs", "bug-x", "bug-x.mdx"), "\nRoot cause: the value was wrong.\n");
+  // A migration added to a composition root's folder: the decision gate covers it, so f-db is not stale.
+  fs.mkdirSync(path.join(root, "src", "f-db", "migrations"), { recursive: true });
+  fs.writeFileSync(path.join(root, "src", "f-db", "migrations", "0002.sql"), "create table t (id int);\n");
+  // A revision opened but never started does not cover code that moved.
+  fs.writeFileSync(path.join(root, "src", "i-planned", "index.ts"), 'export const v = "moved";\n');
+  git("add", "-A");
+  git("commit", "-q", "-m", "work");
+
+  const plain = cli(root, []);
+  assert.equal(plain.status, 0, `the default check stays ok: ${plain.out}`);
+  ok("the default check does not Block a shipped node edited in place");
+
+  const gated = cli(root, ["--merge", "--base", "main"]);
+  assert.equal(gated.status, 1, gated.out);
+  const lines = gated.out.split("\n").filter((l) => l.startsWith("Blocked: Merge:"));
+  assert.equal(lines.length, 2, gated.out);
+  const edited = lines.find((l) => l.includes('"i-edited"')) ?? "";
+  assert.match(edited, /"i-edited" \(Interaction, stable\): claimed files changed against main but its territory did not: "src\/i-edited\/index.ts"/);
+  assert.ok(edited.includes('open_next({ node_id: "i-edited"') && edited.includes('patch_node_territory({ node_id: "i-edited"'), edited);
+  ok("--merge Blocks a shipped node whose claimed files changed but whose territory did not (a node its changed Bug affects, and a new migration file, are exempt)");
+  const planned = lines.find((l) => l.includes('"i-planned"')) ?? "";
+  assert.match(planned, /revision draft, change "later"\): claimed files changed against main but its revision was never started: "src\/i-planned\/index.ts"/);
+  ok("--merge Blocks a draft revision opened over code that moved, so open_next alone does not clear the rule");
+
+  const result = handler(root, { merge: true, base: "main" });
+  assert.deepEqual(result.merge.changes, [
+    {
+      change: "later",
+      nodes: [
+        { id: "i-planned", type: "Interaction", state: "draft", slot: "revision", files: ["src/i-planned/index.ts"], stale: true },
+      ],
+    },
+    {
+      change: null,
+      nodes: [
+        { id: "i-edited", type: "Interaction", state: "stable", slot: "live", files: ["src/i-edited/index.ts"], stale: true },
+      ],
+    },
+  ]);
+  ok("runCheckHandler reports the stale nodes with stale: true");
+
+  // Updating the territory on the branch clears it; the unstarted revision still Blocks.
+  fs.appendFileSync(path.join(root, "mindplan", "interactions", "i-edited", "i-edited.mdx"), "\nNow returns the changed value.\n");
+  const after = cli(root, ["--merge", "--base", "main"]);
+  assert.deepEqual(
+    after.out.split("\n").filter((l) => l.startsWith("Blocked: Merge:")).map((l) => l.includes('"i-planned"')),
+    [true],
+    after.out
+  );
+  ok("an uncommitted territory update on the branch clears the stale Block");
+
+  const noGit = sandbox("stale-nogit", [{ id: "i-x", type: "Interaction", state: "stable" }]);
+  const r = handler(noGit, { merge: true });
+  assert.equal(r.ok, true, r.failures.join("\n"));
+  assert.ok(r.info.some((l) => l.startsWith("merge: no git base")), r.info.join("\n"));
+  ok("--merge with no git base skips the stale rule with an info line");
 }
 
 console.log("merge-gate tests passed");

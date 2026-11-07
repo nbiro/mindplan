@@ -47,6 +47,8 @@ async function session() {
   });
   const client = new Client({ name: "orient-gate-test", version: "0.1.0" });
   await client.connect(transport);
+  // A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+  await client.callTool({ name: "get_project", arguments: {} });
   const raw = async (tool, args) => {
     const res = await client.callTool({ name: tool, arguments: args });
     return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };

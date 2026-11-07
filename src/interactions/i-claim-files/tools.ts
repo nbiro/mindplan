@@ -26,19 +26,13 @@ export const TOOLS: ToolDef[] = [
       title: "Set implementation files",
       description:
         "Call before writing a file the node does not yet claim. " +
-        "Changes the server-owned implements list for an Interaction, Interface, or Foundation: add (the default) and remove change entries; " +
-        "files replaces the whole list only with replace: true (files without replace is Blocked). " +
-        "Pre-ship writes current; shipped with an open revision writes it as an add/remove delta against live (change picks the revision when several are open); " +
-        "shipped with no open revision writes live in place, additive only: every old entry kept (or under a new dir entry), " +
-        "each new entry an exact file (or F/) in a folder F the node dominates (it already claims a file directly in F, no other node claims under F); " +
-        "removing, moving, globbing, claiming elsewhere, or claiming a migration or schema file (config decisions.schema_files) is Blocked → open_next. " +
-        "In-place results list added_in_place; name each in the body with patch_node_territory (run_check warns until then). " +
-        "retired nodes may only shrink. Rejects bad paths and ownership conflicts. " +
-        "Results may carry folder_claims: a folder/ entry that would replace several per-file entries. " +
-        "Entries are files, directories ending in /, or globs (* ** ?; [ ] stay literal), e.g. src/templates/*/actions/i-read-post/. " +
-        "attributed names files a revision adds in another node's claimed folder (a migration in a composition root's single migrations folder): ownership stays with that node, " +
-        "but the decision gate and the blast radius count them for this revision; each must be an exact file another active node claims, and a shipped node needs an open revision. " +
-        READINESS_HINT,
+        "Changes the server-owned implements list of a Foundation, Interaction, or Interface: add (default) and remove entries; files replaces the whole list only with replace: true. " +
+        "Entries are files, directories ending in /, or globs (* ** ?). Pre-ship writes current; with an open revision it writes a delta (change picks the revision when several are open). " +
+        "A shipped node with no open revision may only add exact files in a folder it already dominates (listed in added_in_place: name each in the body with patch_node_territory); " +
+        "removing, globbing, claiming elsewhere, or claiming a migration or schema file is Blocked → open_next. Ownership conflicts are rejected. " +
+        "attributed lists files this revision adds in another node's claimed folder: that node keeps ownership, the decision gate and blast radius count them here. " +
+        READINESS_HINT +
+        ' Details: get_spec({ topic: "set_implementation_files" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Pipeline node whose implements list to change."),
@@ -82,14 +76,11 @@ export const TOOLS: ToolDef[] = [
       title: "Set test files",
       description:
         "Call when tests that verify a node exist, before moving it to in-review. " +
-        "Changes the node's linked tests list for an Interaction, Interface, or Foundation: add (the default) and remove change entries; " +
-        "files replaces the whole list only with replace: true (files without replace is Blocked). " +
-        "Test links are evidence, not contract: they do not own the files (claim them with set_implementation_files), several nodes may list one file, " +
-        "and readiness is never reset. Without change the live list is written in place, whatever revisions are open (no open_next); " +
-        "with change on a shipped node with open revisions, that revision takes it as an add/remove delta, applied when it ships. " +
-        "run_check Blocks an entry missing on disk once the node is in review or shipped, and warns about a revision in review with none. " +
-        "get_blast_radius lists the linked tests a change should run. " +
-        "Entries are files, directories ending in /, or globs (* ** ?). files: [] with replace: true removes it.",
+        "Changes a Foundation, Interaction, or Interface's linked tests: add (default) and remove entries (files, directories ending in /, or globs); files replaces the whole list only with replace: true. " +
+        "Test links are evidence, not ownership: several nodes may list one file, and readiness is never reset. " +
+        "Without change the live list is written in place (no open_next needed); with change on a shipped node, that revision takes it as a delta applied on ship. " +
+        "run_check Blocks an entry missing on disk once the node is in review or shipped. " +
+        'Details: get_spec({ topic: "set_test_files" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Pipeline node whose linked tests to change."),

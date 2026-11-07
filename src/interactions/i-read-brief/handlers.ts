@@ -5,6 +5,7 @@
 
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
+import { recordProjectRulesServed } from "../../foundations/f-orientation-ledger/ledger.js";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
 import { findPackageFile } from "./spec.js";
 import { packageRoot, packageVersion } from "../../foundations/f-territory-store/version.js";
@@ -78,11 +79,13 @@ export function getProject(): Record<string, unknown> {
   const brief = loadProjectBrief();
   const version = graphStatus();
   const restart = restartNotice();
+  const rules_version = rulesVersion(brief.rules);
+  recordProjectRulesServed(rules_version);
   return {
     path: brief.path,
     description: brief.description,
     rules: brief.rules,
-    rules_version: rulesVersion(brief.rules),
+    rules_version,
     playbook: loadBundledPlaybook(),
     check: CHECK_HINT,
     ...(version.warning ? { version: version.warning } : {}),
@@ -91,13 +94,14 @@ export function getProject(): Record<string, unknown> {
 }
 
 /**
- * Mandatory project rules only — call before each action, before orient_for_work.
+ * Mandatory project rules only — the explicit re-read (after a context summary, or a missed push).
  * `{ path, rules, rules_version }`; with a `known_version` equal to the current tag, the text is
  * left out: `{ path, rules_version, unchanged: true }`.
  */
 export function getRules(args: { known_version?: string } = {}): Record<string, unknown> {
   const brief = loadProjectBrief();
   const rules_version = rulesVersion(brief.rules);
+  recordProjectRulesServed(rules_version);
   if (args.known_version !== undefined && args.known_version === rules_version) {
     return { path: brief.path, rules_version, unchanged: true };
   }

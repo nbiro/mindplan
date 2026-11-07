@@ -40,6 +40,8 @@ const transport = new StdioClientTransport({
 });
 const client = new Client({ name: "graph-filters-test", version: "0.1.0" });
 await client.connect(transport);
+// A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+await client.callTool({ name: "get_project", arguments: {} });
 
 async function raw(tool, args) {
   const res = await client.callTool({ name: tool, arguments: args });

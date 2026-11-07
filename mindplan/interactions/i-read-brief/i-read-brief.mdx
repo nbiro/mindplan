@@ -2,17 +2,18 @@
 id: i-read-brief
 type: Interaction
 title: "Read the brief"
-description: "Agent reads the playbook, the project description, the versioned rules, SPEC sections by topic, and the MindPlan skills served by the running server."
+description: "Agent reads the playbook, the product description, and the project rules once per session (get_project; get_rules re-reads them), SPEC sections by topic, and the MindPlan skills served by the running server."
 state: stable
-shipped_at: 2026-11-04T11:46:29.739Z
-revisions: 3
-churn: 2.832
+shipped_at: 2026-11-07T20:32:46.686Z
+revisions: 4
+churn: 3.62
 created_at: 2026-10-31T11:58:04.718Z
-updated_at: 2026-11-04T11:46:29.739Z
+updated_at: 2026-11-07T20:32:46.686Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-graph-migrations
+  - f-orientation-ledger
   - f-plan-views
   - f-tool-kit
 implements:
@@ -38,18 +39,19 @@ Agent calls `get_project` before the first answer or code change in a session, `
 
 Intended files: `src/interactions/i-read-brief/` (`handlers.ts`, `spec.ts`, `skills.ts`, `tools.ts`).
 
-- `get_project` returns `{ path, description, rules, rules_version, playbook, check, version? }`: the bundled playbook (`templates/agent/playbook.md`), the brief from `mindplan/project.md`, the rules tagged with `rulesVersion` (`f-plan-views`), a `check` sentence naming `run_check`, `version` only when `graphStatus()` (`f-graph-migrations`) is not `current`: its warning, which names `setup_project`, `upgrade_project`, or the package to upgrade to, and `restart` only when the package installed under the running server differs from the one it booted: `packageRoot()`'s `package.json` is read fresh on every call and compared with `packageVersion()` (cached at boot), so an `npm install` that replaced the package under a running server is noticed. `restart` names both versions, says the running server's answers (`version` included) come from the version it booted, and tells the agent to have the MCP server restarted and call `get_project` again. It is advice only: no tool is gated on it, and an unreadable `package.json` gives none
-- `get_rules({ known_version? })` returns `{ path, rules, rules_version }`, or `{ path, rules_version, unchanged: true }` when `known_version` still matches
+- `get_project` returns `{ path, description, rules, rules_version, playbook, check, version?, restart? }`: the bundled playbook (`templates/agent/playbook.md`), the brief from `mindplan/project.md`, the rules tagged with `rulesVersion` (`f-plan-views`), a `check` sentence naming `run_check` and the merge gate, `version` only when `graphStatus()` (`f-graph-migrations`) is not `current`: its warning, which names `setup_project`, `upgrade_project`, or the package to upgrade to, and `restart` only when the package installed under the running server differs from the one it booted: `packageRoot()`'s `package.json` is read fresh on every call and compared with `packageVersion()` (cached at boot), so an `npm install` that replaced the package under a running server is noticed. `restart` names both versions, says the running server's answers (`version` included) come from the version it booted, and tells the agent to have the MCP server restarted and call `get_project` again. It is advice only: no tool is gated on it, and an unreadable `package.json` gives none. The call records the rules as served to this session (`recordProjectRulesServed`, `f-orientation-ledger`), which is what lets the project rules gate (`Blocked: Rules`, `f-plan-writes`) pass for every later write
+- `get_rules({ known_version? })` returns `{ path, rules, rules_version }`, or `{ path, rules_version, unchanged: true }` when `known_version` still matches, and records the rules as served. It is the explicit re-read: after a context summary, or when a reply's `project_rules` push was missed. Nothing requires it before each action: the gate needs the rules read once per session, and replies that orient and write results push them when they change
 - `get_spec({ topic? })` serves one part of the running package's SPEC.md by stable topic id (`SPEC_TOPICS`, matched by heading text without section numbers) or by tool name; without a topic it lists them; an unknown topic is Blocked and lists the valid ones (`findPackageFile` locates the bundled files)
 - `get_skill({ name?, file? })` (`skills.ts`) serves the bundled skills under `templates/agent/skills/<name>/`: without `name` it lists `{ name, description, files }` for each (description from the SKILL.md frontmatter); with `name` it returns `{ name, text, files }`, `text` being SKILL.md without its frontmatter and `files` the other files in the folder; with `file` it returns `{ name, file, text }` for that file. An unknown name or file is Blocked and lists the valid ones; a `file` that leaves the folder is Blocked
 - All four are reads with no drift, no orientation gate, and `gate: false`: they answer before setup and upgrade
 
-Depends on: `f-plan-views`, `f-graph-migrations`, `f-tool-kit`.
+Depends on: `f-plan-views`, `f-graph-migrations`, `f-tool-kit`, `f-orientation-ledger`.
 
 ## Acceptance Criteria
 
 - `get_rules` returns the current rules, path, and `rules_version`; with the current tag as `known_version` it returns `unchanged: true` without the text, under 150 bytes; after `patch_project_rules` the tag changes
 - `get_project` returns the playbook, brief, `rules_version`, and a `check` sentence naming `run_check`; its `version` names `setup_project` without a graph, `upgrade_project` for a graph behind the server, and the package for a stamp ahead of it, and is absent when current; it answers in every state
+- In a fresh session a write before `get_project` is `Blocked: Rules`; after `get_project` (or `get_rules`) alone the same write passes the rules gate
 - `get_project` has no `restart` while the installed package is the one the server booted; after the package's `package.json` version changes under a running server, `get_project` returns `restart` naming the installed and the running version, with or without a graph
 - `get_skill()` lists `plan-project` and `define-entities`; `get_skill({ name: "plan-project" })` returns its text without frontmatter; `get_skill({ name: "define-entities", file: "examples.md" })` returns that file; an unknown name, an unknown file, or a `../` path is Blocked
 - `get_spec({ topic: "territory-shape" })` returns under 3 KB with the generated shape table; every topic resolves against the bundled SPEC.md; an unknown topic is Blocked and lists the valid ones

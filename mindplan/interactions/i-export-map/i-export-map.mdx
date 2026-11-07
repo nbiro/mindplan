@@ -8,7 +8,7 @@ shipped_at: 2026-10-31T12:20:49.088Z
 revisions: 5
 churn: 3.061
 created_at: 2026-07-19T18:33:36.804Z
-updated_at: 2026-10-31T12:20:49.088Z
+updated_at: 2026-11-07T20:06:37.063Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -50,6 +50,10 @@ Package: `src/interactions/i-export-map/`
 Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belongs to: `j-territory-sdlc`.
 
 **Tool definition.** `export_mindplan_view` is defined in this action's `tools.ts` (`defineTool`, `f-tool-kit`) and mounted by `if-mcp-tools`.
+
+## Tool descriptions
+
+Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
 
 ## Acceptance Criteria
 

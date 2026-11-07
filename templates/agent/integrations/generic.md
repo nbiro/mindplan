@@ -18,4 +18,4 @@ From a source checkout, use `node /absolute/path/to/mindplan/dist/index.js`. As 
 
 The connection works when the agent can call `get_project`.
 
-Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), run `npx -y mindplan-mcp@0.19` (in JSON config: `"args": ["-y", "mindplan-mcp@0.19"]`). Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).
+Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), run `npx -y mindplan-mcp@0.21` (in JSON config: `"args": ["-y", "mindplan-mcp@0.21"]`). Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).

@@ -25,11 +25,10 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Export MindPlan view",
       description:
-        "Call when a human wants a map for a PR or a doc. " +
-        "Exports a deterministic typed-DAG projection as Mermaid or DOT. " +
-        "Omit focus for the full filtered map; pass focus for that node plus its 1-hop neighborhood. " +
-        "By default hides deprecated/cancelled nodes and closed bugs. Prefer find_related_nodes for agent orientation JSON. " +
-        `A diagram over ${EXPORT_RESULT_BUDGET} characters is Blocked unless you pass focus or output (a repo-relative file path, outside mindplan/).`,
+        "Call when a human wants a map for a PR or a doc (agents orient with find_related_nodes). " +
+        "Exports the typed DAG as Mermaid or DOT: the full filtered map, or with focus that node and its 1-hop neighborhood; retired nodes and closed bugs are hidden by default. " +
+        `A diagram over ${EXPORT_RESULT_BUDGET} characters is Blocked unless you pass focus or output (a repo-relative file path, outside mindplan/). ` +
+        "Details: get_spec({ topic: \"export_mindplan_view\" }).",
       inputSchema: {
         format: z
           .enum(VIEW_FORMATS)

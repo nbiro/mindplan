@@ -2,13 +2,13 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Agent orients before work: ranked rows or a full node (versioned rules, own decisions, body by slot and section, files, blast radius, stability, shape), a whole change in one call, node context and implementation, and related-node search."
+description: "Agent orients before work: ranked rows or a full node (versioned rules, the project rules when they changed, own decisions, body by slot and section, files, blast radius, stability, shape), a whole change in one call, node context and implementation, and related-node search."
 state: stable
-shipped_at: 2026-11-03T09:41:55.485Z
-revisions: 26
-churn: 4.887
+shipped_at: 2026-11-07T20:32:46.534Z
+revisions: 27
+churn: 5.409
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-11-04T08:52:37.746Z
+updated_at: 2026-11-07T20:32:46.534Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -70,6 +70,7 @@ This action covers `orient_for_work`, `get_node_context`, `get_node_implementati
 - **Summary first.** `orient_for_work({ query })` without `node_id` returns `{ query, matches, focus: null, next }`: rows `{ id, type, state, title, description (70 characters), area?, score }`, default 8, no body, rules, or decisions. A clear winner (`clearWinner`: its exact id, the only match, or twice the next score, looking one match past the limit) comes back in full with `auto_focus: true`. `orient_for_work({ node_id })` returns the full node: `rules`, `decisions`, `context`, from `depth: "body"` on `files` (`nodeOwnedFiles`) for a pipeline node; `full` adds the 1-hop `nodes` / `edges`, `blast_radius` (`buildBlastRadiusPayload`, `f-plan-views`), and for a pipeline node `stability` (`{ fan_in, rate, median_rate, revisions?, split_at?, split_into?, hotspot?, fan_out? }`, `f-compiler-rules`); `fan_out` (`{ count, changes }`, `fanOut`, `f-fan-out`) is present for a pre-ship Foundation, Interaction, or Interface, even at 0 and whether or not the node is kept whole, so an agent planning a node sees how many other unshipped changes it already reaches before the check warns
 - **Rules block.** `{ node_id, entries }` from `reachingRules` (live edges plus an open revision's proposed ones), ordered self, `belongs_to`, `depends_on`, `affects`; each entry carries `version` (`rulesVersion`, `f-plan-views`); `known_rules_versions` leaves out known text (`unchanged: true`); `null` without a focus; never the project brief rules
 - **Orientation ledger.** Every full reply and every `get_node_context` records the node with `recordOriented` (`f-orientation-ledger`), which is what lets the write actions' gate pass; `get_node_context` returns `resolved_rules` because it counts as orienting
+- **Project rules push.** Every reply that orients (a full node reply, a change-wide reply) spreads `pushProjectRules` (`f-orientation-ledger`) over the brief (`loadProjectBrief`, `rulesVersion`): `project_rules: { path, rules, rules_version }` when the project rules have not reached this session yet or changed since, recorded as served; absent otherwise. An agent that orients before `get_project` gets the brief rules this way, and one that oriented before a `patch_project_rules` gets the new text on its next orient, so no call before each action is needed to keep the rules current
 - **Depth.** `full` (default), `body` (no neighborhood or blast radius, which are not computed), `rules` (the record only)
 - **One slot, one section.** Both tools take `slot` (`orient_for_work` defaults to the active slot, `get_node_context` to both; `slot: "next"` without a revision is Blocked) and `section` (each returned body cut to that `## heading`; a missing heading is Blocked and lists the sections); `depth: "rules"` ignores both
 - **Decisions.** `orient_for_work` returns `decisions` at every depth: `{ node_id, entries, inherited_decisions }`, the focus's own (`via: self`; a Bug: the nodes it affects) and `{ count, nodes }` for the inherited ones, with `include_inherited_decisions` adding them (whole at distance 1, one line beyond) and `include_superseded` adding superseded ones; compact entries at `depth: "rules"`. Its `context` leaves decisions out (the block is the reply's only copy). `get_node_context` keeps `decisions` and `next.decisions` (superseded left out unless asked), adds `inherited_decisions`, and returns `body` without `## Rules` and `## Decisions`

@@ -24,7 +24,7 @@ An Interaction owns its behavior, screen body or handler included; an Interface 
 
 ## Think in systems
 
-Orient on the graph, place each change on it, respect the edges, claim files, and classify shipped work by blast radius. `get_project` loads that dialect plus this project's brief. Before each action the agent calls `get_rules`, then `orient_for_work`; before new-feature code it updates or creates nodes with the `plan-project` skill.
+A new behavior is a new node, and the graph describes the code before it merges. `get_project` loads that dialect plus this project's brief; when the agent plans is its call, and the server holds the line: writes wait until the project rules and the node's rules reached the session, every source file needs an owner, and the merge gate blocks a node whose code changed but whose graph entry did not.
 
 Without those boundaries, agents improvise from chat and tickets. The compiler refuses the illegal move:
 
@@ -124,7 +124,7 @@ Node.js 22.13 or later (`engines` in `package.json`; the search cache uses `node
    npm install -D mindplan-mcp
    ```
 
-   Any other project (Python, Go, …) installs nothing and uses `npx -y mindplan-mcp@0.19` in the config below.
+   Any other project (Python, Go, …) installs nothing and uses `npx -y mindplan-mcp@0.21` in the config below.
 
 2. **Register the MCP server.** It runs over stdio from the project root. In Claude Code, run `claude mcp add mindplan -- npx mindplan-mcp`, or commit a `.mcp.json` so everyone who opens the repo gets it (Cursor reads the same shape from `.cursor/mcp.json`; the package ships it as `templates/agent/mcp.json.example`):
 
@@ -136,7 +136,7 @@ Node.js 22.13 or later (`engines` in `package.json`; the search cache uses `node
    }
    ```
 
-   With a dev dependency, `npx mindplan-mcp` runs the locked copy (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.19"]`. Other hosts: [templates/agent/integrations/](templates/agent/integrations/README.md). Reload MCP servers after a config change.
+   With a dev dependency, `npx mindplan-mcp` runs the locked copy (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.21"]`. Other hosts: [templates/agent/integrations/](templates/agent/integrations/README.md). Reload MCP servers after a config change.
 
 3. **Ask your agent to set up MindPlan.** It calls `setup_project`, which creates `mindplan/` (a default `config.json`, an empty `project.md`, and the `version.json` stamp) and returns `pointer`, the short text every session must see first, plus a guide. Following the guide, the agent writes `MINDPLAN.md` and wires it into the files your agent reads, adds the ignores, proposes moving your standing rules into the project brief, asks for a product description, and offers the [merge gate](#the-check-and-the-merge-gate). The server never writes those files itself; the agent shows you each change. The skills (`plan-project`, `define-entities`) are served through `get_skill`, so nothing is copied into `.claude/` or `.cursor/`.
 
@@ -188,7 +188,7 @@ The MCP server is the only writer of `mindplan/`. Nodes claim their source files
 | `check --root <path>` | Checks another checkout |
 | `mindplan-mcp help` | Usage |
 
-**Merge gate.** The default branch should hold work that is done (`stable` / `unstable`) or still being built, never work that is `in-review`: the code is finished but the graph has not shipped it, and that belongs on a branch. Plain `check` ignores lifecycle state; `check --merge` fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live file or open revision is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back to `in-progress` (a Bug: `fixing`) if the work is unfinished. `draft`, `ready`, `in-progress`, and shipped nodes pass, so planning PRs and incremental PRs still merge. Agents run the same gate as `run_check({ merge: true })` before saying a PR is ready.
+**Merge gate.** The default branch should hold work that is done (`stable` / `unstable`) or still being built, never work that is `in-review`: the code is finished but the graph has not shipped it, and that belongs on a branch. Plain `check` ignores lifecycle state; `check --merge` fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live file or open revision is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back to `in-progress` (a Bug: `fixing`) if the work is unfinished. `draft`, `ready`, `in-progress`, and shipped nodes pass, so planning PRs and incremental PRs still merge. It also fails a shipped node whose claimed files changed against the base while its territory file did not: the graph must describe the code before it merges, so the fix is `open_next` and ship, or `patch_node_territory` in place. Agents run the same gate as `run_check({ merge: true })` before saying a PR is ready.
 
 `--merge=strict` also fails an `in-progress` node whose claimed files changed against the base: a finished feature left at `in-progress`. The base is `--base <ref>`, else the merge base with the newer of `main` and `origin/main` (else `master`). It is opt-in because it blocks the incremental PRs of a large feature. An explicit `--base` also turns on the dirty-src check.
 
@@ -238,7 +238,7 @@ The server has 37 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each 
 **Orient and read**
 
 - `get_project` — the dialect (playbook) plus this project's description and rules; call it first.
-- `get_rules` — the mandatory project rules, before each action.
+- `get_rules` — re-read the mandatory project rules (after a context summary); writes are `Blocked: Rules` until they reached the session.
 - `orient_for_work` — ranked nodes for a query, or one node's rules, decisions, body, files, and blast radius; unlocks writes on that node.
 - `find_related_nodes` — hybrid search plus the 1-hop neighborhood.
 - `list_areas` — every Capability with counts of its nodes.

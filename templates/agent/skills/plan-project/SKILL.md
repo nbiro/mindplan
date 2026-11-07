@@ -1,49 +1,27 @@
 ---
 name: mindplan-plan-project
 description: >-
-  Create or patch the MindPlan graph (Capabilities, Foundations, Interactions,
-  Interfaces, Bugs, edges, territory) without writing application code. Use
-  whenever you create_node, link/unlink, patch territory or project brief/config,
-  open_next, or discard_next — including before any new-feature code change when
-  nodes must be updated or created. Also use for plan-only / greenfield sessions.
+  Model and evolve a MindPlan graph: break an ask into Capabilities,
+  Interactions, Interfaces, Foundations, and Bugs; choose between a new node and
+  a revision; evolve shipped nodes (blast radius, revisions, conflicts, planned
+  wiring); self-ready a plan; and run one change across parallel git worktrees.
 ---
 
-# Plan a MindPlan Project (no code)
+# Plan and evolve a MindPlan graph
 
-Use this skill whenever you create or patch MindPlan territory: in plan-only sessions, and for the graph work that must finish **before** any new-feature code change. Application code (files claimed with `set_implementation_files`) waits for an execution session under `get_project.playbook`.
+Reference for graph work: load it when you model a product or a feature, or change shipped nodes. Creating and linking single nodes, and the required sections per type, are in `define-entities` (`get_skill({ name: "define-entities" })`). Normative reference: `SPEC.md` (`get_spec({ topic })`).
 
-The server serves this skill (`get_skill({ name: "plan-project" })`). Create and link details: the `define-entities` skill (`get_skill({ name: "define-entities" })`). Normative reference: `SPEC.md`. Before each action in this skill, call `get_rules`, then `orient_for_work`.
+The duty this skill serves, from the playbook: **a new behavior is a new node.** When you plan it (before the code, or after it and before handoff) is your call; the merge gate Blocks a shipped node whose files changed while its territory did not, and Coverage Blocks a file no node claims.
 
-## When to use
-
-| User intent | Use this skill? |
-|-------------|-----------------|
-| “Let’s plan / model / map the product” | Yes |
-| Greenfield: define Capabilities → draft Interactions → Interfaces → derive Foundations | Yes |
-| Restructure edges, enrich PRDs, rewrite Atomic Ops | Yes |
-| Before new-feature code: update or create the matching nodes | Yes — finish this skill, then implement |
-| Any `create_node` / link / territory / brief / config / `open_next` / `discard_next` | Yes |
-| “Implement / build / fix / ship this Interaction” (code already on the graph) | No — playbook build or Bug loop |
-| Mixed “plan then code” in one ask | Plan first with this skill; **stop** and confirm before any implementation session |
-
-## Hard rules (plan-only)
-
-- **No application code** — do not create, edit, or delete files claimed by nodes. Use `set_implementation_files` only to declare intended boundaries, and prefer leaving that to the build session unless the user asks.
-- **No implementation pipeline** — do not move Foundations, Interactions, or Interfaces to `in-progress`, `in-review`, or `ship`, or Bugs to `fixing`, `in-review`, or `resolved`.
-- **Allowed states** — write contracts at `draft`; when they are real, self-`ready` them in one ordered call (§6).
-- **Never tick Atomic Ops** — they stay open until an execution session implements them.
-- Write only through MindPlan MCP. Every `Blocked: <reason>` is a hard failure: fix the plan, do not retry blindly.
-
-## Session loop
-
-### 1. Orient
+## 1. Orient
 
 ```
-orient_for_work({ query: "<user ask>" })   // ranked rows; pick the node you will work on
-orient_for_work({ node_id: "<row id>" })   // its rules, decisions, body, files, blast radius
+orient_for_work({ query: "<the ask>" })   // ranked rows; a clear winner comes back in full
+orient_for_work({ node_id: "<row id>" })  // its rules, decisions, body, files, blast radius
+orient_for_work({ change: "<change>" })   // every member of a change in one reply
 ```
 
-A write on an existing node needs that `node_id` orientation first (playbook rule 1). For an empty or unknown graph, also call `get_mindplan_graph` once; use `export_mindplan_view` when the user wants a diagram.
+A write on an existing node needs a full reply on it first (`Blocked: Orientation` otherwise). For an empty or unfamiliar graph, `get_mindplan_graph({ fields: ["id", "type", "title"] })` once; `export_mindplan_view` when the user wants a diagram.
 
 ### 2. Classify scope
 
@@ -79,43 +57,23 @@ The parent self-readies when the contracts are written.
 When several agents build one change at once, each in its own git worktree, the graph travels with the branches. One MindPlan server serves every worktree through `root`:
 
 1. **Plan on the integration branch.** The orchestrator creates the change there with this skill: the nodes, the revisions (`open_next({ node_id, change })`), and the decisions, and commits them before the worktrees branch off.
-2. **Build in the worktree.** Each agent passes `root: "<absolute path of its worktree>"` to every MindPlan tool (`get_rules`, `orient_for_work`, every write, `run_check`). Orientation is per root, so orient in your own worktree. Fill your revisions, claim your files (`set_implementation_files({ node_id, add, root })`), link your tests (`set_test_files({ node_id, change, add, root })`; without `change` it writes live), and move them to `in-review`. A result from another root carries `root`; a `Blocked:` from one ends with `(root: <path>)`.
+2. **Build in the worktree.** Each agent passes `root: "<absolute path of its worktree>"` to every MindPlan tool (`get_project`, `orient_for_work`, every write, `run_check`). The project rules gate and orientation are per root, so call `get_project` and orient in your own worktree. Fill your revisions, claim your files (`set_implementation_files({ node_id, add, root })`), link your tests (`set_test_files({ node_id, change, add, root })`; without `change` it writes live), and move them to `in-review`. A result from another root carries `root`; a `Blocked:` from one ends with `(root: <path>)`.
 3. **Merge.** Merging the branches brings the graph along with the code. Run `run_check({ after_merge: true })` (CLI `mindplan-mcp check --after-merge`) on the merged checkout and fix each `Blocked: after-merge:` line; a `Warning: after-merge:` on a revision whose base moved names `rebase_revision({ node_id, change })`, then `resolve_conflict` for any conflict it reports.
 4. **Ship.** The orchestrator ships from the integration branch with one scoped walk, `update_node_status({ scope: "change", change, new_status: "ship" })`; `nodes: [...]` ships only the finished members while the rest keep building.
 
 Two changes must not each add half of a `depends_on` cycle: `link_nodes` and `open_next` are `Blocked:` on an edge that closes a cycle across changes. Move the shared part into a Foundation both depend on.
 
-### 5. On `Blocked:`
+## 5. Ready and ship
 
-On `Blocked:` or a mismatch after a mutation — stop and fix; do not continue. The server already writes `mindplan/map.md`; do not call `export_mindplan_view` after every write.
+- A plan is build-ready when `run_check` passes, links are complete (an Interaction: one `belongs_to` and one Foundation `depends_on`; an Interface: one `exposes`; a Bug past `open`: `affects`), and every required section is written. Self-ready it in one call: `update_node_status({ revisions: [...] })` (the server orders Foundations, Interactions, Interfaces), or `scope: "change"` for a change.
+- Any later edit to a `ready` slot's text, claims, or links sends it back to `draft` (`readiness_reset`); self-ready it again.
+- Atomic Ops are ticked when the work they name is done, by `id` with `toggle_checkboxes` (`note` / `not_applicable` when done differently); a `review` or `deploy` item waits on a person.
+- When the implementation is done and a merge is requested, walk the change to `ship`: `update_node_status({ scope: "change", change, new_status: "ship" })`. `run_check({ merge: true })` is the merge gate.
 
-### 6. Self-ready, then stop
+## Never
 
-When the graph matches the user’s product model and territory is a full contract (not stubs), with nodes at `draft` (or Bugs at `open` / `triaged`):
-
-1. `run_check` (CLI `mindplan-mcp check`) returns ok. Fix every `Blocked:` first.
-2. Self-`ready` the revision in one `update_node_status` `revisions` call (Foundations, then Interactions, then Interfaces). Every item is tried; `results` says which moved, and the call is `Blocked:` only when none did. When the revision spans several nodes, give them one change id (`change` on `open_next` / `create_node`, or `patch_node_territory({ node_id, change })` before first ship) and use `scope: "change"` instead; a shipped node with several open revisions moves only through `scope: "change"` or a single call with `change`.
-3. Any later edit to a `ready` node's text, claims, or links sends it back to `draft` (`readiness_reset`); self-ready it again.
-4. After MCP confirms `ready`, **stop** if this is still a plan-only session. A later **execution session** runs `in-progress` → implement → one Implementation review that judges these contracts and the diff together. Do not start implementation unless the user explicitly switches modes.
-
-## Shipping a plan (self-ready)
-
-When the user says **“ship the plan”**, **“ship it”** (in a plan-only session), or otherwise wants the modeled graph build-ready, that means self-`ready` and stop — not the build-pipeline `ship` transition. Before self-ready:
-
-- `run_check` returns ok (same as `mindplan-mcp check` exiting `0`)
-- Links are complete (Interactions: at least one `belongs_to` + one Foundation `depends_on`; Interfaces: at least one `exposes`; Bugs past `open`: `affects`)
-- Territory is a full contract with **unchecked** Atomic Ops; an item a person closes (a review sign-off, a deploy) is added with `patch_node_territory({ node_id, add_checklist_items: [{ text, id, kind: "review" | "deploy" }] })`
-- No application code under `src/`, no state past `ready`, no ticked boxes
-
-The build-pipeline `ship` happens in the execution session, before the PR merges: `run_check({ merge: true })` (CLI `mindplan-mcp check --merge`) is the merge gate and fails while any node is still `in-review`; plan-only PRs (`draft` / `ready`) pass it.
-
-## Never do (this skill)
-
-- Write or “just scaffold” application code (claimed paths) in a plan-only session
-- Advance to `in-progress` / `in-review` / `ship`, or Bug `fixing` / `resolved`, in a plan-only session
-- Treat “ship the plan” as build-pipeline `ship` / `stable`, or as permission to tick Atomic Ops
 - Edit `mindplan/**` with host file tools, or hand-edit server-owned frontmatter (`state`, timestamps, edge arrays)
-- Set Capability state, `stable`, or `unstable` manually
+- Claim a new behavior's files onto an existing node to avoid creating one
+- Set Capability state, `stable`, or `unstable` by hand
 - Treat `mindplan/map.md` as graph authority
-- Self-`ready` or claim done while `mindplan-mcp check` fails
 - Anything in the `define-entities` Common mistakes table

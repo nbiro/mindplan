@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T09:41:59.917Z
 revisions: 3
 churn: 2.934
 created_at: 2026-10-31T11:58:03.472Z
-updated_at: 2026-11-03T12:53:35.576Z
+updated_at: 2026-11-07T20:06:37.463Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -56,6 +56,10 @@ A revision's readiness reset comes from `revisionReadinessResult` (`f-plan-write
 ## Cycles across changes
 
 `link_nodes` with `depends_on` (live, revision, or planned) is Blocked when the edge closes a dependency cycle across changes (`assertNoChangeCycle`), naming the changes and the path, and `run_check` reports existing ones (see `i-check-integrity`).
+
+## Tool descriptions
+
+Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
 
 ## Acceptance Criteria
 

@@ -422,6 +422,8 @@ ok("timing: incremental update < 200 ms and search < 50 ms on 1,000 nodes");
   });
   const client = new Client({ name: "search-test", version: "0.1.0" });
   await client.connect(transport);
+  // A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+  await client.callTool({ name: "get_project", arguments: {} });
   const call = async (name, args) => {
     const res = await client.callTool({ name, arguments: args });
     if (res.isError) throw new Error(`${name}: ${res.content[0].text}`);
@@ -481,6 +483,8 @@ ok("MCP: outside edits reach search on the next call; async Blocked envelope; se
   });
   const client = new Client({ name: "search-semantic-test", version: "0.1.0" });
   await client.connect(transport);
+  // A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+  await client.callTool({ name: "get_project", arguments: {} });
   const call = async (name, args) => {
     const res = await client.callTool({ name, arguments: args });
     if (res.isError) throw new Error(`${name}: ${res.content[0].text}`);

@@ -29,12 +29,7 @@ export const TOOLS: ToolDef[] = [
       gate: false,
       title: "Get project brief",
       description:
-        "Call before the first answer or code change in a session, and again after the product description or rules change. Not before every action. " +
-        "Returns the systems dialect and this product's description and standing rules " +
-        "({ path, description, rules, rules_version, playbook, check, version?, restart? }). playbook is the bundled MindPlan dialect; description/rules come from mindplan/project.md. " +
-        "rules_version tags the rules: pass it to get_rules as known_version. " +
-        "version appears only when the graph needs setup or an upgrade, or the server is older than the graph, and names the fix (setup_project, upgrade_project, or the package to install); until then every other graph tool is Blocked. " +
-        "restart appears only when a different mindplan-mcp was installed under this running server (an npm install after it started): have the user restart the server, then call get_project again before acting on version.",
+        "Call before the first answer or code change in a session, and again after the product description or rules change. Returns the MindPlan playbook and this product's description and rules ({ path, description, rules, rules_version, playbook, check, version?, restart? }). version appears only when the graph needs setup_project, upgrade_project, or a newer server; until then other graph tools are Blocked. restart means a different mindplan-mcp was installed under this server: have the user restart it, then call again. Details: get_spec({ topic: \"get_project\" }).",
       inputSchema: {},
     },
     () => getProject()
@@ -47,9 +42,7 @@ export const TOOLS: ToolDef[] = [
       gate: false,
       title: "Read the specification",
       description:
-        "Call when you need a specific MindPlan rule (lifecycle, required sections, change ids, neighbors, decisions, imports, orientation) instead of guessing or retrying. " +
-        "Returns one part of the running server's own SPEC.md ({ topic, version, text }) by stable topic id, or a tool's SPEC entry by tool name. " +
-        "Without topic it lists the topic ids and tool names.",
+        "Call when you need a specific MindPlan rule (lifecycle, required sections, change ids, decisions, orientation) instead of guessing or retrying. Returns one part of the running server's SPEC.md ({ topic, version, text }) by topic id, or a tool's entry by tool name; without topic it lists them. Details: get_spec({ topic: \"get_spec\" }).",
       inputSchema: {
         topic: z
           .string()
@@ -68,12 +61,7 @@ export const TOOLS: ToolDef[] = [
       gate: false,
       title: "Get project rules",
       description:
-        "Call before each action, before orient_for_work. Returns the mandatory project rules " +
-        "({ path, rules, rules_version }) from mindplan/project.md. Empty string when the section is empty. " +
-        "While you still hold the rules text, pass its rules_version as known_version: when the rules are unchanged the reply is { path, rules_version, unchanged: true } " +
-        "and that text still applies; otherwise it carries the new text and tag. Without the text in context (a new session, a summarized one), pass nothing. " +
-        "These are the global rules only; node rules arrive through orient_for_work. " +
-        "Does not return the playbook or description.",
+        "Call to re-read the project rules explicitly: after a context summary, or when a rules push was missed. Returns the mandatory project rules ({ path, rules, rules_version }) from mindplan/project.md and records them as served to this session. Pass known_version only while you still hold that text; unchanged: true means it still applies. Node rules arrive through orient_for_work. Details: get_spec({ topic: \"get_rules\" }).",
       inputSchema: {
         known_version: z
           .string()
@@ -91,9 +79,7 @@ export const TOOLS: ToolDef[] = [
       gate: false,
       title: "Load a MindPlan skill",
       description:
-        "Call when the playbook or the server instructions name a skill, before acting on it. " +
-        "Returns the skill served by this server: { name, text, files } (text is SKILL.md without frontmatter; files are its supporting files). " +
-        "Pass file to read one supporting file ({ name, file, text }). Without name it lists the skills ({ name, description, files }).",
+        "Call when the playbook or the server instructions name a skill, before acting on it. Returns { name, text, files } (text is SKILL.md without frontmatter); pass file to read one supporting file; without name it lists the skills. Details: get_spec({ topic: \"get_skill\" }).",
       inputSchema: {
         name: z.string().min(1).optional().describe("Skill name, e.g. plan-project or define-entities. Omit to list them."),
         file: z.string().min(1).optional().describe("A supporting file of the skill, as listed in files (e.g. examples.md). Needs name."),
