@@ -29,6 +29,8 @@ const transport = new StdioClientTransport({
 });
 const client = new Client({ name: "honesty-test", version: "0.1.0" });
 await client.connect(transport);
+// A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+await client.callTool({ name: "get_project", arguments: {} });
 
 let failures = 0;
 function check(label, condition, detail = "") {
@@ -298,8 +300,9 @@ fillAndTick("interactions", "i-b");
   r = await call("run_check", {});
   const far = r.failures.find((f) => f.includes('"src/orphan/deep/x.ts"'));
   check(
-    "a file that only shares src/ with every claim gets no probable owner",
-    !!far && !far.includes("Probable owner") && far.includes("No node claims a nearby path"),
+    "a file that only shares src/ with every claim gets no owner and leads with create_node",
+    !!far && !far.includes("Probable owner") && !far.includes("If it extends") &&
+      far.includes("A new behavior is a new node: create_node("),
     String(far)
   );
   remove("src/orphan");
@@ -320,9 +323,9 @@ fillAndTick("interactions", "i-b");
   r = await call("run_check", {});
   const deepCov = r.failures.find((f) => f.includes('"src/f-core/sub/deep.ts"'));
   check(
-    "the fix for a shipped owner outside a folder it dominates opens its evolution first",
+    "a file in a new folder leads with create_node, then the nearest owner's fix (its evolution first)",
     !!deepCov &&
-      deepCov.includes('Probable owner by path: "f-core"') &&
+      deepCov.indexOf("create_node(") < deepCov.indexOf('If it extends "f-core" instead:') &&
       deepCov.includes('open_next({"node_id":"f-core","change":"<change-id>"}) then set_implementation_files({"node_id":"f-core","change":"<change-id>","add":'),
     String(deepCov)
   );

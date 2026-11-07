@@ -54,7 +54,13 @@ import {
 import { shapeReport } from "../../foundations/f-compiler-rules/shape.js";
 import { openHumanItemsOfChange, openHumanItemsOfNode } from "../../foundations/f-compiler-rules/checklist-gates.js";
 import { changeMembership } from "../../foundations/f-compiler-rules/planned.js";
-import { reachingRules, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
+import {
+  orientationGateEnabled,
+  pushProjectRules,
+  reachingRules,
+  recordOriented,
+} from "../../foundations/f-orientation-ledger/ledger.js";
+import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { cutReply, orients, parseSections, type OrientSection } from "./sections.js";
 import { resolveNodeRules } from "../../foundations/f-graph-search/rules.js";
 import {
@@ -73,6 +79,16 @@ import {
   revisionSummaries,
   rulesVersion,
 } from "../../foundations/f-plan-views/views.js";
+
+/**
+ * `{ project_rules }` for a reply that orients when the project rules have not reached this
+ * session or changed since they did (recorded as served); `{}` otherwise or with the gate off.
+ */
+function orientRulesPush(): Record<string, unknown> {
+  if (!orientationGateEnabled()) return {};
+  const brief = loadProjectBrief();
+  return pushProjectRules({ path: brief.path, rules: brief.rules, rules_version: rulesVersion(brief.rules) });
+}
 
 function fileExists(rel: string, root?: string): boolean {
   const cwd = root ?? projectRoot();
@@ -417,6 +433,7 @@ function orientForChange(
       change,
       members,
       rules,
+      ...(orients(sections) ? orientRulesPush() : {}),
       decisions: { count: decisionCount, nodes: holders },
       ...(openItems.length ? { open_items: openItems } : {}),
       next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
@@ -596,6 +613,9 @@ export async function orientForWork(args: {
     rules,
     decisions,
   };
+  // The rules count as served only once the reply that carries them is complete.
+  const withRulesPush = (r: Record<string, unknown>) =>
+    cutReply(orients(sections) ? { ...r, ...orientRulesPush() } : r, sections);
   const shape = shapeReport(view);
   if (shape) reply.shape = shape;
   // Review and deploy items wait on people: listed so the agent says so instead of ticking them.
@@ -607,7 +627,7 @@ export async function orientForWork(args: {
       record: context.record,
       next: typeof next === "string" ? next : next ? { record: next.record } : null,
     };
-    return cutReply(reply, sections);
+    return withRulesPush(reply);
   }
   reply.context = context;
   if (isPipelineNodeType(node.type)) {
@@ -625,7 +645,7 @@ export async function orientForWork(args: {
       : null;
     if (isPipelineNodeType(node.type)) reply.stability = stabilityPayload(graph, node);
   }
-  return cutReply(reply, sections);
+  return withRulesPush(reply);
 }
 
 /**

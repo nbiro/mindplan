@@ -27,11 +27,10 @@ export const TOOLS: ToolDef[] = [
       title: "Record a decision",
       description:
         "Call when you choose between viable designs (a data shape, an ordering guarantee, which system owns a fact), " +
-        "on the node the choice shapes. Writes one file, decisions/<id>.md: inside the node's open revision of change (or its only open revision), else beside its live file. " +
-        "One decision that shapes several nodes is recorded once: list them in nodes. " +
-        "Records are never rewritten: to change a decision, record a new one with supersedes (the old one stays listable as superseded). " +
-        "A decision-worthy revision (a shipped Foundation's contract, a new migration or schema file, a wide blast radius, a depends_on change) " +
-        "is Blocked at in-review until a decision is recorded under its change id, in the revision, or naming the node in nodes. Never resets readiness.",
+        "on the node the choice shapes. Writes decisions/<id>.md in the node's open revision of change (or its only one), else beside live; list every other node it shapes in nodes. " +
+        "Never rewritten: to change one, record a new decision with supersedes. " +
+        "A decision-worthy revision is Blocked at in-review until a decision is recorded under its change. Never resets readiness. " +
+        'Details: get_spec({ topic: "record_decision" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Node the decision shapes (not a Bug)."),

@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:38.429Z
 revisions: 4
 churn: 3.829
 created_at: 2026-10-31T11:58:04.384Z
-updated_at: 2026-11-03T12:53:35.100Z
+updated_at: 2026-11-07T20:06:37.173Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -52,6 +52,10 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-graph-s
 - **Decision files (0.18.0).** `record_decision` writes one `decisions/<decision-id>.md` file (in the revision folder `change` picks, else the node folder), never rewriting another; an id already used anywhere on the node is Blocked
 
 - **Cleanup (0.18).** Decision fields are flattened with the store's `oneLineValue`; no legacy-next path remains.
+
+## Tool descriptions
+
+Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
 
 ## Acceptance Criteria
 

@@ -29,14 +29,11 @@ export const TOOLS: ToolDef[] = [
       title: "Open a revision",
       description:
         "Call when a shipped node's contract changes, before editing that contract. " +
-        "Opens a revision of the node under change (required): revisions/<change>/<id>.mdx, a draft copy of the live file with a fresh list of unticked default Atomic Ops. The live node keeps serving. " +
-        "A node may hold several open revisions, one per change; each is judged against live plus itself only. " +
-        "Optional title/description overrides. Ship it with update_node_status (pass change when the node has several), or discard_next to abandon it. " +
-        "Shipping one revision rebases its siblings onto the new live: untouched text carries over, a section both edited becomes a conflict (resolve_conflict). " +
-        "Edges planned on the node under the change are added to the revision (applied_planned). " +
-        "Blocked when the change is already open on the node or the node is not shipped. " +
-        "On a hotspot (a node shipping far more often than the graph's median lately; config hotspots) the result also carries warnings and decision_prompt: prefer a new node that depends_on it, or record why revising it is right. " +
-        "The result lists the node's open revisions ({ change, state }).",
+        "Opens a draft revision under change (required) while the live node keeps serving; a node may hold several, one per change. Optional title/description overrides. " +
+        "Ship it with update_node_status (pass change when several are open) or abandon it with discard_next; shipping one rebases its siblings (conflicts go to resolve_conflict). " +
+        "Blocked when the node is not shipped or already has that change open. " +
+        "On a hotspot the result carries decision_prompt: prefer a new node that depends_on it, or record why revising it is right. " +
+        'Details: get_spec({ topic: "open_next" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe(
@@ -59,9 +56,8 @@ export const TOOLS: ToolDef[] = [
       title: "Discard a revision",
       description:
         "Call when an open revision should be abandoned. " +
-        "Deletes revisions/<change>/ (the revision file, its attachments, and its decisions). The live <id>.mdx and the node's other revisions are unchanged. " +
-        "Pass change when the node has several open revisions. " +
-        "When it was its change's last open revision, the change's planned edges are dropped (cleared_planned).",
+        "Deletes the revision with its attachments and decisions; live and other revisions stay. Pass change when several are open. " +
+        'Details: get_spec({ topic: "discard_next" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Id of the node whose open revision to discard."),
@@ -76,10 +72,10 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Resolve a revision conflict",
       description:
-        "Call when a revision holds a conflict after a sibling revision shipped (update_node_status lists rebased conflicts; in-review is Blocked until none remain). " +
-        "Name exactly one conflict: section (a level-2 heading such as \"## Spec\"), field (title, description, or role), or claim (a claimed path another node now owns). " +
-        'take "revision" keeps the revision\'s value, "live" takes the shipped value (a claim: drops the add), "text" writes text instead (sections and scalars only). ' +
-        "Pass change when the node has several open revisions. The result lists the conflicts left.",
+        "Call when a revision holds a conflict after a sibling revision shipped (in-review is Blocked until none remain). " +
+        'Name one conflict: section (e.g. "## Spec"), field (title, description, role), or claim (a path); take "revision", "live", or "text" (with text; sections and fields only). ' +
+        "Pass change when several revisions are open. Returns the conflicts left. " +
+        'Details: get_spec({ topic: "resolve_conflict" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Id of the node whose revision holds the conflict."),
@@ -100,10 +96,10 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Rebase a revision onto live",
       description:
-        "Call when run_check({ after_merge: true }) reports a revision whose base no longer matches live (live changed on another branch, e.g. a sibling revision shipped there and the branches merged). " +
-        "Carries the open revision onto current live with the rule a ship applies to its siblings: a section or field the revision did not touch takes live's text, one both edited becomes a conflict (resolve_conflict), deltas already live drop, claim conflicts are recomputed, and a ready / in-review revision whose text changed goes back to draft (readiness_reset). " +
-        "Pass change when the node has several open revisions. A revision already based on live is left as it is (rebased: false). " +
-        "Result: { node_id, change, rebased, conflicts, readiness_reset?, changed_files }.",
+        "Call when run_check({ after_merge: true }) reports a revision whose base no longer matches live. " +
+        "Carries the open revision onto current live as a ship rebases siblings: untouched text takes live's, text both edited becomes a conflict (resolve_conflict), and a ready / in-review revision whose text changed returns to draft (readiness_reset). " +
+        "Pass change when several are open; a revision already on live returns rebased: false. " +
+        'Details: get_spec({ topic: "rebase_revision" }).',
       inputSchema: {
         verbose: VERBOSE,
         node_id: NODE_ID.describe("Id of the node whose open revision to rebase."),

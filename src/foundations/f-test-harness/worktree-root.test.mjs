@@ -50,6 +50,8 @@ async function session(root) {
   });
   const client = new Client({ name: "worktree-root-test", version: "0.1.0" });
   await client.connect(transport);
+  // A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+  await client.callTool({ name: "get_project", arguments: {} });
   const raw = async (tool, args) => {
     const res = await client.callTool({ name: tool, arguments: args });
     return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };
@@ -78,6 +80,17 @@ try {
     const { tools } = await s.client.listTools();
     const missing = tools.filter((t) => !t.inputSchema?.properties?.root).map((t) => t.name);
     check("every tool schema has an optional root", missing.length === 0, missing.join(", "));
+  }
+
+  // --- the project rules gate is per root: a write to B waits until B's rules reached the session ---
+  {
+    const blocked = await s.raw("create_node", { id: "i-early", type: "Capability", title: "Early", description: "Too early.", root: B });
+    check(
+      "a write to another root before its rules reached the session is Blocked: Rules naming the root",
+      blocked.error && blocked.text.startsWith("Blocked: Rules") && blocked.text.includes("same root"),
+      blocked.text
+    );
+    await s.call("get_project", { root: B });
   }
 
   // --- writes land in the named root only ---

@@ -27,7 +27,7 @@ const IDENTITY = ["query", "focus", "auto_focus", "unlocks", "change", "members"
 
 /** Reply keys each section maps to (record and body are cut from `context`). */
 const TOP_LEVEL: Partial<Record<OrientSection, string[]>> = {
-  rules: ["rules"],
+  rules: ["rules", "project_rules"],
   decisions: ["decisions"],
   files: ["files"],
   shape: ["shape"],

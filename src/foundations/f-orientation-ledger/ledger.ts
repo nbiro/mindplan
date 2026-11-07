@@ -29,9 +29,58 @@ export function orientationGateEnabled(): boolean {
   return enabled;
 }
 
-/** Forget every fetch (tests). */
+/** Forget every fetch and every served project rules version (tests). */
 export function resetOrientationLedger(): void {
   fetched.clear();
+  servedRules.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Project rules: which version of mindplan/project.md's rules reached this session
+// ---------------------------------------------------------------------------
+
+/** Keyed by project root: the rules_version last served there in this session. */
+const servedRules = new Map<string, string>();
+
+/** The project rules as callers load them (`loadProjectBrief` + `rulesVersion`). */
+export type ProjectRulesBrief = { path: string | null; rules: string; rules_version: string };
+
+/** Record that the project rules at this version reached the agent (get_project, get_rules, a push). */
+export function recordProjectRulesServed(version: string): void {
+  servedRules.set(rootKey(resolveProjectRoot()), version);
+}
+
+/** Why the project rules gate would fail: never served, or changed since; null when current or the gate is off. */
+export function projectRulesGap(version: string): "unserved" | "changed" | null {
+  if (!enabled) return null;
+  const served = servedRules.get(rootKey(resolveProjectRoot()));
+  if (served === undefined) return "unserved";
+  return served === version ? null : "changed";
+}
+
+/**
+ * `{ project_rules }` when the rules are missing from this session or changed since they were
+ * served (and records them as served), else `{}`. Replies that orient spread it; a write needs none, since the gate made the rules current first.
+ */
+export function pushProjectRules(brief: ProjectRulesBrief): { project_rules?: ProjectRulesBrief } {
+  if (projectRulesGap(brief.rules_version) === null) return {};
+  recordProjectRulesServed(brief.rules_version);
+  return { project_rules: brief };
+}
+
+/** Blocked: Rules unless the project rules reached this session at their current version. */
+export function assertProjectRulesServed(version: string, tool: string): void {
+  const gap = projectRulesGap(version);
+  if (gap === "unserved") {
+    throw new Error(
+      `Blocked: Rules: ${tool} acts before the project rules reached you in this session. Call get_project (or get_rules), with the same root when you passed one, read the rules, then retry.`
+    );
+  }
+  if (gap === "changed") {
+    throw new Error(
+      `Blocked: Rules: the project rules changed since they reached you. Call get_rules, read them, then retry ${tool}.`
+    );
+  }
 }
 
 /**

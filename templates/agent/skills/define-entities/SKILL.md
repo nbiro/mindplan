@@ -15,7 +15,7 @@ description: >-
 
 Use this skill when adding or restructuring nodes in `mindplan/`. Every graph write goes through a **MindPlan MCP** tool; never edit `mindplan/**` with host file tools.
 
-The server serves this skill (`get_skill({ name: "define-entities" })`) and its examples (`get_skill({ name: "define-entities", file: "examples.md" })`). Graph work as a whole (scope, shipped nodes, revisions, self-ready) follows the `plan-project` skill, which calls this one to create and link; execution follows `get_project.playbook`. Normative reference: `SPEC.md` (type glossary §2.0.0).
+The server serves this skill (`get_skill({ name: "define-entities" })`) and its examples (`get_skill({ name: "define-entities", file: "examples.md" })`). Modeling a whole feature and evolving shipped nodes are in the `plan-project` skill; the duties and gates are in `get_project.playbook`. Normative reference: `SPEC.md` (type glossary §2.0.0).
 
 ## Step 0 — Break the request down
 

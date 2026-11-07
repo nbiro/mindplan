@@ -10,4 +10,4 @@ Add to `.vscode/mcp.json` or your VS Code settings; the schema varies by version
 }
 ```
 
-Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), use `"args": ["-y", "mindplan-mcp@0.19"]`. Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).
+Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), use `"args": ["-y", "mindplan-mcp@0.21"]`. Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).

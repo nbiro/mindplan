@@ -61,7 +61,8 @@ import {
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
 import { toPosix, withRoot } from "../../foundations/f-source-index/root-scope.js";
-import { fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { decisionGateSettings, fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { schemaClaimEntries } from "../../foundations/f-source-index/dominance.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import {
   changeAdditivity,
@@ -122,7 +123,10 @@ export interface CheckOptions {
 
 export type MergeLevel = true | "strict";
 
-/** One node the merge gate Blocks. `files` lists the changed claimed paths (strict only). */
+/**
+ * One node the merge gate Blocks. `files` lists the changed claimed paths (strict, and stale
+ * territory). `stale`: a shipped node whose claimed files changed but whose territory did not.
+ */
 export interface MergeNode {
   id: string;
   type: string;
@@ -130,6 +134,18 @@ export interface MergeNode {
   /** `revision`: an open revision stored under `revisions/<change>/`. */
   slot: "live" | "revision";
   files?: string[];
+  stale?: true;
+}
+
+/**
+ * Changed paths a node's claims cover, leaving out migration and schema files (the decision gate
+ * covers those, and a composition root that owns the migrations folder gains one with every
+ * feature that another node's revision attributes to it).
+ */
+function changedClaimed(changed: string[], claims: string[], schemaGlobs: string[]): string[] {
+  return changed.filter(
+    (rel) => claims.some((claim) => claimCoversPath(claim, rel)) && schemaClaimEntries([rel], schemaGlobs).length === 0
+  );
 }
 
 /** The merge gate's findings, one group per change id (`null` for nodes with none). */
@@ -412,6 +428,20 @@ function checkExclusivity(
 }
 
 /**
+ * Whether `owner` claims an exact file directly in `file`'s folder (live, next, or a revision's
+ * added claims): then an unclaimed file there extends it rather than starting a new behavior.
+ */
+function claimsFolderOf(owner: MindPlanNode, file: string): boolean {
+  const folder = path.posix.dirname(file);
+  const claims = [
+    ...(owner.implements ?? []),
+    ...(owner.next?.implements ?? []),
+    ...(owner.open_revisions ?? []).flatMap((r) => r.implements.add),
+  ];
+  return claims.some((c) => !c.endsWith("/") && !/[*?]/.test(c) && path.posix.dirname(c) === folder);
+}
+
+/**
  * Every in-universe file needs a claim in a current or next slot of a non-retired node.
  * A retired node's claim does not count (the leftovers rule Blocks that file too).
  */
@@ -427,10 +457,23 @@ function checkCoverage(
     if (claimantsOf(buckets, file).length > 0) continue;
     // A retired claim on a file on disk is the leftovers rule's failure; do not report it twice.
     if (buckets.retired.has(file)) continue;
-    const owner = probableOwner(graph, file);
-    const hint = owner
-      ? ` Probable owner by path: "${owner.id}". ${formatCoverageFix(coverageFix(graph, root, owner, file, fixCtx))}`
-      : " No node claims a nearby path: create or pick the owning node, then claim the file with set_implementation_files.";
+    const nearest = probableOwner(graph, file);
+    // A node with a file in this folder owns it, whoever ranks nearest by path.
+    const folderOwner =
+      nearest && claimsFolderOf(nearest, file)
+        ? nearest
+        : graph.nodes.find(
+            (n) => isPipelineNodeType(n.type) && !RETIRED_STATES.has(n.state) && claimsFolderOf(n, file)
+          ) ?? null;
+    const owner = folderOwner ?? nearest;
+    const claimFix = owner ? formatCoverageFix(coverageFix(graph, root, owner, file, fixCtx)) : "";
+    // Beside an owner's own files: the file extends it. In a folder no node has a file in: likely a new behavior.
+    const hint =
+      folderOwner
+        ? ` Probable owner by path: "${folderOwner.id}". ${claimFix}`
+        : ` No node has a file in its folder. A new behavior is a new node: create_node({ id, type, title, description }), link it, ` +
+          `then set_implementation_files({ node_id, add: ["${file}"] }).` +
+          (owner ? ` If it extends "${owner.id}" instead: ${claimFix}` : "");
     fail(
       failures,
       `Coverage: "${file}" is inside the configured sources but no node claims it in a current or next slot.${hint}`
@@ -874,6 +917,28 @@ function mergeLine(node: MergeNode, change: string | null, base: string | undefi
       `or move it back with new_status: "fixing" if the fix is unfinished.`
     );
   }
+  if (node.stale && node.slot === "revision") {
+    const files = node.files ?? [];
+    const shown = files.slice(0, MERGE_FILE_CAP).map((f) => `"${f}"`).join(", ");
+    const more = files.length > MERGE_FILE_CAP ? ` (+${files.length - MERGE_FILE_CAP} more)` : "";
+    return (
+      `Blocked: Merge: ${where}: claimed files changed against ${base ?? "the base"} but its revision was never started: ${shown}${more}. ` +
+      `Write the revision so it matches the code and ship it: ${mergeShipCall(node, change)}; ` +
+      `or discard_next({ node_id: "${node.id}", change: "${change ?? "<change-id>"}" }) and patch the live text in place.`
+    );
+  }
+  if (node.stale) {
+    const files = node.files ?? [];
+    const shown = files.slice(0, MERGE_FILE_CAP).map((f) => `"${f}"`).join(", ");
+    const more = files.length > MERGE_FILE_CAP ? ` (+${files.length - MERGE_FILE_CAP} more)` : "";
+    return (
+      `Blocked: Merge: "${node.id}" (${node.type}, ${node.state}): claimed files changed against ${base ?? "the base"} ` +
+      `but its territory did not: ${shown}${more}. Update the node so it matches the code: ` +
+      `open_next({ node_id: "${node.id}", change: "<change-id>" }) and ship it when its contract changed, ` +
+      `or patch_node_territory({ node_id: "${node.id}", ... }) in place; when its text still holds, any patch that confirms it counts. ` +
+      `A bug fix is exempt once its Bug (affects "${node.id}") is updated on the branch.`
+    );
+  }
   if (node.state === "in-progress") {
     const files = node.files ?? [];
     const shown = files.slice(0, MERGE_FILE_CAP).map((f) => `"${f}"`).join(", ");
@@ -903,32 +968,49 @@ function checkMerge(
   level: MergeLevel,
   base: string | undefined,
   probe: DirtyProbe,
-  failures: string[]
+  failures: string[],
+  info: string[]
 ): MergeReport {
   const strict = level === "strict";
   const report: MergeReport = { level: strict ? "strict" : "default", changes: [] };
   const found: { change: string | null; node: MergeNode }[] = [];
 
+  // The paths changed against the base: strict judges in-progress work by them, and every level
+  // judges shipped nodes edited in place whose territory did not change (stale territory).
   let changed: string[] | null = null;
-  if (strict) {
-    const baseRef = base ?? defaultBaseRef(root);
-    report.base = base ?? "the default branch";
-    if (!baseRef) {
+  const baseRef = base ?? defaultBaseRef(root);
+  report.base = base ?? "the default branch";
+  if (!baseRef) {
+    if (strict) {
       fail(
         failures,
         `Merge (strict): no git base to compare against (no main or master merge base). Pass --base <ref> (run_check: base).`
       );
     } else {
-      const probed = probe(baseRef);
-      if (!("error" in probed)) {
-        changed = [...new Set([...probed.dirty.commits, ...probed.dirty.workingTree])].sort((a, b) =>
-          a.localeCompare(b)
-        );
-      } else if (!probed.repeat) {
+      info.push(`merge: no git base (no main or master merge base), so shipped nodes edited in place were not checked against their territory. Pass --base <ref> (run_check: base).`);
+    }
+  } else {
+    const probed = probe(baseRef, { quiet: !strict });
+    if (!("error" in probed)) {
+      changed = [...new Set([...probed.dirty.commits, ...probed.dirty.workingTree])].sort((a, b) =>
+        a.localeCompare(b)
+      );
+    } else if (strict) {
+      if (!probed.repeat) {
         fail(failures, `Merge (strict): git probe failed: ${probed.error} Pass --base <ref> with a ref this checkout has.`);
       }
+    } else {
+      info.push(`merge: git probe failed (${probed.error}), so shipped nodes edited in place were not checked against their territory.`);
     }
   }
+  const changedSet = new Set(changed ?? []);
+  const schemaGlobs = changed ? decisionGateSettings(loadProjectConfig(root)).schema_files : [];
+  // A bug fix is described by its Bug: a node a Bug changed on this branch affects is not stale.
+  const fixedByBug = new Set(
+    graph.nodes
+      .filter((n) => n.type === "Bug" && changedSet.has(markdownRelativePath(n, "current")))
+      .flatMap((n) => n.affects ?? [])
+  );
 
   for (const node of graph.nodes) {
     if (node.type === "Bug") {
@@ -942,6 +1024,18 @@ function checkMerge(
     }
     if (!isPipelineNodeType(node.type)) continue;
     if (RETIRED_STATES.has(node.state)) continue;
+    // A shipped node with no open revision, edited in place: its territory must have moved too.
+    if (changed && node.shipped_at && !node.next && (node.open_revisions ?? []).length === 0) {
+      if (fixedByBug.has(node.id)) continue;
+      const files = changedClaimed(changed, node.implements ?? [], schemaGlobs);
+      if (files.length > 0 && !changedSet.has(markdownRelativePath(node, "current"))) {
+        found.push({
+          change: activeChange(node) ?? null,
+          node: { id: node.id, type: node.type, state: node.state, slot: "live", files, stale: true },
+        });
+      }
+      continue;
+    }
     // Each open revision is gated on its own, under its change.
     for (const { change: revision, view } of slotViews(node)) {
       const slot = revision !== null ? "revision" : "live";
@@ -949,7 +1043,18 @@ function checkMerge(
       const change = revision ?? activeChange(view) ?? null;
       if (state === "in-review") {
         found.push({ change, node: { id: node.id, type: node.type, state, slot } });
-      } else if (state === "in-progress" && changed) {
+      } else if (
+        changed &&
+        slot === "revision" &&
+        (state === "draft" || state === "ready") &&
+        !fixedByBug.has(node.id)
+      ) {
+        // A shipped node's revision that was opened but never started does not describe code that moved.
+        const files = changedClaimed(changed, [...(node.implements ?? []), ...((view.next ? view.next.implements : view.implements) ?? [])], schemaGlobs);
+        if (files.length > 0) {
+          found.push({ change, node: { id: node.id, type: node.type, state, slot, files, stale: true } });
+        }
+      } else if (strict && state === "in-progress" && changed) {
         const claims = (view.next ? view.next.implements : view.implements) ?? [];
         const files = changed.filter((rel) => claims.some((claim) => claimCoversPath(claim, rel)));
         if (files.length > 0) {
@@ -1247,7 +1352,7 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
       changeReport = checkChange(graph, root, options.change, decisionCtx, cycles);
     }
     if (options.merge) {
-      mergeReport = checkMerge(graph, root, options.merge, options.base, probe, failures);
+      mergeReport = checkMerge(graph, root, options.merge, options.base, probe, failures, info);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

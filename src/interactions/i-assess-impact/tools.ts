@@ -22,17 +22,7 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Get blast radius",
       description:
-        "Call before changing a shipped node. " +
-        "Returns nodes that depend on the given node (transitive reverse depends_on closure), " +
-        "with hop distance, capabilities_at_risk, and affected_files grouped by owner " +
-        "({ owner_id, owner_type, via[], files[] }; via ∈ focus|dependent|exposing|importer). " +
-        "Cancelled and deprecated nodes are omitted by default; set include_retired to see them " +
-        "(BFS still traverses through retired nodes so live dependents keep true distances). " +
-        "When the focus is an Interaction, also returns reachability. " +
-        "decisions lists the active decisions held by the focus; dependent_decisions ({ count, nodes }) names the dependents that hold decisions a change would reach, and include_dependent_decisions adds their one-line entries to decisions. " +
-        "tests lists the linked test files of the focus and every owner in affected_files: the suites to run. " +
-        "A node with open revisions lists them in open_revisions ([{ change, state }]); pass change with node_id to judge that node's revision of it on the graph the change would ship into. " +
-        "Pass change instead of node_id for the merged radius of every member of a change (open revisions and shipped nodes with planned edges; members carry kind revision | planned), its planned_edges, and additivity ({ summary, new_nodes, revised, planned }): whether the change only adds nodes or reopens shipped ones, each with its fan-in.",
+        "Call before changing a shipped node. Returns its transitive dependents with hop distance, capabilities_at_risk, affected_files grouped by owner, the focus's decisions, and tests: the suites to run. Pass change instead of node_id for the merged radius of a change and its additivity (whether it only adds nodes or reopens shipped ones); change with node_id judges that node's open revision. include_retired and include_dependent_decisions widen the reply. Details: get_spec({ topic: \"get_blast_radius\" }).",
       inputSchema: {
         node_id: NODE_ID.optional().describe("The id of the node whose dependents to analyze. Or pass change."),
         change: CHANGE_ID.optional().describe("A change id: alone, merge the blast radius of all its open revisions and planned sources; with node_id, that node's revision of it."),

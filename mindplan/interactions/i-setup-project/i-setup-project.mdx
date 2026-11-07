@@ -8,7 +8,7 @@ shipped_at: 2026-10-31T20:33:29.094Z
 revisions: 1
 churn: 1
 created_at: 2026-10-31T19:40:48.412Z
-updated_at: 2026-10-31T20:33:29.094Z
+updated_at: 2026-11-07T20:06:37.362Z
 aliases:
   - "init"
   - "install"
@@ -56,6 +56,10 @@ Intended files: `src/interactions/i-setup-project/` (`handlers.ts`, `tools.ts`, 
 - `tools.ts` defines `setup_project` with `gate: false`
 
 Depends on: `f-graph-migrations`, `f-territory-store`, `f-source-index`, `f-tool-kit`.
+
+## Tool descriptions
+
+Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry. The setup guide it returns starts by telling the agent to call `get_project`, since writes wait until the seeded rules reached the session.
 
 ## Acceptance Criteria
 

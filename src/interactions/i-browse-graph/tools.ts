@@ -29,15 +29,10 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Get MindPlan graph",
       description:
-        "Call when you need the graph's nodes and edges, or a slice of them. Prefer orient_for_work for one piece of work. " +
-        "For a question about part of the graph, filter and project instead of reading every node: " +
-        'e.g. state: ["draft", "ready"] with fields: ["id", "type", "title", "change"] and edges: false lists what is planned but not built. ' +
-        "state, type, and change combine with AND; values inside one array combine with OR. " +
-        "Returns one page of the MindPlan graph assembled from <id>.mdx frontmatter: nodes sorted by id, " +
-        "the edges whose source is in the page, total_nodes, total_edges, and next_offset while nodes remain, all over the filtered set. " +
-        'edges: false leaves out edges and total_edges; an array (e.g. ["depends_on"]) keeps only those edge types. ' +
-        "open_revisions lists each open revision as { change, state } only; read one with get_node_context({ node_id, change }). " +
-        `A graph of up to ${GRAPH_PAGE_DEFAULT} nodes fits one page; walk offset = next_offset for the rest.`,
+        "Call when you need the graph's nodes and edges, or a slice of them; prefer orient_for_work for one piece of work. " +
+        `Returns one page: nodes sorted by id, the edges whose source is in the page, totals, and next_offset while nodes remain (up to ${GRAPH_PAGE_DEFAULT} nodes per page). ` +
+        "Filter with state / type / change (AND across, OR within an array), project with fields, and drop or narrow edges with edges: e.g. state: [\"draft\", \"ready\"], fields: [\"id\", \"type\", \"title\", \"change\"], edges: false lists what is planned but not built." +
+        " Details: get_spec({ topic: \"get_mindplan_graph\" }).",
       inputSchema: {
         offset: z.number().int().min(0).optional().describe("First node index (default 0)."),
         limit: z
@@ -82,10 +77,7 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "List areas",
       description:
-        "Call when you are unsure where work lands, before orient_for_work. " +
-        "Returns every Capability as one row of a compact table: { columns, rows, count } with " +
-        "[id, title, description (60 characters), interactions, interfaces, foundations, open_bugs]. " +
-        "Pick a row and pass its id as area to orient_for_work or find_related_nodes; for a question that cuts across Capabilities, search without area.",
+        "Call when you are unsure where work lands. Returns every Capability as one compact table row (id, title, short description, interaction / interface / foundation counts, open_bugs); pass a row's id as area to orient_for_work or find_related_nodes. Details: get_spec({ topic: \"list_areas\" }).",
       inputSchema: {},
     },
     () => listAreas()
@@ -96,9 +88,7 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "List decisions",
       description:
-        "Call before reshaping a design someone else chose, or to read the reasoning trail of a node or change. " +
-        "Returns { decisions, count }: one node's own decisions, every decision recorded under a change, or the whole graph's, " +
-        "each with its node, status (active or superseded), and superseded_by. Superseded entries only with include_superseded.",
+        "Call before reshaping a design someone else chose, or to read the reasoning trail of a node or change. Returns { decisions, count } for one node, one change, or the whole graph, each with its node, status, and superseded_by; superseded entries only with include_superseded. Details: get_spec({ topic: \"list_decisions\" }).",
       inputSchema: {
         node_id: NODE_ID.optional().describe("List this node's own decisions."),
         change: CHANGE_ID.optional().describe("List decisions recorded under this change id."),

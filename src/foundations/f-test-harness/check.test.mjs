@@ -39,6 +39,8 @@ const transport = new StdioClientTransport({
 });
 const client = new Client({ name: "check-test", version: "0.1.0" });
 await client.connect(transport);
+// A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+await client.callTool({ name: "get_project", arguments: {} });
 
 async function call(tool, args) {
   const res = await client.callTool({ name: tool, arguments: args });
@@ -607,6 +609,7 @@ await call("discard_next", { node_id: "i-feature" });
   });
   const c2 = new Client({ name: "check-test-scope", version: "0.1.0" });
   await c2.connect(t2);
+  await c2.callTool({ name: "get_project", arguments: {} });
   const raw2 = async (tool, args) => {
     const res = await c2.callTool({ name: tool, arguments: args });
     return { error: !!res.isError, text: res.content?.[0]?.text ?? "" };

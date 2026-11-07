@@ -34,18 +34,18 @@ const transport = new StdioClientTransport({
 });
 const client = new Client({ name: "smoke", version: "0.1.0" });
 await client.connect(transport);
+// A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+await client.callTool({ name: "get_project", arguments: {} });
 
 let failures = 0;
 
 // --- server instructions are a short reanchor pointer (initialize) ---
 {
   const expectedInstructions =
-    "Before answering any questions or writing any code for this project, call get_project and read the response. " +
-    "Follow the playbook (systems dialect) and the project description and rules it returns. " +
-    "Project rules are mandatory: before each action, call get_rules then orient_for_work. " +
-    "Before any new-feature code change, update or create the matching nodes using the plan-project skill (load it with get_skill): " +
-    "it covers every graph write (create_node, open_next, discard_next, link_nodes, unlink_nodes, patch_node_territory, " +
-    "patch_node_rules, patch_project_description, patch_project_rules, patch_config, and attachments).";
+    "Before answering any questions or writing any code for this project, call get_project and follow the playbook, description, and rules it returns. " +
+    "A new behavior is a new node. Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; " +
+    "when a change alters what existing nodes describe, update those nodes. " +
+    "Read and write mindplan/ only through these tools. Before handing work off, run_check must pass.";
   const instructions = client.getInstructions();
   if (instructions !== expectedInstructions) {
     failures++;
@@ -78,6 +78,12 @@ let failures = 0;
     failures++;
     console.log("FAIL playbook must mention get_rules, plan-project, and ship-on-merge handoff");
   } else console.log("ok   playbook mentions get_rules and plan-project");
+  const duty = "Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; when a change alters what existing nodes describe, update those nodes.";
+  const stubText = fs.readFileSync(path.join(toolRoot, "templates", "agent", "agents-stub.md"), "utf-8");
+  if (!bundledPlaybook.includes(duty) || !stubText.includes(duty) || !(client.getInstructions() ?? "").includes(duty)) {
+    failures++;
+    console.log("FAIL the planning duty must read the same in the playbook, the stub, and the server instructions");
+  } else console.log("ok   the planning duty reads the same in the playbook, the stub, and the server instructions");
   if (!bundledPlaybook.includes("run_check") || !bundledPlaybook.includes("mindplan-mcp check")) {
     failures++;
     console.log("FAIL playbook must name the run_check tool and the CLI mindplan-mcp check");
@@ -266,7 +272,7 @@ function nextTerritoryPath(...parts) {
     console.log("FAIL patch_node_rules description must lead with when to call it");
   } else console.log("ok   patch_node_rules description has when-hint");
   const orient = (listed.tools ?? []).find((t) => t.name === "orient_for_work");
-  if (!orient?.description?.startsWith("Call before each action")) {
+  if (!orient?.description?.startsWith("Call before working on a node")) {
     failures++;
     console.log("FAIL orient_for_work description must lead with when to call it");
   } else console.log("ok   orient_for_work description has when-hint");
@@ -1808,10 +1814,10 @@ const { spawnSync } = await import("child_process");
     console.log("FAIL setup_project should write { sources, exclude } by default");
   } else if (
     setup.result.pointer !== stub ||
-    !["get_project", "get_rules", "plan-project", "get_skill", "mindplan/**", "setup_project"].every((w) => stub.includes(w))
+    !["get_project", "A new behavior is a new node.", "orient_for_work", "run_check", "mindplan/**", "setup_project"].every((w) => stub.includes(w))
   ) {
     failures++;
-    console.log("FAIL setup_project pointer must be the stub, naming get_project, get_rules, plan-project, get_skill, and mindplan/**");
+    console.log("FAIL setup_project pointer must be the stub, naming get_project, the planning duty, orient_for_work, run_check, and mindplan/**");
   } else if (
     fs.existsSync(path.join(initRoot, "mindplan", "agent")) ||
     fs.existsSync(path.join(initRoot, "AGENTS.md")) ||

@@ -10,4 +10,4 @@ In Cline's settings, open **MCP Servers** and add a stdio server named `mindplan
 }
 ```
 
-Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), use the args `-y` and `mindplan-mcp@0.19` (in the settings file: `"args": ["-y", "mindplan-mcp@0.19"]`). Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).
+Without a `package.json` that pins `mindplan-mcp` (`npm install -D mindplan-mcp`), use the args `-y` and `mindplan-mcp@0.21` (in the settings file: `"args": ["-y", "mindplan-mcp@0.21"]`). Then reload MCP servers and ask your agent to **set up MindPlan** ([what happens next](README.md)).

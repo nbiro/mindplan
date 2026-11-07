@@ -26,6 +26,8 @@ const transport = new StdioClientTransport({
 });
 const client = new Client({ name: "rules-version-test", version: "0.1.0" });
 await client.connect(transport);
+// A session reads the project rules first (writes are Blocked: Rules until then), as an agent does.
+await client.callTool({ name: "get_project", arguments: {} });
 
 let failures = 0;
 function check(label, condition, detail = "") {
@@ -134,6 +136,77 @@ check(
   "changed node rules come back with text and a new version",
   capabilityAfter.rules.includes("currency") && capabilityAfter.version !== versions["j-shop"] && !capabilityAfter.unchanged
 );
+
+// --- Project rules gate and push: writes wait until the rules reached the session ---
+{
+  await call("patch_project_rules", { rules: "- Branch per change." });
+  const fresh = async () => {
+    const t = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(toolRoot, "dist/index.js")],
+      env: { ...process.env, MINDPLAN_ROOT: root },
+      stderr: "pipe",
+    });
+    const c = new Client({ name: "rules-gate-test", version: "0.1.0" });
+    await c.connect(t);
+    const r = async (tool, args) => {
+      const res = await c.callTool({ name: tool, arguments: args });
+      return { error: Boolean(res.isError), text: res.content[0].text };
+    };
+    return { c, r };
+  };
+
+  const a = await fresh();
+  const before = await a.r("create_node", { id: "j-gate", type: "Capability", title: "Gate", description: "Gate checks." });
+  check(
+    "a write before the rules reached a fresh session is Blocked: Rules naming get_project",
+    before.error && before.text.startsWith("Blocked: Rules") && before.text.includes("get_project"),
+    before.text
+  );
+  const pushed = JSON.parse((await a.r("orient_for_work", { node_id: "i-pay", depth: "rules" })).text);
+  check(
+    "the first orient of a session carries project_rules",
+    pushed.project_rules?.rules === "- Branch per change." && /^[0-9a-f]{12}$/.test(pushed.project_rules.rules_version),
+    JSON.stringify(pushed.project_rules)
+  );
+  const again = JSON.parse((await a.r("orient_for_work", { node_id: "i-pay", depth: "rules" })).text);
+  check("an orient while the rules are current carries no project_rules", !("project_rules" in again));
+  const created = await a.r("create_node", { id: "j-gate", type: "Capability", title: "Gate", description: "Gate checks." });
+  check("after the push the write passes the rules gate", !created.error, created.text);
+
+  // Another session changes the rules: this one is Blocked until they reach it again.
+  await call("patch_project_rules", { add: ["Ship at merge."] });
+  const stale = await a.r("patch_node_territory", { node_id: "j-gate", description: "Gate checks, again." });
+  check(
+    "after another session changed the rules, a write is Blocked: Rules naming get_rules",
+    stale.error && stale.text.startsWith("Blocked: Rules") && stale.text.includes("get_rules"),
+    stale.text
+  );
+  const reread = await a.r("get_rules", {});
+  check("get_rules re-reads them", reread.text.includes("Ship at merge."));
+  const passes = await a.r("patch_node_territory", { node_id: "j-gate", description: "Gate checks, again." });
+  check("after get_rules the write passes", !passes.error, passes.text);
+
+  // The next orient after a rules change carries the new text.
+  await call("patch_project_rules", { add: ["Keep it short."] });
+  const viaOrient = JSON.parse((await a.r("orient_for_work", { node_id: "j-gate", depth: "rules" })).text);
+  check("an orient after a rules change pushes the new text", viaOrient.project_rules?.rules.includes("Keep it short."));
+  // The author of a rules change holds the new text: its own next write is not Blocked.
+  await a.r("patch_project_rules", { add: ["One more."] });
+  const own = await a.r("patch_node_territory", { node_id: "j-gate", description: "Gate checks, thrice." });
+  check("the session that patched the rules is not Blocked by its own change", !own.error, own.text);
+  await a.c.close();
+
+  // get_project alone unlocks writes in a fresh session.
+  const b = await fresh();
+  await b.r("get_project", {});
+  const ok = await b.r("create_node", { id: "j-gate-b", type: "Capability", title: "Gate B", description: "Gate checks by b." });
+  check("get_project alone unlocks the rules gate", !ok.error, ok.text);
+  await b.c.close();
+  // Session a changed the rules after this session read them: re-read, then clear them.
+  await call("get_rules", {});
+  await call("patch_project_rules", { rules: "" });
+}
 
 await client.close();
 fs.rmSync(root, { recursive: true, force: true });

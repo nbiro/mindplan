@@ -9,6 +9,7 @@ import { blocked } from "../../foundations/f-compiler-rules/rules.js";
 import * as path from "path";
 import {
   changedFiles,
+  projectRulesPush,
 } from "../../foundations/f-plan-writes/writes.js";
 
 export function patchProjectDescription(args: {
@@ -89,6 +90,8 @@ export function patchProjectRules(args: {
     next = entries.map((e) => e.join("\n").replace(/\s+$/, "")).join("\n");
   }
   const result = writeProjectBrief({ rules: next });
+  // The author holds the text it just wrote: count it as served, so its own next write is not Blocked: Rules.
+  projectRulesPush();
   return {
     path: result.path,
     description: result.description,

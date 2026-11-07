@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:22:44.501Z
 revisions: 6
 churn: 5.872
 created_at: 2026-10-31T11:58:03.620Z
-updated_at: 2026-11-03T17:07:42.652Z
+updated_at: 2026-11-07T20:06:37.268Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -65,6 +65,10 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-
 `rebase_revision({ node_id, change })` rebases one open revision onto current live with the same section-hash rule ship uses (untouched sections carry, both-edited ones become conflicts), for the case where live changed without a ship of a sibling, such as after a git merge brought another branch's ship. It reports `{ conflicts, readiness_reset? }`.
 
 `resolve_conflict` names a section conflict by its level-2 heading (a bare heading gets `## `) or by `"_preamble"` for the text above the first heading, which is kept as given. Taking `live` or `text` for a section the revision lacks inserts it where a rebase would put it: a `_preamble` at the top. `take: "text"` holding a level-2 heading outside fences (any for `_preamble`, any beyond the section's own) is Blocked. A resolution that changes the revision's text, scalars, or claims is a contract write: a ready revision goes back to draft (`readiness_reset`), and an in-review one stays in review, and the relied-on build-item guard runs on the resolved body.
+
+## Tool descriptions
+
+Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
 
 ## Acceptance Criteria
 

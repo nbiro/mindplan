@@ -4,7 +4,8 @@
  * refresh, and dropping a change's planned edges when a write closes it. Owned by f-plan-writes.
  */
 
-import { revisionSummaries as readSummaries } from "../../foundations/f-plan-views/views.js";
+import { revisionSummaries as readSummaries, rulesVersion } from "../../foundations/f-plan-views/views.js";
+import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import { openChanges, revisionFor } from "../../foundations/f-revision-model/index.js";
 import { writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
@@ -28,7 +29,9 @@ import { DEFAULT_FIND_LIMIT, findRelatedNodes, refreshSearchIndex } from "../../
 import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js";
 import {
   assertOriented,
+  assertProjectRulesServed,
   orientationGateEnabled,
+  pushProjectRules,
   reachingRules,
   recordOriented,
   rulesFingerprint,
@@ -46,6 +49,28 @@ export function gateWrite(
 ): void {
   if (!orientationGateEnabled()) return;
   assertOriented(graph ?? loadGraph(), ids, tool, opts);
+}
+
+/** The project rules as `{ path, rules, rules_version }` (mindplan/project.md). */
+function projectRulesBrief(): { path: string | null; rules: string; rules_version: string } {
+  const brief = loadProjectBrief();
+  return { path: brief.path, rules: brief.rules, rules_version: rulesVersion(brief.rules) };
+}
+
+/**
+ * Blocked: Rules unless the project rules reached this session at their current version
+ * (`f-orientation-ledger`). The MCP entry point runs it before every gated write tool. Free when
+ * the gate is off (the CLI, or MINDPLAN_ORIENT_GATE=off).
+ */
+export function projectRulesGate(tool: string): void {
+  if (!orientationGateEnabled()) return;
+  assertProjectRulesServed(projectRulesBrief().rules_version, tool);
+}
+
+/** `{ project_rules }` when the rules are missing from this session or changed since; else `{}`. */
+export function projectRulesPush(): Record<string, unknown> {
+  if (!orientationGateEnabled()) return {};
+  return pushProjectRules(projectRulesBrief());
 }
 
 /**

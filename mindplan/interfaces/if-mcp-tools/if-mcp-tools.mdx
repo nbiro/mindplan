@@ -2,13 +2,13 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface: mounts its actions' thirty-seven tools in a fixed order behind the version gate, each with an optional graph root, with annotations from one tool kind, compact JSON plus structuredContent, small write results, and node-scoped drift on reads."
+description: "MCP stdio Interface: mounts its actions' thirty-seven tools in a fixed order behind the version gate and, for writes, the project rules gate, each with an optional graph root and annotations from one tool kind; compact JSON results, small writes, node-scoped drift."
 state: stable
-shipped_at: 2026-11-03T12:59:23.927Z
-revisions: 32
-churn: 5.927
+shipped_at: 2026-11-07T20:32:46.890Z
+revisions: 33
+churn: 6.365
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-11-03T12:59:23.927Z
+updated_at: 2026-11-07T20:32:46.890Z
 split_at: 26
 split_into:
   - i-assess-impact
@@ -27,6 +27,7 @@ split_into:
 depends_on:
   - f-graph-migrations
   - f-mcp-runtime
+  - f-plan-writes
   - f-territory-store
   - f-tool-kit
 exposes:
@@ -89,6 +90,8 @@ The entry point mounts; it defines no tool. Each exposed action owns its tools i
 
 - **Mounting.** `registerMindPlanTools(server)` collects every exposed action's `TOOLS` (`i-orient-plan`, `i-assess-impact`, `i-read-brief`, `i-browse-graph`, `i-change-status`, `i-shape-graph`, `i-edit-territory`, `i-revise-node`, `i-claim-files`, `i-record-decision`, `i-edit-brief`, `i-check-integrity`, `i-export-map`, `i-setup-project`, `i-upgrade-graph`) and registers them in `TOOL_ORDER`: the order `tools/list` has always shown, with `get_skill` after `get_spec` and `setup_project`, `upgrade_project` last. Two actions defining one tool name, or a name missing from the order, throws at startup. Thirty-three tools
 - **Version gate.** `mount` calls `versionGate()` (`f-graph-migrations`) inside the guarded envelope before the handler of every tool whose config does not say `gate: false`, so its `Blocked: Version` returns as an ordinary error result. The ungated tools are `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check` (which reports the same failure itself), `setup_project`, and `upgrade_project`
+- **Project rules gate.** After the version gate, `mount` runs `projectRulesGate(tool)` (`f-plan-writes`) before the handler of every tool whose `kind` is `write` or `destructive` and whose config does not say `gate: false` (`setup_project` and `upgrade_project` stay free): `Blocked: Rules` until the project rules reached this session, returned as an ordinary error result like the version gate
+- **Lean descriptions.** Each description says when to call the tool, what it does, and its key parameters; option mechanics live in the tool's SPEC §8 entry (`get_spec({ topic: "<tool>" })`)
 - **Tool kinds and annotations.** `mount` derives both the `guarded` options (`drift` / `write`) and the MCP `annotations` from the tool's `kind` (`ToolKind`, `f-tool-kit`): `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`. A tool with `drift: false` (`run_check`, `get_project`, `get_rules`, `get_spec`, `get_skill`, `setup_project`, `upgrade_project`) never carries drift
 - **Result envelope.** `ok(payload)` returns compact JSON text and, for a plain object, `structuredContent: payload`; string payloads stay text-only; errors are `isError: true` with the message; no `outputSchema`
 - **Drift and verbose.** Read results attach a non-empty drift report scoped to the node (`withDrift`, `f-mcp-runtime`); a write carries it only with `verbose: true`, so a default write stays small
