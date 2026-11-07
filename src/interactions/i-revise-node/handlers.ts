@@ -17,6 +17,7 @@ import {
   resolveConflict as resolveRevisionConflict,
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
+import { isRevisionReason, REVISION_REASONS } from "../../foundations/f-domain-model/types.js";
 import { PREAMBLE_SECTION, conflictLabel, resolveRevisionChange, revisionFor } from "../../foundations/f-revision-model/index.js";
 import { hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
@@ -29,7 +30,6 @@ import {
 } from "../../foundations/f-compiler-rules/rules.js";
 import { plannedEdgeProblems } from "../../foundations/f-compiler-rules/planned.js";
 import { changeCycleGate } from "../../foundations/f-compiler-rules/change-cycles.js";
-import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
   changedFiles,
   gateWrite,
@@ -37,10 +37,22 @@ import {
   readinessFields,
   refreshPersistedMap,
   revisionReadinessReset,
+  rulesBeforeWrite,
   rulesReachingAfterWrite,
   territoryPath,
   withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
+
+/** The refactor a hotspot's diagnosis names, as the alternative a decision must say it rejected. */
+function rejectedRefactor(nodeId: string, kind: "invert" | "split" | "unrecorded"): string {
+  if (kind === "invert") {
+    return `Invert "${nodeId}": move its per-node edges onto one registry it depends on, so a new node changes only the registry: <why it lost>`;
+  }
+  if (kind === "split") {
+    return `Split "${nodeId}" so this feature revises one part and the rest stays closed: <why it lost>`;
+  }
+  return `A new node that depends_on "${nodeId}", or a split or inversion of it: <why it lost>`;
+}
 
 export function openNext(args: {
   verbose?: boolean;
@@ -49,22 +61,32 @@ export function openNext(args: {
   description?: string;
   change?: string;
   change_ref?: string;
+  reason?: string;
 }): Record<string, unknown> {
   const { node_id, title, description } = args;
   const change = args.change || undefined;
   if (!change) {
     throw blocked(
       `open_next needs change: every revision of a shipped node belongs to one change id (a slug, e.g. "add-export"). ` +
-        `Retry with open_next({ node_id: "${node_id}", change: "<change-id>" }).`
+        `Retry with open_next({ node_id: "${node_id}", change: "<change-id>", reason }).`
     );
   }
+  if (!isRevisionReason(args.reason)) {
+    throw blocked(
+      `open_next needs reason: why this revision reopens "${node_id}", one of ${REVISION_REASONS.join(", ")} ` +
+        `(behavior: new or changed behavior it owns; wiring: an edge added or removed for another node's sake; ` +
+        `fix: a defect in what it promised; platform: a framework or dependency upgrade; text: wording only; ` +
+        `refactor: a split or inversion). Only behavior and wiring count toward its hotspot rate.`
+    );
+  }
+  const reason = args.reason;
   gateWrite(null, [node_id], "open_next");
   validateChangeInput(args);
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
-  const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()));
+  const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()), reason);
   // A planned depends_on that closes a cycle with another change's edges could never ship.
   const plannedDeps = (node.planned ?? []).filter((e) => e.change === change && e.type === "depends_on");
   if (plannedDeps.length > 0) {
@@ -85,7 +107,7 @@ export function openNext(args: {
   const applied = planned
     .filter((e) => !(node[e.type] ?? []).includes(e.target))
     .map((e) => `${node_id} -${e.type}-> ${e.target}`);
-  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, node_id) : null;
+  const rulesBefore = rulesBeforeWrite(graph, node_id);
   // A leftover mirror file from before 0.8.0 is not a revision: opening one removes it.
   const removedMirror = removeLegacyMirror(node);
   const opened = openRevision(node, change, {
@@ -93,6 +115,7 @@ export function openNext(args: {
     title,
     description,
     plannedAdds: planned,
+    reason,
   });
   refreshPersistedMap();
   const rel = entityRelativePath(node);
@@ -108,6 +131,7 @@ export function openNext(args: {
       title: revision.title,
       description: revision.description,
       opened_at: revision.opened_at,
+      reason,
       ...(revision.change_ref ? { change_ref: revision.change_ref } : {}),
     },
     folder: rel,
@@ -116,16 +140,16 @@ export function openNext(args: {
     ...(applied.length ? { applied_planned: applied } : {}),
     ...(openClosed
       ? {
-          warnings: [openClosed],
+          warnings: [openClosed.warning],
+          diagnosis: openClosed.hotspot.diagnosis,
+          // Do the refactor the diagnosis names (a revision with reason "refactor"), or record why not.
           decision_prompt: {
             tool: "record_decision",
             args: {
               node_id,
-              decision: "<one sentence: why this revision reopens the node>",
-              alternatives: [
-                `A new node that depends_on "${node_id}" and adds the behavior without revising it: <why it lost>`,
-              ],
-              why: "<the constraint that makes revising it the right call>",
+              decision: "<one sentence: why this revision reopens the node as it is>",
+              alternatives: [rejectedRefactor(node_id, openClosed.hotspot.diagnosis.kind)],
+              why: "<the constraint that makes revising it now the right call>",
               change,
             },
           },

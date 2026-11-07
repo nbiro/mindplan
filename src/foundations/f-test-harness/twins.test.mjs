@@ -340,7 +340,7 @@ check(
 
 // --- open_next creates a revision folder; ship deletes it and lists what it deleted ---
 {
-  const opened = await call("open_next", { node_id: "f-core", change: "twins" });
+  const opened = await call("open_next", { reason: "behavior", node_id: "f-core", change: "twins" });
   const revText = exists(revOf("foundations", "f-core", "twins")) ? read(revOf("foundations", "f-core", "twins")) : "";
   check(
     "open_next creates revisions/<change>/<id>.mdx as a draft with unticked Atomic Ops and lists it",
@@ -393,7 +393,7 @@ check(
 
 // --- discard_next deletes the revision folder with its attachments ---
 {
-  await call("open_next", { node_id: "i-a", change: "drop" });
+  await call("open_next", { reason: "behavior", node_id: "i-a", change: "drop" });
   write(`${revDirOf("interactions", "i-a", "drop")}/attachments/note.txt`, "revision note\n");
   const discarded = await call("discard_next", { node_id: "i-a" });
   check(
@@ -440,7 +440,7 @@ check(
       read(nextOf("foundations", "f-core")) === mirrorBefore,
     JSON.stringify(livePatch)
   );
-  const opened = await call("open_next", { node_id: "f-core", change: "again" });
+  const opened = await call("open_next", { reason: "behavior", node_id: "f-core", change: "again" });
   const text = read(revOf("foundations", "f-core", "again"));
   check(
     "open_next deletes a leftover mirror, lists it, and opens a draft revision",

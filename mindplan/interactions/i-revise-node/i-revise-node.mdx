@@ -4,11 +4,11 @@ type: Interaction
 title: "Revise a shipped node"
 description: "Agent opens a revision of a shipped node, with its planned edges applied and a hotspot warning when it ships far above the graph's pace, or discards the revision."
 state: stable
-shipped_at: 2026-11-03T11:22:44.501Z
-revisions: 6
-churn: 5.872
+shipped_at: 2026-11-07T22:43:27.263Z
+revisions: 7
+churn: 6.295
 created_at: 2026-10-31T11:58:03.620Z
-updated_at: 2026-11-07T20:06:37.268Z
+updated_at: 2026-11-07T22:43:27.263Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -43,8 +43,9 @@ Agent calls `open_next` when a shipped node's contract changes, before editing t
 Intended files: `src/interactions/i-revise-node/` (`handlers.ts`, `tools.ts`).
 
 - **open_next** validates Rule 10 and writes `<id>.next.mdx` from the live file in state `draft` (optional title and description) with a fresh list of unticked default Atomic Ops and an empty `next-attachments/`; takes `change` / `change_ref`, written to the next file only (the live file carries no change id)
-- **Planned edges.** With a change, open_next is Blocked while any of that change's planned entries on the node is no longer legal (with the `unlink_nodes` fix); otherwise it applies them to the next slot and returns `applied_planned` (and the `rules` they bring)
-- **Hotspot warning.** When the node is a hotspot counting the revision it opens (`openClosedWarning`, `f-compiler-rules`), the result carries `warnings` and `decision_prompt`, the `record_decision` call naming a new node that depends on it as the alternative. It never Blocks
+- **Planned edges.** With a change, open_next is Blocked while any of that change's planned entries on the node is no longer legal (with the `unlink_nodes` fix); otherwise it applies them to the next slot and returns `applied_planned` (and `rules` with the entries they add or change, light past distance 1)
+- **Reason.** `open_next` requires `reason` (`behavior`, `wiring`, `fix`, `platform`, `text`, `refactor`); a missing or unknown one is Blocked with what each means. It is written to the revision file and returned in `revision.reason`
+- **Hotspot warning.** When the reason counts (`behavior`, `wiring`) and the node is a hotspot counting the revision it opens (`openClosedWarning`, `f-compiler-rules`), the result carries `warnings`, `diagnosis`, and `decision_prompt`, the `record_decision` call naming the diagnosed refactor (the registry inversion, the split, or for an unknown diagnosis a new node that depends on it or a split or inversion) as the alternative. A `fix`, `platform`, `text`, or `refactor` revision never warns. It never Blocks
 - **discard_next** deletes `<id>.next.mdx` and `next-attachments/`, leaves the live file untouched, and drops its change's planned edges when it was the change's last revision (`withChangeCleanup`, `f-plan-writes`)
 - Orientation gate on `node_id`
 
@@ -75,7 +76,8 @@ Each tool's description says when to call it, what it does, and its key paramete
 - `open_next` creates `<id>.next.mdx` with unticked default ops; `discard_next` deletes it and `next-attachments/` and lists each deleted path; no write creates a `state: mirror` file
 - `open_next` with a change writes it to the next file only; the result has no `replaced_change`
 - `open_next` with a change adds its planned edges to the next slot and returns `applied_planned`; a planned edge whose target was cancelled Blocks `open_next` with the `unlink_nodes` fix
-- `open_next` on a node shipping far above the graph's median returns `warnings` and `decision_prompt`; on a node at the graph's pace it returns neither
+- `open_next` with a counted reason on a node shipping far above the graph's median returns `warnings`, `diagnosis`, and `decision_prompt`; on a node at the graph's pace, or with a `platform` reason, it returns none of them
+- `open_next` without `reason` is Blocked naming every reason; the revision file records the reason it was given
 - Verified via `npm test`
 
 ## Attachments

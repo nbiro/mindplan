@@ -251,7 +251,7 @@ function runCheck(root) {
   }
   await must("create_node", { id: "f-new", type: "Foundation", title: "New", description: "Infra — new", role: "infra", change: "live" });
   // f-live also has an open revision: older releases left the label on live beside it.
-  await must("open_next", { node_id: "f-live", change: "rev" });
+  await must("open_next", { reason: "behavior", node_id: "f-live", change: "rev" });
   await client.close();
   client = undefined;
   label("f-live", "live");

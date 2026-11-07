@@ -10,6 +10,7 @@ import {
   isPipelineNodeType,
   type MindPlanGraph,
   type MindPlanNode,
+  type RuleEntry,
 } from "../../foundations/f-domain-model/types.js";
 import { projectRoot, summarizeGraphNode } from "../../foundations/f-territory-store/store.js";
 import { expandClaims } from "../../foundations/f-source-index/claims.js";
@@ -266,4 +267,62 @@ export function blastRadiusDecisions(
  */
 export function rulesVersion(text: string): string {
   return createHash("sha256").update(text, "utf-8").digest("hex").slice(0, 12);
+}
+
+/** A rule source at most this far from the focus comes back with its text by default. */
+export const FULL_RULES_DISTANCE = 1;
+
+/** A one-line entry's `first` rule is cut to this many characters. */
+const FIRST_RULE_CHARS = 100;
+
+/** The top-level rules of a rules text: each `- ` / `* ` bullet, or the whole text when it has none. */
+function ruleHeads(text: string): string[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const bullets = lines.filter((l) => /^[-*] /.test(l)).map((l) => l.slice(2).trim());
+  if (bullets.length > 0) return bullets;
+  const first = lines.find((l) => l.trim() !== "");
+  return first ? [first.trim()] : [];
+}
+
+/**
+ * Rule entries as replies return them, each with its `version`. An entry whose version the caller
+ * already holds (`known[node_id]`) leaves out its text and says `unchanged: true`. A source further
+ * than `FULL_RULES_DISTANCE` from the focus is one line, `{ ..., version, first, count }` (its first
+ * rule, cut, and how many it has), unless `all`. Depends only on the graph, never on what an earlier
+ * reply carried.
+ */
+export function ruleEntriesForReply(
+  entries: RuleEntry[],
+  opts: { all?: boolean; known?: Record<string, string> } = {}
+): Record<string, unknown>[] {
+  return entries.map((entry) => {
+    const version = rulesVersion(entry.rules);
+    const { rules: text, ...rest } = entry;
+    if (opts.known?.[entry.node_id] === version) return { ...rest, version, unchanged: true };
+    if (opts.all || entry.distance <= FULL_RULES_DISTANCE) return { ...entry, version };
+    const heads = ruleHeads(text);
+    const head = heads[0] ?? "";
+    const first = head.length > FIRST_RULE_CHARS ? `${head.slice(0, FIRST_RULE_CHARS - 1).trimEnd()}…` : head;
+    return { ...rest, version, first, count: heads.length };
+  });
+}
+
+/**
+ * A rules block `{ node_id, entries, more? }`: `ruleEntriesForReply`, plus `more` naming the flag
+ * that returns the text when any entry came back as one line.
+ */
+export function rulesBlock(
+  nodeId: string,
+  entries: RuleEntry[],
+  opts: { all?: boolean; known?: Record<string, string> } = {}
+): Record<string, unknown> {
+  const out = ruleEntriesForReply(entries, opts);
+  const lines = out.filter((e) => "first" in e).length;
+  return {
+    node_id: nodeId,
+    entries: out,
+    ...(lines > 0
+      ? { more: `${lines} rule source(s) past distance ${FULL_RULES_DISTANCE} are one line each; include_inherited_rules: true returns their text.` }
+      : {}),
+  };
 }

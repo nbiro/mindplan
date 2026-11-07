@@ -57,7 +57,6 @@ import {
 import { writeRevisionDelta } from "../../foundations/f-territory-store/revisions.js";
 import { validatePlannedLink } from "../../foundations/f-compiler-rules/planned.js";
 import { assertNoChangeCycle } from "../../foundations/f-compiler-rules/change-cycles.js";
-import { orientationGateEnabled, rulesFingerprint } from "../../foundations/f-orientation-ledger/ledger.js";
 import {
   revisionReadinessResult,
   changedFiles,
@@ -66,6 +65,7 @@ import {
   readinessFields,
   readinessResult,
   refreshPersistedMap,
+  rulesBeforeWrite,
   rulesReachingAfterWrite,
   syncNodes,
   territoryPath,
@@ -180,7 +180,7 @@ export function linkNodes(args: {
     assertAcyclicDependsOn(graph, source_id, target_id);
   }
   gateWrite(graph, [source_id], "link_nodes");
-  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source_id) : null;
+  const rulesBefore = rulesBeforeWrite(graph, source_id);
 
   const writeSlot = edgeWriteSlot(source, edge_type);
   const existingOnSlot =
@@ -268,7 +268,7 @@ function linkOnRevision(
     assertAcyclicDependsOn(revisionGraph(graph, change), source.id, target.id);
   }
   gateWrite(graph, [source.id], "link_nodes");
-  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source.id) : null;
+  const rulesBefore = rulesBeforeWrite(graph, source.id);
   if ((withRevision(source, change).next?.[type] ?? []).includes(target.id)) {
     throw blocked(`edge ${source.id} -${type}-> ${target.id} already exists in revision "${change}".`);
   }
@@ -310,7 +310,7 @@ function unlinkOnRevision(
     throw blocked(`no edge exists between "${source.id}" and "${target_id}" in revision "${change}".`);
   }
   gateWrite(graph, [source.id], "unlink_nodes");
-  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source.id) : null;
+  const rulesBefore = rulesBeforeWrite(graph, source.id);
   const files: string[] = [];
   for (const type of types) {
     const d = revisionFor(source, change)!.edges[type] ?? emptyDelta();
@@ -392,7 +392,7 @@ export function unlinkNodes(args: {
   }
   findNode(graph, target_id);
   gateWrite(graph, [source_id], "unlink_nodes");
-  const rulesBefore = orientationGateEnabled() ? rulesFingerprint(graph, source_id) : null;
+  const rulesBefore = rulesBeforeWrite(graph, source_id);
   const before = graph.edges.length;
   graph.edges = graph.edges.filter(
     (e) => !(e.source === source_id && e.target === target_id)

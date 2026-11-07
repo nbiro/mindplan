@@ -292,7 +292,7 @@ await foundation("f-dep");
   );
   const labeled = await blocked("set_test_files", { node_id: "f-bare", files: [], replace: true, change: "c-tests" });
   check("change on a shipped node with no open next is Blocked", labeled?.includes("needs no change id"), String(labeled));
-  await call("open_next", { node_id: "f-dep", change: "c-tests" });
+  await call("open_next", { reason: "behavior", node_id: "f-dep", change: "c-tests" });
   const merged = await call("get_blast_radius", { change: "c-tests" });
   check(
     "the change blast radius merges its members' tests",
@@ -304,7 +304,7 @@ await foundation("f-dep");
 
 // --- an open revision: a tests delta on the revision file, kept through body and claim writes, applied at ship ---
 {
-  await call("open_next", { node_id: "f-core", change: "c-core" });
+  await call("open_next", { reason: "behavior", node_id: "f-core", change: "c-core" });
   const liveBefore = testsIn(liveOf("f-core"));
   // Without change, test links are evidence on live even while a revision is open.
   const onLive = await call("set_test_files", { node_id: "f-core", add: ["tests/dep.test.mjs"] });
@@ -355,7 +355,7 @@ await foundation("f-dep");
 
 // --- discard keeps the live list; an empty list removes the field ---
 {
-  await call("open_next", { change: "rev-f-dep", node_id: "f-dep" });
+  await call("open_next", { reason: "behavior", change: "rev-f-dep", node_id: "f-dep" });
   await call("set_test_files", { node_id: "f-dep", change: "rev-f-dep", files: ["tests/dep.test.mjs", "tests/core.test.mjs"], replace: true });
   await call("discard_next", { node_id: "f-dep" });
   check(

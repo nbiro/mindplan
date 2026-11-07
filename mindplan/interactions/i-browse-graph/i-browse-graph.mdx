@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T08:20:37.238Z
 revisions: 4
 churn: 3.826
 created_at: 2026-10-31T11:58:04.820Z
-updated_at: 2026-11-07T20:06:36.596Z
+updated_at: 2026-11-07T22:33:28.800Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -47,7 +47,7 @@ Intended files: `src/interactions/i-browse-graph/` (`handlers.ts`, `tools.ts`).
   - Filtering happens before paging: nodes are filtered, then sorted by id, then sliced, so `total_nodes`, `offset`, `limit`, and `next_offset` describe the filtered set
   - `edges` keeps its rule (the edges whose source is in the page); `total_edges` counts the edges whose source is in the filtered set (with no filter, every edge, as before)
 - **Edge selection.** `edges`: `true` (default; today's output), `false` (the reply carries neither `edges` nor `total_edges`), or an array of edge types (`EDGE_TYPES`: belongs_to, depends_on, exposes, leads_to, affects, mounts; OR within) keeping only edges of those types whose source is in the page, with `total_edges` counting those types over the filtered set. An unknown type fails before any node is read with `Blocked: get_mindplan_graph edges: unknown edge type "<name>". Valid edge types: <list>.` Node filtering, sorting, and paging never depend on `edges`
-- **Projection.** `fields`: an array of node record fields to return (e.g. `["id", "type", "title", "change"]`); `id` is always included, and each node carries only the listed fields it has. The valid names are `GRAPH_NODE_FIELDS` (the keys of a node record, `MindPlanNode`); an unknown name fails before any node is read with `Blocked: get_mindplan_graph fields: unknown field "<name>". Valid fields: <list>.` Projection never changes which nodes or edges come back
+- **Projection.** `fields`: an array of node record fields to return (e.g. `["id", "type", "title", "change"]`); `id` is always included, and each node carries only the listed fields it has. The valid names are `GRAPH_NODE_FIELDS` (the keys of a node record, `MindPlanNode`, including the rate's parts `churn_behavior` and `churn_wiring`; a compile-time check fails when the type gains a key the list lacks); an unknown name fails before any node is read with `Blocked: get_mindplan_graph fields: unknown field "<name>". Valid fields: <list>.` Projection never changes which nodes or edges come back
 - `list_areas()` returns `{ columns, rows, count }`, a row per active Capability: id, title, description cut to 60 characters, and counts of its active Interactions, the Interfaces exposing them, the Foundations they depend on, and open Bugs
 - `list_decisions({ node_id? | change? , include_superseded? })` returns `{ decisions, count }` for one node, one change, or the whole graph, each with node, status, and `superseded_by`; superseded entries only with `include_superseded`
 - Reads; no orientation gate

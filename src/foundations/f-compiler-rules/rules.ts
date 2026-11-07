@@ -234,7 +234,7 @@ export function assertPipelineTerritoryScalarsEditable(
   if (slot === "next") {
     if (!node.next) {
       throw blocked(
-        `cannot edit ${field} on next: "${node.id}" has no open revision. Open one with open_next({ node_id: "${node.id}", change }).`
+        `cannot edit ${field} on next: "${node.id}" has no open revision. Open one with open_next({ node_id: "${node.id}", change, reason }).`
       );
     }
     return;

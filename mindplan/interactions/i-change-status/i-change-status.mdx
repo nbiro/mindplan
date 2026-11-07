@@ -8,7 +8,7 @@ shipped_at: 2026-11-03T11:22:44.366Z
 revisions: 6
 churn: 5.847
 created_at: 2026-10-31T11:58:03.397Z
-updated_at: 2026-11-07T20:06:36.683Z
+updated_at: 2026-11-07T22:33:15.562Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -49,8 +49,8 @@ Intended files: `src/interactions/i-change-status/` (`handlers.ts`, `tools.ts`).
 - **Scoped status.** `scope` (`all_open_updates` | `node_and_dependents` with `node_id` | `change` with `change`) and `new_status` as the target: selects the open updates, orders Foundations, Interactions, Interfaces, walks each through `draft → ready → in-progress → in-review → ship`, and validates the whole walk in memory first (`promoteInMemory` mirrors `promoteNextSlot` field for field, revision count, rate, and split included), writing nothing when a step would be Blocked. `dry_run` returns `{ dry_run, plan, blocked, warnings? }`
 - **Walk past blocked members.** `skip_blocked: true` (scoped walks only) validates each node's whole walk in memory on its own, in walk order, on top of the nodes already validated: a node whose walk would be Blocked at any step stays where it is (no partial steps), and so does every later node that cannot move without it (the gates Block them in turn). The rest walk to the target. The result (and its `dry_run`) adds `blocked: [{ node_id, step, reason }]`; when no node can move it is Blocked and writes nothing. Without it a scoped walk stays all-or-nothing
 - **Review is not skipped silently.** A scoped walk to `ship` past nodes not yet `in-review` is Blocked unless `skip_review: true`, which walks each through the in-review gate and lists `skipped_review`
-- **Ship.** First ship clears the live change id, writes `shipped_at`, `revisions`, and `churn`, and strips the Atomic Ops (`stripLiveAtomicOps`); promotion (`promoteNextSlot`) copies next over live, adds one to `revisions`, decays and bumps `churn`, and records a declared split (`splitParts`: the marked `split_into` parts, as `f-domain-model` defines them per type), resetting `churn` to 0. A ship, cancel, or promotion that closes a change drops its planned edges (`withChangeCleanup`, `f-plan-writes`); retiring a shipped node touches no change id
-- **force_unship** validates Rule 11, gives the live file fresh Atomic Ops, keeps `revisions`, stores `churn` decayed to now with `churn_at`, clears `added_claims`, deletes any next file, and restores the live file and the in-memory record when any step fails
+- **Ship.** First ship clears the live change id, writes `shipped_at`, `revisions`, and `churn`, and strips the Atomic Ops (`stripLiveAtomicOps`); promotion (`promoteNextSlot`) copies next over live, adds one to `revisions`, decays `churn` and its parts and bumps them by the revision's `reason` (`churnFieldsAfterShip`, `f-domain-model`: only `behavior`, `wiring`, or no reason add 1), and records a declared split (`splitParts`: the marked `split_into` parts, as `f-domain-model` defines them per type), resetting `churn` to 0. A ship, cancel, or promotion that closes a change drops its planned edges (`withChangeCleanup`, `f-plan-writes`); retiring a shipped node touches no change id
+- **force_unship** validates Rule 11, gives the live file fresh Atomic Ops, keeps `revisions`, stores `churn` and its parts (`churn_behavior`, `churn_wiring`) decayed to now with `churn_at` (a reship counts like a ship with no reason), clears `added_claims`, deletes any next file, and restores the live file and the in-memory record when any step fails
 - **Small results.** A single move returns `state`, `next_state`, and `changed_files` (the record only with `verbose`); a batch returns `lines`, one `id: from -> to` per node
 - Orientation gate on every node a non-dry move transitions (`gateWrite`, `f-plan-writes`); one `Blocked: Orientation` names every unoriented node, and a `scope: "change"` walk names `orient_for_work({ change })`
 

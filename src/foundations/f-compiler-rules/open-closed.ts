@@ -5,12 +5,14 @@
  */
 
 import {
+  countsTowardRate,
   decayChurn,
   isInactiveNode,
   isPipelineNodeType,
   type DecisionRecord,
   type MindPlanGraph,
   type MindPlanNode,
+  type RevisionReason,
 } from "../f-domain-model/types.js";
 import { openChanges } from "../f-revision-model/index.js";
 import type { HotspotSettings } from "../f-source-index/config.js";
@@ -94,19 +96,79 @@ export function nodeChurn(node: MindPlanNode): ChurnEntry[] {
 }
 
 /**
- * How often the node shipped lately: its stored `churn` (a decayed ship count as of its last ship)
- * decayed on to `now`, plus one while a revision is open (or about to open). 0 for a node with no
- * stored value yet.
+ * What a revision about to open counts as: `true` for one whose reason is not known (it counts),
+ * else its reason (only `behavior` and `wiring` count); `false` when none is opening.
+ */
+export type Opening = RevisionReason | boolean;
+
+/**
+ * The reason of the revision that counts toward the rate right now: the one about to open, else the
+ * first open revision whose reason counts (a revision with no reason counts, as `undefined`). `null`
+ * when none counts.
+ */
+function countedOpenReason(node: MindPlanNode, opening: Opening): RevisionReason | undefined | null {
+  if (opening !== false) {
+    const reason = opening === true ? undefined : opening;
+    if (countsTowardRate(reason)) return reason;
+  }
+  // The loader also sets `next` to the one open revision's view, so read the revisions first; a
+  // legacy next file with no revisions behind it counts as a revision with no reason.
+  if (node.open_revisions?.length) {
+    for (const r of node.open_revisions) if (countsTowardRate(r.reason)) return r.reason;
+    return null;
+  }
+  return node.next ? undefined : null;
+}
+
+/**
+ * How often the node shipped lately for reasons that say something about its design: its stored
+ * `churn` (a decayed count of `behavior`, `wiring`, and unrecorded ships as of its last ship)
+ * decayed on to `now`, plus one while a counted revision is open (or about to open). A `fix`,
+ * `platform`, `text`, or `refactor` revision never counts. 0 for a node with no stored value yet.
  */
 export function recentRate(
   node: MindPlanNode,
   settings: HotspotSettings,
   now: Date = new Date(),
-  opening = false
+  opening: Opening = false
 ): number {
   const stored = node.churn ?? 0;
   const base = node.shipped_at ? decayChurn(stored, node.shipped_at, now.toISOString(), settings.half_life_days) : 0;
-  return base + (node.next || node.open_revisions?.length || opening ? 1 : 0);
+  return base + (countedOpenReason(node, opening) !== null ? 1 : 0);
+}
+
+/** What kind of refactor a hotspot needs, read from the reasons its revisions recorded. */
+export type HotspotDiagnosis = {
+  /**
+   * `invert`: mostly `wiring`: each revision added an edge for one more node, so a split would not
+   * help; the dependency should point the other way. `split`: mostly `behavior`: it changes for
+   * several features' reasons. `unrecorded`: most of the rate predates recorded reasons.
+   */
+  kind: "invert" | "split" | "unrecorded";
+  /** The rate split by reason (decayed counts, rounded). */
+  wiring: number;
+  behavior: number;
+  unrecorded: number;
+};
+
+const round = (n: number) => Math.round(n * 10) / 10;
+
+/** The rate's parts by reason, and the refactor they point to. */
+export function diagnoseHotspot(
+  node: MindPlanNode,
+  settings: HotspotSettings,
+  now: Date = new Date(),
+  opening: Opening = false
+): HotspotDiagnosis {
+  const decayed = (v: number | undefined) =>
+    v && node.shipped_at ? decayChurn(v, node.shipped_at, now.toISOString(), settings.half_life_days) : 0;
+  const open = countedOpenReason(node, opening);
+  const wiring = decayed(node.churn_wiring) + (open === "wiring" ? 1 : 0);
+  const behavior = decayed(node.churn_behavior) + (open === "behavior" ? 1 : 0);
+  const rate = recentRate(node, settings, now, opening);
+  const unrecorded = Math.max(0, rate - wiring - behavior);
+  const kind = wiring + behavior < unrecorded ? "unrecorded" : wiring >= behavior ? "invert" : "split";
+  return { kind, wiring: round(wiring), behavior: round(behavior), unrecorded: round(unrecorded) };
 }
 
 /**
@@ -165,6 +227,8 @@ export type Hotspot = {
   /** The graph's median rate it was compared with. */
   median: number;
   fan_in: number;
+  /** The refactor its recorded reasons point to. */
+  diagnosis: HotspotDiagnosis;
   /** The most recent change groups its decisions record. */
   changes: ChurnEntry[];
   split_into?: string[];
@@ -183,7 +247,6 @@ export function hotspotContext(graph: MindPlanGraph, settings: HotspotSettings, 
 }
 
 const GROUPS_SHOWN = 3;
-const round = (n: number) => Math.round(n * 10) / 10;
 
 /**
  * A shipped, active Foundation, Interaction, or Interface whose recent ship rate is at least
@@ -195,7 +258,7 @@ export function hotspotFor(
   node: MindPlanNode,
   settings: HotspotSettings,
   ctx: HotspotContext = hotspotContext(graph, settings),
-  opening = false
+  opening: Opening = false
 ): Hotspot | null {
   if (!isPipelineNodeType(node.type) || !node.shipped_at || isRetired(node) || keepsWhole(node, ctx.superseded)) {
     return null;
@@ -208,6 +271,7 @@ export function hotspotFor(
     rate: round(rate),
     median: round(ctx.median),
     fan_in: fanIn(graph, node, ctx.index).count,
+    diagnosis: diagnoseHotspot(node, settings, ctx.now, opening),
     changes: nodeChurn(node).slice(-GROUPS_SHOWN),
     ...(node.split_into?.length ? { split_into: [...node.split_into] } : {}),
   };
@@ -276,13 +340,55 @@ function splitAdvice(h: Hotspot): string {
   );
 }
 
-/** The `hotspot:` warning, with a split that keeps imports pointing the way the import rules allow. */
+/**
+ * How to invert a node that is reopened to add one edge per new node: the per-node edges move to one
+ * registry whose only job is the list, so imports still point from the registry down to the nodes.
+ */
+function invertAdvice(h: Hotspot): string {
+  return (
+    `move those per-node edges onto one registry Foundation whose only job is the list: "${h.node_id}" ` +
+    `(and every other node wired the same way) depends on the registry alone, and the registry depends_on ` +
+    `each new node, so a new node adds one line to the registry and reopens nothing else (record keep_whole ` +
+    `on the registry: growing by one edge per node is its job)`
+  );
+}
+
+function reasonMix(d: HotspotDiagnosis): string {
+  const parts = [`wiring ${d.wiring}`, `behavior ${d.behavior}`];
+  if (d.unrecorded > 0) parts.push(`no reason recorded ${d.unrecorded}`);
+  return parts.join(", ");
+}
+
+/** The diagnosis: which refactor the recorded reasons point to, and why. */
+function diagnosisAdvice(h: Hotspot): string {
+  const d = h.diagnosis;
+  if (d.kind === "invert") {
+    return (
+      `Diagnosis: invert (rate by reason: ${reasonMix(d)}). Most of its revisions only wired it to one more ` +
+      `node, so it has one reason to change and a split would not help; ${invertAdvice(h)}. ` +
+      `Open that revision with reason "refactor".`
+    );
+  }
+  if (d.kind === "split") {
+    return (
+      `Diagnosis: split (rate by reason: ${reasonMix(d)}). Most of its revisions changed its own behavior; ` +
+      `if they serve separate features, ${splitAdvice(h)}, so a later feature revises one part and the rest ` +
+      `stays closed. Open that revision with reason "refactor".`
+    );
+  }
+  return (
+    `Diagnosis: unknown (rate by reason: ${reasonMix(d)}): most of its rate predates recorded reasons. ` +
+    `If those changes only added an edge for another node, ${invertAdvice(h)}; if they changed separate ` +
+    `behaviors, ${splitAdvice(h)}.`
+  );
+}
+
+/** The `hotspot:` warning: the pace, the refactor its recorded reasons point to, and the evidence. */
 export function hotspotWarning(h: Hotspot): string {
   return (
-    `hotspot: "${h.node_id}" ${pace(h)}, and ${dependents(h.fan_in)}; ` +
-    `it may change for several reasons. Its recent changes fall into these groups: ${describeGroups(h.changes)}. ` +
-    `If they are separate reasons, ${splitAdvice(h)}, so a later feature revises one part and the rest stays ` +
-    `closed; if it should stay one node, record that with record_decision({ keep_whole: true }).`
+    `hotspot: "${h.node_id}" ${pace(h)}, and ${dependents(h.fan_in)}. ${diagnosisAdvice(h)} ` +
+    `Recent changes: ${describeGroups(h.changes)}. ` +
+    `If it should stay one node, record that with record_decision({ keep_whole: true }).`
   );
 }
 
@@ -293,17 +399,21 @@ export function hotspotWarning(h: Hotspot): string {
 export function openClosedWarning(
   graph: MindPlanGraph,
   node: MindPlanNode,
-  settings: HotspotSettings
-): string | null {
-  if (!node.shipped_at) return null;
-  const hotspot = hotspotFor(graph, node, settings, hotspotContext(graph, settings), true);
+  settings: HotspotSettings,
+  reason?: RevisionReason
+): { warning: string; hotspot: Hotspot } | null {
+  // A fix, an upgrade, a wording change, or the refactor itself is no reason to restructure.
+  if (!node.shipped_at || !countsTowardRate(reason)) return null;
+  const hotspot = hotspotFor(graph, node, settings, hotspotContext(graph, settings), reason ?? true);
   if (!hotspot) return null;
-  return (
-    `Warning: "${node.id}" ${pace(hotspot)}, and this revision reaches its ${hotspot.fan_in} direct ` +
-    `dependent${hotspot.fan_in === 1 ? "" : "s"}. Prefer extending it: add a new node that depends_on "${node.id}", ` +
-    `or split it so this change revises a smaller part (recent changes: ${describeGroups(hotspot.changes)}). ` +
-    `If revising it is still right, record why with record_decision and name the additive alternative you rejected.`
-  );
+  return {
+    hotspot,
+    warning:
+      `Warning: "${node.id}" ${pace(hotspot)}, and this revision reaches its ${hotspot.fan_in} direct ` +
+      `dependent${hotspot.fan_in === 1 ? "" : "s"}. ${diagnosisAdvice(hotspot)} ` +
+      `Recent changes: ${describeGroups(hotspot.changes)}. ` +
+      `If revising it as it is still right, record why with record_decision, naming the refactor you rejected.`,
+  };
 }
 
 export type AdditivityRow = { id: string; state: string; fan_in: number };

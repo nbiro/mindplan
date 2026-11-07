@@ -131,7 +131,7 @@ git("commit", "-q", "-m", "base");
 
 // --- branch a ships c1 (spec); branch b holds c2 (purpose, ready) ---
 git("switch", "-q", "-c", "a");
-await call("open_next", { node_id: "f-sub", change: "c1" });
+await call("open_next", { reason: "behavior", node_id: "f-sub", change: "c1" });
 setSection(revFile("c1"), "Shared Substrate Spec", "Spec from A.");
 readyRevision("c1");
 await call("update_node_status", { scope: "change", change: "c1", new_status: "ship", skip_review: true });
@@ -141,7 +141,7 @@ git("commit", "-q", "-m", "ship c1");
 
 git("switch", "-q", "main");
 git("switch", "-q", "-c", "b");
-await call("open_next", { node_id: "f-sub", change: "c2" });
+await call("open_next", { reason: "behavior", node_id: "f-sub", change: "c2" });
 setSection(revFile("c2"), "Purpose", "Purpose from B.");
 readyRevision("c2");
 await call("update_node_status", { node_id: "f-sub", change: "c2", new_status: "ready" });

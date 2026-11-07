@@ -4,11 +4,11 @@ type: Foundation
 title: "Plan writes"
 description: "Infra — the plumbing every graph-write action shares: the orientation write gate, the project rules gate and push, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it."
 state: stable
-shipped_at: 2026-11-07T20:32:46.160Z
-revisions: 4
-churn: 3.598
+shipped_at: 2026-11-07T21:55:59.304Z
+revisions: 5
+churn: 4.593
 created_at: 2026-10-31T11:57:22.450Z
-updated_at: 2026-11-07T20:32:46.160Z
+updated_at: 2026-11-07T21:55:59.304Z
 depends_on:
   - f-compiler-rules
   - f-graph-search
@@ -44,7 +44,7 @@ Intended files: `src/foundations/f-plan-writes/` (`writes.ts`)
 - `gateWrite(graph, ids, tool)` — `Blocked: Orientation` unless each node was oriented on with the rules that reach it now (`f-orientation-ledger`); free when the gate is off
 - `projectRulesGate(tool)` — `Blocked: Rules` unless the project rules reached this session with their current version (`assertProjectRulesServed`, `f-orientation-ledger`, over the brief's `rulesVersion`); `if-mcp-tools` runs it before the handler of every gated write tool, so it also covers writes that act on no node (`create_node`, the brief and config writes); free when the gate is off
 - `projectRulesPush()` — the brief as `{ path, rules, rules_version }` through `pushProjectRules` (`f-orientation-ledger`): `{ project_rules }` when the rules are missing from or changed in this session, else `{}`; `patch_project_rules` calls it so its author holds the new rules (a write result needs no push: the gate already made the rules current before the write ran; `orient_for_work` calls `pushProjectRules` itself)
-- `rulesReachingAfterWrite(id, before)` — after a write that can change the rules reaching a node, return them as a `rules` block and count the node as oriented
+- `rulesBeforeWrite(graph, id)`, `rulesReachingAfterWrite(id, before)` — the entries reaching a node before a write that can change them (`null` while the gate is off), and after it: when they changed, a `rules` block (`rulesBlock`, `f-plan-views`) with only the entries this write added or changed (every entry for a new node, `before` null) and `removed` naming sources that no longer reach it, and the node counted as oriented; diffed within the call, nothing remembered
 - `syncNodes(nodes)`, `territoryPath(node, slot?)`, `changedFiles(paths, withMap?)`, `MAP_REL`, `refreshPersistedMap()` — persist recomputed states and build `changed_files` (the persisted map included)
 - `buildMutationAnchor`, `mutationTail(graph, id, verbose)` — the small default write result (`state`, `next_state` or `revisions: [{ change, state }]`), the record and 1-hop neighborhood only with `verbose`
 - `ReadinessReset`, `readinessFields`, `readinessResult`, `revisionReadinessResult(node, change)`, `READINESS_NOTE` — the `readiness_reset` fields a contract write on a `ready` slot returns; every contract write, `resolve_conflict` included, resets only a `ready` slot (an in-review revision stays in review)

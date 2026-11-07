@@ -3,6 +3,7 @@
  * handlers. if-mcp-tools mounts them with the shared envelope.
  */
 
+import { REVISION_REASONS } from "../../foundations/f-domain-model/types.js";
 import { z } from "zod";
 import {
   defineTool,
@@ -32,7 +33,8 @@ export const TOOLS: ToolDef[] = [
         "Opens a draft revision under change (required) while the live node keeps serving; a node may hold several, one per change. Optional title/description overrides. " +
         "Ship it with update_node_status (pass change when several are open) or abandon it with discard_next; shipping one rebases its siblings (conflicts go to resolve_conflict). " +
         "Blocked when the node is not shipped or already has that change open. " +
-        "On a hotspot the result carries decision_prompt: prefer a new node that depends_on it, or record why revising it is right. " +
+        "reason (required) says why: behavior, wiring, fix, platform, text, or refactor; only behavior and wiring count toward the node's hotspot rate. " +
+        "On a hotspot the result carries the diagnosis (invert or split) and a decision_prompt: do that refactor (a revision with reason refactor), or record why not. " +
         'Details: get_spec({ topic: "open_next" }).',
       inputSchema: {
         verbose: VERBOSE,
@@ -44,10 +46,17 @@ export const TOOLS: ToolDef[] = [
         // Optional in the schema so a missing change gets the handler's Blocked, which names the fix.
         change: CHANGE_ID.optional().describe("The change id (a slug) this revision belongs to. Required: without it the call is Blocked."),
         change_ref: CHANGE_REF,
+        // Optional in the schema so a missing reason gets the handler's Blocked, which explains each one.
+        reason: z
+          .enum(REVISION_REASONS)
+          .optional()
+          .describe(
+            "Required. Why this revision reopens the node: behavior (new or changed behavior it owns), wiring (an edge added or removed for another node's sake), fix (a defect in what it promised), platform (a framework or dependency upgrade), text (wording only), refactor (a split or inversion). Only behavior and wiring count toward its hotspot rate."
+          ),
       },
     },
-    ({ node_id, title, description, change, change_ref, verbose }) =>
-      openNext({ node_id, title, description, change, change_ref, verbose })
+    ({ node_id, title, description, change, change_ref, reason, verbose }) =>
+      openNext({ node_id, title, description, change, change_ref, reason, verbose })
   ),
   defineTool(
     "discard_next",

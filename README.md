@@ -69,7 +69,7 @@ The compiler refuses illegal moves; it does not freeze the plan.
 
 - **Rewire** — `link_nodes` / `unlink_nodes`.
 - **Retreat** — `in-review` → `in-progress` when scope or the checklist changes.
-- **Evolve** — a shipped Foundation, Interaction, or Interface keeps its id. `open_next({ node_id, change })` opens a revision, `revisions/<change>/<id>.mdx`; shipping it writes it over `<id>.mdx`. A node holds at most one open revision per change; shipping one rebases the others, and a section both changed becomes a conflict for `resolve_conflict` (SPEC §3.6).
+- **Evolve** — a shipped Foundation, Interaction, or Interface keeps its id. `open_next({ node_id, change, reason })` opens a revision, `revisions/<change>/<id>.mdx`, and records why (`behavior`, `wiring`, `fix`, `platform`, `text`, or `refactor`); shipping it writes it over `<id>.mdx`. A node holds at most one open revision per change; shipping one rebases the others, and a section both changed becomes a conflict for `resolve_conflict` (SPEC §3.6).
 - **Revise together** — classify the blast radius: sources get a revision, neighbors whose files change but whose behavior does not are edited in place, the rest are left alone. One change id groups the work, and one `update_node_status({ scope: "change", … })` call walks it, Foundations first (SPEC §3.7).
 - **Ship after a green check** — the implementer ships when `run_check` passes and the rules allow (SPEC §9.6).
 - **Decide on the record** — `record_decision` keeps the choice, the rejected alternative, and the reason on the node; the next agent gets it from `orient_for_work` (SPEC §5.13).
@@ -239,7 +239,7 @@ The server has 37 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each 
 
 - `get_project` — the dialect (playbook) plus this project's description and rules; call it first.
 - `get_rules` — re-read the mandatory project rules (after a context summary); writes are `Blocked: Rules` until they reached the session.
-- `orient_for_work` — ranked nodes for a query, or one node's rules, decisions, body, files, and blast radius; unlocks writes on that node.
+- `orient_for_work` — ranked nodes for a query, or one node's rules (own and distance-1 in full, further sources as one line), decisions, body, and files, with the blast radius at `depth: "full"`; unlocks writes on that node.
 - `find_related_nodes` — hybrid search plus the 1-hop neighborhood.
 - `list_areas` — every Capability with counts of its nodes.
 - `get_node_context` — one node's record, body, and decisions (live or a revision).
@@ -261,7 +261,7 @@ The server has 37 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each 
 - `set_test_files` — the tests that verify a node.
 - `record_decision` — a decision record on the node it shapes.
 - `put_attachment` / `remove_attachment` (`remove_attachment` is destructive) — node attachment files.
-- `open_next` / `discard_next` (`discard_next` is destructive) — open or delete a revision of a shipped node.
+- `open_next` / `discard_next` (`discard_next` is destructive) — open a revision of a shipped node with its reason, or delete one.
 - `resolve_conflict` — settle a conflict a sibling revision's ship left.
 - `rebase_revision` — carry a revision onto current live after a merge.
 - `patch_project_description` / `patch_project_rules` — the project brief.

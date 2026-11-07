@@ -192,13 +192,13 @@ try {
     JSON.stringify(changeCheck.change?.warnings)
   );
 
-  const orient = await call("orient_for_work", { node_id: "i-delete-site" });
+  const orient = await call("orient_for_work", { node_id: "i-delete-site", depth: "full" });
   check(
     "a full orient reply carries stability.fan_out",
     orient.stability?.fan_out?.count === 3 && orient.stability.fan_out.changes.join(",") === "billing,site-analytics,ai-builder",
     JSON.stringify(orient.stability)
   );
-  const siteOrient = await call("orient_for_work", { node_id: "f-site" });
+  const siteOrient = await call("orient_for_work", { node_id: "f-site", depth: "full" });
   check("a pre-ship node with no fan-out carries count 0", siteOrient.stability?.fan_out?.count === 0, JSON.stringify(siteOrient.stability));
 
   await call("patch_config", { fan_out: { warn_at: 4 } });

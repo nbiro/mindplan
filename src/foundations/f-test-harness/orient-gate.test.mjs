@@ -108,10 +108,10 @@ async function session() {
   const exact = await call("orient_for_work", { query: "i-pay" });
   check(
     "an exact id query auto-focuses and returns the full node",
-    exact.auto_focus === true && exact.focus === "i-pay" && exact.context?.record?.id === "i-pay" && exact.rules && exact.blast_radius,
+    exact.auto_focus === true && exact.focus === "i-pay" && exact.context?.record?.id === "i-pay" && exact.rules && typeof exact.context?.body === "string",
     JSON.stringify({ focus: exact.focus, auto: exact.auto_focus })
   );
-  const full = await call("orient_for_work", { node_id: "f-ledger" });
+  const full = await call("orient_for_work", { node_id: "f-ledger", depth: "full" });
   check(
     "orient_for_work({ node_id }) returns record, body, rules, own decisions, owned files, and blast radius",
     full.focus === "f-ledger" &&
@@ -144,7 +144,7 @@ async function session() {
     statusBlocked.error && statusBlocked.text.includes('orient_for_work({ node_id: "i-refund-0" })'),
     statusBlocked.text.slice(0, 160)
   );
-  const openBlocked = await raw("open_next", { change: "rev-f-ledger", node_id: "f-ledger" });
+  const openBlocked = await raw("open_next", { reason: "behavior", change: "rev-f-ledger", node_id: "f-ledger" });
   check("open_next on an unoriented node is Blocked: Orientation", openBlocked.error && openBlocked.text.startsWith("Blocked: Orientation:"), openBlocked.text.slice(0, 120));
   for (const [tool, args] of writes) {
     const r = await raw(tool, args);
@@ -169,7 +169,7 @@ async function session() {
   await call("orient_for_work", { node_id: "i-refund-0", depth: "rules" });
   check("update_node_status succeeds after orienting", !(await raw("update_node_status", { node_id: "i-refund-0", new_status: "cancelled" })).error);
   await call("orient_for_work", { node_id: "f-ledger", depth: "rules" });
-  const openAfter = await raw("open_next", { change: "rev-f-ledger", node_id: "f-ledger" });
+  const openAfter = await raw("open_next", { reason: "behavior", change: "rev-f-ledger", node_id: "f-ledger" });
   check(
     "after orienting, open_next reaches its own lifecycle check",
     openAfter.error && !openAfter.text.startsWith("Blocked: Orientation"),

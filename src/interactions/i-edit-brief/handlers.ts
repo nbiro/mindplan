@@ -6,6 +6,7 @@
 import { loadProjectConfig, writeProjectConfig } from "../../foundations/f-territory-store/store.js";
 import { PROJECT_RELATIVE_PATH, loadProjectBrief, writeProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
+import { rulesVersion } from "../../foundations/f-plan-views/views.js";
 import * as path from "path";
 import {
   changedFiles,
@@ -19,10 +20,9 @@ export function patchProjectDescription(args: {
     throw blocked("patch_project_description requires description.");
   }
   const result = writeProjectBrief({ description: args.description });
+  // The caller wrote the description and holds the rules: neither is echoed back.
   return {
     path: result.path,
-    description: result.description,
-    rules: result.rules,
     changed_files: changedFiles([PROJECT_RELATIVE_PATH]),
   };
 }
@@ -64,6 +64,9 @@ export function patchProjectRules(args: {
     throw blocked("patch_project_rules rules replaces the whole text; do not combine it with add or remove.");
   }
   let next = rules;
+  const added: string[] = [];
+  const removed: string[] = [];
+  const skipped: string[] = [];
   if (next === undefined) {
     let entries = splitRules(loadProjectBrief().rules);
     for (const raw of remove ?? []) {
@@ -78,24 +81,32 @@ export function patchProjectRules(args: {
         throw blocked(`patch_project_rules remove: "${want}" matches ${hits.length} rules; pass the full rule text.`);
       }
       entries = entries.filter((e) => e !== hits[0]);
+      removed.push(ruleKey(hits[0]));
     }
     const have = new Set(entries.map(ruleKey));
     for (const raw of add ?? []) {
       const key = ruleKey([raw]);
       if (key === "") throw blocked("patch_project_rules add entries must not be empty.");
-      if (have.has(key)) continue;
+      if (have.has(key)) {
+        skipped.push(key);
+        continue;
+      }
       have.add(key);
       entries.push(ruleBullet(raw));
+      added.push(key);
     }
     next = entries.map((e) => e.join("\n").replace(/\s+$/, "")).join("\n");
   }
   const result = writeProjectBrief({ rules: next });
   // The author holds the text it just wrote: count it as served, so its own next write is not Blocked: Rules.
   projectRulesPush();
+  // A confirmation, not the brief: the caller holds what it sent; get_rules returns the whole text.
   return {
     path: result.path,
-    description: result.description,
-    rules: result.rules,
+    rules_version: rulesVersion(result.rules),
+    count: splitRules(result.rules).length,
+    ...(rules === undefined ? { added, removed } : {}),
+    ...(skipped.length > 0 ? { skipped } : {}),
     changed_files: changedFiles([PROJECT_RELATIVE_PATH]),
   };
 }

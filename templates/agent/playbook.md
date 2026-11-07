@@ -41,7 +41,7 @@ These type names are the only words for node types, in tool calls and with the u
 
 - **Find before you create:** `orient_for_work({ query })` ranks nodes; `find_related_nodes` checks reuse. The same Interaction on a new Interface is a new `exposes`, not a new Interaction.
 - **New node:** `create_node`, `link_nodes`, write its sections with `patch_node_territory` (`shape` lists them), claim its files with `set_implementation_files`, link tests with `set_test_files`.
-- **Shipped node:** its contract changes → `open_next({ node_id, change })` and ship the revision; only its files change → edit in place and keep its text true. One feature across several nodes shares one `change` id; `get_blast_radius` shows who it reaches.
+- **Shipped node:** its contract changes → `open_next({ node_id, change, reason })` and ship the revision; only its files change → edit in place and keep its text true. One feature across several nodes shares one `change` id; `get_blast_radius` shows who it reaches.
 - **Rules and decisions:** a rule for one node's work is `patch_node_rules`, a rule for everything `patch_project_rules`; a choice between viable designs is `record_decision` on the node it shapes.
 
 ## Never

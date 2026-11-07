@@ -152,6 +152,8 @@ export interface Revision {
   /** When the revision was opened. */
   opened_at: string;
   updated_at: string;
+  /** Why the revision happens (`REVISION_REASONS`); absent on a revision opened before 0.22. */
+  reason?: RevisionReason;
   title: string;
   description: string;
   /** Proposed Foundation role; absent keeps the live role (unless `role_removed`). */
@@ -199,6 +201,12 @@ export interface MindPlanNode {
    * decayed over the days since the previous ship, plus 1 (`decayChurn`); a split sets it to 0.
    */
   churn?: number;
+  /**
+   * MCP-only. The part of `churn` from revisions shipped with reason `behavior` / `wiring`, decayed
+   * on the same clock. `churn` minus both is unclassified: ships from before reasons were recorded.
+   */
+  churn_behavior?: number;
+  churn_wiring?: number;
   /** MCP-only. While a force-unshipped node has no `shipped_at`: the time `churn` is as of. */
   churn_at?: string;
   severity?: BugSeverity;
@@ -316,6 +324,48 @@ export function decayChurn(value: number, fromIso: string, toIso: string, halfLi
   const days = Math.max(0, (Date.parse(toIso) - Date.parse(fromIso)) / 86_400_000);
   if (!Number.isFinite(days) || value <= 0) return Math.max(0, value);
   return value * Math.pow(0.5, days / halfLifeDays);
+}
+
+/**
+ * Why a revision reopens a shipped node, recorded by `open_next`:
+ * - `behavior` — new or changed behavior the node itself owns
+ * - `wiring` — an edge (depends_on, mounts, exposes, …) added or removed for another node's sake
+ * - `fix` — a defect in what it already promised
+ * - `platform` — a framework, runtime, or dependency upgrade
+ * - `text` — wording only: title, description, or body text
+ * - `refactor` — a split or an inversion that removes a reason to change
+ */
+export const REVISION_REASONS = ["behavior", "wiring", "fix", "platform", "text", "refactor"] as const;
+export type RevisionReason = (typeof REVISION_REASONS)[number];
+
+/** Reasons that say something about a node's design, and so count toward its ship rate. */
+export const RATE_REASONS = ["behavior", "wiring"] as const;
+export type RateReason = (typeof RATE_REASONS)[number];
+
+export function isRevisionReason(value: unknown): value is RevisionReason {
+  return typeof value === "string" && (REVISION_REASONS as readonly string[]).includes(value);
+}
+
+/** Whether a ship with this reason counts toward the rate; no reason (a pre-0.22 revision) counts. */
+export function countsTowardRate(reason: RevisionReason | undefined): boolean {
+  return reason === undefined || (RATE_REASONS as readonly string[]).includes(reason);
+}
+
+/** The churn fields after a ship with `reason`, every one decayed from the previous ship on one clock. */
+export function churnFieldsAfterShip(
+  previous: { churn?: number; churn_behavior?: number; churn_wiring?: number },
+  previousAt: string | undefined,
+  shippedAt: string,
+  halfLifeDays: number,
+  reason: RevisionReason | undefined
+): { churn: number; churn_behavior: number; churn_wiring: number } {
+  const carry = (v: number | undefined) => (v && previousAt ? decayChurn(v, previousAt, shippedAt, halfLifeDays) : 0);
+  const r3 = (v: number) => Math.round(v * 1000) / 1000;
+  return {
+    churn: r3(carry(previous.churn) + (countsTowardRate(reason) ? 1 : 0)),
+    churn_behavior: r3(carry(previous.churn_behavior) + (reason === "behavior" ? 1 : 0)),
+    churn_wiring: r3(carry(previous.churn_wiring) + (reason === "wiring" ? 1 : 0)),
+  };
 }
 
 /** The stored churn after a ship at `shippedAt`: the previous value decayed since the previous ship, plus 1. */

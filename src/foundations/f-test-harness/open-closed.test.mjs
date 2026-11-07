@@ -22,6 +22,7 @@ const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)
 const serverEntry = path.join(toolRoot, "dist/index.js");
 const oc = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-compiler-rules/open-closed.js")).href);
 const config = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-source-index/config.js")).href);
+const types = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-domain-model/types.js")).href);
 
 let failures = 0;
 function check(label, condition, detail = "") {
@@ -140,12 +141,62 @@ function check(label, condition, detail = "") {
   const warning = hotspot ? oc.hotspotWarning(hotspot) : "";
   check(
     "the warning gives the pace against the median, the recent change groups, and a downward split",
-    warning.startsWith('hotspot: "f-core" ships far more often than the rest of the graph lately (rate 5.9 against a median of 0.5), and 41 nodes depend on it directly;') &&
+    warning.startsWith('hotspot: "f-core" ships far more often than the rest of the graph lately (rate 5.9 against a median of 0.5), and 41 nodes depend on it directly.') &&
+      warning.includes("Diagnosis: unknown") &&
       warning.includes('change "c-cache" (decision d-4), change "c-site" (decision d-5), change "c-content" (decision d-6)') &&
       !warning.includes("c-accounts") &&
       warning.includes('its own Foundation that "f-core" depends_on') &&
       warning.includes("keep_whole: true"),
     warning
+  );
+  // Recorded reasons: what kind of refactor the rate points to.
+  const wired = { ...core, churn: 6, churn_wiring: 5, churn_behavior: 0.5 };
+  const wiredHot = oc.hotspotFor(graph, wired, defaults, ctx);
+  check(
+    "a rate made mostly of wiring diagnoses an inversion, not a split",
+    wiredHot?.diagnosis.kind === "invert" &&
+      wiredHot.diagnosis.wiring > 4.5 &&
+      wiredHot.diagnosis.unrecorded > 0 && wiredHot.diagnosis.unrecorded < 1 &&
+      oc.hotspotWarning(wiredHot).includes("Diagnosis: invert") &&
+      oc.hotspotWarning(wiredHot).includes("registry") &&
+      oc.hotspotWarning(wiredHot).includes("a split would not help"),
+    JSON.stringify(wiredHot?.diagnosis)
+  );
+  const featured = { ...core, churn: 6, churn_behavior: 4, churn_wiring: 1 };
+  const featuredHot = oc.hotspotFor(graph, featured, defaults, ctx);
+  check(
+    "a rate made mostly of behavior diagnoses a split",
+    featuredHot?.diagnosis.kind === "split" && oc.hotspotWarning(featuredHot).includes("Diagnosis: split"),
+    JSON.stringify(featuredHot?.diagnosis)
+  );
+  const quiet = { ...core, churn: 1, churn_behavior: 1 };
+  // As the loader leaves a node with one open revision: next set to its view.
+  const openPlatform = { ...quiet, next: { state: "draft" }, open_revisions: [{ change: "c-up", reason: "platform" }] };
+  const openBehavior = { ...quiet, open_revisions: [{ change: "c-feat", reason: "behavior" }] };
+  check(
+    "an open platform revision adds nothing to the rate; an open behavior revision adds one",
+    Math.abs(oc.recentRate(openPlatform, defaults, NOW) - oc.recentRate(quiet, defaults, NOW)) < 0.001 &&
+      Math.abs(oc.recentRate(openBehavior, defaults, NOW) - oc.recentRate(quiet, defaults, NOW) - 1) < 0.001
+  );
+  check(
+    "open_next with a fix, platform, text, or refactor reason never warns, even on a hotspot",
+    ["fix", "platform", "text", "refactor"].every((r) => oc.openClosedWarning(graph, core, defaults, r) === null) &&
+      oc.openClosedWarning(graph, core, defaults, "wiring") !== null
+  );
+  check(
+    "a ship's churn fields: a counted reason adds one to churn and its own part; a fix only decays",
+    (() => {
+      const prev = { churn: 2, churn_wiring: 1 };
+      const at = "2026-10-01T00:00:00.000Z";
+      const wiring = types.churnFieldsAfterShip(prev, at, at, 30, "wiring");
+      const fix = types.churnFieldsAfterShip(prev, at, at, 30, "fix");
+      const legacy = types.churnFieldsAfterShip(prev, at, at, 30, undefined);
+      return (
+        wiring.churn === 3 && wiring.churn_wiring === 2 && wiring.churn_behavior === 0 &&
+        fix.churn === 2 && fix.churn_wiring === 1 &&
+        legacy.churn === 3 && legacy.churn_wiring === 1
+      );
+    })()
   );
   check("auth, depended on by everything at the ordinary pace, is no hotspot", oc.hotspotFor(graph, auth, defaults, ctx) === null);
   const busyHot = oc.hotspotFor(graph, busy, defaults, ctx);
@@ -189,10 +240,10 @@ function check(label, condition, detail = "") {
     oc.hotspotFor(unkeptGraph, kept, defaults, oc.hotspotContext(unkeptGraph, defaults, NOW)) !== null
   );
 
-  const ocw = oc.openClosedWarning(graph, core, defaults);
+  const ocw = oc.openClosedWarning(graph, core, defaults, "behavior")?.warning;
   check(
-    "openClosedWarning names the pace, the reach, and the depends_on alternative",
-    ocw?.startsWith('Warning: "f-core" ships') && ocw.includes("reaches its 41 direct dependents") && ocw.includes('a new node that depends_on "f-core"'),
+    "openClosedWarning names the pace, the reach, and the diagnosis",
+    ocw?.startsWith('Warning: "f-core" ships') && ocw.includes("reaches its 41 direct dependents") && ocw.includes("Diagnosis:"),
     ocw ?? "null"
   );
   check("openClosedWarning is null for auth at the ordinary pace", oc.openClosedWarning(graph, auth, defaults) === null);
@@ -347,7 +398,7 @@ try {
   const cleanCheck = await call("run_check", {});
   check("nodes at one pace print no hotspot warning", !cleanCheck.warnings.some((w) => w.startsWith("hotspot:")), JSON.stringify(cleanCheck.warnings));
 
-  const below = await call("open_next", { node_id: "f-a", change: "c-x" });
+  const below = await call("open_next", { reason: "behavior", node_id: "f-a", change: "c-x" });
   check("open_next on a node at the graph's pace has no warnings or decision_prompt", below.warnings === undefined && below.decision_prompt === undefined, JSON.stringify(below));
   await call("discard_next", { node_id: "f-a" });
 
@@ -371,7 +422,7 @@ try {
   check("patch_config with hotspots keeps stored decisions", both.config.decisions?.blast_radius === 7, JSON.stringify(both.config));
 
   // Opening f-core makes it ship faster than its neighbors: rate 2 against a median of 1.
-  const opened = await call("open_next", { node_id: "f-core", change: "c-3" });
+  const opened = await call("open_next", { reason: "behavior", node_id: "f-core", change: "c-3" });
   check(
     "open_next on a node shipping above the graph's pace warns and returns the decision prompt",
     opened.warnings?.[0]?.startsWith('Warning: "f-core" ships') &&
@@ -379,10 +430,27 @@ try {
       opened.decision_prompt?.tool === "record_decision" &&
       opened.decision_prompt.args.node_id === "f-core" &&
       opened.decision_prompt.args.change === "c-3" &&
-      opened.decision_prompt.args.alternatives[0].includes('depends_on "f-core"') &&
+      opened.decision_prompt.args.alternatives[0].includes('Split "f-core"') &&
+      opened.diagnosis?.kind === "split" &&
+      opened.revision.reason === "behavior" &&
       opened.next_state === "draft",
     JSON.stringify(opened)
   );
+  const revisionText = fs.readFileSync(path.join(root, "mindplan/foundations/f-core/revisions/c-3/f-core.mdx"), "utf-8");
+  check("the revision file records its reason", /^reason: behavior$/m.test(revisionText));
+  const noReason = await raw("open_next", { node_id: "f-core", change: "c-noreason" });
+  check(
+    "open_next without a reason is Blocked, naming every reason",
+    noReason.error && noReason.text.includes("open_next needs reason") && noReason.text.includes("platform"),
+    noReason.text
+  );
+  const upgrade = await call("open_next", { reason: "platform", node_id: "f-core", change: "c-upgrade" });
+  check(
+    "open_next for a platform upgrade on a hotspot carries no warning and no prompt",
+    !upgrade.warnings && !upgrade.decision_prompt && !upgrade.diagnosis,
+    JSON.stringify(upgrade)
+  );
+  await call("discard_next", { node_id: "f-core", change: "c-upgrade" });
 
   const hotCheck = await call("run_check", {});
   const hot = hotCheck.warnings.find((w) => w.startsWith('hotspot: "f-core"'));
@@ -395,7 +463,7 @@ try {
     JSON.stringify(hotCheck.warnings)
   );
 
-  const oriented = await call("orient_for_work", { node_id: "f-core" });
+  const oriented = await call("orient_for_work", { node_id: "f-core", depth: "full" });
   check(
     "a full orient reply carries stability with the rate, the median, and the hotspot line",
     oriented.stability?.fan_in === 2 &&
@@ -479,7 +547,7 @@ try {
     JSON.stringify(marked)
   );
   for (const new_status of ["in-review", "ship"]) await call("update_node_status", { node_id: "f-core", new_status });
-  const split = await call("orient_for_work", { node_id: "f-core" });
+  const split = await call("orient_for_work", { node_id: "f-core", depth: "full" });
   check(
     "promoting a revision that depends_on a part shipped under it records the split and resets churn",
     split.context.record.revisions === 2 &&
@@ -494,7 +562,7 @@ try {
   check("after the split run_check no longer reports the root as a hotspot", !afterSplit.warnings.some((w) => w.startsWith('hotspot: "f-core"')), JSON.stringify(afterSplit.warnings));
   // A revision of a node with a live split record holds only the parts it declares: split_into: []
   // clears them, and the revision file keeps no copy of live's record.
-  const reopened = await call("open_next", { node_id: "f-core", change: "c-5" });
+  const reopened = await call("open_next", { reason: "behavior", node_id: "f-core", change: "c-5" });
   const revFile = path.join(root, "mindplan", "foundations", "f-core", "revisions", reopened.change ?? "c-5", "f-core.mdx");
   // The unlinked-part warning names each declared part once, and never one live already records
   // (the ship does not record it again, so its link does not matter).
@@ -531,7 +599,7 @@ try {
   check("a part's first ship counts one revision", part.revisions === 1 && part.churn === 1, JSON.stringify(part));
 
   // A revision that only starts using a new building block splits nothing.
-  await call("open_next", { node_id: "f-a", change: "c-4" });
+  await call("open_next", { reason: "behavior", node_id: "f-a", change: "c-4" });
   await foundation("f-lib");
   await ship("f-lib");
   await call("link_nodes", { source_id: "f-a", target_id: "f-lib", edge_type: "depends_on" });

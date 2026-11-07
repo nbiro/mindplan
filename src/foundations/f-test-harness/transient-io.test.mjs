@@ -132,7 +132,7 @@ for (const new_status of ["ready", "in-progress", "in-review", "ship"]) {
 const ROUNDS = 25;
 const failed = [];
 for (let round = 0; round < ROUNDS; round++) {
-  await call("open_next", { change: "rev-f-store", node_id: "f-store" });
+  await call("open_next", { reason: "behavior", change: "rev-f-store", node_id: "f-store" });
   const results = await Promise.all([
     raw("patch_node_territory", { node_id: "f-store", replace: { find: "Transient-io test territory.", with: `Round ${round}.`, all: true } }),
     raw("record_decision", {

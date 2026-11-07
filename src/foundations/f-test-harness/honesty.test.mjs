@@ -171,7 +171,7 @@ fillAndTick("interactions", "i-b");
 
   // Ship f-core, then open and ready an evolution: writes to the ready next slot reset it.
   await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
-  await call("open_next", { change: "rev-f-core", node_id: "f-core" });
+  await call("open_next", { reason: "behavior", change: "rev-f-core", node_id: "f-core" });
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
   const nextPatch = await call("patch_node_territory", {
     node_id: "f-core",
@@ -326,7 +326,7 @@ fillAndTick("interactions", "i-b");
     "a file in a new folder leads with create_node, then the nearest owner's fix (its evolution first)",
     !!deepCov &&
       deepCov.indexOf("create_node(") < deepCov.indexOf('If it extends "f-core" instead:') &&
-      deepCov.includes('open_next({"node_id":"f-core","change":"<change-id>"}) then set_implementation_files({"node_id":"f-core","change":"<change-id>","add":'),
+      deepCov.includes('open_next({"node_id":"f-core","change":"<change-id>","reason":"<reason>"}) then set_implementation_files({"node_id":"f-core","change":"<change-id>","add":'),
     String(deepCov)
   );
   remove("src/f-core/sub");
@@ -340,7 +340,7 @@ fillAndTick("interactions", "i-b");
   await call("set_implementation_files", { replace: true, node_id: "f-rel", files: ["src/f-rel/keep.ts", "src/f-rel/old.ts"] });
   fillAndTick("foundations", "f-rel");
   await walk("f-rel", ["ready", "in-progress", "in-review", "ship"]);
-  await call("open_next", { change: "rev-f-rel", node_id: "f-rel" });
+  await call("open_next", { reason: "behavior", change: "rev-f-rel", node_id: "f-rel" });
   await call("set_implementation_files", { replace: true, node_id: "f-rel", files: ["src/f-rel/keep.ts"] });
   write("src/f-rel/old.ts", 'import { a } from "../i-a/a.js";\nexport const old = a;\n');
   const r = await call("run_check", {});
@@ -421,7 +421,7 @@ fillAndTick("interactions", "i-b");
   const rec = await state("f-cx");
   check("create_node stores the change id and ref", rec.change === "feat-x" && rec.change_ref === "feat/x", JSON.stringify(rec));
 
-  await call("open_next", { node_id: "f-tog", change: "feat-x" });
+  await call("open_next", { reason: "behavior", node_id: "f-tog", change: "feat-x" });
   const tog = await state("f-tog");
   check("open_next stores the change on the next slot", tog.next?.change === "feat-x", JSON.stringify(tog.next));
 
@@ -558,7 +558,7 @@ fillAndTick("interactions", "i-b");
 
   // Ship, open an evolution, patch it, and ship it: promote keeps the next file's layout and CRLF.
   await walk("f-lay", ["ready", "in-progress", "in-review", "ship"]);
-  await call("open_next", { change: "rev-f-lay", node_id: "f-lay" });
+  await call("open_next", { reason: "behavior", change: "rev-f-lay", node_id: "f-lay" });
   await call("patch_node_territory", { node_id: "f-lay", section: "## Purpose", text: "Next purpose." });
   // open_next starts a fresh ledger, so the revision ticks its own ops before it ships.
   await call("patch_node_territory", { node_id: "f-lay", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
@@ -621,7 +621,7 @@ fillAndTick("interactions", "i-b");
 
   // A discarded revision deletes the next file, even while the live file still has its run.
   await walk("f-gap", ["in-progress", "in-review", "ship"]);
-  await call("open_next", { change: "rev-f-gap", node_id: "f-gap" });
+  await call("open_next", { reason: "behavior", change: "rev-f-gap", node_id: "f-gap" });
   check(
     "open_next writes the next file with one blank line below the frontmatter",
     blankRun(territory("foundations", "f-gap", "next")) === 1,
@@ -1180,7 +1180,7 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   check("the bug makes f-unst unstable", (await state("f-unst")).state === "unstable");
   // The revision claims a file live does not, and the shipped dependent imports it: it relied on
   // the revision's view, so the discard is Blocked.
-  await call("open_next", { node_id: "f-unst", change: "unst-fix" });
+  await call("open_next", { reason: "behavior", node_id: "f-unst", change: "unst-fix" });
   write("app/f-unst/extra.ts", "export const extra = 2;\n");
   await call("set_implementation_files", { node_id: "f-unst", change: "unst-fix", add: ["app/f-unst/extra.ts"] });
   write("src/i-unst/index.ts", 'import { extra } from "../../app/f-unst/extra.js";\nexport const v = extra;\n');

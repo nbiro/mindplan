@@ -256,7 +256,7 @@ git("switch", "-q", "-c", "feature");
 // --- a revision carries the change id; the live file never does ---
 {
   await newRevision("i-new", "feat");
-  const opened = await call("open_next", { node_id: "i-b", change: "feat" });
+  const opened = await call("open_next", { reason: "behavior", node_id: "i-b", change: "feat" });
   check(
     "open_next writes the change to the revision only, with no replaced_change",
     !("replaced_change" in opened) &&

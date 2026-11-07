@@ -4,9 +4,14 @@
  * refresh, and dropping a change's planned edges when a write closes it. Owned by f-plan-writes.
  */
 
-import { revisionSummaries as readSummaries, rulesVersion } from "../../foundations/f-plan-views/views.js";
+import {
+  FULL_RULES_DISTANCE,
+  revisionSummaries as readSummaries,
+  rulesBlock,
+  rulesVersion,
+} from "../../foundations/f-plan-views/views.js";
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
-import { type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
+import { type MindPlanGraph, type MindPlanNode, type RuleEntry } from "../../foundations/f-domain-model/types.js";
 import { openChanges, revisionFor } from "../../foundations/f-revision-model/index.js";
 import { writeRevisionState } from "../../foundations/f-territory-store/revisions.js";
 import { MAP_REL } from "../../foundations/f-source-index/git.js";
@@ -34,7 +39,6 @@ import {
   pushProjectRules,
   reachingRules,
   recordOriented,
-  rulesFingerprint,
 } from "../../foundations/f-orientation-ledger/ledger.js";
 
 /**
@@ -74,16 +78,35 @@ export function projectRulesPush(): Record<string, unknown> {
 }
 
 /**
- * After a write that can change which rules reach `id` (a link, a new node): when they changed,
- * return them as a `rules` block and count the node as oriented, since the rules reached the agent
- * in this result.
+ * The rules that reach `id` before a write that can change them (a link, a revision's edges), for
+ * `rulesReachingAfterWrite`; null while the gate is off.
  */
-export function rulesReachingAfterWrite(id: string, before: string | null): Record<string, unknown> {
+export function rulesBeforeWrite(graph: MindPlanGraph, id: string): RuleEntry[] | null {
+  return orientationGateEnabled() ? reachingRules(graph, id) : null;
+}
+
+/**
+ * After a write that can change which rules reach `id` (a link, a new node): when they changed,
+ * return a `rules` block with only the entries this write added or changed (every entry for a new
+ * node, `before` null) and `removed` naming sources that no longer reach it, light as in
+ * `rulesBlock`, and count the node as oriented. Diffed within the call: nothing is remembered.
+ */
+export function rulesReachingAfterWrite(id: string, before: RuleEntry[] | null): Record<string, unknown> {
   if (!orientationGateEnabled()) return {};
   const graph = loadGraph();
-  if (before !== null && rulesFingerprint(graph, id) === before) return {};
+  const after = reachingRules(graph, id);
+  // Unchanged: same source, same text, and not newly within reach of its full text (a source that
+  // came closer than FULL_RULES_DISTANCE was only a one-line entry before).
+  const same = (a: RuleEntry, b: RuleEntry) =>
+    a.node_id === b.node_id &&
+    a.rules === b.rules &&
+    !(a.distance <= FULL_RULES_DISTANCE && b.distance > FULL_RULES_DISTANCE);
+  const changed = before === null ? after : after.filter((e) => !before.some((b) => same(e, b)));
+  const removed = before === null ? [] : before.filter((b) => !after.some((e) => e.node_id === b.node_id)).map((b) => b.node_id);
+  if (before !== null && changed.length === 0 && removed.length === 0) return {};
   recordOriented(graph, [id]);
-  return { rules: { node_id: id, entries: reachingRules(graph, id) } };
+  const block = rulesBlock(id, changed);
+  return { rules: removed.length > 0 ? { ...block, removed } : block };
 }
 
 /** Persist recomputed states. Returns each node's live path. */

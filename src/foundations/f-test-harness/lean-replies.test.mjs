@@ -420,7 +420,7 @@ await walk("f-core", ["ready", "in-progress", "in-review", "ship"]);
 }
 
 // --- open_next starts a fresh ledger; the revision cannot ship on old ticks ---
-await call("open_next", { node_id: "f-core", change: "lean" });
+await call("open_next", { reason: "behavior", node_id: "f-core", change: "lean" });
 {
   const next = readRel(revOf("f-core", "lean"));
   check(
@@ -550,7 +550,7 @@ await foundation("f-chk");
 }
 
 // An open revision for the upgrade below: it keeps its own list while the upgrade strips live.
-await call("open_next", { node_id: "f-chk", change: "chk" });
+await call("open_next", { reason: "behavior", node_id: "f-chk", change: "chk" });
 write(revOf("f-chk", "chk"), readRel(revOf("f-chk", "chk")).replace(/^- \[ \] .*$/m, "- [ ] Revision work"));
 
 const final = await call("run_check", {});
@@ -560,7 +560,7 @@ check("every write listed every mindplan/ file it touched", diffMisses === 0, `$
 {
   await foundation("f-items");
   await walk("f-items", ["ready", "in-progress", "in-review", "ship"]);
-  await call("open_next", { node_id: "f-items", change: "items" });
+  await call("open_next", { reason: "behavior", node_id: "f-items", change: "items" });
   check(
     "a revision's fresh ledger carries the default ids",
     /- \[ \] Spec written \{#spec\}\r?\n- \[ \] Implementation complete \{#impl\}\r?\n- \[ \] Verified in target environment \{#verify\}/.test(

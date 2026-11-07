@@ -35,11 +35,12 @@ import type {
   PlannedEdge,
   PlannedEdgeType,
   NodeType,
+  RevisionReason,
 } from "../f-domain-model/types.js";
 import {
   BUG_SEVERITIES,
   CHANGE_ID_PATTERN,
-  churnAfterShip,
+  churnFieldsAfterShip,
   DECISION_ID_PATTERN,
   GRAPH_VERSION,
   isFoundationRole,
@@ -761,6 +762,10 @@ function parseNodeFromFrontmatter(
   if (parsed.split_into.length > 0) node.split_into = [...parsed.split_into];
   const churn = nonNegativeNumber(fm.churn);
   if (churn !== undefined) node.churn = churn;
+  const churnBehavior = nonNegativeNumber(fm.churn_behavior);
+  if (churnBehavior !== undefined) node.churn_behavior = churnBehavior;
+  const churnWiring = nonNegativeNumber(fm.churn_wiring);
+  if (churnWiring !== undefined) node.churn_wiring = churnWiring;
   if (fm.churn_at) node.churn_at = fm.churn_at;
   if (fm.change) node.change = fm.change;
   if (fm.change_ref) node.change_ref = fm.change_ref;
@@ -1113,7 +1118,15 @@ export function patchFrontmatter(
  */
 export function writeRevisionFields(
   node: MindPlanNode,
-  fields: { revisions: number; churn?: number; churn_at?: string | null; split_at?: number; split_into?: string[] }
+  fields: {
+    revisions: number;
+    churn?: number;
+    churn_behavior?: number;
+    churn_wiring?: number;
+    churn_at?: string | null;
+    split_at?: number;
+    split_into?: string[];
+  }
 ): boolean {
   const { file, raw, fence } = requireMutableFrontmatter(node, "current");
   const match = fence.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)$/);
@@ -1131,6 +1144,13 @@ export function writeRevisionFields(
   };
   setScalar("revisions", fields.revisions, "shipped_at");
   if (fields.churn !== undefined) setScalar("churn", fields.churn, "revisions");
+  // The per-reason parts of churn: written after churn, dropped at 0.
+  for (const key of ["churn_wiring", "churn_behavior"] as const) {
+    const value = fields[key];
+    if (value === undefined) continue;
+    if (value > 0) setScalar(key, value, "churn");
+    else inner = inner.replace(new RegExp(`^${key}:.*(\\n|$)`, "m"), "").replace(/\n$/, "");
+  }
   // churn_at: the rate's reference time while the node is unshipped (force_unship); cleared at ship.
   if (fields.churn_at === null) inner = inner.replace(/^churn_at:.*\n?/m, "").replace(/\n$/, "");
   else if (fields.churn_at !== undefined) {
@@ -1149,6 +1169,12 @@ export function writeRevisionFields(
   const patched = `${match[1]}${inner.replace(/\n/g, nl)}${match[3]}`;
   node.revisions = fields.revisions;
   if (fields.churn !== undefined) node.churn = fields.churn;
+  for (const key of ["churn_behavior", "churn_wiring"] as const) {
+    const value = fields[key];
+    if (value === undefined) continue;
+    if (value > 0) node[key] = value;
+    else delete node[key];
+  }
   if (fields.churn_at === null) delete node.churn_at;
   else if (fields.churn_at !== undefined) node.churn_at = fields.churn_at;
   if (fields.split_at !== undefined) node.split_at = fields.split_at;
@@ -1856,6 +1882,8 @@ export function nodeToRecord(node: MindPlanNode): Record<string, unknown> {
   if (node.split_at !== undefined) record.split_at = node.split_at;
   if (node.split_into?.length) record.split_into = [...node.split_into];
   if (node.churn !== undefined) record.churn = node.churn;
+  if (node.churn_behavior !== undefined) record.churn_behavior = node.churn_behavior;
+  if (node.churn_wiring !== undefined) record.churn_wiring = node.churn_wiring;
   if (node.churn_at) record.churn_at = node.churn_at;
   if (node.severity) record.severity = node.severity;
   if (node.role) record.role = node.role;
@@ -2445,6 +2473,8 @@ export type PromotedLive = {
   aliases: string[];
   /** The shipping change: its planned edges are dropped from live. */
   change?: string;
+  /** Why the shipping revision happened: only `behavior` and `wiring` (or none) count toward the rate. */
+  reason?: RevisionReason;
   /** Parts this ship splits out of the node. */
   splitInto?: string[];
   /** The new live body without its `## Rules` section (live's rules are joined back). */
@@ -2483,14 +2513,20 @@ export function writePromotedLive(
   const splitInto = [...new Set([...(liveParsed?.split_into ?? []), ...(p.splitInto ?? [])])];
   const splitAt = p.splitInto?.length ? revisions : positiveInt(liveParsed?.scalars.split_at);
   // A split hands the reasons for change to the parts, so the root's recent rate starts over.
-  const churn = p.splitInto?.length
-    ? 0
-    : churnAfterShip(
-        nonNegativeNumber(liveParsed?.scalars.churn),
+  const rates = p.splitInto?.length
+    ? { churn: 0, churn_behavior: 0, churn_wiring: 0 }
+    : churnFieldsAfterShip(
+        {
+          churn: nonNegativeNumber(liveParsed?.scalars.churn),
+          churn_behavior: nonNegativeNumber(liveParsed?.scalars.churn_behavior),
+          churn_wiring: nonNegativeNumber(liveParsed?.scalars.churn_wiring),
+        },
         liveParsed?.scalars.shipped_at,
         shippedAt,
-        hotspotSettings(loadProjectConfig()).half_life_days
+        hotspotSettings(loadProjectConfig()).half_life_days,
+        p.reason
       );
+  const churn = rates.churn;
 
   const frontmatterLines = [
     "---",
@@ -2502,6 +2538,8 @@ export function writePromotedLive(
     `shipped_at: ${shippedAt}`,
     `revisions: ${revisions}`,
     `churn: ${churn}`,
+    ...(rates.churn_behavior > 0 ? [`churn_behavior: ${rates.churn_behavior}`] : []),
+    ...(rates.churn_wiring > 0 ? [`churn_wiring: ${rates.churn_wiring}`] : []),
     `created_at: ${node.created_at}`,
     `updated_at: ${shippedAt}`,
   ];
@@ -2563,6 +2601,10 @@ export function writePromotedLive(
   node.updated_at = shippedAt;
   node.revisions = revisions;
   node.churn = churn;
+  if (rates.churn_behavior > 0) node.churn_behavior = rates.churn_behavior;
+  else delete node.churn_behavior;
+  if (rates.churn_wiring > 0) node.churn_wiring = rates.churn_wiring;
+  else delete node.churn_wiring;
   if (splitAt !== undefined) node.split_at = splitAt;
   if (splitInto.length > 0) node.split_into = splitInto;
   if (belongs_to.length > 0) node.belongs_to = [...belongs_to];

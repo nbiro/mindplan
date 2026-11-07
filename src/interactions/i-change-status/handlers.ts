@@ -5,7 +5,7 @@
 
 import { splitParts } from "../../foundations/f-compiler-rules/open-closed.js";
 import {
-  churnAfterShip,
+  churnFieldsAfterShip,
   decayChurn,
   isNextPipelineState,
   isPipelineNodeType,
@@ -475,9 +475,20 @@ function promoteInMemory(
   // The revision count, rate, and split, as shipRevision writes them.
   const parts = splitParts(graph, view);
   node.revisions = (node.revisions ?? 1) + 1;
-  node.churn = parts.length
-    ? 0
-    : churnAfterShip(node.churn, node.shipped_at, shippedAt, hotspotSettings(loadProjectConfig()).half_life_days);
+  const rates = parts.length
+    ? { churn: 0, churn_behavior: 0, churn_wiring: 0 }
+    : churnFieldsAfterShip(
+        node,
+        node.shipped_at,
+        shippedAt,
+        hotspotSettings(loadProjectConfig()).half_life_days,
+        revisionFor(node, change)?.reason
+      );
+  node.churn = rates.churn;
+  for (const key of ["churn_behavior", "churn_wiring"] as const) {
+    if (rates[key] > 0) node[key] = rates[key];
+    else delete node[key];
+  }
   if (parts.length) {
     node.split_at = node.revisions;
     node.split_into = [...new Set([...(node.split_into ?? []), ...parts])];
@@ -1188,9 +1199,10 @@ function applyOneStatus(args: {
     node.state = resolved.state;
     node.updated_at = now;
     patchFrontmatter(node);
+    // A reship records no reason: it counts like any ship, and the per-reason parts only decay.
     writeRevisionFields(node, {
       revisions: (node.revisions ?? 0) + 1,
-      churn: churnAfterShip(node.churn, rateAt, now, hotspotSettings(loadProjectConfig()).half_life_days),
+      ...churnFieldsAfterShip(node, rateAt, now, hotspotSettings(loadProjectConfig()).half_life_days, undefined),
       churn_at: null,
     });
     // The shipped node shows its current state; its Atomic Ops ledger stays in git.
@@ -1314,7 +1326,13 @@ export function forceUnship(args: {
   const freshOps = freshLiveAtomicOps(node);
   const now = new Date().toISOString();
   let wroteRate = false;
-  const rateBefore = { revisions: node.revisions, churn: node.churn, churn_at: node.churn_at };
+  const rateBefore = {
+    revisions: node.revisions,
+    churn: node.churn,
+    churn_behavior: node.churn_behavior,
+    churn_wiring: node.churn_wiring,
+    churn_at: node.churn_at,
+  };
   try {
     resolveForceUnship(graph, node, target, confirm);
 
@@ -1324,10 +1342,15 @@ export function forceUnship(args: {
     // time, goes away, so the rate is kept as of now, with now.
     if (node.shipped_at) {
       const halfLife = hotspotSettings(loadProjectConfig()).half_life_days;
-      const decayed = node.churn !== undefined ? decayChurn(node.churn, node.shipped_at, now, halfLife) : undefined;
+      const at = node.shipped_at;
+      const decay = (v: number | undefined) =>
+        v !== undefined ? Math.round(decayChurn(v, at, now, halfLife) * 1000) / 1000 : undefined;
+      const decayed = decay(node.churn);
       wroteRate = writeRevisionFields(node, {
         revisions: node.revisions ?? 1,
-        ...(decayed !== undefined ? { churn: Math.round(decayed * 1000) / 1000, churn_at: now } : {}),
+        ...(decayed !== undefined ? { churn: decayed, churn_at: now } : {}),
+        ...(node.churn_behavior !== undefined ? { churn_behavior: decay(node.churn_behavior) } : {}),
+        ...(node.churn_wiring !== undefined ? { churn_wiring: decay(node.churn_wiring) } : {}),
       });
     }
 

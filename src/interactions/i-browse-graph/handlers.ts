@@ -45,6 +45,8 @@ export const GRAPH_NODE_FIELDS = [
   "split_at",
   "split_into",
   "churn",
+  "churn_behavior",
+  "churn_wiring",
   "churn_at",
   "severity",
   "belongs_to",
