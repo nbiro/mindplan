@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **`patch_project_rules` takes `add` and `remove`.** Changing one standing rule no longer means resending the whole text: `add` appends rules (duplicates skipped) and `remove` drops rules by text. `rules` still replaces the whole section and cannot be combined with them. [§8.2]
+
 ## 0.19.0 — get_project notices a package replaced under the running server
 
 - **`restart` in `get_project`.** A running server keeps the code it started with, so after an `npm install` it still answered as the old package and its `version` field could miss an upgrade the installed one needs. `get_project` now reads the package's own `package.json` on every call and, when its version differs from the one the server booted with, returns `restart`: both versions, and a request to have the MCP server restarted and call `get_project` again before acting on `version`. It is advice only and gates no tool. The playbook and README say so. [§8.1]
