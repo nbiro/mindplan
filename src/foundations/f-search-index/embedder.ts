@@ -1,12 +1,15 @@
 /**
  * The local embedding model (transformers.js, an optional dependency). Loads in the background;
  * until it is ready, or when it cannot load (not installed, offline, proxy, sandbox), `embedder()`
- * returns null and search is keyword-only. A tool call never waits on the download. The reason a
- * model is unavailable is logged once to stderr; nothing here writes to stdout.
+ * returns null and search is keyword-only. A tool call never waits on the download. The library
+ * loads from its mirror in the user cache (runtime-mirror.ts). The reason a model is unavailable is
+ * logged once to stderr; nothing here writes to stdout.
  */
 
 import * as os from "os";
 import * as path from "path";
+import { fileURLToPath, pathToFileURL } from "url";
+import { mirrorPackage, runtimeCacheDir } from "./runtime-mirror.js";
 
 /** Default model: English, 384 dimensions, quantized. */
 export const DEFAULT_SEARCH_MODEL = "Xenova/bge-small-en-v1.5";
@@ -74,14 +77,34 @@ function serialize(): <T>(fn: () => Promise<T>) => Promise<T> {
   };
 }
 
-async function loadModel(profile: ModelProfile, allowRemote: boolean): Promise<Embedder> {
+type TransformersLib = {
+  env: Record<string, unknown> & { backends?: { onnx?: Record<string, unknown> } };
+  pipeline: (task: string, model: string, opts: Record<string, unknown>) => Promise<Extractor>;
+};
+
+/**
+ * Import transformers.js from its mirror in the user cache, so its native modules never lock the
+ * project's node_modules; when the mirror cannot be made or loaded, import it in place.
+ */
+async function importTransformers(): Promise<TransformersLib> {
   // A dynamic import keeps the optional dependency out of the load path of every other module;
   // the specifier is a variable so the build does not need the package installed.
   const specifier = "@huggingface/transformers";
-  const lib = (await import(specifier)) as unknown as {
-    env: Record<string, unknown> & { backends?: { onnx?: Record<string, unknown> } };
-    pipeline: (task: string, model: string, opts: Record<string, unknown>) => Promise<Extractor>;
-  };
+  const entry = fileURLToPath(import.meta.resolve(specifier));
+  try {
+    const mirrored = await mirrorPackage(entry, specifier, runtimeCacheDir(), (target) =>
+      console.error(`MindPlan search: copying the search runtime to ${target} (once per version)`)
+    );
+    return (await import(pathToFileURL(mirrored).href)) as TransformersLib;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message.split("\n")[0] : String(err);
+    logOnce("mirror", `loading the search runtime from node_modules (no copy in the user cache: ${reason}).`);
+    return (await import(specifier)) as TransformersLib;
+  }
+}
+
+async function loadModel(profile: ModelProfile, allowRemote: boolean): Promise<Embedder> {
+  const lib = await importTransformers();
   // Downloads land in cacheDir; offline, the same folder is read as the local model path, because
   // transformers.js refuses to run with both local and remote models disabled.
   lib.env.cacheDir = modelCacheDir();

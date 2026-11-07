@@ -4,11 +4,11 @@ type: Foundation
 title: "Search index"
 description: "Adapter — the derived search cache in .mindplan-cache/index.db (node:sqlite): node rows, an FTS5 keyword index, one normalized embedding vector per node from a local transformers.js model, and edges; synced incrementally from the graph, rebuilt when its schema or model changes, and safe to delete."
 state: stable
-shipped_at: 2026-10-26T00:04:46.126Z
-revisions: 1
-churn: 1
+shipped_at: 2026-11-07T21:11:41.552Z
+revisions: 2
+churn: 1.743
 created_at: 2026-10-25T21:51:39.591Z
-updated_at: 2026-11-04T08:15:58.435Z
+updated_at: 2026-11-07T21:11:41.552Z
 depends_on:
   - f-source-index
 implements:
@@ -42,6 +42,12 @@ Package: `src/foundations/f-search-index/`
   - `DEFAULT_SEARCH_MODEL` = `Xenova/bge-small-en-v1.5` (CLS pooling, 384 dimensions, the bge query instruction before a query); `Xenova/all-MiniLM-L6-v2` is the known alternative (mean pooling); an unknown model is mean-pooled, and every model's vector size is read on load
   - `warmModel(model)` starts loading in the background (q8 weights, `env.cacheDir` = `modelCacheDir()` = `MINDPLAN_MODEL_CACHE` or `~/.cache/mindplan/models`, remote downloads off with `MINDPLAN_SEARCH_OFFLINE=1`, which then reads the same folder as the local model path so a downloaded model still loads); a failure is logged once to stderr; `readyEmbedder(model)` is the model once ready, else `null`; calls into the pipeline run one at a time
   - `Embedder` — `{ model, dims, embed(texts, "query" | "passage") }`; tests pass a fixture-backed one
+  - The library is imported from its runtime mirror (below), so its native modules never lock the project's `node_modules`; when the mirror cannot be made or loaded, the reason is logged once and it is imported in place
+- `runtime-mirror.ts` — `mirrorPackage(entryFile, name, cacheDir, onCopy?)` copies the package that owns `entryFile` and its installed dependency closure (`dependencies` and present `optionalDependencies`, found as Node finds them; `onnxruntime-web` left out, since the Node build never imports it) into `runtimeCacheDir()` = `~/.cache/mindplan/runtime/<name>-<key>`, and returns the mirrored entry file:
+  - The copy keeps the install's layout from the folder above its outermost `node_modules`, nested versions included, so resolution inside it matches the original; a package's own nested `node_modules` is copied only through the closure
+  - Only this platform's and architecture's prebuilt binaries under `bin/napi-vN/<platform>/<arch>` are copied
+  - `key` hashes the mirror format, platform, architecture, and every package's path and version: the same versions reuse one mirror, and a changed install gets a new one; old mirrors are not pruned
+  - The copy is async (a tool call is never blocked) into a temporary folder renamed into place, so two servers mirroring at once never load a half copy; the loser keeps the winner's
 - `keyword-js.ts` — `keywordRankDocs(docs, query, candidates, limit)`: the keyword half in plain JS for a runtime whose SQLite has no FTS5 (Node 22.13's bundled build) or no `node:sqlite`. BM25 over the same fields and weights as `nodes_fts`, with FTS5's `bm25()` formula (the weighted frequency across fields, saturated once against the document's length); `keywordTerms` takes Unicode letters, marks, and digits, folds diacritics, drops stopwords, and stems lightly (`enquiries` and `enquiry` meet). On the search test set it ranks as FTS5 does
 - `service.ts` — settings and the per-project registry:
   - `searchSettings(root)` — `mindplan/config.json` `search` (`enabled`, `model`); `MINDPLAN_SEARCH=keyword` turns semantic ranking off for one process; an unreadable config reads as the defaults
@@ -67,6 +73,8 @@ Depends on: `f-source-index` (the `search` settings in `mindplan/config.json`).
 - Two connections on one file never delete each other's rows; the type filter applies before the row limit
 - An index handle evicted (LRU, more than four roots) or dropped on a model switch while a caller holds it (a search between prepare and query, a background embed) stays open until its last release (`closeWhenIdle`), and a root asked for again reuses that handle instead of opening a second one
 - `MINDPLAN_SEARCH_OFFLINE=1` loads a model that is already downloaded
+- With the model loaded, the process holds no native module from the project's `node_modules` (onnxruntime and sharp load from the runtime mirror), so `npm ci` and `npm install` there do not fail with EPERM
+- The mirror resolves as the install does (nested versions included), holds only this platform's binaries, is copied once per dependency set, and two servers mirroring at once agree on one copy
 - `.mindplan-cache/` ignores itself in git and never appears in `changed_files`
 - Without the model (not installed, offline, still loading) search returns keyword results and no error
 - On 1,000 nodes: an incremental update after one write is under 200 ms and a search under 50 ms; a cold index with the real model is under a minute
