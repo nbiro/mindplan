@@ -4,11 +4,12 @@ type: Foundation
 title: "Graph migrations"
 description: "Infra — the ordered, idempotent graph migrations (legacy filenames and config, shipped Atomic Ops, mirror twins, revision backfill, retired agent files, change labels on shipped nodes), the migration level and stamp, the version gate, and the tree diff setup and upgrade report."
 state: stable
-shipped_at: 2026-11-03T08:20:36.136Z
-revisions: 5
-churn: 4.794
+shipped_at: 2026-11-08T06:29:43.235Z
+revisions: 6
+churn: 5.279
+churn_wiring: 1
 created_at: 2026-10-31T19:40:48.290Z
-updated_at: 2026-11-03T12:53:16.356Z
+updated_at: 2026-11-08T06:29:43.235Z
 depends_on:
   - f-compiler-rules
   - f-domain-model
@@ -59,6 +60,8 @@ Depends on: `f-territory-store`, `f-source-index`, `f-compiler-rules`, `f-domain
 
 - **Leftover next files (0.18).** `graphStatus()` reports a current graph that still holds a `<id>.next.mdx` beside a node file (not a `state: mirror` twin) as `upgrade`, and `upgrade_project` moves it; node folders are listed with the store's `listNodeFolders`, except `level4.ts`, which keeps its own pinned list so the migration never follows later folder changes. Level 4 uses the shared path, line-ending, and git helpers.
 - **Migration level 4 (0.18.0).** Moves each `<id>.next.mdx` and `next-attachments/` to `revisions/<change>/` (a next file without a change gets `rev-<id>`), turns its snapshot edges, claims, and tests into deltas against live, and records base hashes from the current live file; splits every `## Decisions` section into `decisions/<decision-id>.md` files; removes the tracked `mindplan/map.md` and adds it to `mindplan/.gitignore`. A frozen copy of the old next-file reader lives in `legacy-next.ts`. The report lists `revisionsMoved`, `decisionsSplit`, and `mapIgnored`; every step is idempotent
+
+- **Noted writes.** Migration renames, folder moves, and directory removals call `notePlanWrite(path)` (both ends of a rename), so a graph load later in the same tool call (`upgrade_project`) re-checks the folders a migration changed (`f-graph-cache` graph memo)
 
 ## Acceptance Criteria
 

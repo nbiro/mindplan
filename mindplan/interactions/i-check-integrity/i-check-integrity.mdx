@@ -4,11 +4,12 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, an outdated graph, and at merge in-review work and shipped nodes whose code changed but whose territory did not; warns about stale text, shape, and more."
 state: stable
-shipped_at: 2026-11-07T22:43:26.073Z
-revisions: 34
-churn: 22.979
+shipped_at: 2026-11-08T06:29:43.942Z
+revisions: 35
+churn: 23.808
+churn_wiring: 1
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-07T22:43:26.073Z
+updated_at: 2026-11-08T06:29:43.942Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -103,6 +104,8 @@ The check reads revision summaries from `f-plan-views` (`revisionSummaries`), co
 The after-merge and compact code read the cache folder name from `f-source-index` instead of repeating it.
 
 `run_check({ after_merge: true })` (CLI `check --after-merge`) validates the graph a git merge produced: git conflict markers in any `mindplan/` file, two nodes created with one id in different folders, a revision file that no longer parses, a decision id held by two files, a tracked `mindplan/map.md`, and a missing or behind `version.json`, each a `Blocked: after-merge: …` line with its fix; a revision whose `base` no longer matches live is a `Warning: after-merge: …` naming `rebase_revision({ node_id, change })` (ship rebases it anyway); the rest of the check runs as usual. `runIntegrityCheck` reads the call's root and never writes `MINDPLAN_ROOT`.
+
+- **One graph memo per check.** `runIntegrityCheck` and `buildDriftReport` run in a graph-memo scope (`withRoot(..., { memoGraph: true })`), so the CLI check's repeated graph loads reuse its first one (`f-graph-cache`); inside `run_check` they keep the tool call's memo
 
 ## Acceptance Criteria
 

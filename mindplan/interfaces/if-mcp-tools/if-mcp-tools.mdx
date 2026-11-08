@@ -4,11 +4,12 @@ type: Interface
 title: "MCP tools"
 description: "MCP stdio Interface: mounts its actions' thirty-seven tools in a fixed order behind the version gate and, for writes, the project rules gate, each with an optional graph root and annotations from one tool kind; compact JSON results, small writes, node-scoped drift."
 state: stable
-shipped_at: 2026-11-07T20:32:46.890Z
-revisions: 33
-churn: 6.365
+shipped_at: 2026-11-08T06:29:44.466Z
+revisions: 34
+churn: 7.304
+churn_wiring: 1
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-11-07T20:32:46.890Z
+updated_at: 2026-11-08T06:29:44.466Z
 split_at: 26
 split_into:
   - i-assess-impact
@@ -110,6 +111,8 @@ The root label and the removed-legacy-files list are shaped inside `guarded` fro
 `root` must be an absolute path to an existing directory for every tool (`setup_project` and `doctor` included), and must hold `mindplan/` for every other tool; anything else is Blocked before the handler runs. A result from another root gains `root` only when its object payload has none; JSON array payloads are left as they are, and only Blocked texts and plain strings end with ` (root: <path>)`.
 
 Every tool takes an optional `root`: an absolute path to a checkout or git worktree whose `mindplan/` the call reads and writes (the default is the server's root). `mount()` adds it to every input schema once, resolves it (Blocked when the path has no `mindplan/` and the tool is not `setup_project` or `doctor`), and runs the version gate, the handler, and the drift envelope inside that root's scope. Results name `root` when it differs from the server's.
+
+- **Graph memo per call.** Each tool call runs in a graph-memo scope (`withRoot(root, ..., { memoGraph: true })`): its graph loads after the first reuse the folders the call did not write (`f-graph-cache`)
 
 ## Acceptance Criteria
 

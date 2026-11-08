@@ -29,7 +29,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Every graph load a tool call reuses is compared with a full load; a plan write that was
+      # not noted (notePlanWrite) fails the run instead of serving a stale record.
       - run: npm test
+        env:
+          MINDPLAN_GRAPH_MEMO: verify
       - name: mindplan check (graph + packages)
         run: node dist/index.js check
 

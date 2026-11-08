@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.22.1 — faster tool calls: one graph load per call
+
+- **A tool call checks the plan's files once.** A call used to load the graph about four times, and each load stat-ed every node folder (and re-read every recently written one). A later load in the same call now reuses the first one, except for the folders the call itself wrote. Write-heavy calls such as `update_node_status` gain the most. Edits made outside the server between calls are still seen; the records still come from the `.mindplan-cache/graph.db` mirror. `MINDPLAN_GRAPH_MEMO=off` turns the reuse off. [§1.1.3]
+
 ## 0.22.0 — light orientation replies, revision reasons, hotspot diagnosis
 
 - **Distant rules come back as one line.** `orient_for_work`, `get_node_context` (`resolved_rules`), and change-wide orientation return the full text of the node's own rules and of every source at distance 1 (its Capability, a Foundation it depends on directly, a Bug's affected nodes). A source further away is `{ node_id, node_type, via, distance, version, first, count }`: its first rule and how many it has. `include_inherited_rules: true` returns every text. On a 250-node graph the same 1–4 KB of distance 2–4 rules no longer rides along with every orient. The orientation gate still covers every reaching rule. [§8]

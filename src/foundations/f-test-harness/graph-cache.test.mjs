@@ -5,7 +5,8 @@
  * ignored plan files are all seen, with the project at the repository top or below it; records
  * persist across processes, survive a corrupt file, and are never shared between package versions;
  * callers cannot corrupt the cache by mutating what a load returns; a Blocked parse stays Blocked
- * every call; and a warm load beats a cold one.
+ * every call; a warm load beats a cold one; and within one tool call (a graph-memo scope) a load
+ * reuses the call's earlier load except for folders this process wrote since.
  */
 // Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
 process.env.MINDPLAN_VERSION_GATE ??= "off";
@@ -17,6 +18,8 @@ import * as path from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 import { loadGraph, parserVersion } from "../../../dist/foundations/f-territory-store/store.js";
 import { GraphCache, closeGraphCaches, graphCacheFor } from "../../../dist/foundations/f-graph-cache/cache.js";
+import { notePlanWrite, unlinkRetry, writeFileRetry } from "../../../dist/foundations/f-source-index/io.js";
+import { withRoot } from "../../../dist/foundations/f-source-index/root-scope.js";
 
 const toolRoot = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const tmp = (label) => fs.mkdtempSync(path.join(os.tmpdir(), `mindplan-graph-cache-${label}-`));
@@ -380,6 +383,76 @@ function loadInChild(root, mode = "stamps") {
   assert.equal(stats().parsed, 0, "a warm load of an unchanged plan re-parses no node folder");
   assert.ok(warm < cold, `warm load ${warm.toFixed(0)} ms should beat the uncached ${cold.toFixed(0)} ms`);
   ok("scale: a warm load parses nothing and beats an uncached one");
+}
+
+// Graph memo: within one tool call (withRoot with memoGraph) a load reuses the call's last load,
+// re-checking only folders a noted plan write touched; outside such a scope nothing is reused.
+{
+  const root = tmp("memo");
+  makePlan(root, 4);
+  writeNode(root, "other", "Other", { old: true });
+  use(root, "stamps");
+  const otherFile = path.join(root, "mindplan", "capabilities", "other", "other.mdx");
+  loadGraph();
+  loadGraph();
+  assert.equal(stats().reused, 0, "outside a graph-memo scope a load never reuses");
+  withRoot(root, () => {
+    loadGraph();
+    assert.equal(stats().reused, 0, "the first load of a call checks every folder");
+    const first = loadGraph();
+    assert.deepEqual(stats(), { ...stats(), folders: 5, reused: 5, parsed: 0, verified: 0 }, "a second load reuses every folder");
+    first.nodes[0].title = "mutated";
+    assert.notEqual(loadGraph().nodes[0].title, "mutated", "a reused load hands out copies");
+
+    writeFileRetry(otherFile, nodeFile("other", "Other v2"));
+    assert.equal(title("other"), "Other v2", "a noted write is seen in the same call");
+    assert.equal(stats().reused, 4, "only the written folder is checked again");
+    assert.equal(stats().parsed, 1);
+
+    fs.writeFileSync(path.join(root, "mindplan", "project.md"), "# P\n");
+    notePlanWrite(path.join(root, "mindplan", "project.md"));
+    loadGraph();
+    assert.equal(stats().reused, 5, "a write outside every node folder keeps every record");
+
+    writeNode(root, "fresh", "Fresh");
+    assert.equal(title("fresh"), "Fresh", "a new folder is loaded even with no noted write");
+    assert.equal(stats().reused, 5);
+
+    unlinkRetry(otherFile);
+    assert.equal(title("other"), undefined, "a removed live file is seen");
+
+    notePlanWrite();
+    loadGraph();
+    assert.equal(stats().reused, 0, "a write with no path checks every folder again");
+  }, { memoGraph: true });
+  withRoot(root, () => {
+    loadGraph();
+    assert.equal(stats().reused, 0, "a new call never reuses the last call's load");
+  }, { memoGraph: true });
+  withRoot(root, () => {
+    loadGraph();
+    loadGraph();
+    assert.equal(stats().reused, 0, "a scope opened without memoGraph never reuses");
+  });
+  withRoot(root, () => withRoot(undefined, () => {
+    loadGraph();
+    loadGraph();
+    assert.equal(stats().reused, stats().folders, "a nested scope keeps the enclosing call's memo");
+  }), { memoGraph: true });
+  process.env.MINDPLAN_GRAPH_MEMO = "off";
+  withRoot(root, () => {
+    loadGraph();
+    loadGraph();
+    assert.equal(stats().reused, 0, "MINDPLAN_GRAPH_MEMO=off never reuses");
+  }, { memoGraph: true });
+  process.env.MINDPLAN_GRAPH_MEMO = "verify";
+  withRoot(root, () => {
+    loadGraph();
+    fs.writeFileSync(path.join(root, "mindplan", "capabilities", "fresh", "fresh.mdx"), nodeFile("fresh", "Unnoted"));
+    assert.throws(() => loadGraph(), /stale record/, "verify mode catches a write that was not noted");
+  }, { memoGraph: true });
+  delete process.env.MINDPLAN_GRAPH_MEMO;
+  ok("graph memo: one call reuses its load except folders it wrote; verify catches an unnoted write");
 }
 
 closeGraphCaches();

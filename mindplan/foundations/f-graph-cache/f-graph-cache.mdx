@@ -4,11 +4,12 @@ type: Foundation
 title: "Graph cache"
 description: "Adapter — keeps parsed node records in memory and in .mindplan-cache/graph.db, and decides per node folder whether a record can be reused, from git (clean at the current tree) or from file stamps and hashes, so a load re-parses only changed files."
 state: stable
-shipped_at: 2026-11-03T08:20:35.293Z
-revisions: 2
-churn: 1.831
+shipped_at: 2026-11-08T06:29:42.211Z
+revisions: 3
+churn: 2.634
+churn_behavior: 1
 created_at: 2026-10-26T07:49:32.173Z
-updated_at: 2026-11-03T12:53:16.207Z
+updated_at: 2026-11-08T06:29:42.211Z
 depends_on:
   - f-domain-model
   - f-source-index
@@ -51,7 +52,11 @@ Intended files: `src/foundations/f-graph-cache/`
 - **Cache file name.** `cache.ts` exports `DB_FILENAME` (`graph.db`) so readers such as `doctor` never repeat it.
 - **One cache per root.** In-memory caches are keyed by `rootKey(root)` (`f-source-index/root-scope.ts`: resolved, lowercased on Windows) and the package version, so a call on another worktree root, or the same root spelled with another casing, reads the right `graph.db` once.
 
+- **Graph memo (per call).** Inside a graph-memo scope (`graphMemoToken` from `f-source-index`: one MCP tool call or one CLI check, opened with `withRoot(..., { memoGraph: true })`), `load` keeps each folder's outcome (record or none, content key). A later load in the same scope reuses a folder's outcome without touching a file unless a plan write this process noted since (`planWritesSince`) is inside the folder, is the folder, or is a parent of it; those folders, and any folder not in the memo, go through the freshness rule above. A noted write with no path, or a write log that no longer reaches the memo, re-checks every folder. A load that reuses every folder never asks git. Reused records are `structuredClone`s that keep their content keys; `lastStats.reused` counts them. The first load of a call always runs the full rule, so edits made between calls are seen. `MINDPLAN_GRAPH_MEMO=off` disables reuse; `verify` also runs the full load whenever a load reused a folder and throws when the two differ (CI runs `npm test` with it)
+
 ## Acceptance Criteria
+
+- Within one call a second load reuses every folder; a noted write re-checks only its folder; a write outside every node folder keeps them all; a new folder is loaded; a write with no path re-checks all; a new call, a scope without `memoGraph`, and `MINDPLAN_GRAPH_MEMO=off` never reuse; a nested scope keeps the call's memo; verify mode throws on a write that was not noted
 
 - A second load in stamps mode re-parses nothing; in git mode a clean committed plan is reused with no territory file read or stat
 - A same-size edit made within the racy window, with its mtime restored, is re-parsed (by hash)

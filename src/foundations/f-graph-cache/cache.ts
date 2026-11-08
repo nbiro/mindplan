@@ -24,7 +24,8 @@ import * as path from "path";
 import type { MindPlanNode } from "../f-domain-model/types.js";
 import { dirGitState, treeChanges } from "../f-source-index/git.js";
 import { readBytesRetry } from "../f-source-index/io.js";
-import { ensureCacheDir, rootKey } from "../f-source-index/root-scope.js";
+import { planWriteCount, planWritesSince } from "../f-source-index/io.js";
+import { ensureCacheDir, graphMemoToken, rootKey } from "../f-source-index/root-scope.js";
 
 /** Bump when the table or the stored entry shape changes; a mismatch drops every row. */
 export const GRAPH_CACHE_SCHEMA = "2";
@@ -165,8 +166,18 @@ function sameStamps(a: FileStamp[], b: FileStamp[]): boolean {
   return true;
 }
 
-/** Counters for tests and diagnostics: how the last load treated its folders. */
-export type LoadStats = { folders: number; parsed: number; verified: number; trusted: number; mode: "git" | "stamps" };
+/** One folder's outcome in a memoized load: its record (null: no live file) and content key. */
+type MemoRecord = { record: MindPlanNode | null; key: string };
+
+/**
+ * The last load within one graph-memo scope (a tool call): each folder's record as loaded (never
+ * handed out; a reuse returns copies), keyed by folded folder path, and the plan-write position
+ * after it (`planWriteCount`).
+ */
+type GraphMemo = { token: object; writes: number; records: Map<string, MemoRecord> };
+
+/** Counters for tests and diagnostics: how the last load treated its folders (`reused`: from the call's graph memo, no file access). */
+export type LoadStats = { folders: number; parsed: number; verified: number; trusted: number; reused: number; mode: "git" | "stamps" };
 
 /** One project's cache: entries in memory, persisted to SQLite when available. */
 export class GraphCache {
@@ -176,9 +187,12 @@ export class GraphCache {
   private removed = new Set<string>();
   private keys = new WeakMap<MindPlanNode, string>();
   private readonly version: string;
-  lastStats: LoadStats = { folders: 0, parsed: 0, verified: 0, trusted: 0, mode: "stamps" };
+  lastStats: LoadStats = { folders: 0, parsed: 0, verified: 0, trusted: 0, reused: 0, mode: "stamps" };
   /** Folder count from which a load asks git first (tests lower it). */
   gitModeMinFolders = GIT_MODE_MIN_FOLDERS;
+  private memo: GraphMemo | null = null;
+  /** Loads served from the graph memo (tests and diagnostics). */
+  memoHits = 0;
 
   constructor(readonly root: string, packageVersion: string, opts: { persist?: boolean } = {}) {
     this.version = packageVersion;
@@ -262,12 +276,79 @@ export class GraphCache {
    * Load every folder: reuse each record the freshness rule allows, re-parse the rest with
    * `parse` (whose throw propagates; nothing is cached for that folder), and drop entries for
    * folders that are gone. Returns copies, so callers may mutate them.
+   *
+   * Inside a graph-memo scope (`graphMemoToken`: one tool call or CLI check), a load repeats the
+   * scope's last load without touching a file while this process counted no plan write since
+   * (`planWriteCount`) and the folder list is the same. `MINDPLAN_GRAPH_MEMO=off` never reuses;
+   * `verify` also runs the full load on each reuse and throws when the two differ (CI).
    */
   load<F extends FolderRef>(folders: F[], parse: (folder: F) => MindPlanNode | null, planDir: string): MindPlanNode[] {
-    const stats: LoadStats = { folders: folders.length, parsed: 0, verified: 0, trusted: 0, mode: "stamps" };
+    const setting = process.env.MINDPLAN_GRAPH_MEMO;
+    const token = setting === "off" ? undefined : graphMemoToken();
+    if (!token) {
+      this.memo = null;
+      return this.loadFolders(folders, parse, planDir, null, null);
+    }
+    const reuse = this.memo?.token === token ? this.reusable(this.memo) : null;
+    const records = new Map<string, MemoRecord>();
+    const out = this.loadFolders(folders, parse, planDir, reuse, records);
+    // Taken after the load: a parse that removed a legacy twin is part of what was loaded.
+    this.memo = { token, writes: planWriteCount(), records };
+    if (reuse && reuse.size > 0) {
+      this.memoHits++;
+      if (setting === "verify") {
+        // The check load must not replace what this load reports (stats describe the reuse).
+        const served = this.lastStats;
+        const fresh = this.loadFolders(folders, parse, planDir, null, null);
+        this.lastStats = served;
+        if (JSON.stringify(out) !== JSON.stringify(fresh)) {
+          throw new Error(
+            `graph memo served a stale record under ${this.root}: a write this process made under mindplan/ was not noted (notePlanWrite)`
+          );
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The memo's records a load may reuse as they are: every folder no plan write noted since the
+   * memo reached (a noted path inside the folder, the folder itself, or a parent of it; paths are
+   * folded, so a spelling difference can only re-check a folder). Null when a noted write has no
+   * path or the log no longer reaches the memo.
+   */
+  private reusable(memo: GraphMemo): Map<string, MemoRecord> | null {
+    const writes = planWritesSince(memo.writes);
+    if (writes === null) return null;
+    const touched: string[] = [];
+    for (const file of writes) {
+      if (file === null) return null;
+      const rel = path.relative(this.root, path.resolve(file));
+      if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
+      touched.push(foldKey(rel.split(path.sep).join("/")));
+    }
+    if (touched.length === 0) return memo.records;
+    const reuse = new Map<string, MemoRecord>();
+    for (const [rel, rec] of memo.records) {
+      const hit = touched.some((t) => t === "" || t === rel || t.startsWith(rel + "/") || rel.startsWith(t + "/"));
+      if (!hit) reuse.set(rel, rec);
+    }
+    return reuse;
+  }
+
+  private loadFolders<F extends FolderRef>(
+    folders: F[],
+    parse: (folder: F) => MindPlanNode | null,
+    planDir: string,
+    reuse: Map<string, MemoRecord> | null,
+    memoRecords: Map<string, MemoRecord> | null
+  ): MindPlanNode[] {
+    const stats: LoadStats = { folders: folders.length, parsed: 0, verified: 0, trusted: 0, reused: 0, mode: "stamps" };
     // Files modified at or after this moment may postdate git's answer, so they are never marked clean.
     const statusAt = Date.now();
-    const git = folders.length >= this.gitModeMinFolders ? dirGitState(planDir, ".mdx", this.root) : null;
+    // A load that reuses every folder from the memo never asks git.
+    const allReused = reuse !== null && folders.every((f) => reuse.has(foldKey(f.rel)));
+    const git = !allReused && folders.length >= this.gitModeMinFolders ? dirGitState(planDir, ".mdx", this.root) : null;
     const tree = git?.tree ?? null;
     if (tree) stats.mode = "git";
     // Git and the file system may spell a folder differently (case on Windows and macOS, Unicode
@@ -291,15 +372,27 @@ export class GraphCache {
       tree && !dirtyFolders.has(foldKey(folderRel)) && files.every((f) => statusAt - f.mtimeMs > RACY_MS) ? tree : null;
 
     const out: MindPlanNode[] = [];
-    const emit = (record: MindPlanNode, e: Pick<CacheEntry, "hash" | "files">): void => {
+    const give = (record: MindPlanNode, key: string): void => {
       const node = structuredClone(record);
-      this.keys.set(node, e.hash ?? stampKey(e.files));
+      this.keys.set(node, key);
       out.push(node);
+    };
+    const emit = (folderRel: string, record: MindPlanNode | null, e: Pick<CacheEntry, "hash" | "files">): void => {
+      const key = e.hash ?? stampKey(e.files);
+      if (record) give(record, key);
+      memoRecords?.set(foldKey(folderRel), { record, key });
     };
     const seen = new Set<string>();
     try {
       for (const folder of folders) {
         seen.add(folder.rel);
+        const reused = reuse?.get(foldKey(folder.rel));
+        if (reused) {
+          stats.reused++;
+          if (reused.record) give(reused.record, reused.key);
+          memoRecords?.set(foldKey(folder.rel), reused);
+          continue;
+        }
         const cached = this.entries.get(folder.rel);
         let entry: CacheEntry | null = null;
 
@@ -342,11 +435,13 @@ export class GraphCache {
             const held = sameStamps(files, after) && (hash === null || folderHash(folder.abs, after) === hash);
             if (held) this.update(folder.rel, entry);
             else this.forget(folder.rel);
-            if (record) emit(record, entry);
+            // A folder that changed during its parse is not memoized: the next load checks it again.
+            if (held) emit(folder.rel, record, entry);
+            else if (record) give(record, entry.hash ?? stampKey(entry.files));
             continue;
           }
         }
-        if (entry.record) emit(entry.record, entry);
+        emit(folder.rel, entry.record, entry);
       }
       for (const rel of [...this.entries.keys()]) {
         if (!seen.has(rel)) this.forget(rel);

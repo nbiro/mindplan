@@ -100,7 +100,7 @@ function mount(server: McpServer, def: ToolDef): void {
     const { root, ...toolArgs } = args ?? {};
     const call = resolveCallRoot(def.name, root as string | undefined);
     if ("blocked" in call) return { content: [{ type: "text", text: call.blocked }], isError: true };
-    return withRoot(call.root, () => callback(toolArgs));
+    return withRoot(call.root, () => callback(toolArgs), { memoGraph: true });
   };
   const inputSchema = { ...rest.inputSchema, root: ROOT_INPUT };
   server.registerTool(def.name, { ...rest, inputSchema, annotations: ANNOTATIONS[kind] }, rooted as unknown as ToolCallback<typeof inputSchema>);

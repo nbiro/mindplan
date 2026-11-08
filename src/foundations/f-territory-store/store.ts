@@ -61,7 +61,7 @@ import {
   scopedRemovedLegacyFiles,
   type RemovedLegacyFile,
 } from "../f-source-index/root-scope.js";
-import { RM_MAX_RETRIES, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
+import { RM_MAX_RETRIES, notePlanWrite, readFileRetry, unlinkRetry, writeFileRetry } from "../f-source-index/io.js";
 import { packageVersion } from "./version.js";
 import { decisionsDir, readDecisionFiles } from "./decisions-store.js";
 import { readRevisions, syncNextView } from "./revisions.js";
@@ -420,6 +420,7 @@ function deleteNextSlotFiles(node: Pick<MindPlanNode, "id" | "type">): string[] 
       }
     };
     walk(nextAtt, dirRel);
+    notePlanWrite(nextAtt);
     fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
     removed.push(dirRel);
   }

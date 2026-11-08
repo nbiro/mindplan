@@ -59,7 +59,7 @@ import {
   withRevision,
   type RebaseLive,
 } from "../f-revision-model/index.js";
-import { RM_MAX_RETRIES, copyFileRetry, readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
+import { RM_MAX_RETRIES, copyFileRetry, notePlanWrite, readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
 import { repoRelative } from "../f-source-index/root-scope.js";
 import {
   assertNoDecisionClash,
@@ -427,6 +427,7 @@ function deleteRevisionFolder(node: Pick<MindPlanNode, "id" | "type">, change: s
     }
   };
   walk(dir);
+  notePlanWrite(dir);
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
   const parent = path.dirname(dir);
   if (fs.existsSync(parent) && fs.readdirSync(parent).length === 0) withTransientRetry(() => fs.rmdirSync(parent));
@@ -570,6 +571,7 @@ function snapshotTree(snap: FileSnapshot, dir: string): void {
 /** Puts every snapshotted file back as it was: rewritten, or removed when it did not exist. */
 function restoreSnapshot(snap: FileSnapshot): void {
   for (const [abs, bytes] of snap) {
+    notePlanWrite(abs);
     try {
       if (bytes === null) {
         if (fs.existsSync(abs)) fs.rmSync(abs, { force: true, maxRetries: RM_MAX_RETRIES });
