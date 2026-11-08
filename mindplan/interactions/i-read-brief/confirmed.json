@@ -1,0 +1,12 @@
+{
+  "confirmations": [
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-08T17:08:06.242Z",
+      "note": "spec.ts only adds three SPEC_TOPICS entries (rule-checks, replies, hook); the node describes the topic map generically and every topic still resolves.",
+      "files": {
+        "src/interactions/i-read-brief/spec.ts": "f3788b202579baa4ba1fd4f2f07834ead399e514fa3e79baa69cb6bbe691870a"
+      }
+    }
+  ]
+}
