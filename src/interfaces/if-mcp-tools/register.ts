@@ -22,6 +22,7 @@ import { TOOLS as TERRITORY_TOOLS } from "../../interactions/i-edit-territory/to
 import { TOOLS as REVISE_TOOLS } from "../../interactions/i-revise-node/tools.js";
 import { TOOLS as CLAIM_TOOLS } from "../../interactions/i-claim-files/tools.js";
 import { TOOLS as DECISION_TOOLS } from "../../interactions/i-record-decision/tools.js";
+import { TOOLS as CONFIRM_TOOLS } from "../../interactions/i-confirm-territory/tools.js";
 import { TOOLS as BRIEF_EDIT_TOOLS } from "../../interactions/i-edit-brief/tools.js";
 import { TOOLS as CHECK_TOOLS } from "../../interactions/i-check-integrity/tools.js";
 import { TOOLS as EXPORT_TOOLS } from "../../interactions/i-export-map/tools.js";
@@ -186,6 +187,7 @@ const TOOL_ORDER = [
   "get_skill",
   "get_rules",
   "patch_node_territory",
+  "confirm_territory",
   "patch_node_rules",
   "record_decision",
   "list_decisions",
@@ -223,6 +225,7 @@ export function registerMindPlanTools(server: McpServer): void {
     ...REVISE_TOOLS,
     ...CLAIM_TOOLS,
     ...DECISION_TOOLS,
+    ...CONFIRM_TOOLS,
     ...BRIEF_EDIT_TOOLS,
     ...CHECK_TOOLS,
     ...EXPORT_TOOLS,

@@ -5,7 +5,7 @@
 
 import { execFileSync } from "child_process";
 import { matchGlob } from "./universe.js";
-import { resolveProjectRoot } from "./root-scope.js";
+import { resolveProjectRoot, toPosix } from "./root-scope.js";
 
 /**
  * Project-relative path of the auto-persisted Mermaid snapshot. It is rewritten after every write,
@@ -227,4 +227,94 @@ export function fileHistory(relPath: string, root?: string): FileVersion[] | nul
     pos += size + 1;
   }
   return versions;
+}
+
+export interface DirtySrcPaths {
+  workingTree: string[];
+  commits: string[];
+}
+
+export class GitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GitError";
+  }
+}
+
+function gitOutput(args: string[], cwd: string, required: boolean): string {
+  try {
+    // Trim only trailing whitespace. A leading space is the unstaged half of porcelain
+    // (` D path`); trimming it corrupts the first path. A NUL-terminated (-z) list ends in NUL,
+    // so its last path keeps any trailing space of its own.
+    return runGit(args, cwd).replace(/\s+$/, "");
+  } catch (err) {
+    if (!required) return "";
+    const detail =
+      err && typeof err === "object" && "stderr" in err
+        ? String((err as { stderr?: Buffer | string }).stderr ?? "").trim()
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    throw new GitError(
+      `git ${args.join(" ")} failed${detail ? `: ${detail}` : ""}.`
+    );
+  }
+}
+
+/**
+ * Paths of `git status --porcelain -z --no-renames`: NUL-terminated `XY <path>` records, each path
+ * verbatim (no C-quoting, so a non-ASCII or quoted name reads as it is on disk).
+ */
+function parsePorcelainSrcPaths(porcelain: string): string[] {
+  const paths: string[] = [];
+  for (const record of porcelain.split("\0")) {
+    if (record.length < 4) continue;
+    const file = record.slice(3);
+    if (file) paths.push(toPosix(file));
+  }
+  return paths;
+}
+
+/**
+ * Working-tree dirtiness vs commits ahead of base, filtered to universe later.
+ */
+export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths {
+  const explicitBase = base !== undefined;
+  const inside = gitOutput(["rev-parse", "--is-inside-work-tree"], cwd, false);
+  if (inside !== "true") {
+    if (explicitBase) {
+      throw new GitError(`--base requires a git repository (got base "${base}").`);
+    }
+    return { workingTree: [], commits: [] };
+  }
+
+  // Porcelain paths are relative to the repository top and claims to the project root: limit the
+  // status to the project root and strip its prefix (diff --relative does both for commits).
+  // -z: paths verbatim, never C-quoted (core.quotePath would escape a non-ASCII name).
+  // --no-renames: a rename is its deleted and added paths, both dirty.
+  const porcelain = gitOutput(["status", "--porcelain", "-z", "--no-renames", "-uall", "--", "."], cwd, true);
+  const prefix = repoPrefix(cwd) ?? "";
+  const workingTree = [
+    ...new Set(
+      parsePorcelainSrcPaths(porcelain)
+        .filter((p) => p.startsWith(prefix))
+        .map((p) => p.slice(prefix.length))
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const commits = new Set<string>();
+  const baseRef = base ?? defaultBaseRef(cwd);
+  if (baseRef) {
+    const diff = gitOutput(["diff", "-z", "--name-only", "--no-renames", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
+    for (const p of diff.split("\0")) {
+      if (p) commits.add(toPosix(p));
+    }
+  } else if (explicitBase) {
+    throw new GitError(`could not resolve git base "${base}".`);
+  }
+
+  return {
+    workingTree,
+    commits: [...commits].sort((a, b) => a.localeCompare(b)),
+  };
 }
