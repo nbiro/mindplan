@@ -94,7 +94,8 @@ export function gateWriteOrOrient(
     known: tracksSentText(legacy) ? sentRulesVersions() : undefined,
   });
   return (reply) => {
-    recordOriented(g, unfetched);
+    // Fingerprint the rules as they stand after the write (an open_next may have applied edges).
+    recordOriented(loadGraph(), unfetched);
     recordRulesSent(block.entries as Record<string, unknown>[]);
     const rules = { ...block, oriented_on: unfetched };
     return "rules" in reply ? { ...reply, oriented: true, oriented_rules: rules } : { ...reply, oriented: true, rules };

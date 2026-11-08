@@ -11,6 +11,7 @@ const PROTECTED_KEYS = new Set([
   "rules",
   "project_rules",
   "resolved_rules",
+  "oriented_rules",
   "failures",
   "changed_files",
   "truncated",
@@ -76,11 +77,26 @@ function fitting(list: unknown[], room: number): number {
  * reply is under the cap or nothing more can be cut. A string, number, or a reply already under the
  * cap comes back unchanged; `budget` 0 turns the cap off.
  */
-export function budgetReply(payload: unknown, budget: number): unknown {
+export function budgetReply(payload: unknown, cap: number): unknown {
+  let budget = cap;
   if (budget <= 0 || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   let total = size(payload);
   if (total <= budget) return payload;
   const reply = structuredClone(payload) as Record<string, unknown>;
+  // What cutting can remove at most. Rule text and other protected parts stay whole, so when they
+  // alone are near the cap the target becomes their size plus room for a little of each list:
+  // cutting every list to one item would hide them without bringing the reply under the cap.
+  const cuttable = (() => {
+    const found: Candidate[] = [];
+    candidates(reply, "", found);
+    // Top-level-most lists only: a nested list's bytes are inside its parent's.
+    const paths = found.map((c) => c.path);
+    return found
+      .filter((c) => !paths.some((p) => p !== c.path && c.path.startsWith(`${p}.`)))
+      .reduce((sum, c) => sum + c.bytes, 0);
+  })();
+  budget = Math.max(budget, total - cuttable + 2048);
+  if (total <= budget) return payload;
   const truncated: { path: string; shown: number; total: number; cursor: string }[] = [];
   const cut = new Set<string>();
   for (;;) {

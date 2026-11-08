@@ -96,7 +96,13 @@ export function parseRuleChecks(text: string): { rules: CheckedRule[]; problems:
       continue;
     }
     const m = CHECK_LINE.exec(line);
-    if (!m) continue;
+    if (!m) {
+      // At column 0 it is not a continuation of the bullet: say so instead of ignoring it.
+      if (/^check:\s*\{/.test(line)) {
+        problems.push({ rule: current?.rule ?? "(none)", line: line.trim(), problem: "indent the check: line under its rule bullet" });
+      }
+      continue;
+    }
     if (!current) {
       problems.push({ rule: "(none)", line: line.trim(), problem: "a check: line must sit under a rule bullet" });
       continue;

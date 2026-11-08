@@ -91,7 +91,6 @@ export function openNext(args: {
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
   // Once per node per change in a session; a decision under this change already answers it.
   const warned = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()), reason, change);
-  const openClosed = warned && firstHotspotWarning(node_id, change) ? warned : null;
   // A planned depends_on that closes a cycle with another change's edges could never ship.
   const plannedDeps = (node.planned ?? []).filter((e) => e.change === change && e.type === "depends_on");
   if (plannedDeps.length > 0) {
@@ -126,6 +125,8 @@ export function openNext(args: {
   const rel = entityRelativePath(node);
   const revisionPath = revisionRelativeFilePath(node, change);
   const { revision } = opened;
+  // Recorded only now: an open_next that Blocked above has not given the warning.
+  const openClosed = warned && firstHotspotWarning(node_id, change) ? warned : null;
   return finish({
     node_id,
     live_state: node.state,

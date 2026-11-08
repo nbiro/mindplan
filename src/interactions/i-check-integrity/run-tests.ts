@@ -36,7 +36,15 @@ function linkedTests(node: MindPlanNode): string[] {
   return [...(node.tests ?? []), ...(node.open_revisions ?? []).flatMap((r) => r.tests?.add ?? [])];
 }
 
-const quote = (p: string) => (/^[\w./@-]+$/.test(p) ? p : `"${p.replace(/"/g, '\\"')}"`);
+/**
+ * One path as a shell word: plain when it is only safe characters; otherwise single-quoted on POSIX
+ * (no expansion inside) and double-quoted on Windows cmd, where a path cannot contain a quote.
+ */
+const quote = (p: string) => {
+  if (/^[\w./@-]+$/.test(p)) return p;
+  if (process.platform === "win32") return `"${p}"`;
+  return `'${p.replace(/'/g, "'\\''")}'`;
+};
 
 /**
  * Run the linked tests of `change`'s members or of `nodes`. Blocked without a scope, without
@@ -66,7 +74,8 @@ export function runLinkedTests(args: { change?: string; nodes?: string[] }): Tes
   if (files.length === 0) {
     throw blocked(`no node in scope links a test (${without.join(", ") || "none"}); link them with set_test_files.`);
   }
-  const line = command.replace("{files}", files.map(quote).join(" "));
+  // A function replacement: `$&` and the like in a path are not patterns.
+  const line = command.replace("{files}", () => files.map(quote).join(" "));
   const res = spawnSync(line, { cwd: root, shell: true, encoding: "utf-8", timeout: TEST_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
   const passed = res.status === 0 && !res.error;
   recordTestRun(tested, passed);

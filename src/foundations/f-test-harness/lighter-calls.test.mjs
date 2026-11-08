@@ -318,6 +318,25 @@ check(
   text
 );
 
+// --- the budget never hides rule text, and does not shred lists for rule text it cannot cut ---
+const pages = await import(pathToFileURL(path.join(toolRoot, "dist/foundations/f-tool-kit/pages.js")).href);
+const bigRule = "x".repeat(5000);
+const cutReply = pages.budgetReply(
+  { oriented_rules: { entries: [{ rules: bigRule }, { rules: bigRule }] }, decisions: { entries: [{ d: "a" }, { d: "b" }, { d: "c" }] } },
+  1000
+);
+check(
+  "oriented_rules is never cut, and small lists beside protected text stay whole",
+  cutReply.oriented_rules.entries.length === 2 && cutReply.decisions.entries.length === 3 && cutReply.truncated === undefined,
+  JSON.stringify(cutReply.truncated)
+);
+const mixed = pages.budgetReply({ rules: { entries: [{ rules: bigRule }] }, rows: Array.from({ length: 400 }, (_, i) => ({ i, pad: "y".repeat(40) })) }, 1000);
+check(
+  "with protected text over the cap, the lists are still cut to near its size",
+  mixed.rules.entries[0].rules === bigRule && mixed.rows.length < 400 && mixed.truncated?.[0]?.path === "rows",
+  String(mixed.rows.length)
+);
+
 fs.rmSync(root, { recursive: true, force: true });
 if (failures > 0) {
   console.log(`\nlighter-calls.test.mjs: ${failures} failure(s)`);
