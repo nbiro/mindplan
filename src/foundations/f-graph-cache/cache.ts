@@ -297,7 +297,10 @@ export class GraphCache {
     if (reuse && reuse.size > 0) {
       this.memoHits++;
       if (setting === "verify") {
+        // The check load must not replace what this load reports (stats describe the reuse).
+        const served = this.lastStats;
         const fresh = this.loadFolders(folders, parse, planDir, null, null);
+        this.lastStats = served;
         if (JSON.stringify(out) !== JSON.stringify(fresh)) {
           throw new Error(
             `graph memo served a stale record under ${this.root}: a write this process made under mindplan/ was not noted (notePlanWrite)`
