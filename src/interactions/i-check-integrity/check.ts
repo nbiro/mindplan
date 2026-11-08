@@ -82,6 +82,9 @@ import {
 } from "../../foundations/f-territory-store/store.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 import { afterMergeFindings } from "./after-merge.js";
+import { ruleCheckFindings } from "./rule-checks.js";
+import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
+import type { MindPlanProjectConfig } from "../../foundations/f-source-index/config.js";
 import { revisionSummaries } from "../../foundations/f-plan-views/views.js";
 import { compactCheckResult, recordSeen, scopeWarnings, warningIds } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
@@ -1311,9 +1314,10 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   }
 
   let graph: MindPlanGraph;
+  let config: MindPlanProjectConfig;
   try {
     // Config must load (Blocked on legacy implementation_packages).
-    loadProjectConfig(root);
+    config = loadProjectConfig(root);
     graph = loadGraph();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1335,6 +1339,9 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
+    const ruleChecks = ruleCheckFindings(graph, root, loadProjectBrief().rules, universe, config);
+    failures.push(...ruleChecks.failures);
+    info.push(...ruleChecks.info);
     const cycles = changeCycles(graph);
     for (const f of changeCycleFailures(graph, undefined, cycles)) fail(failures, f);
     const probe = dirtyProbe(root);

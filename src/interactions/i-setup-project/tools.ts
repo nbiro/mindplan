@@ -23,16 +23,20 @@ export const TOOLS: ToolDef[] = [
       title: "Set up MindPlan in this project",
       description:
         "Call when get_project's version or a Blocked: Version names setup_project, or the user asks to set up MindPlan. " +
-        "Creates the mindplan/ graph and writes no other file; returns { created, changed_files, ci?, pointer, guide }: the MINDPLAN.md text and the follow-up steps (an existing graph is left as is). " +
-        "Pass ci: \"github\" for the merge-gate workflow. Blocked on a graph that needs upgrade_project. " +
+        "Creates the mindplan/ graph and writes no other file unless asked; returns { created, changed_files, ci?, hook?, pointer, guide }: the MINDPLAN.md text and the follow-up steps (an existing graph is left as is). " +
+        "Pass ci: \"github\" for the merge-gate workflow, install_hook: true for the Claude Code hook that keeps host file tools off mindplan/ (hook.offer says when it is missing). Blocked on a graph that needs upgrade_project. " +
         "Details: get_spec({ topic: \"setup_project\" }).",
       inputSchema: {
         ci: z
           .enum(["github"])
           .optional()
           .describe("Also write the GitHub merge-gate workflow, which runs check --merge on pull requests to the default branch."),
+        install_hook: z
+          .boolean()
+          .optional()
+          .describe("Also merge a Claude Code PreToolUse hook into .claude/settings.json that denies host Read/Edit/Write/Grep/Glob on mindplan/** and names the MindPlan tool to use."),
       },
     },
-    ({ ci }) => setupProject({ ci })
+    ({ ci, install_hook }) => setupProject({ ci, install_hook })
   ),
 ];

@@ -2,8 +2,8 @@
  * Project-level MindPlan config (`mindplan/config.json`).
  * Declares which repo paths form the ownership universe (`sources` / `exclude`), and optionally
  * when the decision gate asks for a decision (`decisions`), when a node counts as a hotspot
- * (`hotspots`), when a planned node depends on too many other changes (`fan_out`), and how search
- * ranks (`search`).
+ * (`hotspots`), when a planned node depends on too many other changes (`fan_out`), how search
+ * ranks (`search`), and when run_check runs rules' command checks (`rule_checks`).
  */
 
 import * as fs from "fs";
@@ -46,6 +46,19 @@ export type SearchConfigSettings = {
   model: string;
 };
 
+/**
+ * When run_check runs rules' `command` checks: `off` never (default), `local` except when
+ * `process.env.CI` is set, `always` also in CI.
+ */
+export type RuleChecksSettings = {
+  commands: RuleCheckCommands;
+};
+
+export const RULE_CHECK_COMMANDS = ["off", "local", "always"] as const;
+export type RuleCheckCommands = (typeof RULE_CHECK_COMMANDS)[number];
+
+export const DEFAULT_RULE_CHECKS_SETTINGS: RuleChecksSettings = { commands: "off" };
+
 export type MindPlanProjectConfig = {
   sources: string[];
   exclude: string[];
@@ -57,6 +70,8 @@ export type MindPlanProjectConfig = {
   fan_out?: Partial<FanOutSettings>;
   /** Stored search settings; absent fields take the search index's defaults. */
   search?: Partial<SearchConfigSettings>;
+  /** Stored rule-check settings; an absent `commands` takes `DEFAULT_RULE_CHECKS_SETTINGS`. */
+  rule_checks?: Partial<RuleChecksSettings>;
 };
 
 /**
@@ -102,6 +117,11 @@ export const DEFAULT_FAN_OUT_SETTINGS: FanOutSettings = {
 /** The fan-out settings in effect: stored values over the defaults. */
 export function fanOutSettings(config: MindPlanProjectConfig): FanOutSettings {
   return { ...DEFAULT_FAN_OUT_SETTINGS, ...config.fan_out };
+}
+
+/** The rule-check settings in effect: stored values over the defaults. */
+export function ruleChecksSettings(config: MindPlanProjectConfig): RuleChecksSettings {
+  return { ...DEFAULT_RULE_CHECKS_SETTINGS, ...config.rule_checks };
 }
 
 const DEFAULT_CONFIG: MindPlanProjectConfig = {
@@ -223,6 +243,25 @@ function parseSearchSettings(value: unknown): Partial<SearchConfigSettings> {
   return out;
 }
 
+/** Validates the optional `rule_checks` object; unknown keys are Blocked like `decisions`. */
+function parseRuleChecksSettings(value: unknown): Partial<RuleChecksSettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw blockedConfig('"rule_checks" must be an object with optional "commands".');
+  }
+  const out: Partial<RuleChecksSettings> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (key !== "commands") {
+      throw blockedConfig(`"rule_checks" has unknown key "${key}" (allowed: commands).`);
+    }
+    if (v === undefined) continue;
+    if (typeof v !== "string" || !(RULE_CHECK_COMMANDS as readonly string[]).includes(v)) {
+      throw blockedConfig(`"rule_checks.commands" must be one of ${RULE_CHECK_COMMANDS.map((c) => `"${c}"`).join(", ")}.`);
+    }
+    out.commands = v as RuleCheckCommands;
+  }
+  return out;
+}
+
 /**
  * Load config.
  * - Missing file → sources: ["src/**"], exclude: []
@@ -265,6 +304,7 @@ export function loadProjectConfig(root?: string): MindPlanProjectConfig {
   if ("hotspots" in obj) config.hotspots = parseHotspotSettings(obj.hotspots);
   if ("fan_out" in obj) config.fan_out = parseFanOutSettings(obj.fan_out);
   if ("search" in obj) config.search = parseSearchSettings(obj.search);
+  if ("rule_checks" in obj) config.rule_checks = parseRuleChecksSettings(obj.rule_checks);
   return config;
 }
 
@@ -275,8 +315,8 @@ export type WriteProjectConfigResult = {
 };
 
 /**
- * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions`, `hotspots`, `fan_out`, and
- * `search` when the config has them.
+ * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions`, `hotspots`, `fan_out`,
+ * `search`, and `rule_checks` when the config has them.
  * - When `force` is false: create only if missing.
  * - When `force` is true: always overwrite.
  */
@@ -305,6 +345,10 @@ export function writeProjectConfig(
   if (config.search) {
     const search = parseSearchSettings(config.search);
     if (Object.keys(search).length > 0) next.search = search;
+  }
+  if (config.rule_checks) {
+    const ruleChecks = parseRuleChecksSettings(config.rule_checks);
+    if (Object.keys(ruleChecks).length > 0) next.rule_checks = ruleChecks;
   }
   const exists = fs.existsSync(abs);
   if (exists && !options.force) {
