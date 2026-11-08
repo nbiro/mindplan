@@ -255,9 +255,9 @@ function nextTerritoryPath(...parts) {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
   const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec", "get_skill", "setup_project", "upgrade_project", "resolve_conflict"];
-  if (names.size !== 37 || required.some((n) => !names.has(n))) {
+  if (names.size !== 39 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 37 tools including ${required.join(", ")} (got ${names.size})`);
+    console.log(`FAIL expected 39 tools including ${required.join(", ")} (got ${names.size})`);
   } else console.log(`ok   thirty-seven tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
@@ -281,7 +281,7 @@ function nextTerritoryPath(...parts) {
   const READ = [
     "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
     "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
-    "list_areas", "get_spec", "get_skill", "doctor",
+    "list_areas", "get_spec", "get_skill", "doctor", "find_in_node", "search_graph",
   ];
   const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
   const annotationProblems = [];
