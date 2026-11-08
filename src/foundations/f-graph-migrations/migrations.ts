@@ -26,6 +26,7 @@ import {
   readFileRetry,
   withTransientRetry,
   writeFileRetry,
+  notePlanWrite,
 } from "../f-source-index/io.js";
 import {
   inferredSplits,
@@ -280,6 +281,8 @@ function renameLegacyTerritoryFile(
       // Distinct paths that cannot be resolved still go through rename and surface a manual fix.
     }
   }
+  notePlanWrite(fromAbs);
+  notePlanWrite(toAbs);
   try {
     fs.renameSync(fromAbs, toAbs);
   } catch (err) {
@@ -467,6 +470,8 @@ export function migrateJourneysToCapabilities(): string[] {
     try {
       rewriteCapabilityFile(liveFileIn(fromAbs, id)!);
       fs.mkdirSync(target, { recursive: true });
+      notePlanWrite(fromAbs);
+      notePlanWrite(toAbs);
       withTransientRetry(() => fs.renameSync(fromAbs, toAbs));
     } catch (err) {
       throw new LegacyTerritoryMigrationError(manualRenameFailure(fromRel, toRel, err).message, moved);
@@ -490,6 +495,7 @@ export function migrateJourneysToCapabilities(): string[] {
     }
   }
   if (fs.existsSync(legacy) && legacyLeftoversOnly(legacy)) {
+    notePlanWrite(legacy);
     fs.rmSync(legacy, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
   }
   return moved.map((m) => path.posix.basename(m.to)).sort();
@@ -644,6 +650,7 @@ export function removeRetiredAgentFiles(): string[] {
     }
   };
   walk(root, path.posix.join(MINDPLAN_DIR, AGENT_DIR));
+  notePlanWrite(root);
   fs.rmSync(root, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
   return removed.sort();
 }

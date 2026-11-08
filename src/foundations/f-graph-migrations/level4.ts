@@ -17,7 +17,7 @@ import {
   type Revision,
 } from "../f-domain-model/types.js";
 import { detectEol, diffDelta, scalarHashes, sectionHashes } from "../f-revision-model/index.js";
-import { RM_MAX_RETRIES, readFileRetry, unlinkRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
+import { RM_MAX_RETRIES, notePlanWrite, readFileRetry, unlinkRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
 import { MAP_REL, git } from "../f-source-index/git.js";
 import { repoRelative } from "../f-source-index/root-scope.js";
 import { decisionFileName, decisionsDir, parseDecisionFile } from "../f-territory-store/decisions-store.js";
@@ -90,6 +90,8 @@ function moveAttachments(from: string, to: string): string[] {
   if (!fs.existsSync(from)) return [];
   const names = fs.readdirSync(from).filter((n) => n !== ".gitkeep").sort();
   if (names.length > 0) fs.mkdirSync(to, { recursive: true });
+  notePlanWrite(from);
+  notePlanWrite(to);
   for (const name of names) {
     const src = path.join(from, name);
     const dst = path.join(to, name);
@@ -172,6 +174,7 @@ function writeAtomically(file: string, text: string): void {
   const tmp = `${file}.tmp-${process.pid}`;
   writeFileRetry(tmp, text);
   withTransientRetry(() => fs.renameSync(tmp, file));
+  notePlanWrite(file);
 }
 
 /** True when the revision file on disk is the one this migration would write. */
@@ -267,6 +270,7 @@ export function moveNextToRevisions(): RevisionMoved[] {
     if (!fs.existsSync(revFile)) writeAtomically(revFile, text);
     unlinkRetry(nextFile);
     if (fs.existsSync(nextAtt)) fs.rmSync(nextAtt, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
+    notePlanWrite(nextAtt);
     moved.push({ node_id: id, change });
   }
   return moved;

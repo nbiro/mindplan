@@ -4,11 +4,12 @@ type: Foundation
 title: "Territory store"
 description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, revision change ids, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-11-07T22:43:24.954Z
-revisions: 25
-churn: 10.327
+shipped_at: 2026-11-08T06:29:42.659Z
+revisions: 26
+churn: 11.25
+churn_wiring: 1
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-07T22:43:24.954Z
+updated_at: 2026-11-08T06:29:42.659Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -123,6 +124,8 @@ Depends on: `f-domain-model`, `f-source-index`.
 ## Graph root per call
 
 `projectRoot()`, `mindplanRoot()`, the brief and version-stamp paths read the root of the current tool call (an `AsyncLocalStorage` scope the MCP mount opens from the call's `root` argument), else `MINDPLAN_ROOT`, else the working directory. Nothing writes `process.env.MINDPLAN_ROOT` at runtime. The legacy-file queue (`removedLegacyFiles`) is kept per root. One server can therefore write the graph of the main checkout and of any git worktree in the same session.
+
+- **Noted writes.** Every file write, copy, and removal goes through the `f-source-index` io wrappers; the store's raw directory removals (a revision folder, next attachments, a snapshot restore) and decision-folder renames call `notePlanWrite(path)`, so a later load in the same tool call re-checks exactly the folders written (`f-graph-cache` graph memo)
 
 ## Acceptance Criteria
 

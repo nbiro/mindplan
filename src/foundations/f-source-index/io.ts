@@ -5,7 +5,7 @@
  * failure a few times with a short synchronous back-off, so the handlers stay synchronous and no
  * tool call can interleave with another while it waits. Any other error is thrown at once. Every
  * read, write, copy, and removal of a file under mindplan/ goes through here (directory removal
- * uses fs.rmSync's own maxRetries).
+ * uses fs.rmSync's own maxRetries, and calls notePlanWrite).
  */
 import * as fs from "fs";
 
@@ -57,16 +57,63 @@ export function readBytesRetry(file: string): Buffer {
   return withTransientRetry(() => fs.readFileSync(file));
 }
 
+/** Plan writes this process noted: `planWriteLog[i]` is write number `planWriteBase + i`. */
+const planWriteLog: (string | null)[] = [];
+let planWriteBase = 0;
+/** Noted writes kept for planWritesSince; an older position reads as "unknown". */
+const PLAN_WRITE_LOG_MAX = 4096;
+
+/**
+ * Notes a change this process made under mindplan/: the absolute path of the file or directory
+ * written, copied, removed, or renamed (both ends of a rename), or no path when the change is not
+ * one path. The write wrappers below note themselves; a write that bypasses them (fs.rmSync of a
+ * directory, fs.renameSync) calls this. The graph cache reuses a record within one tool call only
+ * while no noted path is inside its node folder (`f-graph-cache`).
+ */
+export function notePlanWrite(file?: string): void {
+  planWriteLog.push(file ?? null);
+  if (planWriteLog.length > PLAN_WRITE_LOG_MAX) {
+    planWriteLog.shift();
+    planWriteBase++;
+  }
+}
+
+/** How many plan writes this process has noted (a position for planWritesSince). */
+export function planWriteCount(): number {
+  return planWriteBase + planWriteLog.length;
+}
+
+/**
+ * The paths noted since position `from` (null entries: a change of unknown extent), or null when
+ * the log no longer reaches back that far.
+ */
+export function planWritesSince(from: number): (string | null)[] | null {
+  if (from < planWriteBase) return null;
+  return planWriteLog.slice(from - planWriteBase);
+}
+
 export function writeFileRetry(file: string, data: string | Uint8Array): void {
-  withTransientRetry(() =>
-    typeof data === "string" ? fs.writeFileSync(file, data, "utf-8") : fs.writeFileSync(file, data)
-  );
+  try {
+    withTransientRetry(() =>
+      typeof data === "string" ? fs.writeFileSync(file, data, "utf-8") : fs.writeFileSync(file, data)
+    );
+  } finally {
+    notePlanWrite(file);
+  }
 }
 
 export function copyFileRetry(from: string, to: string): void {
-  withTransientRetry(() => fs.copyFileSync(from, to));
+  try {
+    withTransientRetry(() => fs.copyFileSync(from, to));
+  } finally {
+    notePlanWrite(to);
+  }
 }
 
 export function unlinkRetry(file: string): void {
-  withTransientRetry(() => fs.unlinkSync(file));
+  try {
+    withTransientRetry(() => fs.unlinkSync(file));
+  } finally {
+    notePlanWrite(file);
+  }
 }

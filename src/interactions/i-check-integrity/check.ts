@@ -1197,7 +1197,7 @@ export interface DriftOptions {
  * Returns null when there is nothing to report or git cannot be read. Does not change default check.
  */
 export function buildDriftReport(options: DriftOptions = {}): DriftReport | null {
-  return withRoot(options.cwd, () => driftReportInScope(options));
+  return withRoot(options.cwd, () => driftReportInScope(options), { memoGraph: true });
 }
 
 function driftReportInScope(options: DriftOptions): DriftReport | null {
@@ -1289,7 +1289,7 @@ function driftReportInScope(options: DriftOptions): DriftReport | null {
  * Run integrity checks. Loads the territory graph from disk.
  */
 export function runIntegrityCheck(options: CheckOptions = {}): CheckResult {
-  return withRoot(options.cwd, () => integrityCheckInScope(options));
+  return withRoot(options.cwd, () => integrityCheckInScope(options), { memoGraph: true });
 }
 
 function integrityCheckInScope(options: CheckOptions): CheckResult {

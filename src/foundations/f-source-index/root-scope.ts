@@ -31,19 +31,33 @@ export function ensureCacheDir(root: string): string {
 /** A legacy territory file a graph load deleted because its id-named twin was kept (repo-relative). */
 export type RemovedLegacyFile = { from: string; to: string };
 
-/** One call's scope: its root (undefined: the server's) and the legacy files its loads removed. */
-type CallScope = { root: string | undefined; removedLegacyFiles: RemovedLegacyFile[] };
+/**
+ * One call's scope: its root (undefined: the server's), the legacy files its loads removed, and its
+ * graph-memo token (null: graph loads in it are never reused).
+ */
+type CallScope = { root: string | undefined; removedLegacyFiles: RemovedLegacyFile[]; graphMemo: object | null };
 
 const scope = new AsyncLocalStorage<CallScope>();
 
 /**
  * Runs fn in a fresh call scope: `root` as the project root for everything it (and what it awaits)
  * resolves (undefined keeps the enclosing scope's root, else the server's), and an empty list of
- * removed legacy files.
+ * removed legacy files. `memoGraph: true` opens a graph memo for the scope (one tool call, or one
+ * CLI check): the graph cache may reuse a load within it (`f-graph-cache`). A nested scope keeps
+ * the enclosing scope's memo; a scope opened outside any memo without the option has none.
  */
-export function withRoot<T>(root: string | undefined, fn: () => T): T {
+export function withRoot<T>(root: string | undefined, fn: () => T, opts: { memoGraph?: boolean } = {}): T {
   const scoped = root === undefined ? currentRoot() : path.resolve(root);
-  return scope.run({ root: scoped, removedLegacyFiles: [] }, fn);
+  const graphMemo = scope.getStore()?.graphMemo ?? (opts.memoGraph ? {} : null);
+  return scope.run({ root: scoped, removedLegacyFiles: [], graphMemo }, fn);
+}
+
+/**
+ * The graph-memo token of the innermost scope (an opaque object, one per tool call or CLI check that
+ * opened it with `memoGraph`), or undefined when graph loads here must not be reused.
+ */
+export function graphMemoToken(): object | undefined {
+  return scope.getStore()?.graphMemo ?? undefined;
 }
 
 /** The root set by the innermost withRoot, or undefined outside any scope (or in one with no root). */

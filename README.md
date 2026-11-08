@@ -218,6 +218,7 @@ Full modes and output: SPEC §9.6.
 | `MINDPLAN_SEARCH_OFFLINE=1` | Use only an already-downloaded model |
 | `MINDPLAN_MODEL_CACHE` | Model download folder (default `~/.cache/mindplan/models`) |
 | `MINDPLAN_GRAPH_CACHE` | `off` turns the graph cache off for this process (`git` or `stamps` forces one freshness mode) |
+| `MINDPLAN_GRAPH_MEMO` | `off` makes every graph load within one tool call check the files again (`verify` also compares each reuse with a full load; CI uses it) |
 | `MINDPLAN_VERSION_GATE=off` | For tests: turns the version gate off (fixtures without a stamp) |
 | `MINDPLAN_ORIENT_GATE=off` | For tests: turns the orientation gate off |
 
@@ -229,7 +230,7 @@ The index, `.mindplan-cache/index.db`, is derived from the `.mdx` files, gitigno
 
 ## Graph cache
 
-Every tool call loads the graph, so the server keeps parsed node records in memory and in `.mindplan-cache/graph.db`, and re-parses only node folders that changed. A load always returns what parsing every file would. The cache is derived from the `.mdx` files, gitignored, and safe to delete; `MINDPLAN_GRAPH_CACHE=off` turns it off for one process. SPEC §1.1.3.
+Every tool call loads the graph, so the server keeps parsed node records in memory and in `.mindplan-cache/graph.db`, and re-parses only node folders that changed. A load always returns what parsing every file would. Within one tool call, later loads reuse the first one except for the folders the call wrote. The cache is derived from the `.mdx` files, gitignored, and safe to delete; `MINDPLAN_GRAPH_CACHE=off` turns it off for one process. SPEC §1.1.3.
 
 ## MCP tools
 

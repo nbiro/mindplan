@@ -4,11 +4,12 @@ type: Foundation
 title: "Source index"
 description: "Infra — ownership universe, claim expansion (files, directories, globs), folder dominance for in-place claims, the decision-gate, hotspot, fan-out, and search settings in mindplan/config.json and their MCP write, and read-only git probes for files a branch adds and the plan's tree and dirty paths."
 state: stable
-shipped_at: 2026-11-03T09:48:46.632Z
-revisions: 14
-churn: 10.728
+shipped_at: 2026-11-08T06:29:41.899Z
+revisions: 15
+churn: 10.588
+churn_behavior: 1
 created_at: 2026-09-23T13:28:44.288Z
-updated_at: 2026-11-03T18:02:39.103Z
+updated_at: 2026-11-08T06:29:41.899Z
 depends_on:
   - f-domain-model
   - f-revision-model
@@ -73,6 +74,8 @@ Depends on: `f-domain-model`.
 `root-scope.ts` also exports `rootKey(root)` (resolved, lowercased on Windows), the one key every per-root map uses, and `CACHE_DIRNAME`, the derived cache folder every reader of `.mindplan-cache` imports.
 
 One `resolveProjectRoot(root?)` serves claims, config, imports, git probes, and the universe, and reads the current call's root (see `f-territory-store`) before `MINDPLAN_ROOT` and the working directory; the five private copies are gone.
+
+- **Plan write log and graph-memo scope.** `io.ts` notes every plan write this process makes: `writeFileRetry`, `copyFileRetry`, and `unlinkRetry` note their path themselves, and a write that bypasses them (`fs.rmSync` of a directory, `fs.renameSync`) calls `notePlanWrite(path)` (both ends of a rename; no path for a change that is not one path). `planWriteCount()` is a position and `planWritesSince(pos)` the paths noted after it (null once the last 4,096 no longer reach it). `withRoot(root, fn, { memoGraph: true })` opens a graph-memo scope (one tool call or CLI check); a nested scope keeps the enclosing one's, and `graphMemoToken()` returns it (undefined outside one). The graph cache reuses loads only inside such a scope (`f-graph-cache`)
 
 ## Acceptance Criteria
 

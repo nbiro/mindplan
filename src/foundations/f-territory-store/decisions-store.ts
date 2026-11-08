@@ -8,7 +8,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { DECISION_ID_PATTERN, type DecisionRecord } from "../f-domain-model/types.js";
-import { readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
+import { notePlanWrite, readFileRetry, withTransientRetry, writeFileRetry } from "../f-source-index/io.js";
 import { formatDecisionEntry, parseDecisions } from "./store.js";
 
 /** Folder name that holds decision files. */
@@ -135,6 +135,8 @@ export function moveDecisions(fromDir: string, toDir: string): string[] {
   const names = decisionFolderFiles(fromDir);
   const touched: string[] = [];
   if (names.length > 0) fs.mkdirSync(toDir, { recursive: true });
+  notePlanWrite(fromDir);
+  notePlanWrite(toDir);
   for (const name of names) {
     const from = path.join(fromDir, name);
     const to = path.join(toDir, name);
