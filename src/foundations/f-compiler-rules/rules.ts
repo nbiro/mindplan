@@ -3,6 +3,7 @@
  * Every violation throws an Error whose message starts with "Blocked: ".
  */
 
+import { serverClosedItems } from "./auto-items.js";
 import type {
   BugState,
   EdgeType,
@@ -209,11 +210,15 @@ function runCompletionCheck(
   if (source.text === null) {
     throw blocked(`${slot} file not found for node "${node.id}" (expected at ${source.relPath}).`);
   }
-  const unchecked = countCheckboxesInText(source.text).unchecked;
+  // spec and impl close at ship, verify once the node's linked tests passed (auto-items).
+  const closed = serverClosedItems(source.text, node.id);
+  const unchecked = countCheckboxesInText(source.text).unchecked - closed.length;
   const file = source.file;
   if (unchecked > 0) {
+    const verify = parseChecklistItems(source.text).some((i) => i.id === "verify" && !i.checked && !closed.some((c) => c.line === i.line));
     throw blocked(
-      `Completion Check. ${unchecked} unchecked checkbox(es) remain in ${node.id}/${file}. All [ ] items must be [x] before moving to "${targetLabel}".`
+      `Completion Check. ${unchecked} unchecked checkbox(es) remain in ${node.id}/${file}. All [ ] items must be [x] before moving to "${targetLabel}"` +
+        ` (spec and impl close at ship${verify ? `; verify closes once run_check({ run_tests: true, nodes: ["${node.id}"] }) passes, or tick it with a note` : ""}).`
     );
   }
 }

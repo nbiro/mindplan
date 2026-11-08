@@ -48,6 +48,7 @@ export const TOOLS: ToolDef[] = [
         "Pass change to also run the in-review gate on every member of that change. " +
         "Pass merge before telling the user a PR is ready to merge: it Blocks nodes still in review, and shipped nodes with no open revision whose claimed files changed against base while their territory did not (open_next + ship, or patch_node_territory in place); \"strict\" also Blocks in-progress nodes whose claimed files changed. " +
         "Pass after_merge after merging a branch that changed the graph. " +
+        "Pass run_tests (with change or nodes) to run their linked tests; passing tests close each node's verify item. " +
         "Details: get_spec({ topic: \"run_check\" }).",
       inputSchema: {
         base: z
@@ -76,11 +77,17 @@ export const TOOLS: ToolDef[] = [
         nodes: z
           .array(NODE_ID)
           .optional()
-          .describe("Limit warnings to these nodes; failures stay graph-wide, and counts.out_of_scope says how many warnings were left out."),
+          .describe("Limit warnings to these nodes; failures stay graph-wide, and counts.out_of_scope says how many warnings were left out. With run_tests: the nodes whose linked tests run."),
+        run_tests: z
+          .boolean()
+          .optional()
+          .describe(
+            "Also run the linked tests of change's members (or of nodes) with config tests.command; a failure is Blocked: Tests. Passing tests close each node's default verify item; spec and impl close at ship."
+          ),
       },
     },
-    ({ base, change, merge, after_merge, compact, nodes }) =>
-      runCheckHandler({ base, change, merge, after_merge, compact: compact ?? true, nodes })
+    ({ base, change, merge, after_merge, compact, nodes, run_tests }) =>
+      runCheckHandler({ base, change, merge, after_merge, compact: compact ?? true, nodes, run_tests })
   ),
   defineTool(
     "acknowledge_warning",

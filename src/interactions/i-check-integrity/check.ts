@@ -3,6 +3,7 @@
  * Used by `mindplan-mcp check` (CLI) — not MCP stdio.
  */
 
+import { runLinkedTests, testFailureLine } from "./run-tests.js";
 import * as fs from "fs";
 import * as path from "path";
 import type { MindPlanGraph, MindPlanNode } from "../../foundations/f-domain-model/types.js";
@@ -1360,18 +1361,26 @@ export function runCheckHandler(
     after_merge?: boolean;
     compact?: boolean;
     nodes?: string[];
+    run_tests?: boolean;
   } = {}
 ): Record<string, unknown> {
+  // Tests first: their result closes verify items the check's ship-readiness lines then read.
+  const tests = args.run_tests ? runLinkedTests({ change: args.change, nodes: args.nodes }) : undefined;
   const result = runIntegrityCheck({
     base: args.base,
     change: args.change,
     merge: args.merge,
     after_merge: args.after_merge,
   });
+  if (tests && !tests.passed) {
+    result.failures.push(testFailureLine(tests));
+    result.ok = false;
+  }
   const nodes = args.nodes?.length ? new Set(args.nodes) : undefined;
   const root = projectRoot();
   const { kept, outside } = scopeWarnings(result.warnings, nodes);
   const extras = {
+    ...(tests ? { tests } : {}),
     ...(result.change
       ? { change: { id: result.change.id, members: result.change.members, additivity: result.change.additivity } }
       : {}),
