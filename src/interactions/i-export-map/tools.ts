@@ -23,6 +23,7 @@ export const TOOLS: ToolDef[] = [
     "export_mindplan_view",
     {
       kind: "read",
+      budget: false,
       title: "Export MindPlan view",
       description:
         "Call when a human wants a map for a PR or a doc (agents orient with find_related_nodes). " +

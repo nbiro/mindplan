@@ -27,6 +27,8 @@ export type ToolConfig<Args extends ZodRawShapeCompat> = {
    * version gate before its handler.
    */
   gate?: boolean;
+  /** `false` for tools that page themselves (get_mindplan_graph's offset): no reply budget cut. */
+  budget?: boolean;
 };
 
 /** One tool an action defines: its name, config, and handler. */

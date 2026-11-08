@@ -46,6 +46,31 @@ export type SearchConfigSettings = {
   model: string;
 };
 
+/**
+ * How replies are sized: `budget_bytes` caps one reply's JSON (0 turns the cap off; lists past it
+ * come back cut, with a `next_page` cursor); `legacy: true` restores the 0.22 shapes (the full drift
+ * list on every reply, rule text on every orienting reply).
+ */
+export type ReplySettings = {
+  budget_bytes: number;
+  legacy: boolean;
+};
+
+export const DEFAULT_REPLY_SETTINGS: ReplySettings = { budget_bytes: 8192, legacy: false };
+
+/** The reply settings in effect: stored values over the defaults. */
+export function replySettings(config: MindPlanProjectConfig): ReplySettings {
+  return { ...DEFAULT_REPLY_SETTINGS, ...config.replies };
+}
+
+/**
+ * How `run_check({ run_tests: true })` runs a node's linked tests: `command` with `{files}` replaced
+ * by the test paths (quoted, space-separated); absent means run_check cannot run tests.
+ */
+export type TestSettings = {
+  command?: string;
+};
+
 export type MindPlanProjectConfig = {
   sources: string[];
   exclude: string[];
@@ -57,6 +82,10 @@ export type MindPlanProjectConfig = {
   fan_out?: Partial<FanOutSettings>;
   /** Stored search settings; absent fields take the search index's defaults. */
   search?: Partial<SearchConfigSettings>;
+  /** Stored reply settings; absent fields take `DEFAULT_REPLY_SETTINGS`. */
+  replies?: Partial<ReplySettings>;
+  /** How run_check runs linked tests. */
+  tests?: TestSettings;
 };
 
 /**
@@ -223,6 +252,44 @@ function parseSearchSettings(value: unknown): Partial<SearchConfigSettings> {
   return out;
 }
 
+/** Validates the optional `replies` object; unknown keys are Blocked like `decisions`. */
+function parseReplySettings(value: unknown): Partial<ReplySettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw blockedConfig('"replies" must be an object with optional "budget_bytes" and "legacy".');
+  }
+  const out: Partial<ReplySettings> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "budget_bytes") {
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
+        throw blockedConfig('"replies.budget_bytes" must be a non-negative integer (0 turns the cap off).');
+      }
+      out.budget_bytes = v;
+    } else if (key === "legacy") {
+      if (typeof v !== "boolean") throw blockedConfig('"replies.legacy" must be true or false.');
+      out.legacy = v;
+    } else {
+      throw blockedConfig(`"replies" has unknown key "${key}" (allowed: budget_bytes, legacy).`);
+    }
+  }
+  return out;
+}
+
+/** Validates the optional `tests` object; unknown keys are Blocked like `decisions`. */
+function parseTestSettings(value: unknown): TestSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw blockedConfig('"tests" must be an object with optional "command".');
+  }
+  const out: TestSettings = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (key !== "command") throw blockedConfig(`"tests" has unknown key "${key}" (allowed: command).`);
+    if (typeof v !== "string" || !v.includes("{files}")) {
+      throw blockedConfig('"tests.command" must be a command containing {files}, e.g. "node --test {files}".');
+    }
+    out.command = v.trim();
+  }
+  return out;
+}
+
 /**
  * Load config.
  * - Missing file → sources: ["src/**"], exclude: []
@@ -265,6 +332,8 @@ export function loadProjectConfig(root?: string): MindPlanProjectConfig {
   if ("hotspots" in obj) config.hotspots = parseHotspotSettings(obj.hotspots);
   if ("fan_out" in obj) config.fan_out = parseFanOutSettings(obj.fan_out);
   if ("search" in obj) config.search = parseSearchSettings(obj.search);
+  if ("replies" in obj) config.replies = parseReplySettings(obj.replies);
+  if ("tests" in obj) config.tests = parseTestSettings(obj.tests);
   return config;
 }
 
@@ -305,6 +374,14 @@ export function writeProjectConfig(
   if (config.search) {
     const search = parseSearchSettings(config.search);
     if (Object.keys(search).length > 0) next.search = search;
+  }
+  if (config.replies) {
+    const replies = parseReplySettings(config.replies);
+    if (Object.keys(replies).length > 0) next.replies = replies;
+  }
+  if (config.tests) {
+    const tests = parseTestSettings(config.tests);
+    if (Object.keys(tests).length > 0) next.tests = tests;
   }
   const exists = fs.existsSync(abs);
   if (exists && !options.force) {

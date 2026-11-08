@@ -14,10 +14,25 @@ import {
   runCheckHandler,
 } from "./check.js";
 import { acknowledgeWarnings } from "./compact.js";
+import { fullDrift } from "./drift.js";
 import { projectRoot } from "../../foundations/f-territory-store/store.js";
 
 /** The MCP tools i-check-integrity owns; if-mcp-tools mounts them. */
 export const TOOLS: ToolDef[] = [
+  defineTool(
+    "get_drift",
+    {
+      kind: "read",
+      drift: false,
+      title: "Get the full drift list",
+      description:
+        "Call when a reply's drift count says source files drift and you need every path, or before handing off. " +
+        "Returns { count, paths: [{ path, class, owner_id?, state?, next_state? }], expected, reminder }: every uncommitted source file whose owner has no open update (owner_idle), that a node claims but is missing (claimed_missing), or that no node claims (unowned). " +
+        "Other replies carry only drift: { count, new_since_last_reply }. Details: get_spec({ topic: \"get_drift\" }).",
+      inputSchema: {},
+    },
+    () => fullDrift()
+  ),
   defineTool(
     "run_check",
     {

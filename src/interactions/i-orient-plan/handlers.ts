@@ -60,7 +60,12 @@ import {
   pushProjectRules,
   reachingRules,
   recordOriented,
+  recordRulesSent,
+  sentRulesVersions,
+  tracksSentText,
+  unsentDecisions,
 } from "../../foundations/f-orientation-ledger/ledger.js";
+import { replySettings } from "../../foundations/f-source-index/config.js";
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { cutReply, orients, parseSections, type OrientSection } from "./sections.js";
 import {
@@ -79,6 +84,7 @@ import {
   revisionSummaries,
   rulesBlock,
   rulesVersion,
+  summarizeBlastRadius,
 } from "../../foundations/f-plan-views/views.js";
 
 /**
@@ -89,6 +95,67 @@ function orientRulesPush(): Record<string, unknown> {
   if (!orientationGateEnabled()) return {};
   const brief = loadProjectBrief();
   return pushProjectRules({ path: brief.path, rules: brief.rules, rules_version: rulesVersion(brief.rules) });
+}
+
+/**
+ * Whether this reply leaves out rule text and decisions the session already received: on while the
+ * gate is on, unless `replies.legacy` is set or the caller passes `resend_rules`.
+ */
+function tracking(resend?: boolean): boolean {
+  if (resend) return false;
+  return tracksSentText(replySettings(loadProjectConfig(projectRoot())).legacy);
+}
+
+/** The rule versions a reply may leave out: the caller's own, plus what this session already holds. */
+function knownRules(caller: Record<string, string> | undefined, track: boolean): Record<string, string> | undefined {
+  if (!track) return caller;
+  return { ...sentRulesVersions(), ...(caller ?? {}) };
+}
+
+/** A rules block whose texts reached the agent: record them so later replies leave them out. */
+function sent<T extends Record<string, unknown>>(block: T): T {
+  recordRulesSent((block.entries as Record<string, unknown>[] | undefined) ?? []);
+  return block;
+}
+
+/** The record a narrowed read (`section` / `slot`) keeps: which node, and where it stands. */
+function minimalRecord(node: MindPlanNode): Record<string, unknown> {
+  return { id: node.id, type: node.type, state: node.state, title: node.title };
+}
+
+/**
+ * A node read cut to the body part asked for (`section` / `slot`): the minimal record, the body (and
+ * the open revision's), the rules (text only for sources this session has not received), and only
+ * the decisions this session has not received at their current text (`decisions_known` counts the rest).
+ */
+function narrowContext(
+  node: MindPlanNode,
+  full: Record<string, unknown>,
+  track: boolean
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { record: minimalRecord(node) };
+  if (full.section !== undefined) out.section = full.section;
+  if (full.body !== undefined) out.body = full.body;
+  const decisions: { id?: unknown }[] = [...((full.decisions as { id?: unknown }[] | undefined) ?? [])];
+  const next = full.next as { record?: Record<string, unknown>; body?: unknown; decisions?: unknown } | string | null;
+  if (typeof next === "string") out.next = next;
+  else if (next) {
+    out.next = {
+      state: next.record?.state,
+      ...(next.record?.title !== node.title ? { title: next.record?.title } : {}),
+      ...(next.body !== undefined ? { body: next.body } : {}),
+    };
+    decisions.push(...((next.decisions as { id?: unknown }[] | undefined) ?? []));
+  }
+  const { fresh, known } = unsentDecisions(decisions, track);
+  if (fresh.length) out.decisions = fresh;
+  if (known) out.decisions_known = known;
+  if (full.inherited_decisions !== undefined) {
+    const inherited = full.inherited_decisions as InheritedDecisionsSummary;
+    if (inherited.entries) out.inherited_decisions = inherited;
+    else if (inherited.count) out.inherited_decisions = { count: inherited.count };
+  }
+  return out;
 }
 
 function fileExists(rel: string, root?: string): boolean {
@@ -352,11 +419,13 @@ export function getNodeContext(args: {
   slot?: ContextSlot;
   section?: string;
   change?: string;
+  resend_rules?: boolean;
 }): Record<string, unknown> {
   const graph = loadGraph();
   const node = findNode(graph, args.node_id);
   const change = args.change !== undefined ? namedRevisionChange(node, args.change) : undefined;
-  const payload = buildNodeContextPayload(graph, node, {
+  const track = tracking(args.resend_rules);
+  const full = buildNodeContextPayload(graph, node, {
     include_superseded: args.include_superseded,
     inherited: true,
     include_inherited_decisions: args.include_inherited_decisions,
@@ -364,12 +433,25 @@ export function getNodeContext(args: {
     section: args.section,
     change,
   });
+  // A section or slot read returns that body part, not the whole record (lean replies).
+  const narrow = args.section !== undefined || args.slot !== undefined;
+  const payload = narrow ? { node_id: node.id, ...narrowContext(node, full, track) } : full;
   if (change !== undefined) payload.unlocks = change;
   // It counts as orienting on the node, so it carries every rule that reaches it, not only its own
-  // (sources past distance 1 as one line unless include_inherited_rules).
-  payload.resolved_rules = rulesBlock(node.id, reachingRules(graph, node.id), { all: args.include_inherited_rules });
-  const shape = shapeReport(change !== undefined ? withRevision(node, change) : node);
-  if (shape) payload.shape = shape;
+  // (sources past distance 1 as one line unless include_inherited_rules); text this session already
+  // received comes back as { node_id, version, unchanged: true }.
+  payload.resolved_rules = sent(
+    rulesBlock(node.id, reachingRules(graph, node.id), { all: args.include_inherited_rules, known: knownRules(undefined, track) })
+  );
+  // The node's own rules text rides in resolved_rules; the raw copy goes once that text is known.
+  const own = ((payload.resolved_rules as Record<string, unknown>).entries as Record<string, unknown>[]).find(
+    (e) => e.node_id === node.id
+  );
+  if (track && own?.unchanged) delete payload.rules;
+  if (!narrow) {
+    const shape = shapeReport(change !== undefined ? withRevision(node, change) : node);
+    if (shape) payload.shape = shape;
+  }
   recordOriented(graph, [node.id]);
   return payload;
 }
@@ -387,7 +469,8 @@ function orientForChange(
   change: string,
   known: Record<string, string> | undefined,
   sections?: Set<OrientSection>,
-  all?: boolean
+  all?: boolean,
+  track = false
 ): Record<string, unknown> {
   const under = revisionGraph(graph, change);
   const { revisions, planned } = changeMembership(under, change);
@@ -428,7 +511,8 @@ function orientForChange(
       rules_from: entries.map((e) => e.node_id),
     };
   });
-  const block = rulesBlock(change, [...sources.values()], { all, known });
+  const block = rulesBlock(change, [...sources.values()], { all, known: knownRules(known, track) });
+  if (orients(sections)) sent(block);
   const rules = (block.entries as Record<string, unknown>[]).map(({ via: _via, distance: _distance, ...rest }) => rest);
   if (orients(sections)) recordOriented(graph, members.map((m) => m.id));
   const openItems = openHumanItemsOfChange(graph, change);
@@ -442,6 +526,66 @@ function orientForChange(
       decisions: { count: decisionCount, nodes: holders },
       ...(openItems.length ? { open_items: openItems } : {}),
       next: 'orient_for_work({ node_id: "<member id>" }) for a member\'s body, decisions, and blast radius.',
+    },
+    sections
+  );
+}
+
+/** Most nodes one orient_for_work({ node_ids }) takes. */
+export const MAX_ORIENT_NODES = 20;
+
+/**
+ * orient_for_work({ node_ids }): orient on several nodes in one reply. Each node comes back lean
+ * (id, type, state, title, open revisions, the rule sources reaching it, its decision count), and
+ * every rule source once at its nearest distance, text only where this session has not received
+ * it. Every node is recorded as oriented, so writes on any of them go through.
+ */
+function orientForNodes(
+  graph: MindPlanGraph,
+  ids: string[],
+  known: Record<string, string> | undefined,
+  sections: Set<OrientSection> | undefined,
+  all: boolean | undefined,
+  track: boolean
+): Record<string, unknown> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) throw blocked('orient_for_work "node_ids" needs at least one node id.');
+  if (unique.length > MAX_ORIENT_NODES) {
+    throw blocked(`orient_for_work takes at most ${MAX_ORIENT_NODES} node_ids; pass a change id to orient on a whole change.`);
+  }
+  const sources = new Map<string, RuleEntry>();
+  const nodes = unique.map((id) => {
+    const node = findNode(graph, id);
+    const entries = reachingRules(graph, node.id);
+    for (const e of entries) {
+      const prior = sources.get(e.node_id);
+      if (!prior || e.distance < prior.distance) sources.set(e.node_id, e);
+    }
+    const revisions = revisionSummaries(node);
+    return {
+      id: node.id,
+      type: node.type,
+      state: node.state,
+      title: node.title,
+      ...(revisions.length ? { revisions: revisions.map(({ change, state }) => ({ change, state })) } : {}),
+      rules_from: entries.map((e) => e.node_id),
+      decisions: nodeDecisions(graph, node).length,
+    };
+  });
+  const block = rulesBlock(unique.join(","), [...sources.values()], { all, known: knownRules(known, track) });
+  if (orients(sections)) {
+    sent(block);
+    recordOriented(graph, unique);
+  }
+  const rules = (block.entries as Record<string, unknown>[]).map(({ via: _via, distance: _distance, ...rest }) => rest);
+  return cutReply(
+    {
+      node_ids: unique,
+      members: nodes,
+      rules,
+      ...(block.more ? { rules_more: block.more } : {}),
+      ...(orients(sections) ? orientRulesPush() : {}),
+      next: 'orient_for_work({ node_id, section }) or get_node_context({ node_id, section }) for a body part.',
     },
     sections
   );
@@ -545,8 +689,11 @@ export async function orientForWork(args: {
   section?: string;
   change?: string;
   sections?: string[];
+  node_ids?: string[];
+  resend_rules?: boolean;
 }): Promise<Record<string, unknown>> {
   const sections = parseSections(args.sections);
+  const track = tracking(args.resend_rules);
   // Naming a part only depth "full" computes asks for it: no depth needed alongside.
   const asksFull = [...(sections ?? [])].some((s) => FULL_DEPTH_SECTIONS.has(s));
   const depth: OrientDepth = args.depth ?? (asksFull ? "full" : DEFAULT_ORIENT_DEPTH);
@@ -560,10 +707,16 @@ export async function orientForWork(args: {
         'orient_for_work takes "change" alone (every member of the change) or with "node_id" (that node\'s revision of it): drop "query".'
       );
     }
-    return orientForChange(loadGraph(), args.change, args.known_rules_versions, sections, args.include_inherited_rules);
+    return orientForChange(loadGraph(), args.change, args.known_rules_versions, sections, args.include_inherited_rules, track);
+  }
+  if (args.node_ids !== undefined) {
+    if (q || args.node_id || args.change !== undefined) {
+      throw blocked('orient_for_work takes "node_ids" alone: drop "query", "node_id", and "change".');
+    }
+    return orientForNodes(loadGraph(), args.node_ids, args.known_rules_versions, sections, args.include_inherited_rules, track);
   }
   if (!q && !args.node_id) {
-    throw blocked('orient_for_work requires a non-empty "query", "node_id", or "change".');
+    throw blocked('orient_for_work requires a non-empty "query", "node_id", "node_ids", or "change".');
   }
   const graph = loadGraph();
   if (args.node_id) {
@@ -608,8 +761,9 @@ export async function orientForWork(args: {
   delete context.revisions;
   const rules = rulesBlock(node.id, reachingRules(graph, node.id), {
     all: args.include_inherited_rules,
-    known: args.known_rules_versions,
+    known: knownRules(args.known_rules_versions, track),
   });
+  if (orients(sections)) sent(rules);
   const split = splitNodeDecisions(graph, node, args, depth);
   const decisions = { node_id: node.id, entries: split.own, inherited_decisions: split.inherited_decisions };
   // A reply cut to sections without the rules does not orient.
@@ -635,6 +789,22 @@ export async function orientForWork(args: {
   // Review and deploy items wait on people: listed so the agent says so instead of ticking them.
   const openItems = openHumanItemsOfNode(node);
   if (openItems.length) reply.open_items = openItems;
+  // A section or slot read: that body part, the minimal record, the rules, and only new decisions.
+  if (depth !== "rules" && sections === undefined && (args.section !== undefined || args.slot !== undefined)) {
+    const { fresh, known } = unsentDecisions(split.own as { id?: unknown }[], track);
+    return withRulesPush({
+      query: q,
+      focus: node.id,
+      ...(autoFocus ? { auto_focus: true } : {}),
+      ...(change !== undefined ? { unlocks: change } : {}),
+      ...(context.next === PASS_CHANGE ? { next: PASS_CHANGE } : {}),
+      rules,
+      context: narrowContext(node, context, track),
+      ...(fresh.length ? { decisions: { node_id: node.id, entries: fresh } } : {}),
+      ...(known ? { decisions_known: known } : {}),
+      ...(args.include_inherited_decisions ? { inherited_decisions: split.inherited_decisions } : {}),
+    });
+  }
   if (depth === "rules") {
     const next = context.next as { record?: unknown } | string | null;
     reply.context = {
@@ -654,8 +824,9 @@ export async function orientForWork(args: {
     reply.edges = edges;
     // A named revision is judged on the graph it would ship into.
     const judged = change !== undefined ? revisionGraph(graph, change) : liveGraph(graph);
+    // The summary: get_blast_radius({ node_id, detail: "full" }) returns every row.
     reply.blast_radius = isPipelineNodeType(node.type)
-      ? buildBlastRadiusPayload(judged, findNode(judged, node.id))
+      ? summarizeBlastRadius(judged, buildBlastRadiusPayload(judged, findNode(judged, node.id)))
       : null;
     if (isPipelineNodeType(node.type)) reply.stability = stabilityPayload(graph, node);
   }

@@ -1190,6 +1190,8 @@ export interface DriftOptions {
   cwd?: string;
   /** Report only these owners' files in detail; other owned files become `other_count`. */
   nodeIds?: string[];
+  /** false: list every path (get_drift, lean drift); default true caps each list at DRIFT_LIST_CAP. */
+  cap?: boolean;
 }
 
 /**
@@ -1264,7 +1266,7 @@ function driftReportInScope(options: DriftOptions): DriftReport | null {
 
     let more = 0;
     const capped = <T>(list: T[]): T[] => {
-      if (list.length <= DRIFT_LIST_CAP) return list;
+      if (options.cap === false || list.length <= DRIFT_LIST_CAP) return list;
       more += list.length - DRIFT_LIST_CAP;
       return list.slice(0, DRIFT_LIST_CAP);
     };

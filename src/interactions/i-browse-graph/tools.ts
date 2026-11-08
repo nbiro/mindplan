@@ -27,6 +27,7 @@ export const TOOLS: ToolDef[] = [
     "get_mindplan_graph",
     {
       kind: "read",
+      budget: false,
       title: "Get MindPlan graph",
       description:
         "Call when you need the graph's nodes and edges, or a slice of them; prefer orient_for_work for one piece of work. " +

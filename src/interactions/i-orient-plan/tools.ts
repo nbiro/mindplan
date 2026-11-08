@@ -48,6 +48,14 @@ const INCLUDE_INHERITED_RULES = z
     "Also return the text of rules from sources past distance 1 (a Foundation's Foundations, a Capability's further links). Default false: those come back as one line { node_id, distance, version, first, count }."
   );
 
+/** Ask for rule text again even though this session already received it (after a context summary). */
+const RESEND_RULES = z
+  .boolean()
+  .optional()
+  .describe(
+    "Return every rule text again, even text this session already received (default false: a source whose text already reached you comes back as { node_id, version, unchanged: true }). Use after a context summary."
+  );
+
 /** The MCP tools i-orient-plan owns; if-mcp-tools mounts them. */
 export const TOOLS: ToolDef[] = [
   defineTool(
@@ -110,7 +118,7 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Get node context",
       description:
-        "Call when you are about to read or edit one node's territory. Returns its record, body (without ## Rules / ## Decisions), own rules, active decisions, resolved_rules (sources past distance 1 as one line unless include_inherited_rules), and attachments, plus the next slot while a revision is open; it counts as orienting on the node. With several open revisions pass change to read one (otherwise only live comes back). slot and section narrow the reply; include_superseded and include_inherited_decisions widen the decisions. Details: get_spec({ topic: \"get_node_context\" }).",
+        "Call when you are about to read or edit one node's territory. Returns its record, body (without ## Rules / ## Decisions), own rules, active decisions, resolved_rules (sources past distance 1 as one line unless include_inherited_rules; text this session already received as { node_id, version, unchanged: true }), and attachments, plus the next slot while a revision is open; it counts as orienting on the node. With several open revisions pass change to read one (otherwise only live comes back). slot or section returns only that body part, the minimal record (id, type, state, title), the rules, and decisions not yet sent; include_superseded and include_inherited_decisions widen the decisions. To find exact text for a replace edit use find_in_node. Details: get_spec({ topic: \"get_node_context\" }).",
       inputSchema: {
         node_id: NODE_ID.describe("The id of the node whose territory to read."),
         include_superseded: z
@@ -122,10 +130,11 @@ export const TOOLS: ToolDef[] = [
         slot: SLOT_READ,
         section: SECTION_READ,
         change: CHANGE_ARG,
+        resend_rules: RESEND_RULES,
       },
     },
-    ({ node_id, include_superseded, include_inherited_decisions, include_inherited_rules, slot, section, change }) =>
-      getNodeContext({ node_id, include_superseded, include_inherited_decisions, include_inherited_rules, slot, section, change })
+    ({ node_id, include_superseded, include_inherited_decisions, include_inherited_rules, slot, section, change, resend_rules }) =>
+      getNodeContext({ node_id, include_superseded, include_inherited_decisions, include_inherited_rules, slot, section, change, resend_rules })
   ),
   defineTool(
     "orient_for_work",
@@ -133,13 +142,21 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Orient for work",
       description:
-        "Call before working on a node: a write on a node is Blocked: Orientation until that node had a full reply in this session, and again after the rules reaching it changed (create_node never is). With query alone it returns ranked rows (a clear winner comes back in full with auto_focus: true); with node_id, the node: record, active-slot body, owned files, shape, its mandatory node rules (its own and those at distance 1 in full, further sources as one line), and its decisions; depth full adds the neighborhood, blast radius, and stability. change alone orients on every member of a change and clears the gate for all of them; with node_id it reads that node's revision. known_rules_versions leaves out rule text you still hold; a reply without the rules section does not clear the gate. Replies that orient carry project_rules when the project rules have not reached the session or changed. Details: get_spec({ topic: \"orient_for_work\" }).",
+        "Call before working on a node: a write on a node is Blocked: Orientation until that node had a full reply in this session, and again after the rules reaching it changed (create_node never is). With query alone it returns ranked rows (a clear winner comes back in full with auto_focus: true); with node_id, the node: record, active-slot body, owned files, shape, its mandatory node rules (its own and those at distance 1 in full, further sources as one line), and its decisions; depth full adds the neighborhood, blast radius, and stability. change alone orients on every member of a change and clears the gate for all of them; with node_id it reads that node's revision. node_ids orients on several nodes in one lean reply. Rule text this session already received comes back as { node_id, version, unchanged: true } (resend_rules returns it again); known_rules_versions also leaves out text you hold; a reply without the rules section does not clear the gate. slot or section returns only that body part plus the minimal record. Replies that orient carry project_rules when the project rules have not reached the session or changed. Details: get_spec({ topic: \"orient_for_work\" }).",
       inputSchema: {
         query: z
           .string()
           .optional()
           .describe("Free-text query to rank nodes. Required if node_id and change are omitted."),
         node_id: NODE_ID.optional().describe("Force focus to this node when present."),
+        node_ids: z
+          .array(NODE_ID)
+          .min(1)
+          .max(20)
+          .optional()
+          .describe(
+            "Orient on several nodes in one call (alone, without query, node_id, or change): each node lean (id, type, state, title, revisions, rules_from, decision count) and every rule source once. Clears the write gate for all of them."
+          ),
         change: CHANGE_ID.optional().describe(
           "Alone: orient on every member of this change (each node's revision of it, planned sources, and nodes holding a decision under it) in one reply. With node_id: read that node's open revision of this change."
         ),
@@ -170,18 +187,21 @@ export const TOOLS: ToolDef[] = [
         area: AREA,
         slot: SLOT_READ,
         section: SECTION_READ,
+        resend_rules: RESEND_RULES,
         sections: z
           .array(z.string())
           .optional()
           .describe(
-            `Return only these parts (plus focus and query): ${ORIENT_SECTIONS.join(", ")}. A reply without "rules" does not clear the write gate. Default: every part depth returns.`
+            `Return only these parts (plus focus and query): ${ORIENT_SECTIONS.join(", ")}. A reply without "rules" does not clear the write gate. "drift" returns the full drift list (otherwise drift is { count, new_since_last_reply }). Default: every part depth returns.`
           ),
       },
     },
-    ({ query, node_id, change, type, limit, depth, include_superseded, include_inherited_decisions, include_inherited_rules, known_rules_versions, area, slot, section, sections }) =>
+    ({ query, node_id, node_ids, change, type, limit, depth, include_superseded, include_inherited_decisions, include_inherited_rules, known_rules_versions, resend_rules, area, slot, section, sections }) =>
       orientForWork({
         query,
         node_id,
+        node_ids,
+        resend_rules,
         change,
         type,
         limit,

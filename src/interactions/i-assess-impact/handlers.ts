@@ -15,14 +15,29 @@ import {
   VIA_ORDER,
   buildBlastRadiusPayload,
   namedRevisionChange,
+  summarizeBlastRadius,
+  type BlastDetail,
 } from "../../foundations/f-plan-views/views.js";
 
+/** get_blast_radius: the summary by default, every row with `detail: "full"` (paged by the reply budget). */
 export function getBlastRadius(args: {
   node_id?: string;
   change?: string;
   include_retired?: boolean;
   include_dependent_decisions?: boolean;
+  detail?: BlastDetail;
 }): Record<string, unknown> {
+  const { graph, payload } = blastRadiusOn(args);
+  if (args.detail === "full") return { detail: "full", ...payload };
+  return summarizeBlastRadius(graph, payload);
+}
+
+function blastRadiusOn(args: {
+  node_id?: string;
+  change?: string;
+  include_retired?: boolean;
+  include_dependent_decisions?: boolean;
+}): { graph: MindPlanGraph; payload: Record<string, unknown> } {
   if (args.node_id === undefined && args.change === undefined) {
     throw blocked('get_blast_radius takes "node_id", "change", or both (a node\'s revision of that change).');
   }
@@ -31,13 +46,15 @@ export function getBlastRadius(args: {
     include_retired: args.include_retired,
     include_dependent_decisions: args.include_dependent_decisions,
   };
-  if (args.node_id === undefined) return buildChangeBlastRadiusPayload(graph, args.change!, opts);
+  if (args.node_id === undefined) {
+    return { graph: revisionGraph(graph, args.change!), payload: buildChangeBlastRadiusPayload(graph, args.change!, opts) };
+  }
   const live = findNode(graph, args.node_id);
-  if (args.change === undefined) return buildBlastRadiusPayload(graph, live, opts);
+  if (args.change === undefined) return { graph, payload: buildBlastRadiusPayload(graph, live, opts) };
   // That node's revision of the change, judged on the graph the change would ship into.
   const change = namedRevisionChange(live, args.change);
   const under = revisionGraph(graph, change);
-  return { ...buildBlastRadiusPayload(under, findNode(under, live.id), opts), change };
+  return { graph: under, payload: { ...buildBlastRadiusPayload(under, findNode(under, live.id), opts), change } };
 }
 
 /**

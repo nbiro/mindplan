@@ -131,7 +131,7 @@ const FOUNDATION_SECTIONS = {
     statusOf(oriented.shape, "## Purpose") === "present" && statusOf(oriented.shape, "## Acceptance Criteria") === "stub",
     JSON.stringify(oriented.shape)
   );
-  const context = await call("get_node_context", { node_id: "f-ledger", section: "## Purpose" });
+  const context = await call("get_node_context", { node_id: "f-ledger" });
   check("get_node_context returns shape too", statusOf(context.shape, "## Acceptance Criteria") === "stub", JSON.stringify(context.shape));
   await call("patch_node_territory", { node_id: "f-ledger", section: "## Acceptance Criteria", text: FOUNDATION_SECTIONS["## Acceptance Criteria"] });
   const after = await call("run_check", {});
@@ -235,7 +235,7 @@ const FOUNDATION_SECTIONS = {
   );
   const missing = await raw("orient_for_work", { change: "no-such-change" });
   check("a change with no members is Blocked", missing.error && missing.text.includes("has no members"), missing.text);
-  const oriented = await call("orient_for_work", { change: "cards" });
+  const oriented = await call("orient_for_work", { change: "cards", resend_rules: true });
   const cards = oriented.members?.find((m) => m.id === "f-cards");
   const source = oriented.rules?.find((r) => r.node_id === "f-cards");
   check(
@@ -243,7 +243,7 @@ const FOUNDATION_SECTIONS = {
     oriented.members?.length === 2 && cards?.kind === "revision" && cards.rules_from.includes("f-cards") && source?.rules.includes("card number") && oriented.rules.length === 1,
     JSON.stringify(oriented)
   );
-  const again = await call("orient_for_work", { change: "cards", known_rules_versions: { "f-cards": source.version } });
+  const again = await call("orient_for_work", { change: "cards", resend_rules: true, known_rules_versions: { "f-cards": source.version } });
   check("a known version leaves the rules text out", again.rules[0].unchanged === true && again.rules[0].rules === undefined, JSON.stringify(again.rules));
   const walked = await raw("update_node_status", { scope: "change", change: "cards", new_status: "ready" });
   check("after one change-wide orient the scoped walk passes the gate", !walked.error, walked.text);
@@ -259,7 +259,8 @@ const FOUNDATION_SECTIONS = {
 }
 {
   const { client, raw, call } = await session();
-  const gated = await raw("patch_node_territory", { node_id: "f-fees", description: "Infra — card fees and refunds" });
+  // set_test_files never orients on its own (patch_node_territory would).
+  const gated = await raw("set_test_files", { node_id: "f-fees", files: [] , replace: true });
   check("a decision holder is not oriented in a new session", gated.error && gated.text.includes("Orientation"), gated.text);
   const oriented = await call("orient_for_work", { change: "fees-triage" });
   check(

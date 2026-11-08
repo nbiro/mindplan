@@ -33,6 +33,7 @@ import { changeCycleGate } from "../../foundations/f-compiler-rules/change-cycle
 import {
   changedFiles,
   gateWrite,
+  gateWriteOrOrient,
   mutationTail,
   readinessFields,
   refreshPersistedMap,
@@ -80,7 +81,8 @@ export function openNext(args: {
     );
   }
   const reason = args.reason;
-  gateWrite(null, [node_id], "open_next");
+  // A node not yet oriented on is oriented by this write (its rules ride on the reply).
+  const finish = gateWriteOrOrient(null, [node_id], "open_next");
   validateChangeInput(args);
   const graph = loadGraph();
   const node = findNode(graph, node_id);
@@ -121,7 +123,7 @@ export function openNext(args: {
   const rel = entityRelativePath(node);
   const revisionPath = revisionRelativeFilePath(node, change);
   const { revision } = opened;
-  return {
+  return finish({
     node_id,
     live_state: node.state,
     change,
@@ -160,7 +162,7 @@ export function openNext(args: {
     changed_files: changedFiles([...opened.changed_files, ...removedMirror]),
     // `revisions` lists every open revision of the node: this one and its siblings.
     ...mutationTail(loadGraph(), node_id, args.verbose),
-  };
+  });
 }
 
 export function discardNext(args: { node_id: string; change?: string; verbose?: boolean }): Record<string, unknown> {

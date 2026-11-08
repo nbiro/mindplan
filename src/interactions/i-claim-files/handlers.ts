@@ -58,6 +58,7 @@ import {
   revisionReadinessResult,
   changedFiles,
   gateWrite,
+  gateWriteOrOrient,
   shippedChangeBlocked,
   mutationTail,
   readinessFields,
@@ -262,11 +263,14 @@ function validateAttributed(graph: MindPlanGraph, node: MindPlanNode, entries: s
  * A shipped node with no open next writes its live slot in place, additive only.
  */
 export function setImplementationFiles(args: SetImplementationArgs): Record<string, unknown> {
-  gateWrite(null, [args.node_id], "set_implementation_files");
+  // A node not yet oriented on is oriented by this write (its rules ride on the reply).
+  const finish = gateWriteOrOrient(null, [args.node_id], "set_implementation_files");
   // A change id moved off a revision may leave its old change with no revisions.
-  return args.change === undefined
-    ? writeImplementationFiles(args)
-    : withChangeCleanup(() => writeImplementationFiles(args));
+  return finish(
+    args.change === undefined
+      ? writeImplementationFiles(args)
+      : withChangeCleanup(() => writeImplementationFiles(args))
+  );
 }
 
 function writeImplementationFiles(args: SetImplementationArgs): Record<string, unknown> {

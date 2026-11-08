@@ -63,6 +63,7 @@ import * as path from "path";
 import {
   changedFiles,
   gateWrite,
+  gateWriteOrOrient,
   mutationTail,
   readinessFields,
   readinessResult,
@@ -174,7 +175,12 @@ function clearSplitRecord(node: MindPlanNode): { paths: string[]; churn: number 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   // One load for every check before the first write; replies after a write reload.
   const graph = loadGraph();
-  gateWrite(graph, [args.node_id], "patch_node_territory");
+  // A node not yet oriented on is oriented by this write (its rules ride on the reply).
+  const finish = gateWriteOrOrient(graph, [args.node_id], "patch_node_territory");
+  return finish(patchTerritoryOn(graph, args));
+}
+
+function patchTerritoryOn(graph: MindPlanGraph, args: PatchTerritoryArgs): Record<string, unknown> {
   const subject = findNode(graph, args.node_id);
   const revision = targetRevision(subject, args.change, args.slot);
   if (revision !== null) return patchRevisionTerritory(graph, args, revision);

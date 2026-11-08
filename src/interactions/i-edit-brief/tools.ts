@@ -66,8 +66,8 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Patch project config",
       description:
-        "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, the fan-out threshold, or search settings change. " +
-        "Writes mindplan/config.json sources, exclude, decisions, hotspots, fan_out, and/or search via the territory store. " +
+        "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, the fan-out threshold, search, reply size, or the test command change. " +
+        "Writes mindplan/config.json sources, exclude, decisions, hotspots, fan_out, search, replies, and/or tests via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -139,9 +139,34 @@ export const TOOLS: ToolDef[] = [
           })
           .optional()
           .describe("Search settings. A field not passed keeps its stored value."),
+        replies: z
+          .strictObject({
+            budget_bytes: z
+              .number()
+              .int()
+              .min(0)
+              .optional()
+              .describe("Cap on one reply's JSON size (default 8192; 0 turns it off). Lists past it come back cut with a next_page cursor; rule text is never cut."),
+            legacy: z
+              .boolean()
+              .optional()
+              .describe("true restores the 0.22 reply shapes: the full drift list and rule text on every reply. Default false."),
+          })
+          .optional()
+          .describe("Reply settings. A field not passed keeps its stored value."),
+        tests: z
+          .strictObject({
+            command: z
+              .string()
+              .min(1)
+              .optional()
+              .describe('How run_check({ run_tests: true }) runs linked tests: a command with {files}, e.g. "npm run test:files -- {files}".'),
+          })
+          .optional()
+          .describe("Test settings. A field not passed keeps its stored value."),
       },
     },
-    ({ sources, exclude, decisions, hotspots, fan_out, search }) =>
-      patchConfig({ sources, exclude, decisions, hotspots, fan_out, search })
+    ({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests }) =>
+      patchConfig({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests })
   ),
 ];

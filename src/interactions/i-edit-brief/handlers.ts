@@ -118,6 +118,8 @@ export function patchConfig(args: {
   hotspots?: { half_life_days?: number; outlier_ratio?: number; min_rate?: number };
   fan_out?: { warn_at?: number };
   search?: { enabled?: boolean; model?: string };
+  replies?: { budget_bytes?: number; legacy?: boolean };
+  tests?: { command?: string };
 }): Record<string, unknown> {
   if (
     args.sources === undefined &&
@@ -125,9 +127,11 @@ export function patchConfig(args: {
     args.decisions === undefined &&
     args.hotspots === undefined &&
     args.fan_out === undefined &&
-    args.search === undefined
+    args.search === undefined &&
+    args.replies === undefined &&
+    args.tests === undefined
   ) {
-    throw blocked("patch_config requires sources, exclude, decisions, hotspots, fan_out, and/or search.");
+    throw blocked("patch_config requires sources, exclude, decisions, hotspots, fan_out, search, replies, and/or tests.");
   }
   const current = loadProjectConfig();
   // A decision, hotspot, fan-out, or search setting that is not passed keeps its stored value.
@@ -139,13 +143,19 @@ export function patchConfig(args: {
   const hotspots = merged(current.hotspots, args.hotspots);
   const fanOut = merged(current.fan_out, args.fan_out);
   const search = merged(current.search, args.search);
+  const replies = merged(current.replies, args.replies);
+  const tests = merged(current.tests, args.tests);
   const next = {
+    // Keys this tool does not take stay as stored.
+    ...current,
     sources: args.sources ?? current.sources,
     exclude: args.exclude ?? current.exclude,
     ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
     ...(Object.keys(hotspots).length > 0 ? { hotspots } : {}),
     ...(Object.keys(fanOut).length > 0 ? { fan_out: fanOut } : {}),
     ...(Object.keys(search).length > 0 ? { search } : {}),
+    ...(Object.keys(replies).length > 0 ? { replies } : {}),
+    ...(Object.keys(tests).length > 0 ? { tests } : {}),
   };
   const written = writeProjectConfig(next, { force: true });
   return {
