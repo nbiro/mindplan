@@ -2,5 +2,8 @@
   "sources": [
     "src/**"
   ],
-  "exclude": []
+  "exclude": [],
+  "tests": {
+    "command": "npm run test:files -- {files}"
+  }
 }

@@ -205,14 +205,6 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() !== "" ? v : undefined;
 }
 
-/**` → `a/b`). */
-function globBase(glob: string): string {
-  const s = glob.replace(/\\/g, "/");
-  const first = s.search(/[*?[{]/);
-  const literal = first === -1 ? s : s.slice(0, first);
-  return first === -1 ? literal : literal.slice(0, literal.lastIndexOf("/") + 1);
-}
-
 /**
  * The deny JSON for one PreToolUse call, or null to allow. `input` is the hook payload Claude Code
  * sends (`tool_name`, `tool_input`, `cwd`); anything malformed is allowed.

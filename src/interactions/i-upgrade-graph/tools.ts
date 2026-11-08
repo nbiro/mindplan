@@ -31,7 +31,7 @@ export const TOOLS: ToolDef[] = [
         install_hook: z
           .boolean()
           .optional()
-          .describe("Also merge a Claude Code PreToolUse hook into .claude/settings.json that denies host Read/Edit/Write/Grep/Glob on mindplan/** and names the MindPlan tool to use."),
+          .describe("Also merge a Claude Code PreToolUse hook into .claude/settings.json that denies host Edit/Write on mindplan/** (reads stay free) and names the MindPlan tool to use."),
       },
     },
     ({ install_hook }) => upgradeProject({ install_hook })
