@@ -101,11 +101,16 @@ function decisionTag(d: { decision?: unknown; why?: unknown; status?: unknown; s
  * Split decision entries into those this session has not received at their current text (returned
  * and recorded as sent) and the count of those it has. Off (everything new) while not tracking.
  */
-export function unsentDecisions<T extends { id?: unknown }>(entries: T[], track: boolean): { fresh: T[]; known: number } {
-  if (!track) return { fresh: entries, known: 0 };
+export function unsentDecisions<T extends { id?: unknown }>(
+  entries: T[],
+  track: boolean,
+  limit = Number.POSITIVE_INFINITY
+): { fresh: T[]; known: number; more: number } {
+  if (!track) return { fresh: entries, known: 0, more: 0 };
   const root = rootKey(resolveProjectRoot());
   const fresh: T[] = [];
   let known = 0;
+  let more = 0;
   for (const e of entries) {
     const key = `${root}\0${String(e.id)}`;
     const tag = decisionTag(e as never);
@@ -113,10 +118,15 @@ export function unsentDecisions<T extends { id?: unknown }>(entries: T[], track:
       known += 1;
       continue;
     }
+    // Past the limit a new decision is not sent, so it is not recorded: a later reply carries it.
+    if (fresh.length >= limit) {
+      more += 1;
+      continue;
+    }
     sentDecisions.set(key, tag);
     fresh.push(e);
   }
-  return { fresh, known };
+  return { fresh, known, more };
 }
 
 // ---------------------------------------------------------------------------

@@ -266,9 +266,7 @@ export function summarizeBlastRadius(graph: MindPlanGraph, full: Record<string, 
       ])
     );
   }
-  if (affected.length > top.length || groups.length > 0) {
-    out.more = 'detail: "full" returns every dependent, affected_files by owner, rules_impact, and the decision rows (paged: next_page).';
-  }
+  out.more = 'detail: "full" returns every dependent, affected_files by owner, rules_impact, and the decision rows (paged: next_page).';
   return out;
 }
 

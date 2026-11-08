@@ -16,6 +16,9 @@ const shown = new Map<string, Set<string>>();
 
 const entryKey = (e: DriftEntry) => `${e.path}\u0000${e.class}\u0000${e.owner_id ?? ""}`;
 
+/** At most this many new drift entries per reply. */
+export const NEW_DRIFT_SHOWN = 20;
+
 /** Forget which drift entries were shown (tests). */
 export function resetDriftLedger(): void {
   shown.clear();
@@ -66,10 +69,14 @@ export function leanDrift(): Record<string, unknown> | null {
   }
   const before = shown.get(rootKey(resolveProjectRoot())) ?? new Set<string>();
   const fresh = all.entries.filter((e) => !before.has(entryKey(e)));
-  markShown(fresh, all.entries);
+  // A bounded list, so the reply budget never cuts it: only what is listed counts as shown, and the
+  // rest is listed on the next replies (or by get_drift).
+  const listed = fresh.slice(0, NEW_DRIFT_SHOWN);
+  markShown(listed, all.entries);
   return {
     count: all.entries.length,
-    new_since_last_reply: fresh,
+    new_since_last_reply: listed,
+    ...(fresh.length > listed.length ? { more_new: fresh.length - listed.length } : {}),
     ...(fresh.length > 0 ? { reminder: all.reminder, full: "get_drift lists every path" } : {}),
   };
 }

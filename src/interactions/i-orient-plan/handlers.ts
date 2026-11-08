@@ -120,6 +120,12 @@ function sent<T extends Record<string, unknown>>(block: T): T {
   return block;
 }
 
+/**
+ * New decisions one narrowed read carries at most; the rest (`decisions_more`) are not recorded as
+ * sent, so the next read carries them (a bounded list the reply budget never cuts).
+ */
+const NARROW_DECISIONS = 10;
+
 /** The record a narrowed read (`section` / `slot`) keeps: which node, and where it stands. */
 function minimalRecord(node: MindPlanNode): Record<string, unknown> {
   return { id: node.id, type: node.type, state: node.state, title: node.title };
@@ -149,9 +155,10 @@ function narrowContext(
     };
     decisions.push(...((next.decisions as { id?: unknown }[] | undefined) ?? []));
   }
-  const { fresh, known } = unsentDecisions(decisions, track);
+  const { fresh, known, more } = unsentDecisions(decisions, track, NARROW_DECISIONS);
   if (fresh.length) out.decisions = fresh;
   if (known) out.decisions_known = known;
+  if (more) out.decisions_more = more;
   if (full.inherited_decisions !== undefined) {
     const inherited = full.inherited_decisions as InheritedDecisionsSummary;
     if (inherited.entries) out.inherited_decisions = inherited;
@@ -793,7 +800,7 @@ export async function orientForWork(args: {
   if (openItems.length) reply.open_items = openItems;
   // A section or slot read: that body part, the minimal record, the rules, and only new decisions.
   if (depth !== "rules" && sections === undefined && (args.section !== undefined || args.slot !== undefined)) {
-    const { fresh, known } = unsentDecisions(split.own as { id?: unknown }[], track);
+    const { fresh, known, more } = unsentDecisions(split.own as { id?: unknown }[], track, NARROW_DECISIONS);
     return withRulesPush({
       query: q,
       focus: node.id,
@@ -804,6 +811,7 @@ export async function orientForWork(args: {
       context: narrowContext(node, context, track),
       ...(fresh.length ? { decisions: { node_id: node.id, entries: fresh } } : {}),
       ...(known ? { decisions_known: known } : {}),
+      ...(more ? { decisions_more: more } : {}),
       ...(args.include_inherited_decisions ? { inherited_decisions: split.inherited_decisions } : {}),
     });
   }

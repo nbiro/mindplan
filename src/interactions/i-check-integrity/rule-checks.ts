@@ -164,7 +164,7 @@ export function ruleCheckFindings(
   addJobs("project", projectRules, universe);
   for (const node of graph.nodes) {
     if (!isPipelineNodeType(node.type) || isInactiveNode(node)) continue;
-    const entries = resolveNodeRules(graph, node.id).filter((e) => /^\s+check:/m.test(e.rules));
+    const entries = resolveNodeRules(graph, node.id).filter((e) => /^\s*check:\s*\{/m.test(e.rules));
     if (entries.length === 0) continue;
     const owned = nodeOwnedFiles(node, root);
     const files = [

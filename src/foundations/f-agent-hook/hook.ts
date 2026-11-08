@@ -7,6 +7,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 
 /** The command the hook runs; `--no-install` never downloads a package from a hook. */
 export const HOOK_COMMAND = "npx --no-install mindplan-mcp hook pre-tool-use";
@@ -15,7 +16,30 @@ export const HOOK_MATCHER = "Read|Edit|MultiEdit|Write|Grep|Glob|NotebookEdit";
 /** Project-relative settings file the hook goes into. */
 export const HOOK_SETTINGS_PATH = ".claude/settings.json";
 
-const HOOK_MARKER = "mindplan-mcp hook pre-tool-use";
+/** Any mindplan-mcp hook command, local (`mindplan-mcp hook`) or pinned (`mindplan-mcp@0.23.0 hook`). */
+const HOOK_MARKER = /mindplan-mcp(@\S+)?\s+hook\s+pre-tool-use/;
+
+/** This package's version, read from its package.json beside the compiled module; null when unreadable. */
+function ownVersion(): string | null {
+  try {
+    const file = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "package.json");
+    const version = (JSON.parse(fs.readFileSync(file, "utf-8")) as { version?: unknown }).version;
+    return typeof version === "string" ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The command to install for this project: `HOOK_COMMAND` when the project has mindplan-mcp in its
+ * node_modules (no download from a hook), else `npx -y mindplan-mcp@<this version> hook pre-tool-use`,
+ * which works in a project that runs the server through npx alone (a non-JS repo).
+ */
+export function hookCommand(root: string): string {
+  if (fs.existsSync(path.join(root, "node_modules", "mindplan-mcp", "package.json"))) return HOOK_COMMAND;
+  const version = ownVersion();
+  return version ? `npx -y mindplan-mcp@${version} hook pre-tool-use` : HOOK_COMMAND;
+}
 const MINDPLAN_DIR = "mindplan";
 
 const READ_MESSAGE =
@@ -65,7 +89,7 @@ function hasHook(entries: unknown): boolean {
   if (!Array.isArray(entries)) return false;
   return entries.some((e: HookEntry) =>
     Array.isArray(e?.hooks) &&
-    e.hooks.some((h: { command?: unknown }) => typeof h?.command === "string" && h.command.includes(HOOK_MARKER))
+    e.hooks.some((h: { command?: unknown }) => typeof h?.command === "string" && HOOK_MARKER.test(h.command))
   );
 }
 
@@ -97,7 +121,7 @@ export function installHook(root: string): { path: string; changed: boolean } {
   }
   if (hasHook(pre)) return { path: HOOK_SETTINGS_PATH, changed: false };
   const entries = [...((pre ?? []) as HookEntry[])];
-  entries.push({ matcher: HOOK_MATCHER, hooks: [{ type: "command", command: HOOK_COMMAND }] });
+  entries.push({ matcher: HOOK_MATCHER, hooks: [{ type: "command", command: hookCommand(root) }] });
   const next = { ...settings, hooks: { ...hooks, PreToolUse: entries } };
   const file = settingsFile(root);
   fs.mkdirSync(path.dirname(file), { recursive: true });

@@ -184,6 +184,13 @@ fs.rmSync(path.join(root, "src/interactions/i-feature/todo.ts"));
 fs.rmSync(path.join(root, "src/interactions/i-other/todo.ts"));
 r = runCheck();
 ok("check passes again once the files comply", r.status === 0 && r.out === baseline.out, r.out);
+// A node rule whose check: line sits at column 0 (written before validation, or merged in) is flagged.
+const coreFile = path.join(root, "mindplan/foundations/f-core/f-core.mdx");
+const coreText = fs.readFileSync(coreFile, "utf-8");
+fs.writeFileSync(coreFile, coreText.replace('  check: {"forbid_pattern": "TODO"', 'check: {"forbid_pattern": "TODO"'));
+r = runCheck();
+ok("run_check flags a node rule's unindented check: line", r.status !== 0 && r.out.includes("indent the check: line"), r.out);
+fs.writeFileSync(coreFile, coreText);
 
 // --- Command checks -------------------------------------------------------------------------------
 await call("patch_project_rules", {
@@ -239,8 +246,10 @@ ok(
     JSON.stringify(settings.hooks.PreToolUse[0]) === JSON.stringify(existing.hooks.PreToolUse[0]),
   JSON.stringify(settings)
 );
-const ours = settings.hooks.PreToolUse.filter((e) => e.hooks?.some((h) => h.command === "npx --no-install mindplan-mcp hook pre-tool-use"));
-ok("install_hook adds the PreToolUse entry", ours.length === 1 && ours[0].matcher === "Read|Edit|MultiEdit|Write|Grep|Glob|NotebookEdit", JSON.stringify(settings));
+const version = JSON.parse(fs.readFileSync(path.join(toolRoot, "package.json"), "utf-8")).version;
+// No mindplan-mcp in the project's node_modules: the hook pins this version through npx -y.
+const ours = settings.hooks.PreToolUse.filter((e) => e.hooks?.some((h) => h.command === `npx -y mindplan-mcp@${version} hook pre-tool-use`));
+ok("install_hook adds the PreToolUse entry, pinned to this version without a local install", ours.length === 1 && ours[0].matcher === "Read|Edit|MultiEdit|Write|Grep|Glob|NotebookEdit", JSON.stringify(settings));
 const u = runHandler("upgrade", hookRoot, { args: { install_hook: true } });
 settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
 ok(
