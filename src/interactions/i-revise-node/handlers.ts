@@ -43,6 +43,7 @@ import {
   territoryPath,
   withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
+import { firstHotspotWarning } from "../../foundations/f-orientation-ledger/ledger.js";
 
 /** The refactor a hotspot's diagnosis names, as the alternative a decision must say it rejected. */
 function rejectedRefactor(nodeId: string, kind: "invert" | "split" | "unrecorded"): string {
@@ -88,7 +89,9 @@ export function openNext(args: {
   const node = findNode(graph, node_id);
   validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
-  const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()), reason);
+  // Once per node per change in a session; a decision under this change already answers it.
+  const warned = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()), reason, change);
+  const openClosed = warned && firstHotspotWarning(node_id, change) ? warned : null;
   // A planned depends_on that closes a cycle with another change's edges could never ship.
   const plannedDeps = (node.planned ?? []).filter((e) => e.change === change && e.type === "depends_on");
   if (plannedDeps.length > 0) {

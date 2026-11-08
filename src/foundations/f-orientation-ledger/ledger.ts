@@ -35,6 +35,21 @@ export function resetOrientationLedger(): void {
   servedRules.clear();
   sentRules.clear();
   sentDecisions.clear();
+  hotspotWarned.clear();
+}
+
+/** Keyed by project root + node id + change: the hotspot warnings this session already gave. */
+const hotspotWarned = new Set<string>();
+
+/**
+ * True the first time this session warns about `nodeId` being a hotspot under `change` (and records
+ * it); false after that, so the warning comes once per node per change, not on every reply.
+ */
+export function firstHotspotWarning(nodeId: string, change: string): boolean {
+  const key = `${rootKey(resolveProjectRoot())}\0${nodeId}\0${change}`;
+  if (hotspotWarned.has(key)) return false;
+  hotspotWarned.add(key);
+  return true;
 }
 
 // ---------------------------------------------------------------------------

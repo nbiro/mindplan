@@ -59,9 +59,73 @@ export function fanIn(
   graph: MindPlanGraph,
   node: MindPlanNode,
   index: FanInIndex = fanInIndex(graph)
-): { count: number; nodes: string[] } {
+): FanIn {
   const nodes = [...(index.get(node.id) ?? [])].sort();
-  return { count: nodes.length, nodes };
+  const globs = (node.implements ?? []).filter(isGlobClaim);
+  if (globs.length === 0 || nodes.length < 2) return { count: nodes.length, nodes };
+  // A dependent whose territory one of the focus's glob claims reaches into counts with every other
+  // dependent that glob reaches: one claim spread over many folders is one reason to depend.
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const groups = new Map<string, string[]>();
+  const loose: string[] = [];
+  for (const id of nodes) {
+    const claims = byId.get(id)?.implements ?? [];
+    const glob = globs.find((g) => claims.some((c) => claimsOverlap(c, g)));
+    if (glob) groups.set(glob, [...(groups.get(glob) ?? []), id]);
+    else loose.push(id);
+  }
+  const glob_groups = [...groups].filter(([, members]) => members.length > 1).map(([claim, members]) => ({ claim, nodes: members }));
+  if (glob_groups.length === 0) return { count: nodes.length, nodes };
+  const grouped = new Set(glob_groups.flatMap((g) => g.nodes));
+  const singles = nodes.filter((id) => !grouped.has(id));
+  return { count: singles.length + glob_groups.length, nodes, raw_count: nodes.length, glob_groups };
+}
+
+/**
+ * A node's direct fan-in: `count` the distinct dependents, except that dependents reached by one of
+ * the node's glob claims (`src/templates/*\/blocks/Legal/`) count once per claim (`glob_groups`,
+ * with `raw_count` the uncollapsed number).
+ */
+export type FanIn = {
+  count: number;
+  nodes: string[];
+  raw_count?: number;
+  glob_groups?: { claim: string; nodes: string[] }[];
+};
+
+/** A claim with a wildcard (`*`, `?`, or `[`) in it. */
+function isGlobClaim(claim: string): boolean {
+  return /[*?[]/.test(claim);
+}
+
+function segments(claim: string): string[] {
+  return claim.trim().replace(/\\/g, "/").replace(/^\.\//, "").split("/").filter((s) => s !== "");
+}
+
+/** One path segment against one glob segment (`*` and `?` within the segment, `[...]` classes). */
+function segmentMatches(segment: string, glob: string): boolean {
+  if (glob === "**") return true;
+  const pattern = glob.replace(/[.+^${}()|\\]/g, "\\$&").replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]");
+  return new RegExp(`^${pattern}$`).test(segment);
+}
+
+/**
+ * Whether a glob claim reaches into another claim's territory: segment by segment over their common
+ * length, each path segment matches the glob's (a `**` matches the rest). Graph facts only: the
+ * claim strings, never the files.
+ */
+export function claimsOverlap(claim: string, glob: string): boolean {
+  const a = segments(claim);
+  const b = segments(glob);
+  // The claim must reach the glob's first wildcard: it lies inside one of the folders the glob spans.
+  const wildcard = b.findIndex(isGlobClaim);
+  if (wildcard >= 0 && a.length <= wildcard) return false;
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    if (b[i] === "**") return true;
+    if (isGlobClaim(a[i])) return false;
+    if (!segmentMatches(a[i], b[i])) return false;
+  }
+  return a.length > 0 && b.length > 0;
 }
 
 export type ChurnEntry = { change: string; date?: string; reasons: string[] };
@@ -227,6 +291,8 @@ export type Hotspot = {
   /** The graph's median rate it was compared with. */
   median: number;
   fan_in: number;
+  /** Set when every dependent comes from this one glob claim of the node: no registry or split applies. */
+  single_glob?: string;
   /** The refactor its recorded reasons point to. */
   diagnosis: HotspotDiagnosis;
   /** The most recent change groups its decisions record. */
@@ -265,12 +331,15 @@ export function hotspotFor(
   }
   const rate = recentRate(node, settings, ctx.now, opening);
   if (rate < settings.min_rate || rate < settings.outlier_ratio * Math.max(1, ctx.median)) return null;
+  const fan = fanIn(graph, node, ctx.index);
+  const single = fan.glob_groups?.length === 1 && fan.count === 1 ? fan.glob_groups[0].claim : undefined;
   return {
     node_id: node.id,
     type: node.type,
     rate: round(rate),
     median: round(ctx.median),
-    fan_in: fanIn(graph, node, ctx.index).count,
+    fan_in: fan.count,
+    ...(single ? { single_glob: single } : {}),
     diagnosis: diagnoseHotspot(node, settings, ctx.now, opening),
     changes: nodeChurn(node).slice(-GROUPS_SHOWN),
     ...(node.split_into?.length ? { split_into: [...node.split_into] } : {}),
@@ -312,8 +381,9 @@ function pace(h: Hotspot): string {
   return `ships far more often than the rest of the graph lately (rate ${h.rate} against a median of ${h.median})${since}`;
 }
 
-function dependents(n: number): string {
-  return n === 1 ? "1 node depends on it directly" : `${n} nodes depend on it directly`;
+function dependents(h: Hotspot): string {
+  if (h.single_glob) return `its dependents all come from one claim ("${h.single_glob}"), so they count as one`;
+  return h.fan_in === 1 ? "1 node depends on it directly" : `${h.fan_in} nodes depend on it directly`;
 }
 
 /**
@@ -362,6 +432,13 @@ function reasonMix(d: HotspotDiagnosis): string {
 /** The diagnosis: which refactor the recorded reasons point to, and why. */
 function diagnosisAdvice(h: Hotspot): string {
   const d = h.diagnosis;
+  // One glob claim spread over many folders is one dependency: a registry or a split would not remove it.
+  if (h.single_glob) {
+    return (
+      `Rate by reason: ${reasonMix(d)}. Its fan-in is one glob claim ("${h.single_glob}"), so neither a registry ` +
+      `nor a split applies; if it should stay one node, say so with a decision.`
+    );
+  }
   if (d.kind === "invert") {
     return (
       `Diagnosis: invert (rate by reason: ${reasonMix(d)}). Most of its revisions only wired it to one more ` +
@@ -386,7 +463,7 @@ function diagnosisAdvice(h: Hotspot): string {
 /** The `hotspot:` warning: the pace, the refactor its recorded reasons point to, and the evidence. */
 export function hotspotWarning(h: Hotspot): string {
   return (
-    `hotspot: "${h.node_id}" ${pace(h)}, and ${dependents(h.fan_in)}. ${diagnosisAdvice(h)} ` +
+    `hotspot: "${h.node_id}" ${pace(h)}, and ${dependents(h)}. ${diagnosisAdvice(h)} ` +
     `Recent changes: ${describeGroups(h.changes)}. ` +
     `If it should stay one node, record that with record_decision({ keep_whole: true }).`
   );
@@ -400,20 +477,40 @@ export function openClosedWarning(
   graph: MindPlanGraph,
   node: MindPlanNode,
   settings: HotspotSettings,
-  reason?: RevisionReason
+  reason?: RevisionReason,
+  change?: string
 ): { warning: string; hotspot: Hotspot } | null {
   // A fix, an upgrade, a wording change, or the refactor itself is no reason to restructure.
   if (!node.shipped_at || !countsTowardRate(reason)) return null;
+  // A decision recorded on the node under this change already answers the warning for it.
+  if (change !== undefined && answeredUnder(node, change)) return null;
   const hotspot = hotspotFor(graph, node, settings, hotspotContext(graph, settings), reason ?? true);
   if (!hotspot) return null;
   return {
     hotspot,
     warning:
-      `Warning: "${node.id}" ${pace(hotspot)}, and this revision reaches its ${hotspot.fan_in} direct ` +
-      `dependent${hotspot.fan_in === 1 ? "" : "s"}. ${diagnosisAdvice(hotspot)} ` +
+      `Warning: "${node.id}" ${pace(hotspot)}, and this revision reaches ` +
+      (hotspot.single_glob
+        ? `dependents that all come from one claim ("${hotspot.single_glob}"). `
+        : `its ${hotspot.fan_in} direct dependent${hotspot.fan_in === 1 ? "" : "s"}. `) +
+      `${diagnosisAdvice(hotspot)} ` +
       `Recent changes: ${describeGroups(hotspot.changes)}. ` +
       `If revising it as it is still right, record why with record_decision, naming the refactor you rejected.`,
   };
+}
+
+/** Whether the node holds a decision recorded under `change` (live or any revision): it answers that change's hotspot warning. */
+export function answeredUnder(node: MindPlanNode, change: string): boolean {
+  return allDecisions(node).some((d) => d.change === change);
+}
+
+/**
+ * Whether every counted open revision of the node has a decision under its change: the hotspot
+ * warning was answered for the work in flight. False with no open revision.
+ */
+export function answeredForOpenWork(node: MindPlanNode): boolean {
+  const open = openChanges(node);
+  return open.length > 0 && open.every((c) => answeredUnder(node, c));
 }
 
 export type AdditivityRow = { id: string; state: string; fan_in: number };

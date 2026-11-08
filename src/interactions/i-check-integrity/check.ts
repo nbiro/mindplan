@@ -68,6 +68,7 @@ import {
   changeAdditivity,
   hotspots,
   hotspotWarning,
+  answeredForOpenWork,
   type ChangeAdditivity,
 } from "../../foundations/f-compiler-rules/open-closed.js";
 import { collectDirtySrcPaths, defaultBaseRef, type DirtySrcPaths } from "../../foundations/f-source-index/git.js";
@@ -606,7 +607,10 @@ function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): st
  * reopens it, and orient_for_work at depth full shows it.
  */
 function collectHotspotWarnings(graph: MindPlanGraph, root: string): string[] {
-  const underWork = new Set(graph.nodes.filter((n) => n.next || n.open_revisions?.length).map((n) => n.id));
+  // Under work, and not answered: a decision under each open revision's change answers it for that change.
+  const underWork = new Set(
+    graph.nodes.filter((n) => (n.next || n.open_revisions?.length) && !answeredForOpenWork(n)).map((n) => n.id)
+  );
   return hotspots(graph, hotspotSettings(loadProjectConfig(root)))
     .filter((h) => underWork.has(h.node_id))
     .map(hotspotWarning);

@@ -43,6 +43,7 @@ import {
   diagnoseHotspot,
   recentRate,
   hotspotContext,
+  answeredUnder,
 } from "../../foundations/f-compiler-rules/open-closed.js";
 import { buildOwnershipIndex, exclusiveOwner, nodeOwnedFiles } from "../../foundations/f-source-index/ownership.js";
 import { blocked, findNode, interfacesExposing, isRevisionOf, liveGraph, revisionGraph } from "../../foundations/f-compiler-rules/rules.js";
@@ -61,6 +62,7 @@ import {
   reachingRules,
   recordOriented,
   recordRulesSent,
+  firstHotspotWarning,
   sentRulesVersions,
   tracksSentText,
   unsentDecisions,
@@ -834,6 +836,21 @@ export async function orientForWork(args: {
 }
 
 /**
+ * The stability payload's hotspot fields: the warning text once per node per open change in this
+ * session (none when a decision under the change answered it), afterwards `hotspot: true` and the
+ * diagnosis only. A node with no open revision keeps the text (it is not tied to a change).
+ */
+function hotspotFields(node: MindPlanNode, hotspot: NonNullable<ReturnType<typeof hotspotFor>>): Record<string, unknown> {
+  const open = openChanges(node);
+  const unanswered = open.filter((c) => !answeredUnder(node, c));
+  if (open.length > 0 && unanswered.length === 0) return { hotspot: true, diagnosis: hotspot.diagnosis.kind, answered: true };
+  const fresh = open.length === 0 || unanswered.filter((c) => firstHotspotWarning(node.id, c)).length > 0;
+  return fresh
+    ? { hotspot: hotspotWarning(hotspot), diagnosis: hotspot.diagnosis.kind }
+    : { hotspot: true, diagnosis: hotspot.diagnosis.kind };
+}
+
+/**
  * Whether reopening the node is costly: its direct fan-in, how often it shipped lately against the
  * graph's median, its revision count and split record, and the `hotspot:` line when it is one.
  * A pre-ship node also carries `fan_out`: the other unshipped changes it reaches through
@@ -857,7 +874,7 @@ function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<stri
       : {}),
     ...(node.revisions !== undefined ? { revisions: node.revisions } : {}),
     ...(node.split_into?.length ? { split_at: node.split_at, split_into: [...node.split_into] } : {}),
-    ...(hotspot ? { hotspot: hotspotWarning(hotspot), diagnosis: hotspot.diagnosis.kind } : {}),
+    ...(hotspot ? hotspotFields(node, hotspot) : {}),
     ...(fan ? { fan_out: fan } : {}),
   };
 }
