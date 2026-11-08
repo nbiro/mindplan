@@ -2,14 +2,14 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime"
-description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, the planning duty, mindplan/ through the tools only, run_check before handoff); attaches lean drift (a count and the paths new since the last reply) to results."
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, the planning duty, mindplan/ written through the tools only, run_check before handoff); attaches lean drift to results."
 state: stable
-shipped_at: 2026-11-08T17:07:34.265Z
-revisions: 26
-churn: 4.584
-churn_behavior: 1
+shipped_at: 2026-11-08T17:42:37.134Z
+revisions: 27
+churn: 5.581
+churn_behavior: 1.999
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-11-08T17:07:34.265Z
+updated_at: 2026-11-08T17:42:37.134Z
 split_at: 21
 split_into:
   - f-orientation-ledger
@@ -32,7 +32,7 @@ role: assembler
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change and follow what it returns; the planning duty (a new behavior is a new node, created before its files are claimed; update the nodes a change touches), worded as in the `MINDPLAN.md` stub and the playbook; read and write `mindplan/` only through the tools; `run_check` must pass before handing work off. It prescribes no per-action calls and no mandatory skill load. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session. It also keeps the drift report small: a result carries drift for the node it is about, plus a count of the rest, never the whole tree's dirty files.
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change and follow what it returns; the planning duty (a new behavior is a new node, created before its files are claimed; update the nodes a change touches), worded as in the `MINDPLAN.md` stub and the playbook; write `mindplan/` only through the tools (reading its files directly is fine); `run_check` must pass before handing work off. It prescribes no per-action calls and no mandatory skill load. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session. It also keeps the drift report small: a result carries the number of drifting paths and only the ones this session was not shown yet.
 
 The version the server reports on `initialize` is read from the package's own `package.json`, never typed into source: a second copy of the version string drifts the first time the package is bumped, and a host that logs `serverInfo.version` would then name a release that does not exist. The per-tool descriptions (`if-mcp-tools`) describe their tool only.
 

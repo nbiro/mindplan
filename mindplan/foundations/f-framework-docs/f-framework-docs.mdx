@@ -4,11 +4,12 @@ type: Foundation
 title: "Framework docs"
 description: "Infra — SPEC, playbook, served skills, setup and upgrade guides, the MINDPLAN.md pointer, README, and changelog: each rule stated once in its home section, current behavior only, telling agents what the server enforces rather than what to call before each action."
 state: stable
-shipped_at: 2026-11-07T20:32:45.885Z
-revisions: 55
-churn: 27.162
+shipped_at: 2026-11-08T17:42:36.945Z
+revisions: 56
+churn: 27.614
+churn_behavior: 1
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-08T06:27:23.846Z
+updated_at: 2026-11-08T17:42:36.945Z
 depends_on:
   - f-domain-model
 implements:
@@ -51,7 +52,7 @@ Claims: `SPEC.md`, `README.md`, `CHANGELOG.md`, `templates/`
 **Rules for every file**
 
 - The type names Capability, Interaction, Interface, Foundation, and Bug are the only words for node types. SPEC §2.0.0 keeps a non-normative table of the closest established term for each type and edge; no doc uses those terms as synonyms.
-- MCP is the only writer of `mindplan/`; no doc tells anyone to read or edit `mindplan/**` with host file tools.
+- MCP is the only writer of `mindplan/`; no doc tells anyone to edit `mindplan/**` with host file tools. Reading the files directly is allowed, and the pointer, the playbook, and the server instructions say what a raw file lacks: a node's inherited rules and decisions (orient for those) and a revision's full record.
 - No release history outside `CHANGELOG.md`: SPEC, README, the playbook, and the skills describe what the server does now. Legacy handling the server still performs is described as current behavior (SPEC §1.1.2 lists what `upgrade_project` converts).
 - SPEC section numbers and the headings `get_spec` topics name stay stable; the Minimum Territory Shape table in SPEC §6.5 and in the define-entities skill is generated from `TERRITORY_SHAPE` between the shape-table markers.
 - Features that are specified but not built (SPEC §6.4 MDX components, §10 external UI sync) are labelled as not implemented.

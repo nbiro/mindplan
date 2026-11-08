@@ -7,6 +7,14 @@
       "files": {
         "src/interactions/i-read-brief/spec.ts": "f3788b202579baa4ba1fd4f2f07834ead399e514fa3e79baa69cb6bbe691870a"
       }
+    },
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-08T17:42:46.858Z",
+      "note": "spec.ts adds three SPEC_TOPICS entries and retitles the hook topic (writes only); the node describes the topic map generically and every topic resolves.",
+      "files": {
+        "src/interactions/i-read-brief/spec.ts": "e3433e011b61c2f1e80c4ce9cf1a6da4e2d99b29e0477d05397b592ad64972e5"
+      }
     }
   ]
 }
