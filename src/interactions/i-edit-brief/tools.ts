@@ -66,8 +66,8 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Patch project config",
       description:
-        "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, the fan-out threshold, search, reply size, or the test command change. " +
-        "Writes mindplan/config.json sources, exclude, decisions, hotspots, fan_out, search, replies, and/or tests via the territory store. " +
+        "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, the fan-out threshold, search, reply size, the test command, or when rules' command checks run change. " +
+        "Writes mindplan/config.json sources, exclude, decisions, hotspots, fan_out, search, replies, tests, and/or rule_checks via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -164,9 +164,18 @@ export const TOOLS: ToolDef[] = [
           })
           .optional()
           .describe("Test settings. A field not passed keeps its stored value."),
+        rule_checks: z
+          .strictObject({
+            commands: z
+              .enum(["off", "local", "always"])
+              .optional()
+              .describe('When run_check runs rules\' command checks: "off" never (default), "local" except in CI (env CI set), "always" also in CI.'),
+          })
+          .optional()
+          .describe("Rule-check settings. A field not passed keeps its stored value."),
       },
     },
-    ({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests }) =>
-      patchConfig({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests })
+    ({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests, rule_checks }) =>
+      patchConfig({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests, rule_checks })
   ),
 ];

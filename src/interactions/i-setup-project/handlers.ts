@@ -2,7 +2,8 @@
  * Set up the project — owned by i-setup-project: setup_project creates the graph a repo does not
  * have yet (tree, default config, empty brief, a .gitignore for the derived map.md, stamp), writes the merge-gate workflow on request,
  * and returns the pointer text and the setup guide for the agent's judgment work. It writes
- * nothing else outside mindplan/ (decision d-setup-upgrade-mcp-tools).
+ * nothing else outside mindplan/ (decision d-setup-upgrade-mcp-tools) unless asked: `install_hook`
+ * merges the Claude Code PreToolUse hook into .claude/settings.json (f-agent-hook).
  */
 
 import * as fs from "fs";
@@ -14,9 +15,10 @@ import { ignoreMapLine } from "../../foundations/f-graph-migrations/level4.js";
 import { graphStatus, stampGraph } from "../../foundations/f-graph-migrations/status.js";
 import { changedSince, snapshotTree } from "../../foundations/f-graph-migrations/tree.js";
 import { PROJECT_FILENAME } from "../../foundations/f-territory-store/project.js";
-import { ensureDirectories, mindplanRoot } from "../../foundations/f-territory-store/store.js";
+import { ensureDirectories, mindplanRoot, projectRoot } from "../../foundations/f-territory-store/store.js";
 import { packageRoot, packageVersion } from "../../foundations/f-territory-store/version.js";
 import { installMergeGateWorkflow } from "./workflow.js";
+import { hookReply } from "../../foundations/f-agent-hook/hook.js";
 
 export type SetupCi = "github";
 
@@ -28,7 +30,7 @@ function readTemplate(...segments: string[]): string {
   return fs.readFileSync(file, "utf-8").replace(/\r\n/g, "\n");
 }
 
-export function setupProject(args: { ci?: SetupCi } = {}): Record<string, unknown> {
+export function setupProject(args: { ci?: SetupCi; install_hook?: boolean } = {}): Record<string, unknown> {
   const status = graphStatus();
   if (status.state === "server-behind" || status.state === "upgrade") {
     throw blocked(`setup_project: ${status.warning}`);
@@ -47,10 +49,13 @@ export function setupProject(args: { ci?: SetupCi } = {}): Record<string, unknow
   const changed_files = changedSince(before);
   const ci = args.ci === "github" ? installMergeGateWorkflow(packageRoot(), packageVersion()) : undefined;
   if (ci?.installed) changed_files.push(ci.path);
+  const hook = hookReply(projectRoot(), args.install_hook);
+  changed_files.push(...hook.changed_files);
   return {
     created,
     changed_files,
     ...(ci ? { ci } : {}),
+    ...(hook.hook ? { hook: hook.hook } : {}),
     pointer: readTemplate("agent", "agents-stub.md"),
     guide: readTemplate("agent", "setup-guide.md"),
   };

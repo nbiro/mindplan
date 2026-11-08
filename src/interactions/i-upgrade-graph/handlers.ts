@@ -16,6 +16,7 @@ import { graphStatus, stampGraph } from "../../foundations/f-graph-migrations/st
 import { changedSince, snapshotTree } from "../../foundations/f-graph-migrations/tree.js";
 import { mindplanRoot, projectRoot } from "../../foundations/f-territory-store/store.js";
 import { packageRoot } from "../../foundations/f-territory-store/version.js";
+import { hookReply } from "../../foundations/f-agent-hook/hook.js";
 
 /** What the retired init installed outside mindplan/; the upgrade guide tells the agent to delete them. */
 export const RETIRED_HOST_COPIES = [
@@ -49,7 +50,7 @@ function pointerOutdated(pointer: string): boolean {
   return ["AGENTS.md", "CLAUDE.md"].some((f) => readText(f)?.includes(RETIRED_STUB_MARKER) ?? false);
 }
 
-export function upgradeProject(): Record<string, unknown> {
+export function upgradeProject(args: { install_hook?: boolean } = {}): Record<string, unknown> {
   const status = graphStatus();
   // A folder with no stamp and no node also reads as setup; migrating it is still safe.
   if ((status.state === "setup" && !fs.existsSync(mindplanRoot())) || status.state === "server-behind") {
@@ -69,10 +70,12 @@ export function upgradeProject(): Record<string, unknown> {
   }
   stampGraph();
   const pointer = readTemplate("agent", "agents-stub.md");
+  const hook = hookReply(projectRoot(), args.install_hook);
   return {
     from_level: status.level,
     to_level: MIGRATION_LEVEL,
-    changed_files: changedSince(before),
+    changed_files: [...changedSince(before), ...hook.changed_files],
+    ...(hook.hook ? { hook: hook.hook } : {}),
     migrations,
     leftovers: RETIRED_HOST_COPIES.filter((rel) => fs.existsSync(path.join(projectRoot(), rel))),
     pointer_outdated: pointerOutdated(pointer),

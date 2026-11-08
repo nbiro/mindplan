@@ -57,6 +57,7 @@ import {
   revisionGraph,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
+import { ruleCheckProblems } from "../../foundations/f-graph-search/rule-checks.js";
 import { orientationGateEnabled, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
 import * as fs from "fs";
 import * as path from "path";
@@ -550,6 +551,10 @@ export function patchNodeRules(args: {
   const { node_id, rules } = args;
   if (rules === undefined) {
     throw blocked("patch_node_rules requires rules.");
+  }
+  const problems = ruleCheckProblems(rules);
+  if (problems.length > 0) {
+    throw blocked(`patch_node_rules "${node_id}": invalid check: line(s), nothing written. ${problems.join("; ")}.`);
   }
   const node = findNode(graph, node_id);
   const written = writeNodeRules(node, rules);
