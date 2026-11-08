@@ -256,6 +256,16 @@ export function summarizeBlastRadius(graph: MindPlanGraph, full: Record<string, 
   out.tests = full.tests;
   out.decision_ids = decisions.map((d) => d.id);
   if (full.dependent_decisions !== undefined) out.dependent_decisions = full.dependent_decisions;
+  // An Interaction's reachability, as ids (and distance downstream).
+  const reach = full.reachability as Record<string, { id: string; distance?: number }[]> | undefined;
+  if (reach) {
+    out.reachability = Object.fromEntries(
+      Object.entries(reach).map(([key, rows]) => [
+        key,
+        rows.map((r) => (r.distance !== undefined ? { id: r.id, distance: r.distance } : { id: r.id })),
+      ])
+    );
+  }
   if (affected.length > top.length || groups.length > 0) {
     out.more = 'detail: "full" returns every dependent, affected_files by owner, rules_impact, and the decision rows (paged: next_page).';
   }

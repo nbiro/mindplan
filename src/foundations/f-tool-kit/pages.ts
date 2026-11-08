@@ -118,7 +118,6 @@ export function nextPage(cursor: string, budget: number): Record<string, unknown
       `Blocked: cursor "${cursor}" is unknown or expired (cursors live for this session, the latest ${MAX_STORED} only). Repeat the original call.`
     );
   }
-  store.delete(cursor);
   const room = budget > 0 ? budget - 300 : Number.POSITIVE_INFINITY;
   const count = Number.isFinite(room) ? fitting(entry.items, room) : entry.items.length;
   const items = entry.items.slice(0, count);

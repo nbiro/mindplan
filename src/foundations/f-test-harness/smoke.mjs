@@ -255,10 +255,10 @@ function nextTerritoryPath(...parts) {
   const listed = await client.listTools();
   const names = new Set((listed.tools ?? []).map((t) => t.name));
   const required = ["get_rules", "patch_node_rules", "run_check", "record_decision", "list_decisions", "set_test_files", "list_areas", "get_spec", "get_skill", "setup_project", "upgrade_project", "resolve_conflict"];
-  if (names.size !== 39 || required.some((n) => !names.has(n))) {
+  if (names.size !== 42 || required.some((n) => !names.has(n))) {
     failures++;
-    console.log(`FAIL expected 39 tools including ${required.join(", ")} (got ${names.size})`);
-  } else console.log(`ok   thirty-seven tools registered including ${required.join(", ")}`);
+    console.log(`FAIL expected 42 tools including ${required.join(", ")} (got ${names.size})`);
+  } else console.log(`ok   forty-two tools registered including ${required.join(", ")}`);
   for (const name of ["record_decision", "list_decisions"]) {
     const tool = (listed.tools ?? []).find((t) => t.name === name);
     if (!tool?.description?.startsWith("Call when") && !tool?.description?.startsWith("Call before")) {
@@ -281,7 +281,7 @@ function nextTerritoryPath(...parts) {
   const READ = [
     "run_check", "get_mindplan_graph", "export_mindplan_view", "find_related_nodes", "get_node_implementation",
     "get_node_context", "orient_for_work", "get_project", "get_rules", "list_decisions", "get_blast_radius",
-    "list_areas", "get_spec", "get_skill", "doctor", "find_in_node", "search_graph",
+    "list_areas", "get_spec", "get_skill", "doctor", "find_in_node", "search_graph", "next_page", "get_drift",
   ];
   const DESTRUCTIVE = ["unlink_nodes", "remove_attachment", "discard_next", "force_unship"];
   const annotationProblems = [];
@@ -907,7 +907,7 @@ if (
 } else console.log("ok   orient_for_work context omits raw_context/aliases");
 
 const blastIx = JSON.parse(
-  await expectOk("get_blast_radius interaction reachability", "get_blast_radius", { node_id: "i-checkout" })
+  await expectOk("get_blast_radius interaction reachability", "get_blast_radius", { detail: "full", node_id: "i-checkout" })
 );
 if (
   !blastIx.reachability?.exposing_interfaces?.some((n) => n.id === "if-web") ||
@@ -1088,7 +1088,7 @@ if (tipsLeadsAfterOpen.length !== 1) {
 } else console.log("ok   leads_to keep same id after open_next");
 
 const blastWhileNext = JSON.parse(
-  await expectOk("blast radius while next open", "get_blast_radius", { node_id: "i-checkout" })
+  await expectOk("blast radius while next open", "get_blast_radius", { detail: "full", node_id: "i-checkout" })
 );
 if (!blastWhileNext.reachability?.exposing_interfaces?.some((n) => n.id === "if-web")) {
   failures++; console.log(`FAIL blast reachability while next open: ${JSON.stringify(blastWhileNext.reachability)}`);
@@ -1164,7 +1164,7 @@ await expectOk("link i-on-a f-a", "link_nodes", {
   source_id: "i-on-a", target_id: "f-a", edge_type: "depends_on",
 });
 
-const radius = JSON.parse(await expectOk("get_blast_radius f-a", "get_blast_radius", { node_id: "f-a" }));
+const radius = JSON.parse(await expectOk("get_blast_radius f-a", "get_blast_radius", { detail: "full", node_id: "f-a" }));
 const fB = radius.affected?.find((a) => a.id === "f-b");
 const fC = radius.affected?.find((a) => a.id === "f-c");
 const iOnA = radius.affected?.find((a) => a.id === "i-on-a");
@@ -1192,7 +1192,7 @@ await expectOk("link f-live-beyond depends_on f-retired-mid", "link_nodes", {
   source_id: "f-live-beyond", target_id: "f-retired-mid", edge_type: "depends_on",
 });
 const radiusDefault = JSON.parse(
-  await expectOk("get_blast_radius f-a default retired filter", "get_blast_radius", { node_id: "f-a" })
+  await expectOk("get_blast_radius f-a default retired filter", "get_blast_radius", { detail: "full", node_id: "f-a" })
 );
 const retiredHidden = radiusDefault.affected?.find((a) => a.id === "f-retired-mid");
 const liveBeyond = radiusDefault.affected?.find((a) => a.id === "f-live-beyond");
@@ -1204,7 +1204,7 @@ if (!liveBeyond || liveBeyond.distance !== 2) {
   failures++; console.log(`FAIL live beyond retired missing/wrong distance: ${JSON.stringify(radiusDefault.affected)}`);
 } else console.log("ok   get_blast_radius keeps live dependent behind retired at true distance");
 const radiusRetired = JSON.parse(
-  await expectOk("get_blast_radius f-a include_retired", "get_blast_radius", {
+  await expectOk("get_blast_radius f-a include_retired", "get_blast_radius", { detail: "full",
     node_id: "f-a", include_retired: true,
   })
 );
@@ -2717,7 +2717,7 @@ role: infra
   } else console.log("ok   orient_for_work without a focus returns rows only, no rules");
 
   // Blast radius reports who the rules reach.
-  const blast = await json("get_blast_radius", { node_id: "j-rules" });
+  const blast = await json("get_blast_radius", { detail: "full", node_id: "j-rules" });
   if (
     blast.rules_impact?.has_rules !== true ||
     JSON.stringify(blast.rules_impact.inherited_by.map((e) => e.id)) !== JSON.stringify(["i-rules-a", "i-rules-b", "bug-rules"]) ||
@@ -2726,7 +2726,7 @@ role: infra
     failures++;
     console.log(`FAIL Capability rules_impact: ${JSON.stringify(blast)}`);
   } else console.log("ok   get_blast_radius reports rules_impact independent of affected");
-  const blastNone = await json("get_blast_radius", { node_id: "i-rules-b" });
+  const blastNone = await json("get_blast_radius", { detail: "full", node_id: "i-rules-b" });
   if (blastNone.rules_impact?.has_rules !== false || blastNone.rules_impact.inherited_by.length !== 0) {
     failures++;
     console.log(`FAIL node without rules rules_impact: ${JSON.stringify(blastNone.rules_impact)}`);
@@ -2849,8 +2849,8 @@ role: infra
   await expectBlockedContaining("rules on a closed Bug", "patch_node_rules", {
     node_id: "bug-rules", rules: "- no",
   }, "closed");
-  const audienceNow = (await json("get_blast_radius", { node_id: "j-rules" })).rules_impact;
-  const base = (await json("get_blast_radius", { node_id: "f-rules-base" })).rules_impact;
+  const audienceNow = (await json("get_blast_radius", { detail: "full", node_id: "j-rules" })).rules_impact;
+  const base = (await json("get_blast_radius", { detail: "full", node_id: "f-rules-base" })).rules_impact;
   if (
     audienceNow.inherited_by.some((e) => e.id === "bug-rules") ||
     base.inherited_by.some((e) => e.id === "bug-rules")
