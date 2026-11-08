@@ -28,6 +28,7 @@ import { TOOLS as EXPORT_TOOLS } from "../../interactions/i-export-map/tools.js"
 import { TOOLS as SETUP_TOOLS } from "../../interactions/i-setup-project/tools.js";
 import { TOOLS as UPGRADE_TOOLS } from "../../interactions/i-upgrade-graph/tools.js";
 import { TOOLS as DOCTOR_TOOLS } from "../../interactions/i-doctor/tools.js";
+import { TOOLS as FIND_TEXT_TOOLS } from "../../interactions/i-find-text/tools.js";
 import { versionGate } from "../../foundations/f-graph-migrations/status.js";
 import { projectRulesGate } from "../../foundations/f-plan-writes/writes.js";
 import { foreignRoot, withRoot } from "../../foundations/f-source-index/root-scope.js";
@@ -175,6 +176,8 @@ const TOOL_ORDER = [
   "list_areas",
   "get_node_implementation",
   "get_node_context",
+  "find_in_node",
+  "search_graph",
   "orient_for_work",
   "next_page",
   "get_project",
@@ -227,6 +230,7 @@ export function registerMindPlanTools(server: McpServer): void {
     ...UPGRADE_TOOLS,
     ...DOCTOR_TOOLS,
     ...PAGE_TOOLS,
+    ...FIND_TEXT_TOOLS,
   ];
   const byName = new Map(defs.map((d) => [d.name, d]));
   if (byName.size !== defs.length || byName.size !== TOOL_ORDER.length) {
