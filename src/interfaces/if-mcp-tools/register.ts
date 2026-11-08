@@ -9,6 +9,9 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 
 import type { ToolDef, ToolKind } from "../../foundations/f-tool-kit/tool.js";
 import { withDrift } from "../../foundations/f-mcp-runtime/with-drift.js";
+import { budgetReply } from "../../foundations/f-tool-kit/pages.js";
+import { loadProjectConfig, replySettings } from "../../foundations/f-source-index/config.js";
+import { TOOLS as PAGE_TOOLS } from "../../interactions/i-page-replies/tools.js";
 import { TOOLS as ORIENT_TOOLS } from "../../interactions/i-orient-plan/tools.js";
 import { TOOLS as IMPACT_TOOLS } from "../../interactions/i-assess-impact/tools.js";
 import { TOOLS as BRIEF_READ_TOOLS } from "../../interactions/i-read-brief/tools.js";
@@ -19,12 +22,14 @@ import { TOOLS as TERRITORY_TOOLS } from "../../interactions/i-edit-territory/to
 import { TOOLS as REVISE_TOOLS } from "../../interactions/i-revise-node/tools.js";
 import { TOOLS as CLAIM_TOOLS } from "../../interactions/i-claim-files/tools.js";
 import { TOOLS as DECISION_TOOLS } from "../../interactions/i-record-decision/tools.js";
+import { TOOLS as CONFIRM_TOOLS } from "../../interactions/i-confirm-territory/tools.js";
 import { TOOLS as BRIEF_EDIT_TOOLS } from "../../interactions/i-edit-brief/tools.js";
 import { TOOLS as CHECK_TOOLS } from "../../interactions/i-check-integrity/tools.js";
 import { TOOLS as EXPORT_TOOLS } from "../../interactions/i-export-map/tools.js";
 import { TOOLS as SETUP_TOOLS } from "../../interactions/i-setup-project/tools.js";
 import { TOOLS as UPGRADE_TOOLS } from "../../interactions/i-upgrade-graph/tools.js";
 import { TOOLS as DOCTOR_TOOLS } from "../../interactions/i-doctor/tools.js";
+import { TOOLS as FIND_TEXT_TOOLS } from "../../interactions/i-find-text/tools.js";
 import { versionGate } from "../../foundations/f-graph-migrations/status.js";
 import { projectRulesGate } from "../../foundations/f-plan-writes/writes.js";
 import { foreignRoot, withRoot } from "../../foundations/f-source-index/root-scope.js";
@@ -80,7 +85,7 @@ const ANNOTATIONS: Record<ToolKind, ToolAnnotations> = {
  * tool then waits until the project rules reached this session (`projectRulesGate`, Blocked: Rules).
  */
 function mount(server: McpServer, def: ToolDef): void {
-  const { kind, drift, gate, ...rest } = def.config;
+  const { kind, drift, gate, budget, ...rest } = def.config;
   // The definition erased its handler's argument type; the SDK validates the input schema before
   // the call, so the handler receives exactly what its schema describes.
   const handler = def.handler as (args: unknown) => unknown;
@@ -93,7 +98,7 @@ function mount(server: McpServer, def: ToolDef): void {
           if (kind !== "read") projectRulesGate(def.name);
           return handler(args);
         };
-  const callback = guarded(gated, { write: kind !== "read", drift });
+  const callback = guarded(gated, { write: kind !== "read", drift, budget });
   // Every tool takes `root`: the checkout (or git worktree) whose mindplan/ this one call reads and
   // writes. The gate, the handler, and the envelope all run inside that call's scope.
   const rooted = (args: Record<string, unknown> | undefined): ToolResult | Promise<ToolResult> => {
@@ -106,17 +111,28 @@ function mount(server: McpServer, def: ToolDef): void {
   server.registerTool(def.name, { ...rest, inputSchema, annotations: ANNOTATIONS[kind] }, rooted as unknown as ToolCallback<typeof inputSchema>);
 }
 
+/** The reply cap in effect for this call's root (`replies.budget_bytes`); 0 when the config cannot be read. */
+function replyBudget(): number {
+  try {
+    return replySettings(loadProjectConfig()).budget_bytes;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Wrap a handler with the §5.1 error contract. Successful results carry `drift`
- * (scoped to the touched node) unless `drift: false` — get_project and get_rules run before
- * every action, so drift rides on orient_for_work and the read tools instead. A `write` tool
- * carries it only with `verbose: true`, so a default write stays small. A result of a call on
- * another root than the server's names that root (`markRoot`). Runs inside the call's scope, so
- * the legacy files listed are the ones this call's loads removed.
+ * (`{ count, new_since_last_reply }`; the full list with orient_for_work `sections: ["drift"]`)
+ * unless `drift: false` — get_project and get_rules run before every action, so drift rides on
+ * orient_for_work and the read tools instead. A `write` tool carries it only with `verbose: true`,
+ * so a default write stays small. Then the reply is cut to the budget (`budgetReply`) unless the
+ * tool pages itself (`budget: false`). A result of a call on another root than the server's names
+ * that root (`markRoot`). Runs inside the call's scope, so the legacy files listed are the ones
+ * this call's loads removed.
  */
 function guarded<A>(
   handler: (args: A) => unknown,
-  options: { drift?: boolean; write?: boolean } = {}
+  options: { drift?: boolean; write?: boolean; budget?: boolean } = {}
 ): (args: A) => ToolResult | Promise<ToolResult> {
   const fail = (err: unknown): ToolResult => {
     const removed = drainRemovedLegacyFiles();
@@ -129,10 +145,14 @@ function guarded<A>(
   };
   return (args: A) => {
     const verbose = (args as { verbose?: boolean } | undefined)?.verbose === true;
-    const attachDrift = options.drift !== false && (!options.write || verbose);
+    const sections = (args as { sections?: unknown } | undefined)?.sections;
+    const fullDrift = Array.isArray(sections) && sections.includes("drift");
+    const attachDrift = options.drift !== false && (!options.write || verbose || fullDrift);
     const succeed = (result: unknown): ToolResult => {
-      const payload = withRemovedLegacyFiles(result);
-      return ok(markRoot(attachDrift ? withDrift(payload) : payload, foreignRoot()));
+      let payload = withRemovedLegacyFiles(result);
+      if (attachDrift) payload = withDrift(payload, { full: fullDrift });
+      if (options.budget !== false) payload = budgetReply(payload, replyBudget());
+      return ok(markRoot(payload, foreignRoot()));
     };
     try {
       const result = handler(args);
@@ -149,6 +169,7 @@ function guarded<A>(
 /** Tool order in tools/list: unchanged from when one file defined every tool. */
 const TOOL_ORDER = [
   "run_check",
+  "get_drift",
   "acknowledge_warning",
   "get_mindplan_graph",
   "export_mindplan_view",
@@ -156,13 +177,17 @@ const TOOL_ORDER = [
   "list_areas",
   "get_node_implementation",
   "get_node_context",
+  "find_in_node",
+  "search_graph",
   "orient_for_work",
+  "next_page",
   "get_project",
   "doctor",
   "get_spec",
   "get_skill",
   "get_rules",
   "patch_node_territory",
+  "confirm_territory",
   "patch_node_rules",
   "record_decision",
   "list_decisions",
@@ -200,12 +225,15 @@ export function registerMindPlanTools(server: McpServer): void {
     ...REVISE_TOOLS,
     ...CLAIM_TOOLS,
     ...DECISION_TOOLS,
+    ...CONFIRM_TOOLS,
     ...BRIEF_EDIT_TOOLS,
     ...CHECK_TOOLS,
     ...EXPORT_TOOLS,
     ...SETUP_TOOLS,
     ...UPGRADE_TOOLS,
     ...DOCTOR_TOOLS,
+    ...PAGE_TOOLS,
+    ...FIND_TEXT_TOOLS,
   ];
   const byName = new Map(defs.map((d) => [d.name, d]));
   if (byName.size !== defs.length || byName.size !== TOOL_ORDER.length) {

@@ -1,13 +1,17 @@
 /**
- * Attach a non-empty uncommitted-source drift report to successful MCP payloads.
+ * Attach the uncommitted-source drift report to successful MCP payloads.
  * Lives on the Assembler so if-mcp-tools can use it without importing i-check-integrity
  * (Interfaces may only import Interactions they expose).
  *
- * The report is scoped to the node the payload is about, so one write stays small:
- * that node's files are listed, every other owner's files are only counted.
+ * Lean by default: `drift` is `{ count, new_since_last_reply }`, the number of drifting paths and
+ * only those this session has not been shown yet (a path listed once is not listed again while it
+ * keeps drifting the same way). `get_drift` (or orient_for_work `sections: ["drift"]`) returns the
+ * full list. `replies.legacy` restores the 0.22 shape: the report scoped to the touched node, in full.
  */
 
 import { buildDriftReport } from "../../interactions/i-check-integrity/check.js";
+import { fullDrift, leanDrift } from "../../interactions/i-check-integrity/drift.js";
+import { loadProjectConfig, replySettings } from "../f-source-index/config.js";
 
 /** Node ids a payload is about: its own node_id, orient focus, link ends, or created node. */
 function touchedNodeIds(payload: unknown): string[] {
@@ -27,8 +31,23 @@ function touchedNodeIds(payload: unknown): string[] {
   return [...ids];
 }
 
-export function withDrift(payload: unknown): unknown {
-  const drift = buildDriftReport({ nodeIds: touchedNodeIds(payload) });
+function legacy(): boolean {
+  try {
+    return replySettings(loadProjectConfig()).legacy;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The payload with `drift` attached. `full` attaches the full report (a caller that asked for it);
+ * a payload that already carries `drift` keeps it.
+ */
+export function withDrift(payload: unknown, opts: { full?: boolean } = {}): unknown {
+  let drift: unknown;
+  if (opts.full) drift = fullDrift();
+  else if (legacy()) drift = buildDriftReport({ nodeIds: touchedNodeIds(payload) });
+  else drift = leanDrift();
   if (!drift) return payload;
   if (payload && typeof payload === "object" && !Array.isArray(payload)) {
     return { ...(payload as Record<string, unknown>), drift };

@@ -57,12 +57,14 @@ import {
   revisionGraph,
 } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
+import { ruleCheckProblems } from "../../foundations/f-graph-search/rule-checks.js";
 import { orientationGateEnabled, recordOriented } from "../../foundations/f-orientation-ledger/ledger.js";
 import * as fs from "fs";
 import * as path from "path";
 import {
   changedFiles,
   gateWrite,
+  gateWriteOrOrient,
   mutationTail,
   readinessFields,
   readinessResult,
@@ -174,7 +176,12 @@ function clearSplitRecord(node: MindPlanNode): { paths: string[]; churn: number 
 export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unknown> {
   // One load for every check before the first write; replies after a write reload.
   const graph = loadGraph();
-  gateWrite(graph, [args.node_id], "patch_node_territory");
+  // A node not yet oriented on is oriented by this write (its rules ride on the reply).
+  const finish = gateWriteOrOrient(graph, [args.node_id], "patch_node_territory");
+  return finish(patchTerritoryOn(graph, args));
+}
+
+function patchTerritoryOn(graph: MindPlanGraph, args: PatchTerritoryArgs): Record<string, unknown> {
   const subject = findNode(graph, args.node_id);
   const revision = targetRevision(subject, args.change, args.slot);
   if (revision !== null) return patchRevisionTerritory(graph, args, revision);
@@ -544,6 +551,10 @@ export function patchNodeRules(args: {
   const { node_id, rules } = args;
   if (rules === undefined) {
     throw blocked("patch_node_rules requires rules.");
+  }
+  const problems = ruleCheckProblems(rules);
+  if (problems.length > 0) {
+    throw blocked(`patch_node_rules "${node_id}": invalid check: line(s), nothing written. ${problems.join("; ")}.`);
   }
   const node = findNode(graph, node_id);
   const written = writeNodeRules(node, rules);

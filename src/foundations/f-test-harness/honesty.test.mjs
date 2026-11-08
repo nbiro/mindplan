@@ -425,13 +425,13 @@ fillAndTick("interactions", "i-b");
   const tog = await state("f-tog");
   check("open_next stores the change on the next slot", tog.next?.change === "feat-x", JSON.stringify(tog.next));
 
-  const radius = await call("get_blast_radius", { change: "feat-x" });
+  const radius = await call("get_blast_radius", { detail: "full", change: "feat-x" });
   check(
     "change blast radius lists the members and leaves them out of affected",
     radius.members?.length === 3 && !radius.affected.some((a) => ["f-cx", "i-cx", "f-tog"].includes(a.id)),
     JSON.stringify(radius)
   );
-  const noArgs = await blocked("get_blast_radius", {});
+  const noArgs = await blocked("get_blast_radius", { detail: "full",});
   check("blast radius without node_id or change is Blocked", !!noArgs, String(noArgs));
 
   const dry = await call("update_node_status", { scope: "change", change: "feat-x", new_status: "ready", dry_run: true });
@@ -950,12 +950,13 @@ fillAndTick("interactions", "i-b");
   const plain = await call("orient_for_work", { node_id: "i-hum" });
   check("a node with no open human items has no open_items", plain.open_items === undefined, JSON.stringify(plain.open_items));
 
-  // A build item unticked: the dependency still holds up its dependent.
+  // A build item unticked: the dependency still holds up its dependent. verify, since spec and impl
+  // count as done (ship closes them) and verify closes only on passing linked tests.
   await walk("i-hum", ["ready", "in-progress", "in-review"]);
-  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "impl", checked: false }] });
+  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "verify", checked: false }] });
   const held = await blocked("update_node_status", { node_id: "i-hum", new_status: "ship" });
   check("a dependency in-review with an unticked build item holds up its dependent", !!held && held.includes("Infrastructure First") && held.includes("f-hum"), String(held));
-  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "impl", checked: true }] });
+  await call("patch_node_territory", { node_id: "f-hum", toggle_checkboxes: [{ id: "verify", checked: true }] });
   const dependent = await call("update_node_status", { node_id: "i-hum", new_status: "ship" });
   check(
     "a dependency in-review with every build item ticked lets its dependent ship",

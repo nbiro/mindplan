@@ -419,38 +419,57 @@ for (const status of ["ready", "in-progress"]) {
   write("src/foundations/f-core/index.ts", "export const core = 2;\n");
   write("src/orphan/x.ts", "export {};\n");
   const idle = await call("orient_for_work", { node_id: "f-core" });
-  const hit = idle.drift?.paths?.find((p) => p.path.endsWith("f-core/index.ts"));
+  const hit = idle.drift?.new_since_last_reply?.find((p) => p.path.endsWith("f-core/index.ts"));
   check(
-    "a shipped owner with no open update shows as owner_idle",
-    hit?.class === "owner_idle" && hit.owner_id === "f-core",
+    "a shipped owner with no open update shows as owner_idle, in the lean drift's new entries",
+    hit?.class === "owner_idle" && hit.owner_id === "f-core" && idle.drift.count === 2,
     JSON.stringify(idle.drift)
   );
   check(
     "unowned files are listed",
-    (idle.drift?.unowned ?? []).some((p) => p.endsWith("orphan/x.ts")),
+    idle.drift.new_since_last_reply.some((p) => p.class === "unowned" && p.path.endsWith("orphan/x.ts")),
     JSON.stringify(idle.drift)
   );
+  const again = await call("orient_for_work", { node_id: "if-a" });
+  check(
+    "a later reply counts the same drift but lists nothing it already showed",
+    again.drift?.count === 2 && again.drift.new_since_last_reply.length === 0 && !("reminder" in again.drift),
+    JSON.stringify(again.drift)
+  );
+  const listed = await call("get_drift", {});
+  check(
+    "get_drift returns every path, with its class",
+    listed.count === 2 && listed.paths.some((p) => p.class === "owner_idle") && listed.paths.some((p) => p.class === "unowned"),
+    JSON.stringify(listed)
+  );
+  const fullOrient = await call("orient_for_work", { node_id: "if-a", sections: ["rules", "drift"] });
+  check(
+    'orient_for_work sections: ["drift"] returns the full list',
+    fullOrient.drift?.count === 2 && Array.isArray(fullOrient.drift.paths),
+    JSON.stringify(fullOrient.drift)
+  );
+  const getDrift = async () => (await call("get_drift", {})).paths;
   await call("open_next", { reason: "behavior", change: "rev-f-core", node_id: "f-core" });
   await call("set_implementation_files", { node_id: "f-core", add: ["src/foundations/f-core/"] });
   await call("update_node_status", { node_id: "f-core", new_status: "ready" });
   await call("update_node_status", { node_id: "f-core", new_status: "in-progress" });
-  const expected = await call("orient_for_work", { node_id: "f-core" });
+  const expected = await call("get_drift", {});
   check(
     "a file claimed by an open update is expected: a count, not a listing",
-    !(expected.drift?.paths ?? []).some((p) => p.path.endsWith("f-core/index.ts")),
-    JSON.stringify(expected.drift)
+    !expected.paths.some((p) => p.path.endsWith("f-core/index.ts")) && expected.expected >= 1,
+    JSON.stringify(expected)
   );
   // A second open revision: f-core has no single `next` view now, and each revision is read on
   // its own (live with its delta applied).
   write("src/f-core-extra/y.ts", "export const y = 1;\n");
   await call("open_next", { reason: "behavior", change: "rev-two", node_id: "f-core" });
   await call("set_implementation_files", { node_id: "f-core", change: "rev-two", add: ["src/f-core-extra/y.ts"] });
-  const two = await call("orient_for_work", { node_id: "f-core" });
-  const twoPaths = two.drift?.paths ?? [];
+  const two = await call("get_drift", {});
+  const twoPaths = two.paths;
   check(
     "with two open revisions, a file the in-progress revision claims is still expected",
-    !twoPaths.some((p) => p.path.endsWith("f-core/index.ts")) && (two.drift?.expected ?? 0) >= 1,
-    JSON.stringify(two.drift)
+    !twoPaths.some((p) => p.path.endsWith("f-core/index.ts")) && two.expected >= 1,
+    JSON.stringify(two)
   );
   const extra = twoPaths.find((p) => p.path === "src/f-core-extra/y.ts");
   check(
@@ -462,7 +481,7 @@ for (const status of ["ready", "in-progress"]) {
           { change: "rev-f-core", state: "in-progress" },
           { change: "rev-two", state: "draft" },
         ]),
-    JSON.stringify(two.drift)
+    JSON.stringify(two)
   );
   const dirtyCheck = runCli(["check", "--base", "HEAD"]);
   const dirtyOut = dirtyCheck.stdout + dirtyCheck.stderr;
@@ -479,15 +498,13 @@ for (const status of ["ready", "in-progress"]) {
   fs.rmSync(path.join(root, "src", "foundations", "f-core", "index.ts"));
   const missing = await call("orient_for_work", { node_id: "f-core" });
   check(
-    "a claimed file missing from disk shows as claimed_missing",
-    (missing.drift?.paths ?? []).some((p) => p.class === "claimed_missing" && p.path.endsWith("f-core/index.ts")),
+    "a path that drifts a new way (claimed_missing) is new again in the lean drift",
+    missing.drift.new_since_last_reply.some((p) => p.class === "claimed_missing" && p.path.endsWith("f-core/index.ts")),
     JSON.stringify(missing.drift)
   );
-  const scoped = await call("orient_for_work", { node_id: "if-a" });
   check(
-    "drift is scoped to the focus node and counts the rest",
-    !(scoped.drift?.paths ?? []).some((p) => p.owner_id === "f-core") && (scoped.drift?.other_count ?? 0) >= 1,
-    JSON.stringify(scoped.drift)
+    "a claimed file missing from disk shows as claimed_missing",
+    (await getDrift()).some((p) => p.class === "claimed_missing" && p.path.endsWith("f-core/index.ts"))
   );
   write("src/foundations/f-core/index.ts", "export const core = 1;\n");
   git("checkout", "--", "src");
@@ -642,7 +659,21 @@ for (const status of ["ready", "in-progress"]) {
     await call("create_node", { id: `j-long-${i}`, type: "Capability", title: `Long ${i}`, description: long(i) });
   }
   const fullText = (await raw("run_check", {})).text;
-  const full = JSON.parse(fullText);
+  const fullCut = JSON.parse(fullText);
+  // Past the reply budget the warnings list comes back cut; truncated names its total.
+  const warningsTotal = fullCut.truncated?.find((t) => t.path === "warnings")?.total ?? fullCut.warnings.length;
+  check(
+    "a full check over the reply budget cuts its warnings with a next_page cursor",
+    Buffer.byteLength(fullText) < 9000 && (fullCut.truncated?.length ?? 0) >= 1 && typeof fullCut.truncated[0].cursor === "string",
+    `${Buffer.byteLength(fullText)} bytes`
+  );
+  const page = await call("next_page", { cursor: fullCut.truncated.find((t) => t.path === "warnings").cursor });
+  check(
+    "next_page returns the next part of the cut list",
+    page.path === "warnings" && page.from === fullCut.warnings.length && page.items.length >= 1 && page.total === warningsTotal,
+    JSON.stringify(page).slice(0, 200)
+  );
+  const full = { ...fullCut, warnings: { length: warningsTotal } };
   // A full check records nothing: the first compact run of the session lists every warning.
   const listed = (await compactCall()).json;
   check(

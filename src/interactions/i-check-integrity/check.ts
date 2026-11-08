@@ -3,6 +3,7 @@
  * Used by `mindplan-mcp check` (CLI) — not MCP stdio.
  */
 
+import { runLinkedTests, testFailureLine } from "./run-tests.js";
 import * as fs from "fs";
 import * as path from "path";
 import type { MindPlanGraph, MindPlanNode } from "../../foundations/f-domain-model/types.js";
@@ -60,17 +61,18 @@ import {
   expandClaims,
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
-import { toPosix, withRoot } from "../../foundations/f-source-index/root-scope.js";
+import { withRoot } from "../../foundations/f-source-index/root-scope.js";
 import { decisionGateSettings, fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
-import { schemaClaimEntries } from "../../foundations/f-source-index/dominance.js";
+import { changedClaimed } from "../../foundations/f-source-index/dominance.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import {
   changeAdditivity,
   hotspots,
   hotspotWarning,
+  answeredForOpenWork,
   type ChangeAdditivity,
 } from "../../foundations/f-compiler-rules/open-closed.js";
-import { defaultBaseRef, repoPrefix, runGit } from "../../foundations/f-source-index/git.js";
+import { collectDirtySrcPaths, defaultBaseRef, type DirtySrcPaths } from "../../foundations/f-source-index/git.js";
 import {
   drainRemovedLegacyFiles,
   loadGraph,
@@ -80,8 +82,12 @@ import {
   projectRoot,
   type RemovedLegacyFile,
 } from "../../foundations/f-territory-store/store.js";
+import { confirmationCoverage, readConfirmations } from "../../foundations/f-territory-store/confirmations.js";
 import { graphStatus } from "../../foundations/f-graph-migrations/status.js";
 import { afterMergeFindings } from "./after-merge.js";
+import { ruleCheckFindings } from "./rule-checks.js";
+import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
+import type { MindPlanProjectConfig } from "../../foundations/f-source-index/config.js";
 import { revisionSummaries } from "../../foundations/f-plan-views/views.js";
 import { compactCheckResult, recordSeen, scopeWarnings, warningIds } from "./compact.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
@@ -101,6 +107,7 @@ const CLAIMED_OR_CONCLUDED = new Set([
 
 export type { OwnershipBuckets };
 export { buildOwnershipIndex, exclusiveOwner, ownerOfFile };
+export { collectDirtySrcPaths, type DirtySrcPaths };
 export interface CheckOptions {
   /**
    * When set, also enforce dirty-src ownership vs this git base.
@@ -135,17 +142,13 @@ export interface MergeNode {
   slot: "live" | "revision";
   files?: string[];
   stale?: true;
-}
-
-/**
- * Changed paths a node's claims cover, leaving out migration and schema files (the decision gate
- * covers those, and a composition root that owns the migrations folder gains one with every
- * feature that another node's revision attributes to it).
- */
-function changedClaimed(changed: string[], claims: string[], schemaGlobs: string[]): string[] {
-  return changed.filter(
-    (rel) => claims.some((claim) => claimCoversPath(claim, rel)) && schemaClaimEntries([rel], schemaGlobs).length === 0
-  );
+  /**
+   * Stale live nodes with a `confirmed.json` only: changed claimed files no confirmation names
+   * (`unconfirmed`) and files whose content moved since the newest confirmation naming them
+   * (`changed_since_confirmation`).
+   */
+  unconfirmed?: string[];
+  changed_since_confirmation?: string[];
 }
 
 /** The merge gate's findings, one group per change id (`null` for nodes with none). */
@@ -292,98 +295,8 @@ function checkChange(
   };
 }
 
-export interface DirtySrcPaths {
-  workingTree: string[];
-  commits: string[];
-}
-
-class GitError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "GitError";
-  }
-}
-
 function fail(failures: string[], message: string): void {
   failures.push(message.startsWith("Blocked:") ? message : `Blocked: ${message}`);
-}
-
-function git(args: string[], cwd: string, required: boolean): string {
-  try {
-    // Trim only trailing whitespace. A leading space is the unstaged half of porcelain
-    // (` D path`); trimming it corrupts the first path. A NUL-terminated (-z) list ends in NUL,
-    // so its last path keeps any trailing space of its own.
-    return runGit(args, cwd).replace(/\s+$/, "");
-  } catch (err) {
-    if (!required) return "";
-    const detail =
-      err && typeof err === "object" && "stderr" in err
-        ? String((err as { stderr?: Buffer | string }).stderr ?? "").trim()
-        : err instanceof Error
-          ? err.message
-          : String(err);
-    throw new GitError(
-      `git ${args.join(" ")} failed${detail ? `: ${detail}` : ""}.`
-    );
-  }
-}
-
-/**
- * Paths of `git status --porcelain -z --no-renames`: NUL-terminated `XY <path>` records, each path
- * verbatim (no C-quoting, so a non-ASCII or quoted name reads as it is on disk).
- */
-function parsePorcelainSrcPaths(porcelain: string): string[] {
-  const paths: string[] = [];
-  for (const record of porcelain.split("\0")) {
-    if (record.length < 4) continue;
-    const file = record.slice(3);
-    if (file) paths.push(toPosix(file));
-  }
-  return paths;
-}
-
-/**
- * Working-tree dirtiness vs commits ahead of base, filtered to universe later.
- */
-export function collectDirtySrcPaths(cwd: string, base?: string): DirtySrcPaths {
-  const explicitBase = base !== undefined;
-  const inside = git(["rev-parse", "--is-inside-work-tree"], cwd, false);
-  if (inside !== "true") {
-    if (explicitBase) {
-      throw new GitError(`--base requires a git repository (got base "${base}").`);
-    }
-    return { workingTree: [], commits: [] };
-  }
-
-  // Porcelain paths are relative to the repository top and claims to the project root: limit the
-  // status to the project root and strip its prefix (diff --relative does both for commits).
-  // -z: paths verbatim, never C-quoted (core.quotePath would escape a non-ASCII name).
-  // --no-renames: a rename is its deleted and added paths, both dirty.
-  const porcelain = git(["status", "--porcelain", "-z", "--no-renames", "-uall", "--", "."], cwd, true);
-  const prefix = repoPrefix(cwd) ?? "";
-  const workingTree = [
-    ...new Set(
-      parsePorcelainSrcPaths(porcelain)
-        .filter((p) => p.startsWith(prefix))
-        .map((p) => p.slice(prefix.length))
-    ),
-  ].sort((a, b) => a.localeCompare(b));
-
-  const commits = new Set<string>();
-  const baseRef = base ?? defaultBaseRef(cwd);
-  if (baseRef) {
-    const diff = git(["diff", "-z", "--name-only", "--no-renames", "--relative", `${baseRef}...HEAD`], cwd, explicitBase);
-    for (const p of diff.split("\0")) {
-      if (p) commits.add(toPosix(p));
-    }
-  } else if (explicitBase) {
-    throw new GitError(`could not resolve git base "${base}".`);
-  }
-
-  return {
-    workingTree,
-    commits: [...commits].sort((a, b) => a.localeCompare(b)),
-  };
 }
 
 /**
@@ -695,7 +608,10 @@ function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): st
  * reopens it, and orient_for_work at depth full shows it.
  */
 function collectHotspotWarnings(graph: MindPlanGraph, root: string): string[] {
-  const underWork = new Set(graph.nodes.filter((n) => n.next || n.open_revisions?.length).map((n) => n.id));
+  // Under work, and not answered: a decision under each open revision's change answers it for that change.
+  const underWork = new Set(
+    graph.nodes.filter((n) => (n.next || n.open_revisions?.length) && !answeredForOpenWork(n)).map((n) => n.id)
+  );
   return hotspots(graph, hotspotSettings(loadProjectConfig(root)))
     .filter((h) => underWork.has(h.node_id))
     .map(hotspotWarning);
@@ -936,11 +852,19 @@ function mergeLine(node: MergeNode, change: string | null, base: string | undefi
     const files = node.files ?? [];
     const shown = files.slice(0, MERGE_FILE_CAP).map((f) => `"${f}"`).join(", ");
     const more = files.length > MERGE_FILE_CAP ? ` (+${files.length - MERGE_FILE_CAP} more)` : "";
+    const list = (paths: string[]): string =>
+      paths.slice(0, MERGE_FILE_CAP).map((f) => `"${f}"`).join(", ") +
+      (paths.length > MERGE_FILE_CAP ? ` (+${paths.length - MERGE_FILE_CAP} more)` : "");
+    const confirmation = [
+      node.changed_since_confirmation?.length ? `Changed since confirmation: ${list(node.changed_since_confirmation)}. ` : "",
+      node.unconfirmed?.length ? `Unconfirmed: ${list(node.unconfirmed)}. ` : "",
+    ].join("");
     return (
       `Blocked: Merge: "${node.id}" (${node.type}, ${node.state}): claimed files changed against ${base ?? "the base"} ` +
-      `but its territory did not: ${shown}${more}. Update the node so it matches the code: ` +
+      `but its territory did not: ${shown}${more}. ${confirmation}Update the node so it matches the code: ` +
       `open_next({ node_id: "${node.id}", change: "<change-id>", reason }) and ship it when its contract changed, ` +
-      `or patch_node_territory({ node_id: "${node.id}", ... }) in place; when its text still holds, any patch that confirms it counts. ` +
+      `or patch_node_territory({ node_id: "${node.id}", ... }) in place; when its text still holds, ` +
+      `confirm_territory({ node_id: "${node.id}", note }) records that. ` +
       `A bug fix is exempt once its Bug (affects "${node.id}") is updated on the branch.`
     );
   }
@@ -1033,10 +957,33 @@ function checkMerge(
     if (changed && node.shipped_at && !node.next && (node.open_revisions ?? []).length === 0) {
       if (fixedByBug.has(node.id)) continue;
       const files = changedClaimed(changed, node.implements ?? [], schemaGlobs);
+      // Only the live territory file counts as a territory change; confirmed.json sits beside it.
       if (files.length > 0 && !changedSet.has(markdownRelativePath(node, "current"))) {
+        // A confirmation (confirm_territory) that pins every changed file at its current content
+        // says the text still holds.
+        const confirmations = readConfirmations(node);
+        const coverage = confirmations.length > 0 ? confirmationCoverage(node, files, root, confirmations) : null;
+        if (coverage && coverage.confirmed.length === files.length && coverage.latest) {
+          const c = coverage.latest;
+          info.push(`merge: "${node.id}" confirmed by ${c.by} at ${c.at}: ${c.note}`);
+          continue;
+        }
         found.push({
           change: activeChange(node) ?? null,
-          node: { id: node.id, type: node.type, state: node.state, slot: "live", files, stale: true },
+          node: {
+            id: node.id,
+            type: node.type,
+            state: node.state,
+            slot: "live",
+            files,
+            stale: true,
+            ...(coverage
+              ? {
+                  ...(coverage.unconfirmed.length ? { unconfirmed: coverage.unconfirmed } : {}),
+                  ...(coverage.changed.length ? { changed_since_confirmation: coverage.changed } : {}),
+                }
+              : {}),
+          },
         });
       }
       continue;
@@ -1190,6 +1137,8 @@ export interface DriftOptions {
   cwd?: string;
   /** Report only these owners' files in detail; other owned files become `other_count`. */
   nodeIds?: string[];
+  /** false: list every path (get_drift, lean drift); default true caps each list at DRIFT_LIST_CAP. */
+  cap?: boolean;
 }
 
 /**
@@ -1264,7 +1213,7 @@ function driftReportInScope(options: DriftOptions): DriftReport | null {
 
     let more = 0;
     const capped = <T>(list: T[]): T[] => {
-      if (list.length <= DRIFT_LIST_CAP) return list;
+      if (options.cap === false || list.length <= DRIFT_LIST_CAP) return list;
       more += list.length - DRIFT_LIST_CAP;
       return list.slice(0, DRIFT_LIST_CAP);
     };
@@ -1311,9 +1260,10 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   }
 
   let graph: MindPlanGraph;
+  let config: MindPlanProjectConfig;
   try {
     // Config must load (Blocked on legacy implementation_packages).
-    loadProjectConfig(root);
+    config = loadProjectConfig(root);
     graph = loadGraph();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1335,6 +1285,9 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
     checkPresence(graph, root, failures);
     checkLeftovers(graph, buckets, root, failures);
     checkImports(graph, buckets, root, universe, failures, warnings);
+    const ruleChecks = ruleCheckFindings(graph, root, loadProjectBrief().rules, universe, config);
+    failures.push(...ruleChecks.failures);
+    info.push(...ruleChecks.info);
     const cycles = changeCycles(graph);
     for (const f of changeCycleFailures(graph, undefined, cycles)) fail(failures, f);
     const probe = dirtyProbe(root);
@@ -1408,18 +1361,26 @@ export function runCheckHandler(
     after_merge?: boolean;
     compact?: boolean;
     nodes?: string[];
+    run_tests?: boolean;
   } = {}
 ): Record<string, unknown> {
+  // Tests first: their result closes verify items the check's ship-readiness lines then read.
+  const tests = args.run_tests ? runLinkedTests({ change: args.change, nodes: args.nodes }) : undefined;
   const result = runIntegrityCheck({
     base: args.base,
     change: args.change,
     merge: args.merge,
     after_merge: args.after_merge,
   });
+  if (tests && !tests.passed) {
+    result.failures.push(testFailureLine(tests));
+    result.ok = false;
+  }
   const nodes = args.nodes?.length ? new Set(args.nodes) : undefined;
   const root = projectRoot();
   const { kept, outside } = scopeWarnings(result.warnings, nodes);
   const extras = {
+    ...(tests ? { tests } : {}),
     ...(result.change
       ? { change: { id: result.change.id, members: result.change.members, additivity: result.change.additivity } }
       : {}),

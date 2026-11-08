@@ -2,13 +2,14 @@
 id: f-orientation-ledger
 type: Foundation
 title: "Orientation ledger"
-description: "Infra — in-memory session record of which nodes were fetched with their rules (fingerprinted) and which project rules version reached the agent, plus the gates that block writes until both happened with the current rules."
+description: "Infra — in-memory session record of which nodes were fetched with their rules (fingerprinted), which project rules version, node rule texts, and decisions reached the agent, and which hotspot warnings it got, plus the gates that block writes until the rules reached it at their current version."
 state: stable
-shipped_at: 2026-11-07T20:32:45.982Z
-revisions: 5
-churn: 4.371
+shipped_at: 2026-11-08T17:07:33.930Z
+revisions: 6
+churn: 5.285
+churn_behavior: 1
 created_at: 2026-10-25T23:20:45.972Z
-updated_at: 2026-11-07T20:32:45.982Z
+updated_at: 2026-11-08T17:07:33.930Z
 depends_on:
   - f-domain-model
   - f-graph-search
@@ -52,6 +53,9 @@ Depends on: `f-graph-search`, `f-domain-model`.
 ## Graph root per call
 
 The ledger is keyed by the resolved graph root and the node id, so orienting on a node in one worktree never unlocks writes to the same node id in another root.
+
+- **Sent text (0.23.0).** Per project root, the rule source versions whose text a reply carried (`recordRulesSent`, `sentRulesVersions`) and each decision's tag (decision, why, status, superseded_by) last sent (`unsentDecisions(entries, track)` returns the new ones and counts the rest). `tracksSentText(legacy)` is true while the gate is on and config `replies.legacy` is not set. `resetOrientationLedger` clears them
+- **Hotspot warnings.** `firstHotspotWarning(nodeId, change)` is true once per node per change per root, so the hotspot text is given once (`i-revise-node`, `i-orient-plan`)
 
 ## Acceptance Criteria
 

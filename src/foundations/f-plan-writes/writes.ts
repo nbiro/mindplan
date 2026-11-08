@@ -35,11 +35,16 @@ import { persistMindPlanMap } from "../../foundations/f-view-projection/view.js"
 import {
   assertOriented,
   assertProjectRulesServed,
+  orientationGap,
   orientationGateEnabled,
   pushProjectRules,
   reachingRules,
   recordOriented,
+  recordRulesSent,
+  sentRulesVersions,
+  tracksSentText,
 } from "../../foundations/f-orientation-ledger/ledger.js";
+import { loadProjectConfig, replySettings } from "../../foundations/f-source-index/config.js";
 
 /**
  * Blocked: Orientation unless every node was oriented on in this session with the rules that apply
@@ -53,6 +58,48 @@ export function gateWrite(
 ): void {
   if (!orientationGateEnabled()) return;
   assertOriented(graph ?? loadGraph(), ids, tool, opts);
+}
+
+/**
+ * The write gate for writes that orient on their own (open_next, patch_node_territory,
+ * set_implementation_files): a node never oriented on in this session is oriented by the write
+ * itself, its rules riding on the reply (`oriented: true`, `rules`), instead of Blocking. A node
+ * whose rules changed since they were sent still Blocks: the agent must read the new text first.
+ * Returns the finisher the handler applies to its reply once the write succeeded (it records the
+ * orientation then, so a write that Blocks later orients nothing). Identity while the gate is off.
+ */
+export function gateWriteOrOrient(
+  graph: MindPlanGraph | null,
+  ids: string[],
+  tool: string
+): (reply: Record<string, unknown>) => Record<string, unknown> {
+  const identity = (reply: Record<string, unknown>) => reply;
+  if (!orientationGateEnabled()) return identity;
+  const g = graph ?? loadGraph();
+  const known = [...new Set(ids)].filter((id) => g.nodes.some((n) => n.id === id));
+  const gaps = known.map((id) => ({ id, gap: orientationGap(g, id) }));
+  // Changed rules Block exactly as before: the new text must be read, not skimmed off a write reply.
+  if (gaps.some((x) => x.gap === "rules_changed")) assertOriented(g, ids, tool);
+  const unfetched = gaps.filter((x) => x.gap === "unfetched").map((x) => x.id);
+  if (unfetched.length === 0) return identity;
+  const sources = new Map<string, RuleEntry>();
+  for (const id of unfetched) {
+    for (const e of reachingRules(g, id)) {
+      const prior = sources.get(e.node_id);
+      if (!prior || e.distance < prior.distance) sources.set(e.node_id, e);
+    }
+  }
+  const legacy = replySettings(loadProjectConfig(projectRoot())).legacy;
+  const block = rulesBlock(unfetched.join(","), [...sources.values()], {
+    known: tracksSentText(legacy) ? sentRulesVersions() : undefined,
+  });
+  return (reply) => {
+    // Fingerprint the rules as they stand after the write (an open_next may have applied edges).
+    recordOriented(loadGraph(), unfetched);
+    recordRulesSent(block.entries as Record<string, unknown>[]);
+    const rules = { ...block, oriented_on: unfetched };
+    return "rules" in reply ? { ...reply, oriented: true, oriented_rules: rules } : { ...reply, oriented: true, rules };
+  };
 }
 
 /** The project rules as `{ path, rules, rules_version }` (mindplan/project.md). */

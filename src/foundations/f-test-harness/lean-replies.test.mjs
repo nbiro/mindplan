@@ -466,9 +466,15 @@ await call("open_next", { reason: "behavior", node_id: "f-core", change: "lean" 
   );
   const cur = await call("orient_for_work", { node_id: "f-core", depth: "body", slot: "current" });
   check(
-    "slot current returns the live body and the next record only",
-    typeof cur.context.body === "string" && !cur.context.body.includes("## Atomic Ops") && Object.keys(cur.context.next).join() === "record",
-    JSON.stringify(cur.context.next)
+    "slot current returns the live body, the minimal record, and the open revision's state only",
+    typeof cur.context.body === "string" &&
+      !cur.context.body.includes("## Atomic Ops") &&
+      typeof cur.context.next?.state === "string" &&
+      !("body" in cur.context.next) &&
+      Object.keys(cur.context.record).sort().join() === "id,state,title,type" &&
+      !("files" in cur) &&
+      !("shape" in cur),
+    JSON.stringify(cur.context)
   );
   const sec = await call("orient_for_work", { node_id: "f-core", depth: "body", section: "Atomic Ops" });
   check(

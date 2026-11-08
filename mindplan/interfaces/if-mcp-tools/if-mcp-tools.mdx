@@ -2,14 +2,14 @@
 id: if-mcp-tools
 type: Interface
 title: "MCP tools"
-description: "MCP stdio Interface: mounts its actions' thirty-seven tools in a fixed order behind the version gate and, for writes, the project rules gate, each with an optional graph root and annotations from one tool kind; compact JSON results, small writes, node-scoped drift."
+description: "MCP stdio Interface: mounts its actions' forty-two tools in a fixed order behind the version gate and, for writes, the project rules gate, each with an optional graph root and annotations from one tool kind; compact JSON results under a reply budget, small writes, lean drift."
 state: stable
-shipped_at: 2026-11-08T06:29:44.466Z
-revisions: 34
-churn: 7.304
-churn_wiring: 1
+shipped_at: 2026-11-08T17:07:34.830Z
+revisions: 35
+churn: 8.23
+churn_wiring: 1.99
 created_at: 2026-08-10T13:44:20.502Z
-updated_at: 2026-11-08T06:29:44.466Z
+updated_at: 2026-11-08T17:07:34.830Z
 split_at: 26
 split_into:
   - i-assess-impact
@@ -37,11 +37,14 @@ exposes:
   - i-change-status
   - i-check-integrity
   - i-claim-files
+  - i-confirm-territory
   - i-doctor
   - i-edit-brief
   - i-edit-territory
   - i-export-map
+  - i-find-text
   - i-orient-plan
+  - i-page-replies
   - i-read-brief
   - i-record-decision
   - i-revise-node
@@ -95,7 +98,9 @@ The entry point mounts; it defines no tool. Each exposed action owns its tools i
 - **Lean descriptions.** Each description says when to call the tool, what it does, and its key parameters; option mechanics live in the tool's SPEC §8 entry (`get_spec({ topic: "<tool>" })`)
 - **Tool kinds and annotations.** `mount` derives both the `guarded` options (`drift` / `write`) and the MCP `annotations` from the tool's `kind` (`ToolKind`, `f-tool-kit`): `read` → `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`; `write` → `{ readOnlyHint: false, destructiveHint: false, openWorldHint: false }`; `destructive` → `{ readOnlyHint: false, destructiveHint: true, openWorldHint: false }`. `openWorldHint` is always `false`. A tool with `drift: false` (`run_check`, `get_project`, `get_rules`, `get_spec`, `get_skill`, `setup_project`, `upgrade_project`) never carries drift
 - **Result envelope.** `ok(payload)` returns compact JSON text and, for a plain object, `structuredContent: payload`; string payloads stay text-only; errors are `isError: true` with the message; no `outputSchema`
-- **Drift and verbose.** Read results attach a non-empty drift report scoped to the node (`withDrift`, `f-mcp-runtime`); a write carries it only with `verbose: true`, so a default write stays small
+- **Drift and verbose.** Read results attach drift (`withDrift`, `f-mcp-runtime`): `{ count, new_since_last_reply }`, and the full list when the call passes `sections` containing `"drift"`; a write carries it only with `verbose: true` (or that section), so a default write stays small
+- **Reply budget.** After drift, every result passes `budgetReply(payload, replies.budget_bytes)` (`f-tool-kit` pages; default 8192, 0 off): past the budget the largest lists are cut and the reply names each in `truncated: [{ path, shown, total, cursor }]` for `next_page` (`i-page-replies`). Lists under `rules`, `project_rules`, `resolved_rules`, `failures`, and `changed_files` are never cut. A tool whose config says `budget: false` (`get_mindplan_graph`, `export_mindplan_view`, `next_page`) pages itself
+- **Mounted actions (0.23.0).** Also `i-find-text` (`find_in_node`, `search_graph` after `get_node_context`), `i-confirm-territory` (`confirm_territory` after `patch_node_territory`), `i-page-replies` (`next_page` after `orient_for_work`), and `get_drift` (`i-check-integrity`) after `run_check`: forty-two tools
 - **Async handlers.** `guarded` accepts a handler that returns a promise: the same success and error envelopes, and the legacy files its graph load removed before its first await are drained at once and put back when it settles
 - **Descriptions describe the tool.** Each action's tool descriptions lead with when to call it and never name the plan-project skill; the routing stays in the server instructions (`f-mcp-runtime`). `force_unship` keeps the `confirm` token contract
 - App Router / MCP mounts Interaction packages; the Interface owns no domain logic

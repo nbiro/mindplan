@@ -9,6 +9,7 @@ import { isPipelineNodeType } from "../f-domain-model/types.js";
 import { openChanges, withRevision } from "../f-revision-model/index.js";
 import { parseChecklistItems, type ChecklistItem, type ChecklistKind } from "../f-territory-store/checklist.js";
 import { slotSource } from "./shape.js";
+import { closedByServer } from "./auto-items.js";
 
 /** An unticked review or deploy item: work that waits on a person, not the agent. */
 export type OpenHumanItem = {
@@ -38,16 +39,22 @@ export function buildItemsTickedIn(items: ChecklistItem[]): boolean {
   return items.length > 0 && items.every((i) => i.kind !== "build" || i.done);
 }
 
+/** `buildItemsTicked` counting the items the server closes for `nodeId` (auto-items) as done. */
+function buildItemsDoneFor(text: string, nodeId: string): boolean {
+  const items = parseChecklistItems(text);
+  return items.length > 0 && items.every((i) => i.kind !== "build" || i.done || closedByServer(i, nodeId));
+}
+
 /** The active slot of `dep` is in-review with every build item ticked (the relaxed rule, this node only). */
 function relaxedReady(dep: MindPlanNode): boolean {
   if (dep.shipped_at) {
     if (dep.next?.state !== "in-review") return false;
     const text = slotText(dep, "next");
-    return text !== null && buildItemsTicked(text);
+    return text !== null && buildItemsDoneFor(text, dep.id);
   }
   if (dep.state !== "in-review") return false;
   const text = slotText(dep, "current");
-  return text !== null && buildItemsTicked(text);
+  return text !== null && buildItemsDoneFor(text, dep.id);
 }
 
 /**

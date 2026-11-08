@@ -1,0 +1,15 @@
+{
+  "confirmations": [
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-08T17:08:06.608Z",
+      "note": "0.23.0 content updates (new tools, reply shapes, rule checks, hook, changelog); each doc keeps the role, home sections, and size limits the node describes.",
+      "files": {
+        "CHANGELOG.md": "0933b815c3d90831571df266300824092073e684257ee2882f009ef3aca726aa",
+        "README.md": "0c34e76407930d5cac0395cde0cd897627ba5627d5a8602714b70825c28f59f8",
+        "SPEC.md": "b1ecbbe603bf8a7846fe1f62c0299c48600ac8313f52096bf3460d915e36d43e",
+        "templates/agent/playbook.md": "2abb7f901523180a4784b374bab42ea2eb1a73b7cf13ebaf7a43b790f343aec2"
+      }
+    }
+  ]
+}

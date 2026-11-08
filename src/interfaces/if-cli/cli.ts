@@ -1,5 +1,5 @@
 /**
- * CLI Interface — argv parsing, help, stdout/stderr, exit codes for check / view. Setting up and
+ * CLI Interface — argv parsing, help, stdout/stderr, exit codes for check / view / hook. Setting up and
  * upgrading a project are MCP tools (setup_project, upgrade_project), not commands.
  * Dispatches to Interaction entrypoints; does not own integrity math.
  */
@@ -10,6 +10,28 @@ import {
   type MergeLevel,
 } from "../../interactions/i-check-integrity/check.js";
 import { runViewExport } from "../../interactions/i-export-map/handlers.js";
+import * as fs from "fs";
+import { preToolUseDecision } from "../../foundations/f-agent-hook/hook.js";
+
+/**
+ * `mindplan-mcp hook pre-tool-use`: reads the Claude Code hook payload from stdin and prints the
+ * deny JSON when the call targets mindplan/. Always exits 0 on hook input (malformed input: allow).
+ */
+function runHookCli(argv: string[]): void {
+  if (argv[0] !== "pre-tool-use") {
+    console.error(`Unknown hook "${argv[0] ?? ""}". Usage: mindplan-mcp hook pre-tool-use (reads the hook JSON on stdin).`);
+    process.exit(1);
+  }
+  let input: unknown = null;
+  try {
+    input = JSON.parse(fs.readFileSync(0, "utf-8"));
+  } catch {
+    input = null;
+  }
+  const decision = preToolUseDecision(input);
+  if (decision) process.stdout.write(`${decision}
+`);
+}
 
 function parseViewArgs(argv: string[]): {
   format: "mermaid" | "dot";
@@ -156,6 +178,9 @@ function printHelp(): void {
   mindplan-mcp view         Print a Mermaid/DOT projection of the territory graph
   mindplan-mcp export       Alias for view
   mindplan-mcp check        Offline integrity: graph + file ownership (default CI mode)
+  mindplan-mcp hook pre-tool-use
+                            Claude Code PreToolUse hook: deny host file writes on mindplan/
+                            (stdin: the hook JSON; installed by setup_project install_hook)
   mindplan-mcp help         Show this message
 
 Set up or upgrade a project:
@@ -214,6 +239,11 @@ export function runCli(argv: string[] = process.argv): boolean {
 
   if (cmd === "check") {
     runCheckCli(argv.slice(3));
+    return true;
+  }
+
+  if (cmd === "hook") {
+    runHookCli(argv.slice(3));
     return true;
   }
 

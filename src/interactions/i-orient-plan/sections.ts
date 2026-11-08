@@ -18,12 +18,13 @@ export const ORIENT_SECTIONS = [
   "blast_radius",
   "stability",
   "neighborhood",
+  "drift",
 ] as const;
 
 export type OrientSection = (typeof ORIENT_SECTIONS)[number];
 
 /** Fields every cut reply keeps: which node or change it is about. */
-const IDENTITY = ["query", "focus", "auto_focus", "unlocks", "change", "members", "next"];
+const IDENTITY = ["query", "focus", "auto_focus", "unlocks", "change", "node_ids", "members", "next"];
 
 /** Reply keys each section maps to (record and body are cut from `context`). */
 const TOP_LEVEL: Partial<Record<OrientSection, string[]>> = {
@@ -36,6 +37,8 @@ const TOP_LEVEL: Partial<Record<OrientSection, string[]>> = {
   blast_radius: ["blast_radius"],
   stability: ["stability"],
   neighborhood: ["nodes", "edges"],
+  // The full drift list: the MCP envelope attaches it after the cut (`drift` names no handler key).
+  drift: ["drift"],
 };
 
 /** The sections as given, Blocked on an unknown name (listing the valid ones). */

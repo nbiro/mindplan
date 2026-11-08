@@ -1,0 +1,52 @@
+---
+id: i-page-replies
+type: Interaction
+title: "Page a long reply"
+description: "Agent reads the rest of a list the reply budget cut (next_page with the cursor from truncated), one budget-sized page at a time."
+state: stable
+shipped_at: 2026-11-08T17:07:34.679Z
+revisions: 1
+churn: 1
+created_at: 2026-11-08T15:45:10.508Z
+updated_at: 2026-11-08T17:07:34.679Z
+aliases:
+  - "next page"
+  - "cursor"
+  - "truncated reply"
+  - "reply budget"
+tests:
+  - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/lighter-calls.test.mjs
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-tool-kit
+  - f-source-index
+implements:
+  - src/interactions/i-page-replies/
+---
+
+# Page a long reply
+
+## Purpose
+
+Every MCP reply stays under a size budget (`replies.budget_bytes`, default 8 KB), so one call never floods the agent's context. A list cut to fit is kept for the session under a cursor; `next_page` returns the rest when the agent needs it.
+
+## Actor & Trigger
+
+- **Actor:** agent
+- **Trigger:** a reply carrying `truncated: [{ path, shown, total, cursor }]`; the `next_page` MCP tool (read)
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-page-replies/` (`handlers.ts`, `tools.ts`); the budget and the cursor store are `f-tool-kit`'s (`pages.ts`).
+
+- `next_page({ cursor })` → `{ path, from, items, total, next_cursor? }`: the next items of that list that fit the budget (at least one). Reading a cursor does not consume it, so the call is idempotent; the store keeps the latest 64 cursors for the session.
+- Blocked: an unknown or expired cursor (repeat the original call).
+- Mounted by `if-mcp-tools` with `drift: false` and `budget: false` (it sizes itself).
+
+## Acceptance Criteria
+
+- A reply over the budget carries `truncated` with a cursor; walking `next_cursor` returns every remaining item once
+- An unknown cursor is Blocked
+- Verified by `lighter-calls.test.mjs` and `ergonomics.test.mjs`

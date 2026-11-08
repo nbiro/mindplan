@@ -206,7 +206,7 @@ if (r.status !== 0) {
 
 {
   const payload = await call("orient_for_work", { node_id: "i-feature" });
-  const driftPaths = payload?.drift?.paths?.map((p) => p.path) ?? [];
+  const driftPaths = payload?.drift?.new_since_last_reply?.map((p) => p.path) ?? [];
   if (!payload?.drift || !driftPaths.some((p) => p.endsWith("wip.ts"))) {
     failures++;
     console.log(
@@ -228,7 +228,7 @@ for (const tool of ["get_project", "get_rules"]) {
   const featureBody = fs.readFileSync(featurePath, "utf-8");
   fs.rmSync(featurePath);
   const payload = await call("orient_for_work", { node_id: "i-feature" });
-  const hit = payload?.drift?.paths?.find((p) => p.path.endsWith("feature.ts"));
+  const hit = payload?.drift?.new_since_last_reply?.find((p) => p.path.endsWith("feature.ts"));
   if (!hit || hit.owner_id !== "i-feature") {
     failures++;
     console.log(
@@ -362,7 +362,7 @@ git("checkout", "--", "src/interactions/i-feature/code2.ts");
   });
   // Drift is scoped to the focus node, so orient on the owner of the deleted file.
   const payload = await call("orient_for_work", { node_id: "i-exact" });
-  const hit = payload?.drift?.paths?.find((p) => p.path.endsWith("lonely/gone.ts"));
+  const hit = payload?.drift?.new_since_last_reply?.find((p) => p.path.endsWith("lonely/gone.ts"));
   if (!hit || hit.owner_id !== "i-exact") {
     failures++;
     console.log(

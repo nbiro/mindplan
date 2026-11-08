@@ -35,7 +35,7 @@ export const SERVER_INSTRUCTIONS =
   "Before answering any questions or writing any code for this project, call get_project and follow the playbook, description, and rules it returns. " +
   "A new behavior is a new node. Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; " +
   "when a change alters what existing nodes describe, update those nodes. " +
-  "Read and write mindplan/ only through these tools. Before handing work off, run_check must pass.";
+  "Write mindplan/ only through these tools (reading its files directly is fine). Before handing work off, run_check must pass.";
 
 /**
  * The package version reported on `initialize`, read from this package's own package.json

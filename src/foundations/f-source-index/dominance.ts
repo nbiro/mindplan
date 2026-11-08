@@ -161,3 +161,15 @@ export function folderClaimSuggestions(
   }
   return out;
 }
+
+/**
+ * Changed paths a node's claims cover, leaving out migration and schema files (the decision gate
+ * covers those, and a composition root that owns the migrations folder gains one with every
+ * feature that another node's revision attributes to it). The merge gate's stale-territory rule
+ * and confirm_territory read the same set.
+ */
+export function changedClaimed(changed: string[], claims: string[], schemaGlobs: string[]): string[] {
+  return changed.filter(
+    (rel) => claims.some((claim) => claimCoversPath(claim, rel)) && schemaClaimEntries([rel], schemaGlobs).length === 0
+  );
+}

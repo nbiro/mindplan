@@ -3,6 +3,7 @@
  * ship gate. Pure graph + disk reads: no territory writes.
  */
 
+import { serverClosedItems } from "./auto-items.js";
 import * as fs from "fs";
 import * as path from "path";
 import type {
@@ -1148,7 +1149,10 @@ export function staleTextWarnings(
     }
   }
 
-  const unchecked = scope.checkboxes ? (body.match(/^\s*[-*+]\s+\[ \]/gm) ?? []).length : 0;
+  // Items the server closes itself (spec and impl at ship, verify on passing tests) are not stale.
+  const unchecked = scope.checkboxes
+    ? (body.match(/^\s*[-*+]\s+\[ \]/gm) ?? []).length - serverClosedItems(body, node.id).length
+    : 0;
   if (unchecked > 0) {
     warnings.push(`stale: "${node.id}" has ${unchecked} unticked checkbox(es); ship Blocks until they are [x].`);
   }

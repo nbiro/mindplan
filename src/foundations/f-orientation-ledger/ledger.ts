@@ -29,10 +29,104 @@ export function orientationGateEnabled(): boolean {
   return enabled;
 }
 
-/** Forget every fetch and every served project rules version (tests). */
+/** Forget every fetch, every served project rules version, and every sent rule and decision (tests). */
 export function resetOrientationLedger(): void {
   fetched.clear();
   servedRules.clear();
+  sentRules.clear();
+  sentDecisions.clear();
+  hotspotWarned.clear();
+}
+
+/** Keyed by project root + node id + change: the hotspot warnings this session already gave. */
+const hotspotWarned = new Set<string>();
+
+/**
+ * True the first time this session warns about `nodeId` being a hotspot under `change` (and records
+ * it); false after that, so the warning comes once per node per change, not on every reply.
+ */
+export function firstHotspotWarning(nodeId: string, change: string): boolean {
+  const key = `${rootKey(resolveProjectRoot())}\0${nodeId}\0${change}`;
+  if (hotspotWarned.has(key)) return false;
+  hotspotWarned.add(key);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Node rules and decisions already sent in this session
+// ---------------------------------------------------------------------------
+
+/** Keyed by project root + "\0" + rule source id: the rules version whose text this session received. */
+const sentRules = new Map<string, string>();
+
+/** Keyed by project root + "\0" + decision id: the decision's tag (status + text) last sent. */
+const sentDecisions = new Map<string, string>();
+
+/**
+ * Whether replies leave out what this session already received: on while the gate is on, unless
+ * `replies.legacy` asks for the 0.22 shapes (the caller passes it) or the caller asks to resend.
+ */
+export function tracksSentText(legacy: boolean): boolean {
+  return enabled && !legacy;
+}
+
+/** Rule source id → the version whose text reached this session (this root only). */
+export function sentRulesVersions(): Record<string, string> {
+  const prefix = `${rootKey(resolveProjectRoot())}\0`;
+  const out: Record<string, string> = {};
+  for (const [key, version] of sentRules) if (key.startsWith(prefix)) out[key.slice(prefix.length)] = version;
+  return out;
+}
+
+/**
+ * Record the rule texts a reply carried: every entry with its `rules` text and `version` (entries
+ * that came back as one line or `unchanged` carried no text and record nothing).
+ */
+export function recordRulesSent(entries: Record<string, unknown>[]): void {
+  if (!enabled) return;
+  const root = rootKey(resolveProjectRoot());
+  for (const e of entries) {
+    if (typeof e.rules === "string" && typeof e.version === "string" && typeof e.node_id === "string") {
+      sentRules.set(`${root}\0${e.node_id}`, e.version);
+    }
+  }
+}
+
+/** A decision's tag: equal tags mean the agent already holds what it says now. */
+function decisionTag(d: { decision?: unknown; why?: unknown; status?: unknown; superseded_by?: unknown }): string {
+  return createHash("sha1").update(JSON.stringify([d.decision, d.why, d.status, d.superseded_by])).digest("hex");
+}
+
+/**
+ * Split decision entries into those this session has not received at their current text (returned
+ * and recorded as sent) and the count of those it has. Off (everything new) while not tracking.
+ */
+export function unsentDecisions<T extends { id?: unknown }>(
+  entries: T[],
+  track: boolean,
+  limit = Number.POSITIVE_INFINITY
+): { fresh: T[]; known: number; more: number } {
+  if (!track) return { fresh: entries, known: 0, more: 0 };
+  const root = rootKey(resolveProjectRoot());
+  const fresh: T[] = [];
+  let known = 0;
+  let more = 0;
+  for (const e of entries) {
+    const key = `${root}\0${String(e.id)}`;
+    const tag = decisionTag(e as never);
+    if (sentDecisions.get(key) === tag) {
+      known += 1;
+      continue;
+    }
+    // Past the limit a new decision is not sent, so it is not recorded: a later reply carries it.
+    if (fresh.length >= limit) {
+      more += 1;
+      continue;
+    }
+    sentDecisions.set(key, tag);
+    fresh.push(e);
+  }
+  return { fresh, known, more };
 }
 
 // ---------------------------------------------------------------------------

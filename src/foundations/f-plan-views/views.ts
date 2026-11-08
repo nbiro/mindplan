@@ -18,6 +18,7 @@ import { listResolvedImports } from "../../foundations/f-source-index/imports.js
 import { RETIRED_STATES } from "../../foundations/f-source-index/ownership.js";
 import { blastRadiusDependents, interactionReachability, interfacesExposing } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesImpact } from "../../foundations/f-graph-search/rules.js";
+import { fanInIndex } from "../../foundations/f-compiler-rules/open-closed.js";
 import { nodeDecisions, supersessionIndex } from "../../foundations/f-graph-search/decisions.js";
 import { resolveRevisionChange } from "../../foundations/f-revision-model/index.js";
 
@@ -215,6 +216,58 @@ export function buildBlastRadiusPayload(
     };
   }
   return payload;
+}
+
+/** How many dependents a blast-radius summary names (highest fan-in first). */
+export const TOP_DEPENDENTS = 10;
+
+/** The blast radius levels get_blast_radius returns: the summary (default) or every row. */
+export const BLAST_DETAILS = ["summary", "full"] as const;
+export type BlastDetail = (typeof BLAST_DETAILS)[number];
+
+/**
+ * A full blast-radius payload (one node's or a merged change's) as a summary: counts of the
+ * dependents by type and of the affected files, the capabilities at risk, the `TOP_DEPENDENTS`
+ * dependents with the highest fan-in, the tests to run, and the decision ids; identity fields
+ * (node_id, change, members, additivity, open_revisions) stay. `detail: "full"` returns the rows.
+ */
+export function summarizeBlastRadius(graph: MindPlanGraph, full: Record<string, unknown>): Record<string, unknown> {
+  const affected = (full.affected as { id: string; type: string; state: string; distance: number }[]) ?? [];
+  const groups = (full.affected_files as { owner_id: string; files: string[] }[]) ?? [];
+  const byType: Record<string, number> = {};
+  for (const row of affected) byType[row.type] = (byType[row.type] ?? 0) + 1;
+  const index = fanInIndex(graph);
+  const top = affected
+    .map((row) => ({ ...row, fan_in: index.get(row.id)?.size ?? 0 }))
+    .sort((a, b) => b.fan_in - a.fan_in || a.distance - b.distance || a.id.localeCompare(b.id))
+    .slice(0, TOP_DEPENDENTS);
+  const decisions = (full.decisions as { id: string }[]) ?? [];
+  const keep = ["node_id", "change", "additivity", "members", "planned_edges", "open_revisions"];
+  const out: Record<string, unknown> = { detail: "summary" };
+  for (const key of keep) if (full[key] !== undefined) out[key] = full[key];
+  out.counts = {
+    affected: affected.length,
+    by_type: byType,
+    file_owners: groups.length,
+    files: groups.reduce((sum, g) => sum + g.files.length, 0),
+  };
+  out.capabilities_at_risk = full.capabilities_at_risk;
+  out.top_dependents = top;
+  out.tests = full.tests;
+  out.decision_ids = decisions.map((d) => d.id);
+  if (full.dependent_decisions !== undefined) out.dependent_decisions = full.dependent_decisions;
+  // An Interaction's reachability, as ids (and distance downstream).
+  const reach = full.reachability as Record<string, { id: string; distance?: number }[]> | undefined;
+  if (reach) {
+    out.reachability = Object.fromEntries(
+      Object.entries(reach).map(([key, rows]) => [
+        key,
+        rows.map((r) => (r.distance !== undefined ? { id: r.id, distance: r.distance } : { id: r.id })),
+      ])
+    );
+  }
+  out.more = 'detail: "full" returns every dependent, affected_files by owner, rules_impact, and the decision rows (paged: next_page).';
+  return out;
 }
 
 /** One active decision a change to the focus would reach. */

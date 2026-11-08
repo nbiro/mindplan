@@ -129,13 +129,21 @@ await call("patch_node_rules", { node_id: "j-shop", rules: "- Prices include VAT
 // The Capability's new rules reach i-pay, so the orientation gate asks to orient on it again.
 await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
 await call("patch_node_rules", { node_id: "i-pay", rules: "- Never store card numbers." });
-const oriented = await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
+const oriented = await call("orient_for_work", { node_id: "i-pay", depth: "rules", resend_rules: true });
 const versions = Object.fromEntries(oriented.rules.entries.map((e) => [e.node_id, e.version]));
 check(
   "each orient rules entry carries a version",
   oriented.rules.entries.length === 2 && oriented.rules.entries.every((e) => /^[0-9a-f]{12}$/.test(e.version) && e.rules)
 );
-const known = await call("orient_for_work", { node_id: "i-pay", depth: "rules", known_rules_versions: { "j-shop": versions["j-shop"] } });
+const sessionKnown = await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
+check(
+  "text this session already received comes back as { node_id, version, unchanged: true }",
+  sessionKnown.rules.entries.length === 2 &&
+    sessionKnown.rules.entries.every((e) => e.unchanged === true && !("rules" in e) && /^[0-9a-f]{12}$/.test(e.version)),
+  JSON.stringify(sessionKnown.rules)
+);
+// resend_rules ignores what the session holds; known_rules_versions still leaves out what the caller holds.
+const known = await call("orient_for_work", { node_id: "i-pay", depth: "rules", resend_rules: true, known_rules_versions: { "j-shop": versions["j-shop"] } });
 const capability = known.rules.entries.find((e) => e.node_id === "j-shop");
 const own = known.rules.entries.find((e) => e.node_id === "i-pay");
 check(
@@ -145,11 +153,16 @@ check(
 );
 await call("orient_for_work", { node_id: "j-shop", depth: "rules" });
 await call("patch_node_rules", { node_id: "j-shop", rules: "- Prices include VAT.\n- Show the currency." });
-const changed = await call("orient_for_work", { node_id: "i-pay", depth: "rules", known_rules_versions: versions });
+const changed = await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
 const capabilityAfter = changed.rules.entries.find((e) => e.node_id === "j-shop");
 check(
   "changed node rules come back with text and a new version",
   capabilityAfter.rules.includes("currency") && capabilityAfter.version !== versions["j-shop"] && !capabilityAfter.unchanged
+);
+check(
+  "a source whose text did not change stays left out after another source changed",
+  changed.rules.entries.find((e) => e.node_id === "i-pay")?.unchanged === true,
+  JSON.stringify(changed.rules)
 );
 
 // Light rules: sources past distance 1 are one line unless asked; a link returns only what it changed.
@@ -170,7 +183,7 @@ check(
       delta[0].count === 2,
     JSON.stringify(linked.rules)
   );
-  const light = await call("orient_for_work", { node_id: "i-pay" });
+  const light = await call("orient_for_work", { node_id: "i-pay", resend_rules: true });
   const byId = Object.fromEntries(light.rules.entries.map((e) => [e.node_id, e]));
   check(
     "orient returns own and distance-1 rules in full and further sources as one line",
@@ -190,7 +203,7 @@ check(
     store.rules.includes("Log every erase") && !("first" in store) && !("more" in all.rules),
     JSON.stringify(all.rules)
   );
-  const context = await call("get_node_context", { node_id: "i-pay" });
+  const context = await call("get_node_context", { node_id: "i-pay", resend_rules: true });
   const ctxStore = context.resolved_rules.entries.find((e) => e.node_id === "f-store");
   check("get_node_context resolved_rules is light too", ctxStore && !("rules" in ctxStore) && ctxStore.count === 2);
   const unlinked = await call("unlink_nodes", { source_id: "i-pay", target_id: "f-api", edge_type: "depends_on" });

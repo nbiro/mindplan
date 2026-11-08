@@ -7,6 +7,7 @@ import { loadProjectConfig, writeProjectConfig } from "../../foundations/f-terri
 import { PROJECT_RELATIVE_PATH, loadProjectBrief, writeProjectBrief } from "../../foundations/f-territory-store/project.js";
 import { blocked } from "../../foundations/f-compiler-rules/rules.js";
 import { rulesVersion } from "../../foundations/f-plan-views/views.js";
+import { ruleCheckProblems } from "../../foundations/f-graph-search/rule-checks.js";
 import * as path from "path";
 import {
   changedFiles,
@@ -97,6 +98,10 @@ export function patchProjectRules(args: {
     }
     next = entries.map((e) => e.join("\n").replace(/\s+$/, "")).join("\n");
   }
+  const problems = ruleCheckProblems(next);
+  if (problems.length > 0) {
+    throw blocked(`patch_project_rules: invalid check: line(s), nothing written. ${problems.join("; ")}.`);
+  }
   const result = writeProjectBrief({ rules: next });
   // The author holds the text it just wrote: count it as served, so its own next write is not Blocked: Rules.
   projectRulesPush();
@@ -118,6 +123,9 @@ export function patchConfig(args: {
   hotspots?: { half_life_days?: number; outlier_ratio?: number; min_rate?: number };
   fan_out?: { warn_at?: number };
   search?: { enabled?: boolean; model?: string };
+  replies?: { budget_bytes?: number; legacy?: boolean };
+  tests?: { command?: string };
+  rule_checks?: { commands?: "off" | "local" | "always" };
 }): Record<string, unknown> {
   if (
     args.sources === undefined &&
@@ -125,12 +133,15 @@ export function patchConfig(args: {
     args.decisions === undefined &&
     args.hotspots === undefined &&
     args.fan_out === undefined &&
-    args.search === undefined
+    args.search === undefined &&
+    args.replies === undefined &&
+    args.tests === undefined &&
+    args.rule_checks === undefined
   ) {
-    throw blocked("patch_config requires sources, exclude, decisions, hotspots, fan_out, and/or search.");
+    throw blocked("patch_config requires sources, exclude, decisions, hotspots, fan_out, search, replies, tests, and/or rule_checks.");
   }
   const current = loadProjectConfig();
-  // A decision, hotspot, fan-out, or search setting that is not passed keeps its stored value.
+  // A decision, hotspot, fan-out, search, or rule-check setting that is not passed keeps its stored value.
   const merged = <T extends object>(stored: T | undefined, passedArgs: T | undefined): Partial<T> => ({
     ...(stored ?? {}),
     ...Object.fromEntries(Object.entries(passedArgs ?? {}).filter(([, v]) => v !== undefined)),
@@ -139,13 +150,21 @@ export function patchConfig(args: {
   const hotspots = merged(current.hotspots, args.hotspots);
   const fanOut = merged(current.fan_out, args.fan_out);
   const search = merged(current.search, args.search);
+  const replies = merged(current.replies, args.replies);
+  const tests = merged(current.tests, args.tests);
+  const ruleChecks = merged(current.rule_checks, args.rule_checks);
   const next = {
+    // Keys this tool does not take stay as stored.
+    ...current,
     sources: args.sources ?? current.sources,
     exclude: args.exclude ?? current.exclude,
     ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
     ...(Object.keys(hotspots).length > 0 ? { hotspots } : {}),
     ...(Object.keys(fanOut).length > 0 ? { fan_out: fanOut } : {}),
     ...(Object.keys(search).length > 0 ? { search } : {}),
+    ...(Object.keys(replies).length > 0 ? { replies } : {}),
+    ...(Object.keys(tests).length > 0 ? { tests } : {}),
+    ...(Object.keys(ruleChecks).length > 0 ? { rule_checks: ruleChecks } : {}),
   };
   const written = writeProjectConfig(next, { force: true });
   return {

@@ -167,7 +167,7 @@ check(
   !featCheck.ok && featCheck.failures.some((f) => f.includes("planned edge if-dash -exposes-> i-gone") && f.includes("cancelled")),
   JSON.stringify(featCheck.failures)
 );
-const radius = await call("get_blast_radius", { change: "feat" });
+const radius = await call("get_blast_radius", { detail: "full", change: "feat" });
 check(
   "the change blast radius lists planned_edges and the planned member",
   radius.planned_edges.some((e) => e.source === "if-dash" && e.target === "i-new") &&
@@ -282,7 +282,7 @@ check(
   after.warnings.some((w) => w.startsWith('decision: "f-db"') && w.includes('"src/root/migrations/0002.ts"')),
   JSON.stringify(after.warnings.filter((w) => w.includes("f-db")))
 );
-const dbRadius = await call("get_blast_radius", { node_id: "f-db" });
+const dbRadius = await call("get_blast_radius", { detail: "full", node_id: "f-db" });
 check(
   "the blast radius lists the attributed migration under the revision",
   dbRadius.affected_files.find((g) => g.owner_id === "f-db")?.files.includes("src/root/migrations/0002.ts"),

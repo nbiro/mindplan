@@ -33,6 +33,7 @@ import { changeCycleGate } from "../../foundations/f-compiler-rules/change-cycle
 import {
   changedFiles,
   gateWrite,
+  gateWriteOrOrient,
   mutationTail,
   readinessFields,
   refreshPersistedMap,
@@ -42,6 +43,7 @@ import {
   territoryPath,
   withChangeCleanup,
 } from "../../foundations/f-plan-writes/writes.js";
+import { firstHotspotWarning } from "../../foundations/f-orientation-ledger/ledger.js";
 
 /** The refactor a hotspot's diagnosis names, as the alternative a decision must say it rejected. */
 function rejectedRefactor(nodeId: string, kind: "invert" | "split" | "unrecorded"): string {
@@ -80,13 +82,15 @@ export function openNext(args: {
     );
   }
   const reason = args.reason;
-  gateWrite(null, [node_id], "open_next");
+  // A node not yet oriented on is oriented by this write (its rules ride on the reply).
+  const finish = gateWriteOrOrient(null, [node_id], "open_next");
   validateChangeInput(args);
   const graph = loadGraph();
   const node = findNode(graph, node_id);
   validateOpenNext(node, change);
   // Reopening a widely depended-on node warns now, while an additive design is still cheap.
-  const openClosed = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()), reason);
+  // Once per node per change in a session; a decision under this change already answers it.
+  const warned = openClosedWarning(graph, node, hotspotSettings(loadProjectConfig()), reason, change);
   // A planned depends_on that closes a cycle with another change's edges could never ship.
   const plannedDeps = (node.planned ?? []).filter((e) => e.change === change && e.type === "depends_on");
   if (plannedDeps.length > 0) {
@@ -121,7 +125,9 @@ export function openNext(args: {
   const rel = entityRelativePath(node);
   const revisionPath = revisionRelativeFilePath(node, change);
   const { revision } = opened;
-  return {
+  // Recorded only now: an open_next that Blocked above has not given the warning.
+  const openClosed = warned && firstHotspotWarning(node_id, change) ? warned : null;
+  return finish({
     node_id,
     live_state: node.state,
     change,
@@ -160,7 +166,7 @@ export function openNext(args: {
     changed_files: changedFiles([...opened.changed_files, ...removedMirror]),
     // `revisions` lists every open revision of the node: this one and its siblings.
     ...mutationTail(loadGraph(), node_id, args.verbose),
-  };
+  });
 }
 
 export function discardNext(args: { node_id: string; change?: string; verbose?: boolean }): Record<string, unknown> {

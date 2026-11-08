@@ -2,13 +2,14 @@
 id: f-plan-views
 type: Foundation
 title: "Plan views"
-description: "Infra — read payloads several read actions share: a node's blast radius (dependents, affected files by owner, tests, rules impact, decisions) and the rules version tag."
+description: "Infra — read payloads several read actions share: a node's blast radius (dependents, affected files by owner, tests, rules impact, decisions) and its summary (counts, top dependents by fan-in, tests, decision ids), and the rules version tag."
 state: stable
-shipped_at: 2026-11-07T21:55:59.027Z
-revisions: 4
-churn: 3.604
+shipped_at: 2026-11-08T17:07:34.298Z
+revisions: 5
+churn: 4.538
+churn_behavior: 1
 created_at: 2026-10-31T11:57:22.526Z
-updated_at: 2026-11-07T21:55:59.027Z
+updated_at: 2026-11-08T17:07:34.298Z
 depends_on:
   - f-compiler-rules
   - f-graph-search
@@ -44,6 +45,9 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-
 
 - **One revision summary (0.18).** `revisionSummaries(node)` is the one `{ change, state, conflicts }` shape, used by orient, write results, and the check.
 - **Open revisions (0.18.0).** The blast radius of a node or a change reads `graphUnder(graph, change)` for a change and lists a node's open revisions by change
+
+- **Blast radius summary.** `summarizeBlastRadius(graph, full)` turns a node's or a merged change's payload into `{ detail: "summary", node_id | change, members?, additivity?, planned_edges?, open_revisions?, counts: { affected, by_type, file_owners, files }, capabilities_at_risk, top_dependents, tests, decision_ids, dependent_decisions?, reachability? (ids), more? }`; `top_dependents` are the `TOP_DEPENDENTS` (10) dependents with the highest fan-in (`fanInIndex`, `f-compiler-rules`). `BLAST_DETAILS` is `summary | full`
+- `ruleEntriesForReply` stays a function of the graph and the `known` versions it is given; callers merge the session's sent versions into `known` (`f-orientation-ledger`)
 
 ## Acceptance Criteria
 

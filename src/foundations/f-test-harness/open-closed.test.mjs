@@ -465,12 +465,13 @@ try {
 
   const oriented = await call("orient_for_work", { node_id: "f-core", depth: "full" });
   check(
-    "a full orient reply carries stability with the rate, the median, and the hotspot line",
+    "a full orient reply carries stability with the rate and the median; the hotspot text, already given by open_next for c-3, is only flagged",
     oriented.stability?.fan_in === 2 &&
       oriented.stability?.rate === 2 &&
       oriented.stability?.median_rate === 0 &&
       oriented.stability?.revisions === 1 &&
-      oriented.stability?.hotspot?.startsWith("hotspot:"),
+      oriented.stability?.hotspot === true &&
+      oriented.stability?.diagnosis === "split",
     JSON.stringify(oriented.stability)
   );
   const shallow = await call("orient_for_work", { node_id: "f-core", depth: "body" });
@@ -526,7 +527,18 @@ try {
     supersedes: "d-core-stays-whole",
   });
   const unkept = await call("run_check", {});
-  check("superseding it brings the hotspot back", unkept.warnings.some((w) => w.startsWith('hotspot: "f-core"')), JSON.stringify(unkept.warnings));
+  // The superseding decision lands in the open revision of c-3, so it answers c-3's hotspot warning.
+  check(
+    "superseding it with a decision under the open change answers that change's hotspot warning",
+    !unkept.warnings.some((w) => w.startsWith('hotspot: "f-core"')),
+    JSON.stringify(unkept.warnings)
+  );
+  const answered = await call("orient_for_work", { node_id: "f-core", sections: ["stability"] });
+  check(
+    "stability still flags the hotspot, marked answered",
+    answered.stability?.hotspot === true && answered.stability?.answered === true,
+    JSON.stringify(answered.stability)
+  );
 
   // Splitting a part out of f-core: the part ships first, then the root's revision that depends_on it.
   await foundation("f-part");

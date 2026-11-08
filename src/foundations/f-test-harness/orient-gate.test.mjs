@@ -125,17 +125,19 @@ async function session() {
   await client.close();
 }
 
-// --- session 3: every gated write is Blocked until the node is oriented on ---
+// --- session 3: gated writes Block until the node is oriented on; three writes orient on their own ---
 {
   const { client, raw, call } = await session();
-  const writes = [
-    ["set_implementation_files", { replace: true, node_id: "f-cards", files: ["src/pay/"] }],
+  const gated = [
     ["set_test_files", { replace: true, node_id: "f-cards", files: ["src/pay/pay.test.mjs"] }],
-    ["patch_node_territory", { node_id: "f-cards", section: "## Purpose", text: "Card processor adapter." }],
-    ["patch_node_territory", { node_id: "f-cards", toggle_checkboxes: [{ contains: "Spec written", checked: true }] }],
     ["patch_node_rules", { node_id: "f-cards", rules: "- Never log card numbers." }],
     ["record_decision", { node_id: "f-cards", decision: "Tokens only.", alternatives: ["Raw numbers"], why: "PCI scope." }],
     ["link_nodes", { source_id: "f-cards", target_id: "f-ledger", edge_type: "depends_on" }],
+  ];
+  const implicit = [
+    ["set_implementation_files", { replace: true, node_id: "f-cards", files: ["src/pay/"] }],
+    ["patch_node_territory", { node_id: "f-cards", section: "## Purpose", text: "Card processor adapter." }],
+    ["patch_node_territory", { node_id: "f-cards", toggle_checkboxes: [{ contains: "Spec written", checked: true }] }],
   ];
   // A status move gates on the node it moves (a legal one here: cancel a draft).
   const statusBlocked = await raw("update_node_status", { node_id: "i-refund-0", new_status: "cancelled" });
@@ -144,9 +146,7 @@ async function session() {
     statusBlocked.error && statusBlocked.text.includes('orient_for_work({ node_id: "i-refund-0" })'),
     statusBlocked.text.slice(0, 160)
   );
-  const openBlocked = await raw("open_next", { reason: "behavior", change: "rev-f-ledger", node_id: "f-ledger" });
-  check("open_next on an unoriented node is Blocked: Orientation", openBlocked.error && openBlocked.text.startsWith("Blocked: Orientation:"), openBlocked.text.slice(0, 120));
-  for (const [tool, args] of writes) {
+  for (const [tool, args] of gated) {
     const r = await raw(tool, args);
     check(
       `${tool} on an unoriented node is Blocked: Orientation with the fixing call`,
@@ -161,20 +161,30 @@ async function session() {
   const dry = await raw("update_node_status", { node_id: "f-cards", new_status: "ready", dry_run: true });
   check("a dry run writes nothing and is not gated", !dry.error, dry.text.slice(0, 120));
 
-  await call("orient_for_work", { node_id: "f-cards", depth: "rules" });
-  for (const [tool, args] of writes) {
+  // open_next on a node never oriented on orients it and reaches its own lifecycle check.
+  const openImplicit = await raw("open_next", { reason: "behavior", change: "rev-f-ledger", node_id: "f-ledger" });
+  check(
+    "open_next on an unoriented node is not Blocked: Orientation (it orients on its own)",
+    openImplicit.error && !openImplicit.text.startsWith("Blocked: Orientation"),
+    openImplicit.text.slice(0, 120)
+  );
+  const [firstTool, firstArgs] = implicit[0];
+  const first = await call(firstTool, firstArgs);
+  check(
+    `${firstTool} on an unoriented node orients it and carries its rules (oriented: true)`,
+    first.oriented === true && first.rules?.oriented_on?.includes("f-cards") && Array.isArray(first.rules?.entries),
+    JSON.stringify(first).slice(0, 300)
+  );
+  for (const [tool, args] of implicit.slice(1)) {
+    const r = await call(tool, args);
+    check(`${tool} on an oriented node carries no oriented flag`, r.oriented === undefined, JSON.stringify(r).slice(0, 160));
+  }
+  for (const [tool, args] of gated) {
     const r = await raw(tool, args);
-    check(`${tool} succeeds after orient_for_work({ node_id })`, !r.error, r.text.slice(0, 160));
+    check(`${tool} succeeds once the node is oriented`, !r.error, r.text.slice(0, 160));
   }
   await call("orient_for_work", { node_id: "i-refund-0", depth: "rules" });
   check("update_node_status succeeds after orienting", !(await raw("update_node_status", { node_id: "i-refund-0", new_status: "cancelled" })).error);
-  await call("orient_for_work", { node_id: "f-ledger", depth: "rules" });
-  const openAfter = await raw("open_next", { reason: "behavior", change: "rev-f-ledger", node_id: "f-ledger" });
-  check(
-    "after orienting, open_next reaches its own lifecycle check",
-    openAfter.error && !openAfter.text.startsWith("Blocked: Orientation"),
-    openAfter.text.slice(0, 120)
-  );
   await call("get_node_context", { node_id: "i-pay" });
   check("get_node_context counts as orienting", !(await raw("unlink_nodes", { source_id: "i-pay", target_id: "f-ledger" })).error);
 
@@ -235,7 +245,8 @@ async function session() {
       !("nodes" in bodyOnly),
     JSON.stringify(bodyOnly).slice(0, 300)
   );
-  const write = ["patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card today." }];
+  // patch_node_rules never orients on its own (patch_node_territory would).
+  const write = ["patch_node_rules", { node_id: "i-pay", rules: "- Pay by card only." }];
   const gated = await raw(...write);
   check(
     "a reply without the rules section does not orient",
