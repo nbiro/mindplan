@@ -8,6 +8,7 @@
  */
 // Fixtures build graphs without a version stamp; the gate has its own suite (version.test.mjs).
 process.env.MINDPLAN_VERSION_GATE ??= "off";
+import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -213,6 +214,66 @@ check(
 );
 const shipped = await raw("update_node_status", { node_id: "f-solo", new_status: "ship" });
 check("ship then passes with no box ticked by hand", !shipped.error, shipped.text.slice(0, 200));
+
+// --- the reported session, replayed: 5 revisions, ~20 drifting files, replies under 8 KB ---
+const shippedIds = ["f-solo"];
+for (let n = 1; n <= 4; n++) {
+  const id = `f-s${n}`;
+  write(`src/s${n}/main.ts`, `export const s${n} = 1;\n`);
+  write(`src/s${n}/main.test.mjs`, "\n");
+  await call("create_node", { id, type: "Foundation", role: "infra", title: `Module ${n}`, description: `Infra — module ${n}.` });
+  const file = path.join(root, `mindplan/foundations/${id}/${id}.mdx`);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf-8").replace(/^_.*?_$/gm, (line) => (line.includes("attachments/") ? line : `Module ${n} territory.`)));
+  await call("set_implementation_files", { node_id: id, files: [`src/s${n}/`], replace: true });
+  await call("set_test_files", { node_id: id, files: [`src/s${n}/main.test.mjs`], replace: true });
+  for (const new_status of ["ready", "in-progress", "in-review"]) await call("update_node_status", { node_id: id, new_status });
+  shippedIds.push(id);
+}
+await call("run_check", { run_tests: true, nodes: shippedIds.slice(1) });
+for (const id of shippedIds.slice(1)) await call("update_node_status", { node_id: id, new_status: "ship" });
+const git = (...args) => spawnSync("git", args, { cwd: root, encoding: "utf-8" });
+git("init", "-q");
+git("config", "user.email", "test@example.com");
+git("config", "user.name", "Test");
+git("add", ".");
+git("commit", "-qm", "baseline");
+for (let n = 1; n <= 4; n++) for (let k = 0; k < 5; k++) write(`src/s${n}/extra-${k}.ts`, `export const x${k} = ${n};\n`);
+
+await session();
+const sizes = [];
+let retries = 0;
+for (const id of shippedIds) {
+  const r = await raw("open_next", { node_id: id, change: "legal-pages", reason: "behavior" });
+  sizes.push(bytes(r));
+  if (r.error && r.text.startsWith("Blocked: Orientation")) retries++;
+  check(`open_next on ${id} needs no orient first`, !r.error, r.text.slice(0, 200));
+}
+check(`no orientation retries across ${shippedIds.length} revisions`, retries === 0);
+const read1 = await raw("get_node_context", { node_id: "f-s1", slot: "next", section: "## Purpose" });
+const read1Json = JSON.parse(read1.text);
+sizes.push(bytes(read1));
+check(
+  "the first read lists the drifting paths once",
+  read1Json.drift?.count === 20 && read1Json.drift.new_since_last_reply.length === 20,
+  JSON.stringify(read1Json.drift).slice(0, 200)
+);
+const read2 = await raw("orient_for_work", { node_id: "f-s2", section: "## Purpose" });
+const read2Json = JSON.parse(read2.text);
+sizes.push(bytes(read2));
+check(
+  "later replies carry the count only",
+  read2Json.drift?.count === 20 && read2Json.drift.new_since_last_reply.length === 0,
+  JSON.stringify(read2Json.drift)
+);
+const radius = await raw("get_blast_radius", { node_id: "f-core" });
+sizes.push(bytes(radius));
+const coreSection = await raw("get_node_context", { node_id: "f-core", section: "## Shared Substrate Spec" });
+const coreBody = JSON.parse(coreSection.text).body;
+check(
+  `a large section read is the section plus a small envelope (${bytes(coreSection)} bytes, body ${Buffer.byteLength(coreBody)})`,
+  bytes(coreSection) - Buffer.byteLength(JSON.stringify(coreBody)) < 2048
+);
+check(`every scenario reply is under 8 KB (largest ${Math.max(...sizes)} bytes)`, sizes.every((b) => b < 8192), sizes.join(","));
 
 await client.close();
 
