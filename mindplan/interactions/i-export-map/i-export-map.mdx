@@ -8,7 +8,7 @@ shipped_at: 2026-10-31T12:20:49.088Z
 revisions: 5
 churn: 3.061
 created_at: 2026-07-19T18:33:36.804Z
-updated_at: 2026-11-07T20:06:37.063Z
+updated_at: 2026-11-08T15:51:51.889Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -54,6 +54,8 @@ Depends on: `f-territory-store`, `f-view-projection`, `f-compiler-rules`. Belong
 ## Tool descriptions
 
 Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
+
+- `export_mindplan_view` keeps its own size rule (a diagram over the result budget is Blocked unless `focus` or `output`), so the reply budget never cuts it (`budget: false`)
 
 ## Acceptance Criteria
 

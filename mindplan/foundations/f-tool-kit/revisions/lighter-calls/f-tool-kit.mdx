@@ -1,0 +1,62 @@
+---
+id: f-tool-kit
+type: Foundation
+change: lighter-calls
+state: draft
+opened_at: 2026-11-08T15:49:13.016Z
+updated_at: 2026-11-08T15:50:51.019Z
+reason: behavior
+title: "Tool kit"
+description: "Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape with its version-gate and budget opt-outs, defineTool, the shared schema fragments, and the reply budget with its session cursors."
+base:
+  - title=e3cfb56f
+  - description=4a12d43a
+  - role=5e03a58d
+  - section:_preamble=e0993253
+  - "section:## Purpose=c84d41b3"
+  - "section:## Shared Substrate Spec=cc825c07"
+  - "section:## Acceptance Criteria=63c68354"
+  - "section:## Attachments=6e5b104c"
+---
+
+# Tool kit
+
+Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape, defineTool, and the schema fragments several actions share.
+
+## Purpose
+
+Infra — what an action needs to define its own MCP tools, so each action owns its tool names, descriptions, and input schemas and the MCP entry point only mounts them. Before this, one Interface file held every tool definition and changed for every tool.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-tool-kit/` (`tool.ts`)
+
+- `ToolKind` (`read` | `write` | `destructive`) — one kind per tool drives its MCP annotations, drift, and verbose behavior (the entry point maps it)
+- `ToolConfig<Args>` — `{ kind, title, description, inputSchema, drift?, gate? }`. `gate: false` marks a tool that runs before the graph is set up or upgraded (`get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `setup_project`, `upgrade_project`); every other tool passes the version gate (`versionGate`, `f-graph-migrations`) before its handler, applied by the entry point
+- `ToolDef`, `defineTool(name, config, handler)` — a tool definition whose handler is typed from its input schema; each action exports `TOOLS: ToolDef[]` from its `tools.ts`
+- Schema fragments several actions share: `VERBOSE`, `NODE_ID`, `CHANGE_ID`, `CHANGE_REF`, `AREA`, `ALIASES`, `INCLUDE_INHERITED_DECISIONS`, `SECTION_READ`, and the `READINESS_HINT` sentence
+
+Depends on: none inside the graph (zod and the MCP SDK types).
+
+- **Change argument (0.18.0).** A shared `CHANGE_ARG` schema fragment (optional change id, described as: which open revision; may be omitted when the node has at most one) for every tool that reads or writes a revision
+
+- **Budget opt-out.** `ToolConfig.budget: false` marks a tool that pages itself; the envelope then never cuts its reply
+- **Reply budget (`pages.ts`).** `budgetReply(payload, budget)`: an object reply over `budget` bytes (0: off) is cloned and its largest lists are cut, largest first, to what fits, until it fits or nothing more can be cut; each cut list's rest is kept under a cursor and listed in `truncated: [{ path, shown, total, cursor }]` with a `next_page` hint. Lists under `rules`, `project_rules`, `resolved_rules`, `failures`, `changed_files` are never cut, so a reply can stay over the budget rather than hide a rule or a Blocked line. `nextPage(cursor, budget)` returns `{ path, from, items, total, next_cursor? }` (at least one item) without consuming the cursor; the store keeps the latest 64 per process; an unknown cursor is Blocked
+
+## Acceptance Criteria
+
+- Every exposed action defines its tools with `defineTool` in its own `tools.ts`; the MCP entry point holds no tool schema
+- `tools/list` shows every tool with annotations from its kind; a tool with `gate: false` answers before setup and upgrade
+- Verified via `npm test` (smoke)
+
+## Atomic Ops
+
+- [ ] Spec written {#spec}
+- [ ] Implementation complete {#impl}
+- [ ] Verified in target environment {#verify}
+
+## Attachments
+
+_Schemas, OpenAPI exports, ER diagrams, design tokens, etc. go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}

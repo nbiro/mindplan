@@ -45,14 +45,15 @@ Every violation is a tool error that starts with `Blocked:` and names the fix. S
 | No Ghost Bugs | `triaged` / `fixing` until the Bug `affects` an Interaction, Interface, or Foundation | §5.7 |
 | Infrastructure First | An Interaction's `ship` until every Foundation it `depends_on` is ready for dependents: `stable`, or `in-review` with at least one checklist item, every `build` item ticked, and its own dependencies ready | §5.4 |
 | Behavior First | An Interface's `ship` until every Interaction it `exposes` and every Foundation it `depends_on` is ready for dependents (same test) | §5.5 |
-| Completion Check | `ship` (a Bug: `resolved`) while any checklist item is unticked | §5.6 |
+| Completion Check | `ship` (a Bug: `resolved`) while any checklist item is unticked. The default `spec` and `impl` items close at ship, and `verify` once `run_check({ run_tests: true })` passes the node's linked tests | §5.6, §3.3 |
 | Computed Capabilities / Computed Stability | Setting a Capability's state, or `stable` / `unstable`, by hand: the server computes them | §5.8, §5.9 |
 | Taxonomy enforcement and Interaction Independence | Illegal edge shapes, self-links, duplicates, `depends_on` cycles (`leads_to` may cycle), and any Interaction → Interaction `depends_on` (share state through a Foundation) | §5.10 |
 | Version Lineage | `open_next` on anything but a shipped Foundation, Interaction, or Interface, without a change id, or for a change already open on that node | §5.11 |
 | Force Unship | Undoing a ship without `confirm: "unship:<id>"` | §5.12 |
 | Decision gate | `in-review` for work on a shipped Foundation, work that adds a schema file, work with a wide blast radius, or a change to a shipped node's `depends_on`, until a decision is recorded | §5.13 |
 | Coverage and import matrix | A source file no node claims, a file two nodes claim, an import the edges do not allow. The check reports them; moves to `in-review` and `ship` run the import and ownership rules on the node's files | §1.2, §9.6 |
-| Orientation gate | A write on a node not oriented on in this session, or whose rules changed since | §8.1.2 |
+| Orientation gate | A write on a node not oriented on in this session, or whose rules changed since (`open_next`, `patch_node_territory`, and `set_implementation_files` orient a new node themselves) | §8.1.2 |
+| Rule checks | A project or node rule's `check:` line that fails: a forbidden path or pattern, a missing required pattern, or a command's exit code | §6.1.4 |
 | Version gate | Graph tools while `mindplan/` needs setup or an upgrade, or is newer than the server (`Blocked: Version`) | §1.1.2 |
 
 **Lifecycle** (SPEC §3–§4):
@@ -124,7 +125,7 @@ Node.js 22.13 or later (`engines` in `package.json`; the search cache uses `node
    npm install -D mindplan-mcp
    ```
 
-   Any other project (Python, Go, …) installs nothing and uses `npx -y mindplan-mcp@0.21` in the config below.
+   Any other project (Python, Go, …) installs nothing and uses `npx -y mindplan-mcp@0.23` in the config below.
 
 2. **Register the MCP server.** It runs over stdio from the project root. In Claude Code, run `claude mcp add mindplan -- npx mindplan-mcp`, or commit a `.mcp.json` so everyone who opens the repo gets it (Cursor reads the same shape from `.cursor/mcp.json`; the package ships it as `templates/agent/mcp.json.example`):
 
@@ -136,7 +137,7 @@ Node.js 22.13 or later (`engines` in `package.json`; the search cache uses `node
    }
    ```
 
-   With a dev dependency, `npx mindplan-mcp` runs the locked copy (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.21"]`. Other hosts: [templates/agent/integrations/](templates/agent/integrations/README.md). Reload MCP servers after a config change.
+   With a dev dependency, `npx mindplan-mcp` runs the locked copy (run `npm install` first in a fresh container). Without one, use `"args": ["-y", "mindplan-mcp@0.23"]`. Other hosts: [templates/agent/integrations/](templates/agent/integrations/README.md). Reload MCP servers after a config change.
 
 3. **Ask your agent to set up MindPlan.** It calls `setup_project`, which creates `mindplan/` (a default `config.json`, an empty `project.md`, and the `version.json` stamp) and returns `pointer`, the short text every session must see first, plus a guide. Following the guide, the agent writes `MINDPLAN.md` and wires it into the files your agent reads, adds the ignores, proposes moving your standing rules into the project brief, asks for a product description, and offers the [merge gate](#the-check-and-the-merge-gate). The server never writes those files itself; the agent shows you each change. The skills (`plan-project`, `define-entities`) are served through `get_skill`, so nothing is copied into `.claude/` or `.cursor/`.
 
@@ -167,7 +168,7 @@ Then register `node /absolute/path/to/mindplan/dist/index.js` (with `MINDPLAN_RO
 │   ├── map.md                     # derived Mermaid snapshot
 │   ├── capabilities/<id>/<id>.mdx # + decisions/<decision-id>.md, one file per decision
 │   ├── foundations/<id>/<id>.mdx  # + decisions/, + revisions/<change>/<id>.mdx per open revision
-│   ├── interactions/<id>/<id>.mdx # + decisions/, + revisions/<change>/<id>.mdx per open revision
+│   ├── interactions/<id>/<id>.mdx # + decisions/, + revisions/<change>/<id>.mdx per open revision, + confirmed.json
 │   ├── interfaces/<id>/<id>.mdx   # + decisions/, + revisions/<change>/<id>.mdx per open revision
 │   └── bugs/<id>/<id>.mdx
 └── …                              # your code, wherever nodes claim it
@@ -186,13 +187,25 @@ The MCP server is the only writer of `mindplan/`. Nodes claim their source files
 | `check --merge`, `check --merge=strict` | The merge gate (below) |
 | `check --after-merge` | Names what merging two branches that both changed the graph left behind |
 | `check --root <path>` | Checks another checkout |
+| `mindplan-mcp hook pre-tool-use` | The Claude Code hook: denies host file tools on `mindplan/**` (below) |
 | `mindplan-mcp help` | Usage |
 
-**Merge gate.** The default branch should hold work that is done (`stable` / `unstable`) or still being built, never work that is `in-review`: the code is finished but the graph has not shipped it, and that belongs on a branch. Plain `check` ignores lifecycle state; `check --merge` fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live file or open revision is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back to `in-progress` (a Bug: `fixing`) if the work is unfinished. `draft`, `ready`, `in-progress`, and shipped nodes pass, so planning PRs and incremental PRs still merge. It also fails a shipped node whose claimed files changed against the base while its territory file did not: the graph must describe the code before it merges, so the fix is `open_next` and ship, or `patch_node_territory` in place. Agents run the same gate as `run_check({ merge: true })` before saying a PR is ready.
+**Merge gate.** The default branch should hold work that is done (`stable` / `unstable`) or still being built, never work that is `in-review`: the code is finished but the graph has not shipped it, and that belongs on a branch. Plain `check` ignores lifecycle state; `check --merge` fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live file or open revision is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back to `in-progress` (a Bug: `fixing`) if the work is unfinished. `draft`, `ready`, `in-progress`, and shipped nodes pass, so planning PRs and incremental PRs still merge. It also fails a shipped node whose claimed files changed against the base while its territory file did not: the graph must describe the code before it merges, so the fix is `open_next` and ship, `patch_node_territory` in place, or, when the node's text still holds, `confirm_territory({ node_id, note })`, which pins the changed files' content in the node's `confirmed.json` (editing them again blocks again). Agents run the same gate as `run_check({ merge: true })` before saying a PR is ready.
 
 `--merge=strict` also fails an `in-progress` node whose claimed files changed against the base: a finished feature left at `in-progress`. The base is `--base <ref>`, else the merge base with the newer of `main` and `origin/main` (else `master`). It is opt-in because it blocks the incremental PRs of a large feature. An explicit `--base` also turns on the dirty-src check.
 
 **In CI.** Ask your agent to install the GitHub Actions workflow; it calls `setup_project({ ci: "github" })`, which writes `.github/workflows/mindplan-merge-gate.yml` at the repository top (a project in a subfolder gets it there too, running in its folder). It runs `check --merge` on every pull request to the default branch; an existing workflow file is kept as it is. Then make its **mindplan merge gate** job a required status check for the default branch (Settings → Branches, or a ruleset), or a red gate does not stop the merge.
+
+**Rule checks.** A project or node rule can carry indented `check:` lines that the check runs: `{"forbid_path": glob}`, `{"forbid_pattern": regex, "in": glob}`, `{"require_pattern": regex, "in": glob}`, or `{"command": cmd, "expect_exit": 0}`. A failure is `Blocked: Rule: …` with the offending lines. Command checks run only when `rule_checks.commands` allows. SPEC §6.1.4.
+
+```markdown
+- Site content only through the SnapSite MCP.
+  check: {"forbid_pattern": "payload\\.(update|create)\\(\\{\\s*collection: \"pages\"", "in": "src/payload/scripts/**"}
+```
+
+**Linked tests.** With `tests.command` set (for example `npm run test:files -- {files}`), `run_check({ run_tests: true, change })` runs the linked tests of the change's nodes; a failure is `Blocked: Tests`, and a pass closes each node's `verify` item for this server session.
+
+**Keep agents out of `mindplan/`.** In Claude Code, ask your agent to call `setup_project({ install_hook: true })` (or `upgrade_project`): it adds a PreToolUse hook to `.claude/settings.json` that denies `Read`, `Edit`, `Write`, `Grep`, and `Glob` on `mindplan/**` and names the MindPlan tool to use instead (SPEC §9.8).
 
 Full modes and output: SPEC §9.6.
 
@@ -210,6 +223,10 @@ Full modes and output: SPEC §9.6.
 | `fan_out.warn_at` | `3` | How many other unshipped changes a pre-ship node's `depends_on` may reach before `fan-out:` warns |
 | `search.enabled` | `true` | `false` turns semantic ranking off (keyword ranking always runs) |
 | `search.model` | `Xenova/bge-small-en-v1.5` | The transformers.js embedding model (changing it rebuilds the search cache) |
+| `replies.budget_bytes` | `8192` | Cap on one tool reply's JSON; longer lists come back cut, with a `next_page` cursor (`0` turns it off). Rule text and `Blocked:` lines are never cut |
+| `replies.legacy` | `false` | `true` restores the 0.22 reply shapes: the full drift report and rule text on every reply |
+| `tests.command` | none | How `run_check({ run_tests: true })` runs linked tests; must contain `{files}`, e.g. `npm run test:files -- {files}` |
+| `rule_checks.commands` | `"off"` | When rules' `command` checks run: `"off"`, `"local"` (not when `CI` is set), or `"always"` |
 
 | Environment variable | Effect |
 |----------------------|--------|
@@ -234,18 +251,22 @@ Every tool call loads the graph, so the server keeps parsed node records in memo
 
 ## MCP tools
 
-The server has 37 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each one's inputs, outputs, and errors. Every tool takes an optional `root`, the checkout or git worktree whose `mindplan/` that call uses. Every tool except `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `acknowledge_warning`, `doctor`, `setup_project`, and `upgrade_project` is behind the version gate. Results are compact JSON plus `structuredContent`. MCP annotations mark read tools `readOnlyHint` and the four destructive ones `destructiveHint`, so a host can auto-approve reads and prompt on the rest. Tool and argument descriptions live in each Interaction's `tools.ts` under [`src/interactions/`](src/interactions/), mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts).
+The server has 42 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each one's inputs, outputs, and errors. Every tool takes an optional `root`, the checkout or git worktree whose `mindplan/` that call uses. Every tool except `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `acknowledge_warning`, `doctor`, `setup_project`, and `upgrade_project` is behind the version gate. Results are compact JSON plus `structuredContent`, kept under `replies.budget_bytes` (longer lists are paged with `next_page`). Replies leave out what the session already received: rule text comes back as `unchanged` (`resend_rules: true` sends it again), and `drift` is a count plus the paths not shown yet (`get_drift` lists them all). MCP annotations mark read tools `readOnlyHint` and the four destructive ones `destructiveHint`, so a host can auto-approve reads and prompt on the rest. Tool and argument descriptions live in each Interaction's `tools.ts` under [`src/interactions/`](src/interactions/), mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts).
 
 **Orient and read**
 
 - `get_project` — the dialect (playbook) plus this project's description and rules; call it first.
 - `get_rules` — re-read the mandatory project rules (after a context summary); writes are `Blocked: Rules` until they reached the session.
-- `orient_for_work` — ranked nodes for a query, or one node's rules (own and distance-1 in full, further sources as one line), decisions, body, and files, with the blast radius at `depth: "full"`; unlocks writes on that node.
+- `orient_for_work` — ranked nodes for a query, or one node's rules (own and distance-1 in full, further sources as one line), decisions, body, and files, with a blast radius summary at `depth: "full"`; unlocks writes on that node. `node_ids` orients on several nodes in one call, `change` on a whole change.
 - `find_related_nodes` — hybrid search plus the 1-hop neighborhood.
 - `list_areas` — every Capability with counts of its nodes.
-- `get_node_context` — one node's record, body, and decisions (live or a revision).
+- `get_node_context` — one node's record, body, and decisions (live or a revision); `section` or `slot` returns just that part.
+- `find_in_node` — a node's exact text: matching lines with a unique snippet ready for `patch_node_territory`'s `replace`.
+- `search_graph` — which nodes' text mentions a path, a term, or a phrase.
 - `get_node_implementation` — a node's owned files, or the owner of a path.
-- `get_blast_radius` — what depends on a node or a change, with the files and tests to run.
+- `get_blast_radius` — what depends on a node or a change: a summary (counts, top dependents, tests to run) by default, every row and file with `detail: "full"`.
+- `get_drift` — every uncommitted source file whose owner is not being changed, or that no node claims.
+- `next_page` — the rest of a list a long reply cut.
 - `get_mindplan_graph` — the graph, paged and filterable.
 - `export_mindplan_view` — the map as Mermaid or DOT.
 - `list_decisions` — decision records of a node, a change, or the graph.
@@ -265,6 +286,7 @@ The server has 37 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each 
 - `open_next` / `discard_next` (`discard_next` is destructive) — open a revision of a shipped node with its reason, or delete one.
 - `resolve_conflict` — settle a conflict a sibling revision's ship left.
 - `rebase_revision` — carry a revision onto current live after a merge.
+- `confirm_territory` — record that a shipped node's text still describes its changed files, for the merge gate.
 - `patch_project_description` / `patch_project_rules` — the project brief.
 - `patch_config` — `mindplan/config.json`.
 
@@ -275,13 +297,13 @@ The server has 37 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each 
 
 **Check**
 
-- `run_check` — the integrity check, compact by default; also the merge and after-merge gates.
+- `run_check` — the integrity check, compact by default; also the merge and after-merge gates, and with `run_tests` the nodes' linked tests.
 - `acknowledge_warning` — accept known check warnings so compact checks stop listing them.
 
 **Set up and maintain**
 
-- `setup_project` — create `mindplan/`; returns the pointer and the setup guide (and writes the CI workflow on request).
-- `upgrade_project` — run the graph migrations and stamp the new level; returns the upgrade guide.
+- `setup_project` — create `mindplan/`; returns the pointer and the setup guide (and writes the CI workflow or the Claude Code hook on request).
+- `upgrade_project` — run the graph migrations and stamp the new level; returns the upgrade guide (and installs the Claude Code hook on request).
 - `doctor` — server health in any graph state.
 
 ## Docs and development

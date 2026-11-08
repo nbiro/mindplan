@@ -45,7 +45,13 @@ export const SPEC_TOPICS: Record<string, { title: string; headings: string[] }> 
   ownership: { title: "Declared file ownership and the source universe", headings: ["Declared file ownership"] },
   orientation: { title: "The orientation write gate", headings: ["Orientation gate"] },
   rules: { title: "Project rules and node rules", headings: ["Project brief (`mindplan/project.md`)", "Node rules"] },
+  "rule-checks": { title: "Machine checks on project and node rules (check: lines)", headings: ["Rule checks"] },
   checks: { title: "The offline integrity check", headings: ["Offline integrity check (`mindplan-mcp check`)"] },
+  replies: { title: "Reply budget, lean drift, and what replies leave out once sent", headings: ["Replies"] },
+  hook: {
+    title: "The Claude Code hook that keeps host file tools off mindplan/",
+    headings: ["Claude Code hook (`mindplan-mcp hook pre-tool-use`)"],
+  },
   errors: { title: "Canonical Blocked messages", headings: ["Appendix A — Canonical error catalog"] },
 };
 

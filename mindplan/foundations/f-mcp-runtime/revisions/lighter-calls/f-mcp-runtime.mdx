@@ -1,0 +1,79 @@
+---
+id: f-mcp-runtime
+type: Foundation
+change: lighter-calls
+state: draft
+opened_at: 2026-11-08T15:49:12.526Z
+updated_at: 2026-11-08T15:49:48.958Z
+reason: behavior
+title: "MCP runtime"
+description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, the planning duty, mindplan/ through the tools only, run_check before handoff); attaches lean drift (a count and the paths new since the last reply) to results."
+base:
+  - title=70d67d6e
+  - description=8b91781a
+  - role=cd2e8cfa
+  - section:_preamble=de6bf6e7
+  - "section:## Purpose=e22bc24f"
+  - "section:## Shared Substrate Spec=55bf52ac"
+  - "section:## Graph root per call=f513a9e4"
+  - "section:## Acceptance Criteria=76377b29"
+  - "section:## Attachments=3bcf4e16"
+  - "section:## Startup and health=9cfb77d8"
+---
+
+# MCP runtime
+
+## Purpose
+
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change and follow what it returns; the planning duty (a new behavior is a new node, created before its files are claimed; update the nodes a change touches), worded as in the `MINDPLAN.md` stub and the playbook; read and write `mindplan/` only through the tools; `run_check` must pass before handing work off. It prescribes no per-action calls and no mandatory skill load. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session. It also keeps the drift report small: a result carries drift for the node it is about, plus a count of the rest, never the whole tree's dirty files.
+
+The version the server reports on `initialize` is read from the package's own `package.json`, never typed into source: a second copy of the version string drifts the first time the package is bumped, and a host that logs `serverInfo.version` would then name a release that does not exist. The per-tool descriptions (`if-mcp-tools`) describe their tool only.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-mcp-runtime/`
+
+- `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
+- Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and the plan-project skill, loaded with `get_skill`, before new-feature graph work (`create_node`, `open_next`, links, territory, brief, config). This sentence is the only skill routing the server sends; tool descriptions carry none
+- Boot creates no directory: `mindplan/` exists only after `setup_project`, so `graphStatus` (`f-graph-migrations`) can tell a repo without a graph from one with an empty graph
+- Export `readPackageVersion()` — reads `version` from the package's `package.json` (resolved relative to the compiled module, so it works from `dist/` in a consumer's `node_modules`), and `McpServer` is constructed with `{ name: "mindplan", version: readPackageVersion() }`. Falls back to `"0.0.0"` with a stderr note if the file is unreadable; boot never fails over it
+- `with-drift.ts` — Assembler helper so `if-mcp-tools` can attach drift without importing a non-exposed Interaction (legal because check depends_on this Assembler). `withDrift(payload, { full? })` attaches `drift`: by default the lean form from `i-check-integrity` (`leanDrift`: `{ count, new_since_last_reply }`, the paths this session was not shown yet); with `full` (orient_for_work `sections: ["drift"]`) the full list (`fullDrift`); with config `replies.legacy` the 0.22 report scoped to the node the payload is about (`node_id`, orient `focus`, link ends, created node) via `buildDriftReport({ nodeIds })`
+- Always pass `{ instructions: SERVER_INSTRUCTIONS }`
+- MUST NOT register MCP tools, parse CLI flags, or implement orient/steer/export/init/check handlers
+- MUST NOT load or append `mindplan/project.md` or the playbook body into instructions
+- MUST NOT write to stdout in MCP mode (stdio transport); diagnostics go to stderr. `guardStdout()` runs first in MCP mode and points `console.log`, `info`, `debug`, and `warn` at stderr, so a dependency's log line (the embedding model) cannot corrupt a message
+- Calls `enableOrientationGate()` (`f-orientation-ledger`) before registering tools: in MCP mode writes on a node wait for its orientation; the CLI never enables it
+- After `server.connect`, starts `warmSearchIndex(projectRoot(), loadForSearch, territoryBodyReader())` (`f-graph-search`) without awaiting it: the search model loads and the graph is indexed in the background, and no tool call waits on it. `loadForSearch` drains the legacy files its graph load removed and reports them on stderr, so they never land in an unrelated tool call's `changed_files`
+
+Depends on: `f-territory-store`, `f-framework-docs`, `f-graph-search`, `f-orientation-ledger`. Mounts Interfaces that `depends_on` this Foundation: `if-mcp-tools`, `if-cli`.
+
+## Graph root per call
+
+Drift and the search warm-up use the root of the call they serve; the server warms only its own root at boot and builds another root's caches on first use.
+
+## Acceptance Criteria
+
+- MCP `initialize` instructions equal the short pointer constant
+- Instructions contain neither the playbook body nor `mindplan/project.md` content
+- Boot never fails over a missing brief or playbook file
+- Drift on a result about one node lists that node's files and counts the others
+- `initialize` reports `serverInfo.version` equal to the `version` field of the repo's `package.json`, and `server.ts` contains no literal version string
+- The instructions pointer names `get_project`, `get_rules`, `orient_for_work`, the plan-project skill, and `get_skill`
+- Starting the server in a directory without `mindplan/` creates nothing
+- The smoke test asserts the version match
+- In MCP mode a console.log from any module reaches stderr, not the stdio channel
+- The server answers tool calls while the search model is still loading (keyword-only until it is ready)
+
+## Atomic Ops
+
+- [ ] Spec written {#spec}
+- [ ] Implementation complete {#impl}
+- [ ] Verified in target environment {#verify}
+
+## Attachments
+
+_None._
+
+## Startup and health
+
+`initialize` is answered before any graph load, migration check, or model load. The process installs `uncaughtException` and `unhandledRejection` handlers that write the reason to stderr (`mindplan-mcp: fatal: …`) before exiting, and logs the exit code and reason on any early exit. It records its start time and the duration of each graph load for `doctor`.

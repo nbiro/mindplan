@@ -1,0 +1,69 @@
+---
+id: i-assess-impact
+type: Interaction
+change: lighter-calls
+state: draft
+opened_at: 2026-11-08T15:49:13.105Z
+updated_at: 2026-11-08T15:50:02.215Z
+reason: behavior
+title: "Assess impact"
+description: "Agent asks what a change to a node, or a whole change, reaches: a summary by default (counts by type, capabilities, top dependents by fan-in, tests, decision ids), every row with detail full, plus planned edges and additivity for a change."
+base:
+  - title=480bc3bb
+  - description=c99d1467
+  - role=da39a3ee
+  - section:_preamble=0e52f9eb
+  - "section:## Purpose=8a18c91c"
+  - "section:## Actor & Trigger=3b302aab"
+  - "section:## PRD / Execution Logic=aaeae565"
+  - "section:## Tool descriptions=4971f678"
+  - "section:## Acceptance Criteria=5022d681"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# Assess impact
+
+## Purpose
+
+Answers what a change to a shipped node, or a whole change, reaches before anyone edits it: which nodes depend on it, which files and tests are involved, whose rules and decisions are in play, and whether the change only adds nodes or reopens shipped ones. Source, neighbor, or unaffected is decided from this reply.
+
+## Actor & Trigger
+
+Agent calls `get_blast_radius` with `node_id` before changing a shipped node, or with `change` to see a whole change at once.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-assess-impact/` (`handlers.ts`, `tools.ts`).
+
+- `get_blast_radius({ node_id })` returns `buildBlastRadiusPayload` (`f-plan-views`): dependents with hop distance, `capabilities_at_risk`, `affected_files` grouped by owner (`via`: focus, dependent, exposing, importer), `tests`, `rules_impact`, the focus's decisions and `dependent_decisions`; an Interaction focus adds reachability; retired nodes omitted unless `include_retired`; `include_dependent_decisions` adds the dependents' one-line decisions
+- `get_blast_radius({ change })` merges the radii of every member (open revisions and shipped nodes with planned edges; `members` carry `kind: "revision" | "planned"`), keeping each node's smallest distance and leaving out the members, and returns `planned_edges` and `additivity` (`changeAdditivity`, `f-compiler-rules`: new nodes, reopened shipped nodes with fan-in, planned revisions, "purely additive"). A change with no members is Blocked
+- **Detail.** `detail: "summary"` (default) returns `summarizeBlastRadius` (`f-plan-views`) over that payload: `{ detail, node_id | change, members?, additivity?, planned_edges?, open_revisions?, counts: { affected, by_type, file_owners, files }, capabilities_at_risk, top_dependents (the 10 with the highest fan-in), tests, decision_ids, dependent_decisions, reachability? (ids), more? }`. `detail: "full"` returns the whole payload with `detail: "full"`, which the reply budget pages (`next_page`)
+- Exactly one of `node_id` or `change` (or both, for that node's revision); a read: no orientation gate, drift attached
+
+Depends on: `f-plan-views`, `f-compiler-rules`, `f-territory-store`, `f-graph-search`, `f-domain-model`, `f-tool-kit`.
+
+- **Open revisions (0.18.0).** `get_blast_radius({ change })` merges the radius of every revision of the change, judged on `graphUnder`
+
+## Tool descriptions
+
+Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
+
+## Acceptance Criteria
+
+- Change blast radius lists the union of the members' dependents without the members; a shipped node whose files the change edits in place is not a member
+- `get_blast_radius` on a Foundation lists its own decisions and names its dependents that hold decisions; with `include_dependent_decisions` it lists theirs too
+- `get_blast_radius` lists the expanded tests of the focus and its affected owners, and the change radius merges them
+- A change with a planned edge lists it in `planned_edges` and its source as a `planned` member; a revision's attributed migration appears under the revision in `affected_files`
+- The change radius carries `additivity` with the summary line
+- Without `node_id` or `change` it is Blocked
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Requirements defined {#spec}
+- [ ] Implementation complete {#impl}
+- [ ] Tests passing {#verify}
+
+## Attachments
+
+_None._

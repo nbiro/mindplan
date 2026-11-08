@@ -1,0 +1,63 @@
+---
+id: f-plan-views
+type: Foundation
+change: lighter-calls
+state: draft
+opened_at: 2026-11-08T15:49:12.665Z
+updated_at: 2026-11-08T15:50:50.934Z
+reason: behavior
+title: "Plan views"
+description: "Infra — read payloads several read actions share: a node's blast radius (dependents, affected files by owner, tests, rules impact, decisions) and its summary (counts, top dependents by fan-in, tests, decision ids), and the rules version tag."
+base:
+  - title=c84e488c
+  - description=8e8ca9b9
+  - role=5e03a58d
+  - section:_preamble=3d0a63b7
+  - "section:## Purpose=8bcbc499"
+  - "section:## Shared Substrate Spec=fd53b6a5"
+  - "section:## Acceptance Criteria=5e7012d8"
+  - "section:## Attachments=6e5b104c"
+---
+
+# Plan views
+
+Infra — read payloads several read actions share: a node's blast radius (dependents, affected files by owner, tests, rules impact, decisions) and the rules version tag.
+
+## Purpose
+
+Infra — the read payloads more than one read action builds: a node's blast radius (orient's full reply embeds it; `get_blast_radius` returns it) and the rules version tag (orient's rules block and `get_rules`). Split out of `i-orient-plan` so those actions can live apart, since one action may not import another.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-plan-views/` (`views.ts`)
+
+- `buildBlastRadiusPayload(graph, node, opts)` — reverse-`depends_on` dependents with distance, `capabilities_at_risk`, `affected_files` grouped by owner (`via`: focus, dependent, exposing, importer; `VIA_ORDER`), linked `tests`, `rules_impact`, the focus's decisions and `dependent_decisions` (`blastRadiusDecisions`, `BlastRadiusDecision`, `DependentDecisionsSummary`, `AffectedFileVia`); retired nodes omitted unless `include_retired`
+- `rulesVersion(text)` — the short hash that tags a rules text
+- `ruleEntriesForReply(entries, { all?, known? })`, `rulesBlock(nodeId, entries, opts)`, `FULL_RULES_DISTANCE` (1) — rule entries as replies return them, each with its `version`: a known version leaves out the text (`unchanged: true`); a source past distance 1 is one line `{ node_id, node_type, via, distance, version, first, count }` (its first top-level rule cut to 100 characters, and how many it has) unless `all`; the block adds `more` naming `include_inherited_rules` when any entry is one line. Pure: the reply depends on the graph only
+- `isRetired(node)`
+
+Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-source-index`.
+
+- **One revision summary (0.18).** `revisionSummaries(node)` is the one `{ change, state, conflicts }` shape, used by orient, write results, and the check.
+- **Open revisions (0.18.0).** The blast radius of a node or a change reads `graphUnder(graph, change)` for a change and lists a node's open revisions by change
+
+- **Blast radius summary.** `summarizeBlastRadius(graph, full)` turns a node's or a merged change's payload into `{ detail: "summary", node_id | change, members?, additivity?, planned_edges?, open_revisions?, counts: { affected, by_type, file_owners, files }, capabilities_at_risk, top_dependents, tests, decision_ids, dependent_decisions?, reachability? (ids), more? }`; `top_dependents` are the `TOP_DEPENDENTS` (10) dependents with the highest fan-in (`fanInIndex`, `f-compiler-rules`). `BLAST_DETAILS` is `summary | full`
+- `ruleEntriesForReply` stays a function of the graph and the `known` versions it is given; callers merge the session's sent versions into `known` (`f-orientation-ledger`)
+
+## Acceptance Criteria
+
+- `orient_for_work` at full depth and `get_blast_radius` return the same blast radius payload as before the split
+- `get_rules` and orient's rules entries carry the same version tags
+- Verified via `npm test`
+
+## Atomic Ops
+
+- [ ] Spec written {#spec}
+- [ ] Implementation complete {#impl}
+- [ ] Verified in target environment {#verify}
+
+## Attachments
+
+_Schemas, OpenAPI exports, ER diagrams, design tokens, etc. go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}
