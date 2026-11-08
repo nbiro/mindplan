@@ -179,7 +179,7 @@ function printHelp(): void {
   mindplan-mcp export       Alias for view
   mindplan-mcp check        Offline integrity: graph + file ownership (default CI mode)
   mindplan-mcp hook pre-tool-use
-                            Claude Code PreToolUse hook: deny host file tools on mindplan/
+                            Claude Code PreToolUse hook: deny host file writes on mindplan/
                             (stdin: the hook JSON; installed by setup_project install_hook)
   mindplan-mcp help         Show this message
 

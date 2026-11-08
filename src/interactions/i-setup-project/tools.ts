@@ -24,7 +24,7 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call when get_project's version or a Blocked: Version names setup_project, or the user asks to set up MindPlan. " +
         "Creates the mindplan/ graph and writes no other file unless asked; returns { created, changed_files, ci?, hook?, pointer, guide }: the MINDPLAN.md text and the follow-up steps (an existing graph is left as is). " +
-        "Pass ci: \"github\" for the merge-gate workflow, install_hook: true for the Claude Code hook that keeps host file tools off mindplan/ (hook.offer says when it is missing). Blocked on a graph that needs upgrade_project. " +
+        "Pass ci: \"github\" for the merge-gate workflow, install_hook: true for the Claude Code hook that keeps host file writes off mindplan/ (hook.offer says when it is missing). Blocked on a graph that needs upgrade_project. " +
         "Details: get_spec({ topic: \"setup_project\" }).",
       inputSchema: {
         ci: z

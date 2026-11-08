@@ -5,7 +5,7 @@ MindPlan draws the boundaries your agent won’t. The graph under `mindplan/` de
 ## Your duties
 
 1. **A new behavior is a new node.** Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; when a change alters what existing nodes describe, update those nodes.
-2. **`mindplan/` goes through the tools only.** Never read or edit it with host file tools. For exact text, `find_in_node` (one node, with a snippet ready for a `replace` edit) and `search_graph` (which nodes mention something).
+2. **`mindplan/` is written through the tools only.** Never edit it with host file tools; reading its files is fine. A file alone lacks a node's inherited rules and decisions (orient for those), and a revision's frontmatter holds only its changes against live. For a `replace` edit, `find_in_node` returns a snippet that occurs exactly once.
 3. **Hand off on a green check.** Before `ready`, `in-review`, `ship` / Bug `resolved`, or saying the work is done, `run_check` (CLI `mindplan-mcp check`) must pass. When the implementation is done and a merge is requested, `ship` the node (Bug: `resolved`); `run_check({ merge: true })` (CLI `mindplan-mcp check --merge`) is the merge gate CI runs.
 
 How and when you plan is up to you: sketch nodes first, or code first and update the graph before handoff. The gates below hold either way.

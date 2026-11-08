@@ -187,7 +187,7 @@ The MCP server is the only writer of `mindplan/`. Nodes claim their source files
 | `check --merge`, `check --merge=strict` | The merge gate (below) |
 | `check --after-merge` | Names what merging two branches that both changed the graph left behind |
 | `check --root <path>` | Checks another checkout |
-| `mindplan-mcp hook pre-tool-use` | The Claude Code hook: denies host file tools on `mindplan/**` (below) |
+| `mindplan-mcp hook pre-tool-use` | The Claude Code hook: denies host file writes on `mindplan/**` (below) |
 | `mindplan-mcp help` | Usage |
 
 **Merge gate.** The default branch should hold work that is done (`stable` / `unstable`) or still being built, never work that is `in-review`: the code is finished but the graph has not shipped it, and that belongs on a branch. Plain `check` ignores lifecycle state; `check --merge` fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live file or open revision is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back to `in-progress` (a Bug: `fixing`) if the work is unfinished. `draft`, `ready`, `in-progress`, and shipped nodes pass, so planning PRs and incremental PRs still merge. It also fails a shipped node whose claimed files changed against the base while its territory file did not: the graph must describe the code before it merges, so the fix is `open_next` and ship, `patch_node_territory` in place, or, when the node's text still holds, `confirm_territory({ node_id, note })`, which pins the changed files' content in the node's `confirmed.json` (editing them again blocks again). Agents run the same gate as `run_check({ merge: true })` before saying a PR is ready.
@@ -205,7 +205,7 @@ The MCP server is the only writer of `mindplan/`. Nodes claim their source files
 
 **Linked tests.** With `tests.command` set (for example `npm run test:files -- {files}`), `run_check({ run_tests: true, change })` runs the linked tests of the change's nodes; a failure is `Blocked: Tests`, and a pass closes each node's `verify` item for this server session.
 
-**Keep agents out of `mindplan/`.** In Claude Code, ask your agent to call `setup_project({ install_hook: true })` (or `upgrade_project`): it adds a PreToolUse hook to `.claude/settings.json` that denies `Read`, `Edit`, `Write`, `Grep`, and `Glob` on `mindplan/**` and names the MindPlan tool to use instead (SPEC §9.8).
+**Keep host writes out of `mindplan/`.** Agents may read the graph's files directly; every write goes through the MindPlan tools. In Claude Code, ask your agent to call `setup_project({ install_hook: true })` (or `upgrade_project`): it adds a PreToolUse hook to `.claude/settings.json` that denies `Edit`, `MultiEdit`, `Write`, and `NotebookEdit` on `mindplan/**` and names the MindPlan tool to use instead (SPEC §9.8).
 
 Full modes and output: SPEC §9.6.
 

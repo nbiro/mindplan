@@ -1,5 +1,5 @@
 /**
- * Claude Code PreToolUse hook that keeps agents' host file tools off `mindplan/**` — owned by
+ * Claude Code PreToolUse hook that keeps agents' host file writes off `mindplan/**` (reads are free) — owned by
  * Foundation f-agent-hook. Installs the hook into `.claude/settings.json` (setup_project and
  * upgrade_project with `install_hook: true`), reports whether it is installed, and decides one hook
  * call for `mindplan-mcp hook pre-tool-use`. Never throws on hook input.
@@ -12,7 +12,7 @@ import { fileURLToPath } from "url";
 /** The command the hook runs; `--no-install` never downloads a package from a hook. */
 export const HOOK_COMMAND = "npx --no-install mindplan-mcp hook pre-tool-use";
 /** The host file tools the hook watches. */
-export const HOOK_MATCHER = "Read|Edit|MultiEdit|Write|Grep|Glob|NotebookEdit";
+export const HOOK_MATCHER = "Edit|MultiEdit|Write|NotebookEdit";
 /** Project-relative settings file the hook goes into. */
 export const HOOK_SETTINGS_PATH = ".claude/settings.json";
 
@@ -42,14 +42,13 @@ export function hookCommand(root: string): string {
 }
 const MINDPLAN_DIR = "mindplan";
 
-const READ_MESSAGE =
-  "mindplan/ is the MindPlan graph: read it through the MindPlan MCP tools, not host Read/Grep/Glob. " +
-  "Use get_node_context for one node, find_in_node to search inside a node, search_graph to search the graph, " +
-  "get_mindplan_graph for the whole graph.";
 const WRITE_MESSAGE =
   "mindplan/ is the MindPlan graph and is written only through the MindPlan MCP tools, never host Edit/Write. " +
   "Use patch_node_territory for a node's sections, patch_node_rules for a node's rules, patch_project_rules for the " +
   "project rules (nodes, edges, and claims have their own tools: create_node, link_nodes, set_implementation_files).";
+
+/** The host tools that write a file; the hook answers only these. */
+const WRITE_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 
 type HookEntry = { matcher?: unknown; hooks?: unknown };
 
@@ -149,7 +148,7 @@ export function hookReply(
       installed: false,
       offer:
         "Call again with install_hook: true to install a Claude Code PreToolUse hook in .claude/settings.json that denies host " +
-        "Read/Edit/Write/Grep/Glob on mindplan/** and names the MindPlan tool to use instead.",
+        "Edit/Write on mindplan/** (reads stay free) and names the MindPlan tool to use instead.",
     },
     changed_files: [],
   };
@@ -196,7 +195,8 @@ function insideMarkedGraph(abs: string): boolean {
   for (let i = parts.length; i > 0; i--) {
     if (parts[i - 1].toLowerCase() !== MINDPLAN_DIR) continue;
     const dir = parts.slice(0, i).join("/") || "/";
-    if (["version.json", "project.md"].some((f) => fs.existsSync(`${dir}/${f}`))) return true;
+    // version.json marks a MindPlan graph; a project.md alone is too common to count.
+    if (fs.existsSync(`${dir}/version.json`)) return true;
   }
   return false;
 }
@@ -205,7 +205,7 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() !== "" ? v : undefined;
 }
 
-/** The literal directory prefix of a glob (`a/b/**` → `a/b`). */
+/**` → `a/b`). */
 function globBase(glob: string): string {
   const s = glob.replace(/\\/g, "/");
   const first = s.search(/[*?[{]/);
@@ -232,40 +232,16 @@ export function preToolUseDecision(input: unknown, fallbackCwd: string = process
       return within(abs, graphDir) || insideMarkedGraph(abs);
     };
 
-    let hit = false;
-    let write = false;
-    switch (tool_name) {
-      case "Read":
-      case "Edit":
-      case "MultiEdit":
-      case "Write":
-      case "NotebookEdit": {
-        const target = str(ti.file_path) ?? str(ti.notebook_path) ?? str(ti.path);
-        hit = target !== undefined && inGraph(target);
-        write = tool_name !== "Read";
-        break;
-      }
-      case "Grep":
-      case "Glob": {
-        // The folder searched, then the folder the glob's literal prefix names inside it.
-        const dir = normalize(str(ti.path) ?? base, base);
-        const glob = tool_name === "Grep" ? str(ti.glob) : str(ti.pattern);
-        hit = inGraph(dir);
-        if (!hit && glob) {
-          const prefix = globBase(glob.replace(/^(\.\/)+/, ""));
-          hit = prefix !== "" && inGraph(normalize(prefix, dir));
-        }
-        break;
-      }
-      default:
-        return null;
-    }
-    if (!hit) return null;
+    // Reads are free (Read, Grep, Glob); only a host write into the graph is denied. An install from
+    // before reads were allowed still matches Read/Grep/Glob, and is answered with no output here.
+    if (!WRITE_TOOLS.has(tool_name)) return null;
+    const target = str(ti.file_path) ?? str(ti.notebook_path) ?? str(ti.path);
+    if (target === undefined || !inGraph(target)) return null;
     return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "deny",
-        permissionDecisionReason: write ? WRITE_MESSAGE : READ_MESSAGE,
+        permissionDecisionReason: WRITE_MESSAGE,
       },
     });
   } catch {

@@ -249,7 +249,7 @@ ok(
 const version = JSON.parse(fs.readFileSync(path.join(toolRoot, "package.json"), "utf-8")).version;
 // No mindplan-mcp in the project's node_modules: the hook pins this version through npx -y.
 const ours = settings.hooks.PreToolUse.filter((e) => e.hooks?.some((h) => h.command === `npx -y mindplan-mcp@${version} hook pre-tool-use`));
-ok("install_hook adds the PreToolUse entry, pinned to this version without a local install", ours.length === 1 && ours[0].matcher === "Read|Edit|MultiEdit|Write|Grep|Glob|NotebookEdit", JSON.stringify(settings));
+ok("install_hook adds the PreToolUse entry, pinned to this version without a local install", ours.length === 1 && ours[0].matcher === "Edit|MultiEdit|Write|NotebookEdit", JSON.stringify(settings));
 const u = runHandler("upgrade", hookRoot, { args: { install_hook: true } });
 settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
 ok(
@@ -279,12 +279,14 @@ function hook(input, raw = false) {
   return { status: res.status, decision, stdout: res.stdout };
 }
 let h = hook({ tool_name: "Read", tool_input: { file_path: "mindplan/x.mdx" }, cwd: hookRoot });
+ok("hook allows Read on mindplan/x.mdx (reads are free)", h.status === 0 && h.stdout === "", h.stdout);
+h = hook({ tool_name: "Edit", tool_input: { file_path: "mindplan/x.mdx" }, cwd: hookRoot });
 ok(
-  "hook denies Read on mindplan/x.mdx and names the read tools",
+  "hook denies Edit on mindplan/x.mdx and names the write tools",
   h.status === 0 &&
     h.decision?.hookSpecificOutput?.permissionDecision === "deny" &&
     h.decision.hookSpecificOutput.hookEventName === "PreToolUse" &&
-    h.decision.hookSpecificOutput.permissionDecisionReason.includes("get_node_context"),
+    h.decision.hookSpecificOutput.permissionDecisionReason.includes("patch_node_territory"),
   h.stdout
 );
 h = hook({ tool_name: "Read", tool_input: { file_path: path.join(hookRoot, "src", "x.ts") }, cwd: hookRoot });
@@ -297,9 +299,9 @@ if (process.platform === "win32") {
   ok("hook matches a drive letter of either case", h.decision?.hookSpecificOutput?.permissionDecision === "deny", h.stdout);
 }
 h = hook({ tool_name: "Grep", tool_input: { pattern: "x", path: "mindplan" }, cwd: hookRoot });
-ok("hook denies Grep with path mindplan", h.decision?.hookSpecificOutput?.permissionDecision === "deny", h.stdout);
+ok("hook allows Grep with path mindplan", h.status === 0 && h.stdout === "", h.stdout);
 h = hook({ tool_name: "Glob", tool_input: { pattern: "mindplan/**/*.mdx" }, cwd: hookRoot });
-ok("hook denies Glob mindplan/** from the root", h.decision?.hookSpecificOutput?.permissionDecision === "deny", h.stdout);
+ok("hook allows Glob mindplan/** from the root", h.status === 0 && h.stdout === "", h.stdout);
 h = hook({ tool_name: "Glob", tool_input: { pattern: "src/**/*.ts" }, cwd: hookRoot });
 ok("hook allows Glob src/**", h.stdout === "", h.stdout);
 h = hook({ tool_name: "Bash", tool_input: { command: "cat mindplan/x.mdx" }, cwd: hookRoot });

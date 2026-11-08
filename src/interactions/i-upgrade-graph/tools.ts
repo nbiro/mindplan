@@ -24,7 +24,7 @@ export const TOOLS: ToolDef[] = [
       description:
         "Call when get_project's version, a Blocked: Version, or the check names upgrade_project. " +
         "Runs every idempotent migration and stamps mindplan/version.json; returns { from_level, to_level, changed_files, hook?, migrations, leftovers, pointer_outdated, pointer, guide }: delete the leftovers and follow the guide. Commit the upgrade on its own. " +
-        "Pass install_hook: true for the Claude Code hook that keeps host file tools off mindplan/ (hook.offer says when it is missing). " +
+        "Pass install_hook: true for the Claude Code hook that keeps host file writes off mindplan/ (hook.offer says when it is missing). " +
         "Blocked without a graph (call setup_project) or when the graph is newer than this server. " +
         "Details: get_spec({ topic: \"upgrade_project\" }).",
       inputSchema: {
