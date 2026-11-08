@@ -745,7 +745,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
 
 // --- blast-radius decisions and map counts ---
 {
-  const own = await call("get_blast_radius", { node_id: "f-bookings" });
+  const own = await call("get_blast_radius", { detail: "full", node_id: "f-bookings" });
   check(
     "by default get_blast_radius lists the focus's own decisions and names the dependents that hold others",
     own.decisions.every((d) => d.via === "focus") &&
@@ -754,7 +754,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
       own.dependent_decisions.nodes.length >= 1,
     JSON.stringify({ decisions: own.decisions, dependent_decisions: own.dependent_decisions })
   );
-  const radius = await call("get_blast_radius", { node_id: "f-bookings", include_dependent_decisions: true });
+  const radius = await call("get_blast_radius", { detail: "full", node_id: "f-bookings", include_dependent_decisions: true });
   check(
     "include_dependent_decisions lists the focus's and its dependents' active decisions",
     radius.decisions.some((d) => d.id === "d-capacity-in-transaction" && d.via === "focus" && d.distance === 0) &&
@@ -836,7 +836,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     evening?.status === "superseded" && evening.superseded_by === "d-reschedule-any-evening",
     JSON.stringify(evening)
   );
-  const radius = await call("get_blast_radius", { node_id: "f-bookings", include_retired: true, include_dependent_decisions: true });
+  const radius = await call("get_blast_radius", { detail: "full", node_id: "f-bookings", include_retired: true, include_dependent_decisions: true });
   check(
     "get_blast_radius leaves out a retired node's decisions, even with include_retired",
     radius.affected.some((a) => a.id === "i-reschedule") && !radius.decisions.some((d) => d.node_id === "i-reschedule"),
@@ -874,8 +874,8 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
   );
   check(
     "the embedded blast radius carries the focus's own decisions only",
-    full.blast_radius.decisions.length === 1 && full.blast_radius.dependent_decisions.count === 0,
-    JSON.stringify(full.blast_radius.decisions)
+    full.blast_radius.decision_ids.length === 1 && full.blast_radius.dependent_decisions.count === 0,
+    JSON.stringify(full.blast_radius.decision_ids)
   );
   const deep = await call("orient_for_work", { node_id: "i-contact", depth: "rules", include_inherited_decisions: true });
   const far = deep.decisions.inherited_decisions.entries.filter((e) => e.node_id === "f-blob");
@@ -933,7 +933,7 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     old?.distance === 2 && old.status === "superseded" && old.superseded_by === "d-f-blob-new",
     JSON.stringify(old)
   );
-  const storeRadius = await call("get_blast_radius", { node_id: "f-blob" });
+  const storeRadius = await call("get_blast_radius", { detail: "full", node_id: "f-blob" });
   check(
     "a Foundation's radius names the dependents that hold decisions",
     storeRadius.decisions.length === 3 &&

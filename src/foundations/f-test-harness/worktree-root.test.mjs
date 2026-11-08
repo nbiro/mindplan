@@ -117,7 +117,8 @@ try {
 
   // --- orientation is per root ---
   await s.call("orient_for_work", { node_id: "f-shared" });
-  const gated = await s.raw("patch_node_territory", { node_id: "f-shared", description: "Infra — B edited", root: B });
+  // patch_node_rules never orients on its own (patch_node_territory would).
+  const gated = await s.raw("patch_node_rules", { node_id: "f-shared", rules: "- B only.", root: B });
   check(
     "orienting f-shared in A does not unlock f-shared in B",
     gated.error && gated.text.startsWith("Blocked: Orientation"),
