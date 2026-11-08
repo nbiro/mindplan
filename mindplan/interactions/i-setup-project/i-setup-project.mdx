@@ -4,32 +4,34 @@ type: Interaction
 title: "Set up the project"
 description: "Agent calls setup_project on a repo with no graph: it creates the graph and stamps it, optionally writes the merge-gate workflow, and returns the setup guide for wiring the agent files and filling the brief with the user."
 state: stable
-shipped_at: 2026-10-31T20:33:29.094Z
-revisions: 1
-churn: 1
+shipped_at: 2026-11-08T17:07:34.741Z
+revisions: 2
+churn: 1.834
+churn_behavior: 1
 created_at: 2026-10-31T19:40:48.412Z
-updated_at: 2026-11-07T20:06:37.362Z
+updated_at: 2026-11-08T17:07:34.741Z
+belongs_to:
+  - j-agent-onboarding
+depends_on:
+  - f-agent-hook
+  - f-graph-migrations
+  - f-source-index
+  - f-territory-store
+  - f-tool-kit
+leads_to:
+  - i-orient-plan
+implements:
+  - src/interactions/i-setup-project/
+tests:
+  - src/foundations/f-test-harness/merge-gate.test.mjs
+  - src/foundations/f-test-harness/smoke.mjs
+  - src/foundations/f-test-harness/version.test.mjs
 aliases:
   - "init"
   - "install"
   - "adopt"
   - "onboard"
   - "setup"
-tests:
-  - src/foundations/f-test-harness/merge-gate.test.mjs
-  - src/foundations/f-test-harness/smoke.mjs
-  - src/foundations/f-test-harness/version.test.mjs
-belongs_to:
-  - j-agent-onboarding
-depends_on:
-  - f-graph-migrations
-  - f-tool-kit
-  - f-source-index
-  - f-territory-store
-leads_to:
-  - i-orient-plan
-implements:
-  - src/interactions/i-setup-project/
 ---
 
 # Set up the project
@@ -60,6 +62,8 @@ Depends on: `f-graph-migrations`, `f-territory-store`, `f-source-index`, `f-tool
 ## Tool descriptions
 
 Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry. The setup guide it returns starts by telling the agent to call `get_project`, since writes wait until the seeded rules reached the session.
+
+- **Client hook.** `install_hook: true` installs the Claude Code PreToolUse hook (`installHook`, `f-agent-hook`) into `.claude/settings.json` and lists it in `changed_files` when written; this is the one file setup writes outside `mindplan/` only when asked. The reply carries `hook` (`hookReply`): `{ installed: true, path }`, `{ installed: false, offer }` in a Claude Code project without it, or nothing
 
 ## Acceptance Criteria
 

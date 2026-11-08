@@ -2,13 +2,14 @@
 id: f-tool-kit
 type: Foundation
 title: "Tool kit"
-description: "Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape with its version-gate opt-out, defineTool, and the schema fragments several actions share."
+description: "Infra — what an action needs to define its MCP tools: the tool kind that drives annotations, drift, and verbose, the config shape with its version-gate and budget opt-outs, defineTool, the shared schema fragments, and the reply budget with its session cursors."
 state: stable
-shipped_at: 2026-11-03T08:20:36.515Z
-revisions: 3
-churn: 2.881
+shipped_at: 2026-11-08T17:07:34.357Z
+revisions: 4
+churn: 3.545
+churn_behavior: 1
 created_at: 2026-10-31T11:57:22.631Z
-updated_at: 2026-11-03T08:20:36.515Z
+updated_at: 2026-11-08T17:07:34.357Z
 implements:
   - src/foundations/f-tool-kit/
 tests:
@@ -37,6 +38,9 @@ Intended files: `src/foundations/f-tool-kit/` (`tool.ts`)
 Depends on: none inside the graph (zod and the MCP SDK types).
 
 - **Change argument (0.18.0).** A shared `CHANGE_ARG` schema fragment (optional change id, described as: which open revision; may be omitted when the node has at most one) for every tool that reads or writes a revision
+
+- **Budget opt-out.** `ToolConfig.budget: false` marks a tool that pages itself; the envelope then never cuts its reply
+- **Reply budget (`pages.ts`).** `budgetReply(payload, budget)`: an object reply over `budget` bytes (0: off) is cloned and its largest lists are cut, largest first, to what fits, until it fits or nothing more can be cut; each cut list's rest is kept under a cursor and listed in `truncated: [{ path, shown, total, cursor }]` with a `next_page` hint. Lists under `rules`, `project_rules`, `resolved_rules`, `failures`, `changed_files` are never cut, so a reply can stay over the budget rather than hide a rule or a Blocked line. `nextPage(cursor, budget)` returns `{ path, from, items, total, next_cursor? }` (at least one item) without consuming the cursor; the store keeps the latest 64 per process; an unknown cursor is Blocked
 
 ## Acceptance Criteria
 

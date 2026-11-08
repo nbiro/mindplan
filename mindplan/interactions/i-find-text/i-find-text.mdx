@@ -3,10 +3,12 @@ id: i-find-text
 type: Interaction
 title: "Find text in nodes"
 description: "Agent finds a line in one node (find_in_node, with a unique snippet ready for a replace edit) or across the graph (search_graph), so it never reads mindplan/ with host tools."
-state: in-review
+state: stable
+shipped_at: 2026-11-08T17:07:34.596Z
+revisions: 1
+churn: 1
 created_at: 2026-11-08T15:45:10.341Z
-updated_at: 2026-11-08T16:06:07.275Z
-change: "lighter-calls"
+updated_at: 2026-11-08T17:07:34.596Z
 aliases:
   - "grep node"
   - "search node text"
@@ -53,9 +55,3 @@ Intended files: `src/interactions/i-find-text/` (`handlers.ts`, `tools.ts`).
 - A repeated line grows its snippet until it is unique
 - `search_graph` lists matches across nodes and slots with `more` past `limit`
 - Verified by `find-text.test.mjs`
-
-## Atomic Ops
-
-- [ ] Requirements defined {#spec}
-- [ ] Implementation complete {#impl}
-- [ ] Tests passing {#verify}

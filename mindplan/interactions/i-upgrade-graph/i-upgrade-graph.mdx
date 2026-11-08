@@ -4,14 +4,16 @@ type: Interaction
 title: "Upgrade the graph"
 description: "Agent calls upgrade_project when the graph is behind the server: it runs the pending migrations, stamps the new level, and returns what changed plus the agent-file leftovers to remove."
 state: stable
-shipped_at: 2026-11-03T08:20:39.135Z
-revisions: 2
-churn: 1.944
+shipped_at: 2026-11-08T17:07:34.772Z
+revisions: 3
+churn: 2.717
+churn_behavior: 1
 created_at: 2026-10-31T19:40:48.514Z
-updated_at: 2026-11-07T20:06:37.563Z
+updated_at: 2026-11-08T17:07:34.772Z
 belongs_to:
   - j-agent-onboarding
 depends_on:
+  - f-agent-hook
   - f-graph-migrations
   - f-tool-kit
 implements:
@@ -59,6 +61,8 @@ Depends on: `f-graph-migrations`, `f-tool-kit`.
 ## Tool descriptions
 
 Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
+
+- **Client hook.** `install_hook: true` installs the Claude Code PreToolUse hook (`installHook`, `f-agent-hook`) into `.claude/settings.json` and lists it in `changed_files` when written. The reply carries `hook` (`hookReply`): `{ installed: true, path }`, `{ installed: false, offer }` in a Claude Code project without it, or nothing
 
 ## Acceptance Criteria
 

@@ -4,11 +4,12 @@ type: Interaction
 title: "Revise a shipped node"
 description: "Agent opens a revision of a shipped node, with its planned edges applied and a hotspot warning when it ships far above the graph's pace, or discards the revision."
 state: stable
-shipped_at: 2026-11-07T22:43:27.263Z
-revisions: 7
-churn: 6.295
+shipped_at: 2026-11-08T17:07:34.706Z
+revisions: 8
+churn: 7.184
+churn_behavior: 1
 created_at: 2026-10-31T11:58:03.620Z
-updated_at: 2026-11-07T22:43:27.263Z
+updated_at: 2026-11-08T17:07:34.706Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -70,6 +71,9 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-
 ## Tool descriptions
 
 Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
+
+- **Implicit orientation.** `open_next` passes the write gate through `gateWriteOrOrient` (`f-plan-writes`): on a node never oriented on in this session it orients the node and returns `oriented: true` with its rules; a node whose rules changed still Blocks. `discard_next`, `resolve_conflict`, and `rebase_revision` keep the plain gate
+- **Hotspot warning once.** The open_next hotspot warning is given once per node per change in a session (`firstHotspotWarning`, `f-orientation-ledger`) and not at all when the node already holds a decision under that change (`openClosedWarning` with the change)
 
 ## Acceptance Criteria
 

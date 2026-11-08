@@ -2,13 +2,14 @@
 id: i-edit-brief
 type: Interaction
 title: "Edit the brief and config"
-description: "Agent edits the project brief (description and rules) and mindplan/config.json (sources, exclude, decision gate, hotspots, fan-out, search)."
+description: "Agent edits the project brief (description and rules, with rule checks validated) and mindplan/config.json (sources, exclude, decision gate, hotspots, fan-out, search, reply budget, test command, rule-check commands)."
 state: stable
-shipped_at: 2026-11-07T21:55:59.607Z
-revisions: 5
-churn: 4.688
+shipped_at: 2026-11-08T17:07:34.538Z
+revisions: 6
+churn: 5.602
+churn_behavior: 1
 created_at: 2026-10-31T11:58:04.467Z
-updated_at: 2026-11-07T21:55:59.607Z
+updated_at: 2026-11-08T17:07:34.538Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -46,6 +47,9 @@ Intended files: `src/interactions/i-edit-brief/` (`handlers.ts`, `tools.ts`).
 - Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`
 
 Depends on: `f-plan-writes`, `f-territory-store`, `f-compiler-rules`, `f-tool-kit`.
+
+- **Config keys (0.23.0).** `patch_config` also takes `replies` (`budget_bytes`, `legacy`), `tests` (`command`), and `rule_checks` (`commands`); a key not passed keeps its stored value, and keys the tool does not take are written back unchanged
+- **Rule checks on write.** `patch_project_rules` Blocks, writing nothing, when a `check:` line of the resulting rules is invalid (`f-graph-search` rule checks), naming the rule and the problem
 
 ## Acceptance Criteria
 

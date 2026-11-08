@@ -4,11 +4,12 @@ type: Interaction
 title: "Claim files"
 description: "Agent claims the files a node owns, including in-place growth on a shipped node and attributed files, and links the tests that verify the node."
 state: stable
-shipped_at: 2026-11-03T08:20:37.865Z
-revisions: 3
-churn: 2.883
+shipped_at: 2026-11-08T17:07:34.477Z
+revisions: 4
+churn: 3.547
+churn_behavior: 1
 created_at: 2026-10-31T11:58:03.719Z
-updated_at: 2026-11-07T20:06:36.787Z
+updated_at: 2026-11-08T17:07:34.477Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -57,6 +58,8 @@ Depends on: `f-plan-writes`, `f-compiler-rules`, `f-territory-store`, `f-source-
 ## Tool descriptions
 
 Each tool's description says when to call it, what it does, and its key parameters, and ends with `Details: get_spec({ topic: "<tool>" })`; the full contract is the tool's SPEC §8 entry.
+
+- **Implicit orientation.** `set_implementation_files` passes the write gate through `gateWriteOrOrient` (`f-plan-writes`): on a node never oriented on in this session it orients the node and returns `oriented: true` with its rules; a node whose rules changed still Blocks. `set_test_files` keeps the plain gate
 
 ## Acceptance Criteria
 

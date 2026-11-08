@@ -2,14 +2,15 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, an outdated graph, and at merge in-review work and shipped nodes whose code changed but whose territory did not; warns about stale text, shape, and more."
+description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, failed rule checks and linked tests, an outdated graph, and at merge in-review work and shipped nodes whose code changed but whose territory did not (unless confirmed); warns about stale text, shape, and more; lists drift."
 state: stable
-shipped_at: 2026-11-08T06:29:43.942Z
-revisions: 35
-churn: 23.808
-churn_wiring: 1
+shipped_at: 2026-11-08T17:07:34.426Z
+revisions: 36
+churn: 24.566
+churn_behavior: 1
+churn_wiring: 0.99
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-08T06:29:43.942Z
+updated_at: 2026-11-08T17:07:34.426Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -106,6 +107,12 @@ The after-merge and compact code read the cache folder name from `f-source-index
 `run_check({ after_merge: true })` (CLI `check --after-merge`) validates the graph a git merge produced: git conflict markers in any `mindplan/` file, two nodes created with one id in different folders, a revision file that no longer parses, a decision id held by two files, a tracked `mindplan/map.md`, and a missing or behind `version.json`, each a `Blocked: after-merge: …` line with its fix; a revision whose `base` no longer matches live is a `Warning: after-merge: …` naming `rebase_revision({ node_id, change })` (ship rebases it anyway); the rest of the check runs as usual. `runIntegrityCheck` reads the call's root and never writes `MINDPLAN_ROOT`.
 
 - **One graph memo per check.** `runIntegrityCheck` and `buildDriftReport` run in a graph-memo scope (`withRoot(..., { memoGraph: true })`), so the CLI check's repeated graph loads reuse its first one (`f-graph-cache`); inside `run_check` they keep the tool call's memo
+
+- **Lean drift (`drift.ts`).** `leanDrift()` is what replies carry: `{ count, new_since_last_reply, reminder?, full? }` over every drifting path (unscoped, uncapped `buildDriftReport({ cap: false })`; unowned paths as `class: "unowned"`), listing only entries (path, class, owner) this session was not shown, at most `NEW_DRIFT_SHOWN` (20) per reply with `more_new` counting the rest (only listed entries count as shown); an entry that stopped drifting is forgotten, so its return is new. `fullDrift()` returns `{ count, paths, expected, reminder }` and marks every entry shown. `get_drift` (read, no drift of its own) returns `fullDrift()`
+- **Rule checks (`rule-checks.ts`).** The check evaluates every `check:` line (`f-graph-search` parses them): a project rule's over the source universe, a node rule's over the owned files of every active pipeline node the rule reaches, each failure once: `Blocked: Rule: <project|node-id> — "<rule, never cut>" check <json>: <summary>` then up to five `path:line: <text>` lines and `+N more`. Command checks run per config `rule_checks.commands` (`off` default; `local` unless `CI` is set; `always`), else `Info: rule checks: N command check(s) skipped (...)`. A graph without check lines prints nothing new
+- **Linked tests (`run-tests.ts`).** `run_check({ run_tests: true, change | nodes })` runs config `tests.command` with `{files}` replaced by the linked tests of the nodes in scope (Blocked without a command, a scope, or any linked test), records each node's result (`f-compiler-rules` auto-items, which close `verify` on a pass), returns `tests: { command, nodes, files, exit_code, passed, without_tests?, output_tail? }`, and on a failure adds `Blocked: Tests: …` and `ok: false`
+- **Confirmed territory.** At merge, a shipped node with no open revision whose changed claimed files are all pinned at their current content by `confirm_territory` (`i-confirm-territory`, `f-territory-store` confirmations) passes with `Info: merge: "<id>" confirmed by <by> at <at>: <note>`; otherwise its line names `Unconfirmed:` / `Changed since confirmation:` files and offers `confirm_territory`. `confirmed.json` is not a territory change
+- **Answered hotspots.** The hotspot warnings skip a node whose every open revision has a decision under its change
 
 ## Acceptance Criteria
 

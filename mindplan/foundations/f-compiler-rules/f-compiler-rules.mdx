@@ -4,11 +4,12 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, additivity), change members (revisions, planned sources), checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-11-07T22:43:25.494Z
-revisions: 32
-churn: 18.018
+shipped_at: 2026-11-08T17:07:34.195Z
+revisions: 33
+churn: 18.702
+churn_behavior: 1
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-07T22:43:25.494Z
+updated_at: 2026-11-08T17:07:34.195Z
 split_at: 8
 split_into:
   - f-source-index
@@ -112,6 +113,10 @@ Depends on: `f-domain-model`, `f-territory-store`, `f-source-index`.
 ## Test import scope
 
 A test file of node A (a file A's `tests` list matches that also looks like a test: `*.test.*`, `*.spec.*`, or a `__tests__` / `test` / `tests` path segment) may import, read-only, files owned by A itself and by A's direct dependents (nodes with a `depends_on`, `exposes`, or `mounts` edge to A), without an edge, so a template's starter test can import the registry that reads the template. Every other import from a test file follows the import matrix as before. The full check and the transition gates share this rule. The untested-revision warning names the revision's change and the `set_test_files({ node_id, change, add })` call, since `set_test_files` without `change` writes live. Each graph's direct dependents are indexed once (a WeakMap keyed by the edges array, rebuilt when its length changes), so the lookup per import is O(1).
+
+- **Server-closed checklist items (`auto-items.ts`).** The default `spec` and `impl` build items count as done for the Completion Check, the relaxed dependency rule, and the stale-checkbox warning: shipping is the claim they make. The default `verify` item counts as done once the node's linked tests passed in this session's last `run_check({ run_tests: true })` that ran them (`recordTestRun`, `testsPassed`, in memory per root). Every other item, and every `review` / `deploy` item, is ticked by hand. A Completion Check Block names what is left and, for `verify`, the `run_tests` call
+- **Fan-in from one glob claim.** `fanIn` returns `{ count, nodes, raw_count?, glob_groups? }`: dependents whose own claims a glob claim of the node reaches into (`claimsOverlap`: segment by segment, the dependent's claim reaching at least the glob's first wildcard segment; claim strings only, never files) count once per glob, so `count` is the dependents outside every group plus one per group. A hotspot whose whole fan-in is one glob group carries `single_glob`, and its warning keeps the reason mix but drops the registry and split advice
+- **Answered hotspots.** `openClosedWarning(graph, node, settings, reason, change)` returns null when the node holds a decision under `change` (`answeredUnder`); `answeredForOpenWork(node)` is true when every open revision's change has one, and the check's hotspot warnings skip such a node
 
 ## Acceptance Criteria
 
