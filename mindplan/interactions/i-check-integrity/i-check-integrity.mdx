@@ -2,19 +2,20 @@
 id: i-check-integrity
 type: Interaction
 title: "Check integrity"
-description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, failed rule checks and linked tests, an outdated graph, and at merge in-review work and shipped nodes whose code changed but whose territory did not (unless confirmed); warns about stale text, shape, and more; lists drift."
+description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, failed rule checks and tests, an outdated graph, and unreviewed or stale-territory work at merge; warns about stale text, shape, fan-in, and more; lists drift."
 state: stable
-shipped_at: 2026-11-08T17:07:34.426Z
-revisions: 36
-churn: 24.566
-churn_behavior: 1
-churn_wiring: 0.99
+shipped_at: 2026-11-09T19:38:24.759Z
+revisions: 37
+churn: 24.947
+churn_behavior: 1.975
+churn_wiring: 0.965
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-08T17:07:34.426Z
+updated_at: 2026-11-09T19:38:24.759Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-compiler-rules
+  - f-fan-in
   - f-fan-out
   - f-graph-migrations
   - f-mcp-runtime
@@ -31,6 +32,7 @@ tests:
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/check.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/fan-in.test.mjs
   - src/foundations/f-test-harness/fan-out.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
@@ -72,7 +74,7 @@ Intended files: `src/interactions/i-check-integrity/`
 - **Version.** When `graphStatus()` (`f-graph-migrations`) is not `current`, the check fails with `Blocked: Version — <warning>` (naming `setup_project`, `upgrade_project`, or the package to upgrade to), before the graph checks run. `MINDPLAN_VERSION_GATE=off` skips it, like the tool gate
 - **Linked tests.** `checkPresence` also reports `testPresenceFailures` (`f-compiler-rules`): `Blocked: presence: "<id>" tests entry missing on disk: "<entry>".` for a node in review or shipped. Each in-review revision with no linked tests adds its `untestedWarning` as `Warning: tests: …`; it never changes `ok`. The change check reports both for its members
 
-Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`, `f-fan-out`.
+Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-index`, `f-fan-out`, `f-fan-in`.
 
 - **Merge gate.** `CheckOptions.merge` (`true` or `"strict"`; off by default) adds the rule that the default branch holds only done (`stable` / `unstable`) or still-building (`in-progress`, and the plan states `draft` / `ready`) work. `checkMerge` walks the pipeline nodes and Bugs: a Foundation, Interaction, or Interface whose active slot (the open next while one exists, else live; a mirror twin is not an open next) is `in-review`, and a Bug in `in-review`, are each `Blocked: Merge: …` naming the id, type, state (with `(next)` for a next slot), the change id, and the fix: `update_node_status({ scope: "change", change, new_status: "ship" })` for a node with a change, `update_node_status({ node_id, new_status: "ship" })` without one (a Bug: `"resolved"`), or move it back (`"in-progress"`; a Bug: `"fixing"`) if the work is unfinished. Lines are ordered by change id, then node id, so a change's lines sit together, and the result carries `merge: { level, base?, changes: [{ change, nodes: [{ id, type, state, slot, files? }] }] }` with one group per change (`change: null` for the nodes with none). Cancelled and deprecated nodes pass
 - **Stale territory at the merge gate.** With `merge` (`true` or `"strict"`), a shipped (`stable` / `unstable`), non-retired node with no open revision whose live claims cover a path changed against the base (the run's `dirtyProbe`, matched with `claimCoversPath` as strict does) while its live territory file (`mindplan/<folder>/<id>/<id>.mdx`) is not among the changed paths is `Blocked: Merge: "<id>" (<type>, <state>): claimed files changed against <base> but its territory did not: <up to five paths>. Update the node so it matches the code: open_next({ node_id, change }) and ship it when its contract changed, or patch_node_territory({ node_id, ... }) in place when it holds.` When its text still holds, any patch that confirms it clears the Block (the gate cannot judge the text). A node that a Bug changed on the branch (its live file among the changed paths) `affects` is exempt: the Bug describes the fix. Migration and schema files (`schema_files`, matched with `schemaClaimEntries`) do not count: the decision gate covers them. A shipped node's revision still at `draft` or `ready` whose claims (live or its own) cover a changed path is Blocked too (`… but its revision was never started`, naming the ship call or `discard_next`), so `open_next` alone does not clear the rule; an `in-progress` revision merges as incremental work. Its nodes join the `merge` report with `stale: true`. At the default level with no resolvable base or a failed probe the rule is skipped with one `Info: merge: ...` line (strict already Blocks there)
@@ -88,6 +90,8 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 **Open–closed signals.** The default check warns `hotspot:` for each shipped node with an open revision whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, with the refactor its recorded reasons point to (invert, split, or unknown) and its recent change groups; a hotspot nobody is changing is not listed (open_next warns when a change reopens it); a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
 
 **Fan-out.** The default check warns `fan-out:` for each pre-ship Foundation, Interaction, or Interface whose `depends_on` targets sit in at least `fan_out.warn_at` other unshipped changes (`fanOuts` with `fanOutSettings`, `f-fan-out` and `f-source-index`), one `Warning: fan-out: …` line per node in `fanOuts` order, so a planned node that would have to know every feature of a kind is flagged before it is built; a node kept whole by a `keep_whole` decision is skipped. The settings are loaded once per run. With `change`, a member's `fan-out:` line is also part of the change's warnings. It never changes `ok` or the exit code, and is never Blocked.
+
+**Fan-in.** The default check warns `fan-in:` for each pre-ship Foundation whose role is not in `fan_in.exempt_roles` and whose direct dependents exceed `decisions.blast_radius`, unless it holds its own `keep_whole` decision (`fanInSignals` with `fanInSettings` and `decisionGateSettings`, `f-fan-in` and `f-source-index`), one `Warning: fan-in: …` line per node in `fanInSignals` order, naming its dependents by Capability and pointing at a per-area split. With `change`, a member's `fan-in:` line (`fanInFor`) is also part of the change's warnings, counted on the live graph like the graph-wide line (edges in open revisions count once they ship), so both report the same count. It never changes `ok` or the exit code, and is never Blocked.
 
 **Tool definition.** `run_check` is defined in this action's `tools.ts` (`defineTool`, `f-tool-kit`) and mounted by `if-mcp-tools`.
 
@@ -152,6 +156,7 @@ The after-merge and compact code read the cache folder name from `f-source-index
 - A shipped node with an open revision shipping well above the graph's median prints one `hotspot:` warning with its diagnosis and recent change groups, and `ok` stays true; an active `keep_whole` decision removes it and superseding that decision brings it back; nodes at one pace print none
 - `run_check({ change })` prints one `Info: additivity:` line with the change's summary and carries `change.additivity`
 - A pre-ship node depending on nodes in 3 other unshipped changes prints one `Warning: fan-out:` line naming them and `ok` stays true; 2 changes print none; `keep_whole: true` on the node removes it; `fan_out.warn_at: 2` in `mindplan/config.json` makes 2 changes warn
+- A draft infra Foundation with 18 dependents across 6 Capabilities prints one `Warning: fan-in:` line with the per-Capability counts and no `decision:` line; an unrelated decision listing it keeps the line; `keep_whole` on it, or moving dependents onto a per-area Foundation, removes it; assembler and design-system Foundations print none by default (`fan-in.test.mjs`)
 
 ## Attachments
 

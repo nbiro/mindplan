@@ -613,11 +613,37 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     await call("link_nodes", { source_id: `i-w${n}`, target_id: "f-wide", edge_type: "depends_on" });
   }
   const wide = await call("run_check", {});
+  // A pre-ship Foundation's concentration is the fan-in signal's (f-fan-in), not the decision gate's.
   check(
-    "a revision with more dependents than blast_radius warns",
-    decisionWarnings(wide, "f-wide").some((w) => w.includes("has 6 dependents")),
+    "a pre-ship Foundation with more dependents than blast_radius gets fan-in:, not decision:",
+    decisionWarnings(wide, "f-wide").length === 0 && wide.warnings.some((w) => w.startsWith('fan-in: "f-wide"') && w.includes("has 6 dependents")),
     JSON.stringify(wide.warnings)
   );
+  {
+    // A shipped node's revision keeps the blast-radius trigger exactly as before.
+    const { decisionWarnings: gateWarnings } = await import("../../../dist/foundations/f-compiler-rules/decisions.js");
+    const at = "2026-10-01T00:00:00.000Z";
+    const core = {
+      id: "f-core",
+      type: "Foundation",
+      title: "Core",
+      description: "Infra — core",
+      role: "infra",
+      state: "stable",
+      shipped_at: at,
+      implements: [],
+      next: { state: "draft", title: "Core", description: "Infra — core", opened_at: at, implements: [], depends_on: [] },
+    };
+    const users = [1, 2, 3, 4, 5, 6].map((n) => ({ id: `i-u${n}`, type: "Interaction", title: `U${n}`, description: "Uses core", state: "draft", depends_on: ["f-core"] }));
+    const graph = { version: 1, nodes: [core, ...users], edges: users.map((u) => ({ source: u.id, target: "f-core", type: "depends_on" })) };
+    const ctx = { root, settings: { blast_radius: 5, schema_files: [] }, newFiles: () => null };
+    const lines = gateWarnings(graph, core, ctx, null);
+    check(
+      "a shipped Foundation's revision with more dependents than blast_radius still gets the decision: trigger",
+      lines.length === 1 && lines[0].startsWith('decision: "f-core"') && lines[0].includes("has 6 dependents (more than the blast_radius setting of 5)"),
+      JSON.stringify(lines)
+    );
+  }
   const patched = await call("patch_config", { decisions: { blast_radius: 10 } });
   const stored = JSON.parse(read(path.join(root, "mindplan", "config.json")));
   check(
@@ -625,7 +651,10 @@ await call("link_nodes", { source_id: "bug-slot", target_id: "i-reschedule", edg
     stored.decisions?.blast_radius === 10 && stored.sources?.[0] === "src/**" && patched.config.decisions.blast_radius === 10,
     JSON.stringify(stored)
   );
-  check("a higher setting clears the warning", decisionWarnings(await call("run_check", {}), "f-wide").length === 0);
+  check(
+    "a higher setting clears the fan-in warning",
+    !(await call("run_check", {})).warnings.some((w) => w.startsWith('fan-in: "f-wide"'))
+  );
   const typo = await raw("patch_config", { decisions: { blast_raduis: 3 } });
   check(
     "a mistyped decision setting is rejected instead of ignored",

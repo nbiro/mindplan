@@ -1,5 +1,7 @@
 # MindPlan — think in systems
 
+MindPlan exists so the product can grow by addition. A good graph lets the next feature be built by adding nodes and links, without reopening shipped ones. Judge every planning choice by that test, not by how complete the graph looks or how fast the first version ships.
+
 MindPlan draws the boundaries your agent won’t. The graph under `mindplan/` describes what the code does; you keep it true. You receive this as `get_project.playbook`. Rules are looked up, not guessed: `get_spec({ topic })` serves one section of SPEC or one tool's entry; `get_skill({ name })` serves `plan-project` (modeling and evolving a graph) and `define-entities` (creating and linking nodes).
 
 ## Your duties

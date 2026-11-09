@@ -191,7 +191,10 @@ function triggersOf(s: Subject, ctx: DecisionContext): DecisionTrigger[] {
   const dependents = blastRadiusDependents(s.graph, node.id).affected.filter(
     ({ node: n }) => !isRetired(n)
   );
-  if (dependents.length > ctx.settings.blast_radius) {
+  // A pre-ship Foundation's concentration is the fan-in signal's (f-fan-in): only a split or a
+  // keep_whole decision answers it, so any decision must not clear it here.
+  const preShipFoundation = node.type === "Foundation" && !node.shipped_at;
+  if (!preShipFoundation && dependents.length > ctx.settings.blast_radius) {
     triggers.push({
       kind: "blast_radius",
       message: `has ${dependents.length} dependents (more than the blast_radius setting of ${ctx.settings.blast_radius})`,

@@ -2,14 +2,14 @@
 id: f-mcp-runtime
 type: Foundation
 title: "MCP runtime"
-description: "Assembler — process boot selecting CLI or MCP mode; mounts if-cli / if-mcp-tools; reports the package.json version; serves a short pointer (get_project first, the planning duty, mindplan/ written through the tools only, run_check before handoff); attaches lean drift to results."
+description: "Assembler — process boot (CLI or MCP mode); mounts if-cli / if-mcp-tools; reports the package version; serves a short pointer (get_project first, the graph's purpose, the planning duty, tools-only writes, run_check before handoff); attaches lean drift."
 state: stable
-shipped_at: 2026-11-08T17:42:37.134Z
-revisions: 27
-churn: 5.581
-churn_behavior: 1.999
+shipped_at: 2026-11-09T19:38:24.342Z
+revisions: 28
+churn: 6.443
+churn_behavior: 2.95
 created_at: 2026-07-15T18:51:31.349Z
-updated_at: 2026-11-08T17:42:37.134Z
+updated_at: 2026-11-09T19:38:24.342Z
 split_at: 21
 split_into:
   - f-orientation-ledger
@@ -22,6 +22,7 @@ implements:
   - src/foundations/f-mcp-runtime/
   - src/index.ts
 tests:
+  - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/version.test.mjs
@@ -32,7 +33,7 @@ role: assembler
 
 ## Purpose
 
-Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change and follow what it returns; the planning duty (a new behavior is a new node, created before its files are claimed; update the nodes a change touches), worded as in the `MINDPLAN.md` stub and the playbook; write `mindplan/` only through the tools (reading its files directly is fine); `run_check` must pass before handing work off. It prescribes no per-action calls and no mandatory skill load. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session. It also keeps the drift report small: a result carries the number of drifting paths and only the ones this session was not shown yet.
+Assembler — the `mindplan-mcp` process entry. Selects CLI vs MCP stdio mode, creates the MCP server and stdio transport, and mounts `if-cli` and `if-mcp-tools`. In MCP mode the server announces a **short** `instructions` pointer: call `get_project` before the first answer or code change and follow what it returns; the graph's purpose (the product grows by addition: the next feature is new nodes and links, not reopened shipped ones); the planning duty (a new behavior is a new node, created before its files are claimed; update the nodes a change touches), worded as in the `MINDPLAN.md` stub and the playbook; write `mindplan/` only through the tools (reading its files directly is fine); `run_check` must pass before handing work off. It prescribes no per-action calls and no mandatory skill load. It does **not** embed the playbook, project description, or rules bodies — those would bloat instructions and go stale across a long session. It also keeps the drift report small: a result carries the number of drifting paths and only the ones this session was not shown yet.
 
 The version the server reports on `initialize` is read from the package's own `package.json`, never typed into source: a second copy of the version string drifts the first time the package is bumped, and a host that logs `serverInfo.version` would then name a release that does not exist. The per-tool descriptions (`if-mcp-tools`) describe their tool only.
 
@@ -41,7 +42,7 @@ The version the server reports on `initialize` is read from the package's own `p
 Package: `src/foundations/f-mcp-runtime/`
 
 - `server.ts` — process boot only: mode select, `McpServer` + transport, register tools, CLI dispatch
-- Export `SERVER_INSTRUCTIONS` — short pointer requiring `get_project`, then `get_rules` + `orient_for_work` before each action, and the plan-project skill, loaded with `get_skill`, before new-feature graph work (`create_node`, `open_next`, links, territory, brief, config). This sentence is the only skill routing the server sends; tool descriptions carry none
+- Export `SERVER_INSTRUCTIONS` — short pointer: call `get_project` first and follow what it returns; the graph's purpose (the product grows by addition: the next feature is new nodes and links, not reopened shipped ones), stated here because it reaches the agent before `get_project` does; the planning duty, worded as in the stub and the playbook; `mindplan/` written only through the tools (reads are fine); `run_check` before handoff. It prescribes no per-action calls
 - Boot creates no directory: `mindplan/` exists only after `setup_project`, so `graphStatus` (`f-graph-migrations`) can tell a repo without a graph from one with an empty graph
 - Export `readPackageVersion()` — reads `version` from the package's `package.json` (resolved relative to the compiled module, so it works from `dist/` in a consumer's `node_modules`), and `McpServer` is constructed with `{ name: "mindplan", version: readPackageVersion() }`. Falls back to `"0.0.0"` with a stderr note if the file is unreadable; boot never fails over it
 - `with-drift.ts` — Assembler helper so `if-mcp-tools` can attach drift without importing a non-exposed Interaction (legal because check depends_on this Assembler). `withDrift(payload, { full? })` attaches `drift`: by default the lean form from `i-check-integrity` (`leanDrift`: `{ count, new_since_last_reply }`, the paths this session was not shown yet); with `full` (orient_for_work `sections: ["drift"]`) the full list (`fullDrift`); with config `replies.legacy` the 0.22 report scoped to the node the payload is about (`node_id`, orient `focus`, link ends, created node) via `buildDriftReport({ nodeIds })`
@@ -65,7 +66,7 @@ Drift and the search warm-up use the root of the call they serve; the server war
 - Boot never fails over a missing brief or playbook file
 - Drift on a result about one node lists that node's files and counts the others
 - `initialize` reports `serverInfo.version` equal to the `version` field of the repo's `package.json`, and `server.ts` contains no literal version string
-- The instructions pointer names `get_project`, `get_rules`, `orient_for_work`, the plan-project skill, and `get_skill`
+- The instructions pointer names `get_project`, states the graph's purpose (growth by addition), and carries the planning duty (`agent-guidance.test.mjs` checks the purpose)
 - Starting the server in a directory without `mindplan/` creates nothing
 - The smoke test asserts the version match
 - In MCP mode a console.log from any module reaches stderr, not the stdio channel

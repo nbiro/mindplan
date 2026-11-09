@@ -62,9 +62,10 @@ import {
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
 import { withRoot } from "../../foundations/f-source-index/root-scope.js";
-import { decisionGateSettings, fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { decisionGateSettings, fanInSettings, fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { changedClaimed } from "../../foundations/f-source-index/dominance.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
+import { fanInContext, fanInFor, fanInSignals, fanInWarning } from "../../foundations/f-fan-in/index.js";
 import {
   changeAdditivity,
   hotspots,
@@ -214,7 +215,7 @@ function slotLabel(node: MindPlanNode, change: string | null): string {
  * The in-review gate on every revision of a change, judged on `revisionGraph(graph, change)` (each
  * member's revision of the change, every other node live): import and ownership violations on its
  * active-slot files (Blocked), every stale-text signal (warnings; planned paths go to info), and
- * its decision and fan-out warnings.
+ * its decision, fan-out, and fan-in warnings.
  */
 function checkChange(
   fullGraph: MindPlanGraph,
@@ -265,10 +266,19 @@ function checkChange(
   }
   const fanOut = fanOutSettings(loadProjectConfig(root));
   const fanOutCtx = fanOutContext(graph);
+  const config = loadProjectConfig(root);
+  const fanInConfig = fanInSettings(config);
+  const blastRadius = decisionGateSettings(config).blast_radius;
+  // Fan-in counts live edges only (§5.15): the full graph, not this change's revision view,
+  // so the change's line matches the graph-wide one.
+  const fanInCtx = fanInContext(fullGraph);
   for (const node of revisions) {
     warnings.push(...decisionWarnings(fullGraph, node, decisionCtx, revisionFor(node, change) ? change : null));
     const f = fanOutFor(graph, node, fanOut, fanOutCtx);
     if (f) warnings.push(fanOutWarning(f));
+    const liveNode = fanInCtx.byId.get(node.id);
+    const fi = liveNode ? fanInFor(fullGraph, liveNode, fanInConfig, blastRadius, fanInCtx) : null;
+    if (fi) warnings.push(fanInWarning(fi));
     const untested = untestedWarning(node);
     if (untested) warnings.push(untested);
   }
@@ -623,6 +633,15 @@ function collectHotspotWarnings(graph: MindPlanGraph, root: string): string[] {
  */
 function collectFanOutWarnings(graph: MindPlanGraph, root: string): string[] {
   return fanOuts(graph, fanOutSettings(loadProjectConfig(root))).map(fanOutWarning);
+}
+
+/**
+ * Fan-in warnings, highest count first: each pre-ship Foundation (role not in `fan_in.exempt_roles`)
+ * with more direct dependents than `decisions.blast_radius` and no keep_whole decision of its own.
+ */
+function collectFanInWarnings(graph: MindPlanGraph, root: string): string[] {
+  const config = loadProjectConfig(root);
+  return fanInSignals(graph, fanInSettings(config), decisionGateSettings(config).blast_radius).map(fanInWarning);
 }
 
 function bugAllowsDirty(graph: MindPlanGraph, nodeId: string): boolean {
@@ -1301,6 +1320,7 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
     warnings.push(...collectDecisionWarnings(graph, decisionCtx));
     warnings.push(...collectHotspotWarnings(graph, root));
     warnings.push(...collectFanOutWarnings(graph, root));
+    warnings.push(...collectFanInWarnings(graph, root));
     const waiting = waitingOnPeopleLine(graph);
     if (waiting) info.push(waiting);
     if (options.base !== undefined) {

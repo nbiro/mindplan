@@ -82,6 +82,29 @@ const FOUNDATION_SECTIONS = {
   }
 }
 
+// --- the graph's purpose comes first: playbook opening and server instructions ---
+{
+  const playbook = fs.readFileSync(path.join(toolRoot, "templates/agent/playbook.md"), "utf-8");
+  const opening = playbook.slice(0, playbook.indexOf("## Your duties"));
+  check(
+    "the playbook states the purpose (growth by addition) before its duties",
+    /grow by addition/.test(opening) && /without reopening shipped ones/.test(opening),
+    opening.slice(0, 300)
+  );
+  const { client } = await session();
+  const instructions = client.getInstructions() ?? "";
+  check("the server instructions state the purpose (growth by addition)", /grow by addition/.test(instructions), instructions);
+  await client.close();
+  const planProject = fs.readFileSync(path.join(toolRoot, "templates/agent/skills/plan-project/SKILL.md"), "utf-8");
+  const ready = planProject.slice(planProject.indexOf("## 5. Ready and ship"));
+  check(
+    "plan-project runs the extension check before self-ready",
+    ready.indexOf("Extension check") >= 0 && ready.indexOf("Extension check") < ready.indexOf("Self-ready it in one call")
+  );
+  const defineEntities = fs.readFileSync(path.join(toolRoot, "templates/agent/skills/define-entities/SKILL.md"), "utf-8");
+  check("define-entities names a rule every dependent must remember as a fan-out to invert", /a rule every dependent must remember/.test(defineEntities));
+}
+
 // --- session 1: shape up front, one Blocked with every gap, get_spec ---
 {
   const { client, raw, call } = await session();

@@ -4,12 +4,12 @@ type: Foundation
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, additivity), change members (revisions, planned sources), checklist completion, and stale-text warnings with planned paths as info."
 state: stable
-shipped_at: 2026-11-08T17:07:34.195Z
-revisions: 33
-churn: 18.702
-churn_behavior: 1
+shipped_at: 2026-11-09T19:38:24.636Z
+revisions: 34
+churn: 19.231
+churn_behavior: 1.975
 created_at: 2026-07-15T18:51:13.232Z
-updated_at: 2026-11-08T17:07:34.195Z
+updated_at: 2026-11-09T19:38:24.636Z
 split_at: 8
 split_into:
   - f-source-index
@@ -65,7 +65,7 @@ Intended files: `src/foundations/f-compiler-rules/`
   - `decisionTriggers(graph, node, ctx)` → `{ kind, message }[]`:
     - `foundation_contract` — a Foundation with an open next: `contract changes (an open revision of a shipped Foundation)`
     - `schema` — a migration or schema file (`matchesSchemaFile` with config `decisions.schema_files`) covered by the active-slot claims that is new in this revision: for a shipped node's next, one its live claims do not cover or the branch adds (`newFilesSinceBase`); for a first build, one the branch adds, or any claimed one outside git, so a node modeling a file the repository already had is not gated
-    - `blast_radius` — more non-retired dependents (`blastRadiusDependents`) than config `decisions.blast_radius`
+    - `blast_radius` — more non-retired dependents (`blastRadiusDependents`) than config `decisions.blast_radius`, except on a pre-ship Foundation: its concentration is the `fan-in:` signal (`f-fan-in`), which only a split or `keep_whole` clears, so no decision may silence it here
     - `depends_on` — a shipped node whose next `depends_on` set differs from the live one, naming the targets added and removed
   - `revisionHasDecision(graph, node)` — true when an active node's decisions include one whose `change` is the revision's change id (`activeChange`) and whose `date` is on or after the change's start day (the earliest start among its open revisions: `next.opened_at`, else `created_at`; no bound when a member's next predates `opened_at`), so a member added later still gets credit, so a reused change id is not satisfied by an earlier change's decisions, or the node's own active slot holds a decision new in this revision (before first ship: any own decision; with an open next: an id the live file does not hold). One decision under a change clears every member of that change
   - `decisionGap(graph, node, ctx)` → `{ triggers, fix }` or null; `fix` is the `record_decision` call with the node id and, when set, the change id filled in
@@ -138,7 +138,7 @@ A test file of node A (a file A's `tests` list matches that also looks like a te
 - A first build is not gated on its initial `depends_on` edges; a shipped node's next that adds or removes one is
 - In a git repository a new migration file inside an already-claimed folder trips `schema`; a modified existing one does not
 - In a git repository a first build that adopts a migration the repository already had is not decision-worthy; outside git it is
-- A pre-ship Foundation with more dependents than `blast_radius` trips `blast_radius`
+- A pre-ship Foundation with more dependents than `blast_radius` does not trip `blast_radius` (it gets `fan-in:` instead); a shipped Foundation's revision, and a pre-ship Interaction or Interface, still do (`decisions.test.mjs`)
 - One decision under a change clears every member of the change
 - A revision that reuses a change id is not cleared by that change's older decisions
 - A decision's text naming a missing path does not warn as stale

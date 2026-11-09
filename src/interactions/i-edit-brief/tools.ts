@@ -67,7 +67,7 @@ export const TOOLS: ToolDef[] = [
       title: "Patch project config",
       description:
         "Call when source roots, exclude paths, decision-gate settings, hotspot thresholds, the fan-out threshold, search, reply size, the test command, or when rules' command checks run change. " +
-        "Writes mindplan/config.json sources, exclude, decisions, hotspots, fan_out, search, replies, tests, and/or rule_checks via the territory store. " +
+        "Writes mindplan/config.json sources, exclude, decisions, hotspots, fan_out, fan_in, search, replies, tests, and/or rule_checks via the territory store. " +
         "Do not hand-edit config.json.",
       inputSchema: {
         sources: z
@@ -125,6 +125,15 @@ export const TOOLS: ToolDef[] = [
           })
           .optional()
           .describe("Fan-out settings, used by run_check warnings. A field not passed keeps its stored value."),
+        fan_in: z
+          .strictObject({
+            exempt_roles: z
+              .array(z.enum(["assembler", "infra", "design-system", "adapter"]))
+              .optional()
+              .describe('Foundation roles the fan-in: warning skips (default ["assembler", "design-system"]); [] warns for every role.'),
+          })
+          .optional()
+          .describe("Fan-in settings: a pre-ship Foundation with more direct dependents than decisions.blast_radius gets a fan-in: warning unless its role is exempt or it holds a keep_whole decision. A field not passed keeps its stored value."),
         search: z
           .strictObject({
             enabled: z
@@ -175,7 +184,7 @@ export const TOOLS: ToolDef[] = [
           .describe("Rule-check settings. A field not passed keeps its stored value."),
       },
     },
-    ({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests, rule_checks }) =>
-      patchConfig({ sources, exclude, decisions, hotspots, fan_out, search, replies, tests, rule_checks })
+    ({ sources, exclude, decisions, hotspots, fan_out, fan_in, search, replies, tests, rule_checks }) =>
+      patchConfig({ sources, exclude, decisions, hotspots, fan_out, fan_in, search, replies, tests, rule_checks })
   ),
 ];

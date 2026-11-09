@@ -34,8 +34,9 @@ import {
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
 import { openChanges, pickRevision, withRevision } from "../../foundations/f-revision-model/index.js";
-import { hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { decisionGateSettings, fanInSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
 import { fanOut } from "../../foundations/f-fan-out/index.js";
+import { fanInContext, fanInFor, fanInGrouping, fanInWarning, isPreShipFoundation } from "../../foundations/f-fan-in/index.js";
 import {
   fanIn,
   hotspotFor,
@@ -863,13 +864,22 @@ function hotspotFields(node: MindPlanNode, hotspot: NonNullable<ReturnType<typeo
  * graph's median, its revision count and split record, and the `hotspot:` line when it is one.
  * A pre-ship node also carries `fan_out`: the other unshipped changes it reaches through
  * depends_on, so a node that would have to know every feature of a kind shows while it is planned.
+ * A pre-ship Foundation also carries `fan_in_groups` (its direct dependents by Capability) and,
+ * when the fan-in signal fires, `fan_in_warning`: the `fan-in:` line the check gives.
  */
 function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<string, unknown> {
-  const settings = hotspotSettings(loadProjectConfig(projectRoot()));
+  const config = loadProjectConfig(projectRoot());
+  const settings = hotspotSettings(config);
   const ctx = hotspotContext(graph, settings);
   const hotspot = hotspotFor(graph, node, settings, ctx);
   const round = (n: number) => Math.round(n * 10) / 10;
   const fan = fanOut(graph, node);
+  const preShipFoundation = isPreShipFoundation(node);
+  const fanInCtx = preShipFoundation ? fanInContext(graph) : null;
+  const grouping = fanInCtx ? fanInGrouping(graph, node, fanInCtx) : null;
+  const fanInSignal = fanInCtx
+    ? fanInFor(graph, node, fanInSettings(config), decisionGateSettings(config).blast_radius, fanInCtx)
+    : null;
   return {
     fan_in: fanIn(graph, node, ctx.index).count,
     rate: round(recentRate(node, settings, ctx.now)),
@@ -884,6 +894,8 @@ function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<stri
     ...(node.split_into?.length ? { split_at: node.split_at, split_into: [...node.split_into] } : {}),
     ...(hotspot ? hotspotFields(node, hotspot) : {}),
     ...(fan ? { fan_out: fan } : {}),
+    ...(grouping && grouping.groups.length > 0 ? { fan_in_groups: grouping.groups } : {}),
+    ...(fanInSignal ? { fan_in_warning: fanInWarning(fanInSignal) } : {}),
   };
 }
 

@@ -221,6 +221,7 @@ Full modes and output: SPEC §9.6.
 | `decisions.schema_files` | database migrations and schema dumps (`**/migrations/**`, `**/*.prisma`, `**/schema.sql`, …) | Files that make a revision need a decision when it adds one |
 | `hotspots.half_life_days`, `hotspots.outlier_ratio`, `hotspots.min_rate` | `30`, `3`, `2` | The `hotspot:` warning: how fast a ship rate fades, how far above the median counts, and the lowest rate that can count |
 | `fan_out.warn_at` | `3` | How many other unshipped changes a pre-ship node's `depends_on` may reach before `fan-out:` warns |
+| `fan_in.exempt_roles` | `["assembler", "design-system"]` | Foundation roles that never get the `fan-in:` warning (a pre-ship Foundation with more direct dependents than `decisions.blast_radius`) |
 | `search.enabled` | `true` | `false` turns semantic ranking off (keyword ranking always runs) |
 | `search.model` | `Xenova/bge-small-en-v1.5` | The transformers.js embedding model (changing it rebuilds the search cache) |
 | `replies.budget_bytes` | `8192` | Cap on one tool reply's JSON; longer lists come back cut, with a `next_page` cursor (`0` turns it off). Rule text and `Blocked:` lines are never cut |
