@@ -43,6 +43,7 @@ let failures = 0;
 {
   const expectedInstructions =
     "Before answering any questions or writing any code for this project, call get_project and follow the playbook, description, and rules it returns. " +
+    "The graph exists so the product can grow by addition: the next feature should be new nodes and links, not reopened shipped ones. " +
     "A new behavior is a new node. Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; " +
     "when a change alters what existing nodes describe, update those nodes. " +
     "Write mindplan/ only through these tools (reading its files directly is fine). Before handing work off, run_check must pass.";

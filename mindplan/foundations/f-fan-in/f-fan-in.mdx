@@ -1,0 +1,73 @@
+---
+id: f-fan-in
+type: Foundation
+title: "Fan-in signal"
+description: "Infra — flags a pre-ship Foundation with more direct dependents than decisions.blast_radius, grouped by the Capability they belong to, and words the fan-in warning that points at a per-area split."
+state: stable
+shipped_at: 2026-11-09T19:38:24.706Z
+revisions: 1
+churn: 1
+created_at: 2026-11-09T19:18:40.269Z
+updated_at: 2026-11-09T19:38:24.706Z
+role: infra
+aliases:
+  - "fan-in"
+  - "fan in"
+  - "too many dependents"
+  - "split foundation"
+  - "concentrated foundation"
+  - "per-area split"
+tests:
+  - src/foundations/f-test-harness/fan-in.test.mjs
+depends_on:
+  - f-compiler-rules
+  - f-domain-model
+  - f-source-index
+implements:
+  - src/foundations/f-fan-in/
+---
+
+# Fan-in signal
+
+Infra — flags a pre-ship Foundation with more direct dependents than decisions.blast_radius, grouped by the Capability they belong to, and words the fan-in warning that points at a per-area split.
+
+## Purpose
+
+Infra — flags a planned Foundation that every area depends on. In a real session a draft database Foundation had 18 dependents across 6 Capabilities, and the only signal was the decision gate's blast-radius warning, which any recorded decision cleared: a vendor-stack decision that merely listed the node silenced it, and its wording ("record the choice") steered toward documenting instead of restructuring. Hotspot detection needs ship history, so it says nothing before the first ship. This Foundation counts a pre-ship Foundation's direct dependents, groups them by the Capability they belong to (the grouping that found the right per-area split), and words a `fan-in:` warning that points at that split. Only a split that brings the count down, or a `keep_whole` decision held by the node, clears it. It is its own Foundation beside `f-fan-out`, not another signal in `f-compiler-rules`, so this feature leaves that hotspot closed except for one guard in the decision gate. It is graph facts only, and it only ever warns.
+
+## Shared Substrate Spec
+
+Intended files: `src/foundations/f-fan-in/` (`fan-in.ts`, `index.ts`).
+
+- `isPreShipFoundation(node)` — a Foundation with no `shipped_at` that is not retired (`isInactiveNode`, `f-domain-model`)
+- `fanInContext(graph)` → `{ index, byId, superseded }`: the fan-in index (`fanInIndex`, `f-compiler-rules`), nodes by id, and the superseded decision ids (`supersededIds`), computed once per check
+- `fanInGrouping(graph, node, ctx?)` → `{ count, capabilities, groups }`:
+  - `count` is the direct fan-in as `stability.fan_in` counts it (`fanIn`, `f-compiler-rules`: live `depends_on`, `exposes`, `mounts` sources; dependents one glob claim of the node reaches count once)
+  - each direct dependent (`fanIn().nodes`) is grouped: an Interaction counts once in each active Capability it `belongs_to` (`{ capability: <id>, label: <Capability title> }`); any other dependent, or an Interaction in no Capability, counts in a type group (`{ capability: null, label: "Foundations" | "Interfaces" | "Interactions" }`)
+  - `groups` largest first, then by label; `capabilities` is the number of Capability groups
+- `fanInFor(graph, node, settings, threshold, ctx?)` → `{ node_id, role?, threshold, count, capabilities, groups }` or `null` — the warning case: a pre-ship Foundation whose `role` is not in `settings.exempt_roles` (`FanInSettings`, `f-source-index`), whose `count` exceeds `threshold` (the caller passes config `decisions.blast_radius`), and that is not kept whole (`keepsWhole`, `f-compiler-rules`: an active `keep_whole` decision the node itself holds). A decision without `keep_whole`, or one on another node whose `nodes` lists it, leaves the warning
+- `fanInSignals(graph, settings, threshold)` → every `fanInFor` result, highest `count` first, then by id, for the check
+- `fanInWarning(s)` → the warning text (the check prefixes `Warning: `):
+  `fan-in: "<id>" (<role>) has <N> dependents across <K> Capabilities (<label> <n>, …), more than the blast_radius setting of <B>. Every new feature in these areas will depend on it. Split it into one Foundation per area that depends on a smaller core, or record_decision({ node_id: "<id>", keep_whole: true, why }) if it should stay whole.` With no Capability group: `has <N> dependents (<label> <n>, …)` and `in this graph`; one Capability reads `1 Capability`
+- Never throws on a missing node and never Blocks anything
+
+Used by `i-check-integrity` (graph-wide and change-wide warnings) and `i-orient-plan` (`stability.fan_in_groups`, `stability.fan_in_warning`).
+
+Depends on: `f-domain-model`, `f-source-index`, `f-compiler-rules`.
+
+## Acceptance Criteria
+
+- A draft infra Foundation with 18 dependents across 6 Capabilities gets one `fan-in:` warning with the per-Capability counts, largest first, in the wording above
+- The decision gate gives no `decision:` blast-radius line for that pre-ship Foundation
+- A decision on another node that lists it in `nodes`, and a decision on the node without `keep_whole`, leave the warning
+- A `keep_whole: true` decision on the node clears it
+- Moving dependents onto a new per-area Foundation, so the count drops to the threshold or below, clears it with no decision
+- Draft assembler and design-system Foundations with 18 dependents get no warning under the default config; `fan_in.exempt_roles: []` makes the assembler warn; `patch_config` keeps `fan_in` across later writes; an unknown role or key is Blocked
+- `orient_for_work({ node_id, depth: "full" })` on the pre-ship Foundation carries `stability.fan_in` 18, `fan_in_groups`, and `fan_in_warning` equal to the check's line
+- Verified via `npm test` (`src/foundations/f-test-harness/fan-in.test.mjs`)
+
+## Attachments
+
+_Schemas, OpenAPI exports, ER diagrams, design tokens, etc. go in `attachments/`._
+
+{/* This file is MDX. MindPlan standard components (AtomicOp, AcceptanceCriteria, Attachment, StateBadge, DependsOn, BelongsTo) may be used here; see SPEC.md §6.4. */}

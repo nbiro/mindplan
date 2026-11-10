@@ -27,12 +27,14 @@ import { runCli } from "../../interfaces/if-cli/cli.js";
 import { markServerStarted } from "./started.js";
 
 /**
- * Short pointer only — dialect and project brief load via get_project. It carries the planning duty in the
+ * Short pointer only — dialect and project brief load via get_project. It states the graph's purpose (growth by
+ * addition) before any of it loads, and carries the planning duty in the
  * same words as the MINDPLAN.md stub and the playbook, since no gate can tell a new behavior from a helper file.
  * Always present; never embeds playbook or mindplan/project.md bodies.
  */
 export const SERVER_INSTRUCTIONS =
   "Before answering any questions or writing any code for this project, call get_project and follow the playbook, description, and rules it returns. " +
+  "The graph exists so the product can grow by addition: the next feature should be new nodes and links, not reopened shipped ones. " +
   "A new behavior is a new node. Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; " +
   "when a change alters what existing nodes describe, update those nodes. " +
   "Write mindplan/ only through these tools (reading its files directly is fine). Before handing work off, run_check must pass.";

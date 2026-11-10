@@ -122,6 +122,7 @@ export function patchConfig(args: {
   decisions?: { blast_radius?: number; schema_files?: string[] };
   hotspots?: { half_life_days?: number; outlier_ratio?: number; min_rate?: number };
   fan_out?: { warn_at?: number };
+  fan_in?: { exempt_roles?: string[] };
   search?: { enabled?: boolean; model?: string };
   replies?: { budget_bytes?: number; legacy?: boolean };
   tests?: { command?: string };
@@ -133,12 +134,13 @@ export function patchConfig(args: {
     args.decisions === undefined &&
     args.hotspots === undefined &&
     args.fan_out === undefined &&
+    args.fan_in === undefined &&
     args.search === undefined &&
     args.replies === undefined &&
     args.tests === undefined &&
     args.rule_checks === undefined
   ) {
-    throw blocked("patch_config requires sources, exclude, decisions, hotspots, fan_out, search, replies, tests, and/or rule_checks.");
+    throw blocked("patch_config requires sources, exclude, decisions, hotspots, fan_out, fan_in, search, replies, tests, and/or rule_checks.");
   }
   const current = loadProjectConfig();
   // A decision, hotspot, fan-out, search, or rule-check setting that is not passed keeps its stored value.
@@ -149,6 +151,7 @@ export function patchConfig(args: {
   const decisions = merged(current.decisions, args.decisions);
   const hotspots = merged(current.hotspots, args.hotspots);
   const fanOut = merged(current.fan_out, args.fan_out);
+  const fanIn = merged(current.fan_in, args.fan_in);
   const search = merged(current.search, args.search);
   const replies = merged(current.replies, args.replies);
   const tests = merged(current.tests, args.tests);
@@ -161,6 +164,7 @@ export function patchConfig(args: {
     ...(Object.keys(decisions).length > 0 ? { decisions } : {}),
     ...(Object.keys(hotspots).length > 0 ? { hotspots } : {}),
     ...(Object.keys(fanOut).length > 0 ? { fan_out: fanOut } : {}),
+    ...(Object.keys(fanIn).length > 0 ? { fan_in: fanIn } : {}),
     ...(Object.keys(search).length > 0 ? { search } : {}),
     ...(Object.keys(replies).length > 0 ? { replies } : {}),
     ...(Object.keys(tests).length > 0 ? { tests } : {}),

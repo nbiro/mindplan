@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.24.0 — the graph states its purpose; the fan-in warning
+
+- **Purpose first.** The playbook (`get_project.playbook`) opens with why the graph exists: the product grows by addition, so a good graph lets the next feature be built by adding nodes and links without reopening shipped ones, and every planning choice is judged by that test, not by how complete the graph looks or how fast the first version ships. The server instructions state it in one sentence, since they load before `get_project`. [§1.1.1]
+- **Extension check in `plan-project`.** Before self-ready, name two plausible future features for each Foundation in the plan and say whether each would reopen it; when both would, split or invert it first, or record why it stays whole (`keep_whole: true`).
+- **Rules every dependent must remember are fan-out.** `define-entities` Step 0 now also inverts the mirror case of a node that must know every feature: a rule every dependent must remember ("after writing X, call refresh") moves into one place all those features already pass through.
+- **Setup asks where the product will grow.** The setup guide's "Describe the product" step also asks for the likely growth directions and writes them into the description, so the extension check tests against real future features.
+- **`fan-in:` warning.** A pre-ship Foundation with more direct dependents than `decisions.blast_radius` gets `Warning: fan-in: "<id>" (<role>) has N dependents across K Capabilities (<area> n, …), more than the blast_radius setting of B. Every new feature in these areas will depend on it. Split it into one Foundation per area that depends on a smaller core, or record_decision({ node_id, keep_whole: true, why }) if it should stay whole.` Only a split that brings the count down, or a `keep_whole` decision on the node, clears it; any other decision (one listing the node in `nodes` included) leaves it. Assemblers and design systems are exempt by default: config `fan_in.exempt_roles` (`patch_config({ fan_in: { exempt_roles } })`). `orient_for_work` at `depth: "full"` shows the grouping on a pre-ship Foundation as `stability.fan_in_groups`, and the line as `stability.fan_in_warning`. [§5.15, §1.2.1]
+- **The decision gate no longer counts a pre-ship Foundation's blast radius.** That case is the `fan-in:` warning now, so an unrelated decision (a stack choice listing the node) cannot silence it. The blast-radius trigger on a shipped node's revision, and on pre-ship Interactions and Interfaces, is unchanged. [§5.13]
+
+### Upgrade note
+
+- **No graph migration.** `MIGRATION_LEVEL` is unchanged, so no `upgrade_project` run is needed. Restart the MCP server after upgrading the package.
+- **A draft Foundation with many dependents no longer Blocks at `in-review` for want of a decision.** It warns `fan-in:` until it is split or kept whole. Decisions already recorded for that reason stay; record `keep_whole: true` on the node if it should stay one Foundation.
+
 ## 0.23.0 — lighter calls
 
 - **Lean drift.** `drift` on a reply is `{ count, new_since_last_reply, more_new?, reminder?, full? }` (at most 20 new entries per reply): how many source files drift, and only the entries this session has not been shown yet (an entry is listed once while it keeps drifting the same way; one that stops and comes back is new). The new read tool `get_drift` returns `{ count, paths, expected, reminder }`, every path; `orient_for_work({ sections: ["drift"] })` returns the full list too. [§8 Replies]

@@ -1,0 +1,24 @@
+{
+  "confirmations": [
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-09T19:16:38.733Z",
+      "note": "Only new assertions: agent-guidance checks the purpose in the playbook, instructions, and skills; smoke's expected instructions gain the purpose sentence. The harness body (\"short instructions\", the get_project playbook) still describes them.",
+      "files": {
+        "src/foundations/f-test-harness/agent-guidance.test.mjs": "6323df9e8708a3e82559a6e8a1b4e4ade22b125dd4c24cafd8092e3eed561108",
+        "src/foundations/f-test-harness/smoke.mjs": "61b5c5e831798ac5fcee733fe64b38b5c91c6dd02ccc6397c6e77df76be4e88f"
+      }
+    },
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-09T19:30:47.476Z",
+      "note": "New and changed suites only: fan-in.test.mjs (f-fan-in's test), decisions.test.mjs now expects fan-in: for a pre-ship Foundation and checks the shipped-revision trigger, agent-guidance/smoke check the purpose text. The harness body still describes it as the place these suites live.",
+      "files": {
+        "src/foundations/f-test-harness/agent-guidance.test.mjs": "6323df9e8708a3e82559a6e8a1b4e4ade22b125dd4c24cafd8092e3eed561108",
+        "src/foundations/f-test-harness/decisions.test.mjs": "5dcf6e035093625107d6e452157bae37fe329eeace12e42aab24203a04d9c308",
+        "src/foundations/f-test-harness/fan-in.test.mjs": "1f7adb41e93130fb1bd0c761ee0246a64fffc23df49fb3a305fa8b9d838d766c",
+        "src/foundations/f-test-harness/smoke.mjs": "61b5c5e831798ac5fcee733fe64b38b5c91c6dd02ccc6397c6e77df76be4e88f"
+      }
+    }
+  ]
+}

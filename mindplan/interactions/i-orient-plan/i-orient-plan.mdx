@@ -2,14 +2,14 @@
 id: i-orient-plan
 type: Interaction
 title: "Orient on the plan"
-description: "Agent orients before work: ranked rows, a full node, several nodes in one call, or a whole change (versioned rules, text only once per session, the project rules when they changed, own decisions, a section or slot read with the minimal record, files, blast radius summary, stability, shape), node context and implementation, and related-node search."
+description: "Agent orients before work: ranked rows, a full node, several nodes, or a whole change (rules sent once per session, project rules when changed, decisions, a section or slot, files, blast radius summary, stability with fan-in groups, shape), node context, implementation, related nodes."
 state: stable
-shipped_at: 2026-11-08T17:07:34.626Z
-revisions: 30
-churn: 8.267
-churn_behavior: 1
+shipped_at: 2026-11-09T19:38:24.858Z
+revisions: 31
+churn: 9.059
+churn_behavior: 1.975
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-11-08T17:07:34.626Z
+updated_at: 2026-11-09T19:38:24.858Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -19,6 +19,7 @@ belongs_to:
   - j-territory-sdlc
 depends_on:
   - f-compiler-rules
+  - f-fan-in
   - f-fan-out
   - f-graph-search
   - f-orientation-ledger
@@ -37,6 +38,7 @@ tests:
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/decisions.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
+  - src/foundations/f-test-harness/fan-in.test.mjs
   - src/foundations/f-test-harness/fan-out.test.mjs
   - src/foundations/f-test-harness/lean-replies.test.mjs
   - src/foundations/f-test-harness/node-tests.test.mjs
@@ -83,7 +85,7 @@ This action covers `orient_for_work`, `get_node_context`, `get_node_implementati
 - **Change-wide orientation.** `orient_for_work({ change, known_rules_versions? })` returns `{ change, members, rules, decisions }` over `changeMembership` (revisions and planned sources, each with `kind` and `rules_from`) plus the other active nodes holding an active decision recorded under the change (`kind: "decision"`, from `listDecisions`; a decision gives its node no change id, so these are not change members elsewhere), each rule source once, and records every member, so one call clears the gate for a scoped walk; a change with none of these, or `change` with `query` or `node_id`, is Blocked
 - **Implementation.** `get_node_implementation` expands glob claims to concrete files (`files` / `next_files`) and finds a path's owner through a glob claim; node records carry `change` / `change_ref` and `tests`
 
-Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`, `f-orientation-ledger`, `f-tool-kit`, `f-fan-out`.
+Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-rules`, `f-source-index`, `f-orientation-ledger`, `f-tool-kit`, `f-fan-out`, `f-fan-in`.
 
 - **Open revisions (0.18.0).** `orient_for_work({ node_id })` and `get_node_context` list `revisions: [{ change, state, conflicts }]` for every open revision, take `change` to return that revision's view (live ⊕ it) and body, and say which revision a given change id unlocks (`unlocks`); `orient_for_work({ change })` lists each member's revision of the change
 
@@ -111,7 +113,7 @@ Depends on: `f-plan-views`, `f-graph-search`, `f-territory-store`, `f-compiler-r
 - `orient_for_work({ change })` on a change with three members returns their rules once per source and records all three; a known version leaves its text out
 - `orient_for_work({ change })` lists a shipped node that holds a decision under the change once, with `kind: "decision"`, and records it; a node that is already a revision keeps that kind; a change whose only trace is decisions returns those holders instead of Blocked
 - A glob claim expands to concrete files in `get_node_implementation`, and a path under it resolves to its owner; `get_node_context` returns a node's `tests` list
-- A full reply on a pipeline node carries `stability` with `fan_in`, `rate`, `median_rate`, and on a shipped node `rate_by_reason`, plus `hotspot` and `diagnosis` when the node is one; on a pre-ship Foundation, Interaction, or Interface it also carries `fan_out: { count, changes }` (count 0 when none), and a shipped node's has no `fan_out`
+- A full reply on a pipeline node carries `stability` with `fan_in`, `rate`, `median_rate`, and on a shipped node `rate_by_reason`, plus `hotspot` and `diagnosis` when the node is one; on a pre-ship Foundation, Interaction, or Interface it also carries `fan_out: { count, changes }` (count 0 when none), and a shipped node's has no `fan_out`; a pre-ship Foundation with dependents also carries `fan_in_groups` (its direct dependents by Capability, `fanInGrouping`, `f-fan-in`) and, when the fan-in signal fires, `fan_in_warning` equal to the check's `fan-in:` line (`fan-in.test.mjs`)
 - Verified via `npm test`
 
 ## Attachments

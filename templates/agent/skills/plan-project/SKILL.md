@@ -11,6 +11,8 @@ description: >-
 
 Reference for graph work: load it when you model a product or a feature, or change shipped nodes. Creating and linking single nodes, and the required sections per type, are in `define-entities` (`get_skill({ name: "define-entities" })`). Normative reference: `SPEC.md` (`get_spec({ topic })`).
 
+The goal behind every step here: the product grows by addition. A good graph lets the next feature be built by adding nodes and links, without reopening shipped ones; judge a plan by that, not by how complete it looks or how fast the first version ships.
+
 The duty this skill serves, from the playbook: **a new behavior is a new node.** When you plan it (before the code, or after it and before handoff) is your call; the merge gate Blocks a shipped node whose files changed while its territory did not, and Coverage Blocks a file no node claims.
 
 ## 1. Orient
@@ -65,6 +67,7 @@ Two changes must not each add half of a `depends_on` cycle: `link_nodes` and `op
 
 ## 5. Ready and ship
 
+- **Extension check, before self-ready.** The graph exists so the next feature is added, not reopened. For each Foundation in the plan, name two plausible future features (from the growth directions in the project description when it lists them) and say whether each would reopen it: a new edge, a new section, a new rule every dependent must remember. If both would, split or invert it now (*Prefer additive over reopening* in §2; `define-entities` Step 0, item 5), or record why it stays whole with `record_decision` (`keep_whole: true`). Check the same for any node with many dependents (`fan_in` in `orient_for_work({ node_id, depth: "full" })`). A pre-ship Foundation with more direct dependents than `decisions.blast_radius` gets a `fan-in:` warning that groups them by Capability (`stability.fan_in_groups`): those groups are usually the split. A decision about anything else does not clear it; only the split or `keep_whole` does.
 - A plan is build-ready when `run_check` passes, links are complete (an Interaction: one `belongs_to` and one Foundation `depends_on`; an Interface: one `exposes`; a Bug past `open`: `affects`), and every required section is written. Self-ready it in one call: `update_node_status({ revisions: [...] })` (the server orders Foundations, Interactions, Interfaces), or `scope: "change"` for a change.
 - Any later edit to a `ready` slot's text, claims, or links sends it back to `draft` (`readiness_reset`); self-ready it again.
 - Atomic Ops are ticked when the work they name is done, by `id` with `toggle_checkboxes` (`note` / `not_applicable` when done differently); a `review` or `deploy` item waits on a person.

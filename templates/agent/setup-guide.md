@@ -30,7 +30,7 @@ Show the user the proposed rules and, for each source file, the lines you would 
 
 ## 4. Describe the product
 
-Ask the user what the product does, for whom, and what is out of scope, in two or three sentences. Write it with `patch_project_description`, then call `get_project` again so you hold the new brief.
+Ask the user what the product does, for whom, and what is out of scope, in two or three sentences, and which directions it is likely to grow (the next few features or markets). Write both into the description: planners test their nodes against those real future features (the extension check in `plan-project`). Write it with `patch_project_description`, then call `get_project` again so you hold the new brief.
 
 ## 5. Offer the merge gate
 

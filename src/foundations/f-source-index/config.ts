@@ -2,13 +2,15 @@
  * Project-level MindPlan config (`mindplan/config.json`).
  * Declares which repo paths form the ownership universe (`sources` / `exclude`), and optionally
  * when the decision gate asks for a decision (`decisions`), when a node counts as a hotspot
- * (`hotspots`), when a planned node depends on too many other changes (`fan_out`), how search
+ * (`hotspots`), when a planned node depends on too many other changes (`fan_out`), which Foundation
+ * roles the fan-in warning skips (`fan_in`), how search
  * ranks (`search`), and when run_check runs rules' command checks (`rule_checks`).
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import { resolveProjectRoot } from "./root-scope.js";
+import { FOUNDATION_ROLES } from "../f-domain-model/types.js";
 
 export const CONFIG_FILENAME = "config.json";
 const MINDPLAN_DIR = "mindplan";
@@ -39,6 +41,22 @@ const HOTSPOT_KEYS = ["half_life_days", "outlier_ratio", "min_rate"] as const;
 export type FanOutSettings = {
   warn_at: number;
 };
+
+/**
+ * Which pre-ship Foundations the `fan-in:` warning skips, by role: an assembler (everything runs on
+ * it) and a design system (shared presentation by design) by default. Its threshold is
+ * `decisions.blast_radius`.
+ */
+export type FanInSettings = {
+  exempt_roles: string[];
+};
+
+export const DEFAULT_FAN_IN_SETTINGS: FanInSettings = { exempt_roles: ["assembler", "design-system"] };
+
+/** The fan-in settings in effect: stored values over the defaults. */
+export function fanInSettings(config: MindPlanProjectConfig): FanInSettings {
+  return { exempt_roles: [...(config.fan_in?.exempt_roles ?? DEFAULT_FAN_IN_SETTINGS.exempt_roles)] };
+}
 
 /** Search settings: `enabled: false` turns semantic ranking off; `model` names the embedding model. */
 export type SearchConfigSettings = {
@@ -93,6 +111,8 @@ export type MindPlanProjectConfig = {
   hotspots?: Partial<HotspotSettings>;
   /** Stored fan-out threshold; an absent `warn_at` takes `DEFAULT_FAN_OUT_SETTINGS`. */
   fan_out?: Partial<FanOutSettings>;
+  /** Stored fan-in exemptions; an absent `exempt_roles` takes `DEFAULT_FAN_IN_SETTINGS`. */
+  fan_in?: Partial<FanInSettings>;
   /** Stored search settings; absent fields take the search index's defaults. */
   search?: Partial<SearchConfigSettings>;
   /** Stored reply settings; absent fields take `DEFAULT_REPLY_SETTINGS`. */
@@ -247,6 +267,27 @@ function parseFanOutSettings(value: unknown): Partial<FanOutSettings> {
   return out;
 }
 
+/** Validates the optional `fan_in` object: `exempt_roles` is a list of Foundation roles. */
+function parseFanInSettings(value: unknown): Partial<FanInSettings> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw blockedConfig('"fan_in" must be an object with optional "exempt_roles".');
+  }
+  const out: Partial<FanInSettings> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (key !== "exempt_roles") {
+      throw blockedConfig(`"fan_in" has unknown key "${key}" (allowed: exempt_roles).`);
+    }
+    if (v === undefined) continue;
+    const roles = parseStringArray(v, "fan_in.exempt_roles");
+    const bad = roles.filter((r) => !(FOUNDATION_ROLES as readonly string[]).includes(r));
+    if (bad.length > 0) {
+      throw blockedConfig(`"fan_in.exempt_roles" has unknown role(s) ${bad.map((r) => `"${r}"`).join(", ")} (allowed: ${FOUNDATION_ROLES.join(", ")}).`);
+    }
+    out.exempt_roles = [...new Set(roles)];
+  }
+  return out;
+}
+
 /** Validates the optional `search` object; unknown keys are Blocked like `decisions`. */
 function parseSearchSettings(value: unknown): Partial<SearchConfigSettings> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -371,6 +412,7 @@ export function loadProjectConfig(root?: string): MindPlanProjectConfig {
   if ("decisions" in obj) config.decisions = parseDecisionSettings(obj.decisions);
   if ("hotspots" in obj) config.hotspots = parseHotspotSettings(obj.hotspots);
   if ("fan_out" in obj) config.fan_out = parseFanOutSettings(obj.fan_out);
+  if ("fan_in" in obj) config.fan_in = parseFanInSettings(obj.fan_in);
   if ("search" in obj) config.search = parseSearchSettings(obj.search);
   if ("replies" in obj) config.replies = parseReplySettings(obj.replies);
   if ("tests" in obj) config.tests = parseTestSettings(obj.tests);
@@ -385,7 +427,7 @@ export type WriteProjectConfigResult = {
 };
 
 /**
- * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions`, `hotspots`, `fan_out`,
+ * Write mindplan/config.json as `{ sources, exclude }`, plus `decisions`, `hotspots`, `fan_out`, `fan_in`,
  * `search`, and `rule_checks` when the config has them.
  * - When `force` is false: create only if missing.
  * - When `force` is true: always overwrite.
@@ -411,6 +453,10 @@ export function writeProjectConfig(
   if (config.fan_out) {
     const fanOut = parseFanOutSettings(config.fan_out);
     if (Object.keys(fanOut).length > 0) next.fan_out = fanOut;
+  }
+  if (config.fan_in) {
+    const fanIn = parseFanInSettings(config.fan_in);
+    if (Object.keys(fanIn).length > 0) next.fan_in = fanIn;
   }
   if (config.search) {
     const search = parseSearchSettings(config.search);

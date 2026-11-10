@@ -1,6 +1,6 @@
 # MindPlan
 
-This repository is planned as a MindPlan graph (`mindplan/`), served by the MindPlan MCP server.
+This repository is planned as a MindPlan graph (`mindplan/`), served by the MindPlan MCP server. The graph exists so the product can grow by addition: the next feature should be new nodes and links, not reopened shipped ones.
 
 - Before answering any questions or writing any code, call `get_project` and follow the playbook plus the project description and rules it returns. The project rules and the node rules `orient_for_work` returns are mandatory; the server blocks writes until they reached you.
 - A new behavior is a new node. Before you claim the files of a new feature, create its node (Interaction, Interface, or Foundation) and link it; when a change alters what existing nodes describe, update those nodes.
