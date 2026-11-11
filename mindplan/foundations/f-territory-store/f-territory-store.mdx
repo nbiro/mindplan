@@ -4,13 +4,13 @@ type: Foundation
 title: "Territory store"
 description: "Infra — the only writer of node files: Rules and Decisions, edges and planned edges, revision change ids, claims, tests, aliases, section patches, checkboxes, revision counts, ship rate, and splits; next files only while a revision is open; cached loads; the version stamp."
 state: stable
-shipped_at: 2026-11-08T17:07:34.093Z
-revisions: 27
-churn: 12.135
-churn_behavior: 1
-churn_wiring: 0.99
+shipped_at: 2026-11-11T13:26:33.525Z
+revisions: 28
+churn: 12.363
+churn_behavior: 1.936
+churn_wiring: 0.927
 created_at: 2026-07-15T18:51:15.019Z
-updated_at: 2026-11-08T17:07:34.093Z
+updated_at: 2026-11-11T13:26:33.525Z
 split_at: 13
 split_into:
   - f-graph-cache
@@ -85,7 +85,7 @@ Intended files: `src/foundations/f-territory-store/`
   - Body writes (`patch_node_territory` body, section, replace, toggles) keep the section unchanged; a body, section text, or replacement containing a `## Decisions` heading, or `section: "## Decisions"`, is Blocked naming `record_decision`. `open_next` copies the section with the body (and writes `opened_at` on the next file; promote drops it), promote ships the next file's section, discard drops what the revision recorded
   - **Adoption.** A `## Decisions` heading already in a body becomes the decisions section on the next load; only its `### d-…` entries are parsed. SPEC documents this
 - **Checkbox toggles.** `toggleCheckboxesInBody` returns `{ body, toggled }`. A `contains` that matches more than one checkbox line is Blocked with the matching lines unless the toggle passes `all: true`; zero matches stay Blocked. `note` ticks the line and appends ` — note: <text>`; `not_applicable` ticks it and appends ` — n/a: <reason>`; unticking strips an annotation and re-toggling replaces it, so the item's own wording never changes
-- **Readiness demotion.** `demoteReadySlot(node, slot)` sends a `ready` slot to `draft`. The contract writers call it after writing and return whether they did: `patchNodeTerritory` (any field but `change` / `change_ref`, as `readinessReset`), `writeImplementsFrontmatter` (only when the list changes), `addEdgeToFrontmatter`, and `removeEdgesFromFrontmatter`. `validateChangeInput` is the one change-id validator
+- **Readiness demotion.** `demoteReadySlot(node, slot)` sends a `ready` slot to `draft`. The contract writers call it after writing and return whether they did: `patchNodeTerritory` (any field but `change` / `change_ref` and `toggle_checkboxes`, as `readinessReset`: a tick on an existing item is evidence of work done, not a contract change), `writeImplementsFrontmatter` (only when the list changes), `addEdgeToFrontmatter`, and `removeEdgesFromFrontmatter`. `validateChangeInput` is the one change-id validator
 - **Annotated completion.** `countCheckboxesInText` counts an `— n/a:` line with an empty reason as unchecked; `checkboxLabels` strips annotations
 - **Change frontmatter.** `change` / `change_ref` scalars are read from the live file and the open next file; `writeChangeFrontmatter(node, { change, change_ref }, slot)` sets or clears them (empty string clears) without touching state or `updated_at`; `patchNodeTerritory` takes them as patch fields (validated slug / one-line ref); `create_node`, `open_next`, and first ship call the writer; `promoteNextSlot` drops them because it rebuilds the live frontmatter
 - **No labels.** The store writes a `change` scalar only on a slot that holds a revision (the next file, or the live file before first ship); it has no label writer and no live-label cleanup. Migration level 2 strips a leftover live scalar with `writeChangeFrontmatter(node, { change: "", change_ref: "" }, "current")`

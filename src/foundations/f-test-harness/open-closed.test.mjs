@@ -630,7 +630,7 @@ try {
   const unshipped = (await call("orient_for_work", { node_id: "f-b", depth: "rules" })).context.record;
   check("force_unship keeps the rate with the time it is as of", unshipped.churn > 0.9 && typeof unshipped.churn_at === "string", JSON.stringify(unshipped));
   await call("patch_node_territory", { node_id: "f-b", toggle_checkboxes: [{ id: "spec", checked: true }, { id: "impl", checked: true }, { id: "verify", checked: true }] });
-  for (const new_status of ["ready", "in-progress", "in-review", "ship"]) await call("update_node_status", { node_id: "f-b", new_status });
+  for (const new_status of ["in-progress", "in-review", "ship"]) await call("update_node_status", { node_id: "f-b", new_status });
   const reshipped = (await call("orient_for_work", { node_id: "f-b", depth: "rules" })).context.record;
   check(
     "a reship after force_unship counts a second ship, keeps the rate, and drops churn_at",

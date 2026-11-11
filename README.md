@@ -278,7 +278,7 @@ The server has 42 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each 
 
 - `create_node` — a new Capability, Interaction, Interface, Foundation, or Bug.
 - `link_nodes` / `unlink_nodes` (`unlink_nodes` is destructive) — add or remove an edge, or plan one under a change.
-- `patch_node_territory` — a node's title, description, body, checklist, and search aliases.
+- `patch_node_territory` — a node's title, description, body, checklist, and search aliases. `reason: "text"` fixes wording on a shipped node in place, in one call.
 - `patch_node_rules` — a node's `## Rules`.
 - `set_implementation_files` — the source files a node claims.
 - `set_test_files` — the tests that verify a node.

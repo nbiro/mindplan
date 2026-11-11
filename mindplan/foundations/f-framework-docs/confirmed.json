@@ -10,6 +10,16 @@
         "SPEC.md": "b1ecbbe603bf8a7846fe1f62c0299c48600ac8313f52096bf3460d915e36d43e",
         "templates/agent/playbook.md": "2abb7f901523180a4784b374bab42ea2eb1a73b7cf13ebaf7a43b790f343aec2"
       }
+    },
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-11T13:10:36.441Z",
+      "note": "0.25.0 adds a CHANGELOG section and updates SPEC §3.1 / §8 and one README tool line for lighter edits; the node's text (what each document holds, one home per rule) still describes them.",
+      "files": {
+        "CHANGELOG.md": "cfa94800feb641417880798aeaa1df309f27cc4655b5da264f618279e14a9b69",
+        "README.md": "6938297ab9a617fb1dc435b77f10e380ae626db9fb7bcf497d408bb3925f2a3f",
+        "SPEC.md": "bf7641e5f1a8285badcebc5c93c128f872f2c44d0e9cc44df46cbe745cd8aa5b"
+      }
     }
   ]
 }

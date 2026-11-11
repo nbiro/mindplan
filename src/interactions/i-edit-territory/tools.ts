@@ -22,6 +22,7 @@ import {
   patchNodeTerritory,
   putAttachment,
   removeAttachment,
+  TEXT_REASON,
 } from "./handlers.js";
 
 /** The MCP tools i-edit-territory owns; if-mcp-tools mounts them. */
@@ -32,7 +33,7 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Patch node territory",
       description:
-        "Call when a node's title, description, or body should match the work, before the feature code. The writer for territory prose (never edit mindplan/ with host file tools): body (whole), section + text (one ## section), replace { find, with }, toggle_checkboxes, add_checklist_items, title / description / role. On a shipped node it writes the open revision (change picks one when several are open; with none it is Blocked: edit the code in place). Otherwise change sets the node's change id. aliases replaces search aliases on any node, live. " +
+        "Call when a node's title, description, or body should match the work, before the feature code. The writer for territory prose (never edit mindplan/ with host file tools): body (whole), section + text (one ## section), replace { find, with }, toggle_checkboxes, add_checklist_items, title / description / role. On a shipped node it writes the open revision (change picks one when several are open); with none open, body edits go to live in place and change is Blocked. A wording fix on a shipped node is one call: reason: \"text\" writes title, description, body, section, or replace to live in place, with no open_next, decision, or ship; it must leave the ## sections and checklist items as they are. Before first ship, change sets the node's change id. aliases replaces search aliases on any node, live. " +
         READINESS_HINT +
         " Details: get_spec({ topic: \"patch_node_territory\" }).",
       inputSchema: {
@@ -130,6 +131,12 @@ export const TOOLS: ToolDef[] = [
             "On a shipped node with open revisions: which revision to patch (may be omitted when only one is open). Otherwise: set the node's change id (a slug); empty string clears it. Blocked on a shipped node with no open next."
           ),
         change_ref: CHANGE_REF,
+        reason: z
+          .enum([TEXT_REASON])
+          .optional()
+          .describe(
+            "text: a wording-only edit. On a shipped node it writes title, description, body, section, or replace to live in place (no open_next, decision gate, or ship), and is Blocked when it adds or removes a ## section or changes a checklist item. Before first ship it changes nothing."
+          ),
         slot: z
           .enum(["current", "next"])
           .optional()
@@ -156,6 +163,7 @@ export const TOOLS: ToolDef[] = [
         add_checklist_items,
         change,
         change_ref,
+        reason,
         slot,
         aliases,
         split_into,
@@ -174,6 +182,7 @@ export const TOOLS: ToolDef[] = [
           add_checklist_items,
           change,
           change_ref,
+          reason,
           slot,
           aliases,
           split_into,

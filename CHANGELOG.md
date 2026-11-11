@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.25.0 — lighter edits; the additive question at `open_next`
+
+- **Ticks keep readiness.** `patch_node_territory({ toggle_checkboxes })` on a `ready` node or revision no longer moves it back to `draft`: ticking or unticking an existing checklist item is evidence of work done, not a contract change. Adding items (`add_checklist_items`) and editing the body, title, description, or role still reset. [§3.1, §8.2]
+- **A wording fix on a shipped node is one call.** `patch_node_territory({ node_id, reason: "text", ... })` on a shipped node writes `title`, `description`, `body`, `section`, or `replace` to the live file in place, whatever revisions are open: no `open_next`, no decision gate, no ship. It is `Blocked:` when the edit adds, removes, or renames a `## ` section or changes a checklist item, or when it carries any other patch field. The live file's `updated_at` and git diff record it; the reply carries `reason: "text"` and `in_place: true`. [§8.2]
+- **`orient_for_work({ node_ids })` takes up to 50 ids** (was 20). [§8.1]
+- **`open_next` asks the additive question.** Reopening a shipped node with more dependents than `decisions.blast_radius` returns `additive_question: { dependents, question }` for every reason but `refactor`: could this be a new node that depends on it instead? The answer is the decision the `in-review` gate already requires of that revision, now asked before the code is written. [§8.2]
+
+### Upgrade note
+
+- **No graph migration.** `MIGRATION_LEVEL` is unchanged, so no `upgrade_project` run is needed. Restart the MCP server after upgrading the package.
+
 ## 0.24.0 — the graph states its purpose; the fan-in warning
 
 - **Purpose first.** The playbook (`get_project.playbook`) opens with why the graph exists: the product grows by addition, so a good graph lets the next feature be built by adding nodes and links without reopening shipped ones, and every planning choice is judged by that test, not by how complete the graph looks or how fast the first version ships. The server instructions state it in one sentence, since they load before `get_project`. [§1.1.1]

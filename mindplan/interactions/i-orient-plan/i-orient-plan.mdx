@@ -4,12 +4,12 @@ type: Interaction
 title: "Orient on the plan"
 description: "Agent orients before work: ranked rows, a full node, several nodes, or a whole change (rules sent once per session, project rules when changed, decisions, a section or slot, files, blast radius summary, stability with fan-in groups, shape), node context, implementation, related nodes."
 state: stable
-shipped_at: 2026-11-09T19:38:24.858Z
-revisions: 31
-churn: 9.059
-churn_behavior: 1.975
+shipped_at: 2026-11-11T13:26:33.654Z
+revisions: 32
+churn: 9.702
+churn_behavior: 2.897
 created_at: 2026-07-19T18:33:36.789Z
-updated_at: 2026-11-09T19:38:24.858Z
+updated_at: 2026-11-11T13:26:33.654Z
 split_at: 21
 split_into:
   - i-assess-impact
@@ -73,7 +73,7 @@ This action covers `orient_for_work`, `get_node_context`, `get_node_implementati
 - **Summary first.** `orient_for_work({ query })` without `node_id` returns `{ query, matches, focus: null, next }`: rows `{ id, type, state, title, description (70 characters), area?, score }`, default 8, no body, rules, or decisions. A clear winner (`clearWinner`: its exact id, the only match, or twice the next score, looking one match past the limit) comes back in full with `auto_focus: true`. `orient_for_work({ node_id })` returns the full node: `rules`, `decisions`, `context`, from `depth: "body"` on `files` (`nodeOwnedFiles`) for a pipeline node; `full` adds the 1-hop `nodes` / `edges`, `blast_radius` (the summary: `summarizeBlastRadius` over `buildBlastRadiusPayload`, `f-plan-views`; `get_blast_radius` with `detail: "full"` has the rows), and for a pipeline node `stability` (`{ fan_in, rate, median_rate, rate_by_reason?, revisions?, split_at?, split_into?, hotspot?, diagnosis?, fan_out? }`, `f-compiler-rules`; `rate_by_reason: { wiring, behavior, unrecorded }` for a shipped node from `diagnoseHotspot`, and `diagnosis` the hotspot's kind; the `hotspot` text comes once per node per open change in a session (`firstHotspotWarning`), then `hotspot: true`, and `answered: true` without text when a decision under each open change answers it); `fan_out` (`{ count, changes }`, `fanOut`, `f-fan-out`) is present for a pre-ship Foundation, Interaction, or Interface, even at 0 and whether or not the node is kept whole, so an agent planning a node sees how many other unshipped changes it already reaches before the check warns
 - **Rules block.** `rulesBlock` (`f-plan-views`) over `reachingRules` (live edges plus an open revision's proposed ones), ordered self, `belongs_to`, `depends_on`, `affects`; each entry carries `version`; the focus's own and distance-1 sources carry their text, a source further away is one line `{ node_id, node_type, via, distance, version, first, count }` and the block adds `more`, unless `include_inherited_rules`; `known_rules_versions` leaves out known text (`unchanged: true`); `null` without a focus; never the project brief rules. `get_node_context`'s `resolved_rules` and the change-wide `rules` (each source at its nearest distance to a member, `rules_more` when any is one line) are light the same way
 - **Rule text once per session.** While the gate is on and config `replies.legacy` is not set, a rules block also leaves out every source whose text at that version already reached this session (`sentRulesVersions`, `f-orientation-ledger`): `{ node_id, version, unchanged: true }`. Every reply that orients records the texts it carried (`recordRulesSent`). `resend_rules: true` returns every text again (after a context summary); the caller's `known_rules_versions` still applies. A changed source comes back with its text, and the write gate still Blocks until a reply carried it
-- **Several nodes.** `orient_for_work({ node_ids })` (alone, at most 20) returns `{ node_ids, members: [{ id, type, state, title, revisions?, rules_from, decisions }], rules, rules_more?, project_rules?, next }`: each rule source once at its nearest distance, and records every node as oriented
+- **Several nodes.** `orient_for_work({ node_ids })` (alone, at most 50, `MAX_ORIENT_NODES`) returns `{ node_ids, members: [{ id, type, state, title, revisions?, rules_from, decisions }], rules, rules_more?, project_rules?, next }`: each rule source once at its nearest distance, and records every node as oriented
 - **Section or slot read.** `get_node_context` and `orient_for_work` (depth body or full, no `sections`) with `section` or `slot` return only that body part (and the open revision's, as `next: { state, title?, body? }`) with the minimal record `{ id, type, state, title }`, the rules, and only the decisions this session has not received at their current text, at most 10 (`unsentDecisions`; `decisions_known` counts the received ones, `decisions_more` the new ones left unsent for the next read); inherited decisions only with `include_inherited_decisions`. No files, shape, attachments, or open items
 - **Drift section.** `sections: ["drift"]` asks the envelope (`if-mcp-tools`) for the full drift list instead of `{ count, new_since_last_reply }`
 - **Orientation ledger.** Every full reply and every `get_node_context` records the node with `recordOriented` (`f-orientation-ledger`), which is what lets the write actions' gate pass; `get_node_context` returns `resolved_rules` because it counts as orienting

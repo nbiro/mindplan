@@ -19,6 +19,28 @@
         "src/foundations/f-test-harness/fan-in.test.mjs": "1f7adb41e93130fb1bd0c761ee0246a64fffc23df49fb3a305fa8b9d838d766c",
         "src/foundations/f-test-harness/smoke.mjs": "61b5c5e831798ac5fcee733fe64b38b5c91c6dd02ccc6397c6e77df76be4e88f"
       }
+    },
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-11T13:17:51.215Z",
+      "note": "Lighter-edits cases added to honesty and lighter-calls, and two walks in lean-replies and open-closed start at in-progress now that ticks keep a ready node ready; the node's text (which suites exist and how they run) still describes them.",
+      "files": {
+        "src/foundations/f-test-harness/honesty.test.mjs": "0211d72dcd22a25a03dd47cd2deba23901d552e74e98f7d0b7a00e9eb455c1f9",
+        "src/foundations/f-test-harness/lean-replies.test.mjs": "79b7ba49a417962d49593709c822565c8222a40ba10aa8b76bcb2a72c66778c8",
+        "src/foundations/f-test-harness/lighter-calls.test.mjs": "0d46c325520f9ccdab31f85e3eb3de6c5611356a01d659fe9d53e649b25d604f",
+        "src/foundations/f-test-harness/open-closed.test.mjs": "3852adda958b82674ed7a9c4af1f9db595bbe381a8ca65d6b9824af323501c94"
+      }
+    },
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-11T13:24:09.330Z",
+      "note": "Lighter-edits cases added to honesty (ticks keep readiness, in-place wording fix, a revision shipping onto it, the additive question) and lighter-calls; two walks in lean-replies and open-closed start at in-progress. The node's text (which suites exist and how they run) still describes them.",
+      "files": {
+        "src/foundations/f-test-harness/honesty.test.mjs": "e68567fdb89605ffdae20b4bd64d903d86c8d409bff1f7eaa765121bf8f3e7f3",
+        "src/foundations/f-test-harness/lean-replies.test.mjs": "79b7ba49a417962d49593709c822565c8222a40ba10aa8b76bcb2a72c66778c8",
+        "src/foundations/f-test-harness/lighter-calls.test.mjs": "0d46c325520f9ccdab31f85e3eb3de6c5611356a01d659fe9d53e649b25d604f",
+        "src/foundations/f-test-harness/open-closed.test.mjs": "3852adda958b82674ed7a9c4af1f9db595bbe381a8ca65d6b9824af323501c94"
+      }
     }
   ]
 }

@@ -4,12 +4,12 @@ type: Interaction
 title: "Revise a shipped node"
 description: "Agent opens a revision of a shipped node, with its planned edges applied and a hotspot warning when it ships far above the graph's pace, or discards the revision."
 state: stable
-shipped_at: 2026-11-08T17:07:34.706Z
-revisions: 8
-churn: 7.184
-churn_behavior: 1
+shipped_at: 2026-11-11T13:26:33.735Z
+revisions: 9
+churn: 7.727
+churn_behavior: 1.936
 created_at: 2026-10-31T11:58:03.620Z
-updated_at: 2026-11-08T17:07:34.706Z
+updated_at: 2026-11-11T13:26:33.735Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -46,6 +46,7 @@ Intended files: `src/interactions/i-revise-node/` (`handlers.ts`, `tools.ts`).
 - **open_next** validates Rule 10 and writes `<id>.next.mdx` from the live file in state `draft` (optional title and description) with a fresh list of unticked default Atomic Ops and an empty `next-attachments/`; takes `change` / `change_ref`, written to the next file only (the live file carries no change id)
 - **Planned edges.** With a change, open_next is Blocked while any of that change's planned entries on the node is no longer legal (with the `unlink_nodes` fix); otherwise it applies them to the next slot and returns `applied_planned` (and `rules` with the entries they add or change, light past distance 1)
 - **Reason.** `open_next` requires `reason` (`behavior`, `wiring`, `fix`, `platform`, `text`, `refactor`); a missing or unknown one is Blocked with what each means. It is written to the revision file and returned in `revision.reason`
+- **Additive question.** `open_next` on a node with more non-retired transitive dependents than `decisions.blast_radius` (`blastRadiusDependents`, `f-compiler-rules`; the count the decision gate uses) returns `additive_question: { dependents, question }`, whatever the reason: could this be a new node that `depends_on` it instead? The question names both answers, `discard_next` or `record_decision` under the change, which is the decision the in-review gate requires. Left out for reason `refactor`, when the node holds a decision under the change (`answeredUnder`), and when the hotspot warning is returned
 - **Hotspot warning.** When the reason counts (`behavior`, `wiring`) and the node is a hotspot counting the revision it opens (`openClosedWarning`, `f-compiler-rules`), the result carries `warnings`, `diagnosis`, and `decision_prompt`, the `record_decision` call naming the diagnosed refactor (the registry inversion, the split, or for an unknown diagnosis a new node that depends on it or a split or inversion) as the alternative. A `fix`, `platform`, `text`, or `refactor` revision never warns. It never Blocks
 - **discard_next** deletes `<id>.next.mdx` and `next-attachments/`, leaves the live file untouched, and drops its change's planned edges when it was the change's last revision (`withChangeCleanup`, `f-plan-writes`)
 - Orientation gate on `node_id`

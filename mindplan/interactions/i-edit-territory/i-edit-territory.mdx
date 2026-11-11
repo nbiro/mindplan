@@ -4,12 +4,12 @@ type: Interaction
 title: "Edit a node's territory"
 description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, a revision's change id, aliases, declared splits, node rules, and attachments."
 state: stable
-shipped_at: 2026-11-08T17:07:34.567Z
-revisions: 7
-churn: 6.095
-churn_behavior: 1
+shipped_at: 2026-11-11T13:26:33.604Z
+revisions: 8
+churn: 6.707
+churn_behavior: 1.936
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-08T17:07:34.567Z
+updated_at: 2026-11-11T13:26:33.604Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -44,7 +44,8 @@ Agent calls `patch_node_territory`, `patch_node_rules`, `put_attachment`, or `re
 Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`).
 
 - **patch_node_territory** preserves `## Rules` and Blocks a body containing one (naming `patch_node_rules`), and Blocks `## Decisions` (use `record_decision`). Besides `body` it takes `section` + `text` and `replace { find, with, all? }`; `body` cannot be combined with them; `section` without `text` is Blocked. `toggle_checkboxes` items take `all`, `note`, and `not_applicable` and return `toggled`. Title, description, and role write the pre-ship live slot or an open next; on a shipped live slot they are Blocked
-- **Readiness reset.** A contract write to a `ready` slot (title, description, role, body, section, replace, checkboxes) moves it back to `draft` and returns `readiness_reset`; `change` / `change_ref`, aliases, `split_into`, rules, and attachments never reset
+- **Readiness reset.** A contract write to a `ready` slot (title, description, role, body, section, replace, `add_checklist_items`) moves it back to `draft` and returns `readiness_reset`; `toggle_checkboxes` (a tick on an existing item is evidence of work done, not a contract change), `change` / `change_ref`, aliases, `split_into`, rules, and attachments never reset
+- **Wording fix in place.** `reason: "text"` on a shipped (`stable` / `unstable`) Foundation, Interaction, or Interface writes `title`, `description`, `body`, `section`, or `replace` to the live file in place (`patchShippedText`), whatever revisions are open: no `open_next`, decision gate, or ship, and no change to `revisions` or `churn`. The body's `## ` headings and checklist items must be the same before and after (`assertWordingOnly`, fenced code skipped), else it is Blocked and nothing is written; any other patch field or `slot: "next"` with it is Blocked. The reply carries `reason: "text"` and `in_place: true`; the live file's `updated_at` and git diff are the record. Before first ship, and on a Capability or Bug, the reason changes nothing
 - **Change ids.** `change` / `change_ref` set the change of the slot that holds a revision (the open next, or a pre-ship live slot). On a shipped node with no open next either one is Blocked (`shippedChangeBlocked`, `f-plan-writes`): its files are edited in place and need no change id. A write that passes `change` runs inside `withChangeCleanup` (`f-plan-writes`), so moving the last revision off a change drops that change's planned edges
 - **Aliases** on any active node, shipped ones included, live and next alike, without `open_next` or a readiness reset
 - **Declared splits.** `split_into` on a node with an open revision writes the next file's `split_into` as the live list plus the parts (`writeNextSplitInto`), validated first (`validateSplitInto`): a Foundation splits into other active Foundations (recorded at ship for the parts it then `depends_on`); an Interaction into other active Interactions that share one of its Capabilities; an Interface into the Interactions it exposes. A marked part that will not count at ship yet returns a `split_into:` warning. **Clearing a wrong split.** `split_into: []` on a shipped node with no open revision removes its `split_at` and `split_into` in place (no `open_next`, no readiness reset) and recounts `churn` from the node file's git history without the split reset (`shipHistory`, `replayChurn`, f-compiler-rules); outside git the stored `churn` is kept. A node with no split record is Blocked (nothing to clear); a non-empty list without an open revision stays Blocked with `open_next`
@@ -81,6 +82,8 @@ Each tool's description says when to call it, what it does, and its key paramete
 - `change` (any value, `""` included) or `change_ref` on a shipped node with no open next is Blocked naming in-place edits and `open_next`, and writes nothing
 - `aliases` are written, `[]` clears them, an alias over 60 characters is rejected
 - `split_into` on the node itself, on a node with no open revision, or naming a node of the wrong kind is Blocked; an Interaction may mark Interactions in one of its Capabilities and an Interface the Interactions it exposes
+- `toggle_checkboxes` on a `ready` node or revision leaves it `ready`; `add_checklist_items` on it returns `readiness_reset`
+- `reason: "text"` with a `replace` on a shipped node changes the live file in one call, with a revision open or not; with a description it rewords the shipped description; with a body that changes the `## ` sections, or with `add_checklist_items`, it is Blocked and writes nothing
 - Verified via `npm test`
 
 - `split_into: []` on a shipped node with a split record and no open revision clears `split_at` and `split_into`, keeps `revisions`, and recounts `churn` without the reset; on a node with no split record it is Blocked

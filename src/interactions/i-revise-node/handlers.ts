@@ -17,13 +17,14 @@ import {
   resolveConflict as resolveRevisionConflict,
   revisionRelativeFilePath,
 } from "../../foundations/f-territory-store/revisions.js";
-import { isRevisionReason, REVISION_REASONS } from "../../foundations/f-domain-model/types.js";
+import { isInactiveNode, isRevisionReason, REVISION_REASONS, type MindPlanGraph, type MindPlanNode } from "../../foundations/f-domain-model/types.js";
 import { PREAMBLE_SECTION, conflictLabel, resolveRevisionChange, revisionFor } from "../../foundations/f-revision-model/index.js";
-import { hotspotSettings } from "../../foundations/f-source-index/config.js";
-import { openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
+import { decisionGateSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
+import { answeredUnder, openClosedWarning } from "../../foundations/f-compiler-rules/open-closed.js";
 import {
   assertNoShippedDependentsOnRevision,
   assertNoUntickUnderShippedDependents,
+  blastRadiusDependents,
   blocked,
   findNode,
   validateOpenNext,
@@ -54,6 +55,27 @@ function rejectedRefactor(nodeId: string, kind: "invert" | "split" | "unrecorded
     return `Split "${nodeId}" so this feature revises one part and the rest stays closed: <why it lost>`;
   }
   return `A new node that depends_on "${nodeId}", or a split or inversion of it: <why it lost>`;
+}
+
+/**
+ * The additive question open_next asks when it reopens a shipped node with more dependents than
+ * the `decisions.blast_radius` setting, whatever the reason: asked here, before the code is
+ * written, while a new node is still cheap. The in-review decision gate takes the answer. Null
+ * at or under the setting.
+ */
+function additiveQuestion(graph: MindPlanGraph, node: MindPlanNode, change: string): { dependents: number; question: string } | null {
+  const limit = decisionGateSettings(loadProjectConfig()).blast_radius;
+  const dependents = blastRadiusDependents(graph, node.id).affected.filter(({ node: n }) => !isInactiveNode(n)).length;
+  if (dependents <= limit) return null;
+  return {
+    dependents,
+    question:
+      `"${node.id}" has ${dependents} dependents (more than the blast_radius setting of ${limit}). ` +
+      `Could this be a new node that depends_on "${node.id}" instead, leaving it closed? Consider that, or a refactor ` +
+      `(a split or inversion), before you edit it. Answer either way: discard_next and build the new node, or ` +
+      `record_decision({ node_id: "${node.id}", change: "${change}", ... }) saying why revising it is right ` +
+      `(a fix is a fine answer) and naming the additive alternative you rejected. The in-review gate asks for that decision.`,
+  };
 }
 
 export function openNext(args: {
@@ -127,6 +149,10 @@ export function openNext(args: {
   const { revision } = opened;
   // Recorded only now: an open_next that Blocked above has not given the warning.
   const openClosed = warned && firstHotspotWarning(node_id, change) ? warned : null;
+  // The hotspot warning asks the same question with a diagnosis; a refactor or a decision already
+  // recorded under this change has answered it.
+  const additive =
+    openClosed || reason === "refactor" || answeredUnder(node, change) ? null : additiveQuestion(graph, node, change);
   return finish({
     node_id,
     live_state: node.state,
@@ -161,6 +187,7 @@ export function openNext(args: {
           },
         }
       : {}),
+    ...(additive ? { additive_question: additive } : {}),
     // Applied belongs_to / depends_on can bring new rules: return them so the node stays oriented.
     ...(applied.length ? rulesReachingAfterWrite(node_id, rulesBefore) : {}),
     changed_files: changedFiles([...opened.changed_files, ...removedMirror]),

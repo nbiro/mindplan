@@ -166,6 +166,11 @@ check(
     many.rules.filter((r) => r.node_id === "f-core").length === 1,
   JSON.stringify(many).slice(0, 300)
 );
+// i-use-4 … i-use-25: the nodes below stay unoriented for the checks that follow.
+const batch = await raw("orient_for_work", { node_ids: Array.from({ length: 22 }, (_, i) => `i-use-${i + 4}`) });
+check("a 22-node batch orients in one call", !batch.error && JSON.parse(batch.text).node_ids.length === 22, batch.text.slice(0, 200));
+const tooMany = await raw("orient_for_work", { node_ids: Array.from({ length: 51 }, (_, i) => `n-${i}`) });
+check("more than 50 node_ids is refused", tooMany.error, tooMany.text.slice(0, 200));
 const gatedAfter = await raw("patch_node_rules", { node_id: "i-use-1", rules: "- Use only the public API." });
 check("a gated write on a node oriented by node_ids goes through", !gatedAfter.error, gatedAfter.text.slice(0, 160));
 const implicit = await call("set_implementation_files", { node_id: "i-use-2", files: ["src/use-2/"], replace: true });

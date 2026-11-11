@@ -542,7 +542,7 @@ function orientForChange(
 }
 
 /** Most nodes one orient_for_work({ node_ids }) takes. */
-export const MAX_ORIENT_NODES = 20;
+export const MAX_ORIENT_NODES = 50;
 
 /**
  * orient_for_work({ node_ids }): orient on several nodes in one reply. Each node comes back lean

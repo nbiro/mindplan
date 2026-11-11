@@ -1,0 +1,12 @@
+{
+  "confirmations": [
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-11T13:10:26.763Z",
+      "note": "Only the wording of the READINESS_HINT sentence changed (checkbox toggles no longer reset readiness); the node names the fragment, not its text.",
+      "files": {
+        "src/foundations/f-tool-kit/tool.ts": "359b03bd38b122c29284900ff542fda92877a43bf67ea79ccd5a7afcedb94eff"
+      }
+    }
+  ]
+}
