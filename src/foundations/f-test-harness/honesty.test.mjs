@@ -1202,6 +1202,114 @@ async function builtNode(id, type = "Foundation", extra = {}) {
   remove("app/f-unst");
 }
 
+// --- lighter edits: ticks keep readiness; a wording fix on a shipped node is one call; open_next asks the additive question ---
+{
+  const file = await builtNode("f-lite");
+  await call("patch_node_territory", { node_id: "f-lite", add_checklist_items: [{ text: "Copy reviewed", id: "copy" }] });
+  await call("update_node_status", { node_id: "f-lite", new_status: "ready" });
+  const ticked = await call("patch_node_territory", { node_id: "f-lite", toggle_checkboxes: [{ id: "copy", checked: true }] });
+  check(
+    "ticking an existing item on a ready node leaves it ready",
+    ticked.state === "ready" && !ticked.readiness_reset && ticked.toggled?.[0]?.startsWith("- [x] Copy reviewed"),
+    JSON.stringify(ticked)
+  );
+  const unticked = await call("patch_node_territory", { node_id: "f-lite", toggle_checkboxes: [{ id: "copy", checked: false }] });
+  check("unticking it leaves the node ready too", unticked.state === "ready" && !unticked.readiness_reset, JSON.stringify(unticked));
+  const added = await call("patch_node_territory", { node_id: "f-lite", add_checklist_items: [{ text: "Second pass", id: "second" }] });
+  check("adding an item to a ready node still moves it to draft", added.state === "draft" && !!added.readiness_reset, JSON.stringify(added));
+  await call("patch_node_territory", {
+    node_id: "f-lite",
+    toggle_checkboxes: [{ id: "copy", checked: true }, { id: "second", checked: true }],
+  });
+  await walk("f-lite", ["ready", "in-progress", "in-review", "ship"]);
+
+  // A ready revision keeps its readiness through a tick as well.
+  await call("open_next", { reason: "fix", change: "rev-f-lite", node_id: "f-lite" });
+  await call("update_node_status", { node_id: "f-lite", new_status: "ready" });
+  const revTick = await call("patch_node_territory", { node_id: "f-lite", toggle_checkboxes: [{ id: "spec", note: "as written" }] });
+  check(
+    "ticking an item on a ready revision leaves it ready",
+    revTick.next_state === "ready" && !revTick.readiness_reset,
+    JSON.stringify(revTick)
+  );
+
+  // reason "text" writes live in place, even while that revision is open.
+  const fixed = await call("patch_node_territory", {
+    node_id: "f-lite",
+    reason: "text",
+    replace: { find: "Honesty-test filled territory.", with: "Honesty-test upright territory.", all: true },
+  });
+  check(
+    'reason "text" on a shipped node writes live in place in one call',
+    fixed.in_place === true &&
+      fixed.slot === "current" &&
+      fixed.state === "stable" &&
+      fixed.next_state === "ready" &&
+      fs.readFileSync(file, "utf-8").includes("Honesty-test upright territory.") &&
+      !fs.readFileSync(territory("foundations", "f-lite", "next"), "utf-8").includes("upright"),
+    JSON.stringify(fixed)
+  );
+  // The open revision ships onto the reworded live: the fix survives, with no conflict.
+  await call("patch_node_territory", { node_id: "f-lite", toggle_checkboxes: [{ id: "impl", checked: true }, { id: "verify", checked: true }] });
+  await call("record_decision", { node_id: "f-lite", change: "rev-f-lite", decision: "Fix it in place.", alternatives: ["A new node: nothing new to own"], why: "A defect in what it promised." });
+  await walk("f-lite", ["in-progress", "in-review", "ship"]);
+  const afterShip = fs.readFileSync(file, "utf-8");
+  check(
+    "a revision opened before the wording fix ships onto it without losing the fix",
+    afterShip.includes("Honesty-test upright territory.") && !afterShip.includes("Honesty-test filled territory."),
+    afterShip.slice(0, 400)
+  );
+  const retitled = await call("patch_node_territory", { node_id: "f-lite", reason: "text", title: "Node f-lite, retitled" });
+  check('reason "text" rewords a shipped title in place', retitled.in_place === true && (await state("f-lite")).title === "Node f-lite, retitled", JSON.stringify(retitled));
+  const reworded = await call("patch_node_territory", { node_id: "f-lite", reason: "text", description: "Infra — lite, reworded" });
+  check(
+    'reason "text" rewords a shipped description in place',
+    reworded.in_place === true && (await state("f-lite")).description === "Infra — lite, reworded",
+    JSON.stringify(reworded)
+  );
+  const plain = await blocked("patch_node_territory", { node_id: "f-lite", description: "No reason given" });
+  check("without the reason a shipped description is still Blocked", plain?.includes("open_next"), String(plain));
+  const before = fs.readFileSync(file, "utf-8");
+  const section = await blocked("patch_node_territory", {
+    node_id: "f-lite",
+    reason: "text",
+    body: "# Lite\n\n## Only\n\nText.\n",
+  });
+  check(
+    'reason "text" Blocks an edit that changes the sections, writing nothing',
+    section?.includes("writes wording only") && fs.readFileSync(file, "utf-8") === before,
+    String(section)
+  );
+  const mixed = await blocked("patch_node_territory", {
+    node_id: "f-lite",
+    reason: "text",
+    add_checklist_items: [{ text: "More work" }],
+  });
+  check('reason "text" takes no checklist, claim, or change fields', mixed?.includes("add_checklist_items"), String(mixed));
+
+  // open_next on a node with more dependents than blast_radius asks the additive question.
+  await call("create_node", { id: "i-lite-user", type: "Interaction", title: "Lite user", description: "Uses lite" });
+  await call("link_nodes", { source_id: "i-lite-user", target_id: "f-lite", edge_type: "depends_on" });
+  await call("patch_config", { decisions: { blast_radius: 0 } });
+  const asked = await call("open_next", { reason: "fix", change: "rev-ask", node_id: "f-lite" });
+  check(
+    "open_next on a high fan-in node asks the additive question, whatever the reason",
+    asked.additive_question?.dependents === 1 &&
+      asked.additive_question.question.includes('new node that depends_on "f-lite"') &&
+      asked.additive_question.question.includes("record_decision"),
+    JSON.stringify(asked)
+  );
+  await call("discard_next", { node_id: "f-lite" });
+  const refactor = await call("open_next", { reason: "refactor", change: "rev-split", node_id: "f-lite" });
+  check("a refactor revision is not asked", refactor.additive_question === undefined, JSON.stringify(refactor));
+  await call("discard_next", { node_id: "f-lite" });
+  await call("patch_config", { decisions: { blast_radius: 5 } });
+  const quiet = await call("open_next", { reason: "fix", change: "rev-quiet", node_id: "f-lite" });
+  check("a node at or under blast_radius is not asked", quiet.additive_question === undefined, JSON.stringify(quiet));
+  await call("discard_next", { node_id: "f-lite" });
+  await call("update_node_status", { node_id: "i-lite-user", new_status: "cancelled" });
+}
+
 await client.close();
 if (failures > 0) {
   console.log(`\nhonesty.test.mjs: ${failures} failure(s)`);

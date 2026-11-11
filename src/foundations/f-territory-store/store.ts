@@ -2350,8 +2350,9 @@ export function patchNodeTerritory(
     `${frontmatter}${separator}${joinNodeRules(joinNodeDecisions(body, existingDecisions), existingRules)}`,
     slot
   );
-  // Change ids are grouping metadata; every other field is the contract readiness was judged on.
-  const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref");
+  // Change ids are grouping metadata, and a tick on an existing item is evidence of work done;
+  // every other field is the contract readiness was judged on.
+  const contractWrite = patched_fields.some((f) => f !== "change" && f !== "change_ref" && f !== "toggle_checkboxes");
   const readinessReset = contractWrite && demoteReadySlot(node, slot);
   return {
     patched_fields,

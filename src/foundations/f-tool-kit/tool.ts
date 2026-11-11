@@ -105,4 +105,4 @@ export const SECTION_READ = z
 
 /** Which writes send a ready revision back to draft; repeated in the write tools' hints. */
 export const READINESS_HINT =
-  "A contract write to a slot in state ready (territory text or checkboxes, claims, links) moves that slot back to draft and returns readiness_reset; self-ready it again after review.";
+  "A contract write to a slot in state ready (territory text, added checklist items, claims, links) moves that slot back to draft and returns readiness_reset; self-ready it again after review. Ticking or unticking an existing item (toggle_checkboxes) never does.";

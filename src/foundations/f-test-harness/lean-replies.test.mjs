@@ -550,8 +550,8 @@ await foundation("f-chk");
     JSON.stringify(res)
   );
   // Ticking is a contract write, so the ready node goes back to draft first.
-  await tickAll("f-chk");
-  await walk("f-chk", ["ready", "in-progress", "in-review", "ship"]);
+  await tickAll("f-chk"); // ticks keep the unshipped node ready
+  await walk("f-chk", ["in-progress", "in-review", "ship"]);
   check("the unshipped node ships again", !readRel(liveOf("f-chk")).includes("## Atomic Ops") && noNextFile("f-chk"));
 }
 

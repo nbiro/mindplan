@@ -10,6 +10,7 @@ import { splitLinkHint, splitPartLinked, splitPartProblem, splitPartType } from 
 import {
   isFoundationRole,
   isInactiveNode,
+  isProductionState,
   isShippedWithoutNext,
   isPipelineNodeType,
   type FoundationRole,
@@ -119,7 +120,69 @@ type PatchTerritoryArgs = {
   aliases?: string[];
   /** Foundations this open revision splits out of the node (recorded when it ships). */
   split_into?: string[];
+  /** "text": a wording-only edit; on a shipped node it is written to live in place. */
+  reason?: string;
 };
+
+/** The one reason patch_node_territory takes: a wording-only edit. */
+export const TEXT_REASON = "text";
+
+/** The fields a wording-only edit of a shipped node may carry. */
+const TEXT_FIELDS = new Set(["node_id", "verbose", "slot", "title", "description", "body", "section", "text", "replace"]);
+
+/** A body's `## ` headings and checklist items, in order: what a wording-only edit must leave as it was. */
+function bodyStructure(body: string): { headings: string[]; items: string[] } {
+  const headings: string[] = [];
+  const items: string[] = [];
+  let fenced = false;
+  for (const line of body.split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+    if (fenced) continue;
+    if (/^##\s/.test(line)) headings.push(line.trim());
+    else if (/^\s*[-*+]\s+\[[ xX]\]/.test(line)) items.push(line.trim());
+  }
+  return { headings, items };
+}
+
+/** Blocked unless a wording-only edit left the body's sections and checklist items as they were. */
+function assertWordingOnly(node: MindPlanNode, before: string, after: string): void {
+  const was = bodyStructure(before);
+  const is = bodyStructure(after);
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((v, i) => v === b[i]);
+  const changed = [
+    ...(same(was.headings, is.headings) ? [] : ["its ## sections"]),
+    ...(same(was.items, is.items) ? [] : ["its checklist items"]),
+  ];
+  if (changed.length > 0) {
+    throw blocked(
+      `reason "text" writes wording only, and this edit changes ${changed.join(" and ")} on "${node.id}". ` +
+        `Nothing was written. A contract change needs open_next({ node_id: "${node.id}", change, reason }).`
+    );
+  }
+}
+
+/**
+ * patch_node_territory({ reason: "text" }) on a shipped node: a wording-only edit written to live
+ * in place, whatever revisions are open (each is rebased onto the new live when it ships). It
+ * takes title, description, body, section, and replace, and must leave the body's sections and
+ * checklist items as they were. No revision opens, so no decision gate applies and the hotspot
+ * rate does not move; the live file's `updated_at` and its git diff are the record.
+ */
+function patchShippedText(graph: MindPlanGraph, args: PatchTerritoryArgs): Record<string, unknown> {
+  const extra = Object.entries(args)
+    .filter(([key, value]) => value !== undefined && !(Array.isArray(value) && value.length === 0) && !TEXT_FIELDS.has(key))
+    .map(([key]) => key);
+  if (extra.length > 0 || args.slot === "next") {
+    const named = [...extra, ...(args.slot === "next" ? ['slot "next"'] : [])].join(", ");
+    throw blocked(
+      `reason "text" on shipped "${args.node_id}" writes wording to live in place: it takes title, description, ` +
+        `body, section, and replace only. Drop ${named}, or drop reason to patch the open revision.`
+    );
+  }
+  const result = writeNodeTerritory(graph, { ...args, slot: "current" }, true);
+  if (args.title !== undefined) refreshPersistedMap();
+  return { ...result, reason: TEXT_REASON, in_place: true };
+}
 
 /**
  * Blocked unless `split_into` can be written: a node with an open revision, and each id a part of
@@ -178,7 +241,15 @@ export function patchNodeTerritory(args: PatchTerritoryArgs): Record<string, unk
   const graph = loadGraph();
   // A node not yet oriented on is oriented by this write (its rules ride on the reply).
   const finish = gateWriteOrOrient(graph, [args.node_id], "patch_node_territory");
-  return finish(patchTerritoryOn(graph, args));
+  const { reason, ...patch } = args;
+  if (reason !== undefined && reason !== TEXT_REASON) {
+    throw blocked(`patch_node_territory reason must be "${TEXT_REASON}" (a wording-only edit); any other edit takes no reason.`);
+  }
+  const subject = findNode(graph, args.node_id);
+  // A wording-only edit of a shipped node goes to live in place; before first ship the node's own
+  // file is the draft, so the reason changes nothing there.
+  const inPlace = reason === TEXT_REASON && isPipelineNodeType(subject.type) && isProductionState(subject.state);
+  return finish(inPlace ? patchShippedText(graph, patch) : patchTerritoryOn(graph, patch));
 }
 
 function patchTerritoryOn(graph: MindPlanGraph, args: PatchTerritoryArgs): Record<string, unknown> {
@@ -303,7 +374,8 @@ function assertNoOwnedHeading(text: string, what: string): void {
  * patch_node_territory on an open revision of a shipped node: body, section, replace, and
  * checkboxes edit the revision file's body; title, description, role, change_ref, and split_into
  * its scalars; aliases go to live. Every check runs before the first write. A contract write
- * (anything but change_ref, split_into, and aliases) to a ready revision sends it back to draft.
+ * (anything but change_ref, split_into, aliases, and checkbox toggles) to a ready revision sends it
+ * back to draft.
  */
 function patchRevisionTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, change: string): Record<string, unknown> {
   const node = findNode(graph, args.node_id);
@@ -390,8 +462,9 @@ function patchRevisionTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, 
   }
 
   const paths: string[] = [];
-  // A change ref and a split record describe the revision's shape, not its contract.
-  const contractWrite = patched.some((f) => f !== "change_ref" && f !== "split_into");
+  // A change ref and a split record describe the revision's shape, not its contract, and a tick
+  // on an existing item is evidence of work done.
+  const contractWrite = patched.some((f) => f !== "change_ref" && f !== "split_into" && f !== "toggle_checkboxes");
   const reset = contractWrite && revisionFor(node, change)?.state === "ready" ? revisionReadinessReset(change) : null;
   const scalarWrite = Object.keys(scalars).length > 0;
   if (bodyWrite || scalarWrite || reset) {
@@ -464,7 +537,7 @@ function attachmentTarget(
   return { slot: "current", dir: attachmentsDir(node), relDir: `${entityRelativePath(node)}/${ATTACHMENTS_DIR}` };
 }
 
-function writeNodeTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs): Record<string, unknown> {
+function writeNodeTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, wordingOnly = false): Record<string, unknown> {
   const { node_id, title, description, role, body, toggle_checkboxes, slot } = args;
   validateChangeInput(args);
   if ((args.section === undefined) !== (args.text === undefined)) {
@@ -481,10 +554,11 @@ function writeNodeTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs): Rec
     (node.state === "stable" || node.state === "unstable")
       ? "next"
       : "current");
-  if (title !== undefined) {
+  // A wording-only edit may reword a shipped node's title and description in place.
+  if (title !== undefined && !wordingOnly) {
     assertPipelineTerritoryScalarsEditable(node, "title", resolvedSlot);
   }
-  if (description !== undefined) {
+  if (description !== undefined && !wordingOnly) {
     assertPipelineTerritoryScalarsEditable(node, "description", resolvedSlot);
   }
   if (role !== undefined) {
@@ -509,7 +583,10 @@ function writeNodeTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs): Rec
   const slotState = resolvedSlot === "next" ? node.next?.state : node.state;
   const result = patchNodeTerritoryStore(node, {
     // The store hands over the body every edit of the call leaves, before it writes anything.
-    checkBody: (before, after) => assertNoUntickUnderShippedDependents(graph, node, slotState, before, after),
+    checkBody: (before, after) => {
+      if (wordingOnly) assertWordingOnly(node, before, after);
+      assertNoUntickUnderShippedDependents(graph, node, slotState, before, after);
+    },
     title,
     description,
     role,

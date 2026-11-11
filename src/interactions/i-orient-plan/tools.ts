@@ -24,6 +24,7 @@ import {
 } from "../../foundations/f-tool-kit/tool.js";
 import {
   CONTEXT_SLOTS,
+  MAX_ORIENT_NODES,
   ORIENT_DEPTHS,
   findRelatedNodesHandler,
   getNodeContext,
@@ -142,7 +143,7 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       title: "Orient for work",
       description:
-        "Call before working on a node: a write on a node is Blocked: Orientation until that node had a full reply in this session, and again after the rules reaching it changed (create_node never is). With query alone it returns ranked rows (a clear winner comes back in full with auto_focus: true); with node_id, the node: record, active-slot body, owned files, shape, its mandatory node rules (its own and those at distance 1 in full, further sources as one line), and its decisions; depth full adds the neighborhood, blast radius, and stability. change alone orients on every member of a change and clears the gate for all of them; with node_id it reads that node's revision. node_ids orients on several nodes in one lean reply. Rule text this session already received comes back as { node_id, version, unchanged: true } (resend_rules returns it again); known_rules_versions also leaves out text you hold; a reply without the rules section does not clear the gate. slot or section returns only that body part plus the minimal record. Replies that orient carry project_rules when the project rules have not reached the session or changed. Details: get_spec({ topic: \"orient_for_work\" }).",
+        "Call before working on a node: a write on a node is Blocked: Orientation until that node had a full reply in this session, and again after the rules reaching it changed (create_node never is). With query alone it returns ranked rows (a clear winner comes back in full with auto_focus: true); with node_id, the node: record, active-slot body, owned files, shape, its mandatory node rules (its own and those at distance 1 in full, further sources as one line), and its decisions; depth full adds the neighborhood, blast radius, and stability. change alone orients on every member of a change and clears the gate for all of them; with node_id it reads that node's revision. node_ids orients on several nodes (up to 50) in one lean reply. Rule text this session already received comes back as { node_id, version, unchanged: true } (resend_rules returns it again); known_rules_versions also leaves out text you hold; a reply without the rules section does not clear the gate. slot or section returns only that body part plus the minimal record. Replies that orient carry project_rules when the project rules have not reached the session or changed. Details: get_spec({ topic: \"orient_for_work\" }).",
       inputSchema: {
         query: z
           .string()
@@ -152,7 +153,7 @@ export const TOOLS: ToolDef[] = [
         node_ids: z
           .array(NODE_ID)
           .min(1)
-          .max(20)
+          .max(MAX_ORIENT_NODES)
           .optional()
           .describe(
             "Orient on several nodes in one call (alone, without query, node_id, or change): each node lean (id, type, state, title, revisions, rules_from, decision count) and every rule source once. Clears the write gate for all of them."

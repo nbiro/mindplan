@@ -35,6 +35,7 @@ export const TOOLS: ToolDef[] = [
         "Blocked when the node is not shipped or already has that change open. " +
         "reason (required) says why: behavior, wiring, fix, platform, text, or refactor; only behavior and wiring count toward the node's hotspot rate. " +
         "On a hotspot the result carries the diagnosis (invert or split) and a decision_prompt: do that refactor (a revision with reason refactor), or record why not. " +
+        "On a node with more dependents than decisions.blast_radius it carries additive_question: answer whether a new node that depends_on it would do, before editing. " +
         'Details: get_spec({ topic: "open_next" }).',
       inputSchema: {
         verbose: VERBOSE,
