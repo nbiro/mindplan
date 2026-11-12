@@ -1,0 +1,79 @@
+---
+id: f-orientation-ledger
+type: Foundation
+change: planning-friction
+change_ref: "feat/planning-friction"
+state: ready
+opened_at: 2026-11-12T10:28:42.484Z
+updated_at: 2026-11-12T10:52:12.010Z
+reason: behavior
+title: "Orientation ledger"
+description: "Infra — in-memory session record of which nodes were fetched with which rule texts, which project rules, node rule texts, and decisions reached the agent, and which hotspot warnings it got, plus the gates that Block a write while rule text that applies to it has not reached the agent."
+base:
+  - title=3922d06a
+  - description=c96f8102
+  - role=5e03a58d
+  - section:_preamble=289969d7
+  - "section:## Purpose=5b367b7d"
+  - "section:## Shared Substrate Spec=24ca9e14"
+  - "section:## Graph root per call=3bc59a69"
+  - "section:## Acceptance Criteria=1f662785"
+  - "section:## Attachments=3bcf4e16"
+---
+
+# Orientation ledger
+
+## Purpose
+
+Infra — the record of which nodes had their full context, rules included, reach the agent in this MCP session, and the gate built on it. Orientation now returns summary rows first, so without a gate an agent could write a node without ever seeing its rules; node rules are mandatory, so a write on a node waits until that node was fetched with the rules that apply to it now.
+
+## Shared Substrate Spec
+
+Package: `src/foundations/f-orientation-ledger/`
+
+- `ledger.ts` — in-memory, per process, keyed by the resolved graph root:
+  - `enableOrientationGate()` — called by the MCP runtime at start; turns both gates on unless `MINDPLAN_ORIENT_GATE=off`. Off by default, so the CLI (no session) is never gated; `orientationGateEnabled()` reports it
+  - `withProposedEdges(graph)` — the graph with each open revision's proposed `belongs_to` / `depends_on` added to its live edges; `reachingRules(graph, id)` — `resolveNodeRules` over it: what orientation shows and what the gate records, so a link into an open revision brings its rules before the revision ships, and orienting once covers writes to any of the node's revisions
+  - `reachingTags(graph, nodeId)` — the node's `reachingRules` entries (`f-graph-search`) as a map from rule source id to a tag of that source's rule text (the ledger's own hash of the text). Order and distance are not part of it, so an edge that only brings a source closer changes nothing
+  - `recordOriented(graph, ids)` — stores each existing id with its current reaching tags
+  - `orientationGap(graph, id)` — `unfetched` when the node was never recorded; `rules_changed` when a source that reaches it now carries rule text the agent was not given: text whose tag differs both from the tag the node was recorded with and from the tag of the text this session last received from that source in any reply. Both tags are the ledger's own hash of the rule text: `recordRulesSent` keeps it for each text a reply carried, beside the version string replies use for `unchanged`, so the gate never compares its tags with the `rulesVersion` strings of `f-plan-views` (a package the ledger does not depend on); else null (and null while the gate is off). So these pass: a source that no longer reaches the node, a source that moved, a new source whose current text the session already holds (an edge the agent added itself, whose reply carried the text; a Foundation it already oriented on through another node). When the gate passes on a set that differs from the record, the record is brought up to date. A source that only moved closer passes as well: when another session's edge brings a source this node knew as one line within distance 1, its full text arrives with the next orient on the node, not before the write
+  - `assertOriented(graph, ids, tool, opts?)` — one `Blocked: Orientation: <tool> acts on …` for every gap at once: a single gap keeps the one-node wording naming `orient_for_work({ node_id: "<id>" })`; several list each id with its reason (not oriented, rules changed) in one message, and name `orient_for_work({ change: "<change>" })` when `opts.change` is set (a walk over one change), else one `orient_for_work({ node_id })` per id; an id not in the graph is skipped so the handler reports that it does not exist
+  - `recordProjectRulesServed(version)` — stores the `rules_version` of the project rules (`mindplan/project.md`) that reached the agent in this session: through `get_project`, `get_rules`, `patch_project_rules`, or a reply that carried `project_rules`
+  - `projectRulesGap(version)` — `unserved` (nothing served yet), `changed` (the current version differs from the served one), or null (served and current, or the gate is off)
+  - `pushProjectRules(brief)` — takes `{ path, rules, rules_version }`; returns `{ project_rules: brief }` when there is a gap and records the version as served, else `{}`. Replies that orient spread it once they are complete (an orient that fails records nothing), so the rules reach an agent the moment they are missing or changed
+  - `assertProjectRulesServed(version, tool)` — `Blocked: Rules: <tool> acts before the project rules reached you in this session. Call get_project (or get_rules), with the same root when you passed one, read the rules, then retry.`, or after a change `Blocked: Rules: the project rules changed since they reached you. Call get_rules, read them, then retry.`; a no-op while the gate is off
+  - `resetOrientationLedger()` — forget every fetch and every served rules version (tests)
+
+The ledger stores tags and version strings only, never rule text. For the project rules, callers load the brief, compute its version (`rulesVersion`, `f-plan-views`), and pass it in; node rule text is tagged by the ledger itself.
+
+Depends on: `f-graph-search`, `f-domain-model`.
+
+## Graph root per call
+
+The ledger is keyed by the resolved graph root and the node id, so orienting on a node in one worktree never unlocks writes to the same node id in another root.
+
+- **Sent text (0.23.0).** Per project root, the rule source versions whose text a reply carried (`recordRulesSent`, `sentRulesVersions`) and each decision's tag (decision, why, status, superseded_by) last sent (`unsentDecisions(entries, track)` returns the new ones and counts the rest). `tracksSentText(legacy)` is true while the gate is on and config `replies.legacy` is not set. `resetOrientationLedger` clears them
+- **Hotspot warnings.** `firstHotspotWarning(nodeId, change)` is true once per node per change per root, so the hotspot text is given once (`i-revise-node`, `i-orient-plan`)
+
+## Acceptance Criteria
+
+- A node fetched with its current rules passes; an unfetched node is Blocked with the fixing call
+- A node whose own or inherited rule text changed since it was fetched is Blocked (`rules_changed`), and so is a node that a new edge brings a rule source to whose text this session never received
+- A node that gains a rule source whose current text the session already received (through an orient on another node, or the reply of the link that added it) passes, and so do the dependents of the node that was linked; no orient call is needed
+- An edge that only changes the distance or order of the sources reaching a node, and an unlink that drops one, never Block the next write on it
+- A write in a fresh session before `get_project` or `get_rules` is `Blocked: Rules` naming `get_project`; after either call it passes; after `patch_project_rules` from another session the next write is `Blocked: Rules` naming `get_rules`, unless a reply carried `project_rules` first
+- `pushProjectRules` returns the brief once per gap and `{}` while the served version is current
+- The gates are off in the CLI and with `MINDPLAN_ORIENT_GATE=off`
+- A write over three unoriented nodes is Blocked once, naming all three; over one change it names `orient_for_work({ change })`
+- Verified via `npm test` (`orient-gate.test.mjs`, `rules-version.test.mjs`)
+
+## Atomic Ops
+
+- [ ] Spec written {#spec}
+- [ ] Implementation complete {#impl}
+- [ ] Verified in target environment {#verify}
+- [ ] SPEC orientation gate section and the playbook's Orientation row: when a write Blocks, and the writes that orient on their own (adds a planned `link_nodes` and `confirm_territory`); CHANGELOG {#docs}
+
+## Attachments
+
+_None._

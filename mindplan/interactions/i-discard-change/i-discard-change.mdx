@@ -1,0 +1,91 @@
+---
+id: i-discard-change
+type: Interaction
+title: "Discard a change"
+description: "Agent drops a whole unshipped change in one call (discard_change): its open revisions, planned edges, and never-shipped nodes, with the decisions and attachments they hold, after checking that nothing that stays still points at them."
+state: ready
+created_at: 2026-11-12T10:24:00.941Z
+updated_at: 2026-11-12T10:52:12.113Z
+change: "planning-friction"
+change_ref: "feat/planning-friction"
+aliases:
+  - "discard change"
+  - "abandon a plan"
+  - "drop a planned change"
+  - "delete draft nodes"
+  - "undo planning"
+belongs_to:
+  - j-territory-sdlc
+depends_on:
+  - f-plan-writes
+  - f-territory-store
+  - f-compiler-rules
+  - f-tool-kit
+implements:
+  - src/interactions/i-discard-change/
+tests:
+  - src/foundations/f-test-harness/discard-change.test.mjs
+---
+
+# Discard a change
+
+## Purpose
+
+Drops a whole unshipped change in one call. A plan that is abandoned before it ships leaves revisions, planned edges, and draft nodes spread over many folders; taking them back one `discard_next` and one `unlink_nodes` at a time costs dozens of calls, and no other tool removes a never-shipped node, so agents reached for `git restore` on `mindplan/` instead. The constraint to keep: it only removes what never reached a live file. Anything a ship already wrote stays, and it refuses to leave an edge pointing at a node that is gone.
+
+## Actor & Trigger
+
+- **Actor:** agent
+- **Trigger:** the `discard_change` MCP tool (kind `destructive`), when a planned or half-built change is dropped as a whole. One revision is still `discard_next`; one planned edge is still `unlink_nodes`.
+
+## Inputs & Outputs
+
+- **In:** `{ change }`, the change id.
+- **Out:** `{ change, discarded: { revisions: [node ids], nodes: [node ids], planned: [{ source_id, edge_type, target_id }], decisions: <count> }, kept_decisions?, unclaimed_files?, changed_files }`.
+
+## PRD / Execution Logic
+
+Intended files: `src/interactions/i-discard-change/` (`handlers.ts` with the exported `discardChange` handler, `tools.ts` with the tool definition). `if-mcp-tools` mounts it after `discard_next`.
+
+- **Members.** The change's members come from `changeMembership` (`f-compiler-rules`): the shipped nodes holding an open revision of it, the never-shipped Foundations, Interactions, and Interfaces whose change id it is, and the shipped sources holding planned edges under it. A change with no members is Blocked (nothing to discard).
+- **Gate.** The orientation gate runs over every member in one message that names `orient_for_work({ change })` (`gateWrite`, `f-plan-writes`). A session that never read the change reads it first; that reply is the preview of what the discard removes.
+- **Checked before the first write.** Every problem is listed in one Block and nothing is written:
+  - each revision passes the `discard_next` guard: no stable or unstable dependent's files import a file only that revision claims;
+  - no node that stays points at a node that goes: a live edge, an edge delta in a revision of another change, a planned entry of another change, or a Bug's `affects`. Each is listed as `"<source>" <edge_type> "<target>" (live | revision "<c>" | planned "<c>")` with the `unlink_nodes` call that removes it;
+  - no pre-ship member has shipped before: a node that `force_unship` returned to a pre-ship state keeps the decisions of its shipped life, so `removeNode` refuses it. It is listed with both ways out (cancel it, or clear its change id so it leaves the change).
+- **What it removes**, in this order:
+  1. each open revision of the change (`discardRevision`, `f-territory-store`): the revision folder with its text, attachments, and decisions;
+  2. each never-shipped member (`removeNode`, `f-territory-store`): its folder with its decisions and attachments. Its own edges go with it;
+  3. the change's planned edges on every source, last and on the graph loaded after steps 1 and 2 (`clearClosedChanges`, `f-plan-writes`): that helper drops a change's planned entries only once the change has no member left, so calling it while a never-shipped member still exists would drop nothing and leave entries pointing at nodes that are gone.
+  Stability and Capability states are recomputed and the map and search cache refreshed once, after the last removal.
+- **What it leaves.**
+  - A member that already shipped under the change, and the text and edges of every live file. A live file loses only this change's `planned:` entries, which stay listed there while a revision is open.
+  - Decisions tagged with the change that sit beside the live file of a node that stays (recorded on a node the change did not revise, or carried there by a ship). The server cannot tell these from the record of work that shipped, so they stay and the reply lists them in `kept_decisions: [{ id, node_id }]`; one that no longer holds is superseded with `record_decision`.
+  - Source files. The files a removed node or revision claimed stay on disk; those that exist are listed in `unclaimed_files`, because the next check reports each as `Blocked: Coverage` until it is deleted or claimed.
+- **Not undoable by the server.** Uncommitted text is gone; what git tracked comes back with git. The tool takes no confirm token: the host asks, since its kind is `destructive`.
+
+Depends on: `f-plan-writes`, `f-territory-store`, `f-compiler-rules`, `f-tool-kit`.
+
+## Acceptance Criteria
+
+- On a change with two open revisions, three planned edges, and two draft nodes that hold decisions, one `discard_change` leaves no revision folder of the change, no planned entry of it on any node, and no folder for the two nodes; the revised nodes' live files keep their text and edges (only this change's `planned:` entries leave them) and `run_check` passes
+- A planned edge on a shipped Interface that points at a draft node of the change is gone after the call: no entry is left pointing at the removed node
+- A draft node of the change that a node outside it `depends_on` Blocks the call, naming the edge and the `unlink_nodes` call, and nothing is deleted; a delta edge in another change's revision and a Bug's `affects` Block the same way
+- A change with no members is Blocked
+- A member that already shipped is untouched, and a decision recorded under the change beside the live file of a node that stays is kept and listed in `kept_decisions`
+- A pre-ship member that was force-unshipped Blocks the call with both ways out, and nothing is deleted
+- A claimed file of a removed node that exists on disk is listed in `unclaimed_files`
+- A session that has not oriented on the members gets one `Blocked: Orientation` naming `orient_for_work({ change })`
+- `tools/list` shows `discard_change` with `destructiveHint: true`
+- Verified by `discard-change.test.mjs`
+
+## Atomic Ops
+
+- [ ] Requirements defined {#spec}
+- [ ] Implementation complete {#impl}
+- [ ] Tests passing {#verify}
+- [ ] SPEC §8.2 entry for `discard_change`, the tool and destructive-tool counts in SPEC and README, the README tool list, CHANGELOG, and the plan-project skill's line on dropping a plan {#docs}
+
+## Attachments
+
+_None._
