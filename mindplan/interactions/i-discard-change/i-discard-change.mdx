@@ -3,11 +3,12 @@ id: i-discard-change
 type: Interaction
 title: "Discard a change"
 description: "Agent drops a whole unshipped change in one call (discard_change): its open revisions, planned edges, and never-shipped nodes, with the decisions and attachments they hold, after checking that nothing that stays still points at them."
-state: in-review
+state: stable
+shipped_at: 2026-11-12T18:32:51.196Z
+revisions: 1
+churn: 1
 created_at: 2026-11-12T10:24:00.941Z
-updated_at: 2026-11-12T15:47:11.481Z
-change: "planning-friction"
-change_ref: "feat/planning-friction"
+updated_at: 2026-11-12T18:32:51.196Z
 aliases:
   - "discard change"
   - "abandon a plan"
@@ -78,13 +79,6 @@ Depends on: `f-plan-writes`, `f-territory-store`, `f-compiler-rules`, `f-tool-ki
 - A session that has not oriented on the members gets one `Blocked: Orientation` naming `orient_for_work({ change })`
 - `tools/list` shows `discard_change` with `destructiveHint: true`
 - Verified by `discard-change.test.mjs`
-
-## Atomic Ops
-
-- [ ] Requirements defined {#spec}
-- [ ] Implementation complete {#impl}
-- [ ] Tests passing {#verify}
-- [x] SPEC §8.2 entry for `discard_change`, the tool and destructive-tool counts in SPEC and README, the README tool list, CHANGELOG, and the plan-project skill's line on dropping a plan {#docs}
 
 ## Attachments
 
