@@ -24,6 +24,14 @@ import {
   removeAttachment,
   TEXT_REASON,
 } from "./handlers.js";
+import { MAX_REPLACE_ENTRIES } from "../../foundations/f-territory-store/store.js";
+
+/** One exact replacement in a body. */
+const REPLACE_ENTRY = z.object({
+  find: z.string().min(1).describe("Exact text to find in the body (must be unique unless all)."),
+  with: z.string().describe("Replacement text."),
+  all: z.boolean().optional().describe("Replace every occurrence."),
+});
 
 /** The MCP tools i-edit-territory owns; if-mcp-tools mounts them. */
 export const TOOLS: ToolDef[] = [
@@ -65,13 +73,11 @@ export const TOOLS: ToolDef[] = [
           .optional()
           .describe("Replacement text for the section named by section."),
         replace: z
-          .object({
-            find: z.string().min(1).describe("Exact text to find in the body (must be unique unless all)."),
-            with: z.string().describe("Replacement text."),
-            all: z.boolean().optional().describe("Replace every occurrence."),
-          })
+          .union([REPLACE_ENTRY, z.array(REPLACE_ENTRY).min(1).max(MAX_REPLACE_ENTRIES)])
           .optional()
-          .describe("Replace one exact piece of the body without resending it."),
+          .describe(
+            "Replace one exact piece of the body without resending it, or a list of them applied in order (each sees the text the earlier ones left), written once; one failing entry writes nothing."
+          ),
         toggle_checkboxes: z
           .array(
             z.object({

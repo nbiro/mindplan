@@ -39,6 +39,8 @@ export const TOOLS: ToolDef[] = [
       kind: "read",
       drift: false,
       gate: false,
+      // Pages itself: the handler cuts the reply once, so a compact check counts as seen only what it lists.
+      budget: false,
       title: "Run the integrity check",
       description:
         "Call before in-review, before ship, and before telling the user the work is done. " +

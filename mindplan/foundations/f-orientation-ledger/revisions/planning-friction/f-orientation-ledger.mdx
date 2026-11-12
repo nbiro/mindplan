@@ -3,12 +3,14 @@ id: f-orientation-ledger
 type: Foundation
 change: planning-friction
 change_ref: "feat/planning-friction"
-state: ready
+state: in-review
 opened_at: 2026-11-12T10:28:42.484Z
-updated_at: 2026-11-12T10:52:12.010Z
+updated_at: 2026-11-12T15:47:11.141Z
 reason: behavior
 title: "Orientation ledger"
 description: "Infra — in-memory session record of which nodes were fetched with which rule texts, which project rules, node rule texts, and decisions reached the agent, and which hotspot warnings it got, plus the gates that Block a write while rule text that applies to it has not reached the agent."
+tests_add:
+  - src/foundations/f-test-harness/batch-edits.test.mjs
 base:
   - title=3922d06a
   - description=c96f8102
@@ -72,7 +74,7 @@ The ledger is keyed by the resolved graph root and the node id, so orienting on 
 - [ ] Spec written {#spec}
 - [ ] Implementation complete {#impl}
 - [ ] Verified in target environment {#verify}
-- [ ] SPEC orientation gate section and the playbook's Orientation row: when a write Blocks, and the writes that orient on their own (adds a planned `link_nodes` and `confirm_territory`); CHANGELOG {#docs}
+- [x] SPEC orientation gate section and the playbook's Orientation row: when a write Blocks, and the writes that orient on their own (adds a planned `link_nodes` and `confirm_territory`); CHANGELOG {#docs}
 
 ## Attachments
 

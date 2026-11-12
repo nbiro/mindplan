@@ -3,12 +3,15 @@ id: i-check-integrity
 type: Interaction
 change: planning-friction
 change_ref: "feat/planning-friction"
-state: ready
+state: in-review
 opened_at: 2026-11-12T10:18:47.800Z
-updated_at: 2026-11-12T10:52:12.089Z
+updated_at: 2026-11-12T15:47:11.409Z
 reason: behavior
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, failed rule checks and tests, an outdated graph, and unreviewed or stale-territory work at merge; warns about stale text, shape, fan-in, and more; lists drift."
+tests_add:
+  - src/foundations/f-test-harness/check-output.test.mjs
+  - src/foundations/f-test-harness/confirm-territory.test.mjs
 base:
   - title=64b1ee3a
   - description=6fca87d8
@@ -152,7 +155,7 @@ The after-merge and compact code read the cache folder name from `f-source-index
 - [ ] Requirements defined {#spec}
 - [ ] Implementation complete {#impl}
 - [ ] Tests passing {#verify}
-- [ ] SPEC: §5.15 change groups and answered hotspot, §8.1 `run_check` (members first, shown means seen), §9.6 hotspot row and stale text with confirmations; the open-closed spec topic holds the invert and split recipes the short line points to; CHANGELOG {#docs}
+- [x] SPEC: §5.15 change groups and answered hotspot, §8.1 `run_check` (members first, shown means seen), §9.6 hotspot row and stale text with confirmations; the open-closed spec topic holds the invert and split recipes the short line points to; CHANGELOG {#docs}
 
 ## Attachments
 

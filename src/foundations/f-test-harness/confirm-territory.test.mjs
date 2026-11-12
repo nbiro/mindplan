@@ -296,13 +296,13 @@ const write = (root, rel, text) => fs.writeFileSync(path.join(root, ...rel.split
     ok("confirm_territory is listed right after patch_node_territory");
 
     await client.callTool({ name: "get_project", arguments: {} });
-    const gated = await client.callTool({ name: "confirm_territory", arguments: { node_id: "i-served", note: "holds" } });
-    assert.ok(gated.isError, gated.content?.[0]?.text);
-    await client.callTool({ name: "orient_for_work", arguments: { node_id: "i-served", depth: "rules" } });
+    // A confirmation changes nothing the rules shape: it orients a node never oriented on itself.
     const res = await client.callTool({ name: "confirm_territory", arguments: { node_id: "i-served", note: "holds" } });
     assert.ok(!res.isError, res.content?.[0]?.text);
     assert.deepEqual(res.structuredContent.changed_files, ["mindplan/interactions/i-served/confirmed.json"]);
-    ok("over MCP the write gate applies until the node is oriented, then it confirms");
+    assert.equal(res.structuredContent.oriented, true, JSON.stringify(res.structuredContent));
+    assert.deepEqual(res.structuredContent.rules?.oriented_on, ["i-served"]);
+    ok("over MCP confirm_territory orients an unoriented node itself and returns its rules");
   } finally {
     await client.close();
   }

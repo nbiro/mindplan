@@ -52,7 +52,7 @@ Every violation is a tool error that starts with `Blocked:` and names the fix. S
 | Force Unship | Undoing a ship without `confirm: "unship:<id>"` | §5.12 |
 | Decision gate | `in-review` for work on a shipped Foundation, work that adds a schema file, work with a wide blast radius, or a change to a shipped node's `depends_on`, until a decision is recorded | §5.13 |
 | Coverage and import matrix | A source file no node claims, a file two nodes claim, an import the edges do not allow. The check reports them; moves to `in-review` and `ship` run the import and ownership rules on the node's files | §1.2, §9.6 |
-| Orientation gate | A write on a node not oriented on in this session, or whose rules changed since (`open_next`, `patch_node_territory`, and `set_implementation_files` orient a new node themselves) | §8.1.2 |
+| Orientation gate | A write on a node not oriented on in this session, or whose rules changed since (`open_next`, `patch_node_territory`, `set_implementation_files`, `confirm_territory`, and a planned `link_nodes` orient a new node themselves) | §8.1.2 |
 | Rule checks | A project or node rule's `check:` line that fails: a forbidden path or pattern, a missing required pattern, or a command's exit code | §6.1.4 |
 | Version gate | Graph tools while `mindplan/` needs setup or an upgrade, or is newer than the server (`Blocked: Version`) | §1.1.2 |
 
@@ -189,6 +189,7 @@ The MCP server is the only writer of `mindplan/`. Nodes claim their source files
 | `check --root <path>` | Checks another checkout |
 | `mindplan-mcp hook pre-tool-use` | The Claude Code hook: denies host file writes on `mindplan/**` (below) |
 | `mindplan-mcp help` | Usage |
+| `mindplan-mcp --version` (also `-v`, `version`) | Print the installed package version, to see which release `npx mindplan-mcp` resolved |
 
 **Merge gate.** The default branch should hold work that is done (`stable` / `unstable`) or still being built, never work that is `in-review`: the code is finished but the graph has not shipped it, and that belongs on a branch. Plain `check` ignores lifecycle state; `check --merge` fails with one `Blocked: Merge` line per Foundation, Interaction, or Interface whose live file or open revision is `in-review`, and per Bug in `in-review`, grouped by change id. Each line names the fix: `update_node_status({ scope: "change", change: "<id>", new_status: "ship" })`, or move the node back to `in-progress` (a Bug: `fixing`) if the work is unfinished. `draft`, `ready`, `in-progress`, and shipped nodes pass, so planning PRs and incremental PRs still merge. It also fails a shipped node whose claimed files changed against the base while its territory file did not: the graph must describe the code before it merges, so the fix is `open_next` and ship, `patch_node_territory` in place, or, when the node's text still holds, `confirm_territory({ node_id, note })`, which pins the changed files' content in the node's `confirmed.json` (editing them again blocks again). Agents run the same gate as `run_check({ merge: true })` before saying a PR is ready.
 
@@ -252,7 +253,7 @@ Every tool call loads the graph, so the server keeps parsed node records in memo
 
 ## MCP tools
 
-The server has 42 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each one's inputs, outputs, and errors. Every tool takes an optional `root`, the checkout or git worktree whose `mindplan/` that call uses. Every tool except `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `acknowledge_warning`, `doctor`, `setup_project`, and `upgrade_project` is behind the version gate. Results are compact JSON plus `structuredContent`, kept under `replies.budget_bytes` (longer lists are paged with `next_page`). Replies leave out what the session already received: rule text comes back as `unchanged` (`resend_rules: true` sends it again), and `drift` is a count plus the paths not shown yet (`get_drift` lists them all). MCP annotations mark read tools `readOnlyHint` and the four destructive ones `destructiveHint`, so a host can auto-approve reads and prompt on the rest. Tool and argument descriptions live in each Interaction's `tools.ts` under [`src/interactions/`](src/interactions/), mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts).
+The server has 43 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each one's inputs, outputs, and errors. Every tool takes an optional `root`, the checkout or git worktree whose `mindplan/` that call uses. Every tool except `get_project`, `get_rules`, `get_spec`, `get_skill`, `run_check`, `acknowledge_warning`, `doctor`, `setup_project`, and `upgrade_project` is behind the version gate. Results are compact JSON plus `structuredContent`, kept under `replies.budget_bytes` (longer lists are paged with `next_page`). Replies leave out what the session already received: rule text comes back as `unchanged` (`resend_rules: true` sends it again), and `drift` is a count plus the paths not shown yet (`get_drift` lists them all). MCP annotations mark read tools `readOnlyHint` and the five destructive ones `destructiveHint`, so a host can auto-approve reads and prompt on the rest. Tool and argument descriptions live in each Interaction's `tools.ts` under [`src/interactions/`](src/interactions/), mounted by [`src/interfaces/if-mcp-tools/register.ts`](src/interfaces/if-mcp-tools/register.ts).
 
 **Orient and read**
 
@@ -277,14 +278,15 @@ The server has 42 tools; [SPEC §8](SPEC.md#8-mcp-tool-contract) specifies each 
 **Write the graph**
 
 - `create_node` — a new Capability, Interaction, Interface, Foundation, or Bug.
-- `link_nodes` / `unlink_nodes` (`unlink_nodes` is destructive) — add or remove an edge, or plan one under a change.
-- `patch_node_territory` — a node's title, description, body, checklist, and search aliases. `reason: "text"` fixes wording on a shipped node in place, in one call.
+- `link_nodes` / `unlink_nodes` (`unlink_nodes` is destructive) — add or remove an edge, or plan one under a change; `link_nodes({ edges })` adds up to 100 edges in one all-or-none call.
+- `patch_node_territory` — a node's title, description, body, checklist, and search aliases. `replace` takes a list of exact replacements, applied in order and written once. `reason: "text"` fixes wording on a shipped node in place, in one call.
 - `patch_node_rules` — a node's `## Rules`.
 - `set_implementation_files` — the source files a node claims.
 - `set_test_files` — the tests that verify a node.
 - `record_decision` — a decision record on the node it shapes.
 - `put_attachment` / `remove_attachment` (`remove_attachment` is destructive) — node attachment files.
 - `open_next` / `discard_next` (`discard_next` is destructive) — open a revision of a shipped node with its reason, or delete one.
+- `discard_change` (destructive) — drop a whole unshipped change: its open revisions, never-shipped nodes, and planned edges.
 - `resolve_conflict` — settle a conflict a sibling revision's ship left.
 - `rebase_revision` — carry a revision onto current live after a merge.
 - `confirm_territory` — record that a shipped node's text still describes its changed files, for the merge gate.

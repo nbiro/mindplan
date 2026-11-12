@@ -3,12 +3,14 @@ id: f-compiler-rules
 type: Foundation
 change: planning-friction
 change_ref: "feat/planning-friction"
-state: ready
+state: in-review
 opened_at: 2026-11-12T10:18:38.430Z
-updated_at: 2026-11-12T10:52:12.060Z
+updated_at: 2026-11-12T15:47:11.282Z
 reason: behavior
 title: "Compiler rules"
 description: "Infra — transition rules: Minimum Territory Shape, the import matrix, the in-review and ship gate, the decision gate, open–closed signals (fan-in, churn, hotspots, additivity), change members (revisions, planned sources), checklist completion, and stale-text warnings with planned paths as info."
+tests_add:
+  - src/foundations/f-test-harness/check-output.test.mjs
 base:
   - title=6423331d
   - description=c51d29bc
@@ -172,7 +174,7 @@ A test file of node A (a file A's `tests` list matches that also looks like a te
 - [ ] Spec written {#spec}
 - [ ] Implementation complete {#impl}
 - [ ] Verified in target environment {#verify}
-- [ ] Callers of answeredUnder, answeredForOpenWork, and nodeChurn pass the graph (i-orient-plan in place, its text still holds; i-revise-node and i-check-integrity under their own revisions of this change) {#callers}
+- [x] Callers of answeredUnder, answeredForOpenWork, and nodeChurn pass the graph (i-orient-plan in place, its text still holds; i-revise-node and i-check-integrity under their own revisions of this change) {#callers} — note: answeredUnder, answeredForOpenWork, nodeChurn take the graph; i-orient-plan hotspotFields, i-revise-node additive skip, i-check-integrity collectHotspotWarnings pass it
 
 ## Attachments
 

@@ -12,7 +12,11 @@ import { resolveNodeRules } from "../f-graph-search/rules.js";
 import { resolveProjectRoot, rootKey } from "../f-source-index/root-scope.js";
 
 /** Keyed by project root + "\0" + node id: orienting in one checkout never unlocks another. */
-const fetched = new Map<string, string>();
+/**
+ * The value maps each rule source that reached the node when it was recorded to the ledger's tag of
+ * that source's text (`ruleTextTag`).
+ */
+const fetched = new Map<string, Map<string, string>>();
 
 function ledgerKey(nodeId: string): string {
   return `${rootKey(resolveProjectRoot())}\0${nodeId}`;
@@ -34,6 +38,7 @@ export function resetOrientationLedger(): void {
   fetched.clear();
   servedRules.clear();
   sentRules.clear();
+  sentTags.clear();
   sentDecisions.clear();
   hotspotWarned.clear();
 }
@@ -58,6 +63,13 @@ export function firstHotspotWarning(nodeId: string, change: string): boolean {
 
 /** Keyed by project root + "\0" + rule source id: the rules version whose text this session received. */
 const sentRules = new Map<string, string>();
+
+/**
+ * Keyed by project root + "\0" + rule source id: the ledger's tag (`ruleTextTag`) of the text this
+ * session last received from that source. The gate compares these, never the `rulesVersion`
+ * strings replies use for `unchanged` (computed in f-plan-views, which the ledger does not import).
+ */
+const sentTags = new Map<string, string>();
 
 /** Keyed by project root + "\0" + decision id: the decision's tag (status + text) last sent. */
 const sentDecisions = new Map<string, string>();
@@ -86,9 +98,9 @@ export function recordRulesSent(entries: Record<string, unknown>[]): void {
   if (!enabled) return;
   const root = rootKey(resolveProjectRoot());
   for (const e of entries) {
-    if (typeof e.rules === "string" && typeof e.version === "string" && typeof e.node_id === "string") {
-      sentRules.set(`${root}\0${e.node_id}`, e.version);
-    }
+    if (typeof e.rules !== "string" || typeof e.node_id !== "string") continue;
+    if (typeof e.version === "string") sentRules.set(`${root}\0${e.node_id}`, e.version);
+    sentTags.set(`${root}\0${e.node_id}`, ruleTextTag(e.rules));
   }
 }
 
@@ -205,25 +217,45 @@ export function reachingRules(graph: MindPlanGraph, nodeId: string): RuleEntry[]
   return resolveNodeRules(withProposedEdges(graph), nodeId);
 }
 
-/** Tag of the rules that reach a node: its own and every inherited entry, with their sources. */
-export function rulesFingerprint(graph: MindPlanGraph, nodeId: string): string {
-  const entries = reachingRules(graph, nodeId).map((e) => [e.node_id, e.rules]);
-  return createHash("sha1").update(JSON.stringify(entries)).digest("hex");
+/** The ledger's own tag of one source's rule text. */
+export function ruleTextTag(text: string): string {
+  return createHash("sha1").update(text).digest("hex").slice(0, 16);
+}
+
+/**
+ * The rule sources that reach a node, each with the tag of its current text. Order and distance
+ * are not part of it, so an edge that only brings a source closer changes nothing.
+ */
+export function reachingTags(graph: MindPlanGraph, nodeId: string): Map<string, string> {
+  const tags = new Map<string, string>();
+  for (const e of reachingRules(graph, nodeId)) tags.set(e.node_id, ruleTextTag(e.rules));
+  return tags;
 }
 
 /** Record that these nodes' full context, rules included, reached the agent. */
 export function recordOriented(graph: MindPlanGraph, nodeIds: string[]): void {
   for (const id of nodeIds) {
-    if (graph.nodes.some((n) => n.id === id)) fetched.set(ledgerKey(id), rulesFingerprint(graph, id));
+    if (graph.nodes.some((n) => n.id === id)) fetched.set(ledgerKey(id), reachingTags(graph, id));
   }
 }
 
-/** Why a node's write is not allowed yet, or null when it was fetched with its current rules. */
+/**
+ * Why a node's write is not allowed yet, or null. `unfetched`: never recorded. `rules_changed`: a
+ * source reaching it now carries text whose tag matches neither the node's record nor the text this
+ * session last received from that source in any reply. A source that stopped reaching the node, one
+ * that only moved, and a new source whose current text the session already holds all pass.
+ */
 export function orientationGap(graph: MindPlanGraph, nodeId: string): "unfetched" | "rules_changed" | null {
   if (!enabled) return null;
-  const at = fetched.get(ledgerKey(nodeId));
-  if (at === undefined) return "unfetched";
-  return at === rulesFingerprint(graph, nodeId) ? null : "rules_changed";
+  const recorded = fetched.get(ledgerKey(nodeId));
+  if (recorded === undefined) return "unfetched";
+  const root = rootKey(resolveProjectRoot());
+  for (const [source, tag] of reachingTags(graph, nodeId)) {
+    if (recorded.get(source) === tag) continue;
+    if (sentTags.get(`${root}\0${source}`) === tag) continue;
+    return "rules_changed";
+  }
+  return null;
 }
 
 /**
@@ -246,7 +278,11 @@ export function assertOriented(
     const gap = orientationGap(graph, id);
     if (gap) gaps.push({ id, gap });
   }
-  if (gaps.length === 0) return;
+  if (gaps.length === 0) {
+    // Every source's text reached the agent: bring the records up to date with what reaches now.
+    recordOriented(graph, [...new Set(nodeIds)]);
+    return;
+  }
   if (gaps.length === 1) {
     const { id, gap } = gaps[0];
     const reason =

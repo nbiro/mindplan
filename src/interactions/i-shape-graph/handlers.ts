@@ -61,6 +61,7 @@ import {
   revisionReadinessResult,
   changedFiles,
   gateWrite,
+  gateWriteOrOrient,
   mutationTail,
   readinessFields,
   readinessResult,
@@ -156,21 +157,64 @@ export function createNode(args: {
   };
 }
 
+type EdgeType = (typeof EDGE_TYPES)[number];
+
+/** One edge of a `link_nodes` batch. */
+export type LinkEdge = { source_id: string; target_id: string; edge_type: EdgeType };
+
+/** Most edges one `link_nodes` call takes. */
+export const MAX_BATCH_EDGES = 100;
+
+/** Inside a batch the gate, map refresh, and rules diff run once for the whole batch, not per edge. */
+type LinkMode = { batch?: boolean };
+
 export function linkNodes(args: {
   verbose?: boolean;
-  source_id: string;
-  target_id: string;
-  edge_type: (typeof EDGE_TYPES)[number];
+  source_id?: string;
+  target_id?: string;
+  edge_type?: EdgeType;
+  edges?: LinkEdge[];
   change?: string;
 }): Record<string, unknown> {
+  if (args.edges !== undefined) {
+    if (args.source_id !== undefined || args.target_id !== undefined || args.edge_type !== undefined) {
+      throw blocked("link_nodes takes either edges or source_id, target_id, and edge_type, not both.");
+    }
+    return linkBatch(args.edges, args.change, args.verbose);
+  }
+  if (args.source_id === undefined || args.target_id === undefined || args.edge_type === undefined) {
+    throw blocked("link_nodes requires source_id, target_id, and edge_type (or edges for several).");
+  }
+  return linkOne({ ...args, source_id: args.source_id, target_id: args.target_id, edge_type: args.edge_type });
+}
+
+/**
+ * `change` on a Foundation, Interaction, or Interface that never shipped and carries another
+ * change id: its edges are its own plan, so the edge would silently join that plan.
+ */
+function preShipChangeProblem(source: MindPlanNode, change: string | undefined): string | null {
+  if (change === undefined || !isPipelineNodeType(source.type) || source.shipped_at) return null;
+  if (!source.change || source.change === change) return null;
+  return (
+    `"${source.id}" has not shipped, so the edge would join its own plan (change "${source.change}"), not "${change}". ` +
+    `Drop change to add it now (the node then waits for the target), or plan it with change once "${source.id}" has shipped.`
+  );
+}
+
+function linkOne(
+  args: { verbose?: boolean; source_id: string; target_id: string; edge_type: EdgeType; change?: string },
+  mode: LinkMode = {}
+): Record<string, unknown> {
   const { source_id, target_id, edge_type } = args;
   const graph = loadGraph();
   const source = findNode(graph, source_id);
   const target = findNode(graph, target_id);
+  const preShip = preShipChangeProblem(source, args.change);
+  if (preShip) throw blocked(preShip);
   const revision = linkRevision(source, edge_type, args.change);
-  if (revision !== null) return linkOnRevision(graph, source, target, edge_type as PlannedEdgeType, revision, args.verbose);
+  if (revision !== null) return linkOnRevision(graph, source, target, edge_type as PlannedEdgeType, revision, args.verbose, mode);
   if (args.change !== undefined && isPlannedSource(source, args.change)) {
-    return planEdge(graph, source, target, edge_type, args.change, args.verbose);
+    return planEdge(graph, source, target, edge_type, args.change, args.verbose, mode);
   }
   validateLink(source, target, edge_type);
 
@@ -179,28 +223,11 @@ export function linkNodes(args: {
     assertNoChangeCycle(graph, { source: source_id, target: target_id, change });
     assertAcyclicDependsOn(graph, source_id, target_id);
   }
-  gateWrite(graph, [source_id], "link_nodes");
-  const rulesBefore = rulesBeforeWrite(graph, source_id);
+  if (!mode.batch) gateWrite(graph, [source_id], "link_nodes");
+  const rulesBefore = mode.batch ? null : rulesBeforeWrite(graph, source_id);
 
   const writeSlot = edgeWriteSlot(source, edge_type);
-  const existingOnSlot =
-    writeSlot === "next" && source.next
-      ? edge_type === "belongs_to"
-        ? (source.next.belongs_to ?? []).includes(target_id)
-        : edge_type === "depends_on"
-          ? (source.next.depends_on ?? []).includes(target_id)
-          : edge_type === "exposes"
-            ? (source.next.exposes ?? []).includes(target_id)
-            : edge_type === "leads_to"
-              ? (source.next.leads_to ?? []).includes(target_id)
-              : edge_type === "mounts"
-                ? (source.next.mounts ?? []).includes(target_id)
-                : false
-      : graph.edges.some(
-          (e) => e.source === source_id && e.target === target_id && e.type === edge_type
-        );
-
-  if (existingOnSlot) {
+  if (liveEdgeExists(graph, source, target_id, edge_type, writeSlot)) {
     throw blocked(`edge ${source_id} -${edge_type}-> ${target_id} already exists.`);
   }
 
@@ -224,7 +251,7 @@ export function linkNodes(args: {
   const changedCapabilities = recomputeCapabilityStates(graph);
   const changedStability = recomputeStability(graph);
   const synced = syncNodes([...changedCapabilities, ...changedStability]);
-  refreshPersistedMap();
+  if (!mode.batch) refreshPersistedMap();
   const readiness = readinessResult(source, writeSlot, edgeWrite.readinessReset);
   const files = [territoryPath(source, writeSlot), ...synced, ...readiness.files];
   return {
@@ -233,10 +260,174 @@ export function linkNodes(args: {
     capabilities_recomputed: changedCapabilities.map((j) => ({ id: j.id, state: j.state })),
     stability_recomputed: changedStability.map((n) => ({ id: n.id, state: n.state })),
     ...readinessFields(readiness.reset),
-    ...rulesReachingAfterWrite(source_id, rulesBefore),
-    changed_files: changedFiles(files, true),
-    ...mutationTail(loadGraph(), source_id, args.verbose),
+    ...(mode.batch ? {} : rulesReachingAfterWrite(source_id, rulesBefore)),
+    changed_files: changedFiles(files, !mode.batch),
+    ...(mode.batch ? {} : mutationTail(loadGraph(), source_id, args.verbose)),
   };
+}
+
+/** Whether a live link would duplicate an edge on the slot it writes (live, or a legacy next file). */
+function liveEdgeExists(
+  graph: MindPlanGraph,
+  source: MindPlanNode,
+  targetId: string,
+  type: EdgeType,
+  writeSlot: "current" | "next"
+): boolean {
+  if (writeSlot === "next" && source.next) {
+    return type !== "affects" && ((source.next[type] as string[] | undefined) ?? []).includes(targetId);
+  }
+  return graph.edges.some((e) => e.source === source.id && e.target === targetId && e.type === type);
+}
+
+/** Where one link lands: live, a delta on an open revision, or a planned entry. */
+type LinkRoute = "live" | "revision" | "planned";
+
+/**
+ * Check one edge of a batch against `sim` exactly as a single link_nodes would, then add it to
+ * `sim` (graph edges and node arrays, a revision's add delta, or the planned list), so the next
+ * edge is checked against the graph this one leaves. Throws the single call's Blocked.
+ */
+function simulateLink(sim: MindPlanGraph, edge: LinkEdge, change: string | undefined): LinkRoute {
+  const source = findNode(sim, edge.source_id);
+  const target = findNode(sim, edge.target_id);
+  const type = edge.edge_type;
+  const preShip = preShipChangeProblem(source, change);
+  if (preShip) throw blocked(preShip);
+  const revision = linkRevision(source, type, change);
+  if (revision !== null) {
+    validateLink(source, target, type);
+    if (type === "depends_on") {
+      assertNoChangeCycle(sim, { source: source.id, target: target.id, change: revision });
+      assertAcyclicDependsOn(revisionGraph(sim, revision), source.id, target.id);
+    }
+    const planned = type as PlannedEdgeType;
+    if ((withRevision(source, revision).next?.[planned] ?? []).includes(target.id)) {
+      throw blocked(`edge ${source.id} -${type}-> ${target.id} already exists in revision "${revision}".`);
+    }
+    const rev = revisionFor(source, revision)!;
+    const d = rev.edges[planned] ?? emptyDelta();
+    rev.edges[planned] = { add: [...d.add, target.id], remove: d.remove.filter((id) => id !== target.id) };
+    return "revision";
+  }
+  if (change !== undefined && isPlannedSource(source, change)) {
+    validateChangeInput({ change });
+    if (!change) throw blocked("link_nodes change must be a change id to plan an edge.");
+    if (!(PLANNED_EDGE_TYPES as readonly string[]).includes(type)) {
+      throw blocked(`a ${type} edge cannot be planned; planned edges are ${PLANNED_EDGE_TYPES.join(", ")}.`);
+    }
+    const row = { source: source.id, change, type: type as PlannedEdgeType, target: target.id };
+    if (row.type === "depends_on") assertNoChangeCycle(sim, row);
+    validatePlannedLink(sim, row);
+    source.planned = [...(source.planned ?? []), { change, type: row.type, target: target.id }];
+    return "planned";
+  }
+  validateLink(source, target, type);
+  if (type === "depends_on") {
+    const own = source.shipped_at ? null : source.change || null;
+    assertNoChangeCycle(sim, { source: source.id, target: target.id, change: own });
+    assertAcyclicDependsOn(sim, source.id, target.id);
+  }
+  const writeSlot = edgeWriteSlot(source, type);
+  if (liveEdgeExists(sim, source, target.id, type, writeSlot)) {
+    throw blocked(`edge ${source.id} -${type}-> ${target.id} already exists.`);
+  }
+  if (writeSlot === "next" && source.next) {
+    const next = source.next as unknown as Record<string, string[] | undefined>;
+    next[type] = [...(next[type] ?? []), target.id];
+  } else {
+    sim.edges.push({ source: source.id, target: target.id, type });
+    const live = source as unknown as Record<string, string[] | undefined>;
+    live[type] = [...(live[type] ?? []), target.id];
+  }
+  return "live";
+}
+
+/**
+ * Merge the per-source rules blocks of a batch into one, shaped like a single link's: `node_id`
+ * names the sources (comma-joined), each rule source comes once, `removed` lists each source that
+ * stopped reaching one of them.
+ */
+function mergeRulesBlocks(blocks: { source: string; rules: Record<string, unknown> }[]): Record<string, unknown> {
+  if (blocks.length === 0) return {};
+  const entries = new Map<string, Record<string, unknown>>();
+  const removed = new Set<string>();
+  let more: unknown;
+  for (const { rules } of blocks) {
+    for (const e of (rules.entries as Record<string, unknown>[] | undefined) ?? []) {
+      const id = String(e.node_id);
+      // A source's full text wins over its one-line form.
+      if (!entries.has(id) || (typeof e.rules === "string" && typeof entries.get(id)!.rules !== "string")) entries.set(id, e);
+    }
+    for (const id of (rules.removed as string[] | undefined) ?? []) removed.add(id);
+    more ??= rules.more;
+  }
+  return {
+    rules: {
+      node_id: blocks.map((b) => b.source).join(","),
+      entries: [...entries.values()],
+      ...(more ? { more } : {}),
+      ...(removed.size ? { removed: [...removed] } : {}),
+    },
+  };
+}
+
+/**
+ * link_nodes with `edges`: every edge is checked on one in-memory graph, each against the graph
+ * the earlier ones leave, before the first write; one Blocked edge Blocks the call and nothing is
+ * written. Then each edge is written as a single link would write it, the map is refreshed once,
+ * and one rules block covers every source.
+ */
+function linkBatch(edges: LinkEdge[], change: string | undefined, verbose?: boolean): Record<string, unknown> {
+  if (edges.length === 0) throw blocked("link_nodes edges is empty; pass at least one edge.");
+  if (edges.length > MAX_BATCH_EDGES) {
+    throw blocked(`link_nodes takes at most ${MAX_BATCH_EDGES} edges per call; got ${edges.length}. Split the list.`);
+  }
+  const graph = loadGraph();
+  const sim = structuredClone(graph);
+  const failures: string[] = [];
+  const routes: LinkRoute[] = [];
+  edges.forEach((edge, i) => {
+    try {
+      routes.push(simulateLink(sim, edge, change));
+    } catch (err) {
+      const message = (err instanceof Error ? err.message : String(err)).replace(/^Blocked: /, "");
+      failures.push(`edge ${i + 1} of ${edges.length} (${edge.source_id} -${edge.edge_type}-> ${edge.target_id}): ${message}`);
+    }
+  });
+  if (failures.length > 0) {
+    throw blocked(`link_nodes wrote nothing: ${failures.length} of ${edges.length} edge(s) are Blocked. ${failures.join(" ")}`);
+  }
+  const plain = [...new Set(edges.filter((_, i) => routes[i] !== "planned").map((e) => e.source_id))];
+  const plannedOnly = [...new Set(edges.filter((_, i) => routes[i] === "planned").map((e) => e.source_id))].filter(
+    (id) => !plain.includes(id)
+  );
+  if (plain.length > 0) gateWrite(graph, plain, "link_nodes");
+  const finish = plannedOnly.length > 0 ? gateWriteOrOrient(graph, plannedOnly, "link_nodes") : (r: Record<string, unknown>) => r;
+  const before = new Map(plain.map((id) => [id, rulesBeforeWrite(graph, id)]));
+
+  const linked: Record<string, unknown>[] = [];
+  const files: string[] = [];
+  const resets: unknown[] = [];
+  for (const edge of edges) {
+    const r = linkOne({ ...edge, change }, { batch: true });
+    linked.push({ ...edge, ...(r.planned ? { planned: true } : {}) });
+    files.push(...((r.changed_files as string[] | undefined) ?? []));
+    if (r.readiness_reset) resets.push(r.readiness_reset);
+  }
+  if (routes.some((r) => r !== "planned")) refreshPersistedMap();
+  const blocks: { source: string; rules: Record<string, unknown> }[] = [];
+  for (const id of plain) {
+    const after = rulesReachingAfterWrite(id, before.get(id) ?? null);
+    if (after.rules) blocks.push({ source: id, rules: after.rules as Record<string, unknown> });
+  }
+  return finish({
+    edges: linked,
+    ...mergeRulesBlocks(blocks),
+    ...(resets.length > 0 ? { readiness_reset: resets } : {}),
+    changed_files: changedFiles(files, true),
+    ...(verbose ? mutationTail(loadGraph(), edges[0].source_id, verbose) : {}),
+  });
 }
 
 /**
@@ -260,15 +451,16 @@ function linkOnRevision(
   target: MindPlanNode,
   type: PlannedEdgeType,
   change: string,
-  verbose?: boolean
+  verbose?: boolean,
+  mode: LinkMode = {}
 ): Record<string, unknown> {
   validateLink(source, target, type);
   if (type === "depends_on") {
     assertNoChangeCycle(graph, { source: source.id, target: target.id, change });
     assertAcyclicDependsOn(revisionGraph(graph, change), source.id, target.id);
   }
-  gateWrite(graph, [source.id], "link_nodes");
-  const rulesBefore = rulesBeforeWrite(graph, source.id);
+  if (!mode.batch) gateWrite(graph, [source.id], "link_nodes");
+  const rulesBefore = mode.batch ? null : rulesBeforeWrite(graph, source.id);
   if ((withRevision(source, change).next?.[type] ?? []).includes(target.id)) {
     throw blocked(`edge ${source.id} -${type}-> ${target.id} already exists in revision "${change}".`);
   }
@@ -278,7 +470,7 @@ function linkOnRevision(
     remove: d.remove.filter((id) => id !== target.id),
   }).changed_files;
   const readiness = revisionReadinessResult(source, change);
-  refreshPersistedMap();
+  if (!mode.batch) refreshPersistedMap();
   return {
     linked: { source: source.id, target: target.id, type },
     slot: "next",
@@ -286,9 +478,9 @@ function linkOnRevision(
     capabilities_recomputed: [],
     stability_recomputed: [],
     ...(readiness.reset ? { readiness_reset: readiness.reset } : {}),
-    ...rulesReachingAfterWrite(source.id, rulesBefore),
-    changed_files: changedFiles([...files, ...readiness.files], true),
-    ...mutationTail(loadGraph(), source.id, verbose),
+    ...(mode.batch ? {} : rulesReachingAfterWrite(source.id, rulesBefore)),
+    changed_files: changedFiles([...files, ...readiness.files], !mode.batch),
+    ...(mode.batch ? {} : mutationTail(loadGraph(), source.id, verbose)),
   };
 }
 
@@ -352,7 +544,8 @@ function planEdge(
   target: MindPlanNode,
   edge_type: (typeof EDGE_TYPES)[number],
   change: string,
-  verbose?: boolean
+  verbose?: boolean,
+  mode: LinkMode = {}
 ): Record<string, unknown> {
   validateChangeInput({ change });
   if (!change) throw blocked("link_nodes change must be a change id to plan an edge.");
@@ -362,15 +555,17 @@ function planEdge(
   const row = { source: source.id, change, type: edge_type as PlannedEdgeType, target: target.id };
   if (row.type === "depends_on") assertNoChangeCycle(graph, row);
   validatePlannedLink(graph, row);
-  gateWrite(graph, [source.id], "link_nodes");
+  // A planned edge changes neither the live graph nor the rules reaching anything until open_next
+  // applies it (and returns the rules it brings), so it orients its source itself.
+  const finish = mode.batch ? (r: Record<string, unknown>) => r : gateWriteOrOrient(graph, [source.id], "link_nodes");
   // Planned edges are not in the map or the search docs, so neither is refreshed.
   writePlannedEdges(source, [...(source.planned ?? []), { change, type: row.type, target: target.id }]);
-  return {
+  return finish({
     planned: row,
     note: `Planned, not live: open_next({ node_id: "${source.id}", change: "${change}" }) applies it to the revision.`,
     changed_files: changedFiles([territoryPath(source, "current")]),
-    ...mutationTail(loadGraph(), source.id, verbose),
-  };
+    ...(mode.batch ? {} : mutationTail(loadGraph(), source.id, verbose)),
+  });
 }
 
 export function unlinkNodes(args: {

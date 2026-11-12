@@ -3,12 +3,14 @@ id: f-plan-writes
 type: Foundation
 change: planning-friction
 change_ref: "feat/planning-friction"
-state: ready
+state: in-review
 opened_at: 2026-11-12T10:28:42.601Z
-updated_at: 2026-11-12T10:32:34.779Z
+updated_at: 2026-11-12T15:47:11.347Z
 reason: behavior
 title: "Plan writes"
 description: "Infra — the plumbing every graph-write action shares: the orientation write gate, the project rules gate and push, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it."
+tests_add:
+  - src/foundations/f-test-harness/batch-edits.test.mjs
 base:
   - title=d254ce52
   - description=c29e0ea8

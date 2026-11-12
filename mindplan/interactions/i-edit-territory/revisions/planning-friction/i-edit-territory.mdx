@@ -3,12 +3,15 @@ id: i-edit-territory
 type: Interaction
 change: planning-friction
 change_ref: "feat/planning-friction"
-state: ready
+state: in-review
 opened_at: 2026-11-12T10:21:48.869Z
-updated_at: 2026-11-12T10:52:12.149Z
+updated_at: 2026-11-12T15:47:11.513Z
 reason: behavior
 title: "Edit a node's territory"
 description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, a revision's change id, aliases, declared splits, node rules, and attachments."
+tests_add:
+  - src/foundations/f-test-harness/batch-edits.test.mjs
+  - src/foundations/f-test-harness/orient-gate.test.mjs
 base:
   - title=6339afb2
   - description=cee339a4
@@ -90,7 +93,7 @@ Each tool's description says when to call it, what it does, and its key paramete
 - [ ] Requirements defined {#spec}
 - [ ] Implementation complete {#impl}
 - [ ] Tests passing {#verify}
-- [ ] SPEC §8 `patch_node_territory` entry and the tool description name the `replace` list; define-entities skill example; CHANGELOG {#docs}
+- [x] SPEC §8 `patch_node_territory` entry and the tool description name the `replace` list; define-entities skill example; CHANGELOG {#docs}
 
 ## Attachments
 
