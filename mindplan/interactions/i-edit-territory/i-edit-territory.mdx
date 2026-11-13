@@ -4,12 +4,12 @@ type: Interaction
 title: "Edit a node's territory"
 description: "Agent edits a node's territory: body, section, replace, checkboxes, title, description, role, a revision's change id, aliases, declared splits, node rules, and attachments."
 state: stable
-shipped_at: 2026-11-11T13:26:33.604Z
-revisions: 8
-churn: 6.707
-churn_behavior: 1.936
+shipped_at: 2026-11-12T18:32:51.266Z
+revisions: 9
+churn: 7.522
+churn_behavior: 2.883
 created_at: 2026-10-31T11:58:03.545Z
-updated_at: 2026-11-11T13:26:33.604Z
+updated_at: 2026-11-12T18:32:51.266Z
 belongs_to:
   - j-plan-console
   - j-territory-sdlc
@@ -20,10 +20,12 @@ depends_on:
 implements:
   - src/interactions/i-edit-territory/
 tests:
+  - src/foundations/f-test-harness/batch-edits.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
   - src/foundations/f-test-harness/open-closed.test.mjs
+  - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/search-index.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
   - src/foundations/f-test-harness/transient-io.test.mjs
@@ -43,13 +45,13 @@ Agent calls `patch_node_territory`, `patch_node_rules`, `put_attachment`, or `re
 
 Intended files: `src/interactions/i-edit-territory/` (`handlers.ts`, `tools.ts`).
 
-- **patch_node_territory** preserves `## Rules` and Blocks a body containing one (naming `patch_node_rules`), and Blocks `## Decisions` (use `record_decision`). Besides `body` it takes `section` + `text` and `replace { find, with, all? }`; `body` cannot be combined with them; `section` without `text` is Blocked. `toggle_checkboxes` items take `all`, `note`, and `not_applicable` and return `toggled`. Title, description, and role write the pre-ship live slot or an open next; on a shipped live slot they are Blocked
+- **patch_node_territory** preserves `## Rules` and Blocks a body containing one (naming `patch_node_rules`), and Blocks `## Decisions` (use `record_decision`). Besides `body` it takes `section` + `text` and `replace { find, with, all? }`; `body` cannot be combined with them; `section` without `text` is Blocked. `replace` also takes a list of `{ find, with, all? }` entries (1 to 50), for rewording several places of a long body in one call: the entries are applied in order to one in-memory body, so a later `find` sees the text the earlier ones left and must be unique at its step unless `all`, and the body is written once. All or none: when any entry is Blocked (empty, not found, matching several places, or a `with` holding a heading the node owns elsewhere), the Block names each failing entry by its position counted from 1 (`replace entry 2 of 5: find text not found …`), the remaining entries being tried on the body without it, and nothing is written. A list goes wherever one replace goes: a revision, a pre-ship node, and `reason: "text"` on a shipped node. `toggle_checkboxes` items take `all`, `note`, and `not_applicable` and return `toggled`. Title, description, and role write the pre-ship live slot or an open next; on a shipped live slot they are Blocked
 - **Readiness reset.** A contract write to a `ready` slot (title, description, role, body, section, replace, `add_checklist_items`) moves it back to `draft` and returns `readiness_reset`; `toggle_checkboxes` (a tick on an existing item is evidence of work done, not a contract change), `change` / `change_ref`, aliases, `split_into`, rules, and attachments never reset
 - **Wording fix in place.** `reason: "text"` on a shipped (`stable` / `unstable`) Foundation, Interaction, or Interface writes `title`, `description`, `body`, `section`, or `replace` to the live file in place (`patchShippedText`), whatever revisions are open: no `open_next`, decision gate, or ship, and no change to `revisions` or `churn`. The body's `## ` headings and checklist items must be the same before and after (`assertWordingOnly`, fenced code skipped), else it is Blocked and nothing is written; any other patch field or `slot: "next"` with it is Blocked. The reply carries `reason: "text"` and `in_place: true`; the live file's `updated_at` and git diff are the record. Before first ship, and on a Capability or Bug, the reason changes nothing
 - **Change ids.** `change` / `change_ref` set the change of the slot that holds a revision (the open next, or a pre-ship live slot). On a shipped node with no open next either one is Blocked (`shippedChangeBlocked`, `f-plan-writes`): its files are edited in place and need no change id. A write that passes `change` runs inside `withChangeCleanup` (`f-plan-writes`), so moving the last revision off a change drops that change's planned edges
 - **Aliases** on any active node, shipped ones included, live and next alike, without `open_next` or a readiness reset
 - **Declared splits.** `split_into` on a node with an open revision writes the next file's `split_into` as the live list plus the parts (`writeNextSplitInto`), validated first (`validateSplitInto`): a Foundation splits into other active Foundations (recorded at ship for the parts it then `depends_on`); an Interaction into other active Interactions that share one of its Capabilities; an Interface into the Interactions it exposes. A marked part that will not count at ship yet returns a `split_into:` warning. **Clearing a wrong split.** `split_into: []` on a shipped node with no open revision removes its `split_at` and `split_into` in place (no `open_next`, no readiness reset) and recounts `churn` from the node file's git history without the split reset (`shipHistory`, `replayChurn`, f-compiler-rules); outside git the stored `churn` is kept. A node with no split record is Blocked (nothing to clear); a non-empty list without an open revision stays Blocked with `open_next`
-- **patch_node_rules({ node_id, rules })** replaces `## Rules` on any active node (live and an open next alike), never changes state or readiness, Blocks a heading line, and returns `rules_impact` (`rulesImpact`, `f-graph-search`) so the author sees whose work the edit reaches
+- **patch_node_rules({ node_id, rules })** replaces `## Rules` on any active node (live and an open next alike), never changes state or readiness, Blocks a heading line, and returns `rules_impact` (`rulesImpact`, `f-graph-search`) so the author sees whose work the edit reaches. The text it wrote counts as received by this session (`recordRulesSent`, `f-orientation-ledger`), so the author's next write on a node those rules reach is not Blocked for rules it wrote itself; every other session still is
 - **Attachments.** `put_attachment` / `remove_attachment` write or remove a file under the node's attachments folder (next-attachments while a revision is open)
 - Orientation gate on `node_id` (`gateWrite`, `f-plan-writes`)
 
@@ -77,7 +79,9 @@ Each tool's description says when to call it, what it does, and its key paramete
 ## Acceptance Criteria
 
 - `section` rewrites one section and leaves the rest; `replace` is Blocked unless the text matches exactly once (or `all`)
+- A `replace` list of three entries rewrites three places with one file write; when its second entry's text is not found the call is Blocked naming entry 2 and the body is unchanged; with `reason: "text"` on a shipped node the list is written to live in place
 - Each contract write on a `ready` next slot returns `next_state: "draft"` and `readiness_reset`; the same write on an in-progress slot changes no state; `patch_node_rules` and change writes never reset readiness
+- After `patch_node_rules` on a Foundation, the same session's write on a node that depends on it passes the orientation gate, and another session's is `Blocked: Orientation`
 - `patch_node_rules` then `patch_node_territory` leaves the rules intact; with an open evolution the rules appear in both files; Blocked on unknown id, retired node, closed Bug, or a heading line
 - `change` (any value, `""` included) or `change_ref` on a shipped node with no open next is Blocked naming in-place edits and `open_next`, and writes nothing
 - `aliases` are written, `[]` clears them, an alias over 60 characters is rejected

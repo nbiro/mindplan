@@ -162,6 +162,37 @@ export function entityDir(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.join(mindplanRoot(), TYPE_DIRS[node.type], node.id);
 }
 
+/**
+ * Delete the folder of a Foundation, Interaction, or Interface that never shipped: its `<id>.mdx`,
+ * attachments, decisions, and `confirmed.json`. Returns the deleted files, project-relative.
+ * Blocked for a node that shipped or once did (`shipped_at`, or a `revisions` count above zero:
+ * `force_unship` clears `shipped_at` but keeps the count and the decisions of its shipped life), a
+ * Capability, and a Bug. It reads no edges: the caller makes sure nothing that stays points here.
+ */
+export function removeNode(node: MindPlanNode): string[] {
+  if (node.type !== "Foundation" && node.type !== "Interaction" && node.type !== "Interface") {
+    throw new Error(`Blocked: "${node.id}" is a ${node.type}; only a never-shipped Foundation, Interaction, or Interface is removed.`);
+  }
+  if (node.shipped_at || (node.revisions ?? 0) > 0) {
+    throw new Error(`Blocked: "${node.id}" has shipped${node.shipped_at ? "" : " before"}; a node that shipped keeps its folder and history.`);
+  }
+  const dir = entityDir(node);
+  const removed: string[] = [];
+  if (!fs.existsSync(dir)) return removed;
+  const root = projectRoot();
+  const walk = (abs: string): void => {
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+      const child = path.join(abs, entry.name);
+      if (entry.isDirectory()) walk(child);
+      else removed.push(path.relative(root, child).split(path.sep).join("/"));
+    }
+  };
+  walk(dir);
+  notePlanWrite(dir);
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: RM_MAX_RETRIES });
+  return removed.sort();
+}
+
 /** Project-relative path to an entity folder, e.g. mindplan/interactions/i-orient-plan */
 export function entityRelativePath(node: Pick<MindPlanNode, "id" | "type">): string {
   return path.posix.join(MINDPLAN_DIR, TYPE_DIRS[node.type], node.id);
@@ -1939,8 +1970,11 @@ export type PatchNodeTerritoryInput = {
   change_ref?: string;
   /** Replace the text under one `## heading` (heading line kept, other sections untouched). */
   section?: { heading: string; text: string };
-  /** Replace one exact text occurrence in the body (`all` replaces every occurrence). */
-  replace?: { find: string; with: string; all?: boolean };
+  /**
+   * Replace one exact text occurrence in the body (`all` replaces every occurrence), or a list of
+   * them applied in order (`replaceEachInBody`).
+   */
+  replace?: ReplaceSpec | ReplaceSpec[];
   /** Override default slot selection. */
   slot?: TerritorySlot;
   /**
@@ -2112,6 +2146,46 @@ function rewriteLiveBody(node: Pick<MindPlanNode, "id" | "type">, edit: (body: s
   if (body === split.body) return false;
   writeMarkdown(node, `${split.frontmatter}${split.separator}${body}`, "current");
   return true;
+}
+
+/** One exact replacement: `find` must match once unless `all`. */
+export type ReplaceSpec = { find: string; with: string; all?: boolean };
+
+/** Most entries one replace list takes. */
+export const MAX_REPLACE_ENTRIES = 50;
+
+/**
+ * Apply one replacement, or a list of them in order to one in-memory body: each entry sees the
+ * text the earlier ones left. All or none: every failing entry is named by its position counted
+ * from 1 (the rest are tried on the body without it), and the call Blocks with nothing written.
+ * `guard` checks each entry's `with` first (owned headings).
+ */
+export function replaceEachInBody(
+  body: string,
+  replace: ReplaceSpec | ReplaceSpec[],
+  guard?: (text: string, what: string) => void
+): string {
+  if (!Array.isArray(replace)) {
+    guard?.(replace.with, "replace.with");
+    return replaceTextInBody(body, replace.find, replace.with, replace.all);
+  }
+  if (replace.length === 0) throw new Error("Blocked: replace is an empty list; pass at least one { find, with }.");
+  if (replace.length > MAX_REPLACE_ENTRIES) {
+    throw new Error(`Blocked: replace takes at most ${MAX_REPLACE_ENTRIES} entries per call; got ${replace.length}.`);
+  }
+  const failures: string[] = [];
+  let text = body;
+  replace.forEach((entry, i) => {
+    try {
+      guard?.(entry.with, "replace.with");
+      text = replaceTextInBody(text, entry.find, entry.with, entry.all);
+    } catch (err) {
+      const message = (err instanceof Error ? err.message : String(err)).replace(/^Blocked: /, "").replace(/^replace\./, "");
+      failures.push(`replace entry ${i + 1} of ${replace.length}: ${message}`);
+    }
+  });
+  if (failures.length > 0) throw new Error(`Blocked: nothing was written. ${failures.join(" ")}`);
+  return text;
 }
 
 /** Replaces one exact occurrence of `find` in the body; Blocked on zero or ambiguous matches. */
@@ -2289,17 +2363,18 @@ export function patchNodeTerritory(
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }
   if (input.replace !== undefined) {
-    if (hasNodeRulesHeading(input.replace.with)) {
-      throw new Error(
-        `Blocked: replace.with contains a "${NODE_RULES_HEADING}" heading. Node rules are written only by patch_node_rules.`
-      );
-    }
-    if (hasNodeDecisionsHeading(input.replace.with)) {
-      throw new Error(
-        `Blocked: replace.with contains a "${NODE_DECISIONS_HEADING}" heading. Decisions are written only by record_decision.`
-      );
-    }
-    body = replaceTextInBody(body, input.replace.find, input.replace.with, input.replace.all);
+    body = replaceEachInBody(body, input.replace, (text, what) => {
+      if (hasNodeRulesHeading(text)) {
+        throw new Error(
+          `Blocked: ${what} contains a "${NODE_RULES_HEADING}" heading. Node rules are written only by patch_node_rules.`
+        );
+      }
+      if (hasNodeDecisionsHeading(text)) {
+        throw new Error(
+          `Blocked: ${what} contains a "${NODE_DECISIONS_HEADING}" heading. Decisions are written only by record_decision.`
+        );
+      }
+    });
     patched_fields.push("replace");
     frontmatter = frontmatter.replace(/^updated_at:.*$/m, `updated_at: ${now}`);
   }

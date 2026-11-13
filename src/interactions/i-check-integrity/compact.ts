@@ -79,18 +79,24 @@ export function resetSeenWarnings(): void {
   seenByRoot.clear();
 }
 
+/** The warning ids earlier compact checks of this root listed in this session. */
+export function seenWarnings(root: string): Set<string> {
+  return seenByRoot.get(rootKey(root)) ?? new Set<string>();
+}
+
 /**
- * Records what this compact check showed and returns what earlier ones in this session showed.
- * A scoped check showed only its own warnings: those are seen now, and an out-of-scope warning
- * stays seen only if an earlier check showed it.
+ * Records what this compact check listed: shown means seen. Of the current warnings, those the
+ * reply still lists after the budget cut (`listed`, by id) are seen now, and every other one stays
+ * seen only if an earlier check listed it; a warning the budget cut stays unseen, so the next
+ * compact check lists it. Returns what earlier checks listed.
  */
-export function recordSeen(root: string, warnings: string[], ids: Map<string, string>, nodes?: Set<string>): Set<string> {
+export function recordSeen(root: string, warnings: string[], ids: Map<string, string>, listed: Set<string>): Set<string> {
   const key = rootKey(root);
-  const previous = seenByRoot.get(key) ?? new Set<string>();
+  const previous = seenWarnings(root);
   const next = new Set<string>();
   for (const w of warnings) {
     const id = ids.get(w) ?? warningId(w);
-    if (!nodes || inScope(w, nodes) || previous.has(id)) next.add(id);
+    if (listed.has(id) || previous.has(id)) next.add(id);
   }
   seenByRoot.set(key, next);
   return previous;

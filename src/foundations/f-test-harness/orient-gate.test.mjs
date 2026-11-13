@@ -197,17 +197,51 @@ async function session() {
   await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
   check("an oriented node can be written", !(await raw("patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice." })).error);
   await call("orient_for_work", { node_id: "j-pay", depth: "rules" });
+  // Another session that oriented on i-pay before the change must read the new text first.
+  const other = await session();
+  await other.call("orient_for_work", { node_id: "i-pay", depth: "rules" });
   await call("patch_node_rules", { node_id: "j-pay", rules: "- Amounts are integer cents.\n- Payments are append-only." });
-  const after = await raw("patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card." });
+  const after = await other.raw("patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card." });
   check(
-    "after an inherited rule changes, the dependent must orient again",
+    "after an inherited rule changes in another session, the dependent must orient again",
     after.error && after.text.includes("changed since you oriented"),
     after.text.slice(0, 160)
   );
-  const reoriented = await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
+  const reoriented = await other.call("orient_for_work", { node_id: "i-pay", depth: "rules" });
   check("the new orientation carries the changed rule", reoriented.rules.entries.some((e) => e.rules?.includes("append-only")));
-  check("then the write goes through", !(await raw("patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card." })).error);
+  check("then the write goes through", !(await other.raw("patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card." })).error);
+  await other.client.close();
   check("the author of a rules change stays oriented", !(await raw("patch_node_territory", { node_id: "j-pay", description: "Customers pay invoices." })).error);
+  check(
+    "the author's write on a node its new rules reach passes: it holds the text it wrote",
+    !(await raw("patch_node_territory", { node_id: "i-pay", description: "Customer pays an invoice by card or transfer." })).error
+  );
+  await client.close();
+}
+
+// --- session 4b: links never Block the writes that follow on what they touch ---
+{
+  const { client, raw, call } = await session();
+  await call("create_node", { id: "f-audit", type: "Foundation", title: "Audit", description: "Infra — audit trail", role: "infra" });
+  await call("patch_node_rules", { node_id: "f-audit", rules: "- Every money movement is audited." });
+  await call("create_node", { id: "f-base", type: "Foundation", title: "Base", description: "Infra — base store", role: "infra" });
+  await call("create_node", { id: "f-mid", type: "Foundation", title: "Mid", description: "Infra — mid layer", role: "infra" });
+  await call("create_node", { id: "i-top", type: "Interaction", title: "Top", description: "Customer uses the top layer." });
+  // Several links from one node sent together: each one leaves the source oriented.
+  const links = await Promise.all([
+    raw("link_nodes", { source_id: "i-top", target_id: "j-pay", edge_type: "belongs_to" }),
+    raw("link_nodes", { source_id: "i-top", target_id: "f-mid", edge_type: "depends_on" }),
+    raw("link_nodes", { source_id: "i-top", target_id: "f-audit", edge_type: "depends_on" }),
+  ]);
+  check("links from one new node sent together all succeed", links.every((r) => !r.error), links.map((r) => r.text.slice(0, 100)).join(" | "));
+  // f-mid depends on f-audit: f-audit's rules now reach i-top a second way (moved, same text).
+  await call("link_nodes", { source_id: "f-mid", target_id: "f-audit", edge_type: "depends_on" });
+  check("a link that only moves a rule source does not Block the next write", !(await raw("patch_node_territory", { node_id: "i-top", description: "Customer uses the top layer daily." })).error);
+  // f-base gains f-audit's rules; f-mid (a dependent of f-base after this link) already holds the text.
+  await call("link_nodes", { source_id: "f-mid", target_id: "f-base", edge_type: "depends_on" });
+  await call("link_nodes", { source_id: "f-base", target_id: "f-audit", edge_type: "depends_on" });
+  const dependent = await raw("patch_node_territory", { node_id: "i-top", description: "Customer uses the top layer." });
+  check("a dependent of a linked node passes when the session holds every rule text reaching it", !dependent.error, dependent.text.slice(0, 160));
   await client.close();
 }
 
@@ -302,8 +336,8 @@ async function session() {
   check("a revision's proposed depends_on brings its target's rules", reaching.includes("f-new") && reaching.includes("f-old"), JSON.stringify(reaching));
   const live = { ...graph, nodes: graph.nodes.map((n) => (n.id === "i-x" ? { ...n, next: undefined } : n)) };
   check(
-    "so a link into the next slot changes the node's rules fingerprint",
-    ledger.rulesFingerprint(graph, "i-x") !== ledger.rulesFingerprint(live, "i-x")
+    "so a link into the next slot adds a source to the node's reaching tags",
+    ledger.reachingTags(graph, "i-x").has("f-new") && !ledger.reachingTags(live, "i-x").has("f-new")
   );
 }
 

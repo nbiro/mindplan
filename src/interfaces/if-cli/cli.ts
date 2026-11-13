@@ -1,5 +1,5 @@
 /**
- * CLI Interface — argv parsing, help, stdout/stderr, exit codes for check / view / hook. Setting up and
+ * CLI Interface — argv parsing, help, stdout/stderr, exit codes for check / view / hook / --version. Setting up and
  * upgrading a project are MCP tools (setup_project, upgrade_project), not commands.
  * Dispatches to Interaction entrypoints; does not own integrity math.
  */
@@ -12,6 +12,7 @@ import {
 import { runViewExport } from "../../interactions/i-export-map/handlers.js";
 import * as fs from "fs";
 import { preToolUseDecision } from "../../foundations/f-agent-hook/hook.js";
+import { packageVersion } from "../../foundations/f-territory-store/version.js";
 
 /**
  * `mindplan-mcp hook pre-tool-use`: reads the Claude Code hook payload from stdin and prints the
@@ -182,6 +183,7 @@ function printHelp(): void {
                             Claude Code PreToolUse hook: deny host file writes on mindplan/
                             (stdin: the hook JSON; installed by setup_project install_hook)
   mindplan-mcp help         Show this message
+  mindplan-mcp --version    Print the installed version (also -v, version)
 
 Set up or upgrade a project:
   Register the MindPlan MCP server with your agent, then ask it to set up MindPlan.
@@ -244,6 +246,11 @@ export function runCli(argv: string[] = process.argv): boolean {
 
   if (cmd === "hook") {
     runHookCli(argv.slice(3));
+    return true;
+  }
+
+  if (cmd === "--version" || cmd === "-v" || cmd === "version") {
+    console.log(packageVersion());
     return true;
   }
 

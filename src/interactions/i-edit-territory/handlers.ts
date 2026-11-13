@@ -36,7 +36,8 @@ import {
   hasNodeDecisionsHeading,
   normalizeHeadingName,
   replaceSectionInBody,
-  replaceTextInBody,
+  replaceEachInBody,
+  type ReplaceSpec,
   toggleCheckboxesInBody,
 } from "../../foundations/f-territory-store/store.js";
 import { appendChecklistItems, type NewChecklistItem } from "../../foundations/f-territory-store/checklist.js";
@@ -69,6 +70,7 @@ import {
   mutationTail,
   readinessFields,
   readinessResult,
+  recordRulesWritten,
   refreshPersistedMap,
   revisionReadinessReset,
   territoryPath,
@@ -112,7 +114,7 @@ type PatchTerritoryArgs = {
   add_checklist_items?: NewChecklistItem[];
   section?: string;
   text?: string;
-  replace?: { find: string; with: string; all?: boolean };
+  replace?: ReplaceSpec | ReplaceSpec[];
   change?: string;
   change_ref?: string;
   slot?: TerritorySlot;
@@ -413,8 +415,7 @@ function patchRevisionTerritory(graph: MindPlanGraph, args: PatchTerritoryArgs, 
     patched.push("section");
   }
   if (args.replace !== undefined) {
-    assertNoOwnedHeading(args.replace.with, "replace.with");
-    text = replaceTextInBody(text, args.replace.find, args.replace.with, args.replace.all);
+    text = replaceEachInBody(text, args.replace, assertNoOwnedHeading);
     patched.push("replace");
   }
   if (args.add_checklist_items?.length) {
@@ -637,7 +638,12 @@ export function patchNodeRules(args: {
   const written = writeNodeRules(node, rules);
   // The author holds the rules it just wrote; its orientation stays current. Nodes that inherit
   // them now need a fresh orientation before their next write.
-  if (orientationGateEnabled()) recordOriented(loadGraph(), [node_id]);
+  if (orientationGateEnabled()) {
+    const after = loadGraph();
+    recordOriented(after, [node_id]);
+    // The text as the graph reads it back, so its tag matches what reaches the dependents.
+    recordRulesWritten(node_id, after.nodes.find((n) => n.id === node_id)?.rules ?? "");
+  }
   return {
     node_id,
     rules: node.rules ?? "",

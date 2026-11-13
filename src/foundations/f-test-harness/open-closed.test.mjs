@@ -126,14 +126,14 @@ function check(label, condition, detail = "") {
     Math.abs(oc.graphRateMedian({ ...graph, nodes: [...graph.nodes, ...fresh, justSplit] }, defaults, NOW) - median) < 0.001
   );
 
-  const churn = oc.nodeChurn(core);
+  const churn = oc.nodeChurn(graph, core);
   check(
     "change groups are the distinct change ids on the decisions, oldest first",
     churn.map((c) => c.change).join(",") === "c-accounts,c-media,c-cache,c-site,c-content",
     JSON.stringify(churn)
   );
   check("a group holds every decision recorded under its change", churn[1].reasons.length === 2, JSON.stringify(churn[1]));
-  check("a never-shipped node's own change is no group", oc.nodeChurn(draft).length === 0);
+  check("a never-shipped node's own change is no group", oc.nodeChurn(graph, draft).length === 0);
 
   const ctx = oc.hotspotContext(graph, defaults, NOW);
   const hotspot = oc.hotspotFor(graph, core, defaults, ctx);

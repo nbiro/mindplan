@@ -148,7 +148,10 @@ An Interaction only after Capability first (above). The server scaffolds `mindpl
 ```
 link_nodes({ source_id, target_id, edge_type })
 link_nodes({ source_id: "i-orient-plan", target_id: "i-steer-plan", edge_type: "leads_to" })
+link_nodes({ edges: [{ source_id, target_id, edge_type }, …] })   // several edges, one call
 ```
+
+Wiring several new nodes? Send one `edges` batch (up to 100): every edge is checked before any is written, a Blocked edge is named `edge N of M` and nothing is written, and the reply carries one `rules` block.
 
 - `leads_to` is navigation only — not a ship gate and not a substitute for sharing state. Cycles are allowed.
 - Several `belongs_to` edges from one Interaction reuse it across Capabilities.
@@ -173,6 +176,7 @@ Write territory only with `patch_node_territory`. MCP is the only writer of `min
 ```
 patch_node_territory({ node_id, section: "## Purpose", text: "…" })        // one section; the rest untouched
 patch_node_territory({ node_id, replace: { find: "…", with: "…" } })      // one exact piece of the body
+patch_node_territory({ node_id, replace: [{ find, with }, { find, with }] }) // several, in order, one write
 patch_node_territory({ node_id, body: "…" })                              // the whole body
 patch_node_territory({ node_id, title?, description?, aliases? })         // record fields
 patch_node_territory({ node_id, toggle_checkboxes: [{ id: "impl", checked: true }] })

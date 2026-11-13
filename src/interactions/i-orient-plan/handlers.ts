@@ -849,9 +849,13 @@ export async function orientForWork(args: {
  * session (none when a decision under the change answered it), afterwards `hotspot: true` and the
  * diagnosis only. A node with no open revision keeps the text (it is not tied to a change).
  */
-function hotspotFields(node: MindPlanNode, hotspot: NonNullable<ReturnType<typeof hotspotFor>>): Record<string, unknown> {
+function hotspotFields(
+  graph: MindPlanGraph,
+  node: MindPlanNode,
+  hotspot: NonNullable<ReturnType<typeof hotspotFor>>
+): Record<string, unknown> {
   const open = openChanges(node);
-  const unanswered = open.filter((c) => !answeredUnder(node, c));
+  const unanswered = open.filter((c) => !answeredUnder(graph, node, c));
   if (open.length > 0 && unanswered.length === 0) return { hotspot: true, diagnosis: hotspot.diagnosis.kind, answered: true };
   const fresh = open.length === 0 || unanswered.filter((c) => firstHotspotWarning(node.id, c)).length > 0;
   return fresh
@@ -892,7 +896,7 @@ function stabilityPayload(graph: MindPlanGraph, node: MindPlanNode): Record<stri
       : {}),
     ...(node.revisions !== undefined ? { revisions: node.revisions } : {}),
     ...(node.split_into?.length ? { split_at: node.split_at, split_into: [...node.split_into] } : {}),
-    ...(hotspot ? hotspotFields(node, hotspot) : {}),
+    ...(hotspot ? hotspotFields(graph, node, hotspot) : {}),
     ...(fan ? { fan_out: fan } : {}),
     ...(grouping && grouping.groups.length > 0 ? { fan_in_groups: grouping.groups } : {}),
     ...(fanInSignal ? { fan_in_warning: fanInWarning(fanInSignal) } : {}),

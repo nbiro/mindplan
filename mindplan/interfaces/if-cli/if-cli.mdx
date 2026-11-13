@@ -2,23 +2,25 @@
 id: if-cli
 type: Interface
 title: "CLI"
-description: "CLI for check (--base, --merge, --merge=strict), view, and hook pre-tool-use: parses argv, prints the shared check output and warnings, prints legacy removals, answers the Claude Code hook, and sets the exit code; setup and upgrade are MCP tools, not commands."
+description: "CLI for check (--base, --merge, --merge=strict), view, hook pre-tool-use, and --version: parses argv, prints the shared check output and warnings, prints legacy removals, answers the Claude Code hook, and sets the exit code; setup and upgrade are MCP tools, not commands."
 state: stable
-shipped_at: 2026-11-08T17:07:34.799Z
-revisions: 12
-churn: 7.383
-churn_behavior: 1
+shipped_at: 2026-11-12T18:32:51.432Z
+revisions: 13
+churn: 7.722
+churn_behavior: 1.91
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-11-08T17:07:34.799Z
+updated_at: 2026-11-12T18:32:51.432Z
 depends_on:
   - f-agent-hook
   - f-mcp-runtime
+  - f-territory-store
 exposes:
   - i-check-integrity
   - i-export-map
 implements:
   - src/interfaces/if-cli/
 tests:
+  - src/foundations/f-test-harness/batch-edits.test.mjs
   - src/foundations/f-test-harness/check.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/open-closed.test.mjs
@@ -44,7 +46,7 @@ CLI command surface.
 
 Intended files: `src/interfaces/if-cli/`
 
-- Commands: no argument starts the MCP server (`f-mcp-runtime`); `check`, `view` / `export`, `help`. Any other command, `init` included, is `Unknown command` and exit 1; for `init` the message adds that setup and upgrade are now the MCP tools `setup_project` and `upgrade_project`
+- Commands: no argument starts the MCP server (`f-mcp-runtime`); `check`, `view` / `export`, `help`. `--version`, `-v`, and `version` print the installed package version alone on stdout (`packageVersion`, `f-territory-store`, the number `doctor` reports) and exit 0, so a user can see which release `npx mindplan-mcp` resolved without starting the server; help lists it. Any other command, `init` included, is `Unknown command` and exit 1; for `init` the message adds that setup and upgrade are now the MCP tools `setup_project` and `upgrade_project`
 - `check` prints `renderCheckOutput(result)`: `mindplan-mcp check: ok` on stdout, or the `Blocked:` lines on stderr and exit 1; `Warning:` lines follow either way and never change the exit code
 - `check --merge` runs the merge gate (`merge: true`); `--merge=strict` the strict level (`merge: "strict"`), with `--base <ref>` as its base (an explicit `--base` also runs dirty-src, as without `--merge`). Any other `--merge=` value is `Blocked: unknown merge level`, and `--merge` with `--merge=strict` is `Blocked:` (pass one level). Help documents both
 - `check` and `view` print `Removed <legacy> (kept <id-named>)` on stderr when a legacy file was deleted during the command
@@ -60,6 +62,7 @@ Intended files: `src/interfaces/if-cli/`
 
 - `mindplan-mcp init` exits non-zero and names `setup_project` and `upgrade_project`
 - Help has no `init` section and names both tools
+- `mindplan-mcp --version` (also `-v`, `version`) prints the version in `package.json` and exits 0
 - `check` output matches the `run_check` tool's `output`; warnings print without failing the check
 - No domain logic under this Interface
 - Verified via smoke

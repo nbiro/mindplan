@@ -4,13 +4,13 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, failed rule checks and tests, an outdated graph, and unreviewed or stale-territory work at merge; warns about stale text, shape, fan-in, and more; lists drift."
 state: stable
-shipped_at: 2026-11-09T19:38:24.759Z
-revisions: 37
-churn: 24.947
-churn_behavior: 1.975
-churn_wiring: 0.965
+shipped_at: 2026-11-12T18:32:51.050Z
+revisions: 38
+churn: 24.301
+churn_behavior: 2.845
+churn_wiring: 0.901
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-09T19:38:24.759Z
+updated_at: 2026-11-12T18:32:51.050Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -30,7 +30,9 @@ tests:
   - src/foundations/f-test-harness/after-merge.test.mjs
   - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
+  - src/foundations/f-test-harness/check-output.test.mjs
   - src/foundations/f-test-harness/check.test.mjs
+  - src/foundations/f-test-harness/confirm-territory.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/fan-in.test.mjs
   - src/foundations/f-test-harness/fan-out.test.mjs
@@ -87,7 +89,7 @@ Depends on: `f-territory-store`, `f-compiler-rules`, `f-mcp-runtime`, `f-source-
 - **Attributed presence.** `checkPresence` reports each `attributed` entry missing on disk as `Blocked: presence: "<id>" attributed file missing on disk: "<path>".` once the slot that holds it is in review
 - **Planned paths.** `runIntegrityCheck` and `run_check` return `info: string[]` next to `warnings`; `renderCheckOutput` prints them as `Info:` lines after the warnings. With `change`, a member's `planned:` lines from `staleTextWarnings` go to `info`, not `warnings`, so a plan-only change shows one `planned:` line per node and no `stale:` lines for paths it has not built yet. `info` never changes `ok`
 
-**Open–closed signals.** The default check warns `hotspot:` for each shipped node with an open revision whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, with the refactor its recorded reasons point to (invert, split, or unknown) and its recent change groups; a hotspot nobody is changing is not listed (open_next warns when a change reopens it); a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
+**Open–closed signals.** The default check warns `hotspot:` for each shipped node with an open revision whose recent ship rate is an outlier against the graph's median (`hotspots` with the `hotspots` settings), highest rank (rate × fan-in) first, as one short line per node (`hotspotLine`, `f-compiler-rules`): its pace, its direct dependents, the diagnosis (invert, split, or unknown) with the rate by reason, its recent change groups, and the two answers (the refactor, with `get_spec({ topic: "open-closed" })` for how, or a decision under the change). The advice paragraph is not printed per node: `open_next` gives it when a change reopens the node, and the spec topic holds it; a hotspot nobody is changing is not listed (open_next warns when a change reopens it); a node kept whole by a `keep_whole` decision is skipped. A change check adds the change's additivity summary as an `Info: additivity:` line and `change.additivity`. Neither ever fails the check.
 
 **Fan-out.** The default check warns `fan-out:` for each pre-ship Foundation, Interaction, or Interface whose `depends_on` targets sit in at least `fan_out.warn_at` other unshipped changes (`fanOuts` with `fanOutSettings`, `f-fan-out` and `f-source-index`), one `Warning: fan-out: …` line per node in `fanOuts` order, so a planned node that would have to know every feature of a kind is flagged before it is built; a node kept whole by a `keep_whole` decision is skipped. The settings are loaded once per run. With `change`, a member's `fan-out:` line is also part of the change's warnings. It never changes `ok` or the exit code, and is never Blocked.
 
@@ -116,7 +118,8 @@ The after-merge and compact code read the cache folder name from `f-source-index
 - **Rule checks (`rule-checks.ts`).** The check evaluates every `check:` line (`f-graph-search` parses them): a project rule's over the source universe, a node rule's over the owned files of every active pipeline node the rule reaches, each failure once: `Blocked: Rule: <project|node-id> — "<rule, never cut>" check <json>: <summary>` then up to five `path:line: <text>` lines and `+N more`. Command checks run per config `rule_checks.commands` (`off` default; `local` unless `CI` is set; `always`), else `Info: rule checks: N command check(s) skipped (...)`. A graph without check lines prints nothing new
 - **Linked tests (`run-tests.ts`).** `run_check({ run_tests: true, change | nodes })` runs config `tests.command` with `{files}` replaced by the linked tests of the nodes in scope (Blocked without a command, a scope, or any linked test), records each node's result (`f-compiler-rules` auto-items, which close `verify` on a pass), returns `tests: { command, nodes, files, exit_code, passed, without_tests?, output_tail? }`, and on a failure adds `Blocked: Tests: …` and `ok: false`
 - **Confirmed territory.** At merge, a shipped node with no open revision whose changed claimed files are all pinned at their current content by `confirm_territory` (`i-confirm-territory`, `f-territory-store` confirmations) passes with `Info: merge: "<id>" confirmed by <by> at <at>: <note>`; otherwise its line names `Unconfirmed:` / `Changed since confirmation:` files and offers `confirm_territory`. `confirmed.json` is not a territory change
-- **Answered hotspots.** The hotspot warnings skip a node whose every open revision has a decision under its change
+- **Answered hotspots.** The hotspot warnings skip a node whose every open revision has a decision under its change: one the node holds, or one recorded on another node that lists it in `nodes` (`answeredForOpenWork`, `f-compiler-rules`)
+- **Confirmed files are not stale.** A shipped node with no open revision whose claimed files changed against the base gets the full stale-text pass unless a confirmation covers the change: the node has at least one confirmation, and every claimed file that changed against the base is pinned at its current content by the newest confirmation naming it (`confirmationCoverage`, the helper the merge gate reads). A node with no confirmation is never covered. Migration and schema files count here, although the merge gate and `confirm_territory`'s default list leave them out: name one in `files` to pin it. A covered node keeps the path signals alone, so a confirmation also ends its `stale: N claimed file(s) … changed after its body was last updated` warning; editing a confirmed file again brings the full pass back
 
 ## Acceptance Criteria
 
@@ -157,6 +160,11 @@ The after-merge and compact code read the cache folder name from `f-source-index
 - `run_check({ change })` prints one `Info: additivity:` line with the change's summary and carries `change.additivity`
 - A pre-ship node depending on nodes in 3 other unshipped changes prints one `Warning: fan-out:` line naming them and `ok` stays true; 2 changes print none; `keep_whole: true` on the node removes it; `fan_out.warn_at: 2` in `mindplan/config.json` makes 2 changes warn
 - A draft infra Foundation with 18 dependents across 6 Capabilities prints one `Warning: fan-in:` line with the per-Capability counts and no `decision:` line; an unrelated decision listing it keeps the line; `keep_whole` on it, or moving dependents onto a per-area Foundation, removes it; assembler and design-system Foundations print none by default (`fan-in.test.mjs`)
+- `run_check({ change })` on a graph where another change's node also warns lists every warning naming a member before that one, in compact and full output
+- A compact check whose warnings exceed the reply budget lists the first ones with `truncated`; the next compact check lists the ones that were cut and counts the listed ones under `unchanged`
+- Five hotspots under work print five `hotspot:` lines that each name `get_spec({ topic: "open-closed" })`; none carries the registry or split paragraph
+- A hotspot whose open revision's change has a decision on another node listing it in `nodes` prints no `hotspot:` line
+- After `confirm_territory` on a shipped node edited in place, the plain check prints no `stale:` line for its changed files; editing one of them again prints it
 
 ## Attachments
 
@@ -168,6 +176,8 @@ The check lists every unticked `review` and `deploy` checklist item in one compa
 
 ## Compact output
 
-- `run_check` over MCP is compact by default (`compact: true`): `{ ok, counts: { <category>: n }, failures, warnings, info, acknowledged, unchanged }` where `warnings` lists only warnings this MCP session has not already returned for this root (kept in memory per server process; `compact: false` records nothing) and not acknowledged, except that with `nodes` every warning on those nodes is listed; each line appears once (no separate `output` copy). `compact: false` returns today's full shape (`output`, `failures`, `warnings`, `info`). The CLI prints the full output.
-- `nodes: [...]` limits warnings and the per-node checks to those nodes (graph-wide failures still count); `change` already scopes to a change.
-- Every warning carries a stable id (`w-` + 10 hex of sha1 over category, node, and the warning text). `acknowledge_warning({ id })` (or `ids`) stores the id in the acks file of the root's git-ignored cache folder (one per checkout); an acknowledged warning is left out and counted under `acknowledged` until its text changes (a new text is a new id).
+- `run_check` over MCP is compact by default (`compact: true`): `{ ok, counts: { <category>: n }, failures, warnings, info, acknowledged, unchanged }` where `warnings` lists only warnings this MCP session has not already been shown for this root (kept in memory per server process; `compact: false` records nothing) and not acknowledged, except that with `nodes` every warning on those nodes is listed; each line appears once (no separate `output` copy). `compact: false` returns the full shape (`output`, `failures`, `warnings`, `info`). The CLI prints the full output.
+- `nodes: [...]` limits warnings and the per-node checks to those nodes (graph-wide failures still count).
+- **Members first.** With `change`, the warnings that name a member of the change (a revision, a pre-ship member, or a planned source) are listed before every other warning, each group in the usual order, in compact and full output alike. Nothing is left out: another change's warnings follow, so when the reply budget cuts the list it cuts those, not the change's own.
+- **Shown means seen.** `run_check` pages itself: its tool config opts out of the envelope's budget pass (`budget: false`, `f-tool-kit`), and the handler applies `budgetReply` (config `replies.budget_bytes`) once to the finished reply, compact or full, so the list is cut in one place. A compact reply then records as seen only the warnings it still lists. A warning the budget cut stays unseen, so the next compact check lists it; `truncated` and `next_page` still return the rest at once.
+- Every warning carries a stable id (`w-` + 10 hex of sha1 over the warning text). `acknowledge_warning({ id })` (or `ids`) stores the id in the acks file of the root's git-ignored cache folder (one per checkout); an acknowledged warning is left out and counted under `acknowledged` until its text changes (a new text is a new id).
