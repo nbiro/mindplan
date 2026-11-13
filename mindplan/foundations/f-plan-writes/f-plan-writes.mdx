@@ -20,15 +20,16 @@ depends_on:
   - f-view-projection
 implements:
   - src/foundations/f-plan-writes/
+role: infra
 tests:
   - src/foundations/f-test-harness/batch-edits.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/lighter-calls.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
-role: infra
 ---
 
 # Plan writes

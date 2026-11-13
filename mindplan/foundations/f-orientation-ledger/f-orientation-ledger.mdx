@@ -15,13 +15,14 @@ depends_on:
   - f-graph-search
 implements:
   - src/foundations/f-orientation-ledger/
+role: infra
 tests:
   - src/foundations/f-test-harness/agent-guidance.test.mjs
   - src/foundations/f-test-harness/batch-edits.test.mjs
+  - src/foundations/f-test-harness/lighter-calls.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/worktree-root.test.mjs
-role: infra
 ---
 
 # Orientation ledger
