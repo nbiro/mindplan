@@ -114,13 +114,17 @@ create_node({ id: "f-nextjs", type: "Foundation", role: "assembler", title: "Nex
 ### 4. Link Interaction, Interface, Foundations
 
 ```
-link_nodes({ source_id: "i-checkout-split", target_id: "c-ordering", edge_type: "belongs_to" })
-link_nodes({ source_id: "i-checkout-split", target_id: "f-db-core", edge_type: "depends_on" })
-link_nodes({ source_id: "i-checkout-split", target_id: "f-design-system", edge_type: "depends_on" })
-link_nodes({ source_id: "if-checkout-page", target_id: "i-checkout-split", edge_type: "exposes" })
-link_nodes({ source_id: "if-checkout-page", target_id: "f-nextjs", edge_type: "depends_on" })
-link_nodes({ source_id: "if-checkout-page", target_id: "f-design-system", edge_type: "depends_on" })
+link_nodes({ edges: [
+  { source_id: "i-checkout-split", target_id: "c-ordering", edge_type: "belongs_to" },
+  { source_id: "i-checkout-split", target_id: "f-db-core", edge_type: "depends_on" },
+  { source_id: "i-checkout-split", target_id: "f-design-system", edge_type: "depends_on" },
+  { source_id: "if-checkout-page", target_id: "i-checkout-split", edge_type: "exposes" },
+  { source_id: "if-checkout-page", target_id: "f-nextjs", edge_type: "depends_on" },
+  { source_id: "if-checkout-page", target_id: "f-design-system", edge_type: "depends_on" }
+] })
 ```
+
+One call, all or none: an illegal edge is named `edge N of 6` and nothing is written.
 
 Do **not** add Interaction → Interaction `depends_on`. Navigation to a follow-on tip Interaction would use `leads_to`.
 

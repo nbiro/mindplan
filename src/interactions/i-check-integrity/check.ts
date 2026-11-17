@@ -62,14 +62,20 @@ import {
 } from "../../foundations/f-source-index/claims.js";
 import { listUniverseFiles } from "../../foundations/f-source-index/universe.js";
 import { withRoot } from "../../foundations/f-source-index/root-scope.js";
-import { decisionGateSettings, fanInSettings, fanOutSettings, hotspotSettings } from "../../foundations/f-source-index/config.js";
+import {
+  decisionGateSettings,
+  fanInSettings,
+  fanOutSettings,
+  hotspotSettings,
+  replySettings,
+} from "../../foundations/f-source-index/config.js";
 import { changedClaimed } from "../../foundations/f-source-index/dominance.js";
 import { fanOutContext, fanOutFor, fanOuts, fanOutWarning } from "../../foundations/f-fan-out/index.js";
 import { fanInContext, fanInFor, fanInSignals, fanInWarning } from "../../foundations/f-fan-in/index.js";
 import {
   changeAdditivity,
   hotspots,
-  hotspotWarning,
+  hotspotLine,
   answeredForOpenWork,
   type ChangeAdditivity,
 } from "../../foundations/f-compiler-rules/open-closed.js";
@@ -90,7 +96,8 @@ import { ruleCheckFindings } from "./rule-checks.js";
 import { loadProjectBrief } from "../../foundations/f-territory-store/project.js";
 import type { MindPlanProjectConfig } from "../../foundations/f-source-index/config.js";
 import { revisionSummaries } from "../../foundations/f-plan-views/views.js";
-import { compactCheckResult, recordSeen, scopeWarnings, warningIds } from "./compact.js";
+import { compactCheckResult, inScope, recordSeen, scopeWarnings, seenWarnings, warningIds } from "./compact.js";
+import { budgetReply } from "../../foundations/f-tool-kit/pages.js";
 import { applyDelta, revisionFor, withRevision } from "../../foundations/f-revision-model/index.js";
 
 const RETIRED_STATES = new Set(["cancelled", "deprecated"]);
@@ -562,8 +569,18 @@ function collectWarnings(
   root: string,
   changed: string[] | null
 ): { warnings: string[]; info: string[] } {
-  const editedInPlace = (node: MindPlanNode): boolean =>
-    changed !== null && (node.implements ?? []).some((claim) => changed.some((rel) => claimCoversPath(claim, rel)));
+  // Edited in place: some claimed file changed against the base, and no confirmation
+  // (confirm_territory) pins every such file at its current content. Schema and migration files
+  // count here, unlike the merge gate's list. A node with no confirmation is never covered.
+  const editedInPlace = (node: MindPlanNode): boolean => {
+    if (changed === null) return false;
+    const claims = node.implements ?? [];
+    const files = changed.filter((rel) => claims.some((claim) => claimCoversPath(claim, rel)));
+    if (files.length === 0) return false;
+    const confirmations = readConfirmations(node);
+    if (confirmations.length === 0) return true;
+    return confirmationCoverage(node, files, root, confirmations).confirmed.length !== files.length;
+  };
   const warnings = new Set<string>();
   const info = new Set<string>();
   for (const node of graph.nodes) {
@@ -620,11 +637,11 @@ function collectDecisionWarnings(graph: MindPlanGraph, ctx: DecisionContext): st
 function collectHotspotWarnings(graph: MindPlanGraph, root: string): string[] {
   // Under work, and not answered: a decision under each open revision's change answers it for that change.
   const underWork = new Set(
-    graph.nodes.filter((n) => (n.next || n.open_revisions?.length) && !answeredForOpenWork(n)).map((n) => n.id)
+    graph.nodes.filter((n) => (n.next || n.open_revisions?.length) && !answeredForOpenWork(graph, n)).map((n) => n.id)
   );
   return hotspots(graph, hotspotSettings(loadProjectConfig(root)))
     .filter((h) => underWork.has(h.node_id))
-    .map(hotspotWarning);
+    .map(hotspotLine);
 }
 
 /**
@@ -1349,12 +1366,25 @@ function integrityCheckInScope(options: CheckOptions): CheckResult {
   return {
     ok: failures.length === 0,
     failures,
-    warnings,
+    warnings: changeReport ? membersFirst(warnings, new Set(changeReport.members.map((m) => m.id))) : warnings,
     info,
     removedLegacyFiles: drainRemovedLegacyFiles(),
     ...(changeReport ? { change: changeReport } : {}),
     ...(mergeReport ? { merge: mergeReport } : {}),
   };
+}
+
+/**
+ * Members first: with a change, the warnings that name one of its members (a revision, a pre-ship
+ * member, or a planned source) come before every other warning, each group in its usual order.
+ * Nothing is dropped, so a reply budget cuts another change's warnings, not this one's.
+ */
+function membersFirst(warnings: string[], members: Set<string>): string[] {
+  if (members.size === 0) return warnings;
+  const own: string[] = [];
+  const rest: string[] = [];
+  for (const w of warnings) (inScope(w, members) ? own : rest).push(w);
+  return [...own, ...rest];
 }
 
 /**
@@ -1409,32 +1439,48 @@ export function runCheckHandler(
       ? { removed_legacy_files: result.removedLegacyFiles.map((f) => f.from) }
       : {}),
   };
+  // run_check pages itself (`budget: false` on the tool): the list is cut once, here, so a compact
+  // reply knows which warnings it still lists.
+  const budget = (reply: Record<string, unknown>): Record<string, unknown> =>
+    budgetReply(reply, replyBudget(root)) as Record<string, unknown>;
   if (args.compact === true) {
     // Only a compact check records what it showed; a full one lists everything and records nothing.
     const ids = warningIds(result.warnings);
-    const seen = recordSeen(root, result.warnings, ids, nodes);
-    return {
+    const reply = budget({
       ...compactCheckResult({
         ok: result.ok,
         failures: result.failures,
         warnings: kept,
         info: result.info,
         outside,
-        seen,
+        seen: seenWarnings(root),
         ids,
         root,
         scoped: nodes !== undefined,
       }),
       ...extras,
-    };
+    });
+    // Shown means seen: only the warnings the cut reply still lists count as seen.
+    const listed = new Set(((reply.warnings ?? []) as { id: string }[]).map((w) => w.id));
+    recordSeen(root, result.warnings, ids, listed);
+    return reply;
   }
   const scoped = { ...result, warnings: kept };
-  return {
+  return budget({
     ok: result.ok,
     output: renderCheckOutput(scoped),
     failures: result.failures,
     warnings: kept,
     info: result.info,
     ...extras,
-  };
+  });
+}
+
+/** The reply cap for this root (`replies.budget_bytes`); 0 (no cut) when the config cannot be read. */
+function replyBudget(root: string): number {
+  try {
+    return replySettings(loadProjectConfig(root)).budget_bytes;
+  } catch {
+    return 0;
+  }
 }

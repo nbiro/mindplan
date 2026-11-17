@@ -20,6 +20,20 @@
         "README.md": "6938297ab9a617fb1dc435b77f10e380ae626db9fb7bcf497d408bb3925f2a3f",
         "SPEC.md": "bf7641e5f1a8285badcebc5c93c128f872f2c44d0e9cc44df46cbe745cd8aa5b"
       }
+    },
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-12T15:47:06.688Z",
+      "note": "SPEC, README, CHANGELOG, playbook and skills now describe planning-friction (0.26.0); the node's text (one home per rule, current behavior only, which file holds what) still holds.",
+      "files": {
+        "CHANGELOG.md": "0eca3129b78b6caac4a9de4ee87389aef899789c9f74c23a97872122ed2d3d68",
+        "README.md": "2b8303ef634936e5c9404b70076e4fb686938b3e221ad30d0e53e21d565272ae",
+        "SPEC.md": "fbf68cf5f9b423d586c9571b9d498e9bb75fec6a1272f3dadb6d28e68476f4b4",
+        "templates/agent/playbook.md": "d9ac0741abd169c34620a0ce5ae4ce0c3acc3131da29fb26483c7d25d3cbcf7d",
+        "templates/agent/skills/define-entities/examples.md": "ce3c35a339d8c7da01671e5ac1f79a7ae59a3f490ada44a6ec175729064a756e",
+        "templates/agent/skills/define-entities/SKILL.md": "4721a5ce19acddf67060ee5bd41134204fc71f2e5074c412f842384f6d5706dc",
+        "templates/agent/skills/plan-project/SKILL.md": "27b1433d1dc1a2f11fcba08618e19681b38e0997341ec7482202a680a180611b"
+      }
     }
   ]
 }

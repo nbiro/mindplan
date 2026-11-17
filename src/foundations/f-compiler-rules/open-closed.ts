@@ -17,6 +17,7 @@ import {
 import { openChanges } from "../f-revision-model/index.js";
 import type { HotspotSettings } from "../f-source-index/config.js";
 import { changeMembership } from "./planned.js";
+import { decisionsNaming } from "./decisions.js";
 
 /**
  * Every decision a node holds: live, its open next, and each open revision's (by id, so the
@@ -135,10 +136,12 @@ export type ChurnEntry = { change: string; date?: string; reasons: string[] };
  * (live and open next, superseded included, since a superseded decision still records a revision;
  * the first build's change counts like any other) plus the change of each of a shipped node's
  * open revisions.
- * `reasons` are the decision sentences recorded under that change. The node keeps no revision
- * log; decisions are the record and git keeps the rest.
+ * `reasons` are the decision sentences recorded under that change: the node's own, then those
+ * another active node recorded under it naming this node in `nodes` (`decisionsNaming`). A naming
+ * decision only adds reasons to a group the node already has; it never creates one. The node keeps
+ * no revision log; decisions are the record and git keeps the rest.
  */
-export function nodeChurn(node: MindPlanNode): ChurnEntry[] {
+export function nodeChurn(graph: MindPlanGraph, node: MindPlanNode): ChurnEntry[] {
   const byChange = new Map<string, ChurnEntry>();
   for (const d of allDecisions(node)) {
     if (!d.change) continue;
@@ -153,6 +156,11 @@ export function nodeChurn(node: MindPlanNode): ChurnEntry[] {
   const open = new Set(openChanges(node));
   if (node.next?.change) open.add(node.next.change);
   for (const c of [...open].sort()) if (!byChange.has(c)) byChange.set(c, { change: c, reasons: [] });
+  for (const entry of byChange.values()) {
+    for (const d of decisionsNaming(graph, node, entry.change)) {
+      if (!entry.reasons.includes(d.decision)) entry.reasons.push(d.decision);
+    }
+  }
   // Undated entries (the open revision's change with no decision yet) sort last: they are newest.
   return [...byChange.values()].sort(
     (a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.change.localeCompare(b.change)
@@ -341,7 +349,7 @@ export function hotspotFor(
     fan_in: fan.count,
     ...(single ? { single_glob: single } : {}),
     diagnosis: diagnoseHotspot(node, settings, ctx.now, opening),
-    changes: nodeChurn(node).slice(-GROUPS_SHOWN),
+    changes: nodeChurn(graph, node).slice(-GROUPS_SHOWN),
     ...(node.split_into?.length ? { split_into: [...node.split_into] } : {}),
   };
 }
@@ -469,6 +477,40 @@ export function hotspotWarning(h: Hotspot): string {
   );
 }
 
+/** The refactor a diagnosis points to, in a few words: the short line's answer. */
+function refactorClause(h: Hotspot): string {
+  const kind = h.diagnosis.kind;
+  const refactor =
+    kind === "invert"
+      ? "invert it onto a registry Foundation"
+      : kind === "split"
+        ? "split out the part that changes"
+        : "invert or split it";
+  return (
+    `Answer it under each open change: do the refactor with reason "refactor" (${refactor}; ` +
+    `get_spec({ topic: "open-closed" }) says how), or record_decision naming the refactor you rejected ` +
+    `(keep_whole: true keeps it one node).`
+  );
+}
+
+/**
+ * The check's short `hotspot:` line: the pace, the dependents, the diagnosis with the rate by
+ * reason, the recent change groups, and the two answers. The registry and split paragraphs stay
+ * in `hotspotWarning` (orient) and `openClosedWarning` (open_next); the spec topic holds them.
+ */
+export function hotspotLine(h: Hotspot): string {
+  const kind = h.diagnosis.kind === "unrecorded" ? "unknown" : h.diagnosis.kind;
+  const answer = h.single_glob
+    ? `Its fan-in is one glob claim ("${h.single_glob}"), so neither a registry nor a split applies; if it ` +
+      `should stay one node, record that with record_decision({ keep_whole: true }).`
+    : refactorClause(h);
+  return (
+    `hotspot: "${h.node_id}" ${pace(h)}, and ${dependents(h)}. ` +
+    `Diagnosis: ${kind} (rate by reason: ${reasonMix(h.diagnosis)}). ` +
+    `Recent changes: ${describeGroups(h.changes)}. ${answer}`
+  );
+}
+
 /**
  * The warning for `open_next` on a shipped node that is a hotspot counting the revision it opens;
  * null for a node at the graph's pace or one kept whole.
@@ -482,8 +524,8 @@ export function openClosedWarning(
 ): { warning: string; hotspot: Hotspot } | null {
   // A fix, an upgrade, a wording change, or the refactor itself is no reason to restructure.
   if (!node.shipped_at || !countsTowardRate(reason)) return null;
-  // A decision recorded on the node under this change already answers the warning for it.
-  if (change !== undefined && answeredUnder(node, change)) return null;
+  // A decision under this change that the node holds or that names it already answers the warning.
+  if (change !== undefined && answeredUnder(graph, node, change)) return null;
   const hotspot = hotspotFor(graph, node, settings, hotspotContext(graph, settings), reason ?? true);
   if (!hotspot) return null;
   return {
@@ -499,18 +541,22 @@ export function openClosedWarning(
   };
 }
 
-/** Whether the node holds a decision recorded under `change` (live or any revision): it answers that change's hotspot warning. */
-export function answeredUnder(node: MindPlanNode, change: string): boolean {
-  return allDecisions(node).some((d) => d.change === change);
+/**
+ * Whether `change`'s hotspot is answered for the node: it holds a decision recorded under `change`
+ * (live or any revision), or another active node holds one under `change` that lists it in `nodes`
+ * (`decisionsNaming`). A decision under the change that does not name the node does not answer it.
+ */
+export function answeredUnder(graph: MindPlanGraph, node: MindPlanNode, change: string): boolean {
+  return allDecisions(node).some((d) => d.change === change) || decisionsNaming(graph, node, change).length > 0;
 }
 
 /**
  * Whether every counted open revision of the node has a decision under its change: the hotspot
  * warning was answered for the work in flight. False with no open revision.
  */
-export function answeredForOpenWork(node: MindPlanNode): boolean {
+export function answeredForOpenWork(graph: MindPlanGraph, node: MindPlanNode): boolean {
   const open = openChanges(node);
-  return open.length > 0 && open.every((c) => answeredUnder(node, c));
+  return open.length > 0 && open.every((c) => answeredUnder(graph, node, c));
 }
 
 export type AdditivityRow = { id: string; state: string; fan_in: number };

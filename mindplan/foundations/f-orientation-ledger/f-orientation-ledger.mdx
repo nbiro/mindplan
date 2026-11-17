@@ -2,25 +2,27 @@
 id: f-orientation-ledger
 type: Foundation
 title: "Orientation ledger"
-description: "Infra — in-memory session record of which nodes were fetched with their rules (fingerprinted), which project rules version, node rule texts, and decisions reached the agent, and which hotspot warnings it got, plus the gates that block writes until the rules reached it at their current version."
+description: "Infra — in-memory session record of which nodes were fetched with which rule texts, which project rules, node rule texts, and decisions reached the agent, and which hotspot warnings it got, plus the gates that Block a write while rule text that applies to it has not reached the agent."
 state: stable
-shipped_at: 2026-11-08T17:07:33.930Z
-revisions: 6
-churn: 5.285
-churn_behavior: 1
+shipped_at: 2026-11-12T18:32:50.628Z
+revisions: 7
+churn: 5.812
+churn_behavior: 1.91
 created_at: 2026-10-25T23:20:45.972Z
-updated_at: 2026-11-08T17:07:33.930Z
+updated_at: 2026-11-12T18:32:50.628Z
 depends_on:
   - f-domain-model
   - f-graph-search
 implements:
   - src/foundations/f-orientation-ledger/
+role: infra
 tests:
   - src/foundations/f-test-harness/agent-guidance.test.mjs
+  - src/foundations/f-test-harness/batch-edits.test.mjs
+  - src/foundations/f-test-harness/lighter-calls.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/worktree-root.test.mjs
-role: infra
 ---
 
 # Orientation ledger
@@ -35,10 +37,10 @@ Package: `src/foundations/f-orientation-ledger/`
 
 - `ledger.ts` — in-memory, per process, keyed by the resolved graph root:
   - `enableOrientationGate()` — called by the MCP runtime at start; turns both gates on unless `MINDPLAN_ORIENT_GATE=off`. Off by default, so the CLI (no session) is never gated; `orientationGateEnabled()` reports it
-  - `withProposedEdges(graph)` — the graph with each open revision's proposed `belongs_to` / `depends_on` added to its live edges; `reachingRules(graph, id)` — `resolveNodeRules` over it: what orientation shows and what is fingerprinted, so a link into an open revision brings its rules before the revision ships, and orienting once covers writes to any of the node's revisions
-  - `rulesFingerprint(graph, nodeId)` — SHA-1 of the node's `reachingRules` entries (`f-graph-search`) as `[node_id, rules]` pairs: it changes when the node's own rules or any inherited rules change, or when an edge brings or drops a source
-  - `recordOriented(graph, ids)` — stores each existing id with its current fingerprint
-  - `orientationGap(graph, id)` — `unfetched`, `rules_changed`, or null (null while the gate is off)
+  - `withProposedEdges(graph)` — the graph with each open revision's proposed `belongs_to` / `depends_on` added to its live edges; `reachingRules(graph, id)` — `resolveNodeRules` over it: what orientation shows and what the gate records, so a link into an open revision brings its rules before the revision ships, and orienting once covers writes to any of the node's revisions
+  - `reachingTags(graph, nodeId)` — the node's `reachingRules` entries (`f-graph-search`) as a map from rule source id to a tag of that source's rule text (the ledger's own hash of the text). Order and distance are not part of it, so an edge that only brings a source closer changes nothing
+  - `recordOriented(graph, ids)` — stores each existing id with its current reaching tags
+  - `orientationGap(graph, id)` — `unfetched` when the node was never recorded; `rules_changed` when a source that reaches it now carries rule text the agent was not given: text whose tag differs both from the tag the node was recorded with and from the tag of the text this session last received from that source in any reply. Both tags are the ledger's own hash of the rule text: `recordRulesSent` keeps it for each text a reply carried, beside the version string replies use for `unchanged`, so the gate never compares its tags with the `rulesVersion` strings of `f-plan-views` (a package the ledger does not depend on); else null (and null while the gate is off). So these pass: a source that no longer reaches the node, a source that moved, a new source whose current text the session already holds (an edge the agent added itself, whose reply carried the text; a Foundation it already oriented on through another node). When the gate passes on a set that differs from the record, the record is brought up to date. A source that only moved closer passes as well: when another session's edge brings a source this node knew as one line within distance 1, its full text arrives with the next orient on the node, not before the write
   - `assertOriented(graph, ids, tool, opts?)` — one `Blocked: Orientation: <tool> acts on …` for every gap at once: a single gap keeps the one-node wording naming `orient_for_work({ node_id: "<id>" })`; several list each id with its reason (not oriented, rules changed) in one message, and name `orient_for_work({ change: "<change>" })` when `opts.change` is set (a walk over one change), else one `orient_for_work({ node_id })` per id; an id not in the graph is skipped so the handler reports that it does not exist
   - `recordProjectRulesServed(version)` — stores the `rules_version` of the project rules (`mindplan/project.md`) that reached the agent in this session: through `get_project`, `get_rules`, `patch_project_rules`, or a reply that carried `project_rules`
   - `projectRulesGap(version)` — `unserved` (nothing served yet), `changed` (the current version differs from the served one), or null (served and current, or the gate is off)
@@ -46,7 +48,7 @@ Package: `src/foundations/f-orientation-ledger/`
   - `assertProjectRulesServed(version, tool)` — `Blocked: Rules: <tool> acts before the project rules reached you in this session. Call get_project (or get_rules), with the same root when you passed one, read the rules, then retry.`, or after a change `Blocked: Rules: the project rules changed since they reached you. Call get_rules, read them, then retry.`; a no-op while the gate is off
   - `resetOrientationLedger()` — forget every fetch and every served rules version (tests)
 
-The ledger stores fingerprints and version tags only; callers load the brief and compute its version (`rulesVersion`, `f-plan-views`) and pass them in.
+The ledger stores tags and version strings only, never rule text. For the project rules, callers load the brief, compute its version (`rulesVersion`, `f-plan-views`), and pass it in; node rule text is tagged by the ledger itself.
 
 Depends on: `f-graph-search`, `f-domain-model`.
 
@@ -59,7 +61,10 @@ The ledger is keyed by the resolved graph root and the node id, so orienting on 
 
 ## Acceptance Criteria
 
-- A node fetched with its current rules passes; an unfetched node and a node whose reaching rules changed are Blocked with the fixing call
+- A node fetched with its current rules passes; an unfetched node is Blocked with the fixing call
+- A node whose own or inherited rule text changed since it was fetched is Blocked (`rules_changed`), and so is a node that a new edge brings a rule source to whose text this session never received
+- A node that gains a rule source whose current text the session already received (through an orient on another node, or the reply of the link that added it) passes, and so do the dependents of the node that was linked; no orient call is needed
+- An edge that only changes the distance or order of the sources reaching a node, and an unlink that drops one, never Block the next write on it
 - A write in a fresh session before `get_project` or `get_rules` is `Blocked: Rules` naming `get_project`; after either call it passes; after `patch_project_rules` from another session the next write is `Blocked: Rules` naming `get_rules`, unless a reply carried `project_rules` first
 - `pushProjectRules` returns the brief once per gap and `{}` while the served version is current
 - The gates are off in the CLI and with `MINDPLAN_ORIENT_GATE=off`

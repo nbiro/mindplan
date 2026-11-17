@@ -152,7 +152,7 @@ export function openNext(args: {
   // The hotspot warning asks the same question with a diagnosis; a refactor or a decision already
   // recorded under this change has answered it.
   const additive =
-    openClosed || reason === "refactor" || answeredUnder(node, change) ? null : additiveQuestion(graph, node, change);
+    openClosed || reason === "refactor" || answeredUnder(graph, node, change) ? null : additiveQuestion(graph, node, change);
   return finish({
     node_id,
     live_state: node.state,

@@ -91,9 +91,10 @@ check(
     !("shape" in firstJson),
   first.text.slice(0, 300)
 );
+// This session wrote f-core's rules, so it already holds their text (patch_node_rules records it).
 check(
-  "the first read in a session carries the rule text",
-  firstJson.resolved_rules.entries.some((e) => e.node_id === "f-core" && e.rules?.includes("append-only")),
+  "the author's first read leaves out rule text it wrote itself",
+  firstJson.resolved_rules.entries.some((e) => e.node_id === "f-core" && e.unchanged === true && !("rules" in e)),
   JSON.stringify(firstJson.resolved_rules)
 );
 const second = JSON.parse((await raw("get_node_context", { node_id: "f-core", section: "## Purpose" })).text);

@@ -20,6 +20,7 @@ import { TOOLS as STATUS_TOOLS } from "../../interactions/i-change-status/tools.
 import { TOOLS as SHAPE_TOOLS } from "../../interactions/i-shape-graph/tools.js";
 import { TOOLS as TERRITORY_TOOLS } from "../../interactions/i-edit-territory/tools.js";
 import { TOOLS as REVISE_TOOLS } from "../../interactions/i-revise-node/tools.js";
+import { TOOLS as DISCARD_CHANGE_TOOLS } from "../../interactions/i-discard-change/tools.js";
 import { TOOLS as CLAIM_TOOLS } from "../../interactions/i-claim-files/tools.js";
 import { TOOLS as DECISION_TOOLS } from "../../interactions/i-record-decision/tools.js";
 import { TOOLS as CONFIRM_TOOLS } from "../../interactions/i-confirm-territory/tools.js";
@@ -202,6 +203,7 @@ const TOOL_ORDER = [
   "link_nodes",
   "open_next",
   "discard_next",
+  "discard_change",
   "resolve_conflict",
   "rebase_revision",
   "get_blast_radius",
@@ -223,6 +225,7 @@ export function registerMindPlanTools(server: McpServer): void {
     ...SHAPE_TOOLS,
     ...TERRITORY_TOOLS,
     ...REVISE_TOOLS,
+    ...DISCARD_CHANGE_TOOLS,
     ...CLAIM_TOOLS,
     ...DECISION_TOOLS,
     ...CONFIRM_TOOLS,

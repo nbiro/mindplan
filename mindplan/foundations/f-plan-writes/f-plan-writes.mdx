@@ -4,12 +4,12 @@ type: Foundation
 title: "Plan writes"
 description: "Infra — the plumbing every graph-write action shares: the orientation write gate, the project rules gate and push, small write results (changed_files, anchor, readiness reset), stability sync, the persisted map refresh, and dropping a change's planned edges when a write closes it."
 state: stable
-shipped_at: 2026-11-08T17:07:34.326Z
-revisions: 6
-churn: 5.509
-churn_behavior: 1
+shipped_at: 2026-11-12T18:32:50.933Z
+revisions: 7
+churn: 6.016
+churn_behavior: 1.91
 created_at: 2026-10-31T11:57:22.450Z
-updated_at: 2026-11-08T17:07:34.326Z
+updated_at: 2026-11-12T18:32:50.933Z
 depends_on:
   - f-compiler-rules
   - f-graph-search
@@ -20,14 +20,16 @@ depends_on:
   - f-view-projection
 implements:
   - src/foundations/f-plan-writes/
+role: infra
 tests:
+  - src/foundations/f-test-harness/batch-edits.test.mjs
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/honesty.test.mjs
+  - src/foundations/f-test-harness/lighter-calls.test.mjs
   - src/foundations/f-test-harness/orient-gate.test.mjs
   - src/foundations/f-test-harness/rules-version.test.mjs
   - src/foundations/f-test-harness/smoke.mjs
-role: infra
 ---
 
 # Plan writes
@@ -45,7 +47,7 @@ Intended files: `src/foundations/f-plan-writes/` (`writes.ts`)
 - `gateWrite(graph, ids, tool)` — `Blocked: Orientation` unless each node was oriented on with the rules that reach it now (`f-orientation-ledger`); free when the gate is off
 - `projectRulesGate(tool)` — `Blocked: Rules` unless the project rules reached this session with their current version (`assertProjectRulesServed`, `f-orientation-ledger`, over the brief's `rulesVersion`); `if-mcp-tools` runs it before the handler of every gated write tool, so it also covers writes that act on no node (`create_node`, the brief and config writes); free when the gate is off
 - `projectRulesPush()` — the brief as `{ path, rules, rules_version }` through `pushProjectRules` (`f-orientation-ledger`): `{ project_rules }` when the rules are missing from or changed in this session, else `{}`; `patch_project_rules` calls it so its author holds the new rules (a write result needs no push: the gate already made the rules current before the write ran; `orient_for_work` calls `pushProjectRules` itself)
-- `rulesBeforeWrite(graph, id)`, `rulesReachingAfterWrite(id, before)` — the entries reaching a node before a write that can change them (`null` while the gate is off), and after it: when they changed, a `rules` block (`rulesBlock`, `f-plan-views`) with only the entries this write added or changed (every entry for a new node, `before` null) and `removed` naming sources that no longer reach it, and the node counted as oriented; diffed within the call, nothing remembered
+- `rulesBeforeWrite(graph, id)`, `rulesReachingAfterWrite(id, before)` — the entries reaching a node before a write that can change them (`null` while the gate is off), and after it: when they changed, a `rules` block (`rulesBlock`, `f-plan-views`) with only the entries this write added or changed (every entry for a new node, `before` null) and `removed` naming sources that no longer reach it. The node is counted as oriented after every such write, whether or not the diff found something to return, and the rule texts the block carries are recorded as sent (`recordRulesSent`, `f-orientation-ledger`), so the gate and later replies know the agent holds them; the diff itself is within the call, nothing of it remembered
 - `syncNodes(nodes)`, `territoryPath(node, slot?)`, `changedFiles(paths, withMap?)`, `MAP_REL`, `refreshPersistedMap()` — persist recomputed states and build `changed_files` (the persisted map included)
 - `buildMutationAnchor`, `mutationTail(graph, id, verbose)` — the small default write result (`state`, `next_state` or `revisions: [{ change, state }]`), the record and 1-hop neighborhood only with `verbose`
 - `ReadinessReset`, `readinessFields`, `readinessResult`, `revisionReadinessResult(node, change)`, `READINESS_NOTE` — the `readiness_reset` fields a contract write on a `ready` slot returns; every contract write, `resolve_conflict` included, resets only a `ready` slot (an in-review revision stays in review)
@@ -56,13 +58,14 @@ No tool handlers live here; each write action owns its own.
 
 Depends on: `f-domain-model`, `f-territory-store`, `f-compiler-rules`, `f-graph-search`, `f-orientation-ledger`, `f-view-projection`, `f-plan-views`.
 
-- **Implicit orientation.** `gateWriteOrOrient(graph, ids, tool)` (used by `open_next`, `patch_node_territory`, `set_implementation_files`): free while the gate is off; Blocks exactly like `gateWrite` when any node's rules changed since it was oriented; otherwise returns a finisher that, applied to the successful reply, records the never-oriented nodes as oriented and their reaching rules as sent, and adds `oriented: true` and `rules: { node_id, entries, more?, oriented_on }` (session-known text left out; `oriented_rules` when the reply already has `rules`). A write that Blocks after the gate records nothing
+- **Implicit orientation.** `gateWriteOrOrient(graph, ids, tool)`, called by the writes that orient on their own (each action's text says whether it does, so this list is not kept here): free while the gate is off; Blocks exactly like `gateWrite` when any node's rules changed since it was oriented; otherwise returns a finisher that, applied to the successful reply, records the never-oriented nodes as oriented and their reaching rules as sent, and adds `oriented: true` and `rules: { node_id, entries, more?, oriented_on }` (session-known text left out; `oriented_rules` when the reply already has `rules`). A write that Blocks after the gate records nothing
 
 ## Acceptance Criteria
 
 - Every write action imports its gate, result envelope, and change cleanup from here; no write action imports another
 - A write that ships, cancels, discards, or moves the last revision off a change drops that change's planned edges and reports them in `cleared_planned`
 - No write result carries `neighbor_of`, `cleared_neighbors`, or `replaced_change`
+- After a link whose reply carries no `rules` block (the edge brought no new text), the next write on its source passes the gate; a rule text a link reply carried comes back as `unchanged` in the next orient
 - A gated write in a session the project rules have not reached is `Blocked: Rules`; after `patch_project_rules` in another session the next write of this session is `Blocked: Rules` naming `get_rules`, while the session that patched them is not
 - Verified via `npm test`
 

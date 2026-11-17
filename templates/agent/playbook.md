@@ -18,7 +18,7 @@ How and when you plan is up to you: sketch nodes first, or code first and update
 |---|---|---|
 | `Version` | the graph needs setup or an upgrade | the tool it names (`setup_project`, `upgrade_project`) |
 | `Rules` | a write before the project rules reached this session, or after they changed | `get_project`, or `get_rules` |
-| `Orientation` | a write on a node whose rules have not reached you, or changed | `orient_for_work({ node_id })`, `({ node_ids })` for several, or `({ change })` for a whole change; `open_next`, `patch_node_territory`, and `set_implementation_files` orient a node not yet oriented on themselves (its rules ride on the reply) |
+| `Orientation` | a write on a node whose rules have not reached you, or changed | `orient_for_work({ node_id })`, `({ node_ids })` for several, or `({ change })` for a whole change; `open_next`, `patch_node_territory`, `set_implementation_files`, `confirm_territory`, and a planned `link_nodes` orient a node not yet oriented on themselves (its rules ride on the reply) |
 | `Coverage` | a source file no node claims | the node the line names, or a new one: `create_node`, then `set_implementation_files` |
 | `Merge` | at merge: a node still in review, or a shipped node whose files changed but whose territory did not | ship the change; `open_next` + ship, `patch_node_territory` in place, or `confirm_territory({ node_id, note })` when its text still holds |
 | shape, links, imports, decisions, tests, checklist | moves along `draft → ready → in-progress → in-review → ship` | the fix in the line; `get_spec({ topic })` for the rule |

@@ -61,8 +61,8 @@ export function gateWrite(
 }
 
 /**
- * The write gate for writes that orient on their own (open_next, patch_node_territory,
- * set_implementation_files): a node never oriented on in this session is oriented by the write
+ * The write gate for writes that orient on their own (each action's text says whether it does): a
+ * node never oriented on in this session is oriented by the write
  * itself, its rules riding on the reply (`oriented: true`, `rules`), instead of Blocking. A node
  * whose rules changed since they were sent still Blocks: the agent must read the new text first.
  * Returns the finisher the handler applies to its reply once the write succeeded (it records the
@@ -100,6 +100,15 @@ export function gateWriteOrOrient(
     const rules = { ...block, oriented_on: unfetched };
     return "rules" in reply ? { ...reply, oriented: true, oriented_rules: rules } : { ...reply, oriented: true, rules };
   };
+}
+
+/**
+ * The author of a node's rules holds the text it just wrote: record it as received by this session
+ * (no-op while the gate is off), so the author's next write on a node those rules reach passes.
+ */
+export function recordRulesWritten(nodeId: string, rules: string): void {
+  if (!orientationGateEnabled() || !rules) return;
+  recordRulesSent([{ node_id: nodeId, rules, version: rulesVersion(rules) }]);
 }
 
 /** The project rules as `{ path, rules, rules_version }` (mindplan/project.md). */
@@ -150,9 +159,12 @@ export function rulesReachingAfterWrite(id: string, before: RuleEntry[] | null):
     !(a.distance <= FULL_RULES_DISTANCE && b.distance > FULL_RULES_DISTANCE);
   const changed = before === null ? after : after.filter((e) => !before.some((b) => same(e, b)));
   const removed = before === null ? [] : before.filter((b) => !after.some((e) => e.node_id === b.node_id)).map((b) => b.node_id);
-  if (before !== null && changed.length === 0 && removed.length === 0) return {};
+  // The source counts as oriented after every such write, so writes sent together never Block each other.
   recordOriented(graph, [id]);
+  if (before !== null && changed.length === 0 && removed.length === 0) return {};
   const block = rulesBlock(id, changed);
+  // The texts this reply carries reached the agent: the gate and later replies know it holds them.
+  recordRulesSent(block.entries as Record<string, unknown>[]);
   return { rules: removed.length > 0 ? { ...block, removed } : block };
 }
 

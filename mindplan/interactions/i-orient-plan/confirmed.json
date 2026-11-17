@@ -1,0 +1,12 @@
+{
+  "confirmations": [
+    {
+      "by": "Biro Norbert",
+      "at": "2026-11-12T15:47:07.345Z",
+      "note": "hotspotFields passes the graph to answeredUnder (naming decisions now answer a change); the node's text, \"answered when a decision under each open change answers it\", still holds.",
+      "files": {
+        "src/interactions/i-orient-plan/handlers.ts": "1ef286da1af22c97bdf50e3398d5315a7fef37e301309b986356b21592517204"
+      }
+    }
+  ]
+}

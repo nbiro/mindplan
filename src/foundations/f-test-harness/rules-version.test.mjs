@@ -155,9 +155,17 @@ await call("orient_for_work", { node_id: "j-shop", depth: "rules" });
 await call("patch_node_rules", { node_id: "j-shop", rules: "- Prices include VAT.\n- Show the currency." });
 const changed = await call("orient_for_work", { node_id: "i-pay", depth: "rules" });
 const capabilityAfter = changed.rules.entries.find((e) => e.node_id === "j-shop");
+// The session that wrote the rules holds their text: it comes back as unchanged, at the new version.
 check(
-  "changed node rules come back with text and a new version",
-  capabilityAfter.rules.includes("currency") && capabilityAfter.version !== versions["j-shop"] && !capabilityAfter.unchanged
+  "changed node rules carry a new version, and the author's session already holds their text",
+  capabilityAfter.version !== versions["j-shop"] && capabilityAfter.unchanged === true && !("rules" in capabilityAfter),
+  JSON.stringify(capabilityAfter)
+);
+const resent = await call("orient_for_work", { node_id: "i-pay", depth: "rules", resend_rules: true });
+check(
+  "resend_rules returns the changed text",
+  resent.rules.entries.find((e) => e.node_id === "j-shop")?.rules?.includes("currency"),
+  JSON.stringify(resent.rules)
 );
 check(
   "a source whose text did not change stays left out after another source changed",
@@ -196,7 +204,7 @@ check(
     JSON.stringify(light.rules)
   );
   check("orient defaults to body depth: no neighborhood or blast radius", !("blast_radius" in light) && !("nodes" in light));
-  const all = await call("orient_for_work", { node_id: "i-pay", depth: "rules", include_inherited_rules: true });
+  const all = await call("orient_for_work", { node_id: "i-pay", depth: "rules", include_inherited_rules: true, resend_rules: true });
   const store = all.rules.entries.find((e) => e.node_id === "f-store");
   check(
     "include_inherited_rules returns every source's text",

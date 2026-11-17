@@ -22,6 +22,7 @@ import {
 import {
   createNode,
   linkNodes,
+  MAX_BATCH_EDGES,
   unlinkNodes,
 } from "./handlers.js";
 
@@ -64,28 +65,44 @@ export const TOOLS: ToolDef[] = [
       kind: "write",
       title: "Link nodes",
       description:
-        "Call when two existing nodes should be connected. " +
+        "Call when two existing nodes should be connected; pass edges to add several in one call (all or none: one Blocked edge writes nothing, one rules block for all). " +
         "Adds a DAG edge. Legal: Interaction -belongs_to-> Capability; Interaction|Interface -depends_on-> Foundation; Foundation -depends_on-> Foundation; " +
         "Interface -exposes-> Interaction; Foundation -mounts-> Interface; Interaction -leads_to-> Interaction; Bug -affects-> Interaction|Interface|Foundation. " +
         "On a shipped node with an open revision the edge goes to it as a delta (change picks the revision when several are open); " +
-        "with change and no open revision of it, the edge is planned under that change (live graph unchanged; applied when open_next opens the node with that change). " +
+        "with change and no open revision of it, the edge is planned under that change (live graph unchanged; applied when open_next opens the node with that change; it orients the source itself). " +
+        "change on a never-shipped node of another change is Blocked. " +
         READINESS_HINT +
         ' Details: get_spec({ topic: "link_nodes" }).',
       inputSchema: {
         verbose: VERBOSE,
-        source_id: NODE_ID.describe("The id of the edge source node."),
-        target_id: NODE_ID.describe("The id of the edge target node."),
+        source_id: NODE_ID.optional().describe("The id of the edge source node (one edge; or pass edges)."),
+        target_id: NODE_ID.optional().describe("The id of the edge target node (one edge; or pass edges)."),
         edge_type: z
           .enum(EDGE_TYPES)
+          .optional()
           .describe("belongs_to | depends_on | exposes | leads_to | affects | mounts"),
+        edges: z
+          .array(
+            z.object({
+              source_id: NODE_ID,
+              target_id: NODE_ID,
+              edge_type: z.enum(EDGE_TYPES),
+            })
+          )
+          .min(1)
+          .max(MAX_BATCH_EDGES)
+          .optional()
+          .describe(
+            "Several edges in one call, in place of source_id, target_id, and edge_type. Each lands where a single call would put it; each is checked against the graph the earlier ones leave; one Blocked edge writes nothing."
+          ),
         change: CHANGE_ID.optional().describe(
-          "The source's open revision to write the edge to; when the source is shipped and has no open revision of it, plan the edge under this change id."
+          "The source's open revision to write the edge to; when the source is shipped and has no open revision of it, plan the edge under this change id. Applies to every edge of a batch."
         ),
       },
     },
 
-      ({ source_id, target_id, edge_type, change, verbose }) =>
-        linkNodes({ source_id, target_id, edge_type, change, verbose })
+      ({ source_id, target_id, edge_type, edges, change, verbose }) =>
+        linkNodes({ source_id, target_id, edge_type, edges, change, verbose })
   ),
   defineTool(
     "unlink_nodes",

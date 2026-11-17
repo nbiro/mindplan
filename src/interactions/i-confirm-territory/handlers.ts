@@ -20,7 +20,7 @@ import { decisionGateSettings, loadProjectConfig } from "../../foundations/f-sou
 import { buildOwnershipIndex, ownerOfFile } from "../../foundations/f-source-index/ownership.js";
 import { toPosix } from "../../foundations/f-source-index/root-scope.js";
 import { blocked, findNode } from "../../foundations/f-compiler-rules/rules.js";
-import { changedFiles, gateWrite } from "../../foundations/f-plan-writes/writes.js";
+import { changedFiles, gateWriteOrOrient } from "../../foundations/f-plan-writes/writes.js";
 
 /** A project-relative POSIX path from what the caller typed (`./a\b` → `a/b`); null when it leaves the project. */
 function normalizeFile(input: string): string | null {
@@ -38,7 +38,8 @@ function normalizeFile(input: string): string | null {
  */
 export function confirmTerritory(args: { node_id: string; files?: string[]; note: string }): Record<string, unknown> {
   const graph = loadGraph();
-  gateWrite(graph, [args.node_id], "confirm_territory");
+  // A confirmation changes no text, edge, or state the rules could shape: it orients the node itself.
+  const finish = gateWriteOrOrient(graph, [args.node_id], "confirm_territory");
   const node = findNode(graph, args.node_id);
   if (!isPipelineNodeType(node.type)) {
     throw blocked(
@@ -115,9 +116,9 @@ export function confirmTerritory(args: { node_id: string; files?: string[]; note
     files: Object.fromEntries(files.map((rel) => [rel, confirmationHash(rel, root)])),
   };
   const rel = appendConfirmation(node, entry);
-  return {
+  return finish({
     node_id: node.id,
     confirmed: { by: entry.by, at: entry.at, note: entry.note, files },
     changed_files: changedFiles([rel]),
-  };
+  });
 }

@@ -279,17 +279,36 @@ export function revisionHasDecision(graph: MindPlanGraph, node: MindPlanNode, ch
   return hasDecision(subjectOf(graph, node, change));
 }
 
+/** Every decision each active node holds (`heldDecisions`), with its holder. */
+function* activeDecisions(graph: MindPlanGraph): Generator<{ holder: MindPlanNode; decision: DecisionRecord }> {
+  for (const holder of graph.nodes) {
+    if (isInactiveNode(holder)) continue;
+    for (const decision of heldDecisions(holder)) yield { holder, decision };
+  }
+}
+
+/**
+ * The decisions another active node holds under `change` that list `node` in `nodes`, once each:
+ * one decision that shapes several nodes, recorded once. The decision gate (`hasDecision`) and the
+ * hotspot signals (`answeredUnder`, `nodeChurn`) read this one walk.
+ */
+export function decisionsNaming(graph: MindPlanGraph, node: Pick<MindPlanNode, "id">, change: string): DecisionRecord[] {
+  const out = new Map<string, DecisionRecord>();
+  for (const { holder, decision } of activeDecisions(graph)) {
+    if (holder.id === node.id || decision.change !== change || !decision.nodes?.includes(node.id)) continue;
+    if (!out.has(decision.id)) out.set(decision.id, decision);
+  }
+  return [...out.values()];
+}
+
 function hasDecision(s: Subject): boolean {
   const node = s.node;
   const since = s.change ? changeStartDay(s.base, s.change) : revisionStartDay(s.view);
   const dated = (d: DecisionRecord) => !since || !d.date || d.date >= since;
-  for (const other of s.base.nodes) {
-    if (isInactiveNode(other)) continue;
-    for (const d of heldDecisions(other)) {
-      if (!dated(d)) continue;
-      if (s.change && d.change === s.change) return true;
-      if (d.nodes?.includes(node.id) && (!d.change || d.change === s.change)) return true;
-    }
+  for (const { decision: d } of activeDecisions(s.base)) {
+    if (!dated(d)) continue;
+    if (s.change && d.change === s.change) return true;
+    if (d.nodes?.includes(node.id) && (!d.change || d.change === s.change)) return true;
   }
   if (s.revision) return (s.revision.decisions?.length ?? 0) > 0;
   const view = s.view;
