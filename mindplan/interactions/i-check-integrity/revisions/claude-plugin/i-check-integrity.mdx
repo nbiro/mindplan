@@ -3,12 +3,14 @@ id: i-check-integrity
 type: Interaction
 change: claude-plugin
 change_ref: "feat/claude-plugin"
-state: ready
+state: in-progress
 opened_at: 2026-11-22T20:42:56.901Z
-updated_at: 2026-11-22T20:44:54.144Z
+updated_at: 2026-11-22T20:56:51.771Z
 reason: behavior
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, failed rule checks and tests, an outdated graph, and unreviewed or stale-territory work at merge; warns about stale text, shape, fan-in, and more; lists drift."
+tests_add:
+  - src/foundations/f-test-harness/claude-plugin.test.mjs
 base:
   - title=64b1ee3a
   - description=6fca87d8
@@ -163,7 +165,7 @@ _None._
 `stopHookDecision(input, root)` (`stop-hook.ts`) answers the Claude Code `Stop` hook (`mindplan-mcp hook stop`, `if-cli`, wired by `if-claude-plugin`), so a turn that changed files does not end on a red check:
 
 - `stop_hook_active: true` returns null: one block per stop. Claude Code's own cap on consecutive blocks also applies
-- A root (the payload's `cwd`, else the process root) without `mindplan/` returns null. So does a working tree (`git status --porcelain` under the root) with no changed path in the source universe or under `mindplan/`: a read-only turn costs one git call, not a check
+- A root (the process root: `MINDPLAN_ROOT`, else cwd; the plugin's launcher runs it in the project directory) without `mindplan/` returns null. So does a working tree (`git status --porcelain` under the root) with no changed path in the source universe or under `mindplan/`: a read-only turn costs one git call, not a check
 - Otherwise it runs the default check (`runIntegrityCheck`: no merge level, no base). On `ok: false` it returns `{ decision: "block", reason }`, where `reason` is one sentence (`MindPlan check failed: fix these before you end the turn, or tell the user why you cannot.`) followed by the `Blocked:` lines, at most 10 and then `+N more`. Warnings and info lines are left out. On `ok: true` it returns null
 - A failure of its own (no git, a thrown check) returns null: the hook never traps a turn on its own error
 

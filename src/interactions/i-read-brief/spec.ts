@@ -49,8 +49,8 @@ export const SPEC_TOPICS: Record<string, { title: string; headings: string[] }> 
   checks: { title: "The offline integrity check", headings: ["Offline integrity check (`mindplan-mcp check`)"] },
   replies: { title: "Reply budget, lean drift, and what replies leave out once sent", headings: ["Replies"] },
   hook: {
-    title: "The Claude Code hook that keeps host file writes off mindplan/",
-    headings: ["Claude Code hook (`mindplan-mcp hook pre-tool-use`)"],
+    title: "The Claude Code hooks (write guard, session-start brief, stop check) and the plugin",
+    headings: ["Claude Code hooks and plugin (`mindplan-mcp hook <name>`)"],
   },
   errors: { title: "Canonical Blocked messages", headings: ["Appendix A — Canonical error catalog"] },
 };

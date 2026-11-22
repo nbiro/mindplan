@@ -2,10 +2,10 @@
 id: if-claude-plugin
 type: Interface
 title: "Claude Code plugin"
-description: "Claude Code channel: a plugin and same-repo marketplace that register the MCP server and wire hooks to the project's own mindplan-mcp CLI: the write guard (PreToolUse), the brief at session start and after compaction (SessionStart), and the check before a turn ends (Stop)."
-state: ready
+description: "Claude Code channel: a plugin and same-repo marketplace that wire hooks to the project's own mindplan-mcp CLI: the write guard (PreToolUse), the brief at session start and after compaction (SessionStart), and the check before a turn ends (Stop). The project registers the MCP server itself."
+state: in-progress
 created_at: 2026-11-22T20:42:56.671Z
-updated_at: 2026-11-22T20:44:54.244Z
+updated_at: 2026-11-22T21:02:50.932Z
 change: "claude-plugin"
 change_ref: "feat/claude-plugin"
 aliases:
@@ -21,13 +21,15 @@ exposes:
 implements:
   - .claude-plugin/
   - plugin/
+tests:
+  - src/foundations/f-test-harness/claude-plugin.test.mjs
 ---
 
 # Claude Code plugin
 
 ## Purpose
 
-In Claude Code, the MindPlan duties agents skip most are still prose: read the brief before answering, re-read the rules after a context summary, and hand off only on a green check. This Interface makes Claude Code enforce them. It is a plugin, served from a marketplace in this repository, that registers the MCP server and wires three Claude Code hooks to the CLI: the existing write guard, the brief at session start and after compaction, and the check before a turn ends. It is one more channel for existing Interactions (`i-read-brief`, `i-check-integrity`). It owns no behavior: every decision runs in the project's own `mindplan-mcp`, so Cursor and other hosts keep the same server gates, and the playbook and `MINDPLAN.md` stay the way to reach them.
+In Claude Code, the MindPlan duties agents skip most are still prose: read the brief before answering, re-read the rules after a context summary, and hand off only on a green check. This Interface makes Claude Code enforce them. It is a plugin, served from a marketplace in this repository, that wires three Claude Code hooks to the CLI: the existing write guard, the brief at session start and after compaction, and the check before a turn ends. It is one more channel for existing Interactions (`i-read-brief`, `i-check-integrity`). It owns no behavior: every decision runs in the project's own `mindplan-mcp`, so Cursor and other hosts keep the same server gates, and the playbook and `MINDPLAN.md` stay the way to reach them.
 
 ## Kind
 
@@ -44,9 +46,9 @@ Claude Code plugin and marketplace (configuration plus one launcher script; no c
 Intended files: `.claude-plugin/marketplace.json`, `plugin/`.
 
 - **Marketplace.** `.claude-plugin/marketplace.json` at the repository root: marketplace `mindplan`, `owner`, one plugin entry `{ name: "mindplan", source: "./plugin" }`. Users add it with `/plugin marketplace add nbiro/mindplan` and install with `/plugin install mindplan@mindplan`; a team commits `extraKnownMarketplaces` and `enabledPlugins` (`"mindplan@mindplan": true`) to `.claude/settings.json`. The plugin directory is self-contained, because Claude Code copies only `plugin/` into its cache.
-- **Manifest.** `plugin/.claude-plugin/plugin.json`: `name: "mindplan"`, `description`, `repository`, `license`, `homepage`. No `version` field: the plugin is config, its version is the commit, and behavior is versioned by the project's `mindplan-mcp`.
-- **MCP server.** `plugin/.mcp.json` registers `mindplan` as exactly `npx mindplan-mcp`, the command the README tells projects to commit. Claude Code then treats a project registration of the same command as a duplicate and keeps the project's, and `npx` runs the project's locked copy. Without a project install, the server fails to start and `/mcp` shows it. Tools from a plugin-only registration are named `mcp__plugin_mindplan_mindplan__*`; nothing in MindPlan depends on the tool prefix.
-- **Launcher.** `plugin/scripts/mindplan.mjs` (Node, no dependencies) runs every hook. It finds the project's installed package (`$CLAUDE_PROJECT_DIR/node_modules/mindplan-mcp/package.json`, else the hook payload's `cwd`), runs its `bin` with `process.execPath` and the given arguments, pipes stdin and stdout, and exits with the child's code. It exits 0 and prints nothing when no copy is installed, and when the installed version is below `MIN_HOOK_VERSION` (the first release with `hook session-start` and `hook stop`) for those two hooks. So a project without MindPlan, or with an older pin, sees no hook errors.
+- **Manifest.** `plugin/.claude-plugin/plugin.json`: `name: "mindplan"`, `description` (which tells users to register the server in the project's `.mcp.json`), `repository`, `license`, `homepage`, `keywords`. No `version` field: the plugin is config, its version is the commit, and behavior is versioned by the project's `mindplan-mcp`.
+- **No MCP server.** The plugin registers none: the project keeps its own registration (`.mcp.json`, README step 2), which is pinned, shared with teammates and other hosts, and works on every OS (d-plugin-hooks-only).
+- **Launcher.** `plugin/scripts/mindplan.mjs` (Node, no dependencies) runs every hook. The project is the nearest folder at or above the hook payload's `cwd` that holds `mindplan/` (so a session working in a git worktree checks that worktree), else `$CLAUDE_PROJECT_DIR`, else cwd. The launcher resolves that project's installed `mindplan-mcp` (Node resolution from the project, so a hoisted install counts), runs its `bin` with `process.execPath` and the given arguments in the project with `MINDPLAN_ROOT` set to it, pipes stdin and stdout, and exits with the child's code. It exits 0 and prints nothing when no copy is installed, when the installed version is below `MIN_HOOK_VERSION` for the hook asked for (`pre-tool-use` 0.23.0, `session-start` and `stop` 0.27.0), or when the hook name is unknown. So a project without MindPlan, or with an older pin, sees no hook errors. It has no main-module guard, so a plugin path reached through a symlink or junction still runs.
 - **Hooks.** `plugin/hooks/hooks.json`, each command `node "${CLAUDE_PLUGIN_ROOT}/scripts/mindplan.mjs" hook <name>`:
   - `PreToolUse`, matcher `Edit|MultiEdit|Write|NotebookEdit` → `pre-tool-use`. A project that also has the `install_hook` entry gets two identical denies, which is harmless.
   - `SessionStart`, matcher `startup|clear|compact` → `session-start`
@@ -60,7 +62,8 @@ Depends on: nothing it imports. It runs `if-cli` subcommands as a process.
 - `claude plugin validate ./plugin` and validation of the marketplace pass
 - Every hook command in `hooks.json` names a `hook` subcommand that `if-cli` answers
 - The launcher with no installed `mindplan-mcp`, or one below `MIN_HOOK_VERSION`, exits 0 with no output; with one installed it passes stdin through and returns the CLI's stdout and exit code
-- In a project with `mindplan-mcp` installed and the plugin enabled: a new session receives the brief, an `Edit` under `mindplan/` is denied, and a turn that leaves an unclaimed source file is sent back once with the `Blocked: Coverage` line
+- The plugin has no `.mcp.json`
+- In a project with `mindplan-mcp` installed, registered, and the plugin enabled: a new session receives the brief, an `Edit` under `mindplan/` is denied, and a turn that leaves an unclaimed source file is sent back once with the `Blocked: Coverage` line
 - Verified by `claude-plugin.test.mjs` (launcher and config shape) and one manual run in Claude Code
 
 ## Atomic Ops
@@ -68,12 +71,12 @@ Depends on: nothing it imports. It runs `if-cli` subcommands as a process.
 - [ ] Requirements defined {#spec}
 - [ ] Implementation complete {#impl}
 - [ ] Tests passing {#verify}
-- [ ] Write .claude-plugin/marketplace.json and plugin/.claude-plugin/plugin.json {#marketplace}
-- [ ] Write plugin/.mcp.json with the exact `npx mindplan-mcp` command {#mcp-config}
-- [ ] Write plugin/scripts/mindplan.mjs (project-copy resolution, silent when absent or below MIN_HOOK_VERSION) {#launcher}
-- [ ] Write plugin/hooks/hooks.json for PreToolUse, SessionStart, and Stop {#hooks}
-- [ ] Add claude-plugin.test.mjs: launcher behavior and hooks.json naming only CLI hook subcommands {#tests}
-- [ ] README Claude Code plugin section, SPEC hook section, CHANGELOG entry for the minor release (f-framework-docs, in place) {#docs}
+- [x] Write .claude-plugin/marketplace.json and plugin/.claude-plugin/plugin.json {#marketplace}
+- [x] Write plugin/.mcp.json with the exact `npx mindplan-mcp` command {#mcp-config} — n/a: the plugin registers no MCP server (d-plugin-hooks-only)
+- [x] Write plugin/scripts/mindplan.mjs (project-copy resolution, silent when absent or below MIN_HOOK_VERSION) {#launcher}
+- [x] Write plugin/hooks/hooks.json for PreToolUse, SessionStart, and Stop {#hooks}
+- [x] Add claude-plugin.test.mjs: launcher behavior and hooks.json naming only CLI hook subcommands {#tests}
+- [x] README Claude Code plugin section, SPEC hook section, CHANGELOG entry for the minor release (f-framework-docs, in place) {#docs}
 - [ ] Run the plugin in Claude Code on Windows and one POSIX shell: brief at start, write denied, Stop sends a red check back once {#manual-run review}
 
 ## Attachments

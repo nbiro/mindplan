@@ -3,14 +3,16 @@ id: if-cli
 type: Interface
 change: claude-plugin
 change_ref: "feat/claude-plugin"
-state: ready
+state: in-progress
 opened_at: 2026-11-22T20:42:56.973Z
-updated_at: 2026-11-22T20:44:54.267Z
+updated_at: 2026-11-22T20:55:49.130Z
 reason: wiring
 title: "CLI"
 description: "CLI for check (--base, --merge, --merge=strict), view, hook (pre-tool-use, session-start, stop), and --version: parses argv, prints the shared check output and warnings, prints legacy removals, answers the Claude Code hooks, and sets the exit code; setup and upgrade are MCP tools, not commands."
 exposes_add:
   - i-read-brief
+tests_add:
+  - src/foundations/f-test-harness/claude-plugin.test.mjs
 base:
   - title=700b401c
   - description=de98d035

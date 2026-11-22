@@ -1,0 +1,8 @@
+{
+  "name": "mindplan",
+  "description": "MindPlan for Claude Code: enforces its duties with hooks. Denies host writes to mindplan/, puts the brief in context at session start and after compaction, and sends a turn back once while files are changed and the check fails. Runs the project's own mindplan-mcp; register the MCP server in the project's .mcp.json.",
+  "homepage": "https://github.com/nbiro/mindplan#readme",
+  "repository": "https://github.com/nbiro/mindplan",
+  "license": "MIT",
+  "keywords": ["mindplan", "mcp", "planning", "hooks"]
+}

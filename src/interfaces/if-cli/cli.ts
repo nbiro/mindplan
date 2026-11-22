@@ -12,16 +12,28 @@ import {
 import { runViewExport } from "../../interactions/i-export-map/handlers.js";
 import * as fs from "fs";
 import { preToolUseDecision } from "../../foundations/f-agent-hook/hook.js";
+import { stopHookDecision } from "../../interactions/i-check-integrity/stop-hook.js";
+import { sessionStartContext } from "../../interactions/i-read-brief/session-start.js";
 import { packageVersion } from "../../foundations/f-territory-store/version.js";
 
+/** Claude Code hook handlers by name: each takes the stdin payload and returns its JSON, or null. */
+const HOOKS: Record<string, (input: unknown) => string | object | null> = {
+  "pre-tool-use": (input) => preToolUseDecision(input),
+  "session-start": (input) => sessionStartContext(input),
+  stop: (input) => stopHookDecision(input),
+};
+
 /**
- * `mindplan-mcp hook pre-tool-use`: reads the Claude Code hook payload from stdin and prints the
- * deny JSON when the call targets mindplan/. Always exits 0 on hook input (malformed input: allow).
+ * `mindplan-mcp hook <name>`: reads the Claude Code hook payload from stdin and prints the handler's
+ * JSON when it returns one. Always exits 0: malformed input prints nothing, and an unknown hook name
+ * only notes it on stderr, so a newer plugin over an older package never breaks a session.
  */
 function runHookCli(argv: string[]): void {
-  if (argv[0] !== "pre-tool-use") {
-    console.error(`Unknown hook "${argv[0] ?? ""}". Usage: mindplan-mcp hook pre-tool-use (reads the hook JSON on stdin).`);
-    process.exit(1);
+  const name = argv[0] ?? "";
+  const handler = HOOKS[name];
+  if (!handler) {
+    console.error(`mindplan-mcp ${packageVersion()} has no hook "${name}"; update mindplan-mcp.`);
+    return;
   }
   let input: unknown = null;
   try {
@@ -29,9 +41,8 @@ function runHookCli(argv: string[]): void {
   } catch {
     input = null;
   }
-  const decision = preToolUseDecision(input);
-  if (decision) process.stdout.write(`${decision}
-`);
+  const output = handler(input);
+  if (output) process.stdout.write(`${typeof output === "string" ? output : JSON.stringify(output)}\n`);
 }
 
 function parseViewArgs(argv: string[]): {
@@ -182,6 +193,10 @@ function printHelp(): void {
   mindplan-mcp hook pre-tool-use
                             Claude Code PreToolUse hook: deny host file writes on mindplan/
                             (stdin: the hook JSON; installed by setup_project install_hook)
+  mindplan-mcp hook session-start
+                            Claude Code SessionStart hook: print the MindPlan brief as context
+  mindplan-mcp hook stop    Claude Code Stop hook: send the turn back once on a failed check
+                            after files changed (both wired by the Claude Code plugin)
   mindplan-mcp help         Show this message
   mindplan-mcp --version    Print the installed version (also -v, version)
 
