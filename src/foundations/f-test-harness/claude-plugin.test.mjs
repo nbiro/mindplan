@@ -98,6 +98,7 @@ git(root, "commit", "-q", "-m", "fixture");
   ok("session-start: compact also injects", hook(root, "session-start", { source: "compact" }).stdout.length > 0);
   ok("session-start: resume prints nothing", hook(root, "session-start", { source: "resume" }).stdout === "");
   ok("session-start: malformed input prints nothing", hook(root, "session-start").stdout === "");
+  ok("session-start: the gate line comes first", ctx.indexOf("get_rules({ known_version") < ctx.indexOf("## Project rules"));
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-claude-plugin-bare-"));
   ok("session-start: no graph prints nothing", hook(bare, "session-start", { source: "startup" }).stdout === "");
 }
@@ -114,6 +115,21 @@ git(root, "commit", "-q", "-m", "fixture");
   });
   ok("session-start: a write before get_project is still Blocked: Rules", res.isError && res.text.includes("Blocked: Rules"), res.text);
   await client.close();
+}
+
+// A brief over the hook's size limit leaves the playbook out and keeps the rules.
+{
+  const big = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-claude-plugin-big-"));
+  const client = await connect(big);
+  await call(client, "setup_project", {});
+  await call(client, "get_project", {});
+  const long = Array.from({ length: 40 }, (_, i) => `Long rule ${i}: ${"keep every rule in the brief ".repeat(4)}`);
+  await call(client, "patch_project_rules", { add: long });
+  await client.close();
+  const ctx = JSON.parse(hook(big, "session-start", { source: "startup" }).stdout || "{}")?.hookSpecificOutput?.additionalContext ?? "";
+  ok("session-start: a long brief stays under 10,000 characters", ctx.length > 0 && ctx.length <= 10000, String(ctx.length));
+  ok("session-start: a long brief keeps every rule", ctx.includes("Long rule 39:"));
+  ok("session-start: a long brief names the left-out playbook", ctx.includes("get_project returns it") && !ctx.includes("think in systems"));
 }
 
 // --- Stop ---------------------------------------------------------------------------------------
@@ -228,6 +244,18 @@ function fakeInstall(version, exitCode = 0) {
     fromCwd = null;
   }
   ok("launcher: the payload cwd's graph root wins over CLAUDE_PROJECT_DIR", fromCwd?.root === worktree, viaCwd.stdout);
+
+  // A worktree with no node_modules of its own runs the session project's install, in the worktree.
+  const bareWorktree = fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-claude-plugin-wt-"));
+  fs.mkdirSync(path.join(bareWorktree, "mindplan"));
+  const viaFallback = runLauncher(current, ["hook", "stop"], JSON.stringify({ cwd: bareWorktree }));
+  let fallback = null;
+  try {
+    fallback = JSON.parse(viaFallback.stdout);
+  } catch {
+    fallback = null;
+  }
+  ok("launcher: a worktree without an install uses the project's, rooted in the worktree", fallback?.root === bareWorktree, viaFallback.stdout);
 
   // A plugin path reached through a link still runs (the launcher has no main-module guard).
   const linkDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "mindplan-claude-plugin-link-")), "scripts");

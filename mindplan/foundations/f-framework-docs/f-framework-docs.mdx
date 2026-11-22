@@ -9,7 +9,7 @@ revisions: 57
 churn: 27.933
 churn_behavior: 1.975
 created_at: 2026-07-19T18:33:36.834Z
-updated_at: 2026-11-22T21:02:50.880Z
+updated_at: 2026-11-22T21:27:23.897Z
 depends_on:
   - f-domain-model
 implements:
@@ -60,7 +60,7 @@ Claims: `SPEC.md`, `README.md`, `CHANGELOG.md`, `templates/`
 - The playbook stays one screen (≤ 60 lines) and tells the agent what is enforced, not what to call before each action: a sentence of the form "before each action, call …" or "always call …" either names a gate the server runs or goes.
 - A duty the docs still state as prose is one no gate can hold (the planning duty; run the check before handoff); everywhere else the docs name the gate and its fix. The planning duty is worded identically in the stub, the server instructions, and the playbook.
 
-- **Claude Code plugin (0.27.0).** README's Quick start has a Claude Code plugin section after step 2 (install commands, the team `.claude/settings.json` keys, no MCP registration of its own, the project-copy rule), CHANGELOG has the 0.27.0 section and its CLI table lists `hook session-start` and `hook stop`; SPEC §9.8 covers all three hooks and the plugin, and its heading is the `hook` topic (`i-read-brief` `SPEC_TOPICS`).
+- **Claude Code plugin (0.27.0).** README's Quick start has a Claude Code plugin section after step 2 (install commands, the team `.claude/settings.json` keys, no MCP registration of its own, the project-copy rule), CHANGELOG has the 0.27.0 section and its CLI table lists `hook session-start` and `hook stop`; SPEC §9.8 covers all three hooks (with the session-start brief's size budget) and the plugin's launcher, and its heading is the `hook` topic (`i-read-brief` `SPEC_TOPICS`).
 
 ## Acceptance Criteria
 

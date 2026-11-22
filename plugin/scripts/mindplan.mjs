@@ -5,6 +5,8 @@
  *
  * The project is the nearest folder at or above the hook payload's `cwd` that holds `mindplan/`
  * (so a session working in a git worktree checks that worktree), else CLAUDE_PROJECT_DIR, else cwd.
+ * The package is resolved from that project, else from CLAUDE_PROJECT_DIR, else cwd (a worktree
+ * often has no node_modules of its own); it always runs in the project with MINDPLAN_ROOT set to it.
  * It prints nothing and exits 0 when that project has no mindplan-mcp installed, or when the
  * installed one is older than the first release that answers the hook asked for.
  */
@@ -73,7 +75,11 @@ function main(args) {
   const projectDir =
     (payloadCwd && graphRootAbove(payloadCwd)) || process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
-  const installed = findInstalled(projectDir);
+  // A worktree often has no node_modules of its own: fall back to the session's project, then cwd.
+  const installed =
+    findInstalled(projectDir) ??
+    (process.env.CLAUDE_PROJECT_DIR ? findInstalled(process.env.CLAUDE_PROJECT_DIR) : null) ??
+    findInstalled(process.cwd());
   if (!installed) return 0;
   const minimum = args[0] === "hook" ? MIN_HOOK_VERSION[args[1]] : undefined;
   if (args[0] === "hook" && (!minimum || compareVersions(installed.version, minimum) < 0)) return 0;

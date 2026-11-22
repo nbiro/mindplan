@@ -17,23 +17,35 @@ export interface SessionStartOutput {
   hookSpecificOutput: { hookEventName: "SessionStart"; additionalContext: string };
 }
 
-/** The get_project payload as Markdown, closed by the line that names the write gate. */
+/**
+ * Claude Code caps a hook's context at 10,000 characters and swaps a longer one for a file preview,
+ * so the brief stays under this budget: the playbook is left out (named, not sent) when it would pass it.
+ */
+export const BRIEF_BUDGET = 9500;
+
+/**
+ * The get_project payload as Markdown, most binding first: the write-gate line, the version and
+ * restart notices, the project rules, the description, the check sentence, then the playbook when
+ * the whole still fits BRIEF_BUDGET.
+ */
 export function renderBrief(payload: Record<string, unknown>): string {
   const text = (key: string): string => (typeof payload[key] === "string" ? (payload[key] as string).trim() : "");
-  const parts = ["# MindPlan brief (from the SessionStart hook)"];
+  const parts = [
+    "# MindPlan brief (from the SessionStart hook)",
+    "The MindPlan server has not served this brief to this session yet: call get_project, or " +
+      `get_rules({ known_version: "${text("rules_version")}" }), once before the first MindPlan write.`,
+  ];
   if (text("version")) parts.push(`## Graph version\n\n${text("version")}`);
   if (text("restart")) parts.push(`## Server restart\n\n${text("restart")}`);
-  parts.push(`## Product description\n\n${text("description") || "_None yet._"}`);
   parts.push(
     `## Project rules (rules_version ${text("rules_version")}) — mandatory\n\n${text("rules") || "_None._"}`
   );
+  parts.push(`## Product description\n\n${text("description") || "_None yet._"}`);
   parts.push(`## Check\n\n${text("check")}`);
-  parts.push(text("playbook"));
-  parts.push(
-    "---\n\nThis brief is in context, but the MindPlan server has not served it to this session: " +
-      `call get_project, or get_rules({ known_version: "${text("rules_version")}" }), once before the first MindPlan write.`
-  );
-  return parts.join("\n\n");
+  const head = parts.join("\n\n");
+  const withPlaybook = `${head}\n\n${text("playbook")}`;
+  if (withPlaybook.length <= BRIEF_BUDGET) return withPlaybook;
+  return `${head}\n\n## Playbook\n\nLeft out to fit the hook's size limit: get_project returns it.`;
 }
 
 /**
