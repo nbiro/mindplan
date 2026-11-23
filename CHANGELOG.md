@@ -7,6 +7,7 @@
 - **`mindplan-mcp hook stop`.** While the working tree has an uncommitted source or `mindplan/` change, it runs the default check and on a failure sends the turn back once with the `Blocked:` lines (at most 10). A clean tree costs one `git status`. [§9.8]
 - **An unknown hook name exits 0.** `mindplan-mcp hook <name>` with a name this version does not know now notes it on stderr and exits 0 (was 1), so a newer plugin over an older package never breaks a session.
 - **`get_spec({ topic: "hook" })`** now covers all three hooks and the plugin.
+- **A shorter playbook.** It no longer carries a table of the server's gates. Every `Blocked:` reply already names its kind and the call that clears it, so the table repeated the server; what is left is the duties, how to act on a `Blocked:`, the checklist note, the taxonomy, and how to work on the graph (about 4,700 characters, down from about 6,000).
 
 ### Upgrade note
 

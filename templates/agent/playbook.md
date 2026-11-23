@@ -10,23 +10,13 @@ MindPlan draws the boundaries your agent won’t. The graph under `mindplan/` de
 2. **`mindplan/` is written through the tools only.** Never edit it with host file tools; reading its files is fine. A file alone lacks a node's inherited rules and decisions (orient for those), and a revision's frontmatter holds only its changes against live. For a `replace` edit, `find_in_node` returns a snippet that occurs exactly once.
 3. **Hand off on a green check.** Before `ready`, `in-review`, `ship` / Bug `resolved`, or saying the work is done, `run_check` (CLI `mindplan-mcp check`) must pass. When the implementation is done and a merge is requested, `ship` the node (Bug: `resolved`); `run_check({ merge: true })` (CLI `mindplan-mcp check --merge`) is the merge gate CI runs.
 
-How and when you plan is up to you: sketch nodes first, or code first and update the graph before handoff. The gates below hold either way.
+How and when you plan is up to you: sketch nodes first, or code first and update the graph before handoff. The server's gates hold either way.
 
-## What the server enforces
+## When the server blocks you
 
-| `Blocked:` | When | Clear it |
-|---|---|---|
-| `Version` | the graph needs setup or an upgrade | the tool it names (`setup_project`, `upgrade_project`) |
-| `Rules` | a write before the project rules reached this session, or after they changed | `get_project`, or `get_rules` |
-| `Orientation` | a write on a node whose rules have not reached you, or changed | `orient_for_work({ node_id })`, `({ node_ids })` for several, or `({ change })` for a whole change; `open_next`, `patch_node_territory`, `set_implementation_files`, `confirm_territory`, and a planned `link_nodes` orient a node not yet oriented on themselves (its rules ride on the reply) |
-| `Coverage` | a source file no node claims | the node the line names, or a new one: `create_node`, then `set_implementation_files` |
-| `Merge` | at merge: a node still in review, or a shipped node whose files changed but whose territory did not | ship the change; `open_next` + ship, `patch_node_territory` in place, or `confirm_territory({ node_id, note })` when its text still holds |
-| shape, links, imports, decisions, tests, checklist | moves along `draft → ready → in-progress → in-review → ship` | the fix in the line; `get_spec({ topic })` for the rule |
-| `Rule` | `run_check`: a rule's `check:` line fails | fix the code the line names |
+Every gate answers `Blocked: <kind>` with what tripped it and the call that clears it. A `Blocked:` is hard: fix the cause, never retry blindly, and tell the user in one plain sentence what blocked and the next step; `get_spec({ topic })` has the full rule. Project rules (`mindplan/project.md`) and node rules (in `orient_for_work`) are mandatory and never override a `Blocked:`. After a context summary, `get_rules` re-reads the project rules and `orient_for_work({ node_id, resend_rules: true })` the node rules.
 
 The default checklist items `spec` and `impl` close at ship; `verify` closes once `run_check({ run_tests: true, change })` (or `nodes`) passes the node's linked tests. Tick the rest yourself.
-
-A `Blocked:` is hard: fix the cause, never retry blindly. Tell the user in one plain sentence what blocked and the next step. Replies that orient carry `project_rules` when the project rules changed; after a context summary, `get_rules` re-reads them, and `orient_for_work({ node_id, resend_rules: true })` returns node rule text that came back as `unchanged`. Project rules (`mindplan/project.md`) and node rules (in `orient_for_work`) are mandatory and never override a `Blocked:`.
 
 ## Taxonomy
 
