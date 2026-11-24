@@ -76,11 +76,17 @@ export const CHECK_HINT =
  * Call before the first answer or code change; call again after description/rules change.
  */
 export function getProject(): Record<string, unknown> {
+  const payload = projectPayload();
+  recordProjectRulesServed(payload.rules_version);
+  return payload;
+}
+
+/** The get_project payload without recording it as served (the SessionStart hook shares it). */
+export function projectPayload(): Record<string, unknown> & { rules_version: string } {
   const brief = loadProjectBrief();
   const version = graphStatus();
   const restart = restartNotice();
   const rules_version = rulesVersion(brief.rules);
-  recordProjectRulesServed(rules_version);
   return {
     path: brief.path,
     description: brief.description,

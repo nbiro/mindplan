@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.27.0 — a Claude Code plugin
+
+- **Claude Code plugin.** This repository is now a plugin marketplace: `/plugin marketplace add nbiro/mindplan`, then `/plugin install mindplan@mindplan`. The plugin wires three hooks: the write guard on `mindplan/**`, the brief at session start, and the check before a turn ends. It registers no MCP server (keep the project's `.mcp.json`) and pins no version: a launcher runs the project's own `mindplan-mcp` (in the worktree the session works in), and does nothing in a project without one or with a release too old for the hook. [§9.8]
+- **`mindplan-mcp hook session-start`.** At startup, after `/clear`, and after compaction, it puts the `get_project` payload (description, project rules with `rules_version`, check sentence, playbook, version warning) into the session's context. It does not clear the server's rules gate: call `get_project` or `get_rules` once before the first write, as before. [§9.8]
+- **`mindplan-mcp hook stop`.** While the working tree has an uncommitted source or `mindplan/` change, it runs the default check and on a failure sends the turn back once with the `Blocked:` lines (at most 10). A clean tree costs one `git status`. [§9.8]
+- **An unknown hook name exits 0.** `mindplan-mcp hook <name>` with a name this version does not know now notes it on stderr and exits 0 (was 1), so a newer plugin over an older package never breaks a session.
+- **`get_spec({ topic: "hook" })`** now covers all three hooks and the plugin.
+- **A shorter playbook.** It no longer carries a table of the server's gates. Every `Blocked:` reply already names its kind and the call that clears it, so the table repeated the server; what is left is the duties, how to act on a `Blocked:`, the checklist note, the taxonomy, and how to work on the graph (about 4,700 characters, down from about 6,000).
+
+### Upgrade note
+
+- **No graph migration.** `MIGRATION_LEVEL` is unchanged, so no `upgrade_project` run is needed. Restart the MCP server after upgrading the package.
+- **A project that also has the `install_hook` entry** gets two identical write denies with the plugin enabled. That is harmless; remove the `.claude/settings.json` entry if you prefer one.
+
 ## 0.26.0 — less planning friction: batch links, `discard_change`, a lighter gate
 
 - **`link_nodes` takes a batch.** `link_nodes({ edges: [{ source_id, target_id, edge_type }, …], change? })` adds 1 to 100 edges in one call, each where a single call would put it (live, a revision delta, or a planned entry). The whole list is checked before anything is written, each edge against the graph the earlier ones leave, so two edges that close a cycle together are caught. All or none: a failing edge Blocks the call, named `edge N of M` with its reason, and nothing is written. The reply is `{ edges, rules?, readiness_reset?, changed_files }` with one `rules` block holding each rule source once. `unlink_nodes` stays one pair per call. [§8.2]

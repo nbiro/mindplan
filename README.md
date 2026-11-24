@@ -141,6 +141,21 @@ Node.js 22.13 or later (`engines` in `package.json`; the search cache uses `node
 
 3. **Ask your agent to set up MindPlan.** It calls `setup_project`, which creates `mindplan/` (a default `config.json`, an empty `project.md`, and the `version.json` stamp) and returns `pointer`, the short text every session must see first, plus a guide. Following the guide, the agent writes `MINDPLAN.md` and wires it into the files your agent reads, adds the ignores, proposes moving your standing rules into the project brief, asks for a product description, and offers the [merge gate](#the-check-and-the-merge-gate). The server never writes those files itself; the agent shows you each change. The skills (`plan-project`, `define-entities`) are served through `get_skill`, so nothing is copied into `.claude/` or `.cursor/`.
 
+### Claude Code plugin
+
+In Claude Code, after steps 1 and 2, the plugin in this repository adds hooks that enforce what the playbook asks:
+
+- **Write guard.** `Edit` / `Write` on `mindplan/**` is denied and the agent is told which MindPlan tool to use.
+- **Brief at session start.** At startup, after `/clear`, and after compaction, the project rules and the playbook go into the agent's context, so a long session does not lose them.
+- **Check before a turn ends.** While the working tree has uncommitted source or `mindplan/` changes and the check fails, the turn is sent back once with the `Blocked:` lines.
+
+```
+/plugin marketplace add nbiro/mindplan
+/plugin install mindplan@mindplan
+```
+
+For a team, commit the marketplace and the plugin to `.claude/settings.json` (`extraKnownMarketplaces` with `{ "mindplan": { "source": { "source": "github", "repo": "nbiro/mindplan" } } }`, and `enabledPlugins` with `{ "mindplan@mindplan": true }`). The plugin registers no MCP server and pins no version: the project's `.mcp.json` stays the registration, and the hooks run the project's own `mindplan-mcp`. So the plugin needs step 1's dev dependency (0.27.0 or later for the session-start and stop hooks), and its hooks do nothing in a project without one. Projects without a `package.json` use `install_hook` instead. Cursor and other hosts are unaffected: the server's gates are the same everywhere. SPEC §9.8.
+
 ### Upgrading
 
 Bump the package (`npm update mindplan-mcp`, Dependabot, or a new `npx` range) and reload the MCP server: a running server keeps the code it started with, and until it restarts `get_project` returns a `restart` field naming both versions. A release that adds a graph migration raises the server's migration level. Until `mindplan/version.json` reaches it, every graph tool answers `Blocked: Version`, `get_project` returns a `version` field naming the fix, and `mindplan-mcp check` fails. Ask your agent to upgrade MindPlan: it calls `upgrade_project`, which runs every migration (each is idempotent), stamps the new level, and returns a guide. The agent then deletes the host copies it reports as `leftovers`, refreshes `MINDPLAN.md` when `pointer_outdated`, and commits the upgrade on its own. A stamp newer than your server (a teammate upgraded first) blocks too, until you upgrade `mindplan-mcp`. While on 0.x, read [CHANGELOG.md](CHANGELOG.md) before crossing a minor version. Details: SPEC §1.1.2.
@@ -188,6 +203,8 @@ The MCP server is the only writer of `mindplan/`. Nodes claim their source files
 | `check --after-merge` | Names what merging two branches that both changed the graph left behind |
 | `check --root <path>` | Checks another checkout |
 | `mindplan-mcp hook pre-tool-use` | The Claude Code hook: denies host file writes on `mindplan/**` (below) |
+| `mindplan-mcp hook session-start` | The plugin's SessionStart hook: prints the brief as context |
+| `mindplan-mcp hook stop` | The plugin's Stop hook: sends a turn back once when it changed files and the check fails |
 | `mindplan-mcp help` | Usage |
 | `mindplan-mcp --version` (also `-v`, `version`) | Print the installed package version, to see which release `npx mindplan-mcp` resolved |
 
@@ -206,7 +223,7 @@ The MCP server is the only writer of `mindplan/`. Nodes claim their source files
 
 **Linked tests.** With `tests.command` set (for example `npm run test:files -- {files}`), `run_check({ run_tests: true, change })` runs the linked tests of the change's nodes; a failure is `Blocked: Tests`, and a pass closes each node's `verify` item for this server session.
 
-**Keep host writes out of `mindplan/`.** Agents may read the graph's files directly; every write goes through the MindPlan tools. In Claude Code, ask your agent to call `setup_project({ install_hook: true })` (or `upgrade_project`): it adds a PreToolUse hook to `.claude/settings.json` that denies `Edit`, `MultiEdit`, `Write`, and `NotebookEdit` on `mindplan/**` and names the MindPlan tool to use instead (SPEC §9.8).
+**Keep host writes out of `mindplan/`.** Agents may read the graph's files directly; every write goes through the MindPlan tools. In Claude Code, ask your agent to call `setup_project({ install_hook: true })` (or `upgrade_project`): it adds a PreToolUse hook to `.claude/settings.json` that denies `Edit`, `MultiEdit`, `Write`, and `NotebookEdit` on `mindplan/**` and names the MindPlan tool to use instead (SPEC §9.8). The [Claude Code plugin](#claude-code-plugin) ships the same guard.
 
 Full modes and output: SPEC §9.6.
 

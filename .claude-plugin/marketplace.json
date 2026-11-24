@@ -1,0 +1,13 @@
+{
+  "name": "mindplan",
+  "owner": {
+    "name": "MindPlan contributors"
+  },
+  "plugins": [
+    {
+      "name": "mindplan",
+      "source": "./plugin",
+      "description": "MindPlan for Claude Code: hooks that enforce its duties (write guard, brief at session start, check before a turn ends), run through the project's own mindplan-mcp."
+    }
+  ]
+}
