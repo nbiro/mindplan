@@ -3,11 +3,12 @@ id: if-claude-plugin
 type: Interface
 title: "Claude Code plugin"
 description: "Claude Code channel: a plugin and same-repo marketplace that wire hooks to the project's own mindplan-mcp CLI: the write guard (PreToolUse), the brief at session start and after compaction (SessionStart), and the check before a turn ends (Stop). The project registers the MCP server itself."
-state: in-progress
+state: stable
+shipped_at: 2026-11-24T18:55:36.354Z
+revisions: 1
+churn: 1
 created_at: 2026-11-22T20:42:56.671Z
-updated_at: 2026-11-22T21:25:13.293Z
-change: "claude-plugin"
-change_ref: "feat/claude-plugin"
+updated_at: 2026-11-24T18:55:36.354Z
 aliases:
   - "claude plugin"
   - "claude code plugin"
@@ -65,19 +66,6 @@ Depends on: nothing it imports. It runs `if-cli` subcommands as a process.
 - The plugin has no `.mcp.json`
 - In a project with `mindplan-mcp` installed, registered, and the plugin enabled: a new session receives the brief, an `Edit` under `mindplan/` is denied, and a turn that leaves an unclaimed source file is sent back once with the `Blocked: Coverage` line
 - Verified by `claude-plugin.test.mjs` (launcher and config shape) and one manual run in Claude Code
-
-## Atomic Ops
-
-- [ ] Requirements defined {#spec}
-- [ ] Implementation complete {#impl}
-- [ ] Tests passing {#verify}
-- [x] Write .claude-plugin/marketplace.json and plugin/.claude-plugin/plugin.json {#marketplace}
-- [x] Write plugin/.mcp.json with the exact `npx mindplan-mcp` command {#mcp-config} — n/a: the plugin registers no MCP server (d-plugin-hooks-only)
-- [x] Write plugin/scripts/mindplan.mjs (project-copy resolution, silent when absent or below MIN_HOOK_VERSION) {#launcher}
-- [x] Write plugin/hooks/hooks.json for PreToolUse, SessionStart, and Stop {#hooks}
-- [x] Add claude-plugin.test.mjs: launcher behavior and hooks.json naming only CLI hook subcommands {#tests}
-- [x] README Claude Code plugin section, SPEC hook section, CHANGELOG entry for the minor release (f-framework-docs, in place) {#docs}
-- [ ] Run the plugin in Claude Code on Windows and one POSIX shell: brief at start, write denied, Stop sends a red check back once {#manual-run review}
 
 ## Attachments
 

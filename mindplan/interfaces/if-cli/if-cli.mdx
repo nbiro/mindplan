@@ -2,14 +2,15 @@
 id: if-cli
 type: Interface
 title: "CLI"
-description: "CLI for check (--base, --merge, --merge=strict), view, hook pre-tool-use, and --version: parses argv, prints the shared check output and warnings, prints legacy removals, answers the Claude Code hook, and sets the exit code; setup and upgrade are MCP tools, not commands."
+description: "CLI for check (--base, --merge, --merge=strict), view, hook (pre-tool-use, session-start, stop), and --version: parses argv, prints the shared check output and warnings, prints legacy removals, answers the Claude Code hooks, and sets the exit code; setup and upgrade are MCP tools, not commands."
 state: stable
-shipped_at: 2026-11-12T18:32:51.432Z
-revisions: 13
-churn: 7.722
-churn_behavior: 1.91
+shipped_at: 2026-11-24T18:55:36.446Z
+revisions: 14
+churn: 6.85
+churn_behavior: 1.447
+churn_wiring: 1
 created_at: 2026-08-10T13:44:20.510Z
-updated_at: 2026-11-12T18:32:51.432Z
+updated_at: 2026-11-24T18:55:36.446Z
 depends_on:
   - f-agent-hook
   - f-mcp-runtime
@@ -17,11 +18,13 @@ depends_on:
 exposes:
   - i-check-integrity
   - i-export-map
+  - i-read-brief
 implements:
   - src/interfaces/if-cli/
 tests:
   - src/foundations/f-test-harness/batch-edits.test.mjs
   - src/foundations/f-test-harness/check.test.mjs
+  - src/foundations/f-test-harness/claude-plugin.test.mjs
   - src/foundations/f-test-harness/merge-gate.test.mjs
   - src/foundations/f-test-harness/open-closed.test.mjs
   - src/foundations/f-test-harness/version.test.mjs
@@ -41,6 +44,8 @@ CLI command surface.
 
 - `i-check-integrity` — `check` (default ownership; `--base` opt-in; `--merge`, `--merge=strict`)
 - `i-export-map` — `view` / `export`
+- `i-check-integrity` — `hook stop`
+- `i-read-brief` — `hook session-start`
 
 ## Spec
 
@@ -56,11 +61,17 @@ Intended files: `src/interfaces/if-cli/`
 
 `mindplan-mcp check --after-merge` runs the after-merge check; `--root <path>` checks another checkout or worktree. Its `--help` text lists what it Blocks (conflict markers, a node id in two folders, a decision id in two files, a tracked `map.md`, a missing or behind `version.json`, a revision file that does not parse) and says a revision based on an older live is only a warning naming `rebase_revision`, in both the command help and the options help.
 
-- **`hook pre-tool-use`.** Reads the Claude Code hook payload from stdin and prints `preToolUseDecision` (`f-agent-hook`): the deny JSON for a host file tool aimed inside `mindplan/`, nothing otherwise or on malformed input; exits 0. An unknown hook name exits 1
+- **`hook <name>`.** Reads the Claude Code hook payload from stdin, prints the handler's JSON on stdout when it returns one, and exits 0:
+  - `pre-tool-use`: `preToolUseDecision` (`f-agent-hook`), the deny JSON for a host file tool aimed inside `mindplan/`
+  - `session-start`: `sessionStartContext` (`i-read-brief`)
+  - `stop`: `stopHookDecision` (`i-check-integrity`)
+  
+  Malformed input prints nothing. An unknown hook name prints `mindplan-mcp <version> has no hook "<name>"; update mindplan-mcp` on stderr and exits 0, so a newer plugin over an older package never breaks a session. The handlers hold every decision; this Interface only parses and prints
 
 ## Acceptance Criteria
 
 - `mindplan-mcp init` exits non-zero and names `setup_project` and `upgrade_project`
+- `hook session-start` and `hook stop` print their handler's JSON and exit 0; an unknown hook name exits 0 with the stderr note
 - Help has no `init` section and names both tools
 - `mindplan-mcp --version` (also `-v`, `version`) prints the version in `package.json` and exits 0
 - `check` output matches the `run_check` tool's `output`; warnings print without failing the check

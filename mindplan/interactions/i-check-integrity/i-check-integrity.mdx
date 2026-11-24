@@ -4,13 +4,13 @@ type: Interaction
 title: "Check integrity"
 description: "Human, CI, or agent runs the integrity check (CLI check, run_check): Blocks unclaimed files, illegal imports, missing tests, failed rule checks and tests, an outdated graph, and unreviewed or stale-territory work at merge; warns about stale text, shape, fan-in, and more; lists drift."
 state: stable
-shipped_at: 2026-11-12T18:32:51.050Z
-revisions: 38
-churn: 24.301
-churn_behavior: 2.845
-churn_wiring: 0.901
+shipped_at: 2026-11-24T18:55:36.177Z
+revisions: 39
+churn: 19.41
+churn_behavior: 3.155
+churn_wiring: 0.683
 created_at: 2026-07-20T18:53:01.570Z
-updated_at: 2026-11-12T18:32:51.050Z
+updated_at: 2026-11-24T18:55:36.177Z
 belongs_to:
   - j-territory-sdlc
 depends_on:
@@ -32,6 +32,7 @@ tests:
   - src/foundations/f-test-harness/change-neighbors.test.mjs
   - src/foundations/f-test-harness/check-output.test.mjs
   - src/foundations/f-test-harness/check.test.mjs
+  - src/foundations/f-test-harness/claude-plugin.test.mjs
   - src/foundations/f-test-harness/confirm-territory.test.mjs
   - src/foundations/f-test-harness/ergonomics.test.mjs
   - src/foundations/f-test-harness/fan-in.test.mjs
@@ -165,10 +166,22 @@ The after-merge and compact code read the cache folder name from `f-source-index
 - Five hotspots under work print five `hotspot:` lines that each name `get_spec({ topic: "open-closed" })`; none carries the registry or split paragraph
 - A hotspot whose open revision's change has a decision on another node listing it in `nodes` prints no `hotspot:` line
 - After `confirm_territory` on a shipped node edited in place, the plain check prints no `stale:` line for its changed files; editing one of them again prints it
+- `stopHookDecision` with an uncommitted unclaimed source file returns `decision: "block"` whose reason holds the `Blocked: Coverage` line; with `stop_hook_active: true`, a clean tree, or a passing check it returns null; outside git it returns null
 
 ## Attachments
 
 _None._
+
+## Stop hook
+
+`stopHookDecision(input, root)` (`stop-hook.ts`) answers the Claude Code `Stop` hook (`mindplan-mcp hook stop`, `if-cli`, wired by `if-claude-plugin`), so a turn that changed files does not end on a red check:
+
+- `stop_hook_active: true` returns null: one block per stop. Claude Code's own cap on consecutive blocks also applies
+- A root (the process root: `MINDPLAN_ROOT`, else cwd; the plugin's launcher runs it in the project directory) without `mindplan/` returns null. So does a working tree (`git status --porcelain` under the root) with no changed path in the source universe or under `mindplan/`: a read-only turn costs one git call, not a check
+- Otherwise it runs the default check (`runIntegrityCheck`: no merge level, no base). On `ok: false` it returns `{ decision: "block", reason }`, where `reason` is one sentence (`MindPlan check failed: fix these before you end the turn, or tell the user why you cannot.`) followed by the `Blocked:` lines, at most 10 and then `+N more`. Warnings and info lines are left out. On `ok: true` it returns null
+- A failure of its own (no git, a thrown check) returns null: the hook never traps a turn on its own error
+
+It is a level of the one check, with the same `Blocked:` lines the CLI and `run_check` print (d-check-stays-whole), and only decides when that check runs (d-stop-hook-dirty-tree).
 
 ## Open human items
 
